@@ -107,9 +107,11 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     // of them or none.  The table starts empty at each run, so no name of an
     // earlier input collides.  A trace can name more schemas than the table
     // holds, and the load then refuses the whole trace.
+    // The harness reserves no hash, so the reserve refuses no name.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
+    constexpr SchemaNameReserve kNoReservedNames = SchemaNameReserve::none();
     global_schema_table().clear(::foundation::effects::testing::test());
-    auto loaded = load_trace(kHarnessCtx, kForeground, path);
+    auto loaded = load_trace(kHarnessCtx, kForeground, path, kNoReservedNames);
     // A refused load registers no name.
     if (loaded.is_err()) {
         CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() == 0);

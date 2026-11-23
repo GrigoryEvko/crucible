@@ -13,7 +13,8 @@ struct Stranger {};
 
 int main() {
     const ::fixy::TestRunnerCtx io{::foundation::effects::testing::test()};
-    auto trace = crucible::load_trace(io, ::foundation::effects::testing::foreground<Stranger>(), "trace.crtrace");
+    auto trace = crucible::load_trace(io, ::foundation::effects::testing::foreground<Stranger>(), "trace.crtrace",
+                                      crucible::SchemaNameReserve::none());
     (void)trace;
     return 0;
 }

@@ -26,14 +26,15 @@
 //
 // Reserved hash of an outside name
 //   The door of an outside name refuses a name whose hash is the hash of an
-//   operator of the generated table with a different name
-//   (is_reserved_for_other_name of vessel/torch/vessel_api_typed.h).  The
+//   operator of the generated table with a different name (the reserve
+//   kAtenNameReserve of vessel/torch/vessel_api_typed.h).  The
 //   rows time the check of the first row of the table, of its last row, and
 //   of a hash of no row, the case of each operator from outside:
 //     walk             the walk of each row in table order, the old form:
 //                      it stops at the row of the hash, so a miss reads
 //                      each of the 3110 rows
-//     search           aten_op_row_of: the search of the last hash of each
+//     search           the reserve, through aten_op_index_of and a call of
+//                      its CallRef: the search of the last hash of each
 //                      of the 25 parts, then of the 128 hashes of one part
 //   The floor of the search is its chain of dependent loads: at most 5 and 8
 //   steps, each a load of an L1 or L2 line and a compare, then the load of
@@ -92,8 +93,8 @@ void append_word(NameTableImage& image, Word value) noexcept {
     }
 }
 
-// The old form of is_reserved_for_other_name: the walk of each row of the
-// generated table in table order, to the row of the hash.  Complexity:
+// The old form of the reserve of the generated table: the walk of each row of
+// the generated table in table order, to the row of the hash.  Complexity:
 // linear in the rows.
 [[nodiscard]] bool is_reserved_by_walk(SchemaHash hash, ::fixy::TextView name) noexcept {
     for (const ::fixy::View<crucible::vessel::OpEntry const> part : crucible::vessel::aten_op_parts) {
@@ -277,21 +278,21 @@ int main() {
                    }),
         bench::run("search, first row",
                    [&] {
-                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
                            bench::make_opaque(first_hash),
                            crucible::SchemaNameParts{bench::make_opaque(first_name.view())});
                        bench::do_not_optimize(is_reserved);
                    }),
         bench::run("search, last row",
                    [&] {
-                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
                            bench::make_opaque(last_hash),
                            crucible::SchemaNameParts{bench::make_opaque(last_name.view())});
                        bench::do_not_optimize(is_reserved);
                    }),
         bench::run("search, no row",
                    [&] {
-                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                       const bool is_reserved = crucible::vessel::kAtenNameReserve.is_reserved_for_other_name(
                            bench::make_opaque(outside_hash),
                            crucible::SchemaNameParts{bench::make_opaque(kOutsideName)});
                        bench::do_not_optimize(is_reserved);

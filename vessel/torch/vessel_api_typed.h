@@ -385,18 +385,26 @@ enum class OutsideNameRefusal : std::uint8_t {
                                      ::fixy::side_as<crucible::side::SchemaOverload>(row.overload)};
 }
 
-// True when an operator of the generated table has the hash and a full name
-// other than the full name of name (the reserved hashes).  The search of the
-// hash order of the table finds the row of the hash (aten_op_index_of).
-// Complexity: O(log n) in the rows of the table and the length of the name,
-// one time for each name from outside.  The fallback keeps the result in its
-// schema cache, and crucible_mode.py keeps the hash of each name.
-[[nodiscard]] constexpr bool is_reserved_for_other_name(crucible::SchemaHash hash,
-                                                        crucible::SchemaNameParts const& name) noexcept {
-    return aten_op_index_of(hash).match(
-        [&name](AtenOpIndex index) noexcept { return !name.is_same_full_name(name_parts_of(aten_op_row_at(index))); },
-        [] noexcept { return false; });
+// The name of the operator of the generated table with the hash, or no value
+// (the reserved hashes).  The search of the hash order of the table finds
+// the row of the hash (aten_op_index_of).  Complexity: O(log n) in the rows of
+// the table, one time for each name from outside.  The fallback keeps the
+// result in its schema cache, and crucible_mode.py keeps the hash of each
+// name.
+[[nodiscard]] constexpr ::fixy::Option<crucible::SchemaNameParts>
+aten_reserved_name(crucible::SchemaHash hash) noexcept {
+    // The parts borrow the texts of the program image, so the match reads a
+    // named Option.
+    const ::fixy::Option<AtenOpIndex> found = aten_op_index_of(hash);
+    return found.match([](AtenOpIndex index) noexcept { return ::fixy::some(name_parts_of(aten_op_row_at(index))); },
+                       [] noexcept { return ::fixy::Option<crucible::SchemaNameParts>{::fixy::none}; });
 }
+
+// The reserved hashes of the vessel: the hash of each operator of the
+// generated table, with the name of the operator.  The door of an outside
+// name refuses a different name of such a hash, and a load of a trace that
+// registers its names takes this reserve too.
+inline constexpr crucible::SchemaNameReserve kAtenNameReserve{crucible::SchemaNameSearchOf<&aten_reserved_name>{}};
 
 // The result of register_outside_schema_name.
 using OutsideNameRegistration = ::fixy::Result<::fixy::Unit, OutsideNameRefusal>;
@@ -415,7 +423,7 @@ template <class VigilType>
     return crucible::sanitize_schema_name(hash, name)
         .match(
             [&vigil](crucible::SanitizedSchemaName sanitized) noexcept -> OutsideNameRegistration {
-                if (is_reserved_for_other_name(sanitized.hash(), sanitized.parts()))
+                if (kAtenNameReserve.is_reserved_for_other_name(sanitized.hash(), sanitized.parts()))
                     return ::fixy::err(OutsideNameRefusal::reserved);
                 const crucible::SchemaRegistration registration = vigil.register_schema_name(sanitized);
                 if (crucible::is_collision(registration)) return ::fixy::err(OutsideNameRefusal::collision);

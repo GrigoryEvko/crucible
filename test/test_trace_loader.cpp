@@ -69,6 +69,10 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // Each load reads a file, so it also takes a context that owns IO and Block.
 constexpr ::fixy::TestRunnerCtx kTestIo{::foundation::effects::testing::test()};
 
+// A load that registers names takes the reserve of the program.  These tests
+// reserve no hash, other than the cases of the reserve.
+constexpr SchemaNameReserve kNoReservedNames = SchemaNameReserve::none();
+
 // The sanitized form of the path of a test file.  No path of these tests
 // holds a ".." component, so each one passes the check.
 static ::fixy::Path<::fixy::tags::source::Sanitized> sanitized(::fixy::TextView raw) {
@@ -553,7 +557,8 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
                 kTestIo,
                 [&trace_path] noexcept {
                     const bool is_refused =
-                        is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path), TraceLoadError::NameCollision);
+                        is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path, kNoReservedNames),
+                                      TraceLoadError::NameCollision);
                     const bool skips_earlier = missing(global_schema_table().lookup(kFirstHash));
                     const bool keeps_held = is_named(global_schema_table().lookup(kHeldHash), "aten::held");
                     const bool skips_later = missing(global_schema_table().lookup(kLaterHash));
@@ -618,9 +623,9 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
         ::fixy::process::wait(::fixy::process::spawn_child(
                                   kTestIo,
                                   [&trace_path] noexcept {
-                                      const bool is_refused =
-                                          is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path),
-                                                        TraceLoadError::NameTableFull);
+                                      const bool is_refused = is_refused_as(
+                                          load_trace(kTestIo, kVigilForeground, trace_path, kNoReservedNames),
+                                          TraceLoadError::NameTableFull);
                                       const bool skips_first = missing(global_schema_table().lookup(kFirstHash));
                                       const bool skips_next = missing(global_schema_table().lookup(kRefusedHash));
                                       const bool skips_later = missing(global_schema_table().lookup(kLaterHash));
@@ -643,12 +648,47 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
     // names of the trace.  The room of internal names stays out of the count.
     global_schema_table().clear(::foundation::effects::testing::test());
     register_outside_fillers(::fixy::ElementCount{kOutsideNames - 3});
-    CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path, kNoReservedNames).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == kOutsideNames);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kLaterHash), "aten::matmul"));
 
     global_schema_table().clear(::foundation::effects::testing::test());
     ::fixy::check::pass(kTest, "  test_schema_name_table_full_is_refused: PASSED\n");
+}
+
+// The hash of aten::mul in the trace of the round trip.
+constexpr SchemaHash kMulHash{0xBBBB444455556666ULL};
+
+// A reserve that holds the hash of aten::mul for another name, and a reserve
+// that holds it for aten::mul.
+static constexpr ::fixy::Option<SchemaNameParts> mul_hash_for_other_name(SchemaHash hash) noexcept {
+    if (hash != kMulHash) return ::fixy::Option<SchemaNameParts>{::fixy::none};
+    return ::fixy::some(SchemaNameParts{::fixy::TextView{"aten::other"}});
+}
+static constexpr ::fixy::Option<SchemaNameParts> mul_hash_for_mul(SchemaHash hash) noexcept {
+    if (hash != kMulHash) return ::fixy::Option<SchemaNameParts>{::fixy::none};
+    return ::fixy::some(SchemaNameParts{::fixy::TextView{"aten::mul"}});
+}
+
+// The trace of trace_path gives aten::mul to the hash kMulHash.  A program
+// that reserves the hash for another name has an internal name of the hash,
+// and the internal registration would end the process at the collision.  So
+// the load refuses the whole trace before it registers a name, and the
+// process lives.  A reserve of the same name loads the trace.  The old load
+// took no reserve, registered aten::mul, and the later internal name then
+// ended the process.
+static void
+test_schema_name_reserved_for_other_name_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
+    global_schema_table().clear(::foundation::effects::testing::test());
+    constexpr SchemaNameReserve kOtherName{SchemaNameSearchOf<&mul_hash_for_other_name>{}};
+    constexpr SchemaNameReserve kSameName{SchemaNameSearchOf<&mul_hash_for_mul>{}};
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path, kOtherName),
+                                              TraceLoadError::NameReserved));
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path, kSameName).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kMulHash), "aten::mul"));
+    global_schema_table().clear(::foundation::effects::testing::test());
+    ::fixy::check::pass(kTest, "  test_schema_name_reserved_for_other_name_is_refused: PASSED\n");
 }
 
 static void test_schema_name_table_round_trip() {
@@ -674,7 +714,8 @@ static void test_schema_name_table_round_trip() {
     CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, path).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
 
-    const LoadedTrace t = load_trace(kTestIo, kVigilForeground, path).expect("a trace with names loads");
+    const LoadedTrace t =
+        load_trace(kTestIo, kVigilForeground, path, kNoReservedNames).expect("a trace with names loads");
 
     CRUCIBLE_TEST_ASSERT(kTest, t.num_ops == 0);
     CRUCIBLE_TEST_ASSERT(kTest, t.num_metas == 0);
@@ -688,6 +729,7 @@ static void test_schema_name_table_round_trip() {
 
     test_schema_name_table_collision_is_refused(path);
     test_schema_name_table_full_is_refused(path);
+    test_schema_name_reserved_for_other_name_is_refused(path);
     remove_image(kFileName);
 
     global_schema_table().clear(::foundation::effects::testing::test());
@@ -708,8 +750,8 @@ static void test_schema_name_table_corrupt_zero_len() {
 
     constexpr ::fixy::CText kFileName{"crtrace-zero-len.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    CRUCIBLE_TEST_ASSERT(
-        kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameLengthPastLimit));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, path, kNoReservedNames),
+                                              TraceLoadError::NameLengthPastLimit));
     remove_image(kFileName);
 
     // The check refused the image before the registration, so the hash
@@ -741,7 +783,7 @@ static bool is_refused_whole(TraceImage const& image, TraceLoadError error) {
     global_schema_table().clear(::foundation::effects::testing::test());
     constexpr ::fixy::CText kFileName{"crtrace-refused-name.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
-    const bool is_load_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path), error);
+    const bool is_load_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path, kNoReservedNames), error);
     remove_image(kFileName);
     return CheckedTraceImage::check(image.view(), kTest.cap().alloc).err() == ::fixy::some(error) && is_load_refused
         && global_schema_table().count() == 0;
@@ -948,7 +990,8 @@ static void test_cut_files_at_the_section_boundaries_are_refused() {
         global_schema_table().clear(::foundation::effects::testing::test());
         const ::fixy::Path<::fixy::tags::source::Sanitized> path =
             write_image(image.view().window(0, length).expect("a cut is a prefix of the image"), kFileName);
-        const ::fixy::Result<LoadedTrace, TraceLoadError> loaded = load_trace(kTestIo, kVigilForeground, path);
+        const ::fixy::Result<LoadedTrace, TraceLoadError> loaded =
+            load_trace(kTestIo, kVigilForeground, path, kNoReservedNames);
         remove_image(kFileName);
         CRUCIBLE_TEST_ASSERT(kTest, loaded.is_err());
         CRUCIBLE_TEST_ASSERT(kTest, loaded.err() == cut_error(image, length));
@@ -956,7 +999,8 @@ static void test_cut_files_at_the_section_boundaries_are_refused() {
     }
     // The whole file loads, with each of its names.
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
-    const LoadedTrace trace = load_trace(kTestIo, kVigilForeground, path).expect("the written file loads");
+    const LoadedTrace trace =
+        load_trace(kTestIo, kVigilForeground, path, kNoReservedNames).expect("the written file loads");
     remove_image(kFileName);
     CRUCIBLE_TEST_ASSERT(kTest, trace.num_ops == 2 && trace.num_metas == 4);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0xAAAA111122223333ULL}), "aten::add"));
@@ -1007,7 +1051,7 @@ static void test_the_writer_maxima_pass_the_check() {
     }
     constexpr ::fixy::CText kLongestFile{"crtrace-longest-name-registered.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> longest_path = write_image(longest.view(), kLongestFile);
-    const bool is_registered = load_trace(kTestIo, kVigilForeground, longest_path).is_ok();
+    const bool is_registered = load_trace(kTestIo, kVigilForeground, longest_path, kNoReservedNames).is_ok();
     remove_image(kLongestFile);
     CRUCIBLE_TEST_ASSERT(kTest, is_registered);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0x10E6ULL}), longest_name.view()));
@@ -1236,7 +1280,8 @@ static void test_names_on_a_sealed_table_refuse_the_load() {
 
     constexpr ::fixy::CText kFileName{"crtrace-sealed.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    const bool is_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameTableSealed);
+    const bool is_refused =
+        is_refused_as(load_trace(kTestIo, kVigilForeground, path, kNoReservedNames), TraceLoadError::NameTableSealed);
     const bool is_skipped = load_trace(kTestIo, path).is_ok();
     remove_image(kFileName);
 
@@ -1250,7 +1295,7 @@ static void test_names_on_a_sealed_table_refuse_the_load() {
     append_le<uint32_t>(nameless, 0);
     constexpr ::fixy::CText kNamelessFile{"crtrace-sealed-nameless.bin"};
     const ::fixy::Path<::fixy::tags::source::Sanitized> nameless_path = write_image(nameless.view(), kNamelessFile);
-    const bool is_nameless_loaded = load_trace(kTestIo, kVigilForeground, nameless_path).is_ok();
+    const bool is_nameless_loaded = load_trace(kTestIo, kVigilForeground, nameless_path, kNoReservedNames).is_ok();
     remove_image(kNamelessFile);
     CRUCIBLE_TEST_ASSERT(kTest, is_nameless_loaded);
 

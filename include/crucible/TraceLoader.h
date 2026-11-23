@@ -192,6 +192,10 @@ enum class TraceLoadError : uint8_t {
     NameTableFull,
     // The schema table is sealed, and the trace has names to register.
     NameTableSealed,
+    // A name of the trace has a hash that the program reserves for a
+    // different name (SchemaNameReserve).  The load registers no name of the
+    // trace.
+    NameReserved,
 };
 
 // The loader reads each field from the bytes of the file with no byte swap.
@@ -919,6 +923,12 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
                            "of its {} names\n",
                            image.num_names());
             return;
+        case TraceLoadError::NameReserved:
+            ::fixy::report(::fixy::Sink::Err,
+                           "load_trace: a name of the trace has a schema hash that the program reserves for a "
+                           "different name, so the load refuses the trace and registers none of its {} names\n",
+                           image.num_names());
+            return;
         default:
             return;
     }
@@ -1032,14 +1042,17 @@ enum class TraceNameUse : uint8_t {
 
 // Loads the trace at path (the load door).  With register_names, the schema
 // names of the trace go into the global table through schema_table_view after
-// the whole trace decodes, each of them or none.  A name that the table
-// refuses refuses the load (NameCollision, NameTableFull), and an empty view
-// means that the table is sealed (NameTableSealed).  Complexity: linear in the
-// bytes of the file.
+// the whole trace decodes, each of them or none.  A name with a hash that
+// reserve holds for a different name refuses the load (NameReserved) before
+// the first registration.  A name that the table refuses refuses the load
+// (NameCollision, NameTableFull), and an empty view means that the table is
+// sealed (NameTableSealed).  Complexity: linear in the bytes of the file, and
+// one search of the reserve for each name.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path,
-            ::fixy::Option<SchemaTable::MutableView> const& schema_table_view, TraceNameUse name_use) {
+            ::fixy::Option<SchemaTable::MutableView> const& schema_table_view, TraceNameUse name_use,
+            SchemaNameReserve const& reserve) {
     // A report names no path, because a report writes no raw text.  Each
     // caller knows the path that it gave.
     using Opened = ::fixy::Result<detail::TraceFile, TraceLoadError>;
@@ -1136,6 +1149,25 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // so a sealed table refuses each trace that has names.  A load with no
     // name, or a load that skips the names, needs no table.
     if (name_use == TraceNameUse::skip || checked.num_names() == 0) return trace;
+    // A name with a hash that the program reserves for a different name would
+    // sit on the hash before the internal name of the program, whose
+    // registration then ends the process at the collision.  So the load
+    // refuses such a trace before it registers a name.
+    const bool has_reserved_name = [&checked, &reserve] noexcept {
+        ::fixy::View<std::byte const> rest = checked.names();
+        for (uint32_t index = 0; index < checked.num_names(); ++index) {
+            const detail::TraceName entry =
+                detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+            if (reserve.is_reserved_for_other_name(entry.hash,
+                                                   SchemaNameParts{detail::trace_name_text_(entry).value()}))
+                return true;
+        }
+        return false;
+    }();
+    if (has_reserved_name) {
+        detail::report_name_refusal_(TraceLoadError::NameReserved, checked);
+        return ::fixy::err(TraceLoadError::NameReserved);
+    }
     const auto walk_names = [&checked](AddSchemaName const& add_name) noexcept {
         ::fixy::View<std::byte const> rest = checked.names();
         for (uint32_t index = 0; index < checked.num_names(); ++index) {
@@ -1167,17 +1199,21 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
 load_trace(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
-    return load_trace_(io, path, ::fixy::none, TraceNameUse::skip);
+    return load_trace_(io, path, ::fixy::none, TraceNameUse::skip, SchemaNameReserve::none());
 }
 
 // Loads the trace at path, and puts its schema names into the global table.
 // It takes two contexts, because no one context proves the two claims: io
 // owns the file reads, and fg proves that the caller holds a Vigil's
-// producer claim, which the table asks for before it takes a name.
+// producer claim, which the table asks for before it takes a name.  reserve
+// holds the hashes that the internal names of the program take, such as the
+// reserve of the generated table of the vessel (kAtenNameReserve), so no
+// name of the trace takes such a hash with a different name.
 template <CtxFitsTraceLoad Ctx>
 [[nodiscard]] inline ::fixy::Result<LoadedTrace, TraceLoadError>
-load_trace(Ctx const& io, VigilFgCtx const& fg, ::fixy::Path<::fixy::tags::source::Sanitized> const& path) {
-    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), TraceNameUse::register_names);
+load_trace(Ctx const& io, VigilFgCtx const& fg, ::fixy::Path<::fixy::tags::source::Sanitized> const& path,
+           SchemaNameReserve const& reserve) {
+    return load_trace_(io, path, global_schema_table().mint_mutable_view(fg), TraceNameUse::register_names, reserve);
 }
 
 }  // namespace crucible

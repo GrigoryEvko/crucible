@@ -357,6 +357,53 @@ template <SchemaNameBoundary Tag>
     return sanitize_schema_name(hash, ::fixy::mint_tagged<Tag>(SchemaNameParts{name.value()}));
 }
 
+// The search of the name that a program reserves for a schema hash: the
+// name, or no value for a hash that the program reserves for no name.
+using SchemaNameSearch = ::fixy::CallRef<::fixy::Option<SchemaNameParts>(SchemaHash) noexcept>;
+
+// The tag of the reserve of the names that the function Search gives.
+template <auto Search>
+struct SchemaNameSearchOf final {};
+
+// The reserved hashes of a program: each hash that an internal name of the
+// program takes, with that name, such as the hash of each operator of the
+// generated table of the vessel.  An internal name meets a name from outside
+// on its hash only when the two names are the same, because each door of a
+// name from outside refuses a name with a reserved hash and a different name
+// before it registers a name: the C entry of the vessel and the trace loader.
+// The reserve holds a CallRef, so it has no copy and no move, and a door takes
+// it by const&.
+class SchemaNameReserve final {
+public:
+    // The reserve of the names that the function Search gives.
+    template <auto Search>
+        requires ::foundation::core::CallRefFunction<Search, ::fixy::Option<SchemaNameParts>, SchemaHash>
+    constexpr explicit SchemaNameReserve(SchemaNameSearchOf<Search> /*search*/) noexcept
+        : search_{SchemaNameSearch::of<Search>()} {}
+
+    // The reserve of a program that reserves no hash.
+    [[nodiscard]] static constexpr SchemaNameReserve none() noexcept {
+        return SchemaNameReserve{SchemaNameSearchOf<&no_reserved_name_>{}};
+    }
+
+    // True when the program reserves the hash for a full name other than the
+    // full name of parts.  The same name on its reserved hash names the same
+    // schema.  Complexity: the search and the length of the name.
+    [[nodiscard]] constexpr bool is_reserved_for_other_name(SchemaHash hash,
+                                                            SchemaNameParts const& parts) const noexcept {
+        return search_(hash).match(
+            [&parts](SchemaNameParts reserved) noexcept { return !parts.is_same_full_name(reserved); },
+            [] noexcept { return false; });
+    }
+
+private:
+    [[nodiscard]] static constexpr ::fixy::Option<SchemaNameParts> no_reserved_name_(SchemaHash /*hash*/) noexcept {
+        return ::fixy::none;
+    }
+
+    SchemaNameSearch search_;
+};
+
 // A table of schema names of at most Capacity names, sorted by hash, with at
 // most SCHEMA_NAME_BYTES_MAX bytes of names.  The entries, the count and the
 // phase are private.  A public field is a write that no view and no seal can
