@@ -88,13 +88,18 @@
 //                       the element is a value
 //   mint_foreign_text(first, count)   the ForeignText of such a run of
 //                       characters, which keeps that source in its type
+//   mint_foreign_text(bytes)   the ForeignText of the bytes of a View of data
+//                       from outside, such as the image of a file, one
+//                       character for each byte.  The View proves the run,
+//                       so the mint checks nothing, and a call needs no
+//                       opt-out region
 //   foreign_c_str(text)   the address of the first character of a CText,
 //                       for a foreign reader that reads up to the zero
 //   foreign_first(view)   the address of the first element of a View, for a
 //                       raw loop: a foreign reader, the measured loop of a
 //                       bench, or a probe of raw behavior
-// The two mints check the count, the null pointer and the alignment, and
-// they cannot prove that the run lives.  A call of each door stands only at
+// The two mints of a pointer check the count, the null pointer and the
+// alignment, and they cannot prove that the run lives.  A call of each door stands only at
 // the edge of a foreign ABI, in an opt-out region of the class ABI, or in the
 // measured loop of a bench, in an opt-out region of the class MEASURE.  A
 // call of foreign_first can also stand in a probe of raw behavior, in an
@@ -1468,16 +1473,26 @@ View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
 }
 
 // The door of mint_foreign_text to the raw constructors of a TextView and a
-// ForeignText (the doors of a text of foundation/core/Text.h).  Its one member
-// is private, and mint_foreign_text is its one friend.  The invariant: the
-// mint checks the count and the null pointer of the parts before it calls the
-// door.  A home owner row of utils/rule-table.txt keeps this definition in
-// this header.
+// ForeignText (the doors of a text of foundation/core/Text.h).  Its members
+// are private, and the two forms of mint_foreign_text are its friends.  The
+// invariant: the mint of the parts checks the count and the null pointer
+// before it calls the door, and the mint of the bytes of a View gives the
+// first byte and the count of a View.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class ForeignTextDoor final : ::foundation::NoObject<ForeignTextDoor> {
     friend ForeignText mint_foreign_text(char const* first, std::size_t count) noexcept;
+    friend ForeignText mint_foreign_text(View<std::byte const> bytes) noexcept;
 
     [[nodiscard]] static constexpr ForeignText text_(char const* first, std::size_t size) noexcept {
         return ForeignText{TextView{first, size}};
+    }
+
+    // The characters of the bytes of a View: one character for each byte.
+    // char may name the bytes of each object, and each bit pattern of a byte
+    // is a character.
+    [[nodiscard]] static ForeignText text_of_bytes_(View<std::byte const> bytes) noexcept {
+        std::byte const* const first = first_of_(detail::BaseLayerRead{}, bytes);
+        return text_(static_cast<char const*>(static_cast<void const*>(first)), bytes.size());
     }
 };
 
@@ -1494,6 +1509,15 @@ class ForeignTextDoor final : ::foundation::NoObject<ForeignTextDoor> {
         fatal("mint_foreign_text got a null pointer with a count");
     }
     return ForeignTextDoor::text_(first, count);
+}
+
+// The ForeignText of the bytes of a View of data from outside the program,
+// such as the characters of a name in the image of a file, one character for
+// each byte.  The View proves the count and the run, so the mint checks
+// nothing, and the text borrows the run as the View does.  So a reader checks
+// such characters in place, with no copy.  Complexity: constant.
+[[nodiscard]] inline ForeignText mint_foreign_text(View<std::byte const> bytes) noexcept {
+    return ForeignTextDoor::text_of_bytes_(bytes);
 }
 
 // The address of the first character of text, for a reader of a foreign ABI

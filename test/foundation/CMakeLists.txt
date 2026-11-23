@@ -4769,6 +4769,9 @@ foundation_neg_compile_test(neg_core_foreign_text_result_dropped
 foundation_neg_compile_test(neg_core_foreign_text_byte_run
   "invalid conversion from .const unsigned char\\*. to .const char\\*."
   "initializing argument 1 of .foundation::core::ForeignText foundation::core::mint_foreign_text\\(const char\\*, std::size_t\\).")
+foundation_neg_compile_test(neg_core_foreign_text_word_view
+  "no matching function for call to .mint_foreign_text\\(foundation::core::View<const short unsigned int>\\)."
+  "no known conversion for argument 1 from .View<const short unsigned int>. to .View<const std::byte>.")
 
 # The CText of a view that holds its zero is the one CText of that view, and
 # a bare address gives no count, so the mint takes a view and no address.

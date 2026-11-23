@@ -463,6 +463,14 @@ void test_foreign_doors() {
     FixedArray<char, 2> const letters{'o', 'k'};
     TextView const text = ::foundation::core::mint_foreign_text(&*letters.get(0).expect("2 elements"), 2).characters();
     CRUCIBLE_TEST_ASSERT(kTest, text == TextView{"ok"});
+    // The bytes of a View give one character for each byte, also a zero byte
+    // and a byte past 127.
+    FixedArray<std::byte, 3> const bytes{std::byte{'a'}, std::byte{0}, std::byte{0xFF}};
+    TextView const of_bytes = ::foundation::core::mint_foreign_text(bytes.view()).characters();
+    CRUCIBLE_TEST_ASSERT(kTest, of_bytes.size() == 3 && of_bytes.window(0, 1).expect("3 characters") == TextView{"a"});
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::find(of_bytes, '\0') == ::foundation::core::some(std::size_t{1}));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         ::foundation::core::mint_foreign_text(View<std::byte const>{}).characters().size() == 0);
     CRUCIBLE_TEST_ASSERT(kTest,
                          ::foundation::core::mint_foreign_view(static_cast<float const*>(nullptr), 0).size() == 0);
     // A null pointer with a count ends the process.  Each call runs in a
