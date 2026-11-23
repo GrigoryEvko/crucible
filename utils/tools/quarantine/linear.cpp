@@ -134,6 +134,8 @@
 //                          (the sums)
 //     option-known-empty   a door that needs a full sum, such as expect, on a
 //                          sum that each path shows empty (the sums)
+//     option-static        an object of static or thread storage duration that
+//                          is or holds a linear sum (the sum holders)
 //     borrow-move-out      a consume of a lent object that a path keeps to
 //                          an exit (the lent parameters)
 //     closure-move-out     a call of a closure that moves a linear capture
@@ -228,7 +230,8 @@
 //     reference, or a type argument of a linear class, such as the payload of
 //     a Box or the element of a list (holds_linear_sum).  The drop door and
 //     the door end_unrun_body of include/foundation/Linear.h refuse a holder
-//     by its type (states_own_end).  The rule reads two more ends of a holder:
+//     by its type (states_own_end).  The rule reads three more ends of a
+//     holder:
 //       * The body of a door keeps the kinds of a drop for an object or a
 //         temporary of a holder: option-unconsumed and option-discarded for a
 //         sum, and unconsumed, unconsumed-on-path and discarded-temporary for
@@ -241,10 +244,20 @@
 //         its destructor ends that sum, and the rule reads no destructor.  So a
 //         destructor that consumes its sum still gives a line
 //         (control-known-gaps).
+//       * An object of static or thread storage duration that is a holder
+//         gives the kind option-static, an error in each mode, at its
+//         declaration: a variable at namespace scope, a static data member and
+//         a static or thread_local local (check_static_linear_sum, from the
+//         static walks of declaration.cpp).  The end of the process or of the
+//         thread ends it, and no path of a body reaches that end.  A variable
+//         whose type names a template parameter is read in no instance.  A
+//         static linear value that holds no sum, such as a token, gives no
+//         line of this kind.
 //     A named end door of a sum, which takes the reason of the end, and which
 //     the drop door, the body of a door and a destructor call for each sum
-//     that they end, retires these lines: the rule then reads each such end
-//     as a call of that door.
+//     that they end, retires the first two lines: the rule then reads each
+//     such end as a call of that door.  C++ states no storage duration in a
+//     type, so no type of the base retires the kind option-static.
 //
 // Lent parameters
 //     A parameter of a reference that is not const to a linear class is a
@@ -5539,6 +5552,20 @@ void check_linear_alias(tree decl) {
     check_alias(decl, CP_DECL_CONTEXT(decl), qualified_name(CP_DECL_CONTEXT(decl)));
 }
 
+// An object of static or thread storage duration, from the static walks of
+// declaration.cpp: the kind option-static when its type is or holds a linear
+// sum by value (the sum holders).
+void check_static_linear_sum(tree decl, const std::string& entity) {
+    if (!linear_mode.checks_must_consume || decl == NULL_TREE || !holds_linear_sum(TREE_TYPE(decl))) {
+        return;
+    }
+    Place place = place_of(DECL_SOURCE_LOCATION(decl), Scope::quarantine);
+    if (place.file == nullptr) {
+        return;
+    }
+    add_finding(Kind::linear_option_static, nullptr, place, entity + " (" + linear_type_text(TREE_TYPE(decl)) + ")");
+}
+
 // The error of one finding of the kinds of the scope brands that no region
 // opts out.
 void report_scope_escape(const Finding& finding) {
@@ -5567,10 +5594,10 @@ void report_scope_escape(const Finding& finding) {
 }
 
 // The error of one finding of the kinds option-unconsumed, option-discarded,
-// option-known-full and option-known-empty (the sums), and borrow-move-out
-// (the lent parameters), of the rule must-consume that no region opts out.
-// The message does not start with "quarantine: ", so a regex of a negative
-// fixture reads it.
+// option-known-full and option-known-empty (the sums), option-static (the sum
+// holders) and borrow-move-out (the lent parameters), of the rule
+// must-consume that no region opts out.  The message does not start with
+// "quarantine: ", so a regex of a negative fixture reads it.
 void report_option_end(const Finding& finding) {
     if (finding.kind == Kind::linear_option_unconsumed) {
         error_at(finding.spelling, "a linear sum can end with a payload that no consumer took: %s",
@@ -5598,6 +5625,16 @@ void report_option_end(const Finding& finding) {
         inform(finding.spelling,
                "its run-time check ends the process on each path, because the sum holds no payload: fill it first, or "
                "end the empty sum with %<expect_none(reason)%>");
+    } else if (finding.kind == Kind::linear_option_static) {
+        error_at(finding.spelling,
+                 "an object of static or thread storage duration holds a linear sum, and the end of the process or "
+                 "of the thread ends it with no consume: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "a full sum drops at that end a payload that each path must use one time, and no rule reads the state "
+               "of the sum there");
+        inform(finding.spelling,
+               "hold the sum in an object of automatic storage duration, or in an owner that a consumer ends");
     } else if (finding.kind == Kind::linear_borrow_move_out) {
         error_at(finding.spelling,
                  "a function moves a linear value out of a parameter that its caller lends, and a path leaves the "

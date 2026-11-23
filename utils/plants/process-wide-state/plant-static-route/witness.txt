@@ -4,10 +4,13 @@
 # refuses the global of the thread_bound type and the global of a class that
 # holds one, in each mode (declaration.cpp, THE THREAD-BOUND STATICS).  This
 # unit was the known gap of the route in the control control-known-gaps of
-# must-consume.
+# must-consume.  Each global holds a linear sum too, so the kind option-static
+# of must-consume refuses each one in each mode (linear.cpp, THE SUM HOLDERS).
 compile static_route src/static_route.cpp must-consume=on errors=static_route
 flag static_route -freflection
 exit static_route fail
+finding static_route must-consume option-static src/static_route.cpp:36:19 | planted::g_slot (foundation::core::Option<planted::PinnedEnd>)
+finding static_route must-consume option-static src/static_route.cpp:37:8 | planted::g_parked (planted::Parked)
 finding static_route process-wide-state thread-bound-static src/static_route.cpp:36:19 | planted::g_slot
 finding static_route process-wide-state unmarked-static src/static_route.cpp:36:19 | planted::g_slot
 finding static_route process-wide-state thread-bound-static src/static_route.cpp:37:8 | planted::g_parked

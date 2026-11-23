@@ -1,0 +1,48 @@
+// The objects of static or thread storage duration that hold a linear sum
+// (THE SUM HOLDERS of linear.cpp).  The end of the process or of the thread
+// ends each one with no consume, so each one is an error.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+using ::foundation::core::Result;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that marks its own end and holds an Option of a token.
+struct [[= ::foundation::linear::linear{}]] Holder {
+    Option<Token> held;
+};
+
+[[nodiscard]] int look(Option<Token> const& held) noexcept;
+
+// A variable at namespace scope, a static data member, and a Result.
+Option<Token> global_held = Option<Token>::some(Token{1});
+struct Statics {
+    static inline Option<Token> member_held{};
+};
+Result<int, Token> global_refused{2};
+
+// A static local, a thread_local local, a holder, and a closure that holds a
+// sum.
+int read_statics() {
+    static Option<Token> local_held = Option<Token>::some(Token{3});
+    thread_local Option<Token> thread_held{};
+    static Holder holder{Option<Token>::some(Token{4})};
+    static auto const reader = [held = Option<Token>::some(Token{5})]() noexcept { return look(held); };
+    return look(local_held) + look(thread_held) + look(global_held) + look(Statics::member_held) + look(holder.held)
+         + reader();
+}
+
+}  // namespace planted

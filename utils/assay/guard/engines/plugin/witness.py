@@ -323,6 +323,8 @@ SUM_ERRORS = {
     "option-discarded": "the code discards a temporary linear sum, so its payload can drop: {entity}",
     "option-known-full": "a door that needs an empty linear sum runs on a sum that each path shows full: {entity}",
     "option-known-empty": "a door that needs a full linear sum runs on a sum that each path shows empty: {entity}",
+    "option-static": "an object of static or thread storage duration holds a linear sum, and the end of the process "
+    "or of the thread ends it with no consume: {entity}",
 }
 # The rule process-wide-state, and the start of the error of each of its kinds that are errors in each mode: an object
 # with static storage duration that holds a thread_bound class, and an object with static or thread storage duration

@@ -1,0 +1,26 @@
+# Each object of static or thread storage duration that is or holds a linear
+# sum is an error in each mode (THE SUM HOLDERS of linear.cpp): a variable at
+# namespace scope (line 31), a static data member (33), a Result at namespace
+# scope (35), a static local (40), a thread_local local (41), a static holder
+# of a sum (42) and a static closure that holds one (43).  Only the run-time
+# end of a full Option of a linear payload caught such an object before.  No
+# path of a body reaches the end of the process, so the rule cannot know the
+# state of the sum there, and it refuses each such object.  The rule
+# process-wide-state names each object that can change and has no marker.
+
+compile statics src/statics.cpp must-consume=on errors=statics
+flag statics -freflection
+exit statics fail
+finding statics must-consume option-static src/statics.cpp:31:15 | planted::global_held (foundation::core::Option<planted::Token>)
+finding statics must-consume option-static src/statics.cpp:33:33 | planted::Statics::member_held (foundation::core::Option<planted::Token>)
+finding statics must-consume option-static src/statics.cpp:35:20 | planted::global_refused (foundation::core::Result<int, planted::Token>)
+finding statics must-consume option-static src/statics.cpp:40:26 | planted::read_statics()::local_held (foundation::core::Option<planted::Token>)
+finding statics must-consume option-static src/statics.cpp:41:32 | planted::read_statics()::thread_held (foundation::core::Option<planted::Token>)
+finding statics must-consume option-static src/statics.cpp:42:19 | planted::read_statics()::holder (planted::Holder)
+finding statics must-consume option-static src/statics.cpp:43:23 | planted::read_statics()::reader (planted::read_statics()::<lambda()>)
+finding statics process-wide-state unmarked-static src/statics.cpp:31:15 | planted::global_held
+finding statics process-wide-state unmarked-static src/statics.cpp:33:33 | planted::Statics::member_held
+finding statics process-wide-state unmarked-static src/statics.cpp:35:20 | planted::global_refused
+finding statics process-wide-state unmarked-static src/statics.cpp:40:26 | planted::read_statics()::local_held
+finding statics process-wide-state unmarked-static src/statics.cpp:41:32 | planted::read_statics()::thread_held
+finding statics process-wide-state unmarked-static src/statics.cpp:42:19 | planted::read_statics()::holder

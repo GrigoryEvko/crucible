@@ -1,0 +1,10 @@
+# An object of static or thread storage duration that holds no linear sum by
+# value gives no line of the kind option-static (THE SUM HOLDERS of
+# linear.cpp): a token at namespace scope, a thread_local token, and a static
+# reference to an Option.  The rule process-wide-state names each object that
+# can change and has no marker.
+compile statics src/statics.cpp must-consume=on
+flag statics -freflection
+exit statics pass
+finding statics process-wide-state unmarked-static src/statics.cpp:26:7 | planted::global_token
+finding statics process-wide-state unmarked-static src/statics.cpp:29:24 | planted::read_statics()::thread_token

@@ -405,8 +405,12 @@
 //                           a door that needs an empty sum on a sum that each
 //                           path shows full, and a door that needs a full sum
 //                           on a sum that each path shows empty (the sums of
-//                           linear.cpp).  Each finding of the four option
-//                           kinds is an error in each mode (is_each_mode_kind)
+//                           linear.cpp)
+//     option-static         an object of static or thread storage duration
+//                           whose type is or holds a linear sum by value (the
+//                           sum holders of linear.cpp).  Each finding of the
+//                           five option kinds is an error in each mode
+//                           (is_each_mode_kind)
 //     borrow-move-out       a function that moves a linear value out of a
 //                           parameter that its caller lends, a reference that
 //                           is not const, and leaves it spent at an exit (the
@@ -1116,6 +1120,7 @@ enum class Kind : std::uint8_t {
     linear_option_discarded,
     linear_option_known_full,
     linear_option_known_empty,
+    linear_option_static,
     linear_borrow_move_out,
     linear_closure_move_out,
     linear_capture_unconsumed,
@@ -1497,6 +1502,8 @@ inline const char* kind_name(Kind kind) {
             return "option-known-full";
         case Kind::linear_option_known_empty:
             return "option-known-empty";
+        case Kind::linear_option_static:
+            return "option-static";
         case Kind::linear_borrow_move_out:
             return "borrow-move-out";
         case Kind::linear_closure_move_out:
@@ -1699,6 +1706,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_option_discarded:
         case Kind::linear_option_known_full:
         case Kind::linear_option_known_empty:
+        case Kind::linear_option_static:
         case Kind::linear_borrow_move_out:
         case Kind::linear_closure_move_out:
         case Kind::linear_capture_unconsumed:
@@ -1779,6 +1787,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::linear_option_discarded:
         case Kind::linear_option_known_full:
         case Kind::linear_option_known_empty:
+        case Kind::linear_option_static:
         case Kind::specialization_outside_home:
         case Kind::specialization_orphan:
         case Kind::specialization_forward_declaration:
@@ -2000,6 +2009,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "option-discarded"},
     {"must-consume", "option-known-full"},
     {"must-consume", "option-known-empty"},
+    {"must-consume", "option-static"},
     {"must-consume", "borrow-move-out"},
     {"must-consume", "closure-move-out"},
     {"must-consume", "capture-unconsumed"},
@@ -2066,6 +2076,7 @@ inline bool is_name_kind(Kind kind) {
         case Kind::linear_option_discarded:
         case Kind::linear_option_known_full:
         case Kind::linear_option_known_empty:
+        case Kind::linear_option_static:
         case Kind::fresh_deduced_brand:
         case Kind::fresh_named_brand:
             return true;
@@ -3102,6 +3113,11 @@ void check_linear_alias(tree decl);
 // linear.cpp: the rule brand-reentry at the end of the unit, from the walks of
 // plugin.cpp after the parse.
 void finish_linear_rules();
+// linear.cpp: the kind option-static of the rule must-consume at the variable
+// DECL of static or thread storage duration and of a type that no template
+// parameter names, which the static walks of declaration.cpp give with its
+// name ENTITY (the sum holders).
+void check_static_linear_sum(tree decl, const std::string& entity);
 // linear.cpp: the error of one finding of the kind self-move of the rule
 // must-consume, in each mode (the self-moves).  Its text names the move, so a
 // fixture reads it as an error of the compile and not as a finding.
@@ -3110,9 +3126,9 @@ void report_self_move(const Finding& finding);
 // scope-return of the rule brand-escape that no region opts out (the scope
 // brands of linear.cpp).
 void report_scope_escape(const Finding& finding);
-// linear.cpp: the error of one finding of the kinds option-unconsumed and
-// option-discarded of the rule must-consume that no region opts out (the sums
-// of linear.cpp).
+// linear.cpp: the error of one finding of the option kinds and of the kind
+// borrow-move-out of the rule must-consume that no region opts out (the sums
+// and the sum holders of linear.cpp).
 void report_option_end(const Finding& finding);
 
 // plugin.cpp: the report of the unit.

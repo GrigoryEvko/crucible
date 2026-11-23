@@ -1,0 +1,34 @@
+// The objects of static or thread storage duration that hold no linear sum by
+// value (THE SUM HOLDERS of linear.cpp): a token, and a reference to an
+// Option.  The kind option-static names none of them: a static token ends with
+// the process too, but no run-time end of a sum is at stake there.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+[[nodiscard]] Option<Token>& slot() noexcept;
+[[nodiscard]] int look(Option<Token> const& held) noexcept;
+
+Token global_token{1};
+
+int read_statics() {
+    thread_local Token thread_token{2};
+    static Option<Token>& alias = slot();
+    return global_token.handle + thread_token.handle + look(alias);
+}
+
+}  // namespace planted

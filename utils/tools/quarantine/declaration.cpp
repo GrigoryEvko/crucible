@@ -216,6 +216,11 @@
 //     keys of the holder.  A const part ends the path: a const key moves into
 //     no door, and a const owner lends no writer.
 //
+// Statics of a linear sum (the rule must-consume)
+//     The same walk of the statics gives each such variable to the rule
+//     must-consume, which refuses one whose type is or holds a linear sum
+//     (check_static_linear_sum, the sum holders of linear.cpp).
+//
 // Rule lifetime-twin (CLAUDE.md section XVI)
 //     The macro CRUCIBLE_LIFETIMEBOUND gives the attribute
 //     quarantine::lifetimebound, which this plugin registers on a parameter.
@@ -2733,7 +2738,8 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
 // A variable with static storage duration whose type holds a class that
 // states thread_bound{}, and a variable with static or thread storage
 // duration whose type reaches a loan key or a keyed owner (the thread-bound
-// statics, the loan-key statics).  ENTITY names it.
+// statics, the loan-key statics), or holds a linear sum (the statics of a
+// linear sum).  ENTITY names it.
 void check_static_reach(tree decl, const std::string& entity) {
     if (!VAR_P(decl) || DECL_ARTIFICIAL(decl)) {
         return;
@@ -2752,6 +2758,7 @@ void check_static_reach(tree decl, const std::string& entity) {
     if (holds_static_mark(type, StaticWalk::loan_key, 0)) {
         record_property(Kind::loan_key_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
     }
+    check_static_linear_sum(decl, entity);
 }
 
 // Each static and thread_local local of the blocks from BLOCK on, and of

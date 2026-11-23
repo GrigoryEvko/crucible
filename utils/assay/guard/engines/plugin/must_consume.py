@@ -52,7 +52,7 @@ Sums
     gives its alternative out only through a consumer (linear.cpp, the sums).
     The plugin reads the empty state of an Option through the annotations of
     include/foundation/Linear.h, so an Option that is empty on each path to
-    its end needs no consume.  The four kinds:
+    its end needs no consume.  The five kinds:
       option-unconsumed     a linear sum that can end with its alternative,
                             on each path or on some paths
       option-discarded      a temporary of a linear sum that the code
@@ -61,7 +61,11 @@ Sums
                             expect_none, on a sum that each path shows full
       option-known-empty    a door that needs a full sum, such as expect, on a
                             sum that each path shows empty
-    The plugin makes each line of the four kinds a compile error in each build
+      option-static         an object of static or thread storage duration
+                            that is or holds a linear sum (linear.cpp, the
+                            sum holders).  A static linear value that holds
+                            no sum, such as a token, gives no line of it
+    The plugin makes each line of the five kinds a compile error in each build
     and each mode, so no object holds one.  No ledger row admits such a line,
     and a write refuses a build that holds one.
 
@@ -144,6 +148,9 @@ ACTIONS = {
     "process.  Consume the payload first, or use replace",
     "option-known-empty": "a door that needs a full sum runs on a sum that each path shows empty, so its check ends the "
     "process.  Fill the sum first, or end it with expect_none(reason)",
+    "option-static": "an object of static or thread storage duration holds a linear sum, and the end of the process "
+    "ends it with no consume.  Hold the sum in an object of automatic storage duration, or in an owner that a "
+    "consumer ends",
     "borrow-move-out": "the function moves the value out of a parameter that its caller lends, and a path leaves it "
     "spent.  Take the value with foundation::linear::exchange, give the parameter a value again on each path, or take "
     "it by value",
@@ -154,7 +161,7 @@ ACTIONS = {
     "the value by reference and consume it in the caller",
 }
 # The kinds of the sums.  Each line is a compile error, and no ledger row admits one.
-SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty")
+SUM_KINDS = ("option-unconsumed", "option-discarded", "option-known-full", "option-known-empty", "option-static")
 
 
 def stale_doors(root: Path, records: set[str]) -> list[check_report.Finding]:
