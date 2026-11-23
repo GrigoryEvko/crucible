@@ -25,9 +25,10 @@ namespace foundation::core {
 // one alternative of a closed set, and of the union of the alternatives that
 // such a tag names.  A copy of bytes can write a tag outside that set, so no
 // copy of bytes makes a value that holds a marked class.  The quarantine
-// plugin refuses std::bit_cast, __builtin_bit_cast, memcpy and a member of a
-// different union into such a type (utils/tools/quarantine/library.cpp, the
-// closed tags).  The walk of the Scalar family (foundation/core/Scalar.h) and
+// plugin refuses std::bit_cast, __builtin_bit_cast, memcpy, a pointer to
+// bytes that can write such a type, and a member of a different union into
+// such a type (utils/tools/quarantine/library.cpp, the closed tags).  The
+// walk of the Scalar family (foundation/core/Scalar.h) and
 // the checked lifetime start (foundation/Lifetime.h) refuse it.  Each class
 // that holds the tag of a sum slot of foundation/core/Choice.h carries the
 // mark, so a sum on the slot of the family needs no mark of its own.

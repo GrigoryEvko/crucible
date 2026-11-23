@@ -3040,6 +3040,14 @@ foundation_neg_compile_test(neg_core_one_of_memcpy_forged_tag
 foundation_neg_compile_test(neg_core_one_of_memset_forged_tag
   "this copy of bytes writes a .Frame. from bytes of a different type"
   "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+# A pointer to bytes or to void that can write the bytes of a sum is the view
+# of bytes, so no local pointer carries a copy of bytes onto a sum.
+foundation_neg_compile_test(neg_core_option_view_through_void_local
+  "this conversion makes a pointer that can write the bytes of a .foundation::core::Option<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_one_of_view_through_byte_local
+  "this conversion makes a pointer that can write the bytes of a .Reading., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
 foundation_neg_compile_test(neg_core_one_of_lifetime_start
   "no matching function for call to .start_as_array<Reading>"
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. \\[with T = foundation::core::OneOf<")

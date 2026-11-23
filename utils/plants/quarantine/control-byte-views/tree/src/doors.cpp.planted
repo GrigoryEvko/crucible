@@ -1,0 +1,52 @@
+// A quarantined unit with the forms that give no view of bytes of a type that
+// holds the tag of a sum: a pointer to const bytes, a copy of bytes out of a
+// sum and into a sum from the same type, a placement new of the type of its
+// place, and the four doors of the language that the front end writes: the
+// end registration of a static local and of a thread local, and the cleanup
+// of a new-expression and a delete-expression.
+#include <fixy/Doors.h>
+
+#include <cstddef>
+#include <new>
+
+namespace planted {
+
+struct Holder {
+    ::foundation::core::Option<unsigned int> option{};
+    ~Holder() { option = ::foundation::core::Option<unsigned int>{}; }
+};
+
+std::byte first_byte(Holder const& holder) {
+    auto const* const view = static_cast<std::byte const*>(static_cast<void const*>(&holder));
+    return view[0];
+}
+
+unsigned char copy_out(::fixy::doors::Reading const& reading) {
+    unsigned char buffer[8]{};
+    __builtin_memcpy(buffer, &reading, sizeof(buffer));
+    return buffer[0];
+}
+
+void copy_same(::fixy::doors::Reading& into, ::fixy::doors::Reading const& from) {
+    __builtin_memcpy(static_cast<void*>(&into), &from, sizeof(into));
+}
+
+void place_same(::fixy::doors::Reading& reading) {
+    ::new (static_cast<void*>(&reading))::fixy::doors::Reading{0u};
+}
+
+Holder const& static_holder() {
+    static Holder const slot{};
+    return slot;
+}
+
+Holder& thread_holder() {
+    thread_local Holder slot{};
+    return slot;
+}
+
+Holder* make_holder() { return new Holder{}; }
+
+void end_holder(Holder* holder) { delete holder; }
+
+}  // namespace planted

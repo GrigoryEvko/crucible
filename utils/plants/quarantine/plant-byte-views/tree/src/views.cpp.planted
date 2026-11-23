@@ -1,0 +1,48 @@
+// A quarantined unit.  Each function makes a pointer that can write the bytes
+// of a type that holds the tag of a sum: a pointer to std::byte, a read door
+// into a class that holds an Option, a const round trip in one expression, a
+// bit copy of the pointer, a placement new of a different type, and a mark
+// free_door outside the base, which frees nothing.  The opt-out region turns
+// one view into opted-out.
+#include <fixy/Views.h>
+#include <foundation/ByteSeal.h>
+#include <foundation/Quarantine.h>
+
+#include <bit>
+#include <cstddef>
+#include <new>
+
+namespace planted {
+
+struct Wire {
+    unsigned long word = 0;
+    ::foundation::core::Option<unsigned int> option{};
+};
+
+struct Words {
+    unsigned long payload = 7;
+    unsigned long tag = 2;
+};
+
+[[= ::foundation::core::free_door{}]] void release_outside(void* storage) noexcept;
+
+std::byte* byte_view(Wire& wire) { return static_cast<std::byte*>(static_cast<void*>(&wire)); }
+
+void read_wire(Wire& wire) { ::fixy::views::fill_bytes(&wire, sizeof(wire)); }
+
+void* const_round_trip(Wire& wire) { return const_cast<void*>(static_cast<void const*>(&wire)); }
+
+unsigned char* bit_view(Wire& wire) { return std::bit_cast<unsigned char*>(&wire); }
+
+void place_words(Wire& wire) { ::new (static_cast<void*>(&wire)) Words{}; }
+
+void release_wire(Wire& wire) { release_outside(&wire); }
+
+void* opted(Wire& wire) {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test views the bytes of a sum")
+    void* const raw = &wire;
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return raw;
+}
+
+}  // namespace planted

@@ -163,11 +163,13 @@
 //                           foundation::core::closed_tag: a call of a function
 //                           whose admit row has plain-result, a
 //                           __builtin_bit_cast, a memcpy, memmove, mempcpy or
-//                           memset onto such a type from a different type, and
-//                           a member of such a type of a union with a second
-//                           member of bytes.  It is an error in each file under
-//                           the root and in each mode (the closed tags of
-//                           library.cpp)
+//                           memset onto such a type from a different type, a
+//                           conversion of a pointer to such a type into a
+//                           pointer to bytes or to void that can write (the
+//                           byte views), and a member of such a type of a
+//                           union with a second member of bytes.  It is an
+//                           error in each file under the root and in each
+//                           mode (the closed tags of library.cpp)
 //     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the

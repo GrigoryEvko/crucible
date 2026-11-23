@@ -1,0 +1,73 @@
+# A conversion of a pointer to a type that holds the tag of a sum into a
+# pointer to bytes or to void that can write is the error forged-tag, the
+# view of bytes, in each file and each mode.  In the quarantined unit with no
+# sentinel: a pointer to std::byte (line 29), a read door of bytes into a
+# class that holds an Option (31), a const round trip in one expression (33),
+# a std::bit_cast of the pointer (35), a placement new of a different type
+# (37), a mark free_door outside the base, which frees nothing (39), and the
+# instance of the template of the base header (Views.h:25, from Views.h:28).
+# The opt-out region turns the view on line 43 into opted-out.  The sentinel
+# unit of the base header also reads the pointer to void in a local
+# (Views.h:17) and the read door into a OneOf (Views.h:21).
+
+compile plain src/views.cpp
+flag plain -freflection
+exit plain fail
+finding plain quarantine raw-pointer-object src/views.cpp:27:66 | storage
+finding plain quarantine raw-pointer-object src/views.cpp:29:12 | byte_view
+finding plain quarantine forged-tag src/views.cpp:29:43 | view of bytes of planted::Wire
+finding plain quarantine forged-tag src/views.cpp:31:56 | view of bytes of planted::Wire
+finding plain quarantine raw-pointer-object src/views.cpp:33:7 | const_round_trip
+finding plain quarantine forged-tag src/views.cpp:33:45 | view of bytes of planted::Wire
+finding plain quarantine raw-pointer-object src/views.cpp:35:16 | bit_view
+finding plain quarantine replace-pending:std::bit_cast src/views.cpp:35:75 | std::bit_cast
+finding plain quarantine forged-tag src/views.cpp:35:75 | view of bytes of planted::Wire
+finding plain quarantine raw-new-delete src/views.cpp:37:72 | placement new
+finding plain quarantine forged-tag src/views.cpp:37:39 | view of bytes of planted::Wire
+finding plain quarantine forged-tag src/views.cpp:39:49 | view of bytes of planted::Wire
+finding plain quarantine raw-pointer-object src/views.cpp:41:7 | opted
+finding plain quarantine region src/views.cpp:42:1 | PROBE: the test views the bytes of a sum
+finding plain quarantine opted-out src/views.cpp:43:17 | raw-pointer-object raw
+finding plain quarantine opted-out src/views.cpp:43:23 | forged-tag view of bytes of planted::Wire
+finding plain quarantine forged-tag include/fixy/Views.h:25:16 | view of bytes of foundation::core::OneOf<unsigned int, short unsigned int>
+error plain src/views.cpp:29 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain src/views.cpp:31 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain src/views.cpp:33 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain src/views.cpp:35 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain src/views.cpp:37 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain src/views.cpp:39 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error plain include/fixy/Views.h:25 | this conversion makes a pointer that can write the bytes of a 'foundation::core::OneOf
+text plain | only a constructor of the sum writes it
+text plain | erases the type of an object with no pointer to bytes
+
+compile sentinel src/views.cpp sentinel=include/fixy/Views.h
+flag sentinel -freflection
+exit sentinel fail
+finding sentinel quarantine forged-tag include/fixy/Views.h:17:23 | view of bytes of fixy::views::Reading
+finding sentinel quarantine forged-tag include/fixy/Views.h:21:63 | view of bytes of fixy::views::Reading
+finding sentinel quarantine forged-tag include/fixy/Views.h:25:16 | view of bytes of foundation::core::OneOf<unsigned int, short unsigned int>
+finding sentinel quarantine raw-pointer-object src/views.cpp:27:66 | storage
+finding sentinel quarantine raw-pointer-object src/views.cpp:29:12 | byte_view
+finding sentinel quarantine forged-tag src/views.cpp:29:43 | view of bytes of planted::Wire
+finding sentinel quarantine forged-tag src/views.cpp:31:56 | view of bytes of planted::Wire
+finding sentinel quarantine raw-pointer-object src/views.cpp:33:7 | const_round_trip
+finding sentinel quarantine forged-tag src/views.cpp:33:45 | view of bytes of planted::Wire
+finding sentinel quarantine raw-pointer-object src/views.cpp:35:16 | bit_view
+finding sentinel quarantine replace-pending:std::bit_cast src/views.cpp:35:75 | std::bit_cast
+finding sentinel quarantine forged-tag src/views.cpp:35:75 | view of bytes of planted::Wire
+finding sentinel quarantine raw-new-delete src/views.cpp:37:72 | placement new
+finding sentinel quarantine forged-tag src/views.cpp:37:39 | view of bytes of planted::Wire
+finding sentinel quarantine forged-tag src/views.cpp:39:49 | view of bytes of planted::Wire
+finding sentinel quarantine raw-pointer-object src/views.cpp:41:7 | opted
+finding sentinel quarantine region src/views.cpp:42:1 | PROBE: the test views the bytes of a sum
+finding sentinel quarantine opted-out src/views.cpp:43:17 | raw-pointer-object raw
+finding sentinel quarantine opted-out src/views.cpp:43:23 | forged-tag view of bytes of planted::Wire
+error sentinel include/fixy/Views.h:17 | this conversion makes a pointer that can write the bytes of a 'fixy::views::Reading'
+error sentinel include/fixy/Views.h:21 | this conversion makes a pointer that can write the bytes of a 'fixy::views::Reading'
+error sentinel include/fixy/Views.h:25 | this conversion makes a pointer that can write the bytes of a 'foundation::core::OneOf
+error sentinel src/views.cpp:29 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error sentinel src/views.cpp:31 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error sentinel src/views.cpp:33 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error sentinel src/views.cpp:35 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error sentinel src/views.cpp:37 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'
+error sentinel src/views.cpp:39 | this conversion makes a pointer that can write the bytes of a 'planted::Wire'

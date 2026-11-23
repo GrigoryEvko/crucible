@@ -1,0 +1,39 @@
+# The forms that give no view of bytes of a type that holds the tag of a sum
+# (the byte views of utils/tools/quarantine/library.cpp).  A change that makes
+# one of them a finding forged-tag makes this control fail.  The unit has no
+# finding forged-tag: a pointer to const bytes (line 20), a copy of bytes out
+# of a OneOf (26) and into a OneOf from the same type (31), a placement new of
+# the type of its place (35), the end registration of a static local (39) and
+# of a thread local (44), the cleanup of a new-expression (48), and a
+# delete-expression (50).  The sentinel unit of the base header also reads
+# the argument of a free door (Doors.h:17) and the conversion of a parameter
+# in an erasure door (Doors.h:26).  The other findings are those of the raw
+# forms in a quarantined file.
+
+compile plain src/doors.cpp
+flag plain -freflection
+exit plain pass
+finding plain quarantine raw-pointer-object src/doors.cpp:20:23 | view
+finding plain quarantine c-array-object src/doors.cpp:25:19 | buffer
+finding plain quarantine c-library-call src/doors.cpp:26:21 | memcpy (__builtin_memcpy)
+finding plain quarantine c-library-call src/doors.cpp:31:21 | memcpy (__builtin_memcpy)
+finding plain quarantine raw-new-delete src/doors.cpp:35:66 | placement new
+finding plain process-wide-state unmarked-static src/doors.cpp:44:25 | planted::thread_holder()::slot
+finding plain quarantine raw-pointer-object src/doors.cpp:48:9 | make_holder
+finding plain quarantine raw-new-delete src/doors.cpp:48:43 | new
+finding plain quarantine raw-pointer-object src/doors.cpp:50:25 | holder
+finding plain quarantine raw-new-delete src/doors.cpp:50:42 | delete
+
+compile sentinel src/doors.cpp sentinel=include/fixy/Doors.h
+flag sentinel -freflection
+exit sentinel pass
+finding sentinel quarantine raw-pointer-object src/doors.cpp:20:23 | view
+finding sentinel quarantine c-array-object src/doors.cpp:25:19 | buffer
+finding sentinel quarantine c-library-call src/doors.cpp:26:21 | memcpy (__builtin_memcpy)
+finding sentinel quarantine c-library-call src/doors.cpp:31:21 | memcpy (__builtin_memcpy)
+finding sentinel quarantine raw-new-delete src/doors.cpp:35:66 | placement new
+finding sentinel process-wide-state unmarked-static src/doors.cpp:44:25 | planted::thread_holder()::slot
+finding sentinel quarantine raw-pointer-object src/doors.cpp:48:9 | make_holder
+finding sentinel quarantine raw-new-delete src/doors.cpp:48:43 | new
+finding sentinel quarantine raw-pointer-object src/doors.cpp:50:25 | holder
+finding sentinel quarantine raw-new-delete src/doors.cpp:50:42 | delete

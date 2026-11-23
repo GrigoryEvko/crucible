@@ -61,27 +61,33 @@ int parameter_count(tree decl) {
 //     a bit copy into such a type is the finding forged-tag, an error in each
 //     file under the root and in each mode: a call of a function whose admit
 //     row has plain-result, such as std::bit_cast, and a __builtin_bit_cast.
-//     Two more copies of bytes are the same finding:
+//     Three more routes to the bytes are the same finding:
 //       a copy of bytes  a call of memcpy, memmove, mempcpy or memset, or of
 //                        their checked forms, whose first argument points at
 //                        such a type before its conversion to void*.  A copy
 //                        from an object of the same type copies a value that
 //                        a constructor made, and it is no finding.
+//       a view of bytes  a conversion of a pointer to such a type into a
+//                        pointer to bytes or to void that can write (the byte
+//                        views), with the exceptions that the byte views name.
 //       a union member   a member of such a type of a union that has a second
 //                        member of bytes, so a write of the second member can
 //                        write the tag.  The union of the storage of a sum
 //                        carries the annotation closed_tag itself, because the
 //                        tag of its slot names its active member, and its
 //                        members are no finding.
-//     The entity of a finding of these two routes starts with the text of its
-//     route, and the entity of a bit copy is the type alone.  The rule reads
-//     the bodies that is_body_read_here of plugin.h gives, so a copy whose
-//     type a template parameter gives is judged in each instance.  The event
-//     PLUGIN_FOLDED_INITIALIZER gives an initializer before the front end
-//     folds it.  A copy through a pointer that is void* already, and a buffer
-//     of bytes that the checked lifetime start reads, are no finding of this
-//     rule.  So the plain sums compare their tags with the count at run time
-//     too, and foundation/Lifetime.h refuses a lifetime start over such a type.
+//     The entity of a finding of these three routes starts with the text of
+//     its route, and the entity of a bit copy is the type alone.  The rule
+//     reads the bodies that is_body_read_here of plugin.h gives, so a copy
+//     whose type a template parameter gives is judged in each instance.  The
+//     event PLUGIN_FOLDED_INITIALIZER gives an initializer before the front
+//     end folds it.  A pointer of bytes that a parameter, a member or a call
+//     gives cannot point into such a type, because the view of bytes refuses
+//     each conversion that makes one.  foundation/Lifetime.h refuses a
+//     lifetime start over such a type, and the Scalar family refuses a bit
+//     copy and a decode into it.  So no copy of bytes writes the tag of a sum
+//     outside a region of the class PROBE, and a read of the tag needs no
+//     test at run time.
 
 // The bits of the answer of unnamed_bit_parts.
 inline constexpr std::uint8_t kBoolOrEnumeration = 1;
@@ -928,10 +934,78 @@ bool is_bit_copy_function(tree function) {
     return row != nullptr && row->is_plain_result;
 }
 
-// The texts that start the entity of a copy of bytes and of a union member
-// (the closed tags).  report_forged_tag reads them.
+// The texts that start the entity of a copy of bytes, of a view of bytes and
+// of a union member (the closed tags).  report_forged_tag reads them.
 constexpr const char* kByteCopyRoute = "copy of bytes into ";
+constexpr const char* kByteViewRoute = "view of bytes of ";
 constexpr const char* kUnionMemberRoute = "union member ";
+
+// Byte views
+//     A pointer to bytes or to void that can write is a door to the bytes of
+//     the object that it points into: a copy of bytes, read(), recv() and each
+//     other door that takes such a pointer write through it.  So a conversion
+//     of a pointer to a type that holds a closed tag into a pointer to bytes
+//     or to void that is not const is the finding view of bytes.  The type is
+//     the target of the pointer before each conversion of the expression, so
+//     a const round trip in one expression is a view too.  A bit copy of such
+//     a pointer into a pointer to bytes is the same finding.  Two kinds of
+//     such conversions are no finding:
+//       a copy of bytes  the destination of a call of memcpy, memmove,
+//                        mempcpy or memset in the same expression, which the
+//                        route of a copy of bytes judges
+//       a language door  an argument of a door of the language that starts,
+//                        frees or ends an object: the place of a placement
+//                        new that builds the type of the place, whose
+//                        constructor writes the object, the pointer of an
+//                        operator delete, which frees the storage of an
+//                        ended object, and the object of the registration
+//                        of the end of a static or a thread local object.
+//                        The front end also builds such calls itself, in
+//                        the cleanup of a new-expression and in the first
+//                        run of the declaration of a static local.  Two
+//                        marks of foundation/ByteSeal.h on a function of a
+//                        base file name the doors of the base of the same
+//                        kind: each argument of a call of a function with
+//                        the mark free_door, which frees the storage of an
+//                        ended object as an operator delete does, and the
+//                        conversion of a parameter in the body of a function
+//                        with the mark erasure_door, whose erased address
+//                        keeps the pointer private.
+//     A conversion to a pointer to const bytes only reads the bytes, so it is
+//     no finding.  So no pointer that can write the bytes of a sum exists
+//     outside these forms, and a write through a pointer of bytes that a
+//     parameter, a member or a call gives writes no sum.
+
+// The conversions of the body that walk_bit_copies reads that are no view of
+// bytes (the byte views): the conversions of the destination of a copy of
+// bytes and of each argument of a language door.  The walk visits a call
+// before its arguments, so the call marks them first.
+std::unordered_set<tree> exempt_conversions;
+
+// True when TYPE is a type of bytes: void, a character type or std::byte.  A
+// pointer to such a type names no object type.
+bool is_byte_type(tree type) {
+    if (type == NULL_TREE) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (VOID_TYPE_P(type) || type == char_type_node || type == signed_char_type_node || type == unsigned_char_type_node
+        || type == char8_type_node) {
+        return true;
+    }
+    if (TREE_CODE(type) != ENUMERAL_TYPE) {
+        return false;
+    }
+    static tree const byte = get_identifier("byte");
+    tree name = TYPE_NAME(type);
+    return name != NULL_TREE && TREE_CODE(name) == TYPE_DECL && DECL_NAME(name) == byte
+        && decl_in_std_namespace_p(name);
+}
+
+// True when NODE is a conversion of one value to a different type.
+bool is_conversion(tree node) {
+    return CONVERT_EXPR_P(node) || TREE_CODE(node) == VIEW_CONVERT_EXPR || TREE_CODE(node) == NON_LVALUE_EXPR;
+}
 
 // The type that the pointer value NODE points at, before each conversion to
 // a different pointer type, or null when NODE is no pointer to an object
@@ -939,8 +1013,7 @@ constexpr const char* kUnionMemberRoute = "union member ";
 tree pointee_of(tree node) {
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
         node = tree_strip_any_location_wrapper(node);
-        if (TREE_CODE(node) != NOP_EXPR && TREE_CODE(node) != CONVERT_EXPR && TREE_CODE(node) != VIEW_CONVERT_EXPR
-            && TREE_CODE(node) != NON_LVALUE_EXPR) {
+        if (!is_conversion(node)) {
             break;
         }
         node = TREE_OPERAND(node, 0);
@@ -952,10 +1025,88 @@ tree pointee_of(tree node) {
     return TREE_TYPE(type);
 }
 
+// Marks each conversion of the pointer value NODE as no view of bytes (the
+// byte views).
+void exempt_conversions_of(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        exempt_conversions.insert(node);
+        tree bare = tree_strip_any_location_wrapper(node);
+        if (bare != node) {
+            exempt_conversions.insert(bare);
+        }
+        if (!is_conversion(bare)) {
+            return;
+        }
+        node = TREE_OPERAND(bare, 0);
+    }
+}
+
+// The type that the pointer value NODE points at before each conversion of a
+// pointer: the target of the innermost pointer or reference under the
+// conversions of NODE, or null when NODE is no pointer.  A conversion from a
+// value that is no pointer or reference ends the walk.
+tree origin_pointee(tree node) {
+    tree found = NULL_TREE;
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        tree type = TREE_TYPE(node);
+        if (type == NULL_TREE || (!TYPE_PTR_P(type) && !TYPE_REF_P(type))) {
+            break;
+        }
+        found = TREE_TYPE(type);
+        if (!is_conversion(node)) {
+            break;
+        }
+        node = TREE_OPERAND(node, 0);
+    }
+    return found;
+}
+
+// The object of a view of bytes (the byte views): OBJECT, when TO is a
+// pointer to bytes or to void that is not const, and OBJECT is no type of
+// bytes and holds a closed tag.  Each other pair gives null.
+tree byte_view_of(tree to, tree object) {
+    if (to == NULL_TREE || !TYPE_PTR_P(to) || !is_byte_type(TREE_TYPE(to)) || TYPE_READONLY(TREE_TYPE(to))) {
+        return NULL_TREE;
+    }
+    if (object == NULL_TREE || is_byte_type(object)) {
+        return NULL_TREE;
+    }
+    return (unnamed_bit_parts(object, 0) & kClosedTag) != 0 ? object : NULL_TREE;
+}
+
+// The object of the view of bytes that the conversion NODE makes (the byte
+// views), or null.  The object is the target of the pointer before each
+// conversion of the chain, so a const round trip in one expression, such as
+// a const_cast of a view of const bytes, is a view of bytes too.
+tree byte_view_object(tree node) {
+    if (!is_conversion(node) || exempt_conversions.count(node) != 0) {
+        return NULL_TREE;
+    }
+    return byte_view_of(TREE_TYPE(node), origin_pointee(TREE_OPERAND(node, 0)));
+}
+
+// The object of the view of bytes that the bit copy NODE of a pointer of the
+// type TO makes (the byte views), or null: a __builtin_bit_cast of a pointer,
+// or a call of a bit copy function such as std::bit_cast, whose argument is
+// a reference to the pointer.
+tree bit_copy_view_object(tree node, tree to) {
+    if (TREE_CODE(node) == BIT_CAST_EXPR) {
+        return byte_view_of(to, origin_pointee(TREE_OPERAND(node, 0)));
+    }
+    if (TREE_CODE(node) != CALL_EXPR || call_expr_nargs(node) == 0) {
+        return NULL_TREE;
+    }
+    tree argument = TREE_TYPE(CALL_EXPR_ARG(node, 0));
+    tree from = argument != NULL_TREE && TYPE_REF_P(argument) ? TREE_TYPE(argument) : argument;
+    return from != NULL_TREE && TYPE_PTR_P(from) ? byte_view_of(to, TREE_TYPE(from)) : NULL_TREE;
+}
+
 // The destination of the copy of bytes CALL (the closed tags): the type that
 // the first argument of a call of memcpy, memmove, mempcpy or memset points
 // at, or null.  A copy from an object of the same type gives null, because
-// it copies a value that a constructor made.
+// it copies a value that a constructor made.  The conversions of the first
+// argument are no view of bytes (the byte views).
 tree byte_copy_destination(tree call) {
     tree callee = cp_get_callee_fndecl_nofold(call);
     if (callee == NULL_TREE || call_expr_nargs(call) < 2) {
@@ -967,6 +1118,7 @@ tree byte_copy_destination(tree call) {
     if (!is_copy && !is_fill) {
         return NULL_TREE;
     }
+    exempt_conversions_of(CALL_EXPR_ARG(call, 0));
     tree destination = pointee_of(CALL_EXPR_ARG(call, 0));
     if (destination == NULL_TREE || !is_copy) {
         return destination;
@@ -974,6 +1126,210 @@ tree byte_copy_destination(tree call) {
     tree source = pointee_of(CALL_EXPR_ARG(call, 1));
     bool is_same_type = source != NULL_TREE && same_type_ignoring_top_level_qualifiers_p(source, destination);
     return is_same_type ? NULL_TREE : destination;
+}
+
+// True when FUNCTION registers the end of a static or a thread local object
+// (the byte views): the functions of the C++ ABI, with C linkage, that the
+// front end calls with the address of the object and its destructor.
+bool is_end_registration(tree function) {
+    static tree const cxa_atexit = get_identifier("__cxa_atexit");
+    static tree const cxa_thread_atexit = get_identifier("__cxa_thread_atexit");
+    static tree const aeabi_atexit = get_identifier("__aeabi_atexit");
+    tree name = DECL_NAME(function);
+    bool is_abi_name = name == cxa_atexit || name == cxa_thread_atexit || name == aeabi_atexit;
+    return is_abi_name && DECL_LANG_SPECIFIC(function) != nullptr && DECL_EXTERN_C_P(function);
+}
+
+// True when FUNCTION carries the mark NAME of foundation/ByteSeal.h on a
+// declaration in a base file (the byte views).  A mark on a function outside
+// the base frees no conversion.
+bool carries_byte_view_mark(tree function, tree name) {
+    static tree const core = get_identifier("core");
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL
+        || !function_carries_base_annotation(function, name, core)) {
+        return false;
+    }
+    return place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine).file_class == FileClass::base;
+}
+
+// True when FUNCTION frees the storage of an ended object: it carries the
+// mark free_door (the byte views).
+bool is_free_door(tree function) {
+    static tree const free_door = get_identifier("free_door");
+    return carries_byte_view_mark(function, free_door);
+}
+
+// True when FUNCTION erases the type of the address of an object: it carries
+// the mark erasure_door (the byte views).
+bool is_erasure_door(tree function) {
+    static tree const erasure_door = get_identifier("erasure_door");
+    return carries_byte_view_mark(function, erasure_door);
+}
+
+// The operand under each conversion, address and indirection of NODE, such
+// as the parameter of static_cast<void*>(__builtin_addressof(parameter)).
+tree innermost_operand(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        if (!is_conversion(node) && TREE_CODE(node) != ADDR_EXPR && TREE_CODE(node) != INDIRECT_REF) {
+            return node;
+        }
+        node = TREE_OPERAND(node, 0);
+    }
+    return node;
+}
+
+// A placement new of a body (the byte views): its place, and the type that
+// it builds there, or null when the walk finds no such type.  IS_MIXED tells
+// that the walk found two different types.
+struct PlacementNew {
+    tree place = NULL_TREE;
+    tree built = NULL_TREE;
+    bool is_mixed = false;
+};
+
+// The language doors of a body (the byte views): each placement new, the
+// arguments of each other door, and the initializer of each temporary.  The
+// front end puts the place of a placement new in a temporary, and gives the
+// temporary to the operator new.  It puts the pointer of the new in a second
+// temporary, and converts that pointer to a pointer to the built type.
+// NEW_OF_RESULT maps a call of the placement operator new, and the slot of
+// the temporary of its pointer, to the placement new.  IS_ERASURE_DOOR tells
+// that the body is the body of an erasure door.
+struct LanguageDoors {
+    std::unordered_map<tree, tree> initializer_of;
+    std::unordered_map<tree, std::size_t> new_of_result;
+    std::vector<PlacementNew> placement_news;
+    std::vector<tree> arguments;
+    bool is_erasure_door = false;
+};
+
+// The placement new of the call CALL of the placement operator new, which a
+// new entry holds when the walk did not see the call before.
+std::size_t placement_new_of(LanguageDoors& found, tree call) {
+    auto known = found.new_of_result.find(call);
+    if (known != found.new_of_result.end()) {
+        return known->second;
+    }
+    found.placement_news.push_back(PlacementNew{CALL_EXPR_ARG(call, 1)});
+    found.new_of_result.emplace(call, found.placement_news.size() - 1);
+    return found.placement_news.size() - 1;
+}
+
+// Records BUILT as the type that the placement new ENTRY builds.
+void note_built_type(PlacementNew& entry, tree built) {
+    if (entry.built == NULL_TREE) {
+        entry.built = built;
+    } else if (!same_type_ignoring_top_level_qualifiers_p(entry.built, built)) {
+        entry.is_mixed = true;
+    }
+}
+
+// True when NODE is a call of the placement operator new of the standard
+// library.
+bool is_placement_new_call(tree node) {
+    if (TREE_CODE(node) != CALL_EXPR || call_expr_nargs(node) != 2) {
+        return false;
+    }
+    tree callee = cp_get_callee_fndecl_nofold(node);
+    return callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && std_placement_new_fn_p(callee);
+}
+
+// The callback of cp_walk_tree that collects the LanguageDoors of a body:
+// each placement new of a call of the placement operator new of the
+// standard library, and of a new-expression of a template with one place,
+// the type that each converts its pointer to, each argument of each call of
+// an operator delete, of an end registration and of a free door, and in the
+// body of an erasure door, each conversion of a parameter to a pointer.
+tree collect_language_doors(tree* node_pointer, int* walk_subtrees, void* data) {
+    tree node = *node_pointer;
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (TYPE_P(node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    auto* found = static_cast<LanguageDoors*>(data);
+    if (TREE_CODE(node) == TARGET_EXPR) {
+        tree initializer = TARGET_EXPR_INITIAL(node);
+        found->initializer_of.emplace(TARGET_EXPR_SLOT(node), initializer);
+        tree bare = initializer != NULL_TREE ? tree_strip_any_location_wrapper(initializer) : NULL_TREE;
+        if (bare != NULL_TREE && is_placement_new_call(bare)) {
+            found->new_of_result.emplace(TARGET_EXPR_SLOT(node), placement_new_of(*found, bare));
+        }
+        return NULL_TREE;
+    }
+    if (TREE_CODE(node) == NEW_EXPR) {
+        tree place = TREE_OPERAND(node, 0);
+        if (place != NULL_TREE && TREE_CHAIN(place) == NULL_TREE) {
+            found->placement_news.push_back(PlacementNew{TREE_VALUE(place), TREE_OPERAND(node, 1)});
+        }
+        return NULL_TREE;
+    }
+    bool is_pointer_conversion = is_conversion(node) && TREE_TYPE(node) != NULL_TREE && TYPE_PTR_P(TREE_TYPE(node));
+    if (is_pointer_conversion && found->is_erasure_door
+        && TREE_CODE(innermost_operand(TREE_OPERAND(node, 0))) == PARM_DECL) {
+        found->arguments.push_back(node);
+        return NULL_TREE;
+    }
+    if (is_pointer_conversion && !is_byte_type(TREE_TYPE(TREE_TYPE(node)))) {
+        auto result = found->new_of_result.find(tree_strip_any_location_wrapper(TREE_OPERAND(node, 0)));
+        if (result != found->new_of_result.end()) {
+            note_built_type(found->placement_news[result->second], TREE_TYPE(TREE_TYPE(node)));
+        }
+        return NULL_TREE;
+    }
+    if (is_placement_new_call(node)) {
+        placement_new_of(*found, node);
+        return NULL_TREE;
+    }
+    tree callee = TREE_CODE(node) == CALL_EXPR ? cp_get_callee_fndecl_nofold(node) : NULL_TREE;
+    if (callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL
+        && (DECL_IS_OPERATOR_DELETE_P(callee) || is_end_registration(callee) || is_free_door(callee))) {
+        for (int index = 0; index < call_expr_nargs(node); ++index) {
+            found->arguments.push_back(CALL_EXPR_ARG(node, index));
+        }
+    }
+    return NULL_TREE;
+}
+
+// Marks the arguments of the language doors of BODY, the body of FUNCTION or
+// an initializer in it, as no view of bytes (the byte views): each argument
+// of an operator delete, of an end registration and of a free door, each
+// conversion of a parameter in the body of an erasure door, and the place of
+// each placement new that builds the type of its place.  The place of a
+// placement new that builds a different type in a type that holds a closed
+// tag, or a type that the walk did not find, stays a view of bytes.  The
+// place can come from a temporary, so its initializer counts as the place.
+// Complexity: one visit for each node of the body.
+void exempt_language_doors(tree* body, tree function) {
+    LanguageDoors found;
+    found.is_erasure_door = is_erasure_door(function);
+    cp_walk_tree_without_duplicates(body, collect_language_doors, &found);
+    for (tree argument : found.arguments) {
+        exempt_conversions_of(argument);
+    }
+    for (PlacementNew const& entry : found.placement_news) {
+        tree bare = entry.place;
+        while (bare != NULL_TREE && is_conversion(tree_strip_any_location_wrapper(bare))) {
+            bare = TREE_OPERAND(tree_strip_any_location_wrapper(bare), 0);
+        }
+        bare = bare != NULL_TREE ? tree_strip_any_location_wrapper(bare) : NULL_TREE;
+        auto initializer = found.initializer_of.find(bare);
+        tree source = initializer != found.initializer_of.end() ? initializer->second : NULL_TREE;
+        tree origin = origin_pointee(source != NULL_TREE ? source : entry.place);
+        bool is_sum = origin != NULL_TREE && !is_byte_type(origin) && (unnamed_bit_parts(origin, 0) & kClosedTag) != 0;
+        bool builds_own_type = entry.built != NULL_TREE && !entry.is_mixed && origin != NULL_TREE
+                            && same_type_ignoring_top_level_qualifiers_p(origin, entry.built);
+        if (is_sum && !builds_own_type) {
+            continue;
+        }
+        exempt_conversions_of(entry.place);
+        if (source != NULL_TREE) {
+            exempt_conversions_of(source);
+        }
+    }
 }
 
 // The type of the member that the COMPONENT_REF NODE names, when its object
@@ -1012,6 +1368,12 @@ tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
     }
     tree result = NULL_TREE;
     const char* route = "";
+    // A conversion to a pointer to a const type reads through its operand
+    // only, so the conversions of the operand are no view of bytes either.
+    if (is_conversion(node) && TREE_TYPE(node) != NULL_TREE && TYPE_PTR_P(TREE_TYPE(node))
+        && TYPE_READONLY(TREE_TYPE(TREE_TYPE(node)))) {
+        exempt_conversions_of(TREE_OPERAND(node, 0));
+    }
     if (TREE_CODE(node) == BIT_CAST_EXPR) {
         result = TREE_TYPE(node);
     } else if (TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR) {
@@ -1024,9 +1386,23 @@ tree walk_bit_copies(tree* node_pointer, int* walk_subtrees, void* data) {
     } else if (TREE_CODE(node) == COMPONENT_REF) {
         result = union_member_type(node);
         route = kUnionMemberRoute;
+    } else {
+        result = byte_view_object(node);
+        route = kByteViewRoute;
+    }
+    // A bit copy whose result is a pointer copies the address, so its
+    // finding is the view of bytes of that pointer.
+    bool is_bit_copy = route[0] == '\0' && result != NULL_TREE;
+    if (is_bit_copy && TYPE_PTR_P(result)) {
+        result = bit_copy_view_object(node, result);
+        route = kByteViewRoute;
     }
     if (result == NULL_TREE || (unnamed_bit_parts(result, 0) & kClosedTag) == 0) {
         return NULL_TREE;
+    }
+    // Each inner conversion of a view of bytes is a part of the same view.
+    if (route == kByteViewRoute && is_conversion(node)) {
+        exempt_conversions_of(TREE_OPERAND(node, 0));
     }
     location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : *static_cast<location_t*>(data);
     Place place = place_of(location, Scope::quarantine);
@@ -1048,7 +1424,9 @@ void on_pre_genericize_tags(void* gcc_data, void*) {
     }
     location_t fallback = DECL_SOURCE_LOCATION(function);
     tree body = DECL_SAVED_TREE(function);
+    exempt_language_doors(&body, function);
     cp_walk_tree_without_duplicates(&body, walk_bit_copies, &fallback);
+    exempt_conversions.clear();
 }
 
 // PLUGIN_FOLDED_INITIALIZER: an initializer before the front end folds it, in
@@ -1061,15 +1439,25 @@ void on_folded_initializer_tags(void* gcc_data, void*) {
     }
     location_t fallback = data->location;
     tree original = data->original;
+    exempt_language_doors(&original, current_function_decl);
     cp_walk_tree_without_duplicates(&original, walk_bit_copies, &fallback);
+    exempt_conversions.clear();
 }
 
 }  // namespace
 
 void report_forged_tag(const Finding& finding) {
     const std::string byte_copy(kByteCopyRoute);
+    const std::string byte_view(kByteViewRoute);
     const std::string union_member(kUnionMemberRoute);
-    if (finding.entity.compare(0, byte_copy.size(), byte_copy) == 0) {
+    bool const is_view = finding.entity.compare(0, byte_view.size(), byte_view) == 0;
+    if (is_view) {
+        error_at(finding.spelling,
+                 "this conversion makes a pointer that can write the bytes of a %qs, whose bytes hold the tag of a "
+                 "sum, and a write through the pointer, such as a copy of bytes, %<read%> or %<recv%>, can write a "
+                 "tag that names no alternative",
+                 finding.entity.substr(byte_view.size()).c_str());
+    } else if (finding.entity.compare(0, byte_copy.size(), byte_copy) == 0) {
         error_at(finding.spelling,
                  "this copy of bytes writes a %qs from bytes of a different type, and the bytes of the type hold the "
                  "tag of a sum, so the copy can write a tag that names no alternative",
@@ -1091,6 +1479,11 @@ void report_forged_tag(const Finding& finding) {
     inform(finding.spelling,
            "build the sum from its value, or decode each part with %<foundation::core::decode%> and build the sum "
            "from the parts");
+    if (is_view) {
+        inform(finding.spelling,
+               "a pointer to const bytes reads the bytes, a copy of bytes takes the pointer in the same expression, "
+               "and %<foundation::core::mint_erased_address%> erases the type of an object with no pointer to bytes");
+    }
     inform(finding.spelling,
            "a test of the copy itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
            "%<foundation/Quarantine.h%>");

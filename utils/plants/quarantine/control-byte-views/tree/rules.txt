@@ -1,0 +1,18 @@
+# The rule table of the control control-byte-views of the rule quarantine.
+# The header include/fixy/Doors.h is a base file, and src/doors.cpp is
+# quarantined.  The headers of the repository are outside the root of the
+# plant, so the table admits the names of the base that the planted code uses,
+# and the layer can include the headers of the base that it names.
+
+layer low 0 include/fixy/
+
+allow low <cstddef>
+allow low <new>
+allow low <foundation/ByteSeal.h>
+allow low <foundation/core/OneOf.h>
+
+admit foundation::core | the Choice family, whose sums the planted code reads as bytes
+admit foundation::linear | the vocabulary of the linear marker
+admit std::byte | a byte of a buffer
+
+quarantine src/doors.cpp

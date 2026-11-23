@@ -1,0 +1,30 @@
+#pragma once
+
+// A base header with views of the bytes of sums.  Each conversion of a
+// pointer to a type that holds the tag of a sum into a pointer to bytes or to
+// void that can write is the error forged-tag: a pointer to void in a local,
+// a read door of bytes into a OneOf, and an instance of a template.
+#include <foundation/core/OneOf.h>
+
+namespace fixy::views {
+
+using Reading = ::foundation::core::OneOf<unsigned int, unsigned short>;
+
+// A door that writes bytes from outside, as read() and recv() do.
+void fill_bytes(void* into, unsigned long size) noexcept;
+
+inline void local_view(Reading& reading) noexcept {
+    void* const raw = &reading;
+    fill_bytes(raw, 1);
+}
+
+inline void read_into(Reading& reading) noexcept { fill_bytes(&reading, sizeof(reading)); }
+
+template <class T>
+void read_any(T& object) noexcept {
+    fill_bytes(static_cast<void*>(&object), sizeof(object));
+}
+
+inline void read_reading(Reading& reading) noexcept { read_any(reading); }
+
+}  // namespace fixy::views
