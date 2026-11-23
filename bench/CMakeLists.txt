@@ -275,6 +275,16 @@ include(ExternalProject)
 crucible_bench(bench_alloc_scaling CORES 9)
 target_sources(bench_alloc_scaling PRIVATE bench_alloc_scaling_base.cpp bench_alloc_scaling_glibc.cpp)
 crucible_alloc_references(bench_alloc_scaling)
+# The smoke run of the base alloc-test row with one and two threads.  Its
+# worker calls the body that RawWorkers owns until the join.  In the build of
+# bench-fuzz, AddressSanitizer reports a read of a body after the end of its
+# scope (stack-use-after-scope), so the test fails if a worker reads a body
+# that ended before the worker called it.
+add_test(NAME bench_alloc_scaling_workers_smoke COMMAND bench_alloc_scaling base alloc-test 2)
+set_tests_properties(bench_alloc_scaling_workers_smoke PROPERTIES
+  TIMEOUT 120
+  ENVIRONMENT "CRUCIBLE_BENCH_JSON=0"
+  LABELS "bench")
 # The owner read of the chunk map against the lookups of the metadata of a
 # block in mimalloc and jemalloc.  The libraries of the two references come
 # from the call above, and the check of the symbols runs on this binary too.
@@ -434,8 +444,8 @@ target_compile_definitions(bench_record_leaf PRIVATE
   CRUCIBLE_RECORD_LEAF_TIER="${CRUCIBLE_HOST_TIER}"
   CRUCIBLE_RECORD_LEAF_BASELINE="${_record_leaf_baseline}")
 
-# The only `add_test` in bench/.  The rest of the tree is a compile
-# gate; this one runs, compares against a committed ceiling and fails.
+# The latency gate of bench/.  Most of bench/ is a compile gate, but this
+# test runs, compares against a committed ceiling and fails.
 #
 # The ceiling is the latency of a Release build with no instrumentation.
 # Each configuration below measures a different program, so the test is

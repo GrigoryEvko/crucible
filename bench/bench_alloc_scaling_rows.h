@@ -228,6 +228,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 #include "bench_harness.h"
@@ -1853,12 +1854,21 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the rows of the allocators run their wor
 namespace bench_alloc {
 
 // The workers of one row, one std::jthread for each slot from slot 1 on (the
-// threads of a row).  A worker pins itself to the CPU of its slot.  The join
-// waits for each worker.
+// threads of a row).  The object owns the body of its workers until the join,
+// and each worker calls the body through a const reference.  So a caller can
+// give a temporary body, and the body lives as long as each worker.  A worker
+// pins itself to the CPU of its slot.  The join waits for each worker.
+template <class Body>
+    requires std::is_nothrow_invocable_v<Body const&, bench::ThreadSlot>
 class RawWorkers {
 public:
-    template <class Body>
-    void start(RowPlaces const& places, ThreadCount threads, Body const& body) {
+    explicit RawWorkers(Body body) noexcept : body_{std::move(body)} {}
+
+    RawWorkers(RawWorkers const&) = delete("each worker reads the body at the address of this object");
+    RawWorkers& operator=(RawWorkers const&) = delete("each worker reads the body at the address of this object");
+
+    void start(RowPlaces const& places, ThreadCount threads) {
+        Body const& body = body_;
         for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
             bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
             threads_[slot] = std::jthread{[&body, cpu, slot]() noexcept {
@@ -1875,6 +1885,8 @@ public:
     }
 
 private:
+    Body body_;
+    // The last member, so its end joins each worker before the body ends.
     std::array<std::jthread, kMaxThreads> threads_{};
 };
 
@@ -1892,10 +1904,10 @@ template <AllocatorAdapter A, class W>
     StealTicks const steal_before = read_steal(places, threads);
     MemoryReading memory{.start = read_resident()};
     typename W::Shared shared = W::mint_shared(threads);
-    RawWorkers workers{};
-    workers.start(places, threads, [&control, &shared, threads](bench::ThreadSlot slot) noexcept {
+    RawWorkers workers{[&control, &shared, threads](bench::ThreadSlot slot) noexcept {
         run_worker<W>(control, shared, slot, threads);
-    });
+    }};
+    workers.start(places, threads);
     bench::CpuId const main_cpu = places.cpu_of(bench::kMeasuringSlot);
     typename W::Local local = [&] {
         bench::CoreHold const hold{main_cpu};
