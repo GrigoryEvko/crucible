@@ -5,9 +5,13 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/core/Number.h>
+#include <foundation/core/OneOf.h>
+#include <foundation/core/Scalar.h>
 #include <foundation/core/Verbs.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 #include <utility>
 
@@ -2008,6 +2012,292 @@ static_assert(refused_with(5)
                   .expect("map_err gives the token back")
                   .handle
               == 5);
+
+// ── Doors of the tag ──────────────────────────────────────────────────
+
+// The doors of the tag of Choice.h.  A door of a class is a member that can
+// change an object of the class: a constructor, an assignment, the
+// destructor, a member function that is not const, and each member function
+// template, because the reflection does not tell if a template is const.  A
+// deleted function is no door.  The reflection of GCC 16 gives each
+// constructor template of a class template three times, as three reflections
+// that are not equal, so each pin below counts each of them.  Complexity:
+// linear in the members of the class, at compile time only.
+template <class Class>
+[[nodiscard]] consteval std::size_t door_count() {
+    std::size_t count = 0;
+    for (std::meta::info const member : std::meta::members_of(^^Class, std::meta::access_context::unchecked())) {
+        bool const is_template = std::meta::is_function_template(member);
+        if (!is_template && !std::meta::is_function(member)) continue;
+        if (!is_template && (std::meta::is_const(member) || std::meta::is_deleted(member))) continue;
+        ++count;
+    }
+    return count;
+}
+
+// The pinned count of the doors of a class.  A failed assertion names the
+// pinned count and the counted one in its note.
+template <std::size_t Pinned, std::size_t Counted>
+inline constexpr bool doors_are_pinned = Pinned == Counted;
+
+// The count sees a new door: a class with one more member function that
+// writes its tag has one more door, and a const member is no door.
+class TagProbe {
+    unsigned char tag_ = 0;
+
+public:
+    [[nodiscard]] constexpr unsigned char tag() const noexcept { return tag_; }
+};
+
+class TagProbeWithWrite {
+    unsigned char tag_ = 0;
+
+public:
+    [[nodiscard]] constexpr unsigned char tag() const noexcept { return tag_; }
+    constexpr void copy_tag(TagProbeWithWrite const& other) noexcept { tag_ = other.tag_; }
+};
+
+static_assert(door_count<TagProbeWithWrite>() == door_count<TagProbe>() + 1);
+
+// The doors of each class that holds or writes the tag of a sum.  A new door
+// can write a tag, so a change of a count needs a constant evaluation of the
+// new door below, and then the new count here.
+using ProbeCells = TaggedCells<Alternatives<int, long>, unsigned long long>;
+static_assert(doors_are_pinned<8, door_count<ProbeCells>()>, "a new door of the cells: test it, then pin the count");
+static_assert(doors_are_pinned<11, door_count<SumSlotOf<true, NoPayload, std::uint64_t>>()>,
+              "a new door of the plain slot: test it below, then pin the count");
+static_assert(doors_are_pinned<10, door_count<SumSlotOf<true, NoPayload, SealedWord>>()>,
+              "a new door of the plain slot of a sealed payload: test it below, then pin the count");
+static_assert(doors_are_pinned<10, door_count<SumSlotOf<false, Owner, int>>()>,
+              "a new door of the owning slot: test it below, then pin the count");
+static_assert(doors_are_pinned<12, door_count<OptionSlot<std::uint64_t>>()>,
+              "a new door of the plain Option slot: test it below, then pin the count");
+static_assert(doors_are_pinned<11, door_count<OptionSlot<Owner>>()>,
+              "a new door of the owning Option slot: test it below, then pin the count");
+static_assert(doors_are_pinned<12, door_count<OptionSlot<SlotNumber>>()>,
+              "a new door of the niche Option slot: test it below, then pin the count");
+static_assert(doors_are_pinned<12, door_count<ResultSlot<std::uint64_t, Code>>()>,
+              "a new door of the Result slot: test it below, then pin the count");
+static_assert(doors_are_pinned<47, door_count<Option<std::uint64_t>>()>,
+              "a new door of Option: test it below, then pin the count");
+static_assert(doors_are_pinned<45, door_count<Result<std::uint64_t, Code>>()>,
+              "a new door of Result: test it below, then pin the count");
+static_assert(doors_are_pinned<31, door_count<OneOf<std::uint32_t, Code>>()>,
+              "a new door of OneOf: test it below, then pin the count");
+static_assert(doors_are_pinned<29, door_count<OneOf<Owner, int>>()>,
+              "a new door of an owning OneOf: test it below, then pin the count");
+
+// The constructor of the cells and of each slot takes the index of an
+// alternative as a template argument, and it exists only for an index below
+// the count of the alternatives.  No constructor takes a tag as a value.
+static_assert(std::is_constructible_v<ProbeCells, AlternativeAt<1>, long>);
+static_assert(!std::is_constructible_v<ProbeCells, AlternativeAt<2>, long>);
+static_assert(!std::is_constructible_v<ProbeCells, unsigned long long, long>);
+static_assert(!std::is_constructible_v<ProbeCells, unsigned long long, AlternativeAt<1>, long>);
+static_assert(!std::is_constructible_v<Alternatives<int, long>, AlternativeAt<2>, long>);
+static_assert(std::is_constructible_v<SumSlot<NoPayload, std::uint64_t>, AlternativeAt<1>, std::uint64_t>);
+static_assert(!std::is_constructible_v<SumSlot<NoPayload, std::uint64_t>, AlternativeAt<2>, std::uint64_t>);
+static_assert(std::is_constructible_v<SumSlot<Owner, int>, AlternativeAt<1>, int>);
+static_assert(!std::is_constructible_v<SumSlot<Owner, int>, AlternativeAt<2>, int>);
+
+// The state of an Option through its borrow match: 0 for none, and the word
+// of the payload plus 1 for a payload.  The match reads the member of the
+// storage that the tag names.
+template <class T, class Read>
+[[nodiscard]] consteval std::uint64_t state_of(Option<T> const& option, Read read) {
+    return option.match([&read](T const& payload) noexcept { return read(payload) + 1; },
+                        [] noexcept { return std::uint64_t{0}; });
+}
+
+// Each door of an Option of a payload that copies, in a constant evaluation.
+// A constant evaluation refuses a read of a member of a union that is not
+// active, so a door that wrote a tag of no alternative, or of a different
+// alternative, would stop the compile here.
+template <class T, class Read>
+[[nodiscard]] consteval bool runs_option_doors(T first, T second, Read read) {
+    std::uint64_t const one = read(first) + 1;
+    std::uint64_t const two = read(second) + 1;
+    Option<T> held{};
+    Option<T> emptied{none};
+    Option<T> full = Option<T>::some(first);
+    Option<T> deduced = some(second);
+    Option<T> copied = full;
+    Option<T> const moved = static_cast<Option<T>&&>(copied);
+    bool is_held = state_of(held, read) == 0 && state_of(emptied, read) == 0 && state_of(full, read) == one
+                && state_of(deduced, read) == two && state_of(moved, read) == one;
+    held = full;
+    emptied = Option<T>::some(second);
+    is_held = is_held && state_of(held, read) == one && state_of(emptied, read) == two;
+    full = Option<T>{none};
+    Option<T> const taken = held.take();
+    is_held = is_held && state_of(full, read) == 0 && state_of(held, read) == 0 && state_of(taken, read) == one;
+    held.fill(second);
+    Option<T> const old = held.replace(first);
+    is_held = is_held && state_of(held, read) == one && state_of(old, read) == two;
+    Option<T>{full}.expect_none("the probe holds no payload");
+    T const expected = Option<T>{held}.expect("the probe holds a payload");
+    T const fallback = Option<T>{full}.value_or(second);
+    is_held = is_held && read(expected) == read(first) && read(fallback) == read(second);
+    Result<T, Code> const ok = Option<T>{held}.ok_or(Code::closed);
+    Result<T, Code> const failed = Option<T>{full}.ok_or(Code::closed);
+    auto const word = [](std::uint64_t value) noexcept { return value; };
+    Option<std::uint64_t> const mapped = Option<T>{held}.map([&read](T payload) noexcept { return read(payload); });
+    Option<T> const kept = Option<T>{held}.filter([](T const&) noexcept { return true; });
+    Option<T> const refused = Option<T>{held}.filter([](T const&) noexcept { return false; });
+    Option<T> const chained = Option<T>{held}.and_then([](T payload) noexcept { return Option<T>::some(payload); });
+    std::uint64_t const matched = Option<T>{held}.match([&read](T payload) noexcept { return read(payload) + 1; },
+                                                        [] noexcept { return std::uint64_t{0}; });
+    return is_held && ok.is_ok() && failed.is_err() && state_of(mapped, word) == one && state_of(kept, read) == one
+        && state_of(refused, read) == 0 && state_of(chained, read) == one && matched == one;
+}
+
+static_assert(runs_option_doors(std::uint64_t{3}, std::uint64_t{8},
+                                [](std::uint64_t value) noexcept { return value; }));
+static_assert(runs_option_doors(std::uint32_t{3}, std::uint32_t{8},
+                                [](std::uint32_t value) noexcept { return std::uint64_t{value}; }));
+static_assert(runs_option_doors(SlotNumber{3}, SlotNumber{8},
+                                [](SlotNumber const& slot) noexcept { return std::uint64_t{slot.raw}; }));
+static_assert(runs_option_doors(SealedWord{3}, SealedWord{8},
+                                [](SealedWord const& sealed) noexcept { return sealed.raw; }));
+
+// The frame door of a plain Option writes the payload in place and keeps
+// the tag.
+[[nodiscard]] consteval bool runs_option_frame_door() {
+    Option<std::uint64_t> held = Option<std::uint64_t>::some(std::uint64_t{3});
+    int const seen = held.with_mut([](auto) noexcept { return 1; }, [] noexcept { return 0; });
+    return seen == 1 && state_of(held, [](std::uint64_t value) noexcept { return value; }) == 4;
+}
+static_assert(runs_option_frame_door());
+
+// Each door of an owning Option, in a constant evaluation.
+[[nodiscard]] consteval bool runs_owning_option_doors() {
+    auto const read = [](Owner const& owner) noexcept { return static_cast<std::uint64_t>(owner.handle); };
+    Option<Owner> held{};
+    Option<Owner> full = Option<Owner>::some(Owner{3});
+    Option<Owner> moved = static_cast<Option<Owner>&&>(full);
+    bool is_held = state_of(held, read) == 0 && state_of(moved, read) == 4;
+    held = static_cast<Option<Owner>&&>(moved);
+    Option<Owner> const taken = held.take();
+    is_held = is_held && state_of(held, read) == 0 && state_of(taken, read) == 4;
+    held.fill(Owner{5});
+    Option<Owner> const old = held.replace(Owner{6});
+    is_held = is_held && state_of(held, read) == 7 && state_of(old, read) == 6;
+    Owner const out = static_cast<Option<Owner>&&>(held).expect("the probe holds an owner");
+    return is_held && out.handle == 6;
+}
+static_assert(runs_owning_option_doors());
+
+// Each door of a Result, in a constant evaluation.  The state is the value
+// plus 1, 100 for the error full and 200 for the error closed.
+[[nodiscard]] consteval bool runs_result_doors() {
+    using Word = Result<std::uint64_t, Code>;
+    auto const state = [](Word const& result) noexcept {
+        return result.match(
+            [](std::uint64_t const& value) noexcept { return value + 1; },
+            [](Code const& code) noexcept { return code == Code::full ? std::uint64_t{100} : std::uint64_t{200}; });
+    };
+    Word value{std::uint64_t{4}};
+    Word error{err(Code::full)};
+    Word copied = value;
+    Word const moved = static_cast<Word&&>(copied);
+    value = error;
+    error = Word{std::uint64_t{7}};
+    bool const is_held = state(value) == 100 && state(error) == 8 && state(moved) == 5;
+    Word const mapped = Word{moved}.map([](std::uint64_t word) noexcept { return word * 2; });
+    Result<std::uint64_t, Code32> const remapped =
+        Word{value}.map_err([](Code code) noexcept { return code == Code::full ? Code32::full : Code32::closed; });
+    Word const chained = Word{moved}.and_then([](std::uint64_t word) noexcept { return Word{word + 1}; });
+    Word const recovered = Word{value}.or_else([](Code) noexcept { return Word{std::uint64_t{9}}; });
+    std::uint64_t const expected = Word{moved}.expect("the probe holds a value");
+    std::uint64_t const fallback = Word{value}.value_or(std::uint64_t{11});
+    Result<Unit, Code>{Unit{}}.expect("the probe holds a Unit");
+    return is_held && state(mapped) == 9 && remapped.is_err() && state(chained) == 6 && state(recovered) == 10
+        && expected == 4 && fallback == 11 && Word{moved}.ok().is_some() && Word{value}.ok().is_none()
+        && value.err().is_some() && moved.err().is_none();
+}
+static_assert(runs_result_doors());
+
+// Each door of a OneOf, in a constant evaluation.  The state is the value of
+// the active alternative through the borrow match: the word plus 1, 100 for
+// the code full and 200 for the code closed, and the half word plus 1000.
+using Reading = OneOf<std::uint32_t, Code, std::uint16_t>;
+
+[[nodiscard]] consteval std::uint64_t reading_state(Reading const& reading) {
+    return reading.match(
+        [](std::uint32_t const& word) noexcept { return std::uint64_t{word} + 1; },
+        [](Code const& code) noexcept { return code == Code::full ? std::uint64_t{100} : std::uint64_t{200}; },
+        [](std::uint16_t const& half) noexcept { return std::uint64_t{half} + 1000; });
+}
+
+[[nodiscard]] consteval bool runs_one_of_doors() {
+    Reading wide{std::uint32_t{4}};
+    Reading refused{Code::closed};
+    Reading narrow{std::uint16_t{5}};
+    Reading copied = wide;
+    Reading const moved = static_cast<Reading&&>(copied);
+    bool const is_built = reading_state(wide) == 5 && reading_state(refused) == 200 && reading_state(moved) == 5;
+    wide = narrow;
+    refused = Reading{std::uint32_t{6}};
+    bool const is_held = is_built && reading_state(wide) == 1005 && reading_state(refused) == 7
+                      && narrow.which().raw() == 2 && moved.which().raw() == 0 && narrow.is<std::uint16_t>()
+                      && narrow.get<std::uint16_t>().is_some();
+    int const written = narrow.with_mut([](auto) noexcept { return 1; }, [](auto) noexcept { return 2; },
+                                        [](auto) noexcept { return 3; });
+    std::uint64_t const matched = Reading{narrow}.match(
+        [](std::uint32_t word) noexcept { return std::uint64_t{word}; }, [](Code) noexcept { return std::uint64_t{0}; },
+        [](std::uint16_t half) noexcept { return std::uint64_t{half}; });
+    std::uint16_t const expected = Reading{narrow}.expect<std::uint16_t>("the probe holds a half word");
+    return is_held && written == 3 && matched == 5 && expected == 5 && Reading{narrow} == narrow;
+}
+static_assert(runs_one_of_doors());
+
+[[nodiscard]] consteval bool runs_owning_one_of_doors() {
+    using Held = OneOf<Owner, int>;
+    Held owner{Owner{3}};
+    Held number{4};
+    Held moved = static_cast<Held&&>(owner);
+    number = static_cast<Held&&>(moved);
+    return number.which().raw() == 0
+        && number.match([](Owner const& held) noexcept { return held.handle; },
+                        [](int const& held) noexcept { return held; })
+               == 3;
+}
+static_assert(runs_owning_one_of_doors());
+
+// The byte doors of the base refuse a sum and a class that holds one (the
+// doors of the tag): bit_cast and decode of the Scalar family, and the
+// checked lifetime start.  The one decode of a sum from bytes is decode of
+// the Protocol family, which tests the tag byte once and builds the sum
+// through its constructors.
+struct ForgedWords {
+    std::uint64_t payload = 7;
+    std::uint64_t tag = 2;
+};
+
+struct HoldsOption {
+    std::uint64_t word = 0;
+    Option<std::uint64_t> option{};
+};
+
+struct HoldsResult {
+    std::uint64_t word = 0;
+    Result<std::uint64_t, Code> result{std::uint64_t{0}};
+};
+
+struct HoldsOneOf {
+    std::uint64_t word = 0;
+    Reading reading{std::uint32_t{0}};
+};
+
+static_assert(!BitValid<Option<std::uint64_t>> && !BitValid<HoldsOption>);
+static_assert(!BitValid<Result<std::uint64_t, Code>> && !BitValid<HoldsResult>);
+static_assert(!BitValid<Reading> && !BitValid<HoldsOneOf>);
+static_assert(!DecodableFrom<Option<std::uint64_t>, ForgedWords>);
+static_assert(!DecodableFrom<Result<std::uint64_t, Code>, ForgedWords>);
+static_assert(!DecodableFrom<OneOf<std::uint64_t, Code>, ForgedWords>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<HoldsOption>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<HoldsResult>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<HoldsOneOf>);
 
 // ── The closed surface ────────────────────────────────────────────────
 

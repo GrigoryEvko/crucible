@@ -3060,6 +3060,20 @@ foundation_neg_compile_test(neg_core_option_member_lifetime_start
 foundation_neg_compile_test(neg_core_bit_cast_into_one_of
   "no matching function for call to .bit_cast<Reading>\\(ForgedReading\\)."
   "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::OneOf<")
+# Each sum refuses the two bit copies: std::bit_cast through the rule
+# forged-tag, and the bit copy door of the Scalar family through BitValid.
+foundation_neg_compile_test(neg_core_option_bit_cast_forged_tag
+  "this bit copy makes a .foundation::core::Option<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_result_bit_cast_forged_tag
+  "this bit copy makes a .foundation::core::Result<[^>]*>., whose bytes hold the tag of a sum"
+  "a class that carries the annotation .foundation::core::closed_tag. holds the tag")
+foundation_neg_compile_test(neg_core_bit_cast_into_option
+  "no matching function for call to .bit_cast<Word>\\(ForgedWords\\)."
+  "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::Option<")
+foundation_neg_compile_test(neg_core_bit_cast_into_result
+  "no matching function for call to .bit_cast<Word>\\(ForgedWords\\)."
+  "required for the satisfaction of .BitValid<To>. \\[with To = foundation::core::Result<")
 # niche_key has no open mark, so the rule specialization-home refuses an
 # explicit and a partial specialization of it outside Choice.h.
 foundation_neg_compile_test(neg_core_niche_key_explicit_specialization

@@ -1556,6 +1556,14 @@ struct SomeTag final {
     explicit constexpr SomeTag() noexcept = default;
 };
 
+// The dispatch tag of the constructor of the alternative at an index.  The
+// index is a template argument, so each constructor of a sum writes a tag
+// that the program text fixes.
+template <std::size_t Index>
+struct AlternativeAt final {
+    explicit constexpr AlternativeAt() noexcept = default;
+};
+
 // A payload that declares a niche takes the niche form.  The payload gate
 // holds WellFormedNiche<T>, so its niche is well formed.  A niche payload
 // copies, so it is never linear.  A linear payload takes the owning form
@@ -1670,6 +1678,13 @@ public:
 // stack.  The plain Option, and the sums whose alternatives are all plain,
 // use this rule.  Only the slot of a plain sum reads the two cells.  The tag
 // names one alternative, so the cells carry the mark closed_tag.
+//
+// The one constructor takes the index of the alternative as a template
+// argument, builds the alternative at that index in the storage, and writes
+// the index as the tag.  The storage has a constructor only for an index of
+// an alternative, so no constructor writes a tag that names no alternative,
+// and the tag names the active member of the storage.  A copy of the cells
+// copies a tag that a constructor wrote (the doors of the tag).
 template <class Storage, class Tag>
 class[[= ::foundation::core::closed_tag{}]] TaggedCells {
     static_assert(std::is_unsigned_v<Tag> && alignof(Tag) == sizeof(Tag) && sizeof(Tag) <= alignof(Storage),
@@ -1682,10 +1697,11 @@ class[[= ::foundation::core::closed_tag{}]] TaggedCells {
     friend class SumSlotOf;
 
 public:
-    template <class... Args>
-    constexpr explicit TaggedCells(Tag tag,
-                                   Args&&... args) noexcept(std::is_nothrow_constructible_v<Storage, Args&&...>)
-        : storage_(static_cast<Args&&>(args)...), tag_{tag} {}
+    template <std::size_t Index, class... Args>
+        requires std::is_constructible_v<Storage, AlternativeAt<Index>, Args&&...>
+    constexpr explicit TaggedCells(AlternativeAt<Index> at, Args&&... args) noexcept(
+        std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, Args&&...>)
+        : storage_(at, static_cast<Args&&>(args)...), tag_{static_cast<Tag>(Index)} {}
 };
 
 }  // namespace detail
@@ -2257,12 +2273,6 @@ some(V&& value) noexcept(std::is_nothrow_constructible_v<std::remove_cvref_t<V>,
 
 namespace detail {
 
-// The dispatch tag of the constructor of the alternative at an index.
-template <std::size_t Index>
-struct AlternativeAt final {
-    explicit constexpr AlternativeAt() noexcept = default;
-};
-
 // The dispatch tag of the constructor that moves the active alternative of
 // a different storage.
 struct MoveActive final {
@@ -2285,7 +2295,9 @@ struct NoAlternativeYet final {
 // an index, are linear in the number of alternatives.  The alternatives are
 // private, and only alternative_of_ reads one.  The tag of the slot names the
 // active member, so the union carries the mark closed_tag, and the quarantine
-// plugin reads a member of it as no copy of bytes.
+// plugin reads a member of it as no copy of bytes.  The constructor of the
+// alternative at an index exists only for an index below the count of the
+// alternatives (the doors of the tag).
 template <class... Ts>
 union Alternatives;
 
@@ -2342,7 +2354,7 @@ public:
         : head_(static_cast<U&&>(value)) {}
 
     template <std::size_t Index, class U>
-        requires(Index > 0)
+        requires(Index > 0 && Index < 2 + sizeof...(Rest))
     constexpr Alternatives(AlternativeAt<Index>, U&& value) noexcept(
         std::is_nothrow_constructible_v<Alternatives<Next, Rest...>, AlternativeAt<Index - 1>, U&&>)
         : tail_(AlternativeAt<Index - 1>{}, static_cast<U&&>(value)) {}
@@ -2605,9 +2617,10 @@ public:
     }
 
     template <std::size_t Index, class U>
+        requires std::is_constructible_v<Storage, AlternativeAt<Index>, U&&>
     constexpr SumSlotOf(AlternativeAt<Index> at,
                         U&& value) noexcept(std::is_nothrow_constructible_v<Storage, AlternativeAt<Index>, U&&>)
-        : cells_{static_cast<TagWord>(Index), at, static_cast<U&&>(value)} {}
+        : cells_{at, static_cast<U&&>(value)} {}
 
     constexpr SumSlotOf(SumSlotOf const&) noexcept = default;
     constexpr SumSlotOf(SumSlotOf&&) noexcept = default;
@@ -2678,6 +2691,7 @@ public:
     }
 
     template <std::size_t Index, class U>
+        requires std::is_constructible_v<Alternatives<Ts...>, AlternativeAt<Index>, U&&>
     constexpr SumSlotOf(AlternativeAt<Index> at, U&& value) noexcept(
         std::is_nothrow_constructible_v<Alternatives<Ts...>, AlternativeAt<Index>, U&&>)
         : storage_(at, static_cast<U&&>(value)), tag_{static_cast<unsigned char>(Index)} {}
@@ -2724,6 +2738,26 @@ public:
 // The one slot of the sums of the family.
 template <class... Ts>
 using SumSlot = SumSlotOf<is_plain_sum_v<Ts...>, Ts...>;
+
+// Doors of the tag
+//   The tag of a sum names an alternative in each state, and the doors of
+//   its slot hold that fact.  A constructor of a slot takes the index of an
+//   alternative as a template argument and writes that index, and the storage
+//   has a constructor only for the index of an alternative.  A copy, a move
+//   and an assignment of a slot copy a tag that a constructor wrote.  No
+//   other member of a slot writes the tag.  So each tag names an alternative,
+//   and it names the active member of the storage.  The check file of this
+//   header counts the doors of each slot through reflection, and it runs each
+//   door of Option, Result and OneOf in a constant evaluation, which refuses
+//   a read of a member that is not active.
+//
+//   Only a copy of bytes can write a different tag, and each byte route into
+//   a sum is refused at compile time: the rule forged-tag of the quarantine
+//   plugin refuses a bit copy, a copy of bytes, a view of bytes and a union
+//   member, the Scalar family refuses a decode and a bit_cast into a sum, and
+//   the checked lifetime start of foundation/Lifetime.h refuses a sum over
+//   bytes.  Bytes from outside the program become a sum only through a decode
+//   of its parts and a constructor of the sum.
 
 // The fatal exits of a tag that names no alternative of an Option or a
 // Result.  The calls take no argument, so each inlined read of a tag adds
