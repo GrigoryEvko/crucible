@@ -4,1462 +4,1462 @@
     {
       "name": "neg_witness_algebra_grade_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bgrade_key\\("
+      "constructor": "(?<!~)\\bgrade_key\\("
     },
     {
       "name": "neg_witness_algebra_graded_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bGraded\\("
+      "constructor": "(?<!~)\\bGraded\\("
     },
     {
       "name": "neg_witness_algebra_lattices_countimagekey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCountImageKey\\("
+      "constructor": "(?<!~)\\bCountImageKey\\("
     },
     {
       "name": "neg_witness_algebra_lattices_happensbeforelattice_element_type_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\belement_type\\("
+      "constructor": "(?<!~)\\belement_type\\("
     },
     {
       "name": "neg_witness_algebra_lattices_strongcounterlattice_element_type_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\belement_type\\("
+      "constructor": "(?<!~)\\belement_type\\("
     },
     {
       "name": "neg_witness_algebra_net_sealednet_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSealedNet\\("
+      "constructor": "(?<!~)\\bSealedNet\\("
     },
     {
       "name": "neg_witness_algebra_net_sealedsystem_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSealedSystem\\("
+      "constructor": "(?<!~)\\bSealedSystem\\("
     },
     {
       "name": "neg_witness_alignedbytes_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bAlignedBytes\\("
+      "constructor": "(?<!~)\\bAlignedBytes\\("
     },
     {
       "name": "neg_witness_alloc_biasedchunkmap_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBiasedChunkMap\\("
+      "constructor": "(?<!~)\\bBiasedChunkMap\\("
     },
     {
       "name": "neg_witness_alloc_layout_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLayout\\("
+      "constructor": "(?<!~)\\bLayout\\("
     },
     {
       "name": "neg_witness_alloc_metadatalayout_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMetadataLayout\\("
+      "constructor": "(?<!~)\\bMetadataLayout\\("
     },
     {
       "name": "neg_witness_alloc_slabrecords_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSlabRecords\\("
+      "constructor": "(?<!~)\\bSlabRecords\\("
     },
     {
       "name": "neg_witness_alloc_window_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWindow\\("
+      "constructor": "(?<!~)\\bWindow\\("
     },
     {
       "name": "neg_witness_alloc_windowrecord_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWindowRecord\\("
+      "constructor": "(?<!~)\\bWindowRecord\\("
     },
     {
       "name": "neg_witness_appendonly_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAppendOnly\\("
+      "constructor": "(?<!~)\\bAppendOnly\\("
     },
     {
       "name": "neg_witness_atomicmonotonic_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAtomicMonotonic\\("
+      "constructor": "(?<!~)\\bAtomicMonotonic\\("
     },
     {
       "name": "neg_witness_bindingkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBindingKey\\("
+      "constructor": "(?<!~)\\bBindingKey\\("
     },
     {
       "name": "neg_witness_boundedmonotonic_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBoundedMonotonic\\("
+      "constructor": "(?<!~)\\bBoundedMonotonic\\("
     },
     {
       "name": "neg_witness_budgetauthority_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBudgetAuthority\\("
+      "constructor": "(?<!~)\\bBudgetAuthority\\("
     },
     {
       "name": "neg_witness_budgetstamp_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBudgetStamp\\("
+      "constructor": "(?<!~)\\bBudgetStamp\\("
     },
     {
       "name": "neg_witness_channels_endpoint_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bEndpoint\\("
+      "constructor": "(?<!~)\\bEndpoint\\("
     },
     {
       "name": "neg_witness_channels_endpointdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bEndpointDoor\\("
+      "constructor": "(?<!~)\\bEndpointDoor\\("
     },
     {
       "name": "neg_witness_channels_swmr_session_swmrsession_readerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReaderHandle\\("
+      "constructor": "(?<!~)\\bReaderHandle\\("
     },
     {
       "name": "neg_witness_channels_swmr_session_swmrsession_writerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWriterHandle\\("
+      "constructor": "(?<!~)\\bWriterHandle\\("
     },
     {
       "name": "neg_witness_check_draw_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bDraw\\("
+      "constructor": "(?<!~)\\bDraw\\("
     },
     {
       "name": "neg_witness_clocksource_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bClockSource\\("
+      "constructor": "(?<!~)\\bClockSource\\("
     },
     {
       "name": "neg_witness_collision_detail_pack_premises_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bpack_premises_cell\\("
+      "constructor": "(?<!~)\\bpack_premises_cell\\("
     },
     {
       "name": "neg_witness_collision_detail_pack_record_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bpack_record_cell\\("
+      "constructor": "(?<!~)\\bpack_record_cell\\("
     },
     {
       "name": "neg_witness_collision_detail_payload_premises_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bpayload_premises_cell\\("
+      "constructor": "(?<!~)\\bpayload_premises_cell\\("
     },
     {
       "name": "neg_witness_collision_verdict_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bverdict_cell\\("
+      "constructor": "(?<!~)\\bverdict_cell\\("
     },
     {
       "name": "neg_witness_concurrent_chaselevdeque_ownerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOwnerEnd\\("
+      "constructor": "(?<!~)\\bOwnerEnd\\("
     },
     {
       "name": "neg_witness_concurrent_chaselevdeque_stealerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStealerEnd\\("
+      "constructor": "(?<!~)\\bStealerEnd\\("
     },
     {
       "name": "neg_witness_concurrent_eventwait_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bEventWait\\("
+      "constructor": "(?<!~)\\bEventWait\\("
     },
     {
       "name": "neg_witness_concurrent_lanering_consumerproof_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bConsumerProof\\("
+      "constructor": "(?<!~)\\bConsumerProof\\("
     },
     {
       "name": "neg_witness_concurrent_lanering_laneproof_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLaneProof\\("
+      "constructor": "(?<!~)\\bLaneProof\\("
     },
     {
       "name": "neg_witness_concurrent_mpmcstage_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMpmcStage\\("
+      "constructor": "(?<!~)\\bMpmcStage\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedboxchannel_consumerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bConsumerHandle\\("
+      "constructor": "(?<!~)\\bConsumerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedboxchannel_producerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bProducerHandle\\("
+      "constructor": "(?<!~)\\bProducerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_consumerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bConsumerHandle\\("
+      "constructor": "(?<!~)\\bConsumerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_drainclaim_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bDrainClaim\\("
+      "constructor": "(?<!~)\\bDrainClaim\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_producerhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bProducerHandle\\("
+      "constructor": "(?<!~)\\bProducerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_recombinedring_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRecombinedRing\\("
+      "constructor": "(?<!~)\\bRecombinedRing\\("
     },
     {
       "name": "neg_witness_concurrent_permissionforkthreads_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bPermissionForkThreads\\("
+      "constructor": "(?<!~)\\bPermissionForkThreads\\("
     },
     {
       "name": "neg_witness_concurrent_pipeline_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bPipeline\\("
+      "constructor": "(?<!~)\\bPipeline\\("
     },
     {
       "name": "neg_witness_concurrent_pipelinedag_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bPipelineDag\\("
+      "constructor": "(?<!~)\\bPipelineDag\\("
     },
     {
       "name": "neg_witness_concurrent_sequencecells_readticket_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReadTicket\\("
+      "constructor": "(?<!~)\\bReadTicket\\("
     },
     {
       "name": "neg_witness_concurrent_sequencecells_writeticket_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWriteTicket\\("
+      "constructor": "(?<!~)\\bWriteTicket\\("
     },
     {
       "name": "neg_witness_concurrent_spscend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSpscEnd\\("
+      "constructor": "(?<!~)\\bSpscEnd\\("
     },
     {
       "name": "neg_witness_concurrent_spscendkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSpscEndKey\\("
+      "constructor": "(?<!~)\\bSpscEndKey\\("
     },
     {
       "name": "neg_witness_concurrent_spscsplit_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSpscSplit\\("
+      "constructor": "(?<!~)\\bSpscSplit\\("
     },
     {
       "name": "neg_witness_concurrent_stage_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStage\\("
+      "constructor": "(?<!~)\\bStage\\("
     },
     {
       "name": "neg_witness_concurrent_swmrstage_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSwmrStage\\("
+      "constructor": "(?<!~)\\bSwmrStage\\("
     },
     {
       "name": "neg_witness_core_address_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bAddress\\("
+      "constructor": "(?<!~)\\bAddress\\("
     },
     {
       "name": "neg_witness_core_addresskey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAddressKey\\("
+      "constructor": "(?<!~)\\bAddressKey\\("
     },
     {
       "name": "neg_witness_core_alloc_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAlloc\\("
+      "constructor": "(?<!~)\\bAlloc\\("
     },
     {
       "name": "neg_witness_core_arenaarraydoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bArenaArrayDoor\\("
+      "constructor": "(?<!~)\\bArenaArrayDoor\\("
     },
     {
       "name": "neg_witness_core_atomic_word_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\batomic_word_key\\("
+      "constructor": "(?<!~)\\batomic_word_key\\("
     },
     {
       "name": "neg_witness_core_bitcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBitCursor\\("
+      "constructor": "(?<!~)\\bBitCursor\\("
     },
     {
       "name": "neg_witness_core_bitkeys_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBitKeys\\("
+      "constructor": "(?<!~)\\bBitKeys\\("
     },
     {
       "name": "neg_witness_core_bitset_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bBitSet\\("
+      "constructor": "(?<!~)\\bBitSet\\("
     },
     {
       "name": "neg_witness_core_box_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bBox\\("
+      "constructor": "(?<!~)\\bBox\\("
     },
     {
       "name": "neg_witness_core_box_word_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bbox_word_key\\("
+      "constructor": "(?<!~)\\bbox_word_key\\("
     },
     {
       "name": "neg_witness_core_boxword_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBoxWord\\("
+      "constructor": "(?<!~)\\bBoxWord\\("
     },
     {
       "name": "neg_witness_core_brandedindex_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedIndex\\("
+      "constructor": "(?<!~)\\bBrandedIndex\\("
     },
     {
       "name": "neg_witness_core_brandedstridedview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedStridedView\\("
+      "constructor": "(?<!~)\\bBrandedStridedView\\("
     },
     {
       "name": "neg_witness_core_brandedview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedView\\("
+      "constructor": "(?<!~)\\bBrandedView\\("
     },
     {
       "name": "neg_witness_core_committedrangedoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bCommittedRangeDoor\\("
+      "constructor": "(?<!~)\\bCommittedRangeDoor\\("
     },
     {
       "name": "neg_witness_core_ctext_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCText\\("
+      "constructor": "(?<!~)\\bCText\\("
     },
     {
       "name": "neg_witness_core_dataaddress_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bDataAddress\\("
+      "constructor": "(?<!~)\\bDataAddress\\("
     },
     {
       "name": "neg_witness_core_detail_addressofkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAddressOfKey\\("
+      "constructor": "(?<!~)\\bAddressOfKey\\("
     },
     {
       "name": "neg_witness_core_detail_boxkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBoxKey\\("
+      "constructor": "(?<!~)\\bBoxKey\\("
     },
     {
       "name": "neg_witness_core_detail_brandedenumeratecursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedEnumerateCursor\\("
+      "constructor": "(?<!~)\\bBrandedEnumerateCursor\\("
     },
     {
       "name": "neg_witness_core_detail_brandedenumeraterange_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedEnumerateRange\\("
+      "constructor": "(?<!~)\\bBrandedEnumerateRange\\("
     },
     {
       "name": "neg_witness_core_detail_brandedindexcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedIndexCursor\\("
+      "constructor": "(?<!~)\\bBrandedIndexCursor\\("
     },
     {
       "name": "neg_witness_core_detail_brandedindexrange_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBrandedIndexRange\\("
+      "constructor": "(?<!~)\\bBrandedIndexRange\\("
     },
     {
       "name": "neg_witness_core_detail_chunkcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bChunkCursor\\("
+      "constructor": "(?<!~)\\bChunkCursor\\("
     },
     {
       "name": "neg_witness_core_detail_enumeratecursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bEnumerateCursor\\("
+      "constructor": "(?<!~)\\bEnumerateCursor\\("
     },
     {
       "name": "neg_witness_core_detail_enumeratestage_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bEnumerateStage\\("
+      "constructor": "(?<!~)\\bEnumerateStage\\("
     },
     {
       "name": "neg_witness_core_detail_filterstage_cursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCursor\\("
+      "constructor": "(?<!~)\\bCursor\\("
     },
     {
       "name": "neg_witness_core_detail_framekey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bFrameKey\\("
+      "constructor": "(?<!~)\\bFrameKey\\("
     },
     {
       "name": "neg_witness_core_detail_heaparraykey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHeapArrayKey\\("
+      "constructor": "(?<!~)\\bHeapArrayKey\\("
     },
     {
       "name": "neg_witness_core_detail_holekey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHoleKey\\("
+      "constructor": "(?<!~)\\bHoleKey\\("
     },
     {
       "name": "neg_witness_core_detail_limitstage_cursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCursor\\("
+      "constructor": "(?<!~)\\bCursor\\("
     },
     {
       "name": "neg_witness_core_detail_mapstage_cursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCursor\\("
+      "constructor": "(?<!~)\\bCursor\\("
     },
     {
       "name": "neg_witness_core_detail_ownerrunkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOwnerRunKey\\("
+      "constructor": "(?<!~)\\bOwnerRunKey\\("
     },
     {
       "name": "neg_witness_core_detail_refkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRefKey\\("
+      "constructor": "(?<!~)\\bRefKey\\("
     },
     {
       "name": "neg_witness_core_detail_reversecursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReverseCursor\\("
+      "constructor": "(?<!~)\\bReverseCursor\\("
     },
     {
       "name": "neg_witness_core_detail_runaddressdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bRunAddressDoor\\("
+      "constructor": "(?<!~)\\bRunAddressDoor\\("
     },
     {
       "name": "neg_witness_core_detail_runaddresskey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRunAddressKey\\("
+      "constructor": "(?<!~)\\bRunAddressKey\\("
     },
     {
       "name": "neg_witness_core_detail_stagekey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStageKey\\("
+      "constructor": "(?<!~)\\bStageKey\\("
     },
     {
       "name": "neg_witness_core_detail_stridedindexcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedIndexCursor\\("
+      "constructor": "(?<!~)\\bStridedIndexCursor\\("
     },
     {
       "name": "neg_witness_core_detail_stridedindexrange_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedIndexRange\\("
+      "constructor": "(?<!~)\\bStridedIndexRange\\("
     },
     {
       "name": "neg_witness_core_detail_sumkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSumKey\\("
+      "constructor": "(?<!~)\\bSumKey\\("
     },
     {
       "name": "neg_witness_core_detail_viewcursorkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bViewCursorKey\\("
+      "constructor": "(?<!~)\\bViewCursorKey\\("
     },
     {
       "name": "neg_witness_core_detail_windowcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWindowCursor\\("
+      "constructor": "(?<!~)\\bWindowCursor\\("
     },
     {
       "name": "neg_witness_core_detail_zipstage_cursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCursor\\("
+      "constructor": "(?<!~)\\bCursor\\("
     },
     {
       "name": "neg_witness_core_detail_zipstage_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bZipStage\\("
+      "constructor": "(?<!~)\\bZipStage\\("
     },
     {
       "name": "neg_witness_core_fixedheaparray_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bFixedHeapArray\\("
+      "constructor": "(?<!~)\\bFixedHeapArray\\("
     },
     {
       "name": "neg_witness_core_fixedheaparraycountdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bFixedHeapArrayCountDoor\\("
+      "constructor": "(?<!~)\\bFixedHeapArrayCountDoor\\("
     },
     {
       "name": "neg_witness_core_fixedlistslotsdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bFixedListSlotsDoor\\("
+      "constructor": "(?<!~)\\bFixedListSlotsDoor\\("
     },
     {
       "name": "neg_witness_core_growlist_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bGrowList\\("
+      "constructor": "(?<!~)\\bGrowList\\("
     },
     {
       "name": "neg_witness_core_growtext_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bGrowText\\("
+      "constructor": "(?<!~)\\bGrowText\\("
     },
     {
       "name": "neg_witness_core_heaparray_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bHeapArray\\("
+      "constructor": "(?<!~)\\bHeapArray\\("
     },
     {
       "name": "neg_witness_core_heapbitset_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bHeapBitSet\\("
+      "constructor": "(?<!~)\\bHeapBitSet\\("
     },
     {
       "name": "neg_witness_core_heaptext_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bHeapText\\("
+      "constructor": "(?<!~)\\bHeapText\\("
     },
     {
       "name": "neg_witness_core_hole_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bHole\\("
+      "constructor": "(?<!~)\\bHole\\("
     },
     {
       "name": "neg_witness_core_identity_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bIdentity\\("
+      "constructor": "(?<!~)\\bIdentity\\("
     },
     {
       "name": "neg_witness_core_index_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bIndex\\("
+      "constructor": "(?<!~)\\bIndex\\("
     },
     {
       "name": "neg_witness_core_indexcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bIndexCursor\\("
+      "constructor": "(?<!~)\\bIndexCursor\\("
     },
     {
       "name": "neg_witness_core_loankey_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bLoanKey\\("
+      "constructor": "(?<!~)\\bLoanKey\\("
     },
     {
       "name": "neg_witness_core_maskedarray_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bMaskedArray\\("
+      "constructor": "(?<!~)\\bMaskedArray\\("
     },
     {
       "name": "neg_witness_core_niche_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bniche_key\\("
+      "constructor": "(?<!~)\\bniche_key\\("
     },
     {
       "name": "neg_witness_core_nichestatementplace_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bNicheStatementPlace\\("
+      "constructor": "(?<!~)\\bNicheStatementPlace\\("
     },
     {
       "name": "neg_witness_core_optioncursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOptionCursor\\("
+      "constructor": "(?<!~)\\bOptionCursor\\("
     },
     {
       "name": "neg_witness_core_ref_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bRef\\("
+      "constructor": "(?<!~)\\bRef\\("
     },
     {
       "name": "neg_witness_core_refmut_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bRefMut\\("
+      "constructor": "(?<!~)\\bRefMut\\("
     },
     {
       "name": "neg_witness_core_rowcount_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowCount\\("
+      "constructor": "(?<!~)\\bRowCount\\("
     },
     {
       "name": "neg_witness_core_rowindex_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowIndex\\("
+      "constructor": "(?<!~)\\bRowIndex\\("
     },
     {
       "name": "neg_witness_core_rowoffset_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowOffset\\("
+      "constructor": "(?<!~)\\bRowOffset\\("
     },
     {
       "name": "neg_witness_core_rowstep_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowStep\\("
+      "constructor": "(?<!~)\\bRowStep\\("
     },
     {
       "name": "neg_witness_core_rowsteps_cursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCursor\\("
+      "constructor": "(?<!~)\\bCursor\\("
     },
     {
       "name": "neg_witness_core_rowsteps_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowSteps\\("
+      "constructor": "(?<!~)\\bRowSteps\\("
     },
     {
       "name": "neg_witness_core_rowview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRowView\\("
+      "constructor": "(?<!~)\\bRowView\\("
     },
     {
       "name": "neg_witness_core_runaddress_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bRunAddress\\("
+      "constructor": "(?<!~)\\bRunAddress\\("
     },
     {
       "name": "neg_witness_core_runsetlayoutdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bRunSetLayoutDoor\\("
+      "constructor": "(?<!~)\\bRunSetLayoutDoor\\("
     },
     {
       "name": "neg_witness_core_seat_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSeat\\("
+      "constructor": "(?<!~)\\bSeat\\("
     },
     {
       "name": "neg_witness_core_seat_mintkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMintKey\\("
+      "constructor": "(?<!~)\\bMintKey\\("
     },
     {
       "name": "neg_witness_core_slotcursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSlotCursor\\("
+      "constructor": "(?<!~)\\bSlotCursor\\("
     },
     {
       "name": "neg_witness_core_slotmap_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSlotMap\\("
+      "constructor": "(?<!~)\\bSlotMap\\("
     },
     {
       "name": "neg_witness_core_slotwalk_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSlotWalk\\("
+      "constructor": "(?<!~)\\bSlotWalk\\("
     },
     {
       "name": "neg_witness_core_smalllist_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSmallList\\("
+      "constructor": "(?<!~)\\bSmallList\\("
     },
     {
       "name": "neg_witness_core_sole_writer_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bsole_writer_key\\("
+      "constructor": "(?<!~)\\bsole_writer_key\\("
     },
     {
       "name": "neg_witness_core_solewriter_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSoleWriter\\("
+      "constructor": "(?<!~)\\bSoleWriter\\("
     },
     {
       "name": "neg_witness_core_sortrundoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSortRunDoor\\("
+      "constructor": "(?<!~)\\bSortRunDoor\\("
     },
     {
       "name": "neg_witness_core_statictext_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bStaticText\\("
+      "constructor": "(?<!~)\\bStaticText\\("
     },
     {
       "name": "neg_witness_core_stridedindex_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedIndex\\("
+      "constructor": "(?<!~)\\bStridedIndex\\("
     },
     {
       "name": "neg_witness_core_stridedrow_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedRow\\("
+      "constructor": "(?<!~)\\bStridedRow\\("
     },
     {
       "name": "neg_witness_core_stridedview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedView\\("
+      "constructor": "(?<!~)\\bStridedView\\("
     },
     {
       "name": "neg_witness_core_stridedviewmut_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bStridedViewMut\\("
+      "constructor": "(?<!~)\\bStridedViewMut\\("
     },
     {
       "name": "neg_witness_core_testedwindowdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bTestedWindowDoor\\("
+      "constructor": "(?<!~)\\bTestedWindowDoor\\("
     },
     {
       "name": "neg_witness_core_textview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTextView\\("
+      "constructor": "(?<!~)\\bTextView\\("
     },
     {
       "name": "neg_witness_core_view_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bView\\("
+      "constructor": "(?<!~)\\bView\\("
     },
     {
       "name": "neg_witness_core_viewcursor_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bViewCursor\\("
+      "constructor": "(?<!~)\\bViewCursor\\("
     },
     {
       "name": "neg_witness_core_viewmut_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bViewMut\\("
+      "constructor": "(?<!~)\\bViewMut\\("
     },
     {
       "name": "neg_witness_core_viewmutchunks_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bViewMutChunks\\("
+      "constructor": "(?<!~)\\bViewMutChunks\\("
     },
     {
       "name": "neg_witness_core_writelease_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bWriteLease\\("
+      "constructor": "(?<!~)\\bWriteLease\\("
     },
     {
       "name": "neg_witness_cpupinned_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCpuPinned\\("
+      "constructor": "(?<!~)\\bCpuPinned\\("
     },
     {
       "name": "neg_witness_detail_alignedbyteskey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAlignedBytesKey\\("
+      "constructor": "(?<!~)\\bAlignedBytesKey\\("
     },
     {
       "name": "neg_witness_diag_detail_canonical_id_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bcanonical_id_cell\\("
+      "constructor": "(?<!~)\\bcanonical_id_cell\\("
     },
     {
       "name": "neg_witness_disjoint_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bDisjoint\\("
+      "constructor": "(?<!~)\\bDisjoint\\("
     },
     {
       "name": "neg_witness_effects_bg_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBg\\("
+      "constructor": "(?<!~)\\bBg\\("
     },
     {
       "name": "neg_witness_effects_cap_block_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBlock\\("
+      "constructor": "(?<!~)\\bBlock\\("
     },
     {
       "name": "neg_witness_effects_cap_io_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bIO\\("
+      "constructor": "(?<!~)\\bIO\\("
     },
     {
       "name": "neg_witness_effects_cap_mint_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bcap_mint_key\\("
+      "constructor": "(?<!~)\\bcap_mint_key\\("
     },
     {
       "name": "neg_witness_effects_cap_nondet_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bNondet\\("
+      "constructor": "(?<!~)\\bNondet\\("
     },
     {
       "name": "neg_witness_effects_capability_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bCapability\\("
+      "constructor": "(?<!~)\\bCapability\\("
     },
     {
       "name": "neg_witness_effects_ctx_cap_brandedfg_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bBrandedFg\\("
+      "constructor": "(?<!~)\\bBrandedFg\\("
     },
     {
       "name": "neg_witness_effects_ctx_cap_fg_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bFg\\("
+      "constructor": "(?<!~)\\bFg\\("
     },
     {
       "name": "neg_witness_effects_ctx_cap_kernelsource_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bKernelSource\\("
+      "constructor": "(?<!~)\\bKernelSource\\("
     },
     {
       "name": "neg_witness_effects_detail_contextbase_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bContextBase\\("
+      "constructor": "(?<!~)\\bContextBase\\("
     },
     {
       "name": "neg_witness_effects_detail_ctx_mint_bg_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bbg_key\\("
+      "constructor": "(?<!~)\\bbg_key\\("
     },
     {
       "name": "neg_witness_effects_detail_ctx_mint_fg_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bfg_key\\("
+      "constructor": "(?<!~)\\bfg_key\\("
     },
     {
       "name": "neg_witness_effects_detail_ctx_mint_init_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\binit_key\\("
+      "constructor": "(?<!~)\\binit_key\\("
     },
     {
       "name": "neg_witness_effects_detail_ctx_mint_test_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\btest_key\\("
+      "constructor": "(?<!~)\\btest_key\\("
     },
     {
       "name": "neg_witness_effects_execctx_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bExecCtx\\("
+      "constructor": "(?<!~)\\bExecCtx\\("
     },
     {
       "name": "neg_witness_effects_host_atomowner_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bAtomOwner\\("
+      "constructor": "(?<!~)\\bAtomOwner\\("
     },
     {
       "name": "neg_witness_effects_host_imagereader_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bImageReader\\("
+      "constructor": "(?<!~)\\bImageReader\\("
     },
     {
       "name": "neg_witness_effects_host_producerclaim_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bProducerClaim\\("
+      "constructor": "(?<!~)\\bProducerClaim\\("
     },
     {
       "name": "neg_witness_effects_init_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bInit\\("
+      "constructor": "(?<!~)\\bInit\\("
     },
     {
       "name": "neg_witness_effects_kernelcall_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bKernelCall\\("
+      "constructor": "(?<!~)\\bKernelCall\\("
     },
     {
       "name": "neg_witness_effects_test_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTest\\("
+      "constructor": "(?<!~)\\bTest\\("
     },
     {
       "name": "neg_witness_fail_closed_detail_relation_cells_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\brelation_cells\\("
+      "constructor": "(?<!~)\\brelation_cells\\("
     },
     {
       "name": "neg_witness_fn_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bfn\\("
+      "constructor": "(?<!~)\\bfn\\("
     },
     {
       "name": "neg_witness_fs_filedoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bFileDoor\\("
+      "constructor": "(?<!~)\\bFileDoor\\("
     },
     {
       "name": "neg_witness_fs_temporarydirectorydoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bTemporaryDirectoryDoor\\("
+      "constructor": "(?<!~)\\bTemporaryDirectoryDoor\\("
     },
     {
       "name": "neg_witness_handle_published_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bpublished_key\\("
+      "constructor": "(?<!~)\\bpublished_key\\("
     },
     {
       "name": "neg_witness_handle_publishedobject_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bPublishedObject\\("
+      "constructor": "(?<!~)\\bPublishedObject\\("
     },
     {
       "name": "neg_witness_heap_detail_heapscopedoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bHeapScopeDoor\\("
+      "constructor": "(?<!~)\\bHeapScopeDoor\\("
     },
     {
       "name": "neg_witness_heap_heapscope_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHeapScope\\("
+      "constructor": "(?<!~)\\bHeapScope\\("
     },
     {
       "name": "neg_witness_heap_localblock_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLocalBlock\\("
+      "constructor": "(?<!~)\\bLocalBlock\\("
     },
     {
       "name": "neg_witness_io_ioringdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bIoRingDoor\\("
+      "constructor": "(?<!~)\\bIoRingDoor\\("
     },
     {
       "name": "neg_witness_io_iouringring_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bIoUringRing\\("
+      "constructor": "(?<!~)\\bIoUringRing\\("
     },
     {
       "name": "neg_witness_keyedbytes_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bKeyedBytes\\("
+      "constructor": "(?<!~)\\bKeyedBytes\\("
     },
     {
       "name": "neg_witness_machine_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMachine\\("
+      "constructor": "(?<!~)\\bMachine\\("
     },
     {
       "name": "neg_witness_mmap_sharedwords_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSharedWords\\("
+      "constructor": "(?<!~)\\bSharedWords\\("
     },
     {
       "name": "neg_witness_monotonic_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMonotonic\\("
+      "constructor": "(?<!~)\\bMonotonic\\("
     },
     {
       "name": "neg_witness_net_foreignsocketref_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bForeignSocketRef\\("
+      "constructor": "(?<!~)\\bForeignSocketRef\\("
     },
     {
       "name": "neg_witness_net_socketdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSocketDoor\\("
+      "constructor": "(?<!~)\\bSocketDoor\\("
     },
     {
       "name": "neg_witness_numaplacement_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bNumaPlacement\\("
+      "constructor": "(?<!~)\\bNumaPlacement\\("
     },
     {
       "name": "neg_witness_numapolicyplacement_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bNumaPolicyPlacement\\("
+      "constructor": "(?<!~)\\bNumaPolicyPlacement\\("
     },
     {
       "name": "neg_witness_observe_timingsink_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTimingSink\\("
+      "constructor": "(?<!~)\\bTimingSink\\("
     },
     {
       "name": "neg_witness_observe_timingsink_span_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSpan\\("
+      "constructor": "(?<!~)\\bSpan\\("
     },
     {
       "name": "neg_witness_orderedappendonly_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOrderedAppendOnly\\("
+      "constructor": "(?<!~)\\bOrderedAppendOnly\\("
     },
     {
       "name": "neg_witness_os_committedrange_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCommittedRange\\("
+      "constructor": "(?<!~)\\bCommittedRange\\("
     },
     {
       "name": "neg_witness_os_fpcontrolword_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bFpControlWord\\("
+      "constructor": "(?<!~)\\bFpControlWord\\("
     },
     {
       "name": "neg_witness_os_fpscope_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bFpScope\\("
+      "constructor": "(?<!~)\\bFpScope\\("
     },
     {
       "name": "neg_witness_os_guardedregion_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bGuardedRegion\\("
+      "constructor": "(?<!~)\\bGuardedRegion\\("
     },
     {
       "name": "neg_witness_os_handle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHandle\\("
+      "constructor": "(?<!~)\\bHandle\\("
     },
     {
       "name": "neg_witness_os_handleref_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHandleRef\\("
+      "constructor": "(?<!~)\\bHandleRef\\("
     },
     {
       "name": "neg_witness_os_library_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLibrary\\("
+      "constructor": "(?<!~)\\bLibrary\\("
     },
     {
       "name": "neg_witness_os_libraryfunction_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLibraryFunction\\("
+      "constructor": "(?<!~)\\bLibraryFunction\\("
     },
     {
       "name": "neg_witness_os_reservation_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReservation\\("
+      "constructor": "(?<!~)\\bReservation\\("
     },
     {
       "name": "neg_witness_os_reservedrange_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReservedRange\\("
+      "constructor": "(?<!~)\\bReservedRange\\("
     },
     {
       "name": "neg_witness_ownedmmap_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOwnedMmap\\("
+      "constructor": "(?<!~)\\bOwnedMmap\\("
     },
     {
       "name": "neg_witness_ownedregion_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOwnedRegion\\("
+      "constructor": "(?<!~)\\bOwnedRegion\\("
     },
     {
       "name": "neg_witness_perf_perfeventdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bPerfEventDoor\\("
+      "constructor": "(?<!~)\\bPerfEventDoor\\("
     },
     {
       "name": "neg_witness_permissions_detail_row_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\brow_cell\\("
+      "constructor": "(?<!~)\\brow_cell\\("
     },
     {
       "name": "neg_witness_permissions_exclusivelease_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bExclusiveLease\\("
+      "constructor": "(?<!~)\\bExclusiveLease\\("
     },
     {
       "name": "neg_witness_permissions_federation_admission_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bfederation_admission_key\\("
+      "constructor": "(?<!~)\\bfederation_admission_key\\("
     },
     {
       "name": "neg_witness_permissions_lentpermission_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bLentPermission\\("
+      "constructor": "(?<!~)\\bLentPermission\\("
     },
     {
       "name": "neg_witness_permissions_perm_mint_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bperm_mint_key\\("
+      "constructor": "(?<!~)\\bperm_mint_key\\("
     },
     {
       "name": "neg_witness_permissions_permission_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bPermission\\("
+      "constructor": "(?<!~)\\bPermission\\("
     },
     {
       "name": "neg_witness_permissions_readloan_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReadLoan\\("
+      "constructor": "(?<!~)\\bReadLoan\\("
     },
     {
       "name": "neg_witness_permissions_readview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReadView\\("
+      "constructor": "(?<!~)\\bReadView\\("
     },
     {
       "name": "neg_witness_permissions_scope_mint_key_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bscope_mint_key\\("
+      "constructor": "(?<!~)\\bscope_mint_key\\("
     },
     {
       "name": "neg_witness_permissions_sharedpermission_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSharedPermission\\("
+      "constructor": "(?<!~)\\bSharedPermission\\("
     },
     {
       "name": "neg_witness_permissions_sharedpermissionguard_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSharedPermissionGuard\\("
+      "constructor": "(?<!~)\\bSharedPermissionGuard\\("
     },
     {
       "name": "neg_witness_permissions_sharedpermissionpool_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSharedPermissionPool\\("
+      "constructor": "(?<!~)\\bSharedPermissionPool\\("
     },
     {
       "name": "neg_witness_permissions_writeview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWriteView\\("
+      "constructor": "(?<!~)\\bWriteView\\("
     },
     {
       "name": "neg_witness_process_child_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bChild\\("
+      "constructor": "(?<!~)\\bChild\\("
     },
     {
       "name": "neg_witness_process_childreport_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bChildReport\\("
+      "constructor": "(?<!~)\\bChildReport\\("
     },
     {
       "name": "neg_witness_process_forkedchild_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bForkedChild\\("
+      "constructor": "(?<!~)\\bForkedChild\\("
     },
     {
       "name": "neg_witness_process_syscallstop_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSyscallStop\\("
+      "constructor": "(?<!~)\\bSyscallStop\\("
     },
     {
       "name": "neg_witness_process_tracedchild_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTracedChild\\("
+      "constructor": "(?<!~)\\bTracedChild\\("
     },
     {
       "name": "neg_witness_qtt_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bQtt\\("
+      "constructor": "(?<!~)\\bQtt\\("
     },
     {
       "name": "neg_witness_refinement_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bRefinement\\("
+      "constructor": "(?<!~)\\bRefinement\\("
     },
     {
       "name": "neg_witness_reflect_reflectioncursor_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReflectionCursor\\("
+      "constructor": "(?<!~)\\bReflectionCursor\\("
     },
     {
       "name": "neg_witness_reflect_reflectionlist_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReflectionList\\("
+      "constructor": "(?<!~)\\bReflectionList\\("
     },
     {
       "name": "neg_witness_saturated_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSaturated\\("
+      "constructor": "(?<!~)\\bSaturated\\("
     },
     {
       "name": "neg_witness_sched_prioraffinity_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bPriorAffinity\\("
+      "constructor": "(?<!~)\\bPriorAffinity\\("
     },
     {
       "name": "neg_witness_sched_prioraffinitydoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bPriorAffinityDoor\\("
+      "constructor": "(?<!~)\\bPriorAffinityDoor\\("
     },
     {
       "name": "neg_witness_sched_schedpriority_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSchedPriority\\("
+      "constructor": "(?<!~)\\bSchedPriority\\("
     },
     {
       "name": "neg_witness_sched_schedproofdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSchedProofDoor\\("
+      "constructor": "(?<!~)\\bSchedProofDoor\\("
     },
     {
       "name": "neg_witness_schedclass_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSchedClass\\("
+      "constructor": "(?<!~)\\bSchedClass\\("
     },
     {
       "name": "neg_witness_scopedview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bScopedView\\("
+      "constructor": "(?<!~)\\bScopedView\\("
     },
     {
       "name": "neg_witness_secret_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSecret\\("
+      "constructor": "(?<!~)\\bSecret\\("
     },
     {
       "name": "neg_witness_sequencesource_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSequenceSource\\("
+      "constructor": "(?<!~)\\bSequenceSource\\("
     },
     {
       "name": "neg_witness_sequencestamp_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSequenceStamp\\("
+      "constructor": "(?<!~)\\bSequenceStamp\\("
     },
     {
       "name": "neg_witness_session_borrowed_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBorrowed\\("
+      "constructor": "(?<!~)\\bBorrowed\\("
     },
     {
       "name": "neg_witness_session_checkpointdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bCheckpointDoor\\("
+      "constructor": "(?<!~)\\bCheckpointDoor\\("
     },
     {
       "name": "neg_witness_session_checkpointhandle_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCheckpointHandle\\("
+      "constructor": "(?<!~)\\bCheckpointHandle\\("
     },
     {
       "name": "neg_witness_session_crashcellcore_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCrashCellCore\\("
+      "constructor": "(?<!~)\\bCrashCellCore\\("
     },
     {
       "name": "neg_witness_session_crashreporter_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCrashReporter\\("
+      "constructor": "(?<!~)\\bCrashReporter\\("
     },
     {
       "name": "neg_witness_session_crashsessiondoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bCrashSessionDoor\\("
+      "constructor": "(?<!~)\\bCrashSessionDoor\\("
     },
     {
       "name": "neg_witness_session_crashwatched_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCrashWatched\\("
+      "constructor": "(?<!~)\\bCrashWatched\\("
     },
     {
       "name": "neg_witness_session_crashwriter_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bCrashWriter\\("
+      "constructor": "(?<!~)\\bCrashWriter\\("
     },
     {
       "name": "neg_witness_session_delegatedsession_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bDelegatedSession\\("
+      "constructor": "(?<!~)\\bDelegatedSession\\("
     },
     {
       "name": "neg_witness_session_delegationdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bDelegationDoor\\("
+      "constructor": "(?<!~)\\bDelegationDoor\\("
     },
     {
       "name": "neg_witness_session_delegationkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bDelegationKey\\("
+      "constructor": "(?<!~)\\bDelegationKey\\("
     },
     {
       "name": "neg_witness_session_detail_handle_core_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bhandle_core\\("
+      "constructor": "(?<!~)\\bhandle_core\\("
     },
     {
       "name": "neg_witness_session_handlefactory_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bHandleFactory\\("
+      "constructor": "(?<!~)\\bHandleFactory\\("
     },
     {
       "name": "neg_witness_session_handlekey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHandleKey\\("
+      "constructor": "(?<!~)\\bHandleKey\\("
     },
     {
       "name": "neg_witness_session_holdfactory_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bHoldFactory\\("
+      "constructor": "(?<!~)\\bHoldFactory\\("
     },
     {
       "name": "neg_witness_session_holdslots_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bHoldSlots\\("
+      "constructor": "(?<!~)\\bHoldSlots\\("
     },
     {
       "name": "neg_witness_session_machinelease_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bMachineLease\\("
+      "constructor": "(?<!~)\\bMachineLease\\("
     },
     {
       "name": "neg_witness_session_permhold_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bPermHold\\("
+      "constructor": "(?<!~)\\bPermHold\\("
     },
     {
       "name": "neg_witness_session_recorded_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bRecorded\\("
+      "constructor": "(?<!~)\\bRecorded\\("
     },
     {
       "name": "neg_witness_session_recordingdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bRecordingDoor\\("
+      "constructor": "(?<!~)\\bRecordingDoor\\("
     },
     {
       "name": "neg_witness_session_released_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReleased\\("
+      "constructor": "(?<!~)\\bReleased\\("
     },
     {
       "name": "neg_witness_session_returned_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bReturned\\("
+      "constructor": "(?<!~)\\bReturned\\("
     },
     {
       "name": "neg_witness_session_sessionevent_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSessionEvent\\("
+      "constructor": "(?<!~)\\bSessionEvent\\("
     },
     {
       "name": "neg_witness_session_sessioneventwriter_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSessionEventWriter\\("
+      "constructor": "(?<!~)\\bSessionEventWriter\\("
     },
     {
       "name": "neg_witness_session_sessionfrommachine_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSessionFromMachine\\("
+      "constructor": "(?<!~)\\bSessionFromMachine\\("
     },
     {
       "name": "neg_witness_session_sessionhandle_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bSessionHandle\\("
+      "constructor": "(?<!~)\\bSessionHandle\\("
     },
     {
       "name": "neg_witness_session_sessionmintdoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSessionMintDoor\\("
+      "constructor": "(?<!~)\\bSessionMintDoor\\("
     },
     {
       "name": "neg_witness_session_sessionopenkey_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSessionOpenKey\\("
+      "constructor": "(?<!~)\\bSessionOpenKey\\("
     },
     {
       "name": "neg_witness_session_transferable_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTransferable\\("
+      "constructor": "(?<!~)\\bTransferable\\("
     },
     {
       "name": "neg_witness_session_transition_detail_subsort_cell_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bsubsort_cell\\("
+      "constructor": "(?<!~)\\bsubsort_cell\\("
     },
     {
       "name": "neg_witness_session_vigil_mode_modewriter_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bModeWriter\\("
+      "constructor": "(?<!~)\\bModeWriter\\("
     },
     {
       "name": "neg_witness_session_watch_watchhooks_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWatchHooks\\("
+      "constructor": "(?<!~)\\bWatchHooks\\("
     },
     {
       "name": "neg_witness_session_witnessed_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWitnessed\\("
+      "constructor": "(?<!~)\\bWitnessed\\("
     },
     {
       "name": "neg_witness_sharedread_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSharedRead\\("
+      "constructor": "(?<!~)\\bSharedRead\\("
     },
     {
       "name": "neg_witness_sharedregion_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bSharedRegion\\("
+      "constructor": "(?<!~)\\bSharedRegion\\("
     },
     {
       "name": "neg_witness_solewriterproof_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSoleWriterProof\\("
+      "constructor": "(?<!~)\\bSoleWriterProof\\("
     },
     {
       "name": "neg_witness_spawn_parallelforrunner_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bParallelForRunner\\("
+      "constructor": "(?<!~)\\bParallelForRunner\\("
     },
     {
       "name": "neg_witness_spawn_shardplace_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bShardPlace\\("
+      "constructor": "(?<!~)\\bShardPlace\\("
     },
     {
       "name": "neg_witness_tagged_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTagged\\("
+      "constructor": "(?<!~)\\bTagged\\("
     },
     {
       "name": "neg_witness_thread_ownedthread_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bOwnedThread\\("
+      "constructor": "(?<!~)\\bOwnedThread\\("
     },
     {
       "name": "neg_witness_thread_quiescenceproof_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bQuiescenceProof\\("
+      "constructor": "(?<!~)\\bQuiescenceProof\\("
     },
     {
       "name": "neg_witness_threadnamed_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bThreadNamed\\("
+      "constructor": "(?<!~)\\bThreadNamed\\("
     },
     {
       "name": "neg_witness_time_boundedsleeper_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bBoundedSleeper\\("
+      "constructor": "(?<!~)\\bBoundedSleeper\\("
     },
     {
       "name": "neg_witness_time_clockreader_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bClockReader\\("
+      "constructor": "(?<!~)\\bClockReader\\("
     },
     {
       "name": "neg_witness_time_ptpclockreader_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bPtpClockReader\\("
+      "constructor": "(?<!~)\\bPtpClockReader\\("
     },
     {
       "name": "neg_witness_time_ptpdevicedoor_direct_construction",
       "reason": "use of deleted function",
-      "constructor": "\\bPtpDeviceDoor\\("
+      "constructor": "(?<!~)\\bPtpDeviceDoor\\("
     },
     {
       "name": "neg_witness_time_spindeadline_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bSpinDeadline\\("
+      "constructor": "(?<!~)\\bSpinDeadline\\("
     },
     {
       "name": "neg_witness_time_tscreader_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bTscReader\\("
+      "constructor": "(?<!~)\\bTscReader\\("
     },
     {
       "name": "neg_witness_unwrittenbytes_direct_construction",
       "reason": "no matching function for call",
-      "constructor": "\\bUnwrittenBytes\\("
+      "constructor": "(?<!~)\\bUnwrittenBytes\\("
     },
     {
       "name": "neg_witness_versionsource_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bVersionSource\\("
+      "constructor": "(?<!~)\\bVersionSource\\("
     },
     {
       "name": "neg_witness_versionstamp_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bVersionStamp\\("
+      "constructor": "(?<!~)\\bVersionStamp\\("
     },
     {
       "name": "neg_witness_widemonotonic_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWideMonotonic\\("
+      "constructor": "(?<!~)\\bWideMonotonic\\("
     },
     {
       "name": "neg_witness_writeonce_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWriteOnce\\("
+      "constructor": "(?<!~)\\bWriteOnce\\("
     },
     {
       "name": "neg_witness_writeoncenonnull_direct_construction",
       "reason": "is private within this context",
-      "constructor": "\\bWriteOnceNonNull\\("
+      "constructor": "(?<!~)\\bWriteOnceNonNull\\("
     }
   ],
   "roster": [
