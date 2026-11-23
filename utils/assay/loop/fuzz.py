@@ -31,12 +31,18 @@ Arguments
 
 Environment
     CRUCIBLE_BENCH_SLICE         The slice of the reserved partition when the host has more than one
-    AFL_BIN                      The directory of the AFL++ tools.  The default is the bin directory of the install
-                                 of the pin aflplusplus for the patched GCC (`setup install aflplusplus`)
     CRUCIBLE_CXX                 The patched g++ that the compiler wrappers call, and the gcc in the same directory
     CRUCIBLE_GCC16_PREFIX        The prefix of the patched GCC, when CRUCIBLE_CXX is not set.  The default is
                                  $HOME/.local/gcc16-patched-p8.  cmake/Toolchain-gcc16.cmake reads the two variables
                                  with the same rules.  The wrappers then call the compiler of the toolchain file
+
+    The AFL++ tools are those of the install of the pin aflplusplus for the
+    patched GCC (`setup install aflplusplus`, afl_directory()).  No AFL++
+    tool of PATH runs, and no variable names another directory: the AFL++ of
+    ~/.local/bin of the host has a GCC plugin of a different GCC.  Each
+    variable of the process whose name starts with AFL_ goes from the
+    environment of a tool, and AFL_PATH names the directory of the plugin of
+    the pinned install (_afl_environment()).
 
     Each instance stops with SIGINT: at the end of its time, at the limit
     of assay.core.proc and at an error of the command.  afl-fuzz then
@@ -77,12 +83,31 @@ Kept corpus
     tree shares.  A cache of that module has a size limit and an eviction,
     but the work root has neither, so no step removes a kept input.
 
+Probe
+    loop fuzz --probe BUILD_DIR HARNESS compiles the fuzz main and the unit
+    of the harness with the pinned afl-g++-fast, from the commands of the
+    compile database of BUILD_DIR, a build of the preset bench-fuzz.  The
+    test fuzz_afl_probe of test/fuzz/CMakeLists.txt runs it in each such
+    build, so a change that breaks the compile of a campaign fails in the
+    gate and not in the nightly.  The probe drops the output and the
+    dependency file of each command, and it writes each object into a
+    scratch directory.  The quarantine plugin of a command loads beside the
+    plugin of AFL++, as in the build of a campaign.  afl-cc runs with
+    AFL_DEBUG, which prints the compile that it runs, and the probe refuses
+    a plugin of AFL++ other than lib/afl/afl-gcc-pass.so of the pinned
+    install.  With no install of the pin, or with no pin for the host, the
+    probe prints why it does not run and exits with PROBE_SKIPPED.  An
+    install that its check refuses, such as an install whose plugin does not
+    load into the patched GCC, fails the probe (is_afl_absent()).
+
 Usage
     loop fuzz BUILD_DIR OUT_DIR HARNESS CPU_LIST SECONDS
+    loop fuzz --probe BUILD_DIR HARNESS
     guard selftest loop.fuzz
 
 Exit 0 when each instance ended with status 0 and the campaign saved no crash and no hang, 1 when an instance or a
-step failed or the campaign saved a crash or a hang, 2 on a usage error or a failed self-test.
+step failed or the campaign saved a crash or a hang, 2 on a usage error or a failed self-test.  The probe exits 0 when
+each unit compiles with the plugin of the pin, 77 when the host has no install of the pin, and 1 otherwise.
 """
 
 from __future__ import annotations
@@ -94,14 +119,16 @@ import shutil
 import signal
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from assay.core import cache, proc
+from assay.core import pins as pin_table
 from assay.core.paths import REPO_ROOT
 from assay.loop import bench
 from assay.readers import cmake as cmake_reader
+from assay.readers import compdb
 from assay.setup import gcc as patched_gcc
 from assay.setup import install as setup_install
 from assay.setup import pins as cmake_pin
@@ -117,6 +144,23 @@ _RUN_DEFINITION = re.compile(r"^inline void run_([A-Za-z0-9_]+)\(", re.MULTILINE
 AFL_README = "README.txt"
 # The pin and the tool of `setup install` that give the AFL++ tools (the environment).
 AFL_TOOL = "aflplusplus"
+# The start of the name of each variable that an AFL++ tool reads.  _afl_environment() drops each such variable of the
+# process (the environment).
+AFL_PREFIX = "AFL_"
+# The word of the probe, the status of a probe that does not run because the host has no install of the pin, and the
+# marks of the objects of the two units of a harness in their paths of the compile database (the probe).
+PROBE_WORD = "--probe"
+PROBE_SKIPPED = 77
+PROBE_MARKS = ("/fuzz_{harness}.dir/", "/fuzz_harness_{harness}.dir/")
+# The words of a compile command that the probe drops, alone or with the word after them (the probe).  The probe
+# writes its own object with no dependency file.  afl-g++-fast runs the cc1plus of the patched GCC, so the quarantine
+# plugin of the command loads beside the plugin of AFL++, as in the build of `loop fuzz`.
+PROBE_DROPPED_PAIRS = frozenset({"-o", "-MT", "-MF", "-MQ"})
+PROBE_DROPPED_WORDS = frozenset({"-MD", "-MMD"})
+# The characters of the end of the output of a compile of the probe that fails, which its message gives.
+PROBE_OUTPUT_TAIL = 4000
+# The plugin of AFL++ in a compile command that afl-cc prints with AFL_DEBUG (the probe).
+_LOADED_PLUGIN = re.compile(r"-fplugin=(\S*afl-gcc-pass\.so)")
 # The entry of the CMake cache that names the compiler of an instrumented build (configure_and_build()).
 COMPILER_ENTRY = "CMAKE_CXX_COMPILER"
 # The directory of the kept state of the campaigns in the work root, the two directories of the state of a harness, the
@@ -267,13 +311,40 @@ def campaign_verdict(statuses: Sequence[int], findings: Findings, binary: Path) 
 
 
 def afl_directory() -> Path:
-    """Return the directory of the AFL++ tools: AFL_BIN, else the install of the pin aflplusplus (the environment).
+    """Return the bin directory of the install of the pin aflplusplus for the patched GCC (the environment).
+
+    No AFL++ tool of PATH and no directory that a variable names runs.  The AFL++ of ~/.local/bin of the host has a
+    GCC plugin of a different GCC, which cc1plus of the patched GCC cannot load.
 
     Raises:
-        setup_install.InstallError: If AFL_BIN is not set, and the pinned AFL++ is not installed for the patched GCC
+        setup_install.InstallError: If the pinned AFL++ is not installed for the patched GCC
     """
-    named = os.environ.get("AFL_BIN", "")
-    return Path(named) if named else setup_install.program(AFL_TOOL)
+    return setup_install.program(AFL_TOOL)
+
+
+def afl_plugin(afl_bin: Path) -> Path:
+    """Return the GCC plugin of the install whose bin directory is afl_bin: lib/afl/afl-gcc-pass.so beside bin."""
+    return afl_bin.parent / setup_install.AFL_PLUGIN
+
+
+def is_afl_absent(problem: setup_install.InstallError) -> bool:
+    """Return True when the refusal of afl_directory() tells that the pin has no install on this host (the probe).
+
+    The host has no pin of AFL++, or no directory of the pin.  An install whose check fails, such as an install whose
+    plugin does not load into the patched GCC, is present, and it gives False.
+    """
+    if problem.status == setup_install.UNSUPPORTED:
+        return True
+    if problem.status != setup_install.ABSENT:
+        return False
+    tool = setup_install.TOOLS[AFL_TOOL]
+    table = pin_table.load()
+    try:
+        pin = setup_install.pin_of(tool, table)
+        directory = setup_install.directory_of(tool, pin, cache.tools_root(), table)
+    except setup_install.InstallError:
+        return True
+    return not directory.is_dir()
 
 
 def kept_directory(harness: str) -> Path:
@@ -363,7 +434,7 @@ def minimized(kept: Path, staging: Path, afl_bin: Path, binary: Path, cpus: int)
     for path in staging.iterdir():
         shutil.copyfile(path, corpus / path.name)
     shutil.rmtree(following, ignore_errors=True)
-    environment = dict(_afl_environment(), AFL_PATH=str(afl_bin), **SANITIZER_OPTIONS)
+    environment = dict(_afl_environment(afl_bin), AFL_PATH=str(afl_bin), **SANITIZER_OPTIONS)
     limits = ("-m", "none", "-t", "2000", "-T", str(max(1, cpus)))
     command = [str(afl_bin / "afl-cmin"), "-i", str(corpus), "-o", str(following), *limits, "--", str(binary)]
     completed = proc.run(proc.Command(command, timeout_s=proc.TOOL_S, env=environment, stderr=proc.Output.MERGE))
@@ -518,10 +589,17 @@ def instance_command(campaign: Campaign, index: int, afl_bin: Path, binary: Path
             "--", str(binary)]
 
 
-def _afl_environment() -> dict[str, str]:
-    """Return the environment of this process, with the compilers of the patched GCC for the AFL++ tools."""
+def _afl_environment(afl_bin: Path) -> dict[str, str]:
+    """Return the environment of this process for the AFL++ tools of afl_bin (the environment).
+
+    Each variable of the process whose name starts with AFL_ goes, so an AFL_PATH of the shell cannot give afl-cc the
+    plugin of a different install.  The compilers are those of the patched GCC, and AFL_PATH names the directory of
+    the plugin of afl_bin.
+    """
     c_compiler, cxx_compiler = patched_gcc.toolchain_compilers()
-    return proc.environment({"AFL_CC": str(c_compiler), "AFL_CXX": str(cxx_compiler)})
+    inherited = {name: value for name, value in proc.environment().items() if not name.startswith(AFL_PREFIX)}
+    plugin_directory = afl_plugin(afl_bin).parent
+    return dict(inherited, AFL_CC=str(c_compiler), AFL_CXX=str(cxx_compiler), AFL_PATH=str(plugin_directory))
 
 
 def instance_run(campaign: Campaign, index: int, afl_bin: Path, binary: Path, cmplog_binary: Path,
@@ -539,7 +617,7 @@ def instance_run(campaign: Campaign, index: int, afl_bin: Path, binary: Path, cm
     Returns:
         The command
     """
-    environment = dict(_afl_environment(), TMPDIR=str(scratch), **SANITIZER_OPTIONS)
+    environment = dict(_afl_environment(afl_bin), TMPDIR=str(scratch), **SANITIZER_OPTIONS)
     return proc.Command(instance_command(campaign, index, afl_bin, binary, cmplog_binary),
                         timeout_s=campaign.seconds + STOP_GRACE_S + INSTANCE_MARGIN_S, env=environment,
                         stdout=campaign.out_dir / f"instance-{index}.log", stderr=proc.Output.MERGE,
@@ -582,7 +660,7 @@ def run_instances(campaign: Campaign, afl_bin: Path, binary: Path, cmplog_binary
     Raises:
         proc.ToolFailed: If afl-cmin fails, the harness does not write its seeds, or an instance does not start
     """
-    environment = _afl_environment()
+    environment = _afl_environment(afl_bin)
     scratch = campaign.out_dir / "tmp"
     scratch.mkdir(parents=True, exist_ok=True)
     try:
@@ -627,7 +705,7 @@ def run_campaign(root: Path, campaign: Campaign) -> int:
         and no hang, else 1
     """
     afl_bin = afl_directory()
-    environment = _afl_environment()
+    environment = _afl_environment(afl_bin)
     cmplog_dir = Path(f"{campaign.build_dir}-cmplog")
     configure_and_build(root, campaign.build_dir, campaign.harness, afl_bin, environment)
     configure_and_build(root, cmplog_dir, campaign.harness, afl_bin, dict(environment, AFL_GCC_CMPLOG="1"))
@@ -765,6 +843,63 @@ def leftover_cases(work: Path) -> bool:
         print(f"  the planted campaign after a kill did not run: {problem}")
         return False
     return statuses == [0] and any(path.read_bytes() == left for path in (work / "kept" / CORPUS).iterdir())
+
+
+def probe_cases(expect: Callable[[str, bool], None]) -> None:
+    """Hold the parts of the probe and the environment of the tools that need no install of AFL++ (the probe)."""
+    afl_bin = Path("/pinned/aflplusplus/bin")
+    with tempfile.TemporaryDirectory(prefix="loop-fuzz-probe-test-") as work:
+        build = Path(work) / "build"
+        main_object = build / "test/fuzz/CMakeFiles/fuzz_region.dir/boundary/fuzz_main.cpp.o"
+        unit_object = build / "test/fuzz/CMakeFiles/fuzz_harness_region.dir/boundary/harness_entry.cpp.o"
+        compiles = [
+            {"directory": str(build), "file": "/tree/test/fuzz/boundary/fuzz_main.cpp", "output": str(main_object),
+             "command": f"/gcc/g++ -DNAME=region -fplugin=/q.so -fplugin-arg-q-root=/tree -MD -MT {main_object} "
+                        f"-MF {main_object}.d -o {main_object} -c /tree/test/fuzz/boundary/fuzz_main.cpp"},
+            {"directory": str(build), "file": "/tree/test/fuzz/boundary/harness_entry.cpp",
+             "output": str(unit_object), "command": f"/gcc/g++ -o {unit_object} -c /tree/harness_entry.cpp"},
+        ]
+        build.mkdir()
+        compdb.plant(build, compiles)
+        rows = probe_rows(build, "region")
+        expect("the probe takes the fuzz main and the unit of the harness, in this order",
+               [row.file for row in rows] == ["/tree/test/fuzz/boundary/fuzz_main.cpp",
+                                              "/tree/test/fuzz/boundary/harness_entry.cpp"])
+        command = probe_command(rows[0], afl_bin, Path("/scratch/unit-0.o"))
+        expect(f"the probe compiles with the pinned afl-g++-fast, keeps the quarantine plugin and drops the output and "
+               f"the dependency file of the command: {command}",
+               command == [str(afl_bin / "afl-g++-fast"), "-DNAME=region", "-fplugin=/q.so",
+                           "-fplugin-arg-q-root=/tree", "-c", "/tree/test/fuzz/boundary/fuzz_main.cpp", "-o",
+                           "/scratch/unit-0.o"])
+        try:
+            probe_rows(build, "branch")
+            is_refused = False
+        except FuzzError:
+            is_refused = True
+        expect("a build with no compile of the units of a harness refuses the probe", is_refused)
+    debug = ("[D] cd '/b'; '/gcc/g++' '-fplugin=/pinned/aflplusplus/lib/afl/afl-gcc-pass.so' -c x.cpp\n"
+             "[D] cd '/b'; '/gcc/g++' '-fplugin=/pinned/aflplusplus/lib/afl/afl-gcc-pass.so' -c y.cpp\n")
+    expect("the debug output of afl-cc gives the plugin of AFL++ that the compile loads",
+           loaded_plugins(debug) == (str(afl_plugin(afl_bin)),))
+    expect("a plugin of PATH, such as the plugin of ~/.local, is a different plugin",
+           loaded_plugins("'-fplugin=/home/user/.local/lib/afl/afl-gcc-pass.so'\n") != (str(afl_plugin(afl_bin)),))
+    saved = os.environ.get("AFL_PATH")
+    os.environ["AFL_PATH"] = "/home/user/.local/lib/afl"
+    try:
+        environment = _afl_environment(afl_bin)
+    finally:
+        if saved is None:
+            os.environ.pop("AFL_PATH", None)
+        else:
+            os.environ["AFL_PATH"] = saved
+    expect(f"the environment of a tool drops an AFL_PATH of the shell and names the plugin of the pin: "
+           f"{environment.get('AFL_PATH')}",
+           environment.get("AFL_PATH") == str(afl_plugin(afl_bin).parent)
+           and all(name in {"AFL_CC", "AFL_CXX", "AFL_PATH"} for name in environment if name.startswith(AFL_PREFIX)))
+    expect("a host with no pin of AFL++ has no install, and the probe does not run",
+           is_afl_absent(setup_install.InstallError("no pin", setup_install.UNSUPPORTED)))
+    expect("an install that does not meet its pin is no absent install, and the probe fails",
+           not is_afl_absent(setup_install.InstallError("other version", setup_install.NOT_PINNED)))
 
 
 def self_test() -> int:
@@ -979,11 +1114,102 @@ def self_test() -> int:
         names = sorted(path.name for path in (kept / CORPUS).iterdir())
         expect(f"an afl-cmin that cannot start fails the campaign, and the corpus keeps each input: {names}",
                is_refused and names == ["main-id:000000", "main-id:000001", "older"])
+    probe_cases(expect)
 
     if failures:
         print(f"loop fuzz --self-test: FAILED, {len(failures)} case(s) did not hold")
         return 2
     print("loop fuzz --self-test: every case holds.")
+    return 0
+
+
+def probe_rows(build_dir: Path, harness: str) -> tuple[compdb.CompileEntry, ...]:
+    """Return the compiles of the fuzz main and of the unit of a harness in the compile database of a build (the probe).
+
+    The rows come in the order of PROBE_MARKS.  Complexity: linear in the rows of the database.
+
+    Raises:
+        FuzzError: If the database cannot be read, or it holds no compile of one of the two units
+    """
+    try:
+        rows = compdb.entries(build_dir)
+    except compdb.CompdbError as problem:
+        raise FuzzError(f"the compile database of {build_dir} cannot be read: {problem}") from None
+    found: list[compdb.CompileEntry] = []
+    for mark in PROBE_MARKS:
+        wanted = mark.format(harness=harness)
+        row = next((item for item in rows if item.output is not None and wanted in item.output), None)
+        if row is None:
+            raise FuzzError(f"{build_dir} holds no compile of an object of {wanted.strip('/')}.  Give a build of the "
+                            f"preset bench-fuzz, which sets CRUCIBLE_FUZZ")
+        found.append(row)
+    return tuple(found)
+
+
+def probe_command(row: compdb.CompileEntry, afl_bin: Path, output: Path) -> list[str]:
+    """Return the compile of a row with the afl-g++-fast of afl_bin, into output (the probe).
+
+    The compiler of the row goes, and so do the words of PROBE_DROPPED_PAIRS with the word after each and the words of
+    PROBE_DROPPED_WORDS.  Complexity: linear in the words.
+    """
+    words = row.argv()
+    kept = [str(afl_bin / "afl-g++-fast")]
+    is_value = False
+    for word in words[1:]:
+        if is_value:
+            is_value = False
+            continue
+        if word in PROBE_DROPPED_PAIRS:
+            is_value = True
+            continue
+        if word in PROBE_DROPPED_WORDS:
+            continue
+        kept.append(word)
+    return [*kept, "-o", str(output)]
+
+
+def loaded_plugins(output: str) -> tuple[str, ...]:
+    """Return each GCC plugin of AFL++ that the debug output of afl-cc gives to the compiler, sorted (the probe)."""
+    return tuple(sorted(set(_LOADED_PLUGIN.findall(output))))
+
+
+def probe(build_dir: Path, harness: str) -> int:
+    """Compile the fuzz main and the unit of a harness of a build with the pinned afl-g++-fast (the probe).
+
+    Returns:
+        0 when each unit compiles with the plugin of the pinned install, PROBE_SKIPPED when the host has no install of
+        the pin, and 1 when a unit does not compile or afl-cc gives the compiler a different plugin
+
+    Raises:
+        FuzzError: If the build holds no compile of one of the two units
+    """
+    try:
+        afl_bin = afl_directory()
+    except setup_install.InstallError as problem:
+        if is_afl_absent(problem):
+            print(f"loop fuzz: the probe does not run, because the host has no install of the pin {AFL_TOOL}: "
+                  f"{problem}", flush=True)
+            return PROBE_SKIPPED
+        print(f"loop fuzz: {problem}", file=sys.stderr)
+        return 1
+    rows = probe_rows(build_dir, harness)
+    plugin = str(afl_plugin(afl_bin))
+    environment = dict(_afl_environment(afl_bin), AFL_DEBUG="1")
+    with tempfile.TemporaryDirectory(prefix="loop-fuzz-probe-") as scratch:
+        for index, row in enumerate(rows):
+            command = probe_command(row, afl_bin, Path(scratch) / f"unit-{index}.o")
+            completed = proc.run(proc.Command(command, timeout_s=proc.BUILD_S, cwd=row.directory, env=environment,
+                                              stderr=proc.Output.MERGE))
+            if completed.exit != 0:
+                print(f"loop fuzz: afl-g++-fast of the pin does not compile {row.file}, exit {completed.exit}:\n"
+                      f"{completed.out[-PROBE_OUTPUT_TAIL:]}", file=sys.stderr)
+                return 1
+            plugins = loaded_plugins(completed.out)
+            if plugins != (plugin,):
+                print(f"loop fuzz: afl-cc gives the compile of {row.file} the plugins {plugins}, and the pinned install "
+                      f"holds {plugin}", file=sys.stderr)
+                return 1
+            print(f"loop fuzz: afl-g++-fast of the pin compiles {row.file} with {plugin}", flush=True)
     return 0
 
 
@@ -998,6 +1224,15 @@ def main(argv: list[str]) -> int:
     """
     if argv == ["--self-test"]:
         return self_test()
+    if argv[:1] == [PROBE_WORD]:
+        if len(argv) != 3:
+            print(f"loop fuzz: {PROBE_WORD} takes BUILD_DIR and HARNESS", file=sys.stderr)
+            return 2
+        try:
+            return probe(Path(argv[1]).resolve(), argv[2])
+        except (FuzzError, proc.ToolFailed, OSError) as problem:
+            print(f"loop fuzz: {problem}", file=sys.stderr)
+            return 1
     try:
         campaign = campaign_of(argv, REPO_ROOT, reserved_cpus())
     except (FuzzError, bench.BenchError) as problem:

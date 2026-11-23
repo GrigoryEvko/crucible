@@ -11,7 +11,6 @@ no test, so the nightly entry compiles the aarch64 build and only the release en
 jobs of its names.  The cases of the usage hold also when the caller runs in a heavy step.
 """
 
-import os
 import tempfile
 import threading
 import time
@@ -259,17 +258,10 @@ def run_cases(expect: testing.Expect) -> None:
         step = plan.Step("probe", NIGHTLY, ("guard", "check", "--rule", "x", plan.BUILD_OPTION), "a probe", "absent")
         blocked = runner.step(entry.Job(entry.JobKind.STEP, "probe", step=step), Path(directory) / "probe", 1e18)
         expect("a step whose build is not configured is blocked", blocked.state is entry.State.BLOCKED)
-        saved = os.environ.get("AFL_BIN")
-        os.environ["AFL_BIN"] = directory
-        try:
-            fuzz_step = next(item for item in plan.STEPS if item.command[:2] == entry.FUZZ_WORDS)
-            job = entry.Job(entry.JobKind.STEP, fuzz_step.name, step=fuzz_step, item="region")
-            campaign = runner.campaign(job, Path(directory) / "fuzz", 1e18)
-        finally:
-            if saved is None:
-                os.environ.pop("AFL_BIN", None)
-            else:
-                os.environ["AFL_BIN"] = saved
+        runner.afl_tools = lambda: Path(directory)
+        fuzz_step = next(item for item in plan.STEPS if item.command[:2] == entry.FUZZ_WORDS)
+        job = entry.Job(entry.JobKind.STEP, fuzz_step.name, step=fuzz_step, item="region")
+        campaign = runner.campaign(job, Path(directory) / "fuzz", 1e18)
         expect(
             f"a campaign with no afl-fuzz is blocked with the reason: {campaign.summary}",
             campaign.state is entry.State.BLOCKED and campaign.summary.startswith(f"the host has no {directory}"),

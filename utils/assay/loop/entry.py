@@ -63,7 +63,7 @@ Budget
 
 Campaign
     A campaign uses afl-fuzz in the directory of the AFL++ tools of
-    assay.loop.fuzz: AFL_BIN, else the install of the pin aflplusplus.  With
+    assay.loop.fuzz: the install of the pin aflplusplus.  With
     no afl-fuzz, the job of each harness is blocked, and the report gives the
     reason and the command of the install.  Else the job runs `loop fuzz BUILD OUT
     HARNESS CPUS SECONDS`.  BUILD is CAMPAIGN_BUILD in the tree, and OUT is a
@@ -429,7 +429,9 @@ class Runner:
     def __init__(self, root: Path, tier: tiers.Tier, jobs: int, logs: Path, presets: tiers.Tiers) -> None:
         """Keep the tree, the tier, the job count, the directory of the logs and the presets of the run.
 
-        The launcher of the privileged tests is LAUNCHER of assay.loop.caps.  A test gives a different file to it.
+        The launcher of the privileged tests is LAUNCHER of assay.loop.caps.  A test gives a different file to it.  The
+        directory of the AFL++ tools of a campaign is afl_directory() of assay.loop.fuzz, and a test gives a different
+        function to it.
         """
         self.root = root
         self.tier = tier
@@ -440,6 +442,7 @@ class Runner:
         self.evidence_left = 0
         self.campaigns_left = 0
         self.launcher = caps.LAUNCHER
+        self.afl_tools: Callable[[], Path] = fuzz.afl_directory
 
     def master(self, name: str) -> list[str]:
         """Return the words that run a master of the tree."""
@@ -663,7 +666,7 @@ class Runner:
         """Run one campaign of AFL++ on a harness, or give the reason why it cannot run (the campaign)."""
         self.campaigns_left = max(1, self.campaigns_left)
         try:
-            tool = fuzz.afl_directory() / "afl-fuzz"
+            tool = self.afl_tools() / "afl-fuzz"
         except setup_install.InstallError as problem:
             self.campaigns_left -= 1
             return Outcome(job, State.BLOCKED, str(problem))

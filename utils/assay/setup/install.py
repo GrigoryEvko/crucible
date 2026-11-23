@@ -925,9 +925,15 @@ AFL_PROBE = "int main() { return 0; }\n"
 
 
 def afl_environment() -> dict[str, str]:
-    """Return the environment of this process, with the patched GCC as the compilers of the AFL++ tools."""
+    """Return the environment of this process, with the patched GCC as the compilers of the AFL++ tools.
+
+    Each variable of the process whose name starts with AFL_ goes, so an AFL_PATH of the shell, such as one that names
+    the plugin of an AFL++ of ~/.local, does not reach the build or the check.  afl-cc then finds the plugin in
+    ../lib/afl beside its own program (built tool).
+    """
     c_compiler, cxx_compiler = patched_gcc.toolchain_compilers()
-    return proc.environment({"AFL_CC": str(c_compiler), "AFL_CXX": str(cxx_compiler), "AFL_QUIET": "1"})
+    inherited = {name: value for name, value in proc.environment().items() if not name.startswith("AFL_")}
+    return dict(inherited, AFL_CC=str(c_compiler), AFL_CXX=str(cxx_compiler), AFL_QUIET="1")
 
 
 def compiler_identity() -> str:
