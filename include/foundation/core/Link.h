@@ -114,25 +114,46 @@ public:
 
     // on_some with the Ref, or on_none.  A const Link gives on_some a Ref of
     // const.  The match borrows a copy of the Link, so on_some takes the Ref
-    // by const reference or by value.
+    // by const reference or by value.  The match calls one arm, and a call is
+    // no consume, so the arms hold no linear value by value
+    // (ArmsHoldNoLinearValue of foundation/core/Choice.h), and each match has
+    // a deleted twin for arms that hold one.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) & {
         const Option<Ref<T, Brand>> target = target_;
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
     }
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) && {
         const Option<Ref<T, Brand>> target = target_;
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
     }
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T const, Brand> const&> && std::is_invocable_v<OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) const& {
         const Option<Ref<T const, Brand>> target = option();
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
     }
+
+    // Arms that hold a linear value by value bind to these overloads, so the
+    // refusal gives its reason.
+    template <class OnSome, class OnNone>
+        requires(!ArmsHoldNoLinearValue<OnSome, OnNone>)
+                 && std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
+    void match(OnSome&& on_some, OnNone&& on_none) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires(!ArmsHoldNoLinearValue<OnSome, OnNone>)
+                 && std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
+    void match(OnSome&& on_some, OnNone&& on_none) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires(!ArmsHoldNoLinearValue<OnSome, OnNone>)
+                 && std::is_invocable_v<OnSome, Ref<T const, Brand> const&> && std::is_invocable_v<OnNone>
+    void match(OnSome&& on_some, OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // True when the Link refers to an object and holds gives true for it.
     template <class Holds>

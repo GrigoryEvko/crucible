@@ -65,6 +65,30 @@ static_assert(std::is_same_v<decltype(std::declval<NodeLink const&>().option()),
 static_assert(std::is_same_v<decltype(*std::declval<NodeLink&>().begin()), Ref<Node, Chain>>);
 static_assert(std::is_same_v<decltype(*std::declval<NodeLink const&>().begin()), Ref<Node const, Chain>>);
 
+// The match calls one arm, and a call is no consume, so an arm that holds a
+// linear value by value binds to the deleted twin of each match.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LinearEnd {
+    int handle = 0;
+    constexpr explicit LinearEnd(int value) noexcept : handle{value} {}
+    constexpr LinearEnd(LinearEnd&&) noexcept = default;
+    constexpr LinearEnd& operator=(LinearEnd&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    LinearEnd(LinearEnd const&) = delete("a linear end of the check does not copy");
+    LinearEnd& operator=(LinearEnd const&) = delete("a linear end of the check does not copy");
+};
+using HoldsEnd = decltype([held = LinearEnd{1}](auto) noexcept { return held.handle; });
+using HoldsNothing = decltype([](auto) noexcept { return 0; });
+using NoneArm = decltype([]() noexcept { return 0; });
+template <class Target, class Arm>
+concept MatchesLink =
+    requires(Target link, Arm arm) { static_cast<Target>(link).match(static_cast<Arm&&>(arm), NoneArm{}); };
+static_assert(MatchesLink<NodeLink&, HoldsNothing> && MatchesLink<NodeLink&&, HoldsNothing>
+              && MatchesLink<NodeLink const&, HoldsNothing>);
+static_assert(!MatchesLink<NodeLink&, HoldsEnd> && !MatchesLink<NodeLink&&, HoldsEnd>
+              && !MatchesLink<NodeLink const&, HoldsEnd>);
+
 // The transfer facts of refers_deep{}: a const Link is Shareable when its
 // object is, and a Link is Sendable only when two threads can write its
 // object.

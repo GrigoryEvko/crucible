@@ -3512,6 +3512,9 @@ foundation_neg_compile_test(neg_core_call_ref_wrong_signature
 foundation_neg_compile_test(neg_core_link_const_writes
   "conversion from .Ref<const \\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. to non-scalar type .Ref<\\{anonymous\\}::Node,\\[\\.\\.\\.\\]>. requested"
   "neg_core_link_const_writes.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_link_match_linear_arm
+  "use of deleted function .void foundation::core::Link<T, Brand>::match\\(OnSome&&, OnNone&&\\) &"
+  "the body holds a linear value by value, and the door calls it with no consume")
 foundation_neg_compile_test(neg_core_link_other_brand
   "no match for .operator=. \\(operand types are .foundation::core::Link<\\{anonymous\\}::Node, \\{anonymous\\}::First>. and .const foundation::core::Ref<\\{anonymous\\}::Node, \\{anonymous\\}::Second>.\\)"
   "neg_core_link_other_brand.cpp:[0-9]+:[0-9]+: error")
