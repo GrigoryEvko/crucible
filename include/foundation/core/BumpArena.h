@@ -390,8 +390,10 @@ private:
 
     // count copies of fill in new bytes, at the alignment of T, as a run of
     // the brand.  A count of zero gives the empty run and takes no bytes.  A
-    // count past the largest count of a View ends the process.  Complexity:
-    // O(count).
+    // count past the largest count of a View ends the process.  The callers
+    // give counts of run time from their data, so no type holds the bound.
+    // The check runs one time for each call, before the loop, and its
+    // refusal is cold and out of line.  Complexity: O(count).
     template <class T, class Brand>
     [[nodiscard]] ArenaRun<T, Brand> fill_(std::size_t count, T const& fill) noexcept {
         if (count == 0) {
