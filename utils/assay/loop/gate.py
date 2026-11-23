@@ -416,7 +416,9 @@ Reduce
     ledger.
 
     The gate lowers the rows only when the first round built each
-    configuration of CONFIGURATIONS with no problem (is_each_built()).  A
+    configuration of CONFIGURATIONS with no problem (is_each_built()).  The
+    configurations of ON_REQUEST are in that set, so a round of
+    --all-configurations with no --v4 lowers no row either.  A
     landing that builds only some configurations then lowers no row, and
     its checks still judge each of its builds.  After each leg of the first
     round ended, the gate runs one `guard write --rule RULE --build-dir
@@ -592,7 +594,8 @@ Lower of a budget
     --lower-reason TEXT`) lets the gate make that write in its own run.  The
     rules are those of LOWER_RULES.
       * The candidate selects each configuration, as --all-configurations
-        does (the selection).
+        and --v4 together do (the selection).  A lowered row holds the
+        largest measure of each build, release too.
       * When the first round built each configuration with no problem, the
         gate runs `guard write --rule RULE --lower --row ITEM... --reason
         TEXT --build-dir BUILD...` of the warm tree for each rule and each
@@ -1020,7 +1023,8 @@ class Candidate:
     """The commit of a landing: the commit that the composition started from, the commit, the paths and the focus.
 
     `focus` is empty for the commit of a batch, and it gives the configurations of a run of the base (the run of the
-    base).  `is_every` selects each configuration, as --all-configurations does (the selection).  `built` names each
+    base).  `is_every` selects each configuration other than those of ON_REQUEST, as --all-configurations does (the
+    selection).  A candidate with `lowers` selects those of ON_REQUEST too.  `built` names each
     file of BUILT_FILES that the merge of assay.loop.land leaves to the gate.  The gate adds each file that the change
     can change, and it writes each one before the tests of each configuration (the built files).  `title` names the
     run in the first line of the check, such as "the run of the base at COMMIT".  The landing gives it, because only
@@ -2070,7 +2074,10 @@ class Gate:
                 presets += each_parse
             counted = careful(lambda: counted_rules(self.tree), (), "the counted ledgers", "no reduce")
             selected = select(
-                candidate.changed, presets, self.is_every or candidate.is_every or bool(candidate.lowers), self.is_v4
+                candidate.changed,
+                presets,
+                self.is_every or candidate.is_every or bool(candidate.lowers),
+                self.is_v4 or bool(candidate.lowers),
             )
             plan = tuple(
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
