@@ -134,17 +134,31 @@ parse_qdisc_backlog(ExternalTelemetryText text) noexcept;
 [[nodiscard]] ::fixy::Result<DeclaredSysctlSnapshot, NicTelemetryError>
 parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
 
+// The bits of a byte for each microsecond of a second: 8 bits times 10^6
+// microseconds.
+inline constexpr std::uint64_t kBitMicrosecondsPerByteSecond = 8 * kPartsPerMillion;
+
+// The dropped packets of the counters for each million packets, at most one
+// million.  The kernel gives the counters, so each sum saturates.  The ratio
+// is the floor of the exact quotient of integers, so it has the same bits on
+// each target.
 [[nodiscard]] constexpr std::uint64_t netdev_drop_ppm(NetdevCounters counters) noexcept {
-    const std::uint64_t packets = counters.rx_packets + counters.tx_packets;
+    const std::uint64_t packets = ::fixy::saturating_add(counters.rx_packets, counters.tx_packets);
     const std::uint64_t dropped =
-        counters.rx_dropped + counters.tx_dropped + counters.rx_fifo_errors + counters.tx_fifo_errors;
+        ::fixy::saturating_add(::fixy::saturating_add(counters.rx_dropped, counters.tx_dropped),
+                               ::fixy::saturating_add(counters.rx_fifo_errors, counters.tx_fifo_errors));
     if (packets == 0 || dropped == 0) {
         return 0;
     }
-    const long double ppm = static_cast<long double>(dropped) * 1000000.0L / static_cast<long double>(packets);
-    return static_cast<std::uint64_t>(ppm < 1000000.0L ? ppm : 1000000.0L);
+    const std::uint64_t ppm =
+        ::fixy::checked_mul_div(dropped, kPartsPerMillion, packets).value_or(::fixy::max_of<std::uint64_t>);
+    return ::fixy::min(ppm, kPartsPerMillion);
 }
 
+// The bits for each second that the largest socket window carries in one
+// round trip: the floor of window * 8 * 10^6 / rtt_us, or the largest value
+// for no window and for a rate past 64 bits.  A round trip of zero counts as
+// one microsecond.
 [[nodiscard]] constexpr std::uint64_t sysctl_throughput_ceiling_bps(SysctlSnapshot sysctl,
                                                                     std::uint64_t rtt_us) noexcept {
     if (rtt_us == 0) {
@@ -154,13 +168,10 @@ parse_sysctl_snapshot(ExternalTelemetryText text) noexcept;
     window = ::fixy::max(window, std::uint64_t{sysctl.tcp_rmem_max_bytes});
     window = ::fixy::max(window, std::uint64_t{sysctl.tcp_wmem_max_bytes});
     if (window == 0) {
-        return UINT64_MAX;
+        return ::fixy::max_of<std::uint64_t>;
     }
-    long double bps = static_cast<long double>(window) * 8000000.0L / static_cast<long double>(rtt_us);
-    if (bps >= static_cast<long double>(UINT64_MAX)) {
-        return UINT64_MAX;
-    }
-    return static_cast<std::uint64_t>(bps);
+    return ::fixy::checked_mul_div(window, kBitMicrosecondsPerByteSecond, rtt_us)
+        .value_or(::fixy::max_of<std::uint64_t>);
 }
 
 class NicTelemetrySnapshot;
@@ -233,23 +244,31 @@ private:
     std::uint64_t sequence_ = 0;
 };
 
-// The base is at least one bit per second, so the positive mint passes.
+// The smallest of the line rate, the ceiling of the sysctl windows and the
+// bottleneck of TCP, less the fair share of the bytes in flight, and at
+// least one bit per second, so the positive mint passes.  The fair share is
+// in_flight_bytes * 8 * 10^6 / rtt_us bits per second, times
+// fairness_penalty_ppm / 10^6.  The two factors of 10^6 cancel, so the
+// penalty is the floor of in_flight_bytes * 8 * fairness_penalty_ppm /
+// rtt_us, in integers.  The bandwidth is an integer, and its double is the
+// nearest double, so it has the same bits on each target.
 [[nodiscard]] constexpr PositiveEffectiveBandwidthBps
 compute_effective_bandwidth(NicTelemetrySnapshot const& snapshot, NicTelemetryPolicy policy = {}) noexcept {
     auto const& tcp = snapshot.tcp().peek().value();
     const std::uint64_t rtt_us = ::fixy::max(std::uint64_t{1}, tcp.rt_prop_us.value());
     const std::uint64_t line_rate =
-        snapshot.line_rate_bps().value() == 0 ? UINT64_MAX : snapshot.line_rate_bps().value();
+        snapshot.line_rate_bps().value() == 0 ? ::fixy::max_of<std::uint64_t> : snapshot.line_rate_bps().value();
     const std::uint64_t sysctl_ceiling = sysctl_throughput_ceiling_bps(snapshot.sysctl().peek().value(), rtt_us);
     const std::uint64_t tcp_btl = tcp.btl_bw_bps.value();
 
-    long double base = static_cast<long double>(::fixy::min(::fixy::min(line_rate, sysctl_ceiling), tcp_btl));
-    const long double in_flight_bps =
-        static_cast<long double>(tcp.in_flight_bytes) * 8000000.0L / static_cast<long double>(rtt_us);
-    const long double penalty = in_flight_bps * static_cast<long double>(policy.fairness_penalty_ppm) / 1000000.0L;
-    const long double reduced = base - penalty;
-    base = 1.0L < reduced ? reduced : 1.0L;
-    return ::fixy::mint_refined<::fixy::positive>(static_cast<double>(base));
+    const std::uint64_t base = ::fixy::min(::fixy::min(line_rate, sysctl_ceiling), tcp_btl);
+    const std::uint64_t penalty_scale = std::uint64_t{8} * policy.fairness_penalty_ppm;
+    const std::uint64_t effective =
+        ::fixy::checked_mul_div(std::uint64_t{tcp.in_flight_bytes}, penalty_scale, rtt_us)
+            .match(
+                [base](std::uint64_t penalty) noexcept { return penalty < base ? base - penalty : std::uint64_t{0}; },
+                [] noexcept { return std::uint64_t{0}; });
+    return ::fixy::mint_refined<::fixy::positive>(static_cast<double>(::fixy::max(std::uint64_t{1}, effective)));
 }
 
 [[nodiscard]] constexpr auto

@@ -46,6 +46,9 @@ using PositiveMicroseconds = ::fixy::Positive<std::uint64_t>;
 using PositiveWindowBytes = ::fixy::Positive<std::uint32_t>;
 using PositiveSamplePeriodNs = ::fixy::Positive<std::uint64_t>;
 
+// The parts of a million of a ratio.
+inline constexpr std::uint64_t kPartsPerMillion = 1000000;
+
 struct BbrFields {
     PositiveBandwidthBps btl_bw_bps = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
     PositiveMicroseconds rt_prop_us = ::fixy::mint_refined_constant<::fixy::positive, std::uint64_t{1}>();
@@ -311,10 +314,13 @@ harvest_per_link(Ctx const& ctx, cog::CogIdentity const& nic, ::fixy::View<cntp:
     if (observed.sample_count < policy.min_samples || observed.p95_btl_bw_bps >= baseline_bps.value()) {
         return drift;
     }
-    constexpr std::uint64_t parts_per_million = 1000000;
+    // The missing bandwidth is below the baseline, so the exact quotient is
+    // below one million, and checked_mul_div takes the product in 128 bits.
     const std::uint64_t missing = baseline_bps.value() - observed.p95_btl_bw_bps;
-    const std::uint64_t drop_ppm = (missing * parts_per_million) / baseline_bps.value();
-    drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(drop_ppm < parts_per_million ? drop_ppm : parts_per_million);
+    const std::uint64_t drop_ppm =
+        ::fixy::min(::fixy::checked_mul_div(missing, kPartsPerMillion, baseline_bps.value()).value_or(kPartsPerMillion),
+                    kPartsPerMillion);
+    drift.bandwidth_drop_ppm = static_cast<std::uint32_t>(drop_ppm);
     drift.degraded = drift.bandwidth_drop_ppm >= policy.bandwidth_drop_ppm;
     return drift;
 }

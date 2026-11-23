@@ -202,6 +202,20 @@ void test_aggregate_and_drift() {
                                                    });
     CRUCIBLE_TEST_ASSERT(kTest, drift.degraded);
     CRUCIBLE_TEST_ASSERT(kTest, drift.bandwidth_drop_ppm >= 100000);
+
+    // The drop is the floor of the exact ratio: 1200 - 800 of 1200 Mbps is
+    // 333333 parts of a million, also when the product of the missing
+    // bandwidth and one million needs more than 64 bits.  A baseline of 2^60
+    // bps with nothing observed is a drop of all of it.
+    topology::CongestionDriftPolicy const policy{.bandwidth_drop_ppm = 100000, .min_samples = 1};
+    topology::CongestionAggregate const exact{.sample_count = 1, .p95_btl_bw_bps = 800000000};
+    auto const third = topology::detect_congestion_drift(exact, baseline, policy);
+    CRUCIBLE_TEST_ASSERT(kTest, third.bandwidth_drop_ppm == 333333);
+    topology::CongestionAggregate const silent{.sample_count = 1, .p95_btl_bw_bps = 0};
+    auto const wide = ::fixy::mint_refined<::fixy::positive>(std::uint64_t{1} << 60);
+    auto const all = topology::detect_congestion_drift(silent, wide, policy);
+    CRUCIBLE_TEST_ASSERT(kTest, all.bandwidth_drop_ppm == 1000000);
+    CRUCIBLE_TEST_ASSERT(kTest, all.degraded);
     ::fixy::check::pass(kTest, "  test_aggregate_and_drift: PASSED\n");
 }
 

@@ -118,6 +118,65 @@ static void test_parsers_and_drop_rate() {
     ::fixy::check::pass(kTest, "  test_parsers_and_drop_rate:           PASSED\n");
 }
 
+// Each rate of the telemetry is the floor of an exact quotient of integers,
+// so it has the same value on each target.  A long double has 64 bits of
+// significand on x86_64 and 113 on aarch64.  The quotient of long double of
+// the first pair below gave 129678 on x86_64 and 129677 on aarch64, and the
+// floor is 129677.  A sum of counters past 64 bits saturates and does not
+// wrap to a small count.
+static void test_integer_rates() {
+    constexpr std::uint64_t top = ::fixy::max_of<std::uint64_t>;
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(topology::NetdevCounters{
+                                    .rx_packets = 18182783979729537871ull,
+                                    .rx_dropped = 2357907060923367012ull,
+                                }) == 129677);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(topology::NetdevCounters{
+                                    .rx_packets = top,
+                                    .rx_dropped = top - 1,
+                                }) == 999999);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(topology::NetdevCounters{
+                                    .rx_packets = 3,
+                                    .rx_dropped = 1,
+                                }) == 333333);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(topology::NetdevCounters{
+                                    .rx_packets = top,
+                                    .tx_packets = 2,
+                                    .rx_dropped = 1,
+                                }) == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::netdev_drop_ppm(topology::NetdevCounters{
+                                    .rx_packets = 1,
+                                    .rx_dropped = top,
+                                    .tx_dropped = top,
+                                }) == 1000000);
+
+    topology::SysctlSnapshot const sysctl{.rmem_max_bytes = 67108864};
+    CRUCIBLE_TEST_ASSERT(kTest, topology::sysctl_throughput_ceiling_bps(sysctl, 3) == 178956970666666);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, topology::sysctl_throughput_ceiling_bps(topology::SysctlSnapshot{.rmem_max_bytes = top}, 1) == top);
+    CRUCIBLE_TEST_ASSERT(kTest, topology::sysctl_throughput_ceiling_bps(topology::SysctlSnapshot{}, 1) == top);
+
+    // A bottleneck of 80 Gbps less the fair share of 1000 bytes in flight
+    // over 1000 us at 100000 ppm: 1000 * 8 * 100000 / 1000 = 800000 bps.
+    Samples samples{};
+    ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init_ctx());
+    ::fixy::SequenceStamp const at_one = sampler.advance();
+    auto const snapshot =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(80000000000ull, 1000, 1000), samples.thermal, sampler, at_one)
+            .expect("a nic gives a snapshot");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::narrow<std::uint64_t>(topology::compute_effective_bandwidth(snapshot).value()).value_or(0)
+                   == 79999200000);
+    // A penalty above the bottleneck leaves one bit per second.
+    auto const starved =
+        topology::mint_nic_telemetry_snapshot(nic(), 100000000000ull, samples.counters, samples.backlog, samples.sysctl,
+                                              tcp_sample(1000, 1, 4000000000u), samples.thermal, sampler, at_one)
+            .expect("a nic gives a snapshot");
+    CRUCIBLE_TEST_ASSERT(
+        kTest, ::fixy::narrow<std::uint64_t>(topology::compute_effective_bandwidth(starved).value()).value_or(0) == 1);
+    ::fixy::check::pass(kTest, "  test_integer_rates:                   PASSED\n");
+}
+
 static void test_snapshot_mint() {
     Samples samples{};
     ::fixy::SequenceSource sampler = ::fixy::mint_sequence_source(init_ctx());
@@ -269,6 +328,7 @@ int main() {
     ::fixy::report(::fixy::Sink::Out, "test_topology_telemetry:\n");
     test_enumerator_names();
     test_parsers_and_drop_rate();
+    test_integer_rates();
     test_snapshot_mint();
     test_snapshot_grade_comes_from_the_sampler();
     test_effective_bandwidth_and_history();
