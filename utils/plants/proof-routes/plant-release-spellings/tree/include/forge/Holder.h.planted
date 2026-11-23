@@ -1,0 +1,19 @@
+#pragma once
+
+#include <forge/Door.h>
+
+// A class that holds the proof type forge::Door through its template
+// argument.  The member release() is its door: it moves the proof out.
+namespace forge {
+
+template <class P> class Holder {
+    P proof_;
+
+public:
+    P release() && { return static_cast<P&&>(proof_); }
+    int count() const { return 1; }
+};
+
+inline void drop(Door&&) {}
+
+}  // namespace forge

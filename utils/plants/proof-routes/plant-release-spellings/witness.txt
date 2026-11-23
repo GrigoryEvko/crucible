@@ -1,0 +1,16 @@
+# The two spellings static_cast<Holder<Door>&&>(held).release() and
+# std::move(held).release() give no route, outside a template and in a
+# template body.  A cast to the class of its object in a template body gives
+# no route either.  The plugin of main gave a pointer-cast line for each of
+# the three.  A cast from storage at the start of a member call gives its
+# line, outside a template and in a template body.
+
+compile release src/release.cpp stage=c
+exit release pass
+judge release
+finding release proof-routes pointer-cast src/release.cpp:19:44 | pointer-cast: forge::Door
+finding release proof-routes pointer-cast src/release.cpp:27:65 | pointer-cast: forge::Door
+finding release quarantine std-entity src/release.cpp:17:58 | std::move
+finding release quarantine raw-pointer-object src/release.cpp:19:30 | raw
+finding release quarantine raw-pointer-object src/release.cpp:27:48 | raw
+finding release quarantine raw-pointer-object src/release.cpp:29:54 | raw

@@ -585,11 +585,42 @@ bool spells_cast_at(location_t location) {
         || spelled == IDENTIFIER_POINTER(names.reinterpret_cast_keyword);
 }
 
+// True when the cast CONVERSION to a pointer or a reference views an object
+// of its target class: only the cv-qualifiers or the value category change,
+// as std::move does.  Such a cast builds no object, so it is no proof route.
+// The source object decides, after each conversion that keeps the bits: a
+// pointer to the class for a target pointer, and an object of the class for
+// a target reference.  Outside a template, the front end binds a reference
+// to the address of its object, so the source of a target reference can also
+// be a pointer to the class there.  A reinterpret_cast<Door&> of a pointer
+// object takes the address of that pointer, which points to no class.
+bool is_same_class_view(tree conversion, bool is_pattern) {
+    tree target = TREE_TYPE(TREE_TYPE(conversion));
+    tree source = TREE_OPERAND(conversion, 0);
+    if (target == NULL_TREE || source == NULL_TREE) {
+        return false;
+    }
+    source = tree_strip_any_location_wrapper(source);
+    STRIP_NOPS(source);
+    tree type = TREE_TYPE(source) != NULL_TREE ? non_reference(TREE_TYPE(source)) : NULL_TREE;
+    bool is_address = TYPE_PTR_P(TREE_TYPE(conversion)) || !is_pattern;
+    if (type != NULL_TREE && is_address && TYPE_PTR_P(type)) {
+        type = TREE_TYPE(type);
+    } else if (TYPE_PTR_P(TREE_TYPE(conversion))) {
+        return false;
+    }
+    return type != NULL_TREE && CLASS_TYPE_P(type) && TYPE_MAIN_VARIANT(type) == TYPE_MAIN_VARIANT(target);
+}
+
 // A cast of a body to a pointer or a reference whose target holds a proof
 // type.  Outside a template, CONVERSION is the outer node of the cast: a
 // conversion, or the null test and the offset of a cast to a derived class.
 // The front end gives that node the location of the cast, so it counts only
-// where the source spells the cast at the start of its location.
+// where the source spells the cast at the start of its location.  The front
+// end also gives that location to the bind of a reference to the result of a
+// call whose object is a cast, as in static_cast<Region&&>(region).release().
+// That bind views the object of the call, as each view of an object of the
+// target class does, so it is no route.
 void check_cast(tree conversion, location_t location, bool is_pattern) {
     tree proof = cast_target_proof(TREE_TYPE(conversion));
     if (proof == NULL_TREE) {
@@ -597,6 +628,9 @@ void check_cast(tree conversion, location_t location, bool is_pattern) {
     }
     bool is_nop = TREE_CODE(conversion) == NOP_EXPR || TREE_CODE(conversion) == CONVERT_EXPR;
     if ((is_nop || is_pattern) && is_null_pointer(TREE_OPERAND(conversion, 0))) {
+        return;
+    }
+    if ((is_nop || is_pattern) && is_same_class_view(conversion, is_pattern)) {
         return;
     }
     if (!is_pattern && !spells_cast_at(location)) {

@@ -1,0 +1,35 @@
+#include <forge/Holder.h>
+
+#include <utility>
+
+// The two spellings static_cast<Holder<Door>&&>(held).release() and
+// std::move(held).release() are the same expression.  The cast views the
+// object of the call, and release() is the door of the proof, so neither
+// spelling is a route.  The front end gives the bind of drop's reference to
+// the result of release() the location of the whole call, which starts at the
+// keyword of the cast.  The plugin of main read that bind as a pointer-cast.
+// A cast to the same class in a template body gave the line too.  A cast from
+// storage at the start of a larger expression keeps its line.
+namespace forge {
+
+void release_by_cast(Holder<Door>& held) { drop(static_cast<Holder<Door>&&>(held).release()); }
+
+void release_by_move(Holder<Door>& held) { drop(std::move(held).release()); }
+
+int count_from_storage(void* raw) { return static_cast<Holder<Door>*>(raw)->count(); }
+
+template <class T> void release_in_template(Holder<Door>& held, T) {
+    drop(static_cast<Holder<Door>&&>(held).release());
+}
+
+template <class T> Door&& move_in_template(Door& door, T) { return static_cast<Door&&>(door); }
+
+template <class T> int count_in_template(void* raw, T) { return static_cast<Holder<Door>*>(raw)->count(); }
+
+void instances(Holder<Door>& held, Door& door, void* raw) {
+    release_in_template(held, 0);
+    drop(move_in_template(door, 0));
+    (void)count_in_template(raw, 0);
+}
+
+}  // namespace forge
