@@ -25,7 +25,8 @@
 //     with_slot(slot, body)   the element of a slot, to write or to read
 //   A later claim reuses each slot, so a reference that left a door would name
 //   a later element.  pass_slot() claims a slot and keeps its element, and push
-//   writes the slot of the next claim.
+//   writes the slot of the next claim.  Each of the two writes the claim
+//   cursor, so a keyed ring takes its key at each.
 //
 // Key
 //   A ring of a key brand, from mint_cyclic_buffer, opens a door that writes
@@ -178,10 +179,6 @@ public:
         return prove_slot_(cursor_.index_back(back.raw()));
     }
 
-    // Claims the slot of the next claim and keeps its element, which then
-    // reads as the newest.  The call writes no element.
-    constexpr void pass_slot() noexcept { static_cast<void>(claim_slot_()); }
-
     // The read of the element of a slot: body gets it as const, in place.
     // Complexity: O(1), and the cost of body.
     template <class Body>
@@ -226,6 +223,14 @@ public:
         requires(!is_keyed_) && std::is_move_assignable_v<T>
     {
         slot_at_(claim_slot_()) = std::move(value);
+    }
+
+    // Claims the slot of the next claim and keeps its element, which then
+    // reads as the newest.  The call writes no element.
+    constexpr void pass_slot() noexcept
+        requires(!is_keyed_)
+    {
+        static_cast<void>(claim_slot_());
     }
 
     // ── The doors of a ring of a key brand (the key) ───────────────────────
@@ -277,8 +282,23 @@ public:
         slot_at_(claim_slot_()) = value;
     }
 
+    // The pass of a keyed ring.  The pass writes the claim cursor, so it
+    // takes the key as each writer of a keyed ring does, although it writes
+    // no element.
+    constexpr void pass_slot(key_type& /*key*/) noexcept
+        requires is_keyed_
+    {
+        static_cast<void>(claim_slot_());
+    }
+
     // A door with no key on a keyed ring binds to these overloads, so the
     // refusal gives its reason.
+    void pass_slot() noexcept
+        requires is_keyed_
+    = delete("a keyed CyclicBuffer moves its claim cursor only with its LoanKey: call pass_slot(key)");
+    void push(T const& value) noexcept
+        requires is_keyed_
+    = delete("a keyed CyclicBuffer writes a slot only with its LoanKey: call push(key, value)");
     template <class Body>
         requires is_keyed_ && std::is_invocable_v<Body&&, T&>
     void with_claim(Body&& body) & = delete("a keyed CyclicBuffer lends a slot that a body writes only with its "

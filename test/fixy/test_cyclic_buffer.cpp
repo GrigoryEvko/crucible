@@ -128,6 +128,13 @@ struct Step {
     if (old_value != 43) return 1;
     if (value_back(ring, ::fixy::index<0>()) != 44) return 2;
     if (value_back(ring, ::fixy::index<2>()) != 41) return 3;
+    // The pass of a keyed ring takes the key too, and it keeps the element of
+    // the slot that it claims.
+    auto& pass_key = swapped.at(::fixy::index<1>());
+    ring.pass_slot(pass_key);
+    if (ring.size() != 4 || value_back(ring, ::fixy::index<0>()) != 0 || value_back(ring, ::fixy::index<1>()) != 44) {
+        return 4;
+    }
     return 0;
 }
 

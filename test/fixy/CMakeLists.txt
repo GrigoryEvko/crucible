@@ -2222,6 +2222,9 @@ fixy_neg_compile_test(neg_cyclic_buffer_nested_slot_door
 fixy_neg_compile_test(neg_cyclic_buffer_helper_has_no_key
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(foundation::core::Index<Count>, Body&&\\) &"
   "a keyed CyclicBuffer lends a slot that a body writes only with its LoanKey: call with_slot\\(key, slot, body\\)")
+fixy_neg_compile_test(neg_cyclic_buffer_pass_without_key
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::pass_slot\\(\\)"
+  "a keyed CyclicBuffer moves its claim cursor only with its LoanKey: call pass_slot\\(key\\)")
 fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
   "a later claim reuses each slot of a CyclicBuffer, so the result of a door holds no reference and no address")
