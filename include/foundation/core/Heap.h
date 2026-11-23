@@ -22,6 +22,7 @@
 // cannot give ends the process through fatal().  The tree does not run where
 // an exhausted memory can recover.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/alloc/Layout.h>
 #include <foundation/core/AllocTag.h>
 
@@ -34,8 +35,11 @@ namespace detail {
 // Gives back the storage that heap_allocate_ or heap_allocate_zeroed_ gave,
 // with the same layout.  storage must not be null.  A Layout passes in two
 // registers (the layout in foundation/alloc/Layout.h), so each door takes it
-// by value.
-void heap_release_(void* storage, ::foundation::alloc::Layout layout) noexcept;
+// by value.  Each object in the storage ended before the call, and the door
+// writes no byte of the storage, so it carries the mark free_door of
+// foundation/ByteSeal.h: the quarantine plugin reads the pointer to void of
+// a call as the pointer of an operator delete, and no view of bytes.
+[[= ::foundation::core::free_door{}]] void heap_release_(void* storage, ::foundation::alloc::Layout layout) noexcept;
 
 // Words of a layout.  The two bodies below take the two words of a
 // Layout as two numbers, because the attributes alloc_size and alloc_align
