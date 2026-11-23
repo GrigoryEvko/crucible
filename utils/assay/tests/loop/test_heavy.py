@@ -661,6 +661,48 @@ def weight_cases(expect: testing.Expect) -> None:
         )
 
 
+def gate_first_cases(expect: testing.Expect) -> None:
+    """Hold the priority of the gate in the pump counts: a different lease that waits does not hold a lease of the gate.
+
+    A lease of the gate with the cap 4 holds 8 of 16 slots and is hungry.  A different lease with the cap 8 holds 2
+    slots and is hungry, so it waits.  The case calls the pump counts on the markers, with no time.
+    """
+    with tempfile.TemporaryDirectory(prefix="heavy-gate-first-") as work_text:
+        pool = heavy.Pool(Path(work_text) / "slots", 16)
+        pool.directory.mkdir()
+        gate_lease = heavy.Lease(pool, 4, True)
+        other = heavy.Lease(pool, 8, False)
+        try:
+            for lease, count in ((gate_lease, 8), (other, 2)):
+                lease.register()
+                lease.take(count)
+                lease.hungry = True
+                lease.mark()
+            gate_demand = gate_lease.demand()
+            grown = heavy.grown_count(gate_lease, gate_demand, pool.size)
+            given = heavy.pulled_count(gate_lease, gate_demand, 4, 0)
+            other_demand = other.demand()
+            other_grown = heavy.grown_count(other, other_demand, pool.size)
+            other_given = heavy.pulled_count(other, other_demand, 1, 0)
+            gate_lease.hungry = False
+            gate_lease.mark()
+            after_grown = heavy.grown_count(other, other.demand(), pool.size)
+        finally:
+            gate_lease.close()
+            other.close()
+        expect(
+            f"a hungry lease of the gate above its cap grows past it and keeps its idle tokens while a different lease "
+            f"waits: it grows by {grown} and gives {given}",
+            grown == 8 and given == 0,
+        )
+        expect(
+            f"a different lease does not grow and gives each idle token above one while a lease of the gate is hungry "
+            f"above its cap, and it grows again when the lease of the gate is not hungry: it grows by {other_grown}, "
+            f"gives {other_given}, and then grows by {after_grown}",
+            other_grown == 0 and other_given == 1 and after_grown == 2,
+        )
+
+
 def planted_leases(pool: heavy.Pool, *gb_per_job: float) -> list[heavy.Lease]:
     """Register one lease of the gate with a cap of the pool size for each memory of a job, and return them."""
     leases = [heavy.Lease(pool, pool.size, True, gb_per_job=gb) for gb in gb_per_job]
@@ -1022,6 +1064,7 @@ def main(argv: list[str]) -> int:
             kill_cases,
             fair_cases,
             weight_cases,
+            gate_first_cases,
             budget_cases,
             priority_cases,
             start_cases,

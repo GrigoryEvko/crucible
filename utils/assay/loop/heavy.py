@@ -31,8 +31,10 @@ Pool
       * No idle token: the job uses each slot, and the lease is hungry.
         The pump doubles the slots, with the free slots, the memory and the
         room of the host as limits (the load).  It grows to the burst while
-        no different lease waits, and to the cap else.  A lease waits when it is hungry and holds less
-        than its cap.
+        no different lease waits that it makes room for, and to the cap
+        else.  A lease waits when it is hungry and holds less than its cap.
+        A lease of the gate makes room only for a lease of the gate (the
+        priority of the gate).
       * A different lease waits: the pump pulls each idle token above the
         cap at once.  A lease then grows past its cap only on slots that no
         different lease wants, and no lease keeps a slot that it does not
@@ -66,13 +68,17 @@ Weight
     changes no priority between the classes, and it changes no limit of
     the memory.
 
-    The leases of a run of the gate (leased() with is_gate) go first.  A
-    lease of the gate waits when it is hungry and holds less than its cap
-    and less than the fair share of the leases of the gate.  While a lease
-    of the gate waits, a different lease starts with one free slot, does not
-    grow, and gives each idle token above one at once.  So it always runs,
-    with one job as the least.  The leases of the gate share the pool fairly
-    among themselves.
+    The leases of a run of the gate (leased() with is_gate) go first.  One
+    run of the gate at a time holds main, and each other heavy job of the
+    host waits for it.  While a lease of the gate is hungry, a different
+    lease starts with one free slot, does not grow, and gives each idle
+    token above one at once.  So it always runs, with one job as the least.
+    A lease of the gate makes room only for a different lease of the gate:
+    a different lease that waits does not hold it at its cap, and it gets
+    no idle token of it.  A lease of the gate waits when it is hungry and
+    holds less than its cap and less than the fair share of the leases of
+    the gate.  The leases of the gate share the pool fairly among
+    themselves.
 
     A token that a child holds when SIGKILL ends it does not come back to
     the FIFO.  The job then runs one job less, and the lease keeps the
@@ -96,16 +102,17 @@ Load
         of the average and the last read.  The jobs of a growth then show
         in the next read, and a dip of one read does not open the room.
       * A lease takes its part of the room: the room divided among the
-        hungry leases with the lease itself, rounded up.  Two leases then
+        hungry leases with the lease itself, rounded up.  A lease of the
+        gate counts only the hungry leases of the gate, because no other
+        lease grows while a lease of the gate is hungry.  Two leases then
         seldom take the same room.
       * A lease starts with at most the room, and with one slot as the
         least.
       * The room limits only a start and a growth.  A lease always takes
         its first slot, and the pump pulls no token that a job holds.  Idle
         tokens go back to the pool as before.  A lease that the room stops
-        is hungry, so a lease of the gate that the room stops waits, and
-        the other leases give it their idle tokens (the priority of the
-        gate).  On a quiet host the room is large, and the pool grows to
+        is hungry, so the other leases give a lease of the gate that the
+        room stops their idle tokens (the priority of the gate).  On a quiet host the room is large, and the pool grows to
         each of its slots as before.
     A planted pool and a private pool have no runnable limit, so the
     leases of a test do not change with the load of the host.
@@ -733,7 +740,8 @@ class Demand:
     `weight` is the sum of the weights of the leases of the class of the reader, with the reader (the weight).  A lease
     waits when it is hungry and holds less than its cap.  `peers_below_fair` counts the hungry leases of the class of
     the reader below their fair share: the size of the pool times their weight, divided by `weight`.  `hungry` counts
-    the hungry leases of each class, with no reader (the load).
+    the hungry leases of each class, with no reader (the load).  `hungry_gate` counts the hungry leases of the gate,
+    with no reader (the priority of the gate).
     """
 
     weight: int
@@ -741,11 +749,14 @@ class Demand:
     waiting_other: int
     peers_below_fair: int
     hungry: int = 0
+    hungry_gate: int = 0
 
-    @property
-    def is_waiting(self) -> bool:
-        """Tell if a different lease waits."""
-        return self.waiting_gate + self.waiting_other > 0
+    def is_waiting_for(self, is_gate: bool) -> bool:
+        """Tell if a different lease waits that a lease of the class `is_gate` makes room for (the priority of the gate).
+
+        A lease of the gate makes room only for a lease of the gate.  A different lease makes room for each lease.
+        """
+        return self.waiting_gate > 0 or (not is_gate and self.waiting_other > 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -933,7 +944,7 @@ class Lease:
             1 for held, cap, row_weight in gate_rows if held < min(cap, fair_share(self.pool, row_weight, gate_weight))
         )
         below = sum(1 for held, peer_weight in peers if held < fair_share(self.pool, peer_weight, weight))
-        return Demand(weight, waiting_gate, waiting_other, below, hungry)
+        return Demand(weight, waiting_gate, waiting_other, below, hungry, len(gate_rows))
 
     def set_gb_per_job(self, gb_per_job: float) -> None:
         """Give the lease a new memory of one job, such as a step of tests after a build, and write its marker.
@@ -991,15 +1002,15 @@ def is_locked_descriptor(descriptor: int) -> bool:
 def pulled_count(lease: Lease, demand: Demand, idle: int, idle_ticks: int) -> int:
     """Return the count of idle tokens that the pump pulls at one tick (the pool).
 
-    A lease that is not of the gate gives each idle token above one while a lease of the gate waits.  A lease above its
-    cap gives the idle tokens above its cap while a different lease waits.  A lease above its fair share gives the idle
-    tokens above that share while a hungry lease of its class holds less.  Else a lease gives its idle tokens after
-    IDLE_TICKS ticks, with one slot as the minimum.
+    A lease that is not of the gate gives each idle token above one while a lease of the gate is hungry.  A lease above
+    its cap gives the idle tokens above its cap while a different lease waits that it makes room for
+    (Demand.is_waiting_for()).  A lease above its fair share gives the idle tokens above that share while a hungry lease
+    of its class holds less.  Else a lease gives its idle tokens after IDLE_TICKS ticks, with one slot as the minimum.
     """
     fair = fair_share(lease.pool, lease.weight, demand.weight)
-    if not lease.is_gate and demand.waiting_gate:
+    if not lease.is_gate and demand.hungry_gate:
         return min(idle, lease.held - 1)
-    if lease.held > lease.cap and demand.is_waiting:
+    if lease.held > lease.cap and demand.is_waiting_for(lease.is_gate):
         return min(idle, lease.held - lease.cap)
     if lease.held > fair and demand.peers_below_fair:
         return min(idle, lease.held - fair)
@@ -1009,18 +1020,21 @@ def pulled_count(lease: Lease, demand: Demand, idle: int, idle_ticks: int) -> in
 def grown_count(lease: Lease, demand: Demand, burst: int, room: int | None = None) -> int:
     """Return the count of slots that the pump tries to add at one tick to a lease that uses each slot (the pool).
 
-    The count doubles the slots.  A lease grows to `burst` while no different lease waits, and to its cap else.  A lease
-    with a hungry peer below the fair share grows only to that share.  A lease that is not of the gate does not grow
-    while a lease of the gate waits.  `room` is the room of the host (room_of()): a lease grows only into its part of
-    the room, the room divided among the hungry leases with the lease itself, rounded up (the load).
+    The count doubles the slots.  A lease grows to `burst` while no different lease waits that it makes room for
+    (Demand.is_waiting_for()), and to its cap else.  A lease with a hungry peer below the fair share grows only to that
+    share.  A lease that is not of the gate does not grow while a lease of the gate is hungry.  `room` is the room of
+    the host (room_of()): a lease grows only into its part of the room, rounded up (the load).  A lease of the gate
+    divides the room among the hungry leases of the gate with itself, because no other lease grows while it is hungry.
+    A different lease divides it among each hungry lease with itself.
     """
-    if not lease.is_gate and demand.waiting_gate:
+    if not lease.is_gate and demand.hungry_gate:
         return 0
-    limit = lease.cap if demand.is_waiting else burst
+    limit = lease.cap if demand.is_waiting_for(lease.is_gate) else burst
     if demand.peers_below_fair:
         limit = min(limit, fair_share(lease.pool, lease.weight, demand.weight))
     if room is not None:
-        limit = min(limit, lease.held + max(0, math.ceil(room / (demand.hungry + 1))))
+        sharers = demand.hungry_gate if lease.is_gate else demand.hungry
+        limit = min(limit, lease.held + max(0, math.ceil(room / (sharers + 1))))
     return max(0, min(lease.held, limit - lease.held))
 
 
@@ -1074,8 +1088,8 @@ def pumped(
             count = grown_count(lease, demand, burst, room) if lease.hungry and now >= hold_until else 0
             opened.put(lease.take_within_budget(count, read) if count > 0 else 0)
         lease.mark()
-        is_yielding = not lease.is_gate and demand.waiting_gate > 0 and lease.held > 1
-        is_draining = is_yielding or (lease.held > lease.cap and demand.is_waiting)
+        is_yielding = not lease.is_gate and demand.hungry_gate > 0 and lease.held > 1
+        is_draining = is_yielding or (lease.held > lease.cap and demand.is_waiting_for(lease.is_gate))
     lease.slot_seconds += lease.held * (time.monotonic() - last)
 
 
@@ -1182,7 +1196,7 @@ def leased(
                 return
             lease.register()
             while True:
-                is_yielding = not lease.is_gate and lease.demand().waiting_gate > 0
+                is_yielding = not lease.is_gate and lease.demand().hungry_gate > 0
                 if lease.take_within_budget(1 if is_yielding else start_count(chosen, cap, runnable()), read):
                     break
                 if stop is not None and stop.is_set():
