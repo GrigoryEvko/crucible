@@ -46,19 +46,31 @@ bool send_int(Wire& wire, int& value) noexcept {
     return true;
 }
 
-cntp::DeclaredPathSwapPlan make_plan_for(std::uint64_t flow_id, std::uint64_t old_path_id, std::uint64_t new_path_id) {
-    auto flow = cntp::admit_path_id(flow_id).expect("the flow id is positive");
-    auto old_path = cntp::admit_path_id(old_path_id).expect("the old path id is positive");
-    auto new_path = cntp::admit_path_id(new_path_id).expect("the new path id is positive");
-    auto timeout = cntp::admit_swap_timeout_ns(1000).expect("1000 ns is positive");
-    return cntp::mint_path_swap_plan(flow, old_path, new_path, timeout).expect("the two paths differ");
+// A count of nanoseconds on the clock of the swapper.
+using Nanos = cntp::SwapNanoseconds;
+
+// The three ids of a plan.  A caller names each field, so two ids cannot
+// swap.
+struct PlanIds {
+    std::uint64_t flow = 0;
+    std::uint64_t old_path = 0;
+    std::uint64_t new_path = 0;
+};
+
+cntp::DeclaredPathSwapPlan make_plan_for(PlanIds ids) {
+    auto flow = cntp::admit_flow_id(cntp::FlowId{ids.flow}).expect("the flow id is positive");
+    auto old_path = cntp::admit_path_id(cntp::PathId{ids.old_path}).expect("the old path id is positive");
+    auto new_path = cntp::admit_path_id(cntp::PathId{ids.new_path}).expect("the new path id is positive");
+    auto timeout = cntp::admit_swap_timeout(Nanos{1000}).expect("1000 ns is positive");
+    return cntp::mint_path_swap_plan(flow, cntp::OldPathId{old_path}, cntp::NewPathId{new_path}, timeout)
+        .expect("the two paths differ");
 }
 
-cntp::DeclaredPathSwapPlan make_plan() { return make_plan_for(10, 20, 30); }
+cntp::DeclaredPathSwapPlan make_plan() { return make_plan_for({.flow = 10, .old_path = 20, .new_path = 30}); }
 
 // The second plan of the race tests.  Each field differs from the first
 // plan, so a read that mixes the two plans names paths that no plan named.
-cntp::DeclaredPathSwapPlan make_other_plan() { return make_plan_for(11, 40, 50); }
+cntp::DeclaredPathSwapPlan make_other_plan() { return make_plan_for({.flow = 11, .old_path = 40, .new_path = 50}); }
 
 [[nodiscard]] bool names_one_declared_plan(std::uint64_t flow_id, std::uint64_t old_path_id,
                                            std::uint64_t new_path_id) noexcept {
@@ -92,24 +104,37 @@ void test_admission() {
     static_assert(cntp::swap_error_name(cntp::SwapError::SamePath) == "SamePath");
     CRUCIBLE_TEST_ASSERT(kTest, cntp::swap_state_name(static_cast<cntp::SwapState>(200)) == "<unknown SwapState>");
 
-    auto zero_path = cntp::admit_path_id(0);
+    auto zero_flow = cntp::admit_flow_id(cntp::FlowId{0});
+    CRUCIBLE_TEST_ASSERT(kTest, zero_flow.is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, zero_flow.err() == ::fixy::some(cntp::SwapError::InvalidFlowId));
+
+    auto zero_path = cntp::admit_path_id(cntp::PathId{0});
     CRUCIBLE_TEST_ASSERT(kTest, zero_path.is_err());
     CRUCIBLE_TEST_ASSERT(kTest, zero_path.err() == ::fixy::some(cntp::SwapError::InvalidPathId));
 
-    auto zero_timeout = cntp::admit_swap_timeout_ns(0);
+    auto zero_timeout = cntp::admit_swap_timeout(Nanos{0});
     CRUCIBLE_TEST_ASSERT(kTest, zero_timeout.is_err());
     CRUCIBLE_TEST_ASSERT(kTest, zero_timeout.err() == ::fixy::some(cntp::SwapError::Timeout));
 
-    auto id = cntp::admit_path_id(1).expect("1 is positive");
-    auto timeout = cntp::admit_swap_timeout_ns(10).expect("10 ns is positive");
-    CRUCIBLE_TEST_ASSERT(kTest, cntp::mint_path_swap_plan(id, id, id, timeout).err()
-                                    == ::fixy::some(cntp::SwapError::SamePath));
+    auto flow = cntp::admit_flow_id(cntp::FlowId{1}).expect("1 is positive");
+    auto path = cntp::admit_path_id(cntp::PathId{1}).expect("1 is positive");
+    auto timeout = cntp::admit_swap_timeout(Nanos{10}).expect("10 ns is positive");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         cntp::mint_path_swap_plan(flow, cntp::OldPathId{path}, cntp::NewPathId{path}, timeout).err()
+                             == ::fixy::some(cntp::SwapError::SamePath));
 
     auto plan = make_plan();
-    CRUCIBLE_TEST_ASSERT(kTest, plan.value().flow_id().value() == 10);
-    CRUCIBLE_TEST_ASSERT(kTest, plan.value().old_path().value() == 20);
-    CRUCIBLE_TEST_ASSERT(kTest, plan.value().new_path().value() == 30);
-    CRUCIBLE_TEST_ASSERT(kTest, plan.value().timeout_ns().value() == 1000);
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().flow_id().value() == cntp::FlowId{10});
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().old_path().value() == cntp::PathId{20});
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().new_path().value() == cntp::PathId{30});
+    CRUCIBLE_TEST_ASSERT(kTest, plan.value().timeout().value() == Nanos{1000});
+
+    // The step check reads the state that a step leaves and the state that
+    // it enters in their roles: Stable leads to Draining, and not back.
+    static_assert(cntp::is_valid_path_swap_transition(cntp::SwapFromState{cntp::SwapState::Stable},
+                                                      cntp::SwapToState{cntp::SwapState::Draining}));
+    static_assert(!cntp::is_valid_path_swap_transition(cntp::SwapFromState{cntp::SwapState::Draining},
+                                                       cntp::SwapToState{cntp::SwapState::Stable}));
 
     ::fixy::check::pass(kTest, "  test_admission: PASSED\n");
 }
@@ -124,21 +149,21 @@ void test_state_machine_and_session_resource_transition() {
     CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).is_none());
 
     auto plan = make_plan();
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, 100).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{100}).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Draining);
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.deadline_ns(bg) == 1100);
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.deadline(bg) == Nanos{1100});
     CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).expect("the swap has a plan").old_path().value() == 20);
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).expect("the swap has a plan").old_path().value() == cntp::PathId{20});
 
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, 200).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, Nanos{200}).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::BidirReceive);
 
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, 300).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, Nanos{300}).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::NewPathFlushing);
 
     auto old_handle = sess::mint_session<Proto>(bg, Wire{.id = 1});
-    auto swapped =
-        swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, 400).expect("the swap is at NewPathFlushing");
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle), Wire{.id = 2}, Nanos{400})
+                       .expect("the swap is at NewPathFlushing");
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Complete);
     CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 4);
     CRUCIBLE_TEST_ASSERT(kTest, swapper.sequence(bg) == 4);
@@ -193,10 +218,10 @@ void test_concurrent_observer_sees_only_valid_states() {
     auto writer = [&swapper, &plan, &writer_done](::fixy::BgLoadCtx const& ctx) noexcept {
         for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
             const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, base + 1).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, base + 2).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, base + 3).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, base + 4).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, Nanos{base + 1}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, Nanos{base + 2}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, Nanos{base + 3}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, Nanos{base + 4}).is_ok());
         }
         writer_done.store_release(true);
     };
@@ -220,15 +245,15 @@ void test_commit_sender_loses_in_flight_bytes() {
 
     auto swapper = cntp::mint_path_swapper<8>(init);
     auto plan = make_plan();
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, 100).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, 200).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, 300).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{100}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, Nanos{200}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, Nanos{300}).is_ok());
 
     Wire old_wire{.id = 7, .last = 0xBEEF};  // stands in for buffered data
     auto old_handle = sess::mint_session<Proto>(bg, std::move(old_wire));
 
     Wire new_wire{.id = 9, .last = 0};
-    auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), 400)
+    auto swapped = swapper.commit_sender(bg, std::move(old_handle), std::move(new_wire), Nanos{400})
                        .expect("the swap is at NewPathFlushing");
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Complete);
 
@@ -267,9 +292,9 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
     // The three setup transitions run on this thread alone, so the
     // event count is known exactly before the race begins and the one
     // event the race is allowed to add can be counted afterwards.
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, 100).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, 200).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, 300).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{100}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, Nanos{200}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, Nanos{300}).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 3);
 
     RaceCount winners{0};
@@ -284,8 +309,8 @@ void test_concurrent_complete_receiver_exactly_one_wins() {
         // first thread to wake usually finishes before the others
         // start and the race never happens.
         wait_for_start(start);
-        const std::uint64_t now_ns = 400 + static_cast<std::uint64_t>(idx);
-        auto result = swapper.complete_receiver(ctx, now_ns);
+        Nanos const now{400 + static_cast<std::uint64_t>(idx)};
+        auto result = swapper.complete_receiver(ctx, now);
         if (result.is_ok()) {
             static_cast<void>(winners.fetch_add_relaxed(1));
         } else {
@@ -335,8 +360,8 @@ void test_plan_reader_races_the_writer() {
         do {
             auto const seen = swapper.plan(ctx);
             for (cntp::PathSwapPlan const& plan : seen) {
-                if (!names_one_declared_plan(plan.flow_id().value(), plan.old_path().value(),
-                                             plan.new_path().value())) {
+                if (!names_one_declared_plan(plan.flow_id().value().raw(), plan.old_path().value().raw(),
+                                             plan.new_path().value().raw())) {
                     static_cast<void>(mixed_reads.fetch_add_relaxed(1));
                 }
             }
@@ -345,7 +370,8 @@ void test_plan_reader_races_the_writer() {
                 // sequence number minus one, modulo the ring size.
                 const auto event = swapper.event_at(ctx, swapper.sequence(ctx) - 1);
                 if (!names_one_declared_plan(event.flow_id, event.old_path, event.new_path)
-                    || !cntp::is_valid_path_swap_transition(event.from, event.to)) {
+                    || !cntp::is_valid_path_swap_transition(cntp::SwapFromState{event.from},
+                                                            cntp::SwapToState{event.to})) {
                     static_cast<void>(mixed_reads.fetch_add_relaxed(1));
                 }
             }
@@ -356,10 +382,10 @@ void test_plan_reader_races_the_writer() {
         for (std::uint32_t cycle = 0; cycle < 2000; ++cycle) {
             const std::uint64_t base = static_cast<std::uint64_t>(cycle) * 100;
             const auto& plan = (cycle % 2u == 0u) ? first : second;
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, base + 1).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, base + 2).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, base + 3).is_ok());
-            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, base + 4).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(ctx, plan, Nanos{base + 1}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(ctx, Nanos{base + 2}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(ctx, Nanos{base + 3}).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, swapper.complete_receiver(ctx, Nanos{base + 4}).is_ok());
         }
         writer_done.store_release(true);
     };
@@ -387,13 +413,13 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
         RaceCount winners{0};
         auto left = [&swapper, &start, &winners, &first](::fixy::BgLoadCtx const& ctx) noexcept {
             wait_for_start(start);
-            if (swapper.begin_swap(ctx, first, 100).is_ok()) {
+            if (swapper.begin_swap(ctx, first, Nanos{100}).is_ok()) {
                 static_cast<void>(winners.fetch_add_relaxed(1));
             }
         };
         auto right = [&swapper, &start, &winners, &second](::fixy::BgLoadCtx const& ctx) noexcept {
             wait_for_start(start);
-            if (swapper.begin_swap(ctx, second, 100).is_ok()) {
+            if (swapper.begin_swap(ctx, second, Nanos{100}).is_ok()) {
                 static_cast<void>(winners.fetch_add_relaxed(1));
             }
         };
@@ -403,9 +429,9 @@ void test_concurrent_begin_swap_keeps_the_winning_plan() {
         cntp::PathSwapPlan const held = swapper.plan(bg).expect("one racer won the swap");
         CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 1);
         const auto event = swapper.event_at(bg, 0);
-        CRUCIBLE_TEST_ASSERT(kTest, event.flow_id == held.flow_id().value());
-        CRUCIBLE_TEST_ASSERT(kTest, event.old_path == held.old_path().value());
-        CRUCIBLE_TEST_ASSERT(kTest, event.new_path == held.new_path().value());
+        CRUCIBLE_TEST_ASSERT(kTest, event.flow_id == held.flow_id().value().raw());
+        CRUCIBLE_TEST_ASSERT(kTest, event.old_path == held.old_path().value().raw());
+        CRUCIBLE_TEST_ASSERT(kTest, event.new_path == held.new_path().value().raw());
     }
 
     ::fixy::check::pass(kTest, "  test_concurrent_begin_swap_keeps_the_winning_plan: PASSED\n");
@@ -416,17 +442,17 @@ void test_invalid_transition_and_timeout() {
     ::fixy::BgLoadCtx bg{fe::testing::bg()};
 
     auto swapper = cntp::mint_path_swapper<4>(init);
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, 1).err()
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, Nanos{1}).err()
                                     == ::fixy::some(cntp::SwapError::InvalidTransition));
     CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 0);
 
     auto plan = make_plan();
-    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, 10).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         swapper.begin_swap(bg, plan, 11).err() == ::fixy::some(cntp::SwapError::InvalidTransition));
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{10}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{11}).err()
+                                    == ::fixy::some(cntp::SwapError::InvalidTransition));
 
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         swapper.receiver_accepts_bidir(bg, 2000).err() == ::fixy::some(cntp::SwapError::Timeout));
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, Nanos{2000}).err()
+                                    == ::fixy::some(cntp::SwapError::Timeout));
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Failed);
 
     ::fixy::check::pass(kTest, "  test_invalid_transition_and_timeout: PASSED\n");
@@ -438,7 +464,7 @@ void test_deadline_overflow() {
 
     auto swapper = cntp::mint_path_swapper<4>(init);
     auto plan = make_plan();
-    auto overflow = swapper.begin_swap(bg, plan, ::fixy::max_of<std::uint64_t> - 10);
+    auto overflow = swapper.begin_swap(bg, plan, Nanos{::fixy::max_of<std::uint64_t> - 10});
     CRUCIBLE_TEST_ASSERT(kTest, overflow.err() == ::fixy::some(cntp::SwapError::DeadlineOverflow));
     CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Stable);
     CRUCIBLE_TEST_ASSERT(kTest, swapper.plan(bg).is_none());

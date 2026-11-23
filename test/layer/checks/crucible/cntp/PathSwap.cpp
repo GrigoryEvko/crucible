@@ -4,8 +4,17 @@
 
 namespace crucible::cntp {
 
+static_assert(sizeof(PositiveFlowId) == sizeof(std::uint64_t));
 static_assert(sizeof(PositivePathId) == sizeof(std::uint64_t));
-static_assert(sizeof(PositiveNanoseconds) == sizeof(std::uint64_t));
+static_assert(sizeof(PositiveSwapTimeout) == sizeof(std::uint64_t));
+static_assert(sizeof(OldPathId) == sizeof(std::uint64_t) && sizeof(NewPathId) == sizeof(std::uint64_t));
+// Each parameter of the plan mint has a type of its own, and no raw number
+// stands for an id or a count of nanoseconds.
+static_assert(!std::is_convertible_v<OldPathId, NewPathId> && !std::is_convertible_v<NewPathId, OldPathId>);
+static_assert(!std::is_convertible_v<PositivePathId, PositiveFlowId>
+              && !std::is_convertible_v<PositiveFlowId, PositivePathId>);
+static_assert(!std::is_convertible_v<std::uint64_t, FlowId> && !std::is_convertible_v<std::uint64_t, PathId>);
+static_assert(!std::is_convertible_v<std::uint64_t, SwapNanoseconds>);
 static_assert(sizeof(DeclaredPathSwapPlan) == sizeof(PathSwapPlan));
 static_assert(!std::is_default_constructible_v<PathSwapPlan> && !std::is_aggregate_v<PathSwapPlan>,
               "mint_path_swap_plan must be the only door to a plan");

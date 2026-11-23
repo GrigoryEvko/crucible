@@ -23,7 +23,7 @@ int main() {
     const ::fixy::TestRunnerCtx ctx{fe::testing::test()};
     auto swapper = cntp::mint_path_swapper(init);
     auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
-    auto result = swapper.commit_sender(fg, std::move(handle), Wire{.id = 2}, 0);
+    auto result = swapper.commit_sender(fg, std::move(handle), Wire{.id = 2}, cntp::SwapNanoseconds{0});
     (void)result;
     return 0;
 }

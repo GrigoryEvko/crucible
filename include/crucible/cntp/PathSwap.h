@@ -33,21 +33,38 @@ enum class SwapState : std::uint8_t {
     Failed = 5,
 };
 
+// The roles of a value in a swap.  A state of a step is the state that the
+// step leaves or the state that it enters, and a path of a plan is the old
+// path or the new path.  Two roles give two types, so a call cannot take its
+// two values of one role pair in the other order.
+namespace side {
+
+struct SwapFrom final {};
+struct SwapTo final {};
+struct OldPath final {};
+struct NewPath final {};
+
+}  // namespace side
+
+using SwapFromState = ::fixy::Side<side::SwapFrom, SwapState>;
+using SwapToState = ::fixy::Side<side::SwapTo, SwapState>;
+
 // Complete accepts Draining so one swapper can serve a second swap.  Failed
 // is fully terminal: recovery means discarding the swapper and minting a
 // fresh one.
-[[nodiscard]] constexpr bool is_valid_path_swap_transition(SwapState from, SwapState to) noexcept {
-    switch (from) {
+[[nodiscard]] constexpr bool is_valid_path_swap_transition(SwapFromState const& from, SwapToState const& to) noexcept {
+    SwapState const next = to.value();
+    switch (from.value()) {
         case SwapState::Stable:
-            return to == SwapState::Draining;
+            return next == SwapState::Draining;
         case SwapState::Complete:
-            return to == SwapState::Draining;
+            return next == SwapState::Draining;
         case SwapState::Draining:
-            return to == SwapState::BidirReceive || to == SwapState::Failed;
+            return next == SwapState::BidirReceive || next == SwapState::Failed;
         case SwapState::BidirReceive:
-            return to == SwapState::NewPathFlushing || to == SwapState::Complete || to == SwapState::Failed;
+            return next == SwapState::NewPathFlushing || next == SwapState::Complete || next == SwapState::Failed;
         case SwapState::NewPathFlushing:
-            return to == SwapState::Complete || to == SwapState::Failed;
+            return next == SwapState::Complete || next == SwapState::Failed;
         case SwapState::Failed:
             return false;
         default:
@@ -64,6 +81,7 @@ enum class SwapError : std::uint8_t {
     DeadlineOverflow,
     Timeout,
     InvalidTransition,
+    InvalidFlowId,
 };
 
 // The name of a state or of an error is the identifier of its enumerator.
@@ -75,8 +93,25 @@ enum class SwapError : std::uint8_t {
     return ::foundation::core::enum_name_text(error);
 }
 
-using PositivePathId = ::fixy::Positive<std::uint64_t>;
-using PositiveNanoseconds = ::fixy::Positive<std::uint64_t>;
+// The kinds of the ids of a swap.  A flow and a path are two kinds, so the id
+// of a flow cannot stand for the id of a path.
+struct SwapFlowKind final {};
+struct SwapPathKind final {};
+
+using FlowId = ::fixy::Id<SwapFlowKind, std::uint64_t>;
+using PathId = ::fixy::Id<SwapPathKind, std::uint64_t>;
+using PositiveFlowId = ::fixy::Positive<FlowId>;
+using PositivePathId = ::fixy::Positive<PathId>;
+
+// A count of nanoseconds on the clock of the caller: the time of a call of
+// a door, a deadline, or the timeout of a plan.  A timeout of a plan is above
+// zero.
+using SwapNanoseconds = ::fixy::Quantity<::fixy::unit::Nanosecond, std::uint64_t>;
+using PositiveSwapTimeout = ::fixy::Positive<SwapNanoseconds>;
+
+// The two paths of a plan in their two roles.
+using OldPathId = ::fixy::Side<side::OldPath, PositivePathId>;
+using NewPathId = ::fixy::Side<side::NewPath, PositivePathId>;
 
 class PathSwapPlan;
 class PathSwapPlanDoor;
@@ -89,50 +124,52 @@ using DeclaredPathSwapPlan = ::fixy::Tagged<PathSwapPlan, ::fixy::tags::source::
 // plan: a plan that nobody declared would move a flow nobody named.
 class PathSwapPlan {
 public:
-    [[nodiscard]] constexpr PositivePathId flow_id() const noexcept { return flow_id_; }
+    [[nodiscard]] constexpr PositiveFlowId flow_id() const noexcept { return flow_id_; }
     [[nodiscard]] constexpr PositivePathId old_path() const noexcept { return old_path_; }
     [[nodiscard]] constexpr PositivePathId new_path() const noexcept { return new_path_; }
-    [[nodiscard]] constexpr PositiveNanoseconds timeout_ns() const noexcept { return timeout_ns_; }
+    [[nodiscard]] constexpr PositiveSwapTimeout timeout() const noexcept { return timeout_; }
 
 private:
-    constexpr PathSwapPlan(PositivePathId flow_id, PositivePathId old_path, PositivePathId new_path,
-                           PositiveNanoseconds timeout_ns) noexcept
-        : flow_id_{flow_id}, old_path_{old_path}, new_path_{new_path}, timeout_ns_{timeout_ns} {}
+    constexpr PathSwapPlan(PositiveFlowId flow_id, OldPathId const& old_path, NewPathId const& new_path,
+                           PositiveSwapTimeout timeout) noexcept
+        : flow_id_{flow_id}, old_path_{old_path.value()}, new_path_{new_path.value()}, timeout_{timeout} {}
 
-    PositivePathId flow_id_;
+    PositiveFlowId flow_id_;
     PositivePathId old_path_;
     PositivePathId new_path_;
-    PositiveNanoseconds timeout_ns_;
+    PositiveSwapTimeout timeout_;
 
     friend class PathSwapPlanDoor;
 };
 
 [[nodiscard]] constexpr ::fixy::Result<DeclaredPathSwapPlan, SwapError>
-mint_path_swap_plan(PositivePathId flow_id, PositivePathId old_path, PositivePathId new_path,
-                    PositiveNanoseconds timeout_ns) noexcept;
+mint_path_swap_plan(PositiveFlowId flow_id, OldPathId const& old_path, NewPathId const& new_path,
+                    PositiveSwapTimeout timeout) noexcept;
 
 // The constructor of a plan.  Its one member is private, and the mint is
 // its one friend.  The friend names the Result of a plan, so it stands after
 // the plan is complete.
 class PathSwapPlanDoor {
-    [[nodiscard]] static constexpr PathSwapPlan build(PositivePathId flow_id, PositivePathId old_path,
-                                                      PositivePathId new_path,
-                                                      PositiveNanoseconds timeout_ns) noexcept {
-        return PathSwapPlan{flow_id, old_path, new_path, timeout_ns};
+    [[nodiscard]] static constexpr PathSwapPlan build(PositiveFlowId flow_id, OldPathId const& old_path,
+                                                      NewPathId const& new_path, PositiveSwapTimeout timeout) noexcept {
+        return PathSwapPlan{flow_id, old_path, new_path, timeout};
     }
 
     friend constexpr ::fixy::Result<DeclaredPathSwapPlan, SwapError>
-        mint_path_swap_plan(PositivePathId, PositivePathId, PositivePathId, PositiveNanoseconds) noexcept;
+    mint_path_swap_plan(PositiveFlowId, OldPathId const&, NewPathId const&, PositiveSwapTimeout) noexcept;
 };
 
+// The plan that moves the flow from the old path to the new path, or
+// SamePath when the two paths are one path.  Each parameter has a type of
+// its own, so no two arguments swap at a call.
 [[nodiscard]] constexpr ::fixy::Result<DeclaredPathSwapPlan, SwapError>
-mint_path_swap_plan(PositivePathId flow_id, PositivePathId old_path, PositivePathId new_path,
-                    PositiveNanoseconds timeout_ns) noexcept {
-    if (old_path == new_path) {
+mint_path_swap_plan(PositiveFlowId flow_id, OldPathId const& old_path, NewPathId const& new_path,
+                    PositiveSwapTimeout timeout) noexcept {
+    if (old_path.value() == new_path.value()) {
         return ::fixy::err(SwapError::SamePath);
     }
     return ::fixy::mint_tagged<::fixy::tags::source::PathSwap>(
-        PathSwapPlanDoor::build(flow_id, old_path, new_path, timeout_ns));
+        PathSwapPlanDoor::build(flow_id, old_path, new_path, timeout));
 }
 
 struct PathSwapEvent {
@@ -162,27 +199,20 @@ concept CtxFitsPathSwapRead = ::fixy::spin::CtxMayBlock<Ctx>;
 template <class Resource>
 concept PathSwapSessionResource = ::fixy::session::SessionResource<Resource>;
 
-[[nodiscard]] constexpr ::fixy::Result<PositivePathId, SwapError> admit_path_id(std::uint64_t id) noexcept {
+// The admission of an id or a timeout from outside: the value above zero, or
+// the error of its kind.
+[[nodiscard]] constexpr ::fixy::Result<PositiveFlowId, SwapError> admit_flow_id(FlowId id) noexcept {
+    return ::fixy::admit_refined<::fixy::positive>(id, SwapError::InvalidFlowId);
+}
+
+[[nodiscard]] constexpr ::fixy::Result<PositivePathId, SwapError> admit_path_id(PathId id) noexcept {
     return ::fixy::admit_refined<::fixy::positive>(id, SwapError::InvalidPathId);
 }
 
-[[nodiscard]] constexpr ::fixy::Result<PositiveNanoseconds, SwapError>
-admit_swap_timeout_ns(std::uint64_t ns) noexcept {
-    return ::fixy::admit_refined<::fixy::positive>(ns, SwapError::Timeout);
+[[nodiscard]] constexpr ::fixy::Result<PositiveSwapTimeout, SwapError>
+admit_swap_timeout(SwapNanoseconds timeout) noexcept {
+    return ::fixy::admit_refined<::fixy::positive>(timeout, SwapError::Timeout);
 }
-
-// The two roles of a state in one step of a swap: the state that the step
-// leaves, and the state that it enters.  Two roles give two types, so a step
-// cannot take its two states in the other order.
-namespace side {
-
-struct SwapFrom final {};
-struct SwapTo final {};
-
-}  // namespace side
-
-using SwapFromState = ::fixy::Side<side::SwapFrom, SwapState>;
-using SwapToState = ::fixy::Side<side::SwapTo, SwapState>;
 
 template <std::size_t MaxEvents = 16>
 class PathSwapper;
@@ -216,7 +246,7 @@ private:
         ::fixy::FixedArray<PathSwapEvent, MaxEvents> events{};
         EventIndex next_event = ::fixy::index<0>();
         std::size_t event_count = 0;
-        std::uint64_t deadline_ns = 0;
+        SwapNanoseconds deadline{0};
         std::uint64_t sequence = 0;
     };
 
@@ -242,14 +272,14 @@ private:
     // set the plan.  The ring gives each event the slot after the slot of
     // the event before it.
     static void append_event(Guarded& guarded, SwapFromState const& from, SwapToState const& to,
-                             std::uint64_t at_ns) noexcept {
+                             SwapNanoseconds at) noexcept {
         ++guarded.sequence;
-        PathSwapEvent event{.from = from.value(), .to = to.value(), .at_ns = at_ns, .sequence = guarded.sequence};
+        PathSwapEvent event{.from = from.value(), .to = to.value(), .at_ns = at.raw(), .sequence = guarded.sequence};
         guarded.plan.match(
             [&event](PathSwapPlan const& plan) noexcept {
-                event.flow_id = plan.flow_id().value();
-                event.old_path = plan.old_path().value();
-                event.new_path = plan.new_path().value();
+                event.flow_id = plan.flow_id().value().raw();
+                event.old_path = plan.old_path().value().raw();
+                event.new_path = plan.new_path().value().raw();
             },
             []() noexcept { ::fixy::fatal("an event of a swap comes after begin_swap, which sets the plan"); });
         guarded.events.with_element(guarded.next_event, [&event](PathSwapEvent& slot) noexcept { slot = event; });
@@ -271,30 +301,31 @@ private:
     // A consumed-by-value typestate token would put this DAG in the type
     // system, but state() reads the state concurrently with transitions, and
     // a token consumed on transition cannot be shared with readers.
-    [[nodiscard]] bool transition_to(Guarded& guarded, SwapState next, std::uint64_t at_ns) noexcept {
-        const SwapState prev = state_.load_acquire();
-        if (!is_valid_path_swap_transition(prev, next)) {
+    [[nodiscard]] bool transition_to(Guarded& guarded, SwapState next, SwapNanoseconds at) noexcept {
+        SwapFromState const from{state_.load_acquire()};
+        SwapToState const to{next};
+        if (!is_valid_path_swap_transition(from, to)) {
             return false;
         }
-        append_event(guarded, SwapFromState{prev}, SwapToState{next}, at_ns);
+        append_event(guarded, from, to, at);
         state_.store_release(next);
         return true;
     }
 
     // The caller holds the lock and gives the guarded fields.
-    [[nodiscard]] bool expired(Guarded const& guarded, std::uint64_t now_ns) const noexcept {
+    [[nodiscard]] bool expired(Guarded const& guarded, SwapNanoseconds now) const noexcept {
         const SwapState cur = state_.load_acquire();
         return cur != SwapState::Stable && cur != SwapState::Complete && cur != SwapState::Failed
-            && now_ns > guarded.deadline_ns;
+            && now > guarded.deadline;
     }
 
     // The caller holds the lock and gives the guarded fields.  A live swap
     // past its deadline fails, and the call that saw the deadline pass
     // returns Timeout.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> check_live(Guarded& guarded, std::uint64_t now_ns) noexcept {
-        if (expired(guarded, now_ns)) {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> check_live(Guarded& guarded, SwapNanoseconds now) noexcept {
+        if (expired(guarded, now)) {
             // Each live state leads to Failed, so the transition holds.
-            (void)transition_to(guarded, SwapState::Failed, now_ns);
+            (void)transition_to(guarded, SwapState::Failed, now);
             return ::fixy::err(SwapError::Timeout);
         }
         return ::fixy::Unit{};
@@ -302,10 +333,10 @@ private:
 
     // The caller holds the lock and gives the guarded fields.  Moves a live
     // swap from `from` to `to`.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError>
-    advance(Guarded& guarded, SwapFromState const& from, SwapToState const& to, std::uint64_t now_ns) noexcept {
-        CRUCIBLE_TRY(_, check_live(guarded, now_ns));
-        if (state_.load_acquire() != from.value() || !transition_to(guarded, to.value(), now_ns)) {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance(Guarded& guarded, SwapFromState const& from,
+                                                                  SwapToState const& to, SwapNanoseconds now) noexcept {
+        CRUCIBLE_TRY(_, check_live(guarded, now));
+        if (state_.load_acquire() != from.value() || !transition_to(guarded, to.value(), now)) {
             return ::fixy::err(SwapError::InvalidTransition);
         }
         return ::fixy::Unit{};
@@ -313,10 +344,10 @@ private:
 
     // Takes the lock and moves a live swap from `from` to `to`.
     template <class Ctx>
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError>
-    advance_locked(Ctx const& ctx, SwapFromState from, SwapToState to, std::uint64_t now_ns) noexcept {
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance_locked(Ctx const& ctx, SwapFromState from,
+                                                                         SwapToState to, SwapNanoseconds now) noexcept {
         return guarded_.with(
-            ctx, [this, from, to, now_ns](Guarded& guarded) noexcept { return advance(guarded, from, to, now_ns); });
+            ctx, [this, from, to, now](Guarded& guarded) noexcept { return advance(guarded, from, to, now); });
     }
 
 public:
@@ -335,8 +366,8 @@ public:
 
     template <class Ctx>
         requires CtxFitsPathSwapRead<Ctx>
-    [[nodiscard]] std::uint64_t deadline_ns(Ctx const& ctx) const noexcept {
-        return guarded_.with(ctx, [](Guarded const& guarded) noexcept { return guarded.deadline_ns; });
+    [[nodiscard]] SwapNanoseconds deadline(Ctx const& ctx) const noexcept {
+        return guarded_.with(ctx, [](Guarded const& guarded) noexcept { return guarded.deadline; });
     }
 
     template <class Ctx>
@@ -364,20 +395,21 @@ public:
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> begin_swap(Ctx const& ctx, DeclaredPathSwapPlan const& plan,
-                                                                     std::uint64_t now_ns) noexcept {
+                                                                     SwapNanoseconds now) noexcept {
         PathSwapPlan const& raw = plan.value();
         return guarded_.with(
-            ctx, [this, &raw, now_ns](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
+            ctx, [this, &raw, now](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
                 const SwapState cur = state_.load_acquire();
                 if (cur != SwapState::Stable && cur != SwapState::Complete) {
                     return ::fixy::err(SwapError::InvalidTransition);
                 }
-                CRUCIBLE_TRY(deadline, ::foundation::core::checked_add(now_ns, raw.timeout_ns().value())
-                                           .ok_or(SwapError::DeadlineOverflow));
+                CRUCIBLE_TRY(
+                    deadline,
+                    ::foundation::core::checked_add(now, raw.timeout().value()).ok_or(SwapError::DeadlineOverflow));
                 guarded.plan = ::fixy::some(raw);
-                guarded.deadline_ns = deadline;
+                guarded.deadline = deadline;
                 // Stable and Complete each lead to Draining, so the transition holds.
-                (void)transition_to(guarded, SwapState::Draining, now_ns);
+                (void)transition_to(guarded, SwapState::Draining, now);
                 return ::fixy::Unit{};
             });
     }
@@ -385,16 +417,16 @@ public:
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> receiver_accepts_bidir(Ctx const& ctx,
-                                                                                 std::uint64_t now_ns) noexcept {
-        return advance_locked(ctx, SwapFromState{SwapState::Draining}, SwapToState{SwapState::BidirReceive}, now_ns);
+                                                                                 SwapNanoseconds now) noexcept {
+        return advance_locked(ctx, SwapFromState{SwapState::Draining}, SwapToState{SwapState::BidirReceive}, now);
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> sender_observed_drain_ack(Ctx const& ctx,
-                                                                                    std::uint64_t now_ns) noexcept {
+                                                                                    SwapNanoseconds now) noexcept {
         return advance_locked(ctx, SwapFromState{SwapState::BidirReceive}, SwapToState{SwapState::NewPathFlushing},
-                              now_ns);
+                              now);
     }
 
     // Detaching `current` drops whatever is still buffered on the old path:
@@ -417,14 +449,14 @@ public:
     [[nodiscard, deprecated("CRUCIBLE_STUB: commit_sender migrates no in-flight data. "
                             "The bytes buffered on the old path are dropped.")]]
     auto commit_sender(Ctx const& ctx, ::fixy::session::SessionHandle<Proto, OldResource, void, Policy>&& current,
-                       NewResource&& new_resource, std::uint64_t now_ns) noexcept
+                       NewResource&& new_resource, SwapNanoseconds now) noexcept
         -> ::fixy::Result<::fixy::session::SessionHandle<Proto, NewResource, void, Policy>, SwapError> {
         // The transition has to land before the detach.  A call that is
         // refused must not consume `current`, or the resource leaks and the
         // audit log gains an event for a transition that never happened.
         // The detach and the new mint run after the lock is given back.
-        CRUCIBLE_TRY(_, advance_locked(ctx, SwapFromState{SwapState::NewPathFlushing}, SwapToState{SwapState::Complete},
-                                       now_ns));
+        CRUCIBLE_TRY(
+            _, advance_locked(ctx, SwapFromState{SwapState::NewPathFlushing}, SwapToState{SwapState::Complete}, now));
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
         return ::fixy::session::mint_session<Proto, Policy, Ctx, NewResource>(ctx,
                                                                               std::forward<NewResource>(new_resource));
@@ -433,13 +465,13 @@ public:
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> complete_receiver(Ctx const& ctx,
-                                                                            std::uint64_t now_ns) noexcept {
-        return guarded_.with(ctx, [this, now_ns](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
-            CRUCIBLE_TRY(_, check_live(guarded, now_ns));
+                                                                            SwapNanoseconds now) noexcept {
+        return guarded_.with(ctx, [this, now](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
+            CRUCIBLE_TRY(_, check_live(guarded, now));
             // No check of the current state comes first.  Complete is not a
             // valid successor of Complete, so the second of two callers is
             // refused.
-            if (!transition_to(guarded, SwapState::Complete, now_ns)) {
+            if (!transition_to(guarded, SwapState::Complete, now)) {
                 return ::fixy::err(SwapError::InvalidTransition);
             }
             return ::fixy::Unit{};

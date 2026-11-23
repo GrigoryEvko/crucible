@@ -2751,6 +2751,12 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #   * neg_path_swap_raw_plan_begin: a swap starts only from a tagged plan.
 #   * neg_path_swap_plan_raw_path_id: the plan mint takes admitted path ids.
 #   * neg_path_swap_plan_direct: the plan mint is the only door to a plan.
+#   * neg_path_swap_plan_swapped_paths: the plan mint takes the old path and
+#     the new path in two roles, so the two cannot swap.
+#   * neg_path_swap_transition_swapped_states: the step check takes the state
+#     that a step leaves and the state that it enters in two roles.
+#   * neg_path_swap_raw_now: a door of the swapper takes the time of the call
+#     as a count of nanoseconds, not as a raw integer.
 #   * neg_path_swap_mint_bg_ctx: the swapper mint needs a context that owns Init.
 #   * neg_path_swapper_direct: the swapper mint is the only door to a swapper.
 #   * neg_path_swap_commit_fg_ctx, neg_path_swap_begin_init_ctx: a transition
@@ -2763,14 +2769,23 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #     neg_path_swap_commit_pointer_resource: the new resource is a
 #     SessionResource.
 crucible_neg_compile_test(neg_path_swap_raw_plan_begin
-  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, int.."
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, crucible::cntp::SwapNanoseconds.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
 crucible_neg_compile_test(neg_path_swap_plan_raw_path_id
-  "could not convert .0. from .uint64_t."
-  "to .crucible::cntp::PositivePathId. .aka .fixy::Refinement<fixy::IsPositive.., long unsigned int, false>..")
+  "invalid initialization of reference of type .const crucible::cntp::OldPathId&."
+  "from expression of type .uint64_t. .aka .long unsigned int..")
 crucible_neg_compile_test(neg_path_swap_plan_direct
-  ".constexpr crucible::cntp::PathSwapPlan::PathSwapPlan.crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositivePathId, crucible::cntp::PositiveNanoseconds.. is private within this context"
+  ".constexpr crucible::cntp::PathSwapPlan::PathSwapPlan.crucible::cntp::PositiveFlowId, const crucible::cntp::OldPathId&, const crucible::cntp::NewPathId&, crucible::cntp::PositiveSwapTimeout.. is private within this context"
   "PathSwap.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_path_swap_plan_swapped_paths
+  "invalid initialization of reference of type .const crucible::cntp::OldPathId&."
+  "from expression of type .const crucible::cntp::NewPathId.")
+crucible_neg_compile_test(neg_path_swap_transition_swapped_states
+  "invalid initialization of reference of type .const crucible::cntp::SwapFromState&."
+  "from expression of type .const crucible::cntp::SwapToState.")
+crucible_neg_compile_test(neg_path_swap_raw_now
+  "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::receiver_accepts_bidir.fixy::BgLoadCtx&, const uint64_t&.."
+  "cannot convert .now_us. .type .const uint64_t. .aka .const long unsigned int... to type .crucible::cntp::SwapNanoseconds.")
 crucible_neg_compile_test(neg_path_swap_mint_bg_ctx
   "no matching function for call to .mint_path_swapper.fixy::BgDrainCtx&.."
   "required for the satisfaction of .CtxFitsPathSwapMint<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >.")

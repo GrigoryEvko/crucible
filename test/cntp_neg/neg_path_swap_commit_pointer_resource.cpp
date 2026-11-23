@@ -32,7 +32,8 @@ int main() {
     auto swapper = cntp::mint_path_swapper(init);
     auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
     int peer_state = 0;
-    auto result = swapper.commit_sender(bg, std::move(handle), PointerWire{.peer = &peer_state}, 0);
+    auto result =
+        swapper.commit_sender(bg, std::move(handle), PointerWire{.peer = &peer_state}, cntp::SwapNanoseconds{0});
     (void)result;
     return 0;
 }

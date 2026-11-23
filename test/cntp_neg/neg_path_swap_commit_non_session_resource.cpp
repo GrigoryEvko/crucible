@@ -25,7 +25,7 @@ int main() {
     auto swapper = cntp::mint_path_swapper(init);
     auto handle = sess::mint_session<sess::Send<int, sess::End>>(ctx, Wire{.id = 1});
     Wire next{.id = 2};
-    auto result = swapper.commit_sender(bg, std::move(handle), next, 0);
+    auto result = swapper.commit_sender(bg, std::move(handle), next, cntp::SwapNanoseconds{0});
     (void)result;
     return 0;
 }
