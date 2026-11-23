@@ -2137,6 +2137,62 @@ def dead_holder_cases(expect: testing.Expect) -> None:
         )
 
 
+def right_leave_cases(expect: testing.Expect) -> None:
+    """Hold a holder of --right-of-way whose first request leaves the queue while its batch runs (the right of way).
+
+    The right file of the batch has the number of its first request.  On the first run, that request leaves the queue,
+    as its process does when it ends, and the batch lands its other request in a second run.  On each run, a later
+    batch must still wait for the right of way.  On the old code, the removal of the first request also removed the
+    right file, so the holder held a lock on a removed file, and the later batch found no right of way.
+    """
+    with tempfile.TemporaryDirectory(prefix="land-right-leave-") as work_text:
+        work = Path(work_text)
+        root, queue = work / "repo", work / "queue"
+        queue.mkdir()
+        head = planted_repository(root)
+        requests = own_requests(root, ("leaves the queue\n", "stays in the queue\n"))
+        right_file = land.queue_file(queue, 5, land.RIGHT_SUFFIX)
+        is_first_alive = [True]
+        later_first: list[list[int]] = []
+        later_held: list[bool] = []
+
+        def leave_first() -> None:
+            """Remove the first request from the queue on the first run, then look at the view of a later batch."""
+            if is_first_alive[0]:
+                is_first_alive[0] = False
+                land.remove_request(queue, 5)
+            later_first.append(land.RightOfWay(queue, 9, no_pause).first())
+            later_held.append(land.Stack(queue, 9).is_right_held(5))
+
+        batch = [
+            land.Queued(5, root, requests[0], right_options(True)),
+            land.Queued(6, root, requests[1], options()),
+        ]
+        made: dict[int, land.Decision] = {}
+        landing = land.BatchLanding(
+            batch,
+            passing([], leave_first),
+            lambda item, decision: made.__setitem__(item.number, decision),
+            no_pause,
+            is_alive=lambda item: item.number != 5 or is_first_alive[0],
+            right=land.RightOfWay(queue, 5, no_pause),
+            stack=land.Stack(queue, 5),
+        )
+        _result, printed = testing.captured(lambda: landing.land(batch))
+        expect(
+            f"a holder whose first request leaves the queue keeps its right file until its batch ends, so a later "
+            f"batch waits for it on each run, and the holder removes the file at the end: waits for {later_first}, "
+            f"held {later_held}",
+            later_first == [[5], [5]]
+            and later_held == [True, True]
+            and 5 not in made
+            and made[6].status == 0
+            and subjects_since(root, head) == ["Add r2"]
+            and not right_file.exists()
+            and "left the queue before the swap" in printed,
+        )
+
+
 def right_cases(expect: testing.Expect) -> None:
     """Hold the right of way: a batch that loses swaps takes it, and the swap of a different batch waits for it."""
     with tempfile.TemporaryDirectory(prefix="land-right-") as work_text:
@@ -4235,7 +4291,7 @@ def dead_right_cases(expect: testing.Expect, base: Path, lanes: contextlib.ExitS
     """Hold a holder with --right-of-way that ends in its gate: the kernel frees its lock, a later batch does not wait
     for its file, and the sweep removes the file (the right of way).
 
-    No second holder starts, because it removes each file of a request with no lock before the sweep sees it.
+    No second holder starts, so the case reads the files of the queue as the dead holder left them.
     """
     work, root, log = base / "work-dead-right", base / "repo-dead-right", base / "dead-right.log"
     only_first_lane(work, lanes)
@@ -4383,6 +4439,7 @@ def main(argv: list[str]) -> int:
             right_cases,
             right_word_cases,
             right_option_cases,
+            right_leave_cases,
             stack_cases,
             lost_run_cases,
             newer_entry_cases,

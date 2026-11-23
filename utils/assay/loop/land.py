@@ -487,9 +487,11 @@ Right of way
     --right-of-way takes the right of way before its first composition, and
     not after refused swaps.  It holds a lock of flock(2) on the file
     NUMBER.right of the queue, with the number of its first request, until
-    the batch ends.  The kernel frees the lock of a holder that ends.  The
-    file of a holder that a signal ended stays until the sweep of the queue
-    removes it (removed_dead_holders()).
+    the batch ends.  The file stays when that request leaves the queue
+    before the batch ends (remove_request()), so the other batches still
+    wait for the holder.  The kernel frees the lock of a holder that ends.
+    The file of a holder that a signal ended stays until the sweep of the
+    queue removes it (removed_dead_holders()).
 
     Only the one big-scope series of the coordinator gives --right-of-way,
     because it must land before each other change.  No other landing gives
@@ -3834,8 +3836,11 @@ def remove_request(queue: Path, number: int) -> None:
     """Remove each file of a request from the queue: the request file first, and the lock file last (the queue).
 
     A holder then takes no request of a process that left the queue, and it finds no file of a request with no lock.
+    The file NUMBER.right stays.  It is the file of the batch of the request, and its holder can run that batch after
+    the request left.  The holder removes it at the end of the batch, and the sweep removes the file of a holder that
+    ended (the right of way).
     """
-    for suffix in (REQUEST_SUFFIX, SERIES_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX, RIGHT_SUFFIX):
+    for suffix in (REQUEST_SUFFIX, SERIES_SUFFIX, VERDICT_SUFFIX, JOURNAL_SUFFIX, CLAIM_SUFFIX):
         queue_file(queue, number, suffix).unlink(missing_ok=True)
     for path in paths.listing(queue, f"{number:0{NUMBER_WIDTH}d}{PATCH_MARK}*"):
         path.unlink(missing_ok=True)
