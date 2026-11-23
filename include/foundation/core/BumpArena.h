@@ -58,10 +58,11 @@
 //       brand of the scope.
 //   make and array take the arena by a parameter that CRUCIBLE_LIFETIMEBOUND
 //   marks.  So the rule view-escape refuses a return of a Ref or a run of a
-//   local arena, also through erase_brand.  erase_brand of
-//   foundation/core/Ref.h refuses the scope brand, and it admits a named tag
-//   and an epoch brand.  Two objects of one owner class share a member tag,
-//   which no type tells apart.
+//   local arena.  erase_brand of foundation/core/Ref.h refuses the scope
+//   brand and each brand of an arena: a member tag, a family tag and an
+//   epoch brand.  So a Ref of an arena keeps the brand of its arena.  Two
+//   objects of one owner class share a member tag, which no type tells
+//   apart.
 //
 // Epochs
 //   An EpochArena<Tag> of a member tag has no make and no array.  It gives

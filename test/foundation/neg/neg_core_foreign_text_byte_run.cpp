@@ -1,5 +1,7 @@
-// mint_foreign_text takes a run of char.  A run of bytes is no text, and
-// mint_foreign_view gives its View.
+// mint_foreign_text takes a run of char from a pointer and a count, or the
+// View of a run of std::byte, whose View proves the run.  A pointer of
+// unsigned char is neither, so the call does not compile, and
+// mint_foreign_view gives the View of such a run.
 
 #include <foundation/core/Region.h>
 

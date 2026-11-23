@@ -92,10 +92,12 @@ template <typename Tag, typename Brand>
 constexpr void mint_read_loan(Permission<Tag, Brand> const&) =
     delete("mint_read_loan parks the token until the loan comes back.  Pass the token with std::move");
 
-// Ends a loan: consumes the loan and gives back the parked token.  The
-// brands of the two must agree, so a loan of one region cannot end the
-// loan of another region.  It carries the row gate of mint_read_loan,
-// because no loan of another tag exists to end.
+// Ends a loan: consumes the loan and gives back the parked token.  The tags
+// and the brands of the two must agree, so a loan of one tag or one brand
+// cannot end the loan of another.  Two loans of one tag and one brand, such
+// as the loans of two runs of one site (fact 2 of foundation/Brand.h), have
+// one type, and the types do not tell them apart.  It carries the row gate
+// of mint_read_loan, because no loan of another tag exists to end.
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
 [[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
