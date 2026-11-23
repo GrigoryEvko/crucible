@@ -1,8 +1,9 @@
 // The drops of fixy/LinearDrops.h for three linear types.  The entity of a line
 // names the type that ends, so the instance of each type gives its own line at
 // each place of the header.  The ends of a Token and of a Ticket are clobbers
-// of a trivial destructor.  The destructor of Sealed is user-provided, so the
-// end of its member is a call of that destructor.
+// of a trivial destructor.  The destructor of Sealed is user-provided, so each
+// end of a Sealed is a call of that destructor: the end of its member, an
+// explicit call through a pointer, and a delete-expression.
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <fixy/LinearDrops.h>
@@ -35,6 +36,10 @@ void uses(Holder<Token>& holder, Token& slot, Token& last) { drops<Token>(holder
 
 void uses_ticket(Holder<Ticket>& holder, Ticket& slot, Ticket& last) { drops<Ticket>(holder, slot, &last); }
 
-void uses_sealed(Holder<Sealed>& holder) { end_member<Sealed>(holder); }
+void uses_sealed(Holder<Sealed>& holder, Sealed& last) {
+    end_member<Sealed>(holder);
+    end_in_place<Sealed>(&last);
+    free_one<Sealed>(&last);
+}
 
 }  // namespace planted

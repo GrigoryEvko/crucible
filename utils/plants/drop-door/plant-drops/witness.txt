@@ -2,8 +2,11 @@
 # explicit call of the destructor and a delete-expression end a value with no
 # door.  The entity of each line names the type that ends, so the instances of
 # one template for Token and for Ticket give two lines at each place, and a
-# new type at a place raises the count of its row.  The end of the member of a
-# Sealed is a call of its user-provided destructor.
+# new type at a place raises the count of its row.  Each end of a Sealed is a
+# call of its user-provided destructor: the end of its member, an explicit
+# call through a pointer (25), and a delete-expression (30).  The plugin of
+# main read the pointer of the two last ends as an object of the frame, so it
+# gave no line there.
 
 compile drops src/drops.cpp linear-shapes=on
 flag drops -freflection
@@ -18,3 +21,5 @@ finding drops drop-door untracked-assignment include/fixy/LinearDrops.h:20:10 | 
 finding drops drop-door destroy include/fixy/LinearDrops.h:25:5 | planted::end_in_place: the end of a lifetime (planted::Ticket)
 finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_one: the end of a lifetime (planted::Ticket)
 finding drops drop-door destroy include/fixy/LinearDrops.h:35:20 | planted::end_member: planted::Sealed::~Sealed (planted::Sealed)
+finding drops drop-door destroy include/fixy/LinearDrops.h:25:16 | planted::end_in_place: planted::Sealed::~Sealed (planted::Sealed)
+finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_one: planted::Sealed::~Sealed (planted::Sealed)

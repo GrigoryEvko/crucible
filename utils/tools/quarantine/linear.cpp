@@ -5018,10 +5018,24 @@ bool is_call_of_type(tree initial, tree type) {
     return result != NULL_TREE && TYPE_MAIN_VARIANT(result) == TYPE_MAIN_VARIANT(type);
 }
 
+// How a node names an object for is_frame_object: as the object itself, as
+// the target of an assignment does, or as its address, as the object argument
+// of a destructor or an assignment operator does.
+enum class ObjectForm : std::uint8_t {
+    object,
+    address,
+};
+
 // The tracked object of must-consume that NODE names: a local, a parameter
 // by value or by rvalue reference, or a structured binding.  An assignment to
-// it is the business of must-consume.
-bool is_frame_object(tree node) {
+// it is the business of must-consume.  When NODE is an address (FORM), the
+// value of a local or a parameter of a pointer type names its pointee, which
+// is no tracked object, so p->~T() and a delete of p end an object behind a
+// pointer.  The address of such a local names the pointer itself.
+bool is_frame_object(tree node, ObjectForm form) {
+    // True when a declaration that the walk reaches is the object itself, and
+    // not a pointer whose pointee is the object.
+    bool is_object_itself = form == ObjectForm::object;
     for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
         node = tree_strip_any_location_wrapper(node);
         switch (TREE_CODE(node)) {
@@ -5029,7 +5043,10 @@ bool is_frame_object(tree node) {
             case CONVERT_EXPR:
             case NON_LVALUE_EXPR:
             case VIEW_CONVERT_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
             case ADDR_EXPR:
+                is_object_itself = true;
                 node = TREE_OPERAND(node, 0);
                 continue;
             case INDIRECT_REF: {
@@ -5040,10 +5057,10 @@ bool is_frame_object(tree node) {
             case TARGET_EXPR:
                 return true;
             case VAR_DECL:
-                return !TREE_STATIC(node) && !DECL_EXTERNAL(node)
+                return !TREE_STATIC(node) && !DECL_EXTERNAL(node) && (is_object_itself || !TYPE_PTR_P(TREE_TYPE(node)))
                     && (!TYPE_REF_P(TREE_TYPE(node)) || DECL_DECOMPOSITION_P(node));
             case PARM_DECL:
-                return !TYPE_REF_P(TREE_TYPE(node));
+                return !TYPE_REF_P(TREE_TYPE(node)) && (is_object_itself || !TYPE_PTR_P(TREE_TYPE(node)));
             default:
                 return false;
         }
@@ -5165,8 +5182,9 @@ bool is_lent_parameter_target(tree target, tree function) {
 // The rule drop-door at an assignment: an assignment over a linear object
 // that is no tracked object of must-consume drops its old value.  A lent
 // parameter is such a tracked object when must-consume runs in the unit.
-void check_assignment_target(tree target, location_t location, const ShapeWalk& walk) {
-    if (walk.is_exempt_from_drops || target == NULL_TREE || is_frame_object(target)) {
+// FORM tells whether TARGET is the object or its address (is_frame_object).
+void check_assignment_target(tree target, ObjectForm form, location_t location, const ShapeWalk& walk) {
+    if (walk.is_exempt_from_drops || target == NULL_TREE || is_frame_object(target, form)) {
         return;
     }
     if (linear_mode.checks_must_consume && is_lent_parameter_target(target, walk.function)) {
@@ -5227,9 +5245,9 @@ void check_call(tree call, ShapeWalk& walk) {
     tree first = argument_at(call, 0);
     if (DECL_ASSIGNMENT_OPERATOR_P(callee) && DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
         && is_linear_type(DECL_CONTEXT(callee))) {
-        check_assignment_target(first, location, walk);
+        check_assignment_target(first, ObjectForm::address, location, walk);
     } else if (DECL_DESTRUCTOR_P(callee) && DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
-               && is_linear_type(DECL_CONTEXT(callee)) && !is_frame_object(first)) {
+               && is_linear_type(DECL_CONTEXT(callee)) && !is_frame_object(first, ObjectForm::address)) {
         // A delete-expression calls the destructor too, or clobbers the
         // object of a trivial destructor (walk_shapes).
         record_shape(Kind::linear_destroy, location,
@@ -5385,12 +5403,12 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
             if (TREE_CLOBBER_P(TREE_OPERAND(node, 1))) {
                 tree target = TREE_OPERAND(node, 0);
                 if (!walk.is_exempt_from_drops && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target))
-                    && !is_frame_object(target)) {
+                    && !is_frame_object(target, ObjectForm::object)) {
                     record_shape(Kind::linear_destroy, walk.location_of(node),
                                  walk.name + ": the end of a lifetime (" + linear_type_text(TREE_TYPE(target)) + ")");
                 }
             } else {
-                check_assignment_target(TREE_OPERAND(node, 0), walk.location_of(node), walk);
+                check_assignment_target(TREE_OPERAND(node, 0), ObjectForm::object, walk.location_of(node), walk);
             }
             break;
         default:

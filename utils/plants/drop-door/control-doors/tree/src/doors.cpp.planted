@@ -35,6 +35,19 @@ struct [[= ::foundation::linear::scope_end_door{}]] Owner {
 
 [[= ::foundation::linear::drop_door{}]] void reset(Holder& holder) noexcept { holder.token = Token{}; }
 
+// A class that states its own end, which a door ends through a pointer.
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Sealed {
+    constexpr Sealed() noexcept = default;
+    constexpr Sealed(Sealed&&) noexcept = default;
+    constexpr Sealed& operator=(Sealed&&) noexcept { return *this; }
+    Sealed(const Sealed&) = delete;
+    ~Sealed() {}
+};
+
+[[= ::foundation::linear::drop_door{}]] void end_through(Sealed* sealed) noexcept { sealed->~Sealed(); }
+
+[[= ::foundation::linear::drop_door{}]] void free_through(Sealed* sealed) noexcept { delete sealed; }
+
 void local() {
     Token token;
     token = Token{};

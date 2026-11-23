@@ -1,6 +1,12 @@
 # An assignment to a tracked local, an assignment in a door, a destructor and
-# the transfer functions of a linear class give no line.
+# the transfer functions of a linear class give no line.  A door that ends a
+# Sealed through a pointer, by an explicit call of its destructor and by a
+# delete-expression, gives no line either.  The rule quarantine gives its
+# lines for the two pointers and the delete.
 
 compile doors src/doors.cpp linear-shapes=on
 flag doors -freflection
 exit doors pass
+finding doors quarantine raw-pointer-object src/doors.cpp:47:66 | sealed
+finding doors quarantine raw-pointer-object src/doors.cpp:49:67 | sealed
+finding doors quarantine raw-new-delete src/doors.cpp:49:93 | delete
