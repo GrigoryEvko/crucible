@@ -200,8 +200,11 @@ class Epoch;
 
 // A run of elements that an arena of the brand built: a View with the brand
 // of its arena.  Only the arena builds a run that is not empty, through
-// ArenaArrayDoor below.  view() gives the View of an lvalue run.  That View
-// carries no brand (epochs above).
+// ArenaArrayDoor below.  A run converts to a run of const elements, and
+// window gives a part of a run, each with the same brand.  So a field that
+// holds a run of the brand takes only bytes of an arena of the brand.  view()
+// gives the View of an lvalue run for a read in place.  That View carries no
+// brand (epochs above).
 template <ViewElement T, ::foundation::brand::IsBrand Brand>
 class[[= ::foundation::transfer::refers{}]] ArenaRun final {
 public:
@@ -210,16 +213,32 @@ public:
     // The empty run, which names no byte.
     constexpr ArenaRun() noexcept = default;
 
+    // The run of the same elements as const, with the same brand.
+    template <class Writable>
+        requires std::same_as<Writable const, T> && (!std::same_as<Writable, T>)
+    constexpr ArenaRun(ArenaRun<Writable, Brand> other) noexcept : run_{other.run_} {}
+
     // The elements of the run.  A run of a temporary has no View, because
     // the View would outlive the name of the run.
     [[nodiscard]] constexpr View<T> view() const& noexcept { return run_; }
     void view() const&& = delete("a View of a temporary run outlives the name of the run: name the run first");
+
+    // The count elements from offset, as a run of the same brand, or no run
+    // when they do not fit in this run.  The result is an Option<ArenaRun>,
+    // which the class cannot name before it is complete.
+    [[nodiscard]] constexpr auto window(std::size_t offset, std::size_t count) const noexcept {
+        Option<View<T>> const part = run_.window(offset, count);
+        return part.match([](View<T> const& found) noexcept { return Option<ArenaRun>::some(ArenaRun{found}); },
+                          []() noexcept { return Option<ArenaRun>{}; });
+    }
 
     // The count of the elements.
     [[nodiscard]] constexpr std::size_t size() const noexcept { return run_.size(); }
 
 private:
     friend class ArenaArrayDoor;
+    template <ViewElement, ::foundation::brand::IsBrand>
+    friend class ArenaRun;
 
     constexpr explicit ArenaRun(View<T> run) noexcept : run_{run} {}
 

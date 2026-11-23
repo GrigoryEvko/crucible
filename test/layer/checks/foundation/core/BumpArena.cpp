@@ -80,6 +80,17 @@ static_assert(!std::is_move_constructible_v<EpochArena<Owner::Member>>);
 static_assert(!std::is_move_constructible_v<Epoch<EpochOf<Owner::Member>>>);
 static_assert(!std::is_constructible_v<ArenaRun<int, Family>, View<int>>);
 
+// A run converts to a run of const elements with the same brand, and to no
+// run of a different brand, and no run of const gives back a writable run.
+// A window of a run keeps the type of the run.
+static_assert(std::is_convertible_v<ArenaRun<int, Family>, ArenaRun<int const, Family>>);
+static_assert(!std::is_convertible_v<ArenaRun<int const, Family>, ArenaRun<int, Family>>);
+static_assert(!std::is_constructible_v<ArenaRun<int, Owner::Member>, ArenaRun<int, Family>>);
+static_assert(!std::is_constructible_v<ArenaRun<int const, Owner::Member>, ArenaRun<int, Family>>);
+static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(0, 0)),
+                             Option<ArenaRun<int, Family>>>);
+static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
+
 // make takes a type with a trivial destructor that the arguments build with
 // no throw, and the allocation tag only.
 static_assert(CanMakeInArena<Plain, Alloc>);

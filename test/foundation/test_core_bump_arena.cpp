@@ -112,6 +112,28 @@ void test_array_fills_each_element() {
     });
 }
 
+// A window of a run names the elements of its part, with the brand of the
+// run, and a window past the end gives no run.  A run of const reads the same
+// elements.
+void test_window_keeps_the_run() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
+    ArenaRun<std::uint32_t, TestFamily> const numbers = arena.array<std::uint32_t>(alloc, 8, 0);
+    std::uint32_t next = 0;
+    for (std::uint32_t& element : numbers.view()) {
+        element = next++;
+    }
+    ArenaRun<std::uint32_t, TestFamily> const part = numbers.window(2, 3).expect("the window fits in the run");
+    CRUCIBLE_FATAL_INVARIANT(part.size() == 3);
+    CRUCIBLE_FATAL_INVARIANT(*part.view().get(0).expect("a window of three holds element 0") == 2);
+    CRUCIBLE_FATAL_INVARIANT(*part.view().get(2).expect("a window of three holds element 2") == 4);
+    CRUCIBLE_FATAL_INVARIANT(numbers.window(6, 3).is_none());
+    CRUCIBLE_FATAL_INVARIANT(numbers.window(8, 0).is_some());
+    ArenaRun<std::uint32_t const, TestFamily> const read = part;
+    CRUCIBLE_FATAL_INVARIANT(address_of(::foundation::core::to(*read.view().get(1).expect("element 1")))
+                             == address_of(::foundation::core::to(*part.view().get(1).expect("element 1"))));
+}
+
 // A count of zero gives the empty run and takes no block.
 void test_empty_array_takes_no_bytes() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
@@ -316,6 +338,7 @@ int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_make_builds_the_object();
     test_array_fills_each_element();
+    test_window_keeps_the_run();
     test_empty_array_takes_no_bytes();
     test_large_request_takes_its_own_block();
     test_family_arena_lives_in_a_box();
