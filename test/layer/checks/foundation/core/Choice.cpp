@@ -1376,6 +1376,7 @@ class LocalKey {
 
 public:
     LocalKey& operator=(LocalKey const&) = delete("a key lives for one construction");
+    static constexpr niche_statement is_niche_voucher{};
 };
 struct OpenVoucher {
     constexpr OpenVoucher() noexcept = default;
@@ -1392,15 +1393,17 @@ public:
 struct OpenedKey : ProtectedKey {
     constexpr OpenedKey() noexcept = default;
 };
-// A key vouches only in a namespace of the base, so OutsideKey of the global
-// namespace vouches for nothing.  LocalKey stands in a namespace of the base,
-// as each class of a check file of the base does.
-static_assert(is_voucher_type(^^niche_key<KeyedPairSlot>) && is_voucher_type(^^LocalKey));
-static_assert(!is_voucher_type(^^::OutsideKey) && !is_defined_in_base(^^::OutsideKey));
-static_assert(is_defined_in_base(^^niche_key<KeyedPairSlot>) && is_defined_in_base(^^LocalKey));
+// A key vouches only with the mark of a key of the base, which niche_key
+// states.  OutsideKey states no mark.  LocalKey stands in a namespace of the
+// base, but its mark reads this file, which is no header of the base.  So
+// the two vouch for nothing.  A class with protected constructors is no key
+// even with a mark, because a class outside reaches its constructor.
+static_assert(is_voucher_type(^^niche_key<KeyedPairSlot>) && is_base_key(^^niche_key<KeyedPairSlot>));
+static_assert(!is_voucher_type(^^::OutsideKey) && !is_base_key(^^::OutsideKey));
+static_assert(!is_voucher_type(^^LocalKey) && !is_base_key(^^LocalKey));
 static_assert(!is_voucher_type(^^OpenVoucher) && !is_voucher_type(^^RawWord));
-static_assert(!is_voucher_type(^^ProtectedKey) && is_defined_in_base(^^ProtectedKey));
-static_assert(!has_reachable_constructor(^^LocalKey) && has_reachable_constructor(^^ProtectedKey));
+static_assert(!is_voucher_type(^^ProtectedKey) && has_reachable_constructor(^^ProtectedKey));
+static_assert(!has_reachable_constructor(^^LocalKey) && !has_reachable_constructor(^^niche_key<KeyedPairSlot>));
 
 // Constructors of the walk: a plain class around the raw word, a voucher that
 // each caller builds, two raw values, a raw value beside a key, a raw value
@@ -1980,7 +1983,8 @@ static_assert(refused_with(5)
 // no type has a member of its name.
 inline constexpr TextView choice_names{
     "none NoValue Unit Err err some is_some is_none value_or ok_or is_ok is_err ok is which niche empty is_empty "
-    "is_empty_never_built with_mut map map_err and_then or_else filter is_some_and is_none_or is_ok_and is_err_and "
+    "is_empty_never_built is_niche_voucher with_mut map map_err and_then or_else filter is_some_and is_none_or "
+    "is_ok_and is_err_and "
     "take fill replace expect_none"};
 
 // Each form of an Option, and each Result, gives only the shared verbs, the

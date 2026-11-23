@@ -2700,6 +2700,11 @@ foundation_neg_compile_test(neg_core_option_niche_statement_outside_key
   "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = KeyedSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_outside_key APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_open_key
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = KeyedSlot<foundation::core::niche<OpenTag> >\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = KeyedSlot<foundation::core::niche<OpenTag> >\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_open_key APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_wrapped_raw
   "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = WrappedRawSlot\\]"
   "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = WrappedRawSlot\\]. evaluated to .false.")

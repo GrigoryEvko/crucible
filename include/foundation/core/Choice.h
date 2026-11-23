@@ -285,6 +285,9 @@ class [[nodiscard]] niche_key final {
 
 public:
     niche_key& operator=(niche_key const&) = delete("a niche key lives for one call of the niche protocol");
+
+    // The mark of a key of the base (the check of the statement).
+    static constexpr niche_statement is_niche_voucher{};
 };
 
 // The niche protocol.  A payload type T with an empty value that no valid
@@ -474,15 +477,15 @@ public:
 //      - Each door takes a voucher.  A door is a constructor other than copy
 //        and move, and a static member function that gives a value that
 //        holds a T, such as a T, an Option of a T or a class with a field of
-//        T (holds_class).  A voucher is a key, which is a class in a
-//        namespace of the base with no constructor that a class outside can
-//        call, such as RefKey, or a payload whose statement passes the three
-//        checks, such as the RunAddress of a DataAddress.  A raw value then
-//        comes in only through a door that checks it, or beside a value that
-//        is not empty.  A door with no voucher is refused also when it takes
-//        no raw value, such as a door from an empty tag.  Such a door
-//        carries nothing, so its body picks a constant, and the constant can
-//        be the empty value, as for a door from nothing.
+//        T (holds_class).  A voucher is a key, which is a class with no
+//        constructor that a class outside can call and that states the mark
+//        of a key of the base, such as RefKey, or a payload whose statement
+//        passes the three checks, such as the RunAddress of a DataAddress.  A
+//        raw value then comes in only through a door that checks it, or
+//        beside a value that is not empty.  A door with no voucher is refused
+//        also when it takes no raw value, such as a door from an empty tag.
+//        Such a door carries nothing, so its body picks a constant, and the
+//        constant can be the empty value, as for a door from nothing.
 //      - A static data member that holds a T is a door with no parameter, at
 //        each access, because a friend or a nested class can copy a private
 //        one.  A member variable template is refused too.
@@ -578,43 +581,48 @@ consteval bool has_reachable_constructor(std::meta::info type) {
     return false;
 }
 
-// True when a namespace of the base holds the class: the namespace
-// foundation or fixy of the global scope, or a namespace inside one of them.
-// The rule base-namespace of the quarantine plugin refuses each declaration
-// in such a namespace from a file outside the base, but not an explicit or a
-// partial specialization.  A specialization of a template with the open mark,
-// such as niche<T> in the file of T, and a specialization in a PROBE: region
-// stand in such a namespace from a different file.  So the namespace does
-// not prove that a header of the base defines the class.  Complexity: linear
-// in the depth of the scopes of the class.
-consteval bool is_defined_in_base(std::meta::info type) {
-    std::meta::info const global_scope = ^^::;
-    std::meta::info scope = std::meta::parent_of(type);
-    while (scope != global_scope) {
-        std::meta::info const parent = std::meta::parent_of(scope);
-        bool const is_layer_namespace = parent == global_scope && std::meta::is_namespace(scope)
-                                     && (::foundation::reflect::has_identifier_named(scope, "foundation")
-                                         || ::foundation::reflect::has_identifier_named(scope, "fixy"));
-        if (is_layer_namespace) return true;
-        scope = parent;
+// True when the class states the mark of a key of the base: an own public
+// member is_niche_voucher, a niche_statement whose mark stands in a header of
+// the base, as the statement of a payload does.  A specialization of a
+// template of the base in a different file, such as a specialization of a
+// template with the open mark in the file of its argument or a
+// specialization in a PROBE: region, holds no member of its primary
+// template.  Its own mark reads its own file, and a class that derives from
+// a key holds no own mark.  So a key of a different file states nothing.
+// The answer is a variable template, so each unit reads the mark of a key
+// one time, and a Ref of each brand takes the answer for RefKey.
+template <class Key>
+consteval bool states_base_key_mark() {
+    if constexpr (requires { Key::is_niche_voucher; }) {
+        constexpr std::meta::info mark = ^^Key::is_niche_voucher;
+        std::meta::info const own_class = ^^Key;
+        return std::meta::parent_of(mark) == own_class && is_base_statement(mark);
+    } else {
+        return false;
     }
-    return false;
+}
+
+template <class Key>
+inline constexpr bool is_base_key_v = states_base_key_mark<Key>();
+
+consteval bool is_base_key(std::meta::info type) {
+    return std::meta::extract<bool>(std::meta::substitute(^^is_base_key_v, {type}));
 }
 
 // True when the type, with no reference and no cv, vouches for the raw
-// values beside it: a key, which is a class in a namespace of the base with
-// no constructor that a class outside can call, or a payload whose statement
-// passes the check.  Such a class in a different namespace vouches for
-// nothing, and so does a class with a protected constructor, which a class
-// outside builds through a class that derives from it.  A key from a
-// specialization of a different file, which is_defined_in_base gives,
-// vouches too.  No stated type takes a key from a template argument, so no
-// such key comes into a door of the base.  An incomplete class, such as the
+// values beside it: a key, which is a class with no constructor that a class
+// outside can call and that states the mark of a key of the base, or a
+// payload whose statement passes the check.  So only the doors and the
+// friends of an author of the base build a key.  A class with no such mark,
+// such as a key that a template argument gives from a different file,
+// vouches for nothing, as a statement outside the base states nothing.  So
+// does a class with a protected constructor, which a class outside builds
+// through a class that derives from it.  An incomplete class, such as the
 // target of a Ref, vouches for nothing.
 consteval bool is_voucher_type(std::meta::info type) {
     std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
     if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
-    if (!has_reachable_constructor(bare)) return is_defined_in_base(bare);
+    if (!has_reachable_constructor(bare)) return is_base_key(bare);
     return std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}))
         && is_statement_checked(bare);
 }

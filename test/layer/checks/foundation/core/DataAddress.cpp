@@ -65,6 +65,7 @@ constexpr niche_statement copied_statement{niche<RunAddress>::is_empty_never_bui
 static_assert(!copied_statement.is_in_base());
 static_assert(detail::BuildsNoEmptyValue<RunAddress> && detail::BuildsNoEmptyValue<DataAddress<TwoBytes>>);
 static_assert(detail::CheckedStatement<RunAddress> && detail::CheckedStatement<DataAddress<TwoBytes>>);
+static_assert(detail::is_base_key(^^detail::RunAddressKey) && detail::is_voucher_type(^^detail::RunAddressKey));
 
 // The copy and the end are those of the bytes, so the ABI gives the words in
 // registers.  The seal makes the assignment user-provided, so the types are

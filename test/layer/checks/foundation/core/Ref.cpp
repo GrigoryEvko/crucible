@@ -165,6 +165,9 @@ static_assert(!std::is_default_constructible_v<detail::RefKey>);
 static_assert(!std::is_copy_constructible_v<detail::RefKey>);
 static_assert(!std::is_copy_assignable_v<detail::RefKey>);
 static_assert(!std::is_trivially_copyable_v<detail::RefKey>);
+// The key states the mark of a key of the base, so it vouches for the
+// reference beside it in the walk of the constructors.
+static_assert(detail::is_base_key(^^detail::RefKey) && detail::is_voucher_type(^^detail::RefKey));
 
 // A const target comes from a mutable one with the same brand, and never
 // the reverse.  No brand changes into a different brand.

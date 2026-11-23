@@ -149,6 +149,10 @@ class [[nodiscard]] RefKey final {
 
 public:
     RefKey& operator=(RefKey const&) = delete("a key of a Ref lives for one construction");
+
+    // The mark of a key of the base (the check of the statement of
+    // foundation/core/Choice.h).
+    static constexpr niche_statement is_niche_voucher{};
 };
 
 }  // namespace detail
