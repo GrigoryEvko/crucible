@@ -96,19 +96,20 @@ namespace detail {
 void text_literal_has_no_terminating_zero() noexcept;
 void text_literal_holds_a_zero_byte_before_its_end() noexcept;
 
-// The doors of the base to the parts of a text.  The rule owners keeps
-// each caller outside the base out.
+// The reads of the base of the parts of a text.  A read makes no text.  The
+// rule owners keeps each caller outside the base out.
 [[nodiscard]] constexpr char const* text_first_(TextView text) noexcept;
-[[nodiscard]] constexpr TextView text_over_(char const* first, std::size_t size) noexcept;
 [[nodiscard]] constexpr char const* c_text_first_(CText text) noexcept;
-[[nodiscard]] constexpr CText c_text_over_(char const* first, std::size_t size) noexcept;
-[[nodiscard]] constexpr ForeignText foreign_text_over_(TextView characters) noexcept;
 
 template <std::size_t Capacity>
 [[nodiscard]] constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept;
 
 template <std::size_t Capacity>
 constexpr void text_resize_(FixedText<Capacity>& text, std::size_t count) noexcept;
+
+// The door of the mints and the reads of this header to the raw constructors
+// of a TextView and a CText.  This header defines it after CText.
+class TextPartsDoor;
 
 // The door of TextView to the key of a cursor (the doors of the key of
 // foundation/core/Cursor.h).  Its one member is private, and TextView is its
@@ -123,6 +124,32 @@ class TextCursorDoor final : ::foundation::NoObject<TextCursorDoor> {
 
 }  // namespace detail
 
+// Doors of a text
+// The constructors of a TextView and of a CText from raw parts check
+// nothing.  Each road to them names the proof of its characters:
+//   - mint_static_text takes a run of static storage, which the compiler
+//     proves at the compile.
+//   - mint_c_text checks the zero at the end of a TextView.
+//   - The reads of the names of enumerators in this header give the names
+//     that foundation/reflect/EnumName.h keeps in static storage.
+//   - These mints and reads reach the constructors through
+//     detail::TextPartsDoor, whose friends they are.
+//   - An owner above this header, such as a GrowText, has a plain door class
+//     that TextView or CText names as a friend.  This header declares the
+//     class.  The header of the owner defines it, the owner is its friend, and
+//     the comment of the door states the invariant that the owner holds.  A
+//     home owner row of utils/rule-table.txt keeps the one definition of each
+//     door in that header.
+//   - mint_foreign_text of foundation/core/Region.h checks the parts that a
+//     foreign ABI or a raw parameter gives, through ForeignTextDoor.
+class StaticTextDoor;
+class GrowTextDoor;
+class PathTextDoor;
+class RowMismatchTextDoor;
+class SurfaceVerdictTextDoor;
+class LineReaderTextDoor;
+class ForeignTextDoor;
+
 // A borrowed run of characters.  The characters need no terminating zero,
 // and a zero byte inside the run is a character as each other byte is.
 class TextView {
@@ -135,8 +162,16 @@ class TextView {
     friend class FixedText;
     friend class CText;
     friend constexpr char const* detail::text_first_(TextView text) noexcept;
-    friend constexpr TextView detail::text_over_(char const* first, std::size_t size) noexcept;
     friend struct niche<TextView>;
+
+    // The doors of a text (the comment above this class).
+    friend class detail::TextPartsDoor;
+    friend class StaticTextDoor;
+    friend class GrowTextDoor;
+    friend class RowMismatchTextDoor;
+    friend class SurfaceVerdictTextDoor;
+    friend class LineReaderTextDoor;
+    friend class ForeignTextDoor;
 
     constexpr TextView(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
 
@@ -229,7 +264,10 @@ class CText {
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     friend constexpr char const* detail::c_text_first_(CText text) noexcept;
-    friend constexpr CText detail::c_text_over_(char const* first, std::size_t size) noexcept;
+
+    // The doors of a CText (the doors of a text above TextView).
+    friend class detail::TextPartsDoor;
+    friend class PathTextDoor;
 
     constexpr CText(char const* first, std::size_t size) noexcept : first_{first}, size_{size} {}
 
@@ -266,7 +304,9 @@ public:
 class ForeignText {
     TextView characters_{};
 
-    friend constexpr ForeignText detail::foreign_text_over_(TextView characters) noexcept;
+    // The door of mint_foreign_text of foundation/core/Region.h (the doors of
+    // a text above TextView).
+    friend class ForeignTextDoor;
 
     constexpr explicit ForeignText(TextView characters) noexcept : characters_{characters} {}
 
@@ -368,28 +408,55 @@ public:
     }
 };
 
+// The mints and the reads of this header that detail::TextPartsDoor names as
+// its friends.  This header defines them after the door.
+[[nodiscard]] consteval TextView mint_static_text(char const* text) noexcept;
+[[nodiscard]] consteval TextView mint_static_text(char const* first, std::size_t size) noexcept;
+[[nodiscard]] constexpr Option<CText> mint_c_text(TextView text) noexcept;
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] constexpr TextView enum_name_text(E value) noexcept;
+template <::foundation::reflect::ScopedEnum E, char Separator>
+[[nodiscard]] constexpr TextView enum_words_text(E value) noexcept;
+template <::foundation::reflect::ScopedEnum E>
+[[nodiscard]] constexpr Option<TextView> enumerator_name_text(E value) noexcept;
+template <::foundation::reflect::ScopedEnum E, typename F>
+constexpr void for_each_enumerator_text(F&& f);
+
 namespace detail {
 
 constexpr char const* text_first_(TextView text) noexcept { return text.first_; }
 
-// A TextView over the size characters at first.  The caller is an owner of
-// the base that holds the characters, such as a GrowText, or a door that
-// checked the raw parts of a foreign run.  The size is at most
-// __PTRDIFF_MAX__, and first is not null when the size is above zero.
-constexpr TextView text_over_(char const* first, std::size_t size) noexcept { return TextView{first, size}; }
-
 // The first character of a CText.  A zero follows its last character.
 constexpr char const* c_text_first_(CText text) noexcept { return text.first_; }
 
-// A CText over the size characters at first.  The caller is an owner of the
-// base that keeps a zero at first[size] and no zero before it, such as
-// foundation::os::PathText or the name of an entry that the kernel writes
-// with its zero.
-constexpr CText c_text_over_(char const* first, std::size_t size) noexcept { return CText{first, size}; }
+// The door of the mints and the reads of this header to the raw constructors
+// of a TextView and a CText (the doors of a text).  Its members are private.
+// Its friends are mint_static_text, mint_c_text and the reads of the names of
+// enumerators, so each text that it gives has the proof of one of them.  The
+// class stands after CText, so the friends that give an Option of a text name
+// a complete type.
+class TextPartsDoor final : ::foundation::NoObject<TextPartsDoor> {
+    friend consteval TextView foundation::core::mint_static_text(char const* text) noexcept;
+    friend consteval TextView foundation::core::mint_static_text(char const* first, std::size_t size) noexcept;
+    // A friend whose return type ends in a template-id takes a trailing
+    // return type, or GCC 16 misparses the declaration.
+    friend constexpr auto foundation::core::mint_c_text(TextView text) noexcept -> Option<CText>;
+    template <::foundation::reflect::ScopedEnum E>
+    friend constexpr TextView foundation::core::enum_name_text(E value) noexcept;
+    template <::foundation::reflect::ScopedEnum E, char Separator>
+    friend constexpr TextView foundation::core::enum_words_text(E value) noexcept;
+    template <::foundation::reflect::ScopedEnum E>
+    friend constexpr auto foundation::core::enumerator_name_text(E value) noexcept -> Option<TextView>;
+    template <::foundation::reflect::ScopedEnum E, typename F>
+    friend constexpr void foundation::core::for_each_enumerator_text(F&& f);
 
-// The ForeignText of the characters of a foreign run.  The caller is the door
-// that checked the raw parts of the run, mint_foreign_text.
-constexpr ForeignText foreign_text_over_(TextView characters) noexcept { return ForeignText{characters}; }
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+    [[nodiscard]] static constexpr CText c_text_(char const* first, std::size_t size) noexcept {
+        return CText{first, size};
+    }
+};
 
 template <std::size_t Capacity>
 constexpr char* text_bytes_(FixedText<Capacity>& text) noexcept {
@@ -430,7 +497,7 @@ constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out
     for (std::size_t index = 0; index + 1 < size; ++index) {
         if (first[index] == '\0') return none;
     }
-    return Option<CText>::some(detail::c_text_over_(first, size - 1));
+    return Option<CText>::some(detail::TextPartsDoor::c_text_(first, size - 1));
 }
 
 // The TextView of a static text: a run of characters with static storage
@@ -449,7 +516,22 @@ constexpr void put_hex_digits_(std::uint64_t value, std::size_t count, char* out
     std::size_t size = 0;
     while (text[size] != '\0')
         ++size;
-    return detail::text_over_(text, size);
+    return detail::TextPartsDoor::text_(text, size);
+}
+
+// The TextView of the size characters of static storage at first, such as a
+// name that reflection gives with its count.  The mint reads the last
+// character, so a run that does not fit in its object stops the build, as a
+// null pointer with a count does.  The mint is consteval, so a pointer that
+// is no constant expression stops the build, and a view of an object that
+// ends before the compile ends is no constant result.  So the view never
+// dangles.  A zero inside the run is a character of the view.  Complexity:
+// constant, at compile time only.
+[[nodiscard]] consteval TextView mint_static_text(char const* first, std::size_t size) noexcept {
+    if (size != 0) {
+        [[maybe_unused]] char const last = first[size - 1];
+    }
+    return detail::TextPartsDoor::text_(first, size);
 }
 
 // Puts the low Digits hexadecimal digits of value after the last character
@@ -474,7 +556,7 @@ template <std::size_t Digits, std::size_t Capacity>
 template <::foundation::reflect::ScopedEnum E>
 [[nodiscard]] constexpr TextView enum_name_text(E value) noexcept {
     ::foundation::reflect::detail::NameChars const name = ::foundation::reflect::detail::enum_name_chars(value);
-    return detail::c_text_over_(name.first, name.size).view();
+    return detail::TextPartsDoor::text_(name.first, name.size);
 }
 
 // The identifier of the enumerator that holds value in lower-case words
@@ -484,7 +566,7 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
 [[nodiscard]] constexpr TextView enum_words_text(E value) noexcept {
     ::foundation::reflect::detail::NameChars const words =
         ::foundation::reflect::detail::enum_words_chars<E, Separator>(value);
-    return detail::c_text_over_(words.first, words.size).view();
+    return detail::TextPartsDoor::text_(words.first, words.size);
 }
 
 // The identifier of the entity that entity reflects, such as a class, an
@@ -494,7 +576,7 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
 // compile time only.  Complexity: constant.
 [[nodiscard]] consteval TextView identifier_text(std::meta::info entity) noexcept {
     ::foundation::reflect::detail::NameChars const name = ::foundation::reflect::detail::read_identifier_chars(entity);
-    return detail::c_text_over_(name.first, name.size).view();
+    return mint_static_text(name.first, name.size);
 }
 
 // The text "<unknown E>" with the unqualified name of E: the name that
@@ -502,9 +584,8 @@ template <::foundation::reflect::ScopedEnum E, char Separator>
 // holds.  The text has static storage and a zero after its last character.
 template <::foundation::reflect::ScopedEnum E>
 inline constexpr TextView unknown_enum_text =
-    detail::c_text_over_(::foundation::reflect::detail::unknown_enum_chars<E>.first,
-                         ::foundation::reflect::detail::unknown_enum_chars<E>.size)
-        .view();
+    mint_static_text(::foundation::reflect::detail::unknown_enum_chars<E>.first,
+                     ::foundation::reflect::detail::unknown_enum_chars<E>.size);
 
 // The identifier of the enumerator that holds value, or no value when no
 // enumerator holds it.  When two enumerators share a value, the first in
@@ -513,7 +594,7 @@ template <::foundation::reflect::ScopedEnum E>
 [[nodiscard]] constexpr Option<TextView> enumerator_name_text(E value) noexcept {
     ::foundation::reflect::detail::FoundName const found = ::foundation::reflect::detail::enumerator_chars(value);
     if (!found.is_found) return Option<TextView>{none};
-    return Option<TextView>::some(detail::c_text_over_(found.name.first, found.name.size).view());
+    return Option<TextView>::some(detail::TextPartsDoor::text_(found.name.first, found.name.size));
 }
 
 // Calls f(value, name) for each enumerator of E, in declaration order, with
@@ -525,7 +606,7 @@ template <::foundation::reflect::ScopedEnum E, typename F>
 constexpr void for_each_enumerator_text(F&& f) {
     ::foundation::reflect::detail::walk_enumerator_names<E>(
         [&f](E value, ::foundation::reflect::detail::NameChars name) {
-            f(value, detail::c_text_over_(name.first, name.size).view());
+            f(value, detail::TextPartsDoor::text_(name.first, name.size));
         });
 }
 

@@ -32,6 +32,7 @@
 //   each part of the input that the kernel gives.
 
 #include <fixy/os/Fd.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Region.h>
@@ -63,6 +64,34 @@ read_standard_input_(char* first, std::size_t count) noexcept;
 
 }  // namespace detail
 
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
+class LineReader;
+
+}  // namespace fixy::os
+
+namespace foundation::core {
+
+// The door of a reader of lines to the raw constructor of a TextView (the
+// doors of a text of foundation/core/Text.h).  Its one member is private, and
+// LineReader of fixy/os/Stdio.h is its one friend.  The invariant: a line runs
+// from first_ to an end at most last_, and last_ is at most the size of the
+// buffer of the reader.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class LineReaderTextDoor final : ::foundation::NoObject<LineReaderTextDoor> {
+    template <std::size_t Capacity>
+        requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
+    friend class ::fixy::os::LineReader;
+
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::os {
+
 // A reader of the lines of standard input (see the lines).  It does not copy
 // and does not move, because a line that it gave borrows its buffer.
 template <std::size_t Capacity>
@@ -88,7 +117,8 @@ class LineReader final {
     // The line from first_ to end.  A newline at end is no part of the line,
     // and the unread bytes then start after it.
     [[nodiscard]] LineResult take_line_(std::size_t end) noexcept {
-        ::foundation::core::TextView const line = ::foundation::core::detail::text_over_(bytes_ + first_, end - first_);
+        ::foundation::core::TextView const line =
+            ::foundation::core::LineReaderTextDoor::text_(bytes_ + first_, end - first_);
         first_ = end < last_ ? end + 1 : end;
         return LineResult{::foundation::core::Option<::foundation::core::TextView>::some(line)};
     }

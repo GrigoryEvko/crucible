@@ -24,6 +24,7 @@
 
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 
 #include <cstddef>
@@ -32,14 +33,16 @@ namespace fixy::os {
 
 namespace detail {
 
-// The CText of the text at first, which a zero ends.  Complexity: O(n) in
-// the characters.
+// The CText of the text at first, which a zero ends.  The kernel gives each
+// argument of the process with its zero, so the foreign view holds the zero,
+// and mint_c_text finds it.  Complexity: O(n) in the characters.
 [[nodiscard]] inline ::foundation::core::CText c_text_of_argument_(char const* first) noexcept {
     std::size_t count = 0;
     while (first[count] != '\0') {
         ++count;
     }
-    return ::foundation::core::detail::c_text_over_(first, count);
+    return ::foundation::core::mint_c_text(::foundation::core::mint_foreign_text(first, count + 1).characters())
+        .expect("an argument of the process ends with its zero");
 }
 
 }  // namespace detail

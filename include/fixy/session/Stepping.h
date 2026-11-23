@@ -358,7 +358,7 @@ inline constexpr std::string_view type_display_name_v = std::meta::display_strin
 // name lives in the constant data of the program, as the view above.
 template <typename T>
 inline constexpr ::foundation::core::TextView type_display_text_v =
-    ::foundation::core::detail::text_over_(type_display_name_v<T>.data(), type_display_name_v<T>.size());
+    ::foundation::core::mint_static_text(type_display_name_v<T>.data(), type_display_name_v<T>.size());
 
 // ── The Stepping wrapper contract ────────────────────────────────────
 //

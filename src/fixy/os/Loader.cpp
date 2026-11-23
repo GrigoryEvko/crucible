@@ -7,6 +7,7 @@
 #include <fixy/os/Loader.h>
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 
 #include <dlfcn.h>
@@ -33,7 +34,7 @@ namespace core = ::foundation::core;
     std::size_t count = 0;
     while (count < kLoaderDiagnosticBytes && text[count] != '\0')
         ++count;
-    return core::detail::text_over_(text, count);
+    return core::mint_foreign_text(text, count).characters();
 }
 
 }  // namespace

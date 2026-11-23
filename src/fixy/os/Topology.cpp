@@ -240,7 +240,7 @@ using Path = os_door::PathText<kPathCapacity>;
 // the searches of the Region family, which call no function of the C
 // library.
 [[nodiscard]] base_core::TextView text_of(std::string_view text) noexcept {
-    return base_core::detail::text_over_(text.data(), text.size());
+    return base_core::mint_foreign_text(text.data(), text.size()).characters();
 }
 
 // A path that the probe builds piece by piece.  A piece that does not fit
@@ -795,7 +795,7 @@ namespace {
 // std::string, which keeps a zero after its last character.
 [[nodiscard]] TextView probed_text(char const* first, std::size_t size) noexcept {
     if (size == 0) return TextView{"?"};
-    return ::foundation::core::detail::c_text_over_(first, size).view();
+    return ::foundation::core::mint_foreign_text(first, size).characters();
 }
 
 }  // namespace

@@ -14,6 +14,7 @@
 // door of foundation/core/Text.h.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Fatal.h>
@@ -33,6 +34,21 @@ namespace detail {
 void static_text_holds_a_zero_before_its_end() noexcept;
 
 }  // namespace detail
+
+// The door of a StaticText to the raw constructor of a TextView (the doors
+// of a text of foundation/core/Text.h).  Its one member is private, and
+// StaticText is its one friend.  The invariant: a StaticText names a run of
+// static storage with a zero after it, which its constructors take only from
+// a constant, so the view of the characters before the zero never dangles.
+// A home owner row of utils/rule-table.txt keeps this definition in this
+// header.
+class StaticTextDoor final : ::foundation::NoObject<StaticTextDoor> {
+    friend class StaticText;
+
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+};
 
 // The word of a StaticText in an atomic cell (the word of a value of
 // foundation/core/Atomic.h): the pointer of its first character.  No
@@ -81,7 +97,7 @@ public:
         std::size_t size = 0;
         while (size < static_cast<std::size_t>(__PTRDIFF_MAX__) && first_[size] != '\0')
             ++size;
-        return detail::text_over_(first_, size);
+        return StaticTextDoor::text_(first_, size);
     }
 
 private:

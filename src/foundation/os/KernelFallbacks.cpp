@@ -9,6 +9,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Format.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/reflect/EnumName.h>
 
@@ -54,7 +55,7 @@ constexpr std::size_t kRowTextBound = kLineCapacity;
     while (size < kRowTextBound && literal[size] != '\0') {
         ++size;
     }
-    return core::detail::text_over_(literal, size);
+    return core::mint_foreign_text(literal, size).characters();
 }
 
 }  // namespace

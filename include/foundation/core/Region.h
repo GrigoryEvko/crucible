@@ -1467,6 +1467,20 @@ View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
     return View<T const>{first, count};
 }
 
+// The door of mint_foreign_text to the raw constructors of a TextView and a
+// ForeignText (the doors of a text of foundation/core/Text.h).  Its one member
+// is private, and mint_foreign_text is its one friend.  The invariant: the
+// mint checks the count and the null pointer of the parts before it calls the
+// door.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class ForeignTextDoor final : ::foundation::NoObject<ForeignTextDoor> {
+    friend ForeignText mint_foreign_text(char const* first, std::size_t count) noexcept;
+
+    [[nodiscard]] static constexpr ForeignText text_(char const* first, std::size_t size) noexcept {
+        return ForeignText{TextView{first, size}};
+    }
+};
+
 // The ForeignText of the count characters at first, which a foreign ABI
 // gives.  The text keeps its source in its type (foundation/core/Text.h).
 // The mint ends the process for a count past __PTRDIFF_MAX__ and for a null
@@ -1479,7 +1493,7 @@ View<T const> mint_foreign_view(T const* first, std::size_t count) noexcept {
     if (first == nullptr && count != 0) [[unlikely]] {
         fatal("mint_foreign_text got a null pointer with a count");
     }
-    return detail::foreign_text_over_(detail::text_over_(first, count));
+    return ForeignTextDoor::text_(first, count);
 }
 
 // The address of the first character of text, for a reader of a foreign ABI

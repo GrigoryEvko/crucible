@@ -414,7 +414,7 @@ read_tcp_congestion(Ctx const&, Borrow socket) noexcept {
                 ++count;
             }
             ::foundation::core::FixedText<congestion_name_bytes> name{};
-            name.append(::foundation::core::detail::text_over_(bytes, count))
+            name.append(::foundation::core::mint_foreign_text(bytes, count).characters())
                 .expect("the name holds at most congestion_name_bytes characters");
             return name;
         });

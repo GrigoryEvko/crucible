@@ -7,6 +7,7 @@
 
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Parse.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Text.h>
 
 #include <stdlib.h>
@@ -47,7 +48,7 @@ constexpr std::size_t kLongestValue = static_cast<std::size_t>(__PTRDIFF_MAX__);
     while (count < kLongestValue && value[count] != '\0') {
         ++count;
     }
-    return core::Option<core::TextView>::some(core::detail::text_over_(value, count));
+    return core::Option<core::TextView>::some(core::mint_foreign_text(value, count).characters());
 }
 
 // True when the variable name holds a value that starts with the character 1.

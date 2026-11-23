@@ -4369,6 +4369,33 @@ foundation_neg_compile_test(neg_core_text_cursor_door_private
 foundation_neg_compile_test(neg_core_text_cursor_door_lookalike
   "static constexpr foundation::core::detail::ViewCursorKey foundation::core::detail::TextCursorDoor::key\\(\\). is private within this context"
   "Text\\.h:[0-9]+:[0-9]+: note: declared private here")
+# Each road to the raw constructors of a TextView and a CText names the proof
+# of its characters.  The two free doors are gone, and each door that stays is
+# private to its friends.  The static mint of a run reads its last character.
+foundation_neg_compile_test(neg_core_text_over_removed
+  ".text_over_. is not a member of .foundation::core::detail."
+  "neg_core_text_over_removed\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_foreign_text_over_removed
+  ".foreign_text_over_. is not a member of .foundation::core::detail."
+  "neg_core_foreign_text_over_removed\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_c_text_over_removed
+  ".c_text_over_. is not a member of .foundation::core::detail."
+  "neg_core_c_text_over_removed\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_text_parts_door_private
+  "static constexpr foundation::core::TextView foundation::core::detail::TextPartsDoor::text_\\(const char\\*, std::size_t\\). is private within this context"
+  "Text\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_text_parts_door_lookalike
+  "static constexpr foundation::core::CText foundation::core::detail::TextPartsDoor::c_text_\\(const char\\*, std::size_t\\). is private within this context"
+  "Text\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_grow_text_door_private
+  "static constexpr foundation::core::TextView foundation::core::GrowTextDoor::text_\\(const char\\*, std::size_t\\). is private within this context"
+  "Grow\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_foreign_text_door_lookalike
+  "static constexpr foundation::core::ForeignText foundation::core::ForeignTextDoor::text_\\(const char\\*, std::size_t\\). is private within this context"
+  "Region\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_static_text_run_past_object
+  "array subscript value .7. is outside the bounds of array type .const char \\[4\\]."
+  "expansion of .foundation::core::mint_static_text\\(")
 foundation_neg_compile_test(neg_core_view_enumerate_range_forged
   "redefinition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>."
   "previous definition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>.")

@@ -1445,12 +1445,16 @@ template <class T, class Marker, std::size_t... Bases, std::size_t... Members>
 // allocates one time, exactly count bytes, and nothing for no character.  A
 // char reads each byte of an object, so the characters are the bytes.  The
 // text comes out as a value, so a freeze takes it with no cast of the text.
-// The caller checked that the bytes hold count characters.  Complexity: one
-// allocation and one copy of the characters.
+// The caller checked that the bytes hold count characters.  The bytes come
+// from an image, which is outside data, so their TextView comes through
+// mint_foreign_text.  Complexity: one allocation and one copy of the
+// characters.
 template <class Marker>
 [[nodiscard]] GrowText grow_text_of_(Marker allocation, std::byte const* first, std::uint64_t count) noexcept {
     GrowText text = mint_grow_text(count);
-    TextView const characters = detail::text_over_(static_cast<char const*>(static_cast<void const*>(first)), count);
+    TextView const characters =
+        mint_foreign_text(static_cast<char const*>(static_cast<void const*>(first)), static_cast<std::size_t>(count))
+            .characters();
     if (text.append(allocation, characters).is_err()) ::foundation::core::unreachable();
     return text;
 }
@@ -1671,7 +1675,7 @@ template <std::size_t Capacity, class T, std::size_t Index>
     } else {
         constexpr ::foundation::reflect::detail::NameChars name = member_name_<T, Index>;
         bool const is_written = (is_first || detail::put_text_(out, ", "))
-                             && detail::put_text_(out, detail::text_over_(name.first, name.size))
+                             && detail::put_text_(out, mint_static_text(name.first, name.size))
                              && detail::put_text_(out, " = ")
                              && detail::put_part_(out, detail::member_at_<Index>(object));
         is_first = false;

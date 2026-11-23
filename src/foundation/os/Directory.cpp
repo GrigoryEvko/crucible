@@ -17,6 +17,8 @@
 
 #include <foundation/os/Directory.h>
 
+#include <foundation/core/Region.h>
+#include <foundation/core/Text.h>
 #include <foundation/os/OpenFlags.h>
 #include <foundation/os/Syscall.h>
 
@@ -60,8 +62,15 @@ enum class Walk : std::uint8_t {
         if (size == room) return Walk::malformed;
         bool const is_self = size == 1 && name[0] == '.';
         bool const is_parent = size == 2 && name[0] == '.' && name[1] == '.';
-        if (!is_self && !is_parent
-            && visit.call(visit.visitor, core::detail::c_text_over_(name, size)) == Visit::stop) {
+        if (is_self || is_parent) {
+            offset += length;
+            continue;
+        }
+        // The name and its zero are bytes that the kernel wrote, so the CText
+        // comes through the foreign door and the check of its zero.
+        core::CText const entry = core::mint_c_text(core::mint_foreign_text(name, size + 1).characters())
+                                      .expect("the walk of the record found the zero after the name");
+        if (visit.call(visit.visitor, entry) == Visit::stop) {
             return Walk::stopped;
         }
         offset += length;

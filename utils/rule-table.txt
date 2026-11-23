@@ -488,6 +488,13 @@ home owner foundation::core::CommittedRangeDoor include/foundation/os/PageSource
 home owner foundation::core::SortRunDoor include/foundation/core/Sort.h | the door of the stable sort to the raw constructors of a View: View befriends it, and its one definition gives the runs of the elements and of the scratch only to StableSort and radix_sort_
 home owner foundation::core::detail::ViewCursorDoor include/foundation/core/Region.h | the door of View and ViewMut to the key of a cursor: the key befriends it, and its one definition builds the key only for View and ViewMut, so a unit that includes Cursor.h or Text.h alone cannot define a door that builds a cursor over any run
 home owner foundation::core::detail::TextCursorDoor include/foundation/core/Text.h | the door of TextView to the key of a cursor: the key befriends it, and its one definition builds the key only for TextView, so a unit that includes Cursor.h alone cannot define a door that builds a cursor over any characters
+home owner foundation::core::StaticTextDoor include/foundation/core/StaticText.h | the door of a StaticText to the raw constructor of a TextView: TextView befriends it, and its one definition gives the characters of a run of static storage only to StaticText
+home owner foundation::core::GrowTextDoor include/foundation/core/Grow.h | the door of a HeapText and a GrowText to the raw constructor of a TextView: TextView befriends it, and its one definition gives the characters of the storage of a text only to the two texts
+home owner foundation::core::PathTextDoor include/foundation/os/PathText.h | the door of a PathText to the raw constructor of a CText: CText befriends it, and its one definition gives the characters of a buffer that keeps its zero only to PathText
+home owner foundation::core::RowMismatchTextDoor include/foundation/diag/RowMismatch.h | the door of the text of a block of a row mismatch to the raw constructor of a TextView: TextView befriends it, and its one definition gives the characters of the buffer only to char_buffer
+home owner foundation::core::SurfaceVerdictTextDoor include/foundation/core/Verbs.h | the door of a SurfaceVerdict to the raw constructor of a TextView: TextView befriends it, and its one definition gives the characters of the verdict only to SurfaceVerdict
+home owner foundation::core::LineReaderTextDoor include/fixy/os/Stdio.h | the door of a reader of lines to the raw constructor of a TextView: TextView befriends it, and its one definition gives a line of the buffer of the reader only to LineReader
+home owner foundation::core::ForeignTextDoor include/foundation/core/Region.h | the door of mint_foreign_text to the raw constructor of a TextView: TextView befriends it, and its one definition gives the characters of a foreign run only to the mint, which checks the count and the null pointer first
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 
@@ -904,6 +911,8 @@ witness <foundation/core/BumpArena.h> deleted | foundation::core::ArenaArrayDoor
 witness <foundation/core/BumpArena.h> private | foundation::core::ArenaRun<int, forge::brand> | foundation::core::ArenaRun<int, forge::brand>{forge::rvalue<foundation::core::View<int>>()}
 witness <foundation/os/PageSource.h> deleted | foundation::core::CommittedRangeDoor | foundation::core::CommittedRangeDoor{}
 witness <foundation/core/Sort.h> deleted | foundation::core::SortRunDoor | foundation::core::SortRunDoor{}
+witness <foundation/core/Region.h> deleted | foundation::core::ForeignTextDoor | foundation::core::ForeignTextDoor{}
+witness <foundation/core/Text.h> deleted | foundation::core::detail::TextPartsDoor | foundation::core::detail::TextPartsDoor{}
 # A ViewMut, the chunks of its split and a RefMut come only from a frame door
 # or a split, so no pointer, no count and no object that a caller holds become
 # a unique borrow.  Each constructor takes the key that only FrameDoor builds.

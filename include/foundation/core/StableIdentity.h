@@ -41,20 +41,20 @@ template <auto FnPtr>
 [[nodiscard]] constexpr TextView stable_function_name_text() noexcept {
     constexpr ::foundation::reflect::detail::NameChars name =
         ::foundation::reflect::stable_function_name_chars<^^::foundation::reflect::function_key<FnPtr>>();
-    return detail::c_text_over_(name.first, name.size).view();
+    return mint_static_text(name.first, name.size);
 }
 
 template <auto FnPtr>
 [[nodiscard]] constexpr TextView stable_function_type_name_text() noexcept {
     constexpr ::foundation::reflect::detail::NameChars name =
         ::foundation::reflect::stable_function_type_name_chars<^^::foundation::reflect::function_key<FnPtr>>();
-    return detail::c_text_over_(name.first, name.size).view();
+    return mint_static_text(name.first, name.size);
 }
 
 template <class T>
 [[nodiscard]] constexpr TextView stable_name_text() noexcept {
     constexpr ::foundation::reflect::detail::NameChars name = ::foundation::reflect::stable_name_chars<^^T>();
-    return detail::c_text_over_(name.first, name.size).view();
+    return mint_static_text(name.first, name.size);
 }
 
 namespace detail {

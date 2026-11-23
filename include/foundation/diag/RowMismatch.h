@@ -21,6 +21,7 @@
 //
 // The runtime test is test/foundation/test_row_mismatch.cpp.
 
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Text.h>
@@ -31,6 +32,32 @@
 #include <meta>
 #include <source_location>
 #include <type_traits>
+
+namespace foundation::diag::detail {
+
+template <std::size_t Capacity>
+class char_buffer;
+
+}  // namespace foundation::diag::detail
+
+namespace foundation::core {
+
+// The door of the text of one block of a row mismatch to the raw constructor
+// of a TextView (the doors of a text of foundation/core/Text.h).  Its one
+// member is private, and char_buffer is its one friend.  The invariant: the
+// buffer holds size_ characters of its own array, and an append that does not
+// fit stops the constant evaluation.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class RowMismatchTextDoor final : ::foundation::NoObject<RowMismatchTextDoor> {
+    template <std::size_t Capacity>
+    friend class ::foundation::diag::detail::char_buffer;
+
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+};
+
+}  // namespace foundation::core
 
 namespace foundation::diag {
 
@@ -134,7 +161,7 @@ public:
     // The text.  The view borrows this buffer, so a view of a temporary
     // buffer is refused: it would dangle at the end of the full expression.
     [[nodiscard]] constexpr ::foundation::core::TextView view() const& noexcept {
-        return ::foundation::core::detail::c_text_over_(text_, size_).view();
+        return ::foundation::core::RowMismatchTextDoor::text_(text_, size_);
     }
     ::foundation::core::TextView view() const&& = delete("a view of a temporary char_buffer points into an object "
                                                          "that the full expression ends");

@@ -1155,7 +1155,7 @@ template <typename Tag>
 // static string (foundation/reflect/Anchor.h).
 template <typename Text>
 [[nodiscard]] consteval ::foundation::core::TextView static_text_view_(Text const& text) {
-    return ::foundation::core::detail::text_over_(std::define_static_string(text), text.size());
+    return ::foundation::core::mint_static_text(std::define_static_string(text), text.size());
 }
 
 // The name of the tag, for the report of a refused take or release.

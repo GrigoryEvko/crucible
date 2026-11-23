@@ -44,6 +44,7 @@
 // calls the check evaluates it.  Its cost is linear in the public members of
 // T and its bases, and in the length of the two lists for each member.
 
+#include <foundation/NoObject.h>
 #include <foundation/core/Text.h>
 
 #include <cstddef>
@@ -67,6 +68,22 @@ struct CursorProtocol final {};
 // refused, so a check cannot grant a protocol that the language does not have.
 template <class Grant>
 concept LanguageProtocolGrant = std::is_same_v<Grant, DereferenceProtocol> || std::is_same_v<Grant, CursorProtocol>;
+
+class SurfaceVerdict;
+
+// The door of a SurfaceVerdict to the raw constructor of a TextView (the
+// doors of a text of foundation/core/Text.h).  Its one member is private,
+// and SurfaceVerdict is its one friend.  The invariant: the verdict holds
+// size_ characters of its own array, and each write of the verdict stops at
+// the end of the array.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class SurfaceVerdictTextDoor final : ::foundation::NoObject<SurfaceVerdictTextDoor> {
+    friend class SurfaceVerdict;
+
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+};
 
 // The answer of the check.  A closed verdict has an empty text.  Each other
 // verdict names the first public member outside the three lists.  data() and
@@ -109,7 +126,7 @@ public:
 
     // The text.  The view borrows this verdict, so a view of a temporary
     // verdict is refused: it would dangle at the end of the full expression.
-    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::c_text_over_(text_, size_).view(); }
+    [[nodiscard]] constexpr TextView view() const& noexcept { return SurfaceVerdictTextDoor::text_(text_, size_); }
     TextView view() const&& = delete("a view of a temporary SurfaceVerdict points into an object that the full "
                                      "expression ends");
 };

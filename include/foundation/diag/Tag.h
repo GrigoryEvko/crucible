@@ -39,7 +39,7 @@ struct tag_base {
 // The literal has static storage, so the view never dangles.
 struct tag_text_literal : ::foundation::core::TextView {
     consteval tag_text_literal(const char (&literal)[]) noexcept
-        : ::foundation::core::TextView{::foundation::core::detail::text_over_(literal, __builtin_strlen(literal))} {}
+        : ::foundation::core::TextView{::foundation::core::mint_static_text(literal, __builtin_strlen(literal))} {}
 };
 
 // The two texts of a violation in their roles: the context, such as the

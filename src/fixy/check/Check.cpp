@@ -4,6 +4,7 @@
 
 #include <fixy/os/Process.h>
 #include <foundation/core/Fatal.h>
+#include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
 #include <foundation/os/ChildProcess.h>
@@ -31,7 +32,7 @@ constexpr std::size_t kSiteNameBound = 4096;
     while (size < kSiteNameBound && name[size] != '\0') {
         ++size;
     }
-    return core::detail::text_over_(name, size);
+    return core::mint_foreign_text(name, size).characters();
 }
 
 [[noreturn]] void end_at(core::Site site) noexcept {

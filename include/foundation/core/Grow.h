@@ -119,6 +119,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
@@ -636,6 +637,21 @@ void with_mut(Owner&& owner, Body&& body) = delete(
     "with_mut takes the owner into its frame and gives it back: pass std::move(owner), and keep the owner that the "
     "call returns");
 
+// The door of a HeapText and a GrowText to the raw constructor of a TextView
+// (the doors of a text of foundation/core/Text.h).  Its one member is
+// private, and the two texts are its friends.  The invariant: the state of
+// each text holds the first character and the count of its own storage, and
+// a GrowText bounds the count at __PTRDIFF_MAX__.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class GrowTextDoor final : ::foundation::NoObject<GrowTextDoor> {
+    friend class HeapText;
+    friend class GrowText;
+
+    [[nodiscard]] static constexpr TextView text_(char const* first, std::size_t size) noexcept {
+        return TextView{first, size};
+    }
+};
+
 // The characters that a GrowText held at its freeze.  No operation changes
 // them, so a borrow of them ends only at the end or at a move assignment of
 // the text.  The one door is freeze(std::move(text)) of a GrowText.
@@ -664,8 +680,8 @@ public:
     // The characters of the text.  The TextView borrows this text, and no
     // operation of the text ends what it borrows.  The GrowText that gave
     // the characters bounds the count at __PTRDIFF_MAX__, so the TextView
-    // comes through the door of the base layer, with no check.
-    [[nodiscard]] constexpr TextView view() const& noexcept { return detail::text_over_(state_.first, state_.size); }
+    // comes through the door of the two texts, with no check.
+    [[nodiscard]] constexpr TextView view() const& noexcept { return GrowTextDoor::text_(state_.first, state_.size); }
     TextView
     view() const&& = delete("a view of a temporary HeapText points into storage that the full expression frees");
 
@@ -794,7 +810,7 @@ public:
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, TextView>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, TextView>) {
         [[maybe_unused]] detail::OwnerLend const lend{state_.lend_count};
-        return static_cast<Body&&>(body)(detail::text_over_(state_.first, state_.size));
+        return static_cast<Body&&>(body)(GrowTextDoor::text_(state_.first, state_.size));
     }
     template <class Body>
         requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>

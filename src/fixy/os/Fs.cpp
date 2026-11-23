@@ -14,6 +14,7 @@
 #include <fixy/os/Fs.h>
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 #include <foundation/os/Directory.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/OpenFlags.h>
@@ -453,7 +454,7 @@ core::Result<std::size_t, os::Errno> read_all_into_(int descriptor, core::Alloc 
             .match(
                 [&](std::size_t count) {
                     is_at_end = count < kChunkBytes;
-                    if (text.append(allocation, core::detail::text_over_(chunk, count)).is_err()) {
+                    if (text.append(allocation, core::mint_foreign_text(chunk, count).characters()).is_err()) {
                         failure = os::Errno::efbig;
                         has_failed = true;
                         return;

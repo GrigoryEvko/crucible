@@ -35,6 +35,13 @@ static_assert(TextView{"abc"} == TextView{"abc"});
 static_assert(mint_static_text("abc") == TextView{"abc"});
 static_assert(mint_static_text("").size() == 0);
 static_assert(mint_static_text(std::define_static_string("reflected")) == TextView{"reflected"});
+
+// The static mint of a run gives its count of characters, also a part of a
+// longer text and a run with a zero inside it.  The fixture
+// neg_core_static_text_run_past_object holds a count past the object.
+static_assert(mint_static_text("abcdef", 3) == TextView{"abc"});
+static_assert(mint_static_text("abc", 0).size() == 0);
+static_assert(mint_static_text("a\0b", 3).size() == 3);
 static_assert(!(TextView{"abc"} == TextView{"abd"}));
 static_assert(!(TextView{"abc"} == TextView{"ab"}));
 static_assert(TextView{} == TextView{""});

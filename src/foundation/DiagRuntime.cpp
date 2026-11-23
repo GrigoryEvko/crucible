@@ -67,20 +67,19 @@ public:
 
     // The characters of the text.  The view borrows this object, which the
     // copy is refused for, and the caller keeps the object while a sink runs.
-    [[nodiscard]] core::TextView view() const noexcept { return core::detail::text_over_(bytes_, length_); }
+    [[nodiscard]] core::TextView view() const noexcept { return text_.view(); }
 
 private:
     void append(char byte) noexcept {
-        if (length_ < location_capacity) {
-            bytes_[length_] = byte;
-            ++length_;
+        if (text_.size() < location_capacity) {
+            text_.append(byte).expect("the text has room for one more character");
         }
     }
 
     // A null name writes nothing.
     void append(char const* text) noexcept {
         if (text == nullptr) return;
-        for (; *text != '\0' && length_ < location_capacity; ++text)
+        for (; *text != '\0' && text_.size() < location_capacity; ++text)
             append(*text);
     }
 
@@ -100,8 +99,7 @@ private:
         }
     }
 
-    char bytes_[location_capacity] = {};
-    std::size_t length_ = 0;
+    core::FixedText<location_capacity> text_{};
 };
 
 }  // namespace

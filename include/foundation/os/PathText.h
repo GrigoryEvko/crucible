@@ -17,12 +17,41 @@
 // The buffer is a FixedText of Capacity + 1 characters.  Its count is the
 // count of the path, and the character after the count is the zero.
 
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Text.h>
 #include <foundation/os/Errno.h>
 
 #include <cstddef>
 #include <cstdint>
+
+namespace foundation::os {
+
+template <std::size_t Capacity>
+    requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
+class PathText;
+
+}  // namespace foundation::os
+
+namespace foundation::core {
+
+// The door of a PathText to the raw constructor of a CText (the doors of a
+// text of foundation/core/Text.h).  Its one member is private, and PathText
+// is its one friend.  The invariant: each append of a path keeps the zero
+// after its last character and refuses a zero byte, so the buffer holds a
+// zero after the count and none before it.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class PathTextDoor final : ::foundation::NoObject<PathTextDoor> {
+    template <std::size_t Capacity>
+        requires(Capacity > 0 && Capacity < static_cast<std::size_t>(__PTRDIFF_MAX__))
+    friend class ::foundation::os::PathText;
+
+    [[nodiscard]] static constexpr CText c_text_(char const* first, std::size_t size) noexcept {
+        return CText{first, size};
+    }
+};
+
+}  // namespace foundation::core
 
 namespace foundation::os {
 
@@ -118,7 +147,7 @@ public:
     // buffer, so a CText of a temporary path is refused: it would dangle at
     // the end of the full expression.
     [[nodiscard]] constexpr core::CText c_text() const& noexcept {
-        return core::detail::c_text_over_(core::detail::text_first_(text_.view()), size());
+        return core::PathTextDoor::c_text_(core::detail::text_first_(text_.view()), size());
     }
     core::CText c_text() const&& = delete("a CText of a temporary PathText points into an object that the full "
                                           "expression ends");

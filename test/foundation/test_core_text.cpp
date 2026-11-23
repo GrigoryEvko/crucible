@@ -213,6 +213,10 @@ void test_static_text_gives_its_characters() {
     CRUCIBLE_TEST_ASSERT(kTest, text.size() == 15);
     FixedText<32> written;
     CRUCIBLE_TEST_ASSERT(kTest, text_of(format(written, "[{}]", text)) == TextView{"[the static text]"});
+
+    // The static mint of a run gives the count of characters that it names.
+    constexpr TextView part = ::foundation::core::mint_static_text("the static text", 3);
+    CRUCIBLE_TEST_ASSERT(kTest, part == TextView{"the"});
 }
 
 // A Hex writes its width in lower-case digits with the zeros that lead, and
