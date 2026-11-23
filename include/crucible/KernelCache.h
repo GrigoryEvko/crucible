@@ -510,9 +510,7 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(is_foldable_recipe(recipe));
     const DagRef<RegionNode> new_region = recipe.match(
-        [a, &arena, new_ops](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
-            return make_region(a, arena, new_ops, *chosen);
-        },
+        [a, &arena, new_ops](RecipeRef chosen) noexcept { return make_region(a, arena, new_ops, *chosen); },
         [a, &arena, new_ops]() noexcept { return make_region(a, arena, new_ops); });
 
     const TraceLink merge = find_merge_point(new_ops.view(), existing_suffix, recipe);

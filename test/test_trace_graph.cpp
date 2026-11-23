@@ -135,11 +135,11 @@ static void test_offsets_prefix_sum_invariant() {
 
         CRUCIBLE_TEST_ASSERT(kTest, g.fwd_offsets.size() == 11 && g.rev_offsets.size() == 11);
         for (uint32_t i = 1; i <= 10; ++i) {
-            CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets, i) >= offset_at(g.fwd_offsets, i - 1));
-            CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets, i) >= offset_at(g.rev_offsets, i - 1));
+            CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets.view(), i) >= offset_at(g.fwd_offsets.view(), i - 1));
+            CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets.view(), i) >= offset_at(g.rev_offsets.view(), i - 1));
         }
-        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets, 10) == 9);
-        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets, 10) == 9);
+        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.fwd_offsets.view(), 10) == 9);
+        CRUCIBLE_TEST_ASSERT(kTest, offset_at(g.rev_offsets.view(), 10) == 9);
     });
     ::fixy::check::pass(kTest, "  test_prefix_sum:                PASSED\n");
 }

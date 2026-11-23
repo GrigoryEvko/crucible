@@ -1,9 +1,9 @@
 // Negative-compile test. This file must fail to compile.
 //
-// The RecipePool constructor takes the arena as a branded
-// fixy::Ref<BumpArena<RecipeArena>, Brand>.  A raw pointer to the arena
-// skips the non-null borrow at the constructor boundary, so the constructor
-// must refuse it.
+// The RecipePool constructor takes the arena as a
+// fixy::Ref<BumpArena<RecipeArena>, RecipeArena>, with the brand of the
+// arena.  A raw pointer to the arena skips the non-null borrow at the
+// constructor boundary, so the constructor must refuse it.
 //
 // Expected diagnostic: no constructor takes a BumpArena<RecipeArena>*.
 

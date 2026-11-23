@@ -383,12 +383,30 @@ namespace detail {
 
 }  // namespace detail
 
+namespace detail {
+
+// True when brand is the brand of an arena: a member tag, a family tag or an
+// epoch brand of foundation/core/BumpArena.h, each of which carries its mark of
+// foundation/Brand.h.  A Ref of an arena keeps the brand of its arena, so a
+// store of the Ref names its arena, and no erased Ref of an arena exists.
+[[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
+    namespace brand_marks = ::foundation::brand;
+    return ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_member_brand)
+        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_family_brand)
+        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::epoch_brand);
+}
+
+}  // namespace detail
+
 // A brand that erase_brand drops: a brand of one instance that is not a scope
-// brand and names none.  The rule brand-escape refuses each value of a scope
-// brand that outlives its scope, and an erased Ref names no brand that the
-// rule could read.  So a scope brand has no erasure.
+// brand, names none, and is no brand of an arena.  The rule brand-escape
+// refuses each value of a scope brand that outlives its scope, and an erased
+// Ref names no brand that the rule could read.  So a scope brand has no
+// erasure.  A Ref of an arena keeps the brand of its arena, so a field that
+// stores it names the arena that holds its object.
 template <class Brand>
-concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::names_scope_brand(^^Brand);
+concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::names_scope_brand(^^Brand)
+                     && !detail::names_arena_brand_(^^Brand);
 
 // The door that drops the brand of a Ref.  It gives a Ref of the same object
 // on the erased identity DefaultBrand, which each erased Ref of the target

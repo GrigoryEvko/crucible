@@ -214,8 +214,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     build_csr(test.alloc, epoch, graph, in_run, num_ops);
 
                     // (A) Offset shape — forward and reverse.
-                    const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets;
-                    const ::fixy::View<const uint32_t> rev = graph.rev_offsets;
+                    const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets.view();
+                    const ::fixy::View<const uint32_t> rev = graph.rev_offsets.view();
                     if (fwd.size() != num_ops + 1u || rev.size() != num_ops + 1u) return false;
                     if (offset_at(fwd, 0) != 0u || offset_at(rev, 0) != 0u) return false;
                     if (offset_at(fwd, num_ops) != num_edges || offset_at(rev, num_ops) != num_edges) return false;
@@ -244,7 +244,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         const EdgeOrder by_src =
                             stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.src; });
                         for (uint32_t k = 0; k < num_edges; ++k) {
-                            if (!edge_eq(edge_at(graph.fwd_edges, k), edge_at(in_run, position_at(by_src, k))))
+                            if (!edge_eq(edge_at(graph.fwd_edges.view(), k), edge_at(in_run, position_at(by_src, k))))
                                 return false;
                         }
 
@@ -252,15 +252,15 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         const EdgeOrder by_dst =
                             stable_order_by(spec, [](const EdgeSpec& edge) noexcept { return edge.dst; });
                         for (uint32_t k = 0; k < num_edges; ++k) {
-                            if (!edge_eq(edge_at(graph.rev_edges, k), edge_at(in_run, position_at(by_dst, k))))
+                            if (!edge_eq(edge_at(graph.rev_edges.view(), k), edge_at(in_run, position_at(by_dst, k))))
                                 return false;
                         }
                     }
 
                     copy_prefix(fwd_copy, fwd);
                     copy_prefix(rev_copy, rev);
-                    copy_prefix(fwd_edges_copy, ::fixy::View<const Edge>{graph.fwd_edges});
-                    copy_prefix(rev_edges_copy, ::fixy::View<const Edge>{graph.rev_edges});
+                    copy_prefix(fwd_edges_copy, ::fixy::View<const Edge>{graph.fwd_edges.view()});
+                    copy_prefix(rev_edges_copy, ::fixy::View<const Edge>{graph.rev_edges.view()});
                     return true;
                 });
             if (!is_first_build_correct) return false;
@@ -278,12 +278,12 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 TraceGraph graph2{};
                 build_csr(test.alloc, epoch, graph2, in_run2, num_ops);
                 for (uint32_t v = 0; v <= num_ops; ++v) {
-                    if (offset_at(graph2.fwd_offsets, v) != offset_at(fwd.view(), v)) return false;
-                    if (offset_at(graph2.rev_offsets, v) != offset_at(rev.view(), v)) return false;
+                    if (offset_at(graph2.fwd_offsets.view(), v) != offset_at(fwd.view(), v)) return false;
+                    if (offset_at(graph2.rev_offsets.view(), v) != offset_at(rev.view(), v)) return false;
                 }
                 for (uint32_t k = 0; k < num_edges; ++k) {
-                    if (!edge_eq(edge_at(graph2.fwd_edges, k), edge_at(fwd_edges.view(), k))) return false;
-                    if (!edge_eq(edge_at(graph2.rev_edges, k), edge_at(rev_edges.view(), k))) return false;
+                    if (!edge_eq(edge_at(graph2.fwd_edges.view(), k), edge_at(fwd_edges.view(), k))) return false;
+                    if (!edge_eq(edge_at(graph2.rev_edges.view(), k), edge_at(rev_edges.view(), k))) return false;
                 }
                 return true;
             });

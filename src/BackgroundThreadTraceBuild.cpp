@@ -556,8 +556,7 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     const uint32_t num_slots = ::fixy::min(next_slot_raw, slot_cap);
     const ::fixy::View<SlotInfo const> built_slots =
         local_slots.window(0, num_slots).expect("the slots of the build are below slot_cap");
-    const auto tensor_slots_run = region_arena->array(a, num_slots, TensorSlot{});
-    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::ArenaRun<TensorSlot, DagArena> tensor_slots_run = region_arena->array(a, num_slots, TensorSlot{});
     const ::fixy::View<TensorSlot> tensor_slots = tensor_slots_run.view();
     uint32_t slot_idx = 0;
     for (const auto [info, slot] :
@@ -577,10 +576,9 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         ++slot_idx;
     }
 
-    const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(a, scratch);
-    // A plain View of an arena run: the View carries no brand of its arena.
-    graph->ops = op_arena_run.view();
-    graph->slots = tensor_slots;
+    const TraceGraphRef graph = alloc_trace_graph(a, scratch);
+    graph->ops = op_arena_run;
+    graph->slots = tensor_slots_run;
     graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
     graph->max_meta_end.set(max_meta_end);

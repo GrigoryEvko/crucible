@@ -7,6 +7,7 @@
 #include <crucible/Types.h>
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -249,5 +250,16 @@ inline constexpr uint64_t kNumericsSalt = 0x4E554D4552494353ULL;  // "NUMERICS"
     // strongest tier a per-block scale policy can reach.
     return d == ReductionDeterminism::UNORDERED || d == ReductionDeterminism::ORDERED;
 }
+
+// The family tag of each arena that holds the recipes of a pool
+// (crucible/RecipePool.h).  No product class owns such an arena, and a test
+// makes its own, so the tag is no member tag.  Two arenas of the family share
+// the brand, so a Ref of one fits a field that names the other.  That instance
+// identity needs a run-time id, or a pool type that takes the brand of its
+// own arena.
+struct[[= ::foundation::brand::arena_family_brand{}]] RecipeArena final {};
+
+// A recipe that a pool interned, with the brand of the arena of the pool.
+using RecipeRef = ::fixy::Ref<NumericalRecipe const, RecipeArena>;
 
 }  // namespace crucible

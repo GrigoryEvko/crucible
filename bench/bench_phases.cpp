@@ -272,7 +272,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             num_ops = ref->num_ops.get();
             num_slots = ref->num_slots.get();
             // The forward edges are in the order of their sources.
-            saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges);
+            saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges.view());
             ref_region = std::move(region);
         });
 
@@ -282,7 +282,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         for (uint32_t iter = 0; iter < iters; iter++) {
             TraceScratch csr_scratch{Bytes{size_t{1} << 18}};
             ns_csr += csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-                const ::fixy::Ref<TraceGraph> graph2 = alloc_trace_graph(A, epoch);
+                const TraceGraphRef graph2 = alloc_trace_graph(A, epoch);
 
                 const uint64_t t0 = bench::rdtsc_start();
                 build_csr(A, epoch, *graph2, saved_edges.view(), num_ops);

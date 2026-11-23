@@ -139,8 +139,9 @@ public:
 
     static constexpr std::size_t STARTER_COUNT = 8;
 
-    // A recipe in the arena of the pool.  The pool outlives the registry.
-    using RecipeRef = ::fixy::Ref<NumericalRecipe const>;
+    // A recipe in the arena of the pool, with the brand of that arena.  The
+    // pool outlives the registry.
+    using RecipeRef = ::crucible::RecipeRef;
 
     // The name points into read-only storage and the recipe into the pool's
     // arena, so neither is owned here and both outlive the registry.

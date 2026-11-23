@@ -133,9 +133,11 @@ static_assert(
                    Ref<int, EpochOf<Owner::Member>>>);
 
 // A Ref of a family arena converts to no Ref of a different family, and
-// erase_brand admits a named tag and an epoch brand.
+// erase_brand refuses a member tag, a family tag and an epoch brand, so a Ref
+// of an arena keeps the brand of its arena.
 static_assert(!std::is_convertible_v<Ref<int, Family>, Ref<int, Owner::Member>>);
-static_assert(ErasableBrand<Family> && ErasableBrand<EpochOf<Owner::Member>>);
+static_assert(!ErasableBrand<Family> && !ErasableBrand<Owner::Member> && !ErasableBrand<EpochOf<Owner::Member>>);
+static_assert(ErasableBrand<Unmarked>);
 
 // The view of a run of a temporary is refused.
 template <class Run>

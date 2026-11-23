@@ -241,7 +241,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             report = ::fixy::Option<bench::Report>::some(bench::run("build_csr (481 ops, 900 edges)", [&] {
                 TraceScratch csr_scratch{Bytes{size_t{1} << 16}};
                 csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-                    const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(test.alloc, epoch);
+                    const TraceGraphRef graph = alloc_trace_graph(test.alloc, epoch);
                     build_csr(test.alloc, epoch, *graph, edges, NUM_OPS);
                     bench::do_not_optimize(graph);
                 });

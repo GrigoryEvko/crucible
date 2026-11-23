@@ -1044,13 +1044,14 @@ private:
 
 // The recipe that a fold covers, or no recipe.  A function that takes it has
 // no default for it, so a caller states the choice: ::fixy::none for a
-// producer that selects no numerics.
-using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
+// producer that selects no numerics.  A recipe comes from a pool, with the
+// brand of the arena of the pool.
+using RecipeChoice = ::fixy::Option<RecipeRef>;
 
 // True for no recipe, and for a recipe whose hash was interned: a hash that
 // is not zero and not the end-of-region marker.
 [[nodiscard]] constexpr bool is_foldable_recipe(RecipeChoice const& recipe) noexcept {
-    return recipe.is_none_or([](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
+    return recipe.is_none_or([](RecipeRef chosen) noexcept {
         return ::foundation::decide::is_non_zero(chosen->hash) && !chosen->hash.is_sentinel();
     });
 }
@@ -1381,9 +1382,9 @@ inline void recompute_merkle(TraceNode& node) {
 
         const ::fixy::View<const TraceEntry> tail =
             new_ops.window(new_pos - region_ops, region_ops).expect("the tail of the new ops holds the region");
-        const ContentHash new_hash = recipe.match(
-            [tail](::fixy::Ref<const NumericalRecipe> chosen) noexcept { return compute_content_hash(tail, *chosen); },
-            [tail]() noexcept { return compute_content_hash(tail); });
+        const ContentHash new_hash =
+            recipe.match([tail](RecipeRef chosen) noexcept { return compute_content_hash(tail, *chosen); },
+                         [tail]() noexcept { return compute_content_hash(tail); });
 
         if (new_hash != region->content_hash) break;
         merge = make_link(*region);

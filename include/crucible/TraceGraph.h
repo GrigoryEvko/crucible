@@ -49,24 +49,44 @@ struct Edge {
     }
 };
 
+// The owner of the epoch arena of the build of a trace.  The background
+// thread holds one for its build epoch, and each test or bench that builds a
+// trace holds its own.  Two objects of the class share the brand of the
+// arena, which no type tells apart.
+class TraceScratch {
+public:
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+    using Epoch = ::foundation::core::Epoch<::fixy::EpochOf<Arena>>;
+    explicit TraceScratch(::fixy::ArenaBlockSize block_size) noexcept
+        : arena{::fixy::mint_epoch_arena<Arena>(block_size)} {}
+    ::fixy::EpochArena<Arena> arena;
+};
+
+// A graph lives in an epoch of a TraceScratch, and its edges are runs of that
+// epoch.  The class states the brand of the epoch, so it is a carrier of the
+// brand: the rule brand-escape refuses a graph in a static object and in a
+// member of a class that does not state the brand, and an epoch refuses a
+// graph as the result of its body.  The ops and the slots are runs of the DAG
+// arena of the region of the build, which outlives the epoch.
 struct TraceGraph {
+    using brand_type = ::fixy::EpochOf<TraceScratch::Arena>;
     using BuiltCount = ::fixy::WriteOnce<uint32_t>;
 
     // The ops in trace order.
-    ::fixy::View<TraceEntry> ops{};
+    ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
     BuiltCount num_ops = ::fixy::mint_write_once<uint32_t>();
 
     // Sorted by source, so a walk answers which ops consume a given output.
-    ::fixy::View<Edge> fwd_edges{};
-    ::fixy::View<uint32_t> fwd_offsets{};  // num_ops + 1 entries
+    ::fixy::ArenaRun<Edge, brand_type> fwd_edges{};
+    ::fixy::ArenaRun<uint32_t, brand_type> fwd_offsets{};  // num_ops + 1 entries
 
     // Sorted by destination, so a walk answers which op produced a given input.
-    ::fixy::View<Edge> rev_edges{};
-    ::fixy::View<uint32_t> rev_offsets{};  // num_ops + 1 entries
+    ::fixy::ArenaRun<Edge, brand_type> rev_edges{};
+    ::fixy::ArenaRun<uint32_t, brand_type> rev_offsets{};  // num_ops + 1 entries
 
     BuiltCount num_edges = ::fixy::mint_write_once<uint32_t>();
 
-    ::fixy::View<TensorSlot> slots{};
+    ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
     BuiltCount num_slots = ::fixy::mint_write_once<uint32_t>();  // count of distinct storages, not of tensors
 
     ContentHash content_hash;
@@ -87,7 +107,7 @@ struct TraceGraph {
     [[nodiscard]] uint32_t in_degree(OpIndex i) const noexcept;
 
     [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept {
-        return *ops.get(checked_index_(i)).expect("the build gives the graph one entry for each op");
+        return *ops.view().get(checked_index_(i)).expect("the build gives the graph one entry for each op");
     }
 
     // The precondition refuses a graph with no ops, where the fold
@@ -119,25 +139,15 @@ private:
     edges_of_(::fixy::View<const Edge> edges, ::fixy::View<const uint32_t> offsets, uint32_t index) noexcept;
 };
 
-// The owner of the epoch arena of the build of a trace.  The background
-// thread holds one for its build epoch, and each test or bench that builds a
-// trace holds its own.  Two objects of the class share the brand of the
-// arena, which no type tells apart.
-class TraceScratch {
-public:
-    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
-    using Epoch = ::foundation::core::Epoch<::fixy::EpochOf<Arena>>;
-    explicit TraceScratch(::fixy::ArenaBlockSize block_size) noexcept
-        : arena{::fixy::mint_epoch_arena<Arena>(block_size)} {}
-    ::fixy::EpochArena<Arena> arena;
-};
+// A Ref of a graph, with the brand of the epoch that holds it.
+using TraceGraphRef = ::fixy::Ref<TraceGraph, TraceGraph::brand_type>;
 
 // The graph is in the epoch, and the build stage keeps its Ref for the length
 // of the epoch.  The bodies of this function and of build_csr are in
 // src/TraceGraph.cpp, so a unit that includes this header compiles no part of
 // the build.
-[[nodiscard]] ::fixy::Ref<TraceGraph> alloc_trace_graph(::foundation::effects::Alloc a,
-                                                        TraceScratch::Epoch& epoch CRUCIBLE_LIFETIMEBOUND) noexcept;
+[[nodiscard]] TraceGraphRef alloc_trace_graph(::foundation::effects::Alloc a,
+                                              TraceScratch::Epoch& epoch CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 // The graph is in the epoch, and an epoch lives only in the frame of
 // with_epoch.  This twin refuses a temporary epoch.

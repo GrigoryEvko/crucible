@@ -63,9 +63,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                             /*initial_capacity=*/8};
 
             // Phase 1: insert all, keep a Ref of each recipe.
-            ::fixy::FixedList<::fixy::Ref<const NumericalRecipe>, kRecipes> interned{};
+            ::fixy::FixedList<RecipeRef, kRecipes> interned{};
             for (const NumericalRecipe& recipe : recipes) {
-                const ::fixy::Ref<const NumericalRecipe> stored = pool.intern(init.alloc, recipe);
+                const RecipeRef stored = pool.intern(init.alloc, recipe);
                 // Pool authority: returned recipe carries the
                 // canonical compute_recipe_hash, ignoring any
                 // pre-set hash on the input.

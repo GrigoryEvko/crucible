@@ -3680,15 +3680,15 @@ crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# The RecipePool constructor takes a branded Ref<BumpArena<RecipeArena>,
-# Brand>.  A raw pointer to the arena and a Ref of a different type must fail
-# at the constructor.
+# The RecipePool constructor takes a Ref<BumpArena<RecipeArena>, RecipeArena>,
+# with the brand of the arena.  A raw pointer to the arena and a Ref of a
+# different type must fail at the constructor.
 crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, [A-Za-z]+>. and .foundation::core::BumpArena<crucible::RecipeArena>\\*.")
+  "\\(type .foundation::core::BumpArena<crucible::RecipeArena>\\*.\\) to type .crucible::RecipePool::ArenaBorrow. \\{aka .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, crucible::RecipeArena>.\\}")
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "mismatched types .foundation::core::BumpArena<crucible::RecipeArena>. and .OtherArena.")
+  "\\(type .foundation::core::Ref<OtherArena, .*\\) to type .crucible::RecipePool::ArenaBorrow. \\{aka .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, crucible::RecipeArena>.\\}")
 
 # A RecipePool is built in the initialization phase.  The constructor
 # defaults to Row<Init>, and a pure row, a row with only Alloc and a row

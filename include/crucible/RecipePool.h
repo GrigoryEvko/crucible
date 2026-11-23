@@ -29,16 +29,9 @@
 
 namespace crucible {
 
-// The family tag of each arena that holds the recipes of a pool.  No product
-// class owns such an arena, and a test makes its own, so the tag is no member
-// tag.  Two arenas of the family share the brand, so a Ref of one fits a field
-// that names the other.  That instance identity needs a run-time id, or a pool
-// type that takes the brand of its own arena.
-struct[[= ::foundation::brand::arena_family_brand{}]] RecipeArena final {};
-
 class CRUCIBLE_OWNER RecipePool {
 public:
-    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena<RecipeArena>>;
+    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena<RecipeArena>, RecipeArena>;
     using Capacity = ::fixy::PowerOfTwo<uint32_t>;
     using Size = ::fixy::Monotonic<uint32_t>;
     using init_required_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
@@ -46,17 +39,15 @@ public:
     // The table never passes half full, so the initial capacity holds half
     // that many distinct recipes before the first resize.
     //
-    // The arena comes as a Ref from ::fixy::to, and the constructor refuses
-    // a Ref that names no brand.  The pool keeps the Ref on the erased brand
-    // through erase_brand, so the layout does not change.  Each call of to()
-    // is a new brand, so this constructor only checks and forwards.  The one
-    // body below does the work out of line.
-    template <typename Brand, typename CallerRow = init_required_row>
-        requires ::fixy::ErasableBrand<Brand> && ::foundation::effects::Subrow<init_required_row, CallerRow>
-    [[gnu::cold]] explicit RecipePool(::fixy::Ref<::fixy::BumpArena<RecipeArena>, Brand> arena,
-                                      ::foundation::effects::Init init, uint32_t initial_capacity = 32,
-                                      std::type_identity<CallerRow> = {}) noexcept
-        : RecipePool{erased_door_{}, ::fixy::erase_brand(arena), init, admitted_capacity_(initial_capacity)} {}
+    // The arena comes as a Ref from ::fixy::to, which gives the brand of the
+    // arena, RecipeArena.  The pool keeps that Ref, so each recipe that it
+    // makes keeps the brand of its arena.  This constructor only checks and
+    // forwards, and the one body below does the work out of line.
+    template <typename CallerRow = init_required_row>
+        requires ::foundation::effects::Subrow<init_required_row, CallerRow>
+    [[gnu::cold]] explicit RecipePool(ArenaBorrow arena, ::foundation::effects::Init init,
+                                      uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
+        : RecipePool{body_door_{}, arena, init, admitted_capacity_(initial_capacity)} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
     RecipePool& operator=(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
@@ -68,8 +59,8 @@ public:
     // the pool computes and owns that field.
     //
     // The recipe is in the arena, and not in the pool.
-    [[nodiscard]] ::fixy::Ref<const NumericalRecipe> intern(::foundation::effects::Alloc a,
-                                                            const NumericalRecipe& fields) CRUCIBLE_NO_THREAD_SAFETY {
+    [[nodiscard]] RecipeRef intern(::foundation::effects::Alloc a, const NumericalRecipe& fields)
+        CRUCIBLE_NO_THREAD_SAFETY {
         const RecipeHash h = compute_recipe_hash(fields);
         const uint64_t hv = h.raw();
 
@@ -85,7 +76,7 @@ public:
                 }
                 return install_(a, key, fields, h);
             }
-            for (const ::fixy::Ref<const NumericalRecipe> stored : s.recipe) {
+            for (const RecipeRef stored : s.recipe) {
                 if (s.hash == hv && semantic_equal_(*stored, fields)) {
                     return stored;
                 }
@@ -102,12 +93,12 @@ public:
 private:
     struct Slot {
         uint64_t hash = 0;  // meaningful only when the slot is occupied
-        ::fixy::Option<::fixy::Ref<const NumericalRecipe>> recipe = ::fixy::none;  // none marks an empty slot
+        ::fixy::Option<RecipeRef> recipe = ::fixy::none;  // none marks an empty slot
     };
 
     // Only the public constructor names this tag, so no caller reaches the
-    // erased borrow below.
-    struct erased_door_ {};
+    // body below with a capacity that the precondition did not read.
+    struct body_door_ {};
 
     // The precondition of the public constructor.  It runs before the
     // constructor that it delegates to reads the capacity.  The lower bound
@@ -119,7 +110,7 @@ private:
         return initial_capacity;
     }
 
-    [[gnu::cold, gnu::noinline]] RecipePool(erased_door_, ArenaBorrow arena, ::foundation::effects::Init init,
+    [[gnu::cold, gnu::noinline]] RecipePool(body_door_, ArenaBorrow arena, ::foundation::effects::Init init,
                                             uint32_t initial_capacity) noexcept
         : arena_{arena},
           capacity_{::fixy::mint_refined<::fixy::power_of_two>(initial_capacity)},
@@ -143,18 +134,15 @@ private:
     }
 
     // Installs the recipe in the slot of key.
-    [[nodiscard]] ::fixy::Ref<const NumericalRecipe> install_(::foundation::effects::Alloc a, uint64_t key,
-                                                              const NumericalRecipe& fields, RecipeHash h) {
+    [[nodiscard]] RecipeRef install_(::foundation::effects::Alloc a, uint64_t key, const NumericalRecipe& fields,
+                                     RecipeHash h) {
         const auto recipe = arena_->make<NumericalRecipe>(a, fields);
         recipe->hash = h;
 
-        slots_.with_masked(
-            key,
-            [installed = Slot{.hash = h.raw(),
-                              .recipe = ::fixy::some(::fixy::Ref<const NumericalRecipe>{::fixy::erase_brand(recipe)})}](
-                Slot& slot) noexcept { slot = installed; });
+        slots_.with_masked(key, [installed = Slot{.hash = h.raw(), .recipe = ::fixy::some(RecipeRef{recipe})}](
+                                    Slot& slot) noexcept { slot = installed; });
         size_.bump();
-        return ::fixy::erase_brand(recipe);
+        return recipe;
     }
 
     [[gnu::cold, gnu::noinline]]

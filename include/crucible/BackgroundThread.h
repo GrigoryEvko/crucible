@@ -730,11 +730,13 @@ public:
         NumericsHash numerics_{};
     };
 
-    // A build: the trace graph, in the scratch arena that the caller gave,
-    // and the parts of its region.  The graph dies with the epoch of the
-    // scratch arena.  The region does not depend on the graph.
+    // A build: the trace graph, in the epoch of the scratch arena that the
+    // caller gave, and the parts of its region.  The graph dies with the
+    // epoch.  The build states the brand of the epoch, so it is a carrier of
+    // the brand, as the graph is.  The region does not depend on the graph.
     struct BuiltTrace {
-        ::fixy::Ref<TraceGraph> graph;
+        using brand_type = TraceGraph::brand_type;
+        TraceGraphRef graph;
         BuiltRegion region;
     };
 
