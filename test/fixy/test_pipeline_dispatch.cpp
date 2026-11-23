@@ -96,7 +96,10 @@ struct StageHolder {
 static void keyed_stage(Consumer<1 * KiB>&&, Producer<1 * KiB>&&,
                         ::foundation::core::LoanKey<StageHolderBrand>& key) noexcept {
     StageHolder holder{};
-    holder.array.with_mut(key, [](auto run) noexcept { run.view().at(::foundation::core::index<0>()) = 6; });
+    holder.array.with_mut(key, [](auto run) noexcept {
+        auto element = run.get_mut(0).expect("the array holds the element");
+        *element = 6;
+    });
     CRUCIBLE_FATAL_INVARIANT(holder.array.at(::foundation::core::index<0>()) == 6);
     record_call();
 }

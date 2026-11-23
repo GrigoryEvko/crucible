@@ -135,9 +135,9 @@ void edit_matrix(Matrix<T>& matrix, Edit const& edit) noexcept {
     matrix.values = ::fixy::with_mut(std::move(matrix.values), [shape, place, &edit](auto run) noexcept {
         for (std::size_t row = 0; row < shape.rows; ++row) {
             for (std::size_t column = 0; column < shape.columns; ++column) {
-                edit(row, column,
-                     *run.get(position_in(place, MatrixRow{row}, MatrixColumn{column}))
-                          .expect("a test reads an element at or past the count of its View"));
+                auto element = run.get_mut(position_in(place, MatrixRow{row}, MatrixColumn{column}))
+                                   .expect("a test reads an element at or past the count of its View");
+                edit(row, column, *element);
             }
         }
     });

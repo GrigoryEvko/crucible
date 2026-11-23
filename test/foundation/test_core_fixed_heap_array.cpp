@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -134,13 +135,14 @@ void test_large_ring() {
     FixedHeapArray<std::uint64_t, kCount> ring = mint_fixed_heap_array<std::uint64_t, kCount>(alloc, std::uint64_t{0});
     std::uint64_t const slot = (kCount + 5) & (kCount - 1);
     ring.with_mut([slot](auto run) noexcept {
-        run.view().window(slot, 1).match(
-            [](::foundation::core::View<std::uint64_t> one) noexcept {
-                for (std::uint64_t& word : one) {
-                    word = 9;
-                }
-            },
-            [] noexcept { ::foundation::core::fatal("a masked slot is below the count"); });
+        take_window(std::move(run), slot, 1)
+            .match(
+                [](auto one) noexcept {
+                    for (std::uint64_t& word : one) {
+                        word = 9;
+                    }
+                },
+                [] noexcept { ::foundation::core::fatal("a masked slot is below the count"); });
     });
     CRUCIBLE_FATAL_INVARIANT(ring.at(::foundation::core::Index<kCount>::check(5).expect("5 is below the count")) == 9);
 }

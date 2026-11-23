@@ -246,7 +246,8 @@ void test_agrees_with_plain_model() {
                 std::uint64_t const key = stream.next_wide();
                 std::uint64_t const value = stream.next_wide();
                 array.with_masked(key, [value](std::uint64_t& element) noexcept { element = value; });
-                *cells.get(key % count).expect("a key modulo the count is below the count") = value;
+                auto cell = cells.get_mut(key % count).expect("a key modulo the count is below the count");
+                *cell = value;
             }
         });
         for (int step = 0; step < 64; ++step) {

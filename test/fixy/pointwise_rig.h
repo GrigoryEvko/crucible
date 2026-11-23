@@ -475,13 +475,14 @@ template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is
     // NAN rule in each step, so a shared input reads the canonical NaN of an
     // earlier step.  The walk writes the copy in a frame of the copy.
     auto [is_walked, walked] = ::fixy::with_mut(std::move(expected), [&drawn, &input_of, op](auto frame_run) noexcept {
-        ::fixy::View<E> const expected_run = frame_run.view();
-        ::fixy::StridedView<E> const expected_out =
-            ::fixy::mint_strided_view(expected_run, sizes_of(drawn.out), strides_of(drawn.out), drawn.out.offset)
-                .expect("the output fits the run");
+        ::fixy::View<E const> const expected_run{frame_run.view()};
+        auto unique_out = ::fixy::mint_strided_view_mut(std::move(frame_run), sizes_of(drawn.out),
+                                                        strides_of(drawn.out), drawn.out.offset)
+                              .expect("the output fits the run");
+        ::fixy::StridedView<E> const expected_out = unique_out.view();
         return ::fixy::walk(
                    [op](E& target, auto const&... values) noexcept { target = oracle_output<E, Op>(op(values...)); },
-                   expected_out, input_of(::fixy::View<E const>{expected_run}, Is)...)
+                   expected_out, input_of(expected_run, Is)...)
             .is_ok();
     });
 

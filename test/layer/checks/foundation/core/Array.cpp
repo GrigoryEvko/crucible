@@ -163,7 +163,7 @@ static_assert(FixedArray<NoDefault, 2>{NoDefault{1}, NoDefault{2}}
     FixedArray<int, 3> array{};
     array.with_element(index<0>(), [](int& element) noexcept { element = 10; });
     array.with_element(Index<3>::check(2).expect("2 is below 3"), [](int& element) noexcept { element = 30; });
-    array.with_mut([](auto run) noexcept { fill(run.view().window(1, 1).expect("one element fits"), 20); });
+    array.with_mut([](auto run) noexcept { fill(take_window(std::move(run), 1, 1).expect("one element fits"), 20); });
     int total = 0;
     for (Index<3> const position : array.indices()) {
         total += array.at(position) * static_cast<int>(position.raw() + 1);
@@ -189,7 +189,10 @@ static_assert(view_reads() == 7 + 8 + 9 + 10 + 10);
 [[nodiscard]] consteval int get_reads() noexcept {
     FixedArray<int, 3> array{5, 6, 7};
     int total = *array.get(2).expect("2 is below 3");
-    array.with_mut([](auto run) noexcept { *run.get(0).expect("0 is below 3") = 1; });
+    array.with_mut([](auto run) noexcept {
+        auto element = run.get_mut(0).expect("0 is below 3");
+        *element = 1;
+    });
     total += array.at(index<0>());
     return array.get(3).is_none() ? total : -1;
 }
@@ -244,7 +247,8 @@ static_assert(pairs_hold_an_index_and_refs());
     FixedArray<int, 4> values{};
     values.with_mut([](auto run) noexcept {
         for (auto const [position, element] : run.view().enumerate()) {
-            *element = static_cast<int>(position.raw()) + 10;
+            auto writer = run.get_mut(position.raw()).expect("the position is below the count");
+            *writer = *element + static_cast<int>(position.raw()) + 10;
         }
     });
     int total = 0;

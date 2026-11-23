@@ -60,8 +60,8 @@ inline constexpr std::uint64_t kCanonicalDoubleNan = 0x7FF8000000000000u;
 
 // Puts a drawn NaN or infinity into about one element in 61 of run, at
 // positions that the stream of seed draws.  Complexity: O(n).
-template <class T>
-void put_specials(::fixy::View<T> run, std::uint64_t seed) noexcept {
+template <class T, class Brand, std::size_t Extent>
+void put_specials(::fixy::ViewMut<T, Brand, Extent>& run, std::uint64_t seed) noexcept {
     PhiloxStream stream{seed};
     for (T& value : run) {
         std::uint64_t const bits = stream.next_wide();

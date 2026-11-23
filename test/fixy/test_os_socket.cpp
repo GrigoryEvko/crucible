@@ -175,8 +175,9 @@ struct LinkDumpRequest final {
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, socket, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 13;
     foundation::core::FixedArray<std::byte, 8192> reply{};
-    std::size_t const received = reply.with_mut(
-        [&ctx, &socket](auto run) noexcept { return fixy::net::receive_bytes(ctx, socket, run.view()).value_or(0); });
+    std::size_t const received = reply.with_mut([&ctx, &socket](auto run) noexcept {
+        return fixy::net::receive_bytes(ctx, socket, std::move(run)).value_or(0);
+    });
     if (received < 16) return 14;
     return 0;
 }
@@ -211,7 +212,7 @@ struct LinkDumpRequest final {
     // mode answers TCP_INFO with the four bytes of one int.
     foundation::core::FixedArray<std::byte, 256> info{};
     auto const info_read = info.with_mut([&ctx, &socket](auto run) noexcept {
-        return fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, run.view());
+        return fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, std::move(run));
     });
     std::size_t const info_bytes = info_read.match([](std::size_t count) noexcept { return count; },
                                                    [](foundation::os::Errno) noexcept { return std::size_t{0}; });
@@ -348,15 +349,18 @@ struct LinkDumpRequest final {
     if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 52;
     foundation::core::FixedArray<std::byte, 8192> reply{};
     foundation::os::Errno const first_error = reply.with_mut([&ctx, &netlink](auto run) noexcept {
-        return fixy::net::receive_with_timestamps(ctx, netlink, run.view()).err().value_or(foundation::os::Errno::eio);
+        return fixy::net::receive_with_timestamps(ctx, netlink, std::move(run))
+            .err()
+            .value_or(foundation::os::Errno::eio);
     });
     if (first_error != foundation::os::Errno::eagain) {
         return 53;
     }
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 54;
-    auto received = reply.with_mut(
-        [&ctx, &netlink](auto run) noexcept { return fixy::net::receive_with_timestamps(ctx, netlink, run.view()); });
+    auto received = reply.with_mut([&ctx, &netlink](auto run) noexcept {
+        return fixy::net::receive_with_timestamps(ctx, netlink, std::move(run));
+    });
     if (received.is_err()) return 55;
     fixy::net::TimestampedReceive const message = std::move(received).expect("the receive gave a message");
     if (message.count < 16 || message.count > reply.size()) return 56;

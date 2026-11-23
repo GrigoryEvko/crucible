@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -106,7 +107,7 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
 [[nodiscard]] int const_storage_reads_its_bytes() {
     alignas(Pair) PairBytes storage{};
     const core::FixedArray<Pair, 2> written{Pair{1, 2}, Pair{3, 4}};
-    storage.with_mut([&written](auto cells) noexcept { core::copy(cells.view(), core::bytes(written)); });
+    storage.with_mut([&written](auto cells) noexcept { core::copy(std::move(cells), core::bytes(written)); });
     return read_pairs_of(storage);
 }
 

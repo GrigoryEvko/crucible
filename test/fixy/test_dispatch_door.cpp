@@ -62,8 +62,14 @@ void test_body_borrows_the_owners_of_its_brands(DispatchCtx const& ctx) {
     Recorder recorder{};
     auto body = [&recorder](DispatchCtx const& /*dispatch_ctx*/, fc::LoanKey<LogBrand>& log_key,
                             fc::LoanKey<RingBrand>& ring_key) noexcept {
-        recorder.log.with_mut(log_key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 3; });
-        recorder.ring.with_mut(ring_key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 4; });
+        recorder.log.with_mut(log_key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("the log holds the element");
+            *element = 3;
+        });
+        recorder.ring.with_mut(ring_key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("the ring holds the element");
+            *element = 4;
+        });
         return recorder.log.at(fc::index<0>()) + recorder.ring.at(fc::index<0>());
     };
     static_assert(!DispatchesAnLvalueBody<decltype(body)>);
@@ -74,7 +80,10 @@ void test_body_borrows_the_owners_of_its_brands(DispatchCtx const& ctx) {
 // The dispatch of one operation to the owner, in a window of its own.
 void dispatch_one_operation(DispatchCtx const& ctx, Recorder& recorder) noexcept {
     fd::run_dispatch(ctx, [&recorder](DispatchCtx const& /*dispatch_ctx*/, fc::LoanKey<LogBrand>& key) noexcept {
-        recorder.log.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<1>()) += 1; });
+        recorder.log.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(1).expect("the log holds the element");
+            *element += 1;
+        });
     });
 }
 
@@ -113,7 +122,8 @@ void test_a_nested_dispatch_ends_the_process(::fixy::TestRunnerCtx const& test) 
                 ctx, [&ctx, &recorder](DispatchCtx const& /*dispatch_ctx*/, fc::LoanKey<RingBrand>& ring_key) noexcept {
                     recorder.ring.with_mut(ring_key, [&ctx, &recorder](auto run) noexcept {
                         dispatch_one_operation(ctx, recorder);
-                        run.view().at(fc::index<0>()) = 1;
+                        auto element = run.get_mut(0).expect("the ring holds the element");
+                        *element = 1;
                     });
                 });
         },

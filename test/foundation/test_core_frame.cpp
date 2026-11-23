@@ -180,7 +180,7 @@ void test_masked_array() {
     MaskedArray<int> array = ::foundation::core::mint_masked_array<int>(allocation(), 8);
     array = with_mut(std::move(through(array)), [&array](auto out) noexcept {
         CRUCIBLE_TEST_ASSERT(kTest, through(array).size() == 0 && out.size() == 8);
-        ::foundation::core::fill(out.view(), 3);
+        ::foundation::core::fill(std::move(out), 3);
     });
     CRUCIBLE_TEST_ASSERT(kTest, array.at_masked(7) == 3 && array.at_masked(8 + 2) == 3);
 }

@@ -187,7 +187,8 @@ void test_region_scope_door_writes_its_storage(TestRunnerCtx const& test) {
     storage.with_mut([&test](auto run) noexcept {
         auto [sum, back] = ::fixy::with_region<DataScope>(std::move(run), [](auto region) noexcept {
             auto written = ::fixy::with_mut(std::move(region), [](auto elements) noexcept {
-                *elements.get(5).expect("the region holds six elements") = 60;
+                auto element = elements.get_mut(5).expect("the region holds six elements");
+                *element = 60;
             });
             std::uint64_t total = 0;
             for (auto const value : ::fixy::mint_borrowed(written))
@@ -305,7 +306,8 @@ void require_recombine_aborts_without_shard(TestRunnerCtx const& test) {
             auto kept = std::move(std::get<KeptIndex>(parts.shards));
             (void)Region::recombine(std::move(parts.witness), std::move(parts.shards));
             auto written = ::fixy::with_mut(std::move(kept), [](auto run) noexcept {
-                *run.get(0).expect("the kept shard holds two elements") = 7;
+                auto element = run.get_mut(0).expect("the kept shard holds two elements");
+                *element = 7;
             });
             ::foundation::linear::drop(std::move(written).release());
         },

@@ -311,15 +311,17 @@ void test_scan_in_place_and_under_append() {
     HeapArray<std::size_t> order = ::foundation::core::mint_heap_array(test_alloc(), count, std::size_t{0});
     order = ::foundation::core::with_mut(std::move(order), [&stream, count](auto slots) noexcept {
         for (std::size_t index = 0; index < count; ++index) {
-            *slots.get(index).expect("a test reads an element at or past the count of its View") = index;
+            auto slot = slots.get_mut(index).expect("a test reads an element at or past the count of its View");
+            *slot = index;
         }
         for (std::size_t index = count; index > 1; --index) {
             std::size_t const other = stream.below(index);
             std::size_t const kept =
                 *slots.get(index - 1).expect("a test reads an element at or past the count of its View");
-            *slots.get(index - 1).expect("a test reads an element at or past the count of its View") =
-                *slots.get(other).expect("a test reads an element at or past the count of its View");
-            *slots.get(other).expect("a test reads an element at or past the count of its View") = kept;
+            auto last = slots.get_mut(index - 1).expect("a test reads an element at or past the count of its View");
+            *last = *slots.get(other).expect("a test reads an element at or past the count of its View");
+            auto drawn = slots.get_mut(other).expect("a test reads an element at or past the count of its View");
+            *drawn = kept;
         }
     });
     return order;
@@ -437,8 +439,8 @@ void test_scan_error_stays_inside_the_bound() {
     wide = ::foundation::core::with_mut(std::move(wide), [&run](auto cells) noexcept {
         std::size_t position = 0;
         for (float const value : run) {
-            *cells.get(position).expect("a test reads an element at or past the count of its View") =
-                static_cast<double>(value);
+            auto element = cells.get_mut(position).expect("a test reads an element at or past the count of its View");
+            *element = static_cast<double>(value);
             ++position;
         }
     });
@@ -544,13 +546,13 @@ void check_scan_outputs(View<float const> want, View<float const> out) noexcept 
 void test_nan_outputs_of_the_scans_are_canonical() {
     HeapArray<float> run = draw_floats(2100, 0x5CA40040u);
     run = ::foundation::core::with_mut(std::move(run), [](auto cells) noexcept {
-        ::crucible::test::put_specials(cells.view(), 0x5CA40041u);
-        *cells.get(0).expect("a test reads an element at or past the count of its View") =
-            ::fixy::bit_cast<float>(0x7F800001u);
-        *cells.get(1).expect("a test reads an element at or past the count of its View") =
-            ::fixy::bit_cast<float>(0x7F800000u);
-        *cells.get(2).expect("a test reads an element at or past the count of its View") =
-            ::fixy::bit_cast<float>(0xFF800000u);
+        ::crucible::test::put_specials(cells, 0x5CA40041u);
+        auto first = cells.get_mut(0).expect("a test reads an element at or past the count of its View");
+        *first = ::fixy::bit_cast<float>(0x7F800001u);
+        auto second = cells.get_mut(1).expect("a test reads an element at or past the count of its View");
+        *second = ::fixy::bit_cast<float>(0x7F800000u);
+        auto third = cells.get_mut(2).expect("a test reads an element at or past the count of its View");
+        *third = ::fixy::bit_cast<float>(0xFF800000u);
     });
     View<float const> const all{run.view()};
     HeapArray<float> expected = zeros(run.size());

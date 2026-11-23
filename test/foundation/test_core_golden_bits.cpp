@@ -425,18 +425,20 @@ void test_golden_bits() {
     HeapArray<double> const doubles = draw_run<double>(kLongest, 0x601D0002u);
     HeapArray<float> special_floats = draw_run<float>(kLongest, 0x601D0003u);
     special_floats = with_mut(std::move(special_floats),
-                              [](auto cells) noexcept { ::crucible::test::put_specials(cells.view(), 0x601D0004u); });
+                              [](auto cells) noexcept { ::crucible::test::put_specials(cells, 0x601D0004u); });
     HeapArray<double> special_doubles = draw_run<double>(kLongest, 0x601D0005u);
     special_doubles = with_mut(std::move(special_doubles),
-                               [](auto cells) noexcept { ::crucible::test::put_specials(cells.view(), 0x601D0006u); });
+                               [](auto cells) noexcept { ::crucible::test::put_specials(cells, 0x601D0006u); });
     HeapArray<std::uint64_t> const words = draw_words(kLongest, 0x601D0007u);
     HeapArray<float> const run_elements = draw_run<float>(kRuns * kRunCount, 0x601D0008u);
     HeapArray<std::uint64_t> const keyed = draw_keyed(1000, 0x601D000Au);
     HeapArray<float> sort_floats = draw_run<float>(1000, 0x601D000Bu);
     sort_floats = with_mut(std::move(sort_floats), [](auto cells) noexcept {
-        ::crucible::test::put_specials(cells.view(), 0x601D000Cu);
-        *cells.get(0).expect("a test reads an element at or past the count of its View") = -0.0f;
-        *cells.get(1).expect("a test reads an element at or past the count of its View") = 0.0f;
+        ::crucible::test::put_specials(cells, 0x601D000Cu);
+        auto first = cells.get_mut(0).expect("a test reads an element at or past the count of its View");
+        *first = -0.0f;
+        auto second = cells.get_mut(1).expect("a test reads an element at or past the count of its View");
+        *second = 0.0f;
     });
 
     View<float const> const float_view{floats.view()};

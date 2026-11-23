@@ -11,6 +11,8 @@
 
 #include "philox_stream.h"
 
+#include <utility>
+
 namespace {
 
 using ::foundation::core::DataAddress;
@@ -51,12 +53,12 @@ struct alignas(64) LineBytes {
 void test_mint_from_bytes() {
     LineBytes line{};
     line.bytes.with_mut([](auto run) noexcept {
-        View<unsigned char> const bytes = run.view();
-        Option<RunAddress> const first = mint_run_address(bytes, 0);
-        Option<RunAddress> const middle = mint_run_address(bytes, 9);
-        Option<RunAddress> const end = mint_run_address(bytes, 64);
+        Option<RunAddress> const first = mint_run_address(run, 0);
+        Option<RunAddress> const middle = mint_run_address(run, 9);
+        Option<RunAddress> const end = mint_run_address(run, 64);
         CRUCIBLE_FATAL_INVARIANT(first.is_some() && middle.is_some() && end.is_some());
-        CRUCIBLE_FATAL_INVARIANT(first == mint_run_address(run.view(), 0));
+        auto const whole = take_window(std::move(run), 0, 64).expect("the line holds 64 bytes");
+        CRUCIBLE_FATAL_INVARIANT(first == mint_run_address(whole, 0));
         CRUCIBLE_FATAL_INVARIANT(!(first == middle) && !(middle == end));
     });
 }
@@ -68,7 +70,7 @@ void test_mint_refuses() {
     CRUCIBLE_FATAL_INVARIANT(mint_run_address(empty, 0).is_none());
     LineBytes line{};
     CRUCIBLE_FATAL_INVARIANT(
-        line.bytes.with_mut([](auto run) noexcept { return mint_run_address(run.view(), 65).is_none(); }));
+        line.bytes.with_mut([](auto run) noexcept { return mint_run_address(run, 65).is_none(); }));
     CRUCIBLE_FATAL_INVARIANT(mint_foreign_run_address(static_cast<unsigned char*>(nullptr)).is_none());
 }
 
@@ -77,7 +79,7 @@ void test_mint_refuses() {
 void test_device_is_part_of_the_value() {
     LineBytes line{};
     line.bytes.with_mut([](auto run) noexcept {
-        RunAddress const address = mint_run_address(run.view(), 4).expect("the line holds 64 bytes");
+        RunAddress const address = mint_run_address(run, 4).expect("the line holds 64 bytes");
         HostData const on_host{address, kHost};
         HostData const on_accelerator{address, kAccelerator};
         CRUCIBLE_FATAL_INVARIANT(!(on_host == on_accelerator));
@@ -99,9 +101,10 @@ void test_device_is_part_of_the_value() {
 void test_foreign_round_trip() {
     LineBytes line{};
     line.bytes.with_mut([](auto run) noexcept {
-        unsigned char& seventh = *run.get(7).expect("the line holds 64 bytes");
+        auto writer = run.get_mut(7).expect("the line holds 64 bytes");
+        unsigned char& seventh = *writer;
         Option<RunAddress> const foreign = mint_foreign_run_address(&seventh);
-        CRUCIBLE_FATAL_INVARIANT(foreign == mint_run_address(run.view(), 7));
+        CRUCIBLE_FATAL_INVARIANT(foreign == mint_run_address(run, 7));
         for (RunAddress const address : foreign) {
             CRUCIBLE_FATAL_INVARIANT(foreign_pointer(address) == &seventh);
             *static_cast<unsigned char*>(foreign_pointer(address)) = 0x5A;
@@ -115,15 +118,14 @@ void test_foreign_round_trip() {
 void test_alignment() {
     LineBytes line{};
     line.bytes.with_mut([](auto run) noexcept {
-        View<unsigned char> const bytes = run.view();
-        for (RunAddress const address : mint_run_address(bytes, 0)) {
+        for (RunAddress const address : mint_run_address(run, 0)) {
             CRUCIBLE_FATAL_INVARIANT(is_aligned<1>(address) && is_aligned<8>(address) && is_aligned<64>(address));
             CRUCIBLE_FATAL_INVARIANT((is_aligned<64>(HostData{address, kHost})));
         }
-        for (RunAddress const address : mint_run_address(bytes, 1)) {
+        for (RunAddress const address : mint_run_address(run, 1)) {
             CRUCIBLE_FATAL_INVARIANT(is_aligned<1>(address) && !is_aligned<2>(address));
         }
-        for (RunAddress const address : mint_run_address(bytes, 32)) {
+        for (RunAddress const address : mint_run_address(run, 32)) {
             CRUCIBLE_FATAL_INVARIANT((is_aligned<32>(address) && !is_aligned<64>(HostData{address, kHost})));
         }
     });
@@ -135,15 +137,14 @@ void test_alignment() {
 void test_agrees_with_plain_model() {
     LineBytes line{};
     line.bytes.with_mut([](auto run) noexcept {
-        View<unsigned char> const bytes = run.view();
         ::crucible::test::PhiloxStream stream{0x5EEDDA7A00000001u};
         for (int trial = 0; trial < 1024; ++trial) {
             auto const first_offset = stream.below(70);
             auto const second_offset = stream.below(70);
             TestDevice const first_device = stream.below(2) == 0 ? kHost : kAccelerator;
             TestDevice const second_device = stream.below(2) == 0 ? kHost : kAccelerator;
-            Option<RunAddress> const first = mint_run_address(bytes, first_offset);
-            Option<RunAddress> const second = mint_run_address(bytes, second_offset);
+            Option<RunAddress> const first = mint_run_address(run, first_offset);
+            Option<RunAddress> const second = mint_run_address(run, second_offset);
             CRUCIBLE_FATAL_INVARIANT(first.is_some() == (first_offset <= 64));
             CRUCIBLE_FATAL_INVARIANT(second.is_some() == (second_offset <= 64));
             for (RunAddress const first_address : first) {

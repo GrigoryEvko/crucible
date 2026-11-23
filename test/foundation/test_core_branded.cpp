@@ -41,14 +41,15 @@ using Run = FixedArray<std::uint64_t, run_size>;
 void test_scope_reads_each_element() {
     FixedArray<int, 6> values{1, 2, 3, 4, 5, 6};
     int const total = values.with_mut([](auto run) noexcept {
-        View<int> const tail = run.view().window(2, 4).expect("four elements fit");
-        return mint_branded_scope(tail, [](auto view) noexcept {
+        View<int const> const tail = run.view().window(2, 4).expect("four elements fit");
+        return mint_branded_scope(tail, [&run](auto view) noexcept {
             int sum = 0;
             for (auto const index : view.indices()) {
                 sum += view.at(index);
             }
             for (auto const [index, element] : view.enumerate()) {
-                *element *= static_cast<int>(index.raw()) + 1;
+                auto writer = run.get_mut(2 + index.raw()).expect("the window is inside the run");
+                *writer = *element * (static_cast<int>(index.raw()) + 1);
             }
             return view.index(4).is_none() ? sum : -1;
         });
@@ -77,7 +78,8 @@ void test_parallel_view_shares_the_index() {
     FixedArray<std::uint64_t, 4> values{10, 20, 30, 40};
     FixedArray<std::uint64_t, 3> short_values{7, 8, 9};
     std::uint64_t const total = values.with_mut([&keys, &short_values](auto run) noexcept {
-        return mint_branded_scope(keys.view(), [column_run = run.view(), &short_values](auto view) noexcept {
+        View<std::uint64_t const, 4> const column_run = run.view();
+        return mint_branded_scope(keys.view(), [column_run, &run, &short_values](auto view) noexcept {
             if (view.parallel(short_values.view()).is_some()) {
                 return std::uint64_t{0};
             }
@@ -85,7 +87,8 @@ void test_parallel_view_shares_the_index() {
             std::uint64_t sum = 0;
             for (auto const index : view.indices()) {
                 sum += static_cast<std::uint64_t>(view.at(index)) * column.at(index);
-                column.at(index) += 1;
+                auto writer = run.get_mut(index.raw()).expect("the two arrays have the same count");
+                *writer += 1;
             }
             return sum;
         });

@@ -191,8 +191,9 @@ struct PlanCombine {
     step_of_left = ::fixy::with_mut(std::move(step_of_left), [&steps, &step](auto lefts) noexcept {
         for (core::TreeStep const& one : steps) {
             ++step;
-            *lefts.get(static_cast<std::size_t>(one.left))
-                 .expect("a test reads an element at or past the count of its View") = step;
+            auto left = lefts.get_mut(static_cast<std::size_t>(one.left))
+                            .expect("a test reads an element at or past the count of its View");
+            *left = step;
         }
     });
     auto const leaves = static_cast<std::uint32_t>(run.size());

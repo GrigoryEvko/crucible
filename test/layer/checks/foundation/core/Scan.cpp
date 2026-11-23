@@ -144,14 +144,16 @@ template <std::size_t N, ScanKind Kind>
     // Each step has a reader: a later step or an output.
     FixedArray<bool, N + step_count> is_read{};
     is_read.with_mut([steps, &outputs](auto run) noexcept {
-        View<bool> const read_marks = run.view();
         for (TreeStep const step : steps) {
-            *read_marks.get(static_cast<std::size_t>(step.left)).expect("an operand is a node of the plan") = true;
-            *read_marks.get(static_cast<std::size_t>(step.right)).expect("an operand is a node of the plan") = true;
+            auto left = run.get_mut(static_cast<std::size_t>(step.left)).expect("an operand is a node of the plan");
+            *left = true;
+            auto right = run.get_mut(static_cast<std::size_t>(step.right)).expect("an operand is a node of the plan");
+            *right = true;
         }
         for (PlanNode const output : outputs) {
             if (output != empty_plan_node) {
-                *read_marks.get(static_cast<std::size_t>(output)).expect("an output is a node of the plan") = true;
+                auto mark = run.get_mut(static_cast<std::size_t>(output)).expect("an output is a node of the plan");
+                *mark = true;
             }
         }
     });

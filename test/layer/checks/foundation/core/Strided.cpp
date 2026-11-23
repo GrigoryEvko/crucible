@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -114,8 +115,8 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
     return values.with_mut([&sizes, &strides](auto run) noexcept {
-        StridedView<int, 2> const matrix =
-            mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        StridedView<int, 2> const matrix = unique.view();
         int total = 0;
         if (walk([&total](int& element) noexcept { total += element; }, matrix).is_err()) return -1;
         return total;
@@ -129,8 +130,8 @@ static_assert(matrix_sum() == 66);
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
     return values.with_mut([&sizes, &strides](auto run) noexcept {
-        StridedView<int, 2> const matrix =
-            mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        StridedView<int, 2> const matrix = unique.view();
         return mint_strided_scope(matrix, [](auto branded) noexcept {
             int total = 0;
             walk([&total](int& element) noexcept { total += element; }, branded);

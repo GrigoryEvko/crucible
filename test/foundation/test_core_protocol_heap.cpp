@@ -101,8 +101,8 @@ void put_byte(Bytes& image, ByteOffset offset, std::byte byte) noexcept {
 template <HeapEncodable T>
 [[nodiscard]] Bytes image_of(T const& value) noexcept {
     Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
-    image =
-        ::foundation::core::with_mut(std::move(image), [&value](auto bytes) noexcept { encode(value, bytes.view()); });
+    image = ::foundation::core::with_mut(std::move(image),
+                                         [&value](auto bytes) noexcept { encode(value, std::move(bytes)); });
     return image;
 }
 
@@ -279,7 +279,7 @@ void test_heap_decode_refuses_each_fault() {
 
     Bytes longer = mint_heap_array_zeroed<std::byte>(test_alloc(), whole.size() + 1);
     longer = ::foundation::core::with_mut(std::move(longer), [&whole](auto bytes) noexcept {
-        encode(sample_message(), bytes.view().window(0, whole.size()).expect("the image fits"));
+        encode(sample_message(), take_window(std::move(bytes), 0, whole.size()).expect("the image fits"));
     });
     Bytes const& longer_read = longer;
     CRUCIBLE_FATAL_INVARIANT((fault_of(longer_read.view()) == DecodeFault{DecodeRefusal::trailing_byte, 39}));
@@ -329,7 +329,7 @@ void test_heap_hash_of_an_array_of_lists() {
         });
         Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
         image = ::foundation::core::with_mut(std::move(image),
-                                             [&value](auto bytes) noexcept { encode(value, bytes.view()); });
+                                             [&value](auto bytes) noexcept { encode(value, std::move(bytes)); });
         Bytes const& read = image;
         CRUCIBLE_FATAL_INVARIANT(hash(value).raw() == hand_heap_hash(read.view()));
         bool const is_back = decode<Tagged>(test_alloc(), kWideBudget, read.view())
@@ -366,8 +366,8 @@ struct[[= derive_protocol{}]] OddWide {
 template <class T>
 [[nodiscard]] bool hashes_as_its_image(T const& value) noexcept {
     Bytes image = mint_heap_array_zeroed<std::byte>(test_alloc(), encoded_size(value));
-    image =
-        ::foundation::core::with_mut(std::move(image), [&value](auto bytes) noexcept { encode(value, bytes.view()); });
+    image = ::foundation::core::with_mut(std::move(image),
+                                         [&value](auto bytes) noexcept { encode(value, std::move(bytes)); });
     Bytes const& read = image;
     return hash(value).raw() == hand_heap_hash(read.view());
 }
@@ -502,8 +502,8 @@ void test_heap_decode_agrees_with_an_oracle() {
             for (std::uint64_t write = 0; size != 0 && write < ((word >> 6) & 3U); ++write) {
                 std::uint64_t const change = stream.next_word();
                 std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
-                *cells.get((change >> 16) % size).expect("the offset is inside the image") =
-                    static_cast<std::byte>(raw);
+                auto cell = cells.get_mut((change >> 16) % size).expect("the offset is inside the image");
+                *cell = static_cast<std::byte>(raw);
             }
         });
         std::uint64_t const purse = stream.next_word();

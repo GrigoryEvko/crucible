@@ -253,8 +253,9 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
     // A write through the walk reaches the run, and the second view of the
     // pair reads each element at the same index.
     bool const is_added = values.with_mut([&sizes, &strides](auto run) noexcept {
-        ::fixy::StridedView<int, 2> const writer =
-            ::fixy::mint_strided_view(run.view(), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        auto unique_writer =
+            ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
+        ::fixy::StridedView<int, 2> const writer = unique_writer.view();
         ::fixy::StridedView<int, 2> const writer_columns = writer.transpose(::fixy::index<0>(), ::fixy::index<1>());
         return ::fixy::walk([](int& target, int& source) noexcept { target += source * 100; }, writer_columns,
                             writer_columns)
@@ -288,6 +289,10 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
         ::fixy::FixedArray<std::size_t, 2> const strides{4 * step, step};
         return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the view fits");
     };
+    auto const unique_view_of = [&sizes](auto run, std::size_t step) noexcept {
+        ::fixy::FixedArray<std::size_t, 2> const strides{4 * step, step};
+        return ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the view fits");
+    };
     std::size_t mixes = 0;
     for (std::size_t mix = 0; mix < 8; ++mix) {
         std::size_t const out_step = 1 + (mix & 1);
@@ -295,9 +300,9 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
         std::size_t const right_step = 1 + ((mix >> 2) & 1);
         ::fixy::FixedArray<int, 16> out{};
         bool const is_walked = out.with_mut([&](auto run) noexcept {
+            auto unique_out = unique_view_of(std::move(run), out_step);
             return ::fixy::walk([](int& sum, int const& first, int const& second) noexcept { sum = first + second; },
-                                view_of(run.view(), out_step),
-                                ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
+                                unique_out.view(), ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
                                 ::fixy::StridedView<int const, 2>{view_of(right.view(), right_step)})
                 .is_ok();
         });
@@ -509,8 +514,9 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
         ::fixy::mint_strided_view(output.view(), wrong_sizes.view(), column_major.view(), 0).expect("fits");
 
     bool const is_summed = output.with_mut([&](auto run) noexcept {
-        ::fixy::StridedView<int, 2> const output_view =
-            ::fixy::mint_strided_view(run.view(), sizes.view(), row_major.view(), 0).expect("fits");
+        auto unique_output =
+            ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), row_major.view(), 0).expect("fits");
+        ::fixy::StridedView<int, 2> const output_view = unique_output.view();
         return ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
             if (branded.parallel(wrong_view).is_some()) return false;
             if (branded.index(std::size_t{2}, std::size_t{0}).is_some()) return false;
@@ -533,8 +539,9 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 6> walked{};
     ::fixy::FixedArray<int, 6> order{};
     std::size_t const visits = walked.with_mut([&](auto run) noexcept {
-        ::fixy::StridedView<int, 2> const walked_view =
-            ::fixy::mint_strided_view(run.view(), sizes.view(), column_major.view(), 0).expect("fits");
+        auto unique_walked =
+            ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), column_major.view(), 0).expect("fits");
+        ::fixy::StridedView<int, 2> const walked_view = unique_walked.view();
         return ::fixy::mint_strided_scope(left_view, [&](auto branded) noexcept {
             auto const others = branded.parallel(right_view).expect("the sizes are the same");
             auto const target = branded.parallel(walked_view).expect("the sizes are the same");

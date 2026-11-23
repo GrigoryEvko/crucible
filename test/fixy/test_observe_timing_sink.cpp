@@ -55,7 +55,8 @@ static_assert(!::foundation::transfer::Sendable<Sink&>);
 
 // A kernel times itself.  It marks one slot and holds a span over a short
 // loop of the other.  It reads no count back.
-void timed_kernel(KernelCall const&, Sink& sink, ::fixy::View<std::uint64_t, 4> out) noexcept {
+template <class Brand>
+void timed_kernel(KernelCall const&, Sink& sink, ::fixy::ViewMut<std::uint64_t, Brand, 4> out) noexcept {
     sink.mark(kMarkSlot);
     Sink::Span const span = sink.span(kSpanSlot);
     std::uint64_t value = 1;
@@ -73,11 +74,15 @@ void test_a_kernel_writes_and_a_test_reads(TestRunnerCtx const& test) {
     os::FpScope<core::kFpModeIeee> const scope = os::mint_fp_scope<core::kFpModeIeee>();
     ::fixy::Kernel<KernelBrand, core::kFpModeIeee> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
     ::fixy::FixedArray<std::uint64_t, 4> out{};
-    out.with_mut([&ctx, &sink](auto run) noexcept { ::fixy::run_kernel(ctx, timed_kernel, sink, run.view()); });
+    out.with_mut([&ctx, &sink](auto run) noexcept {
+        ::fixy::run_kernel(ctx, timed_kernel<typename decltype(run)::brand_type>, sink, std::move(run));
+    });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kMarkSlot) != 0);
     CRUCIBLE_TEST_ASSERT(test, out.at(::fixy::index<3>()) == 121u);
     std::uint64_t const first_span = sink.read(nondet, kSpanSlot);
-    out.with_mut([&ctx, &sink](auto run) noexcept { ::fixy::run_kernel(ctx, timed_kernel, sink, run.view()); });
+    out.with_mut([&ctx, &sink](auto run) noexcept {
+        ::fixy::run_kernel(ctx, timed_kernel<typename decltype(run)::brand_type>, sink, std::move(run));
+    });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) >= first_span);
     ::fixy::check::pass(test, "a kernel marks and spans a sink, and a test context reads it with its tag\n");
 }

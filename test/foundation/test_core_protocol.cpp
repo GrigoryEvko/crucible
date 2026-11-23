@@ -13,6 +13,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -258,7 +259,7 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 // The image of the sample.
 [[nodiscard]] Image image_of(Sample const& sample) noexcept {
     Image image{};
-    image.with_mut([&sample](auto run) noexcept { encode(sample, run.view()); });
+    image.with_mut([&sample](auto run) noexcept { encode(sample, std::move(run)); });
     return image;
 }
 
@@ -269,7 +270,7 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 template <class T>
 [[nodiscard]] FixedArray<std::byte, encoded_size_v<T>> encoded(T const& value) noexcept {
     FixedArray<std::byte, encoded_size_v<T>> image{};
-    image.with_mut([&value](auto run) noexcept { encode(value, run.view()); });
+    image.with_mut([&value](auto run) noexcept { encode(value, std::move(run)); });
     return image;
 }
 
@@ -787,8 +788,8 @@ void test_c_array_and_pointer_parts() {
         CRUCIBLE_FATAL_INVARIANT(hash(c_array).raw() == hash(fixed_array).raw());
         FixedArray<std::byte, 6> c_image{};
         FixedArray<std::byte, 6> fixed_image{};
-        c_image.with_mut([&c_array](auto run) noexcept { encode(c_array, run.view()); });
-        fixed_image.with_mut([&fixed_array](auto run) noexcept { encode(fixed_array, run.view()); });
+        c_image.with_mut([&c_array](auto run) noexcept { encode(c_array, std::move(run)); });
+        fixed_image.with_mut([&fixed_array](auto run) noexcept { encode(fixed_array, std::move(run)); });
         CRUCIBLE_FATAL_INVARIANT(c_image == fixed_image);
         HoldsCArray other = c_array;
         other.lanes[2] = static_cast<std::uint16_t>(other.lanes[2] + 1U);

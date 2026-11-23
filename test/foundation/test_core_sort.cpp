@@ -53,20 +53,18 @@ template <std::size_t N>
     std::uint64_t const lanes = inputs < 64 ? ((std::uint64_t{1} << inputs) - 1) : ~std::uint64_t{0};
     ::fixy::FixedArray<std::uint64_t, N> wires{};
     return wires.with_mut([&plan, inputs, lanes](auto run) noexcept {
-        View<std::uint64_t> const wire_view = run.view();
+        View<std::uint64_t const> const wire_view = run.view();
         for (std::uint64_t base = 0; base < inputs; base += 64) {
             for (std::size_t wire = 0; wire < N; ++wire) {
-                *wire_view.get(wire).expect("a test reads an element at or past the count of its View") =
-                    wire_word(wire, base);
+                auto element = run.get_mut(wire).expect("a test reads an element at or past the count of its View");
+                *element = wire_word(wire, base);
             }
             for (::foundation::core::Comparator const step : plan) {
-                std::uint64_t& low =
-                    *wire_view.get(step.low).expect("a test reads an element at or past the count of its View");
-                std::uint64_t& high =
-                    *wire_view.get(step.high).expect("a test reads an element at or past the count of its View");
-                std::uint64_t const minimum = low & high;
-                high = low | high;
-                low = minimum;
+                auto low = run.get_mut(step.low).expect("a test reads an element at or past the count of its View");
+                auto high = run.get_mut(step.high).expect("a test reads an element at or past the count of its View");
+                std::uint64_t const minimum = *low & *high;
+                *high = *low | *high;
+                *low = minimum;
             }
             for (std::size_t wire = 0; wire + 1 < N; ++wire) {
                 std::uint64_t const below =
@@ -111,18 +109,20 @@ void test_networks_sort_each_binary_input() {
 [[nodiscard]] std::uint32_t bits_of(float value) noexcept { return ::fixy::bit_cast<std::uint32_t>(value); }
 
 // The naive sort: an insertion sort of the total order, by its key.
-void naive_sort(View<float> values) noexcept {
+template <class Brand, std::size_t Extent>
+void naive_sort(::foundation::core::ViewMut<float, Brand, Extent> values) noexcept {
     for (std::size_t index = 1; index < values.size(); ++index) {
         float const moving = *values.get(index).expect("a test reads an element at or past the count of its View");
         std::size_t position = index;
         while (position > 0
                && ::foundation::core::encode_total_order_key(moving) < ::foundation::core::encode_total_order_key(
                       *values.get(position - 1).expect("a test reads an element at or past the count of its View"))) {
-            *values.get(position).expect("a test reads an element at or past the count of its View") =
-                *values.get(position - 1).expect("a test reads an element at or past the count of its View");
+            auto shifted = values.get_mut(position).expect("a test reads an element at or past the count of its View");
+            *shifted = *values.get(position - 1).expect("a test reads an element at or past the count of its View");
             --position;
         }
-        *values.get(position).expect("a test reads an element at or past the count of its View") = moving;
+        auto placed = values.get_mut(position).expect("a test reads an element at or past the count of its View");
+        *placed = moving;
     }
 }
 
@@ -149,7 +149,7 @@ void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
             }
         });
         ::fixy::FixedArray<float, N> expected{values};
-        expected.with_mut([](auto run) noexcept { naive_sort(View<float>{run.view()}); });
+        expected.with_mut([](auto run) noexcept { naive_sort(std::move(run)); });
         values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
@@ -215,8 +215,9 @@ void test_sort_stably_is_stable() {
             for (std::size_t index = 0; index < count; ++index) {
                 Keyed const record =
                     *sorted.get(index).expect("a test reads an element at or past the count of its View");
-                std::uint8_t& mark =
-                    *marks.get(record.position).expect("a test reads an element at or past the count of its View");
+                auto writer =
+                    marks.get_mut(record.position).expect("a test reads an element at or past the count of its View");
+                std::uint8_t& mark = *writer;
                 CRUCIBLE_TEST_ASSERT(kTest, mark == 0);
                 mark = 1;
                 if (index == 0) continue;
@@ -246,7 +247,8 @@ void test_sort_stably_agrees_with_the_naive_sort() {
             test_alloc(), count, [&stream](std::size_t) noexcept { return draw_special_float(stream); });
         HeapArray<float> expected =
             ::foundation::core::mint_heap_array_copy<float>(test_alloc(), View<float const>{values.view()});
-        expected = ::foundation::core::with_mut(std::move(expected), [](auto run) noexcept { naive_sort(run.view()); });
+        expected =
+            ::foundation::core::with_mut(std::move(expected), [](auto run) noexcept { naive_sort(std::move(run)); });
         HeapArray<float> scratch = ::foundation::core::mint_heap_array(test_alloc(), count, 0.0f);
         CRUCIBLE_TEST_ASSERT(kTest, sort_through_frames(values, scratch));
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
@@ -304,8 +306,9 @@ void test_sort_stably_of_ordered_runs() {
         for (std::size_t index = 0; index < sorted.size(); ++index) {
             Keyed const record = *sorted.get(index).expect("a test reads an element at or past the count of its View");
             if (record.position >= sorted.size()) return false;
-            std::uint8_t& mark =
-                *marks.get(record.position).expect("a test reads an element at or past the count of its View");
+            auto writer =
+                marks.get_mut(record.position).expect("a test reads an element at or past the count of its View");
+            std::uint8_t& mark = *writer;
             if (mark != 0) return false;
             mark = 1;
             if (index == 0) continue;
@@ -391,20 +394,24 @@ void test_sort_stably_of_input_runs() {
 // start solid: each run of the scan then ends after two elements, the input
 // is one unsorted run, and the gas keys of the even positions, above each
 // solid key, meet the adversary in the quicksort.
+template <class Brand, std::size_t Extent>
 class QuicksortAdversary {
 public:
-    explicit QuicksortAdversary(View<std::uint32_t> keys) noexcept : keys_{keys}, gas_{keys.size()} {
-        for (std::size_t index = 0; index < keys.size(); ++index) {
-            *keys_.get(index).expect("a test reads an element at or past the count of its View") =
-                index % 2 == 0 ? static_cast<std::uint32_t>(gas_) : solid_++;
+    explicit QuicksortAdversary(::foundation::core::ViewMut<std::uint32_t, Brand, Extent> keys) noexcept
+        : keys_{std::move(keys)}, gas_{keys_.size()} {
+        for (std::size_t index = 0; index < keys_.size(); ++index) {
+            auto key = keys_.get_mut(index).expect("a test reads an element at or past the count of its View");
+            *key = index % 2 == 0 ? static_cast<std::uint32_t>(gas_) : solid_++;
         }
     }
 
     [[nodiscard]] bool is_below(Keyed const& left, Keyed const& right) noexcept {
-        std::uint32_t& left_key =
-            *keys_.get(left.position).expect("a test reads an element at or past the count of its View");
-        std::uint32_t& right_key =
-            *keys_.get(right.position).expect("a test reads an element at or past the count of its View");
+        auto left_writer =
+            keys_.get_mut(left.position).expect("a test reads an element at or past the count of its View");
+        auto right_writer =
+            keys_.get_mut(right.position).expect("a test reads an element at or past the count of its View");
+        std::uint32_t& left_key = *left_writer;
+        std::uint32_t& right_key = *right_writer;
         if (left_key == gas_ && right_key == gas_) {
             if (left.position == candidate_) {
                 left_key = solid_++;
@@ -424,13 +431,14 @@ public:
     // the positions.
     void freeze_each() noexcept {
         for (std::size_t index = 0; index < keys_.size(); ++index) {
-            std::uint32_t& key = *keys_.get(index).expect("a test reads an element at or past the count of its View");
+            auto writer = keys_.get_mut(index).expect("a test reads an element at or past the count of its View");
+            std::uint32_t& key = *writer;
             if (key == gas_) key = solid_++;
         }
     }
 
 private:
-    View<std::uint32_t> keys_;
+    ::foundation::core::ViewMut<std::uint32_t, Brand, Extent> keys_;
     std::size_t gas_ = 0;
     std::uint32_t solid_ = 0;
     std::uint32_t candidate_ = 0;
@@ -448,10 +456,10 @@ void test_sort_stably_bounds_the_adversary() {
     HeapArray<std::uint32_t> keys = ::foundation::core::mint_heap_array(test_alloc(), count, std::uint32_t{0});
     HeapArray<Keyed> probe = draw_records(count, [](std::uint32_t) noexcept { return std::uint32_t{0}; });
     HeapArray<Keyed> probe_scratch = ::foundation::core::mint_heap_array(test_alloc(), count, Keyed{});
-    // The adversary keeps a View of the keys, so its whole life runs in the
+    // The adversary keeps the ViewMut of the keys, so its whole life runs in the
     // frame of the keys.
     keys = ::foundation::core::with_mut(std::move(keys), [&probe, &probe_scratch](auto key_run) noexcept {
-        QuicksortAdversary adversary{key_run.view()};
+        QuicksortAdversary adversary{std::move(key_run)};
         auto const by_adversary = [&adversary](Keyed const& left, Keyed const& right) noexcept {
             return adversary.is_below(left, right);
         };
@@ -826,7 +834,7 @@ void check_network_patterns(::crucible::test::PhiloxStream& stream) noexcept {
             }
         });
         ::fixy::FixedArray<float, N> expected{values};
-        expected.with_mut([](auto run) noexcept { naive_sort(View<float>{run.view()}); });
+        expected.with_mut([](auto run) noexcept { naive_sort(std::move(run)); });
         values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }

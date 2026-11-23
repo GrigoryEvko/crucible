@@ -68,9 +68,9 @@ struct RecordingMix {
 };
 
 // The count of the slots that hold an id.
-[[nodiscard]] std::size_t threads_in(View<::fixy::Atomic<std::uint32_t>> slots) noexcept {
+[[nodiscard]] std::size_t threads_in(View<::fixy::Atomic<std::uint32_t> const> slots) noexcept {
     std::size_t count = 0;
-    for (::fixy::Atomic<std::uint32_t>& slot : slots) {
+    for (::fixy::Atomic<std::uint32_t> const& slot : slots) {
         if (slot.load_acquire() != 0) ++count;
     }
     return count;

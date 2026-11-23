@@ -189,11 +189,11 @@ void test_doors_take_a_body_that_borrows_a_linear_value() {
 void test_fixed_array_view_fill_and_copy() {
     FixedArray<std::uint32_t, 8> target;
     FixedArray<std::uint32_t, 8> source{1, 2, 3, 4, 5, 6, 7, 8};
-    target.with_mut([](auto run) noexcept { ::foundation::core::fill(run.view(), std::uint32_t{0xAB}); });
+    target.with_mut([](auto run) noexcept { ::foundation::core::fill(std::move(run), std::uint32_t{0xAB}); });
     for (std::uint32_t const value : target) {
         CRUCIBLE_TEST_ASSERT(kTest, value == 0xAB);
     }
-    target.with_mut([&source](auto run) noexcept { ::foundation::core::copy(run.view(), source.view()); });
+    target.with_mut([&source](auto run) noexcept { ::foundation::core::copy(std::move(run), source.view()); });
     CRUCIBLE_TEST_ASSERT(kTest, target == source);
     View<std::uint32_t const, 8> const elements = target.view();
     CRUCIBLE_TEST_ASSERT(kTest, elements.at(index<7>()) == 8);
@@ -204,7 +204,8 @@ void test_fixed_array_view_fill_and_copy() {
     CRUCIBLE_TEST_ASSERT(kTest, sum == 36);
     // A window of the run of a frame writes the elements of the array.
     target.with_mut([](auto run) noexcept {
-        ::foundation::core::fill(run.view().window(2, 3).expect("three elements fit"), std::uint32_t{0});
+        ::foundation::core::fill(::foundation::core::take_window(std::move(run), 2, 3).expect("three elements fit"),
+                                 std::uint32_t{0});
     });
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<1>()) == 2 && target.at(index<2>()) == 0 && target.at(index<4>()) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<5>()) == 6);
@@ -217,11 +218,12 @@ void test_get_reads_below_the_count() {
     FixedArray<int, 4> numbers{4, 8, 15, 16};
     FixedArray<int, 4> const& fixed = numbers;
     numbers.with_mut([](auto run) noexcept {
-        View<int> const elements = run.view();
+        View<int const> const elements = run.view();
         CRUCIBLE_TEST_ASSERT(kTest, *elements.get(2).expect("the position is below the count") == 15);
         CRUCIBLE_TEST_ASSERT(kTest, elements.get(4).is_none());
         CRUCIBLE_TEST_ASSERT(kTest, elements.get(~std::size_t{0}).is_none());
-        *elements.get(0).expect("the position is below the count") = 5;
+        auto first = run.get_mut(0).expect("the position is below the count");
+        *first = 5;
     });
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<0>()) == 5);
 
@@ -229,7 +231,10 @@ void test_get_reads_below_the_count() {
     CRUCIBLE_TEST_ASSERT(kTest, *fixed_view.get(3).expect("the position is below the count") == 16);
     CRUCIBLE_TEST_ASSERT(kTest, fixed_view.get(4).is_none());
 
-    numbers.with_mut([](auto run) noexcept { *run.get(1).expect("the position is below the count") = 9; });
+    numbers.with_mut([](auto run) noexcept {
+        auto second = run.get_mut(1).expect("the position is below the count");
+        *second = 9;
+    });
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<1>()) == 9);
     CRUCIBLE_TEST_ASSERT(kTest, *fixed.get(1).expect("the position is below the count") == 9);
     CRUCIBLE_TEST_ASSERT(kTest, fixed.get(4).is_none());

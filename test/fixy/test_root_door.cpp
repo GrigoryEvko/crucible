@@ -39,7 +39,10 @@ struct Other {
 void test_joined_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
     Holder const holder{};
     auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<1>()) = 7; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(1).expect("the array holds the element");
+            *element = 7;
+        });
         return moved.array.at(fc::index<1>());
     };
     fc::Result<fc::Record<int>, ::foundation::os::Errno> const joined =
@@ -58,12 +61,21 @@ void test_context_and_two_brands(::fixy::BgLoadCtx const& ctx) {
     Other const other{};
     auto first = [moved = holder, kept = other](::fixy::BgLoadCtx const&, fc::LoanKey<HolderBrand>& key,
                                                 fc::LoanKey<OtherBrand>& other_key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 3; });
-        kept.array.with_mut(other_key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 4; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("the array holds the element");
+            *element = 3;
+        });
+        kept.array.with_mut(other_key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("the array holds the element");
+            *element = 4;
+        });
         return moved.array.at(fc::index<0>()) + kept.array.at(fc::index<0>());
     };
     auto second = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<0>()) = 5; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("the array holds the element");
+            *element = 5;
+        });
         return moved.array.at(fc::index<0>());
     };
     auto const joined = ft::run_joined(ctx, ft::ThreadOptions{}, std::move(first), std::move(second));
@@ -82,7 +94,10 @@ concept JoinsAnLvalueBody =
 void test_two_copies_of_one_keyed_body(::fixy::BgLoadCtx const& ctx) {
     Holder const holder{};
     auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<3>()) += 1; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(3).expect("the array holds the element");
+            *element += 1;
+        });
         return moved.array.at(fc::index<3>());
     };
     static_assert(!JoinsAnLvalueBody<decltype(body)>);
@@ -98,7 +113,10 @@ void test_two_copies_of_one_keyed_body(::fixy::BgLoadCtx const& ctx) {
 void test_beside_body_owns_its_holder(::fixy::BgLoadCtx const& ctx) {
     Holder const holder{};
     auto body = [moved = holder](fc::LoanKey<HolderBrand>& key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(fc::index<2>()) = 9; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(2).expect("the array holds the element");
+            *element = 9;
+        });
     };
     CRUCIBLE_FATAL_INVARIANT(ft::run_beside(ctx, ft::ThreadOptions{}, std::move(body), [] noexcept {}).is_ok());
 }

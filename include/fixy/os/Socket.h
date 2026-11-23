@@ -561,6 +561,19 @@ receive_with_timestamps(Ctx const&, Borrow socket, ::foundation::core::View<std:
                                             buffer.size(), detail::no_wait_flag);
 }
 
+// The receive with stamps into the run of a frame.  The door takes the
+// ViewMut of the frame by value, as fill does, so the receive is the one
+// writer of the run.
+template <eff::IsExecCtx Ctx, typename Borrow, class Brand, std::size_t Extent>
+    requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::read>
+[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
+receive_with_timestamps(Ctx const&, Borrow socket,
+                        ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
+    return detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
+                                            first_of_(::foundation::core::detail::BaseLayerRead{}, buffer),
+                                            buffer.size(), detail::no_wait_flag);
+}
+
 }  // namespace fixy::net
 
 namespace fixy::net::detail::socket_surface_invariants {

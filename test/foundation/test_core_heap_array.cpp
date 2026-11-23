@@ -73,7 +73,7 @@ void test_fill_and_reads() {
         CRUCIBLE_FATAL_INVARIANT(element == 7);
     }
     numbers = ::foundation::core::with_mut(
-        std::move(numbers), [](auto run) noexcept { ::foundation::core::fill(run.view(), std::uint32_t{3}); });
+        std::move(numbers), [](auto run) noexcept { ::foundation::core::fill(std::move(run), std::uint32_t{3}); });
     std::size_t total = 0;
     for (std::uint32_t const element : numbers) {
         total += element;

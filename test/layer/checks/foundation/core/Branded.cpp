@@ -59,14 +59,15 @@ static_assert(names_brand(^^CheckBrand const&, ^^CheckBrand));
 [[nodiscard]] consteval int scope_reads() noexcept {
     FixedArray<int, 5> values{10, 20, 30, 40, 50};
     return values.with_mut([](auto run) noexcept {
-        View<int> const elements = run.view().window(1, 3).expect("three elements fit");
-        return mint_branded_scope(elements, [](auto view) noexcept {
+        View<int const> const elements = run.view().window(1, 3).expect("three elements fit");
+        return mint_branded_scope(elements, [&run](auto view) noexcept {
             int total = 0;
             for (auto const index : view.indices()) {
                 total += view.at(index);
             }
             for (auto const [index, element] : view.enumerate()) {
-                *element += static_cast<int>(index.raw());
+                auto writer = run.get_mut(1 + index.raw()).expect("the window is inside the run");
+                *writer = *element + static_cast<int>(index.raw());
             }
             int const first = view.at(view.index(0).expect("0 is below the count"));
             bool const is_refused = view.index(3).is_none();

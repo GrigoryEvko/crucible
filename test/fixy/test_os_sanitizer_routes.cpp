@@ -160,7 +160,7 @@ constexpr std::size_t kOpenTries = 64;
             first_number = number_of(null);
             foundation::core::FixedArray<std::byte, 8> bytes{};
             bool const is_read = bytes.with_mut([&thread_ctx, &null](auto run) noexcept {
-                return fs::read_full(thread_ctx, null.ref(), run.view()).is_ok();
+                return fs::read_full(thread_ctx, null.ref(), std::move(run)).is_ok();
             });
             has_read.store_release(is_read);
         }

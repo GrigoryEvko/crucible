@@ -6,11 +6,10 @@
 //
 // A kernel takes the token of one call, which only run_kernel makes after the
 // check of the context, so no call of a kernel skips the check.  The test
-// kernel takes the token, a View of its input, a mutable View of its output
-// and a strided view of a bias row that broadcasts to each row.
+// kernel takes the token, a View of its input, the ViewMut of the frame of
+// its output and a strided view of a bias row that broadcasts to each row.
 // It runs under the IEEE mode and under the flush mode on one thread, and
-// each run gives the bits of its mode.  A unique mutable view of the output
-// does not exist in the base yet, so the output is a plain mutable View.
+// each run gives the bits of its mode.
 //
 // Two runs die: a context that a body takes to another thread, and a context
 // that a function returns while its scope ends.
@@ -39,6 +38,10 @@ using ::fixy::check::expect_dies;
 
 struct KernelBrand {};
 
+// The brand of the frame of the output in the checks of the type of the
+// kernel.
+struct OutputBrand {};
+
 template <core::FpMode Mode>
 using KernelCtx = ::fixy::Kernel<KernelBrand, Mode>;
 
@@ -61,15 +64,26 @@ template <class Element>
     return ::fixy::mint_strided_view(run, sizes.view(), strides.view(), 0).expect("the square fits its run");
 }
 
+// The unique dense square of the run of four elements of a frame.
+template <class Element, class Brand>
+[[nodiscard]] ::fixy::StridedViewMut<Element, 2, Brand>
+square_of(::fixy::ViewMut<Element, Brand, kElements> run) noexcept {
+    ::fixy::FixedArray<std::size_t, 2> const sizes{kSide, kSide};
+    ::fixy::FixedArray<std::size_t, 2> const strides{kSide, 1};
+    return ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0)
+        .expect("the square fits its run");
+}
+
 // The test kernel: out = in * scale + bias, over the square.  The walk adds
 // in the row-major order of the square on each target.
-template <core::FpMode Mode>
+template <core::FpMode Mode, class Brand>
 [[gnu::noipa]] void scale_and_add(KernelCall<Mode> const&, ::fixy::View<float const, kElements> input,
-                                  ::fixy::View<float, kElements> output, ::fixy::StridedView<float const, 2> bias,
-                                  float scale) noexcept {
+                                  ::fixy::ViewMut<float, Brand, kElements> output,
+                                  ::fixy::StridedView<float const, 2> bias, float scale) noexcept {
+    ::fixy::StridedViewMut<float, 2, Brand> target_square = square_of(std::move(output));
     bool const is_walked = ::fixy::walk([scale](float& target, float const& value,
                                                 float const& offset) noexcept { target = value * scale + offset; },
-                                        square_of(output), square_of(input), bias)
+                                        target_square.view(), square_of(input), bias)
                                .is_ok();
     if (!is_walked) ::fixy::fatal("the three views of the kernel have one shape");
 }
@@ -91,8 +105,8 @@ template <core::FpMode Mode>
             .expect("a row broadcasts to a square");
     ::fixy::FixedArray<float, kElements> output{};
     output.with_mut([&ctx, &input, &bias](auto run) noexcept {
-        ::fixy::run_kernel(ctx, scale_and_add<Mode>, ::fixy::View<float const, kElements>{input.view()}, run.view(),
-                           bias, 1e-10F);
+        ::fixy::run_kernel(ctx, scale_and_add<Mode, typename decltype(run)::brand_type>,
+                           ::fixy::View<float const, kElements>{input.view()}, std::move(run), bias, 1e-10F);
     });
     ::fixy::FixedArray<std::uint32_t, kElements> bits{};
     for (::fixy::Index<kElements> const index : output.indices()) {
@@ -118,13 +132,15 @@ static_assert(!std::is_copy_constructible_v<KernelCtx<core::kFpModeIeee>>
 // A kernel takes the token of one call, and only run_kernel makes a token.
 // So a direct call of a kernel with its context does not compile, and no
 // call skips the check of run_kernel.
-static_assert(::fixy::IsKernelOf<decltype(&scale_and_add<core::kFpModeIeee>), KernelBrand, core::kFpModeIeee,
-                                 ::fixy::View<float const, kElements>, ::fixy::View<float, kElements>,
-                                 ::fixy::StridedView<float const, 2>, float>);
-static_assert(!std::is_invocable_v<decltype(&scale_and_add<core::kFpModeIeee>), KernelCtx<core::kFpModeIeee> const&,
-                                   ::fixy::View<float const, kElements>, ::fixy::View<float, kElements>,
-                                   ::fixy::StridedView<float const, 2>, float>,
-              "a direct call of a kernel with its context skips the check of run_kernel");
+static_assert(
+    ::fixy::IsKernelOf<decltype(&scale_and_add<core::kFpModeIeee, OutputBrand>), KernelBrand, core::kFpModeIeee,
+                       ::fixy::View<float const, kElements>, ::fixy::ViewMut<float, OutputBrand, kElements>,
+                       ::fixy::StridedView<float const, 2>, float>);
+static_assert(
+    !std::is_invocable_v<decltype(&scale_and_add<core::kFpModeIeee, OutputBrand>), KernelCtx<core::kFpModeIeee> const&,
+                         ::fixy::View<float const, kElements>, ::fixy::ViewMut<float, OutputBrand, kElements>,
+                         ::fixy::StridedView<float const, 2>, float>,
+    "a direct call of a kernel with its context skips the check of run_kernel");
 static_assert(!std::is_constructible_v<KernelCall<core::kFpModeIeee>, KernelCtx<core::kFpModeIeee> const&>);
 static_assert(!std::is_copy_constructible_v<KernelCall<core::kFpModeIeee>>
                   && !std::is_move_constructible_v<KernelCall<core::kFpModeIeee>>,

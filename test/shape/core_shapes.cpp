@@ -381,8 +381,8 @@ struct ShapeBatch final {
                                          fixy::View<std::uint32_t const, 64> halves) noexcept {
     batch.words.with_mut([&batch, words, halves](auto word_run) noexcept {
         batch.halves.with_mut([&word_run, words, halves](auto half_run) noexcept {
-            fixy::copy(word_run.view(), words);
-            fixy::copy(half_run.view(), halves);
+            fixy::copy(std::move(word_run), words);
+            fixy::copy(std::move(half_run), halves);
         });
     });
 }
@@ -408,8 +408,8 @@ struct KeyedShapeBatch final {
                                          fixy::View<std::uint32_t const, 64> halves) noexcept {
     batch.words.with_mut(words_key, [&batch, &halves_key, words, halves](auto word_run) noexcept {
         batch.halves.with_mut(halves_key, [&word_run, words, halves](auto half_run) noexcept {
-            fixy::copy(word_run.view(), words);
-            fixy::copy(half_run.view(), halves);
+            fixy::copy(std::move(word_run), words);
+            fixy::copy(std::move(half_run), halves);
         });
     });
 }
@@ -456,7 +456,7 @@ struct ShapeHeapBrand final {};
 [[gnu::used]] void keyed_heap_array_frame_copy(
     ::foundation::core::FixedHeapArray<std::uint64_t, 64, alignof(std::uint64_t), ShapeHeapBrand>& target,
     ::foundation::core::LoanKey<ShapeHeapBrand> key, fixy::View<std::uint64_t const, 64> words) noexcept {
-    target.with_mut(key, [words](auto run) noexcept { fixy::copy(run.view(), words); });
+    target.with_mut(key, [words](auto run) noexcept { fixy::copy(std::move(run), words); });
 }
 
 // The open of a loan of count elements, a write of its first element, and
@@ -940,9 +940,7 @@ namespace {
     static_cast<void>(windows.append(second).is_ok());
     auto const write_first = [value](auto& views) noexcept {
         for (auto& view : views) {
-            for (auto element : view.get(0)) {
-                *element = value;
-            }
+            view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
         }
     };
     return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
@@ -958,12 +956,8 @@ namespace {
                                                     fixy::FixedArray<foundation::ByteWindow, 2> const& windows,
                                                     float value) noexcept {
     auto const write_first = [value](auto first_view, auto second_view) noexcept {
-        for (auto element : first_view.get(0)) {
-            *element = value;
-        }
-        for (auto element : second_view.get(0)) {
-            *element = value;
-        }
+        first_view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
+        second_view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
     };
     return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
 }

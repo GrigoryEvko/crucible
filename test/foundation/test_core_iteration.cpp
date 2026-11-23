@@ -57,8 +57,11 @@ void test_reverse_reads_from_the_last_element() {
     CRUCIBLE_TEST_ASSERT(kTest, expected == 0);
     FixedArray<int, 3> numbers{1, 2, 3};
     numbers.with_mut([](auto run) noexcept {
-        for (int& value : run.view().reverse()) {
-            value *= 10;
+        std::size_t position = run.size();
+        for (int const value : run.view().reverse()) {
+            --position;
+            auto element = run.get_mut(position).expect("the position is below the count");
+            *element = value * 10;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 3>{10, 20, 30}));
@@ -96,7 +99,8 @@ void test_enumerate_gives_each_index_with_its_element() {
     FixedArray<int, 4> numbers{};
     numbers.with_mut([](auto run) noexcept {
         for (auto const [position, element] : run.view().enumerate()) {
-            *element = static_cast<int>(position.raw()) * 3;
+            auto writer = run.get_mut(position.raw()).expect("the position is below the count");
+            *writer = *element + static_cast<int>(position.raw()) * 3;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 4>{0, 3, 6, 9}));
@@ -112,8 +116,11 @@ void test_zip_of_one_fixed_extent() {
     CRUCIBLE_TEST_ASSERT(kTest, total == 10 + 40 + 90 + 160);
     FixedArray<int, 4> target{};
     target.with_mut([&left](auto run) noexcept {
+        std::size_t position = 0;
         for (auto const [destination, source] : run.view().walk().zip(left.view().walk())) {
-            *destination = *source + 1;
+            auto writer = run.get_mut(position).expect("the position is below the count");
+            *writer = *destination + *source + 1;
+            ++position;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 4>{2, 3, 4, 5}));

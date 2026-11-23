@@ -75,7 +75,7 @@ template <::fixy::os::RightSet Rights>
                 ReadFile const file = std::move(opened).consume();
                 fixy::FixedArray<std::byte, 128> buffer{};
                 std::size_t const count = buffer.with_mut(
-                    [&file](auto run) noexcept { return fs::read_full(kCtx, file.ref(), run.view()).value_or(0); });
+                    [&file](auto run) noexcept { return fs::read_full(kCtx, file.ref(), std::move(run)).value_or(0); });
                 fixy::FixedArray<std::byte, 128> const& filled = buffer;
                 Contents read{};
                 for (std::byte const byte : filled.view().window(0, count).expect("the read fills its buffer")) {

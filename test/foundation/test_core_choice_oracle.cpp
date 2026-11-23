@@ -38,6 +38,7 @@ using ::foundation::core::none;
 using ::foundation::core::OneOf;
 using ::foundation::core::Option;
 using ::foundation::core::Result;
+using ::foundation::core::View;
 
 enum class Refusal : std::uint8_t {
     full,
@@ -171,8 +172,9 @@ void run_option_sequence(std::uint64_t seed) {
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 9);
         lane.sums.with_mut([&lane, draw](auto run) noexcept {
-            auto const sums = run.view();
-            Maybe& target = sums.at(slot_at(draw.target));
+            View<Maybe const, kSlots> const sums = run.view();
+            auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
+            Maybe& target = *writer;
             MaybeOracle& oracle = lane.oracles.at(draw.target);
             std::uint64_t const fallback = 100 + draw.value;
             switch (draw.operation) {
@@ -184,10 +186,12 @@ void run_option_sequence(std::uint64_t seed) {
                     target = sums.at(slot_at(draw.source));
                     oracle = lane.oracles.at(draw.source);
                     break;
-                case 2:
-                    target = std::move(sums.at(slot_at(draw.source)));
+                case 2: {
+                    auto source = run.get_mut(slot_at(draw.source).raw()).expect("the slot is below the count");
+                    target = std::move(*source);
                     oracle = std::move(lane.oracles.at(draw.source));
                     break;
+                }
                 case 3:
                     target = none;
                     oracle = std::nullopt;
@@ -250,8 +254,9 @@ void run_result_sequence(std::uint64_t seed) {
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 7);
         lane.sums.with_mut([&lane, draw](auto run) noexcept {
-            auto const sums = run.view();
-            Outcome& target = sums.at(slot_at(draw.target));
+            View<Outcome const, kSlots> const sums = run.view();
+            auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
+            Outcome& target = *writer;
             OutcomeOracle& oracle = lane.oracles.at(draw.target);
             Refusal const refusal = static_cast<Refusal>(draw.which);
             std::uint32_t const fallback = 100 + draw.value;
@@ -264,10 +269,12 @@ void run_result_sequence(std::uint64_t seed) {
                     target = sums.at(slot_at(draw.source));
                     oracle = lane.oracles.at(draw.source);
                     break;
-                case 2:
-                    target = std::move(sums.at(slot_at(draw.source)));
+                case 2: {
+                    auto source = run.get_mut(slot_at(draw.source).raw()).expect("the slot is below the count");
+                    target = std::move(*source);
                     oracle = std::move(lane.oracles.at(draw.source));
                     break;
+                }
                 case 3:
                     CRUCIBLE_FATAL_INVARIANT((target == sums.at(slot_at(draw.source)))
                                              == (oracle == lane.oracles.at(draw.source)));
@@ -309,8 +316,9 @@ void run_one_of_sequence(std::uint64_t seed) {
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 6);
         lane.sums.with_mut([&lane, draw](auto run) noexcept {
-            auto const sums = run.view();
-            Reading& target = sums.at(slot_at(draw.target));
+            View<Reading const, kSlots> const sums = run.view();
+            auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
+            Reading& target = *writer;
             ReadingOracle& oracle = lane.oracles.at(draw.target);
             switch (draw.operation) {
                 case 0:
@@ -327,10 +335,12 @@ void run_one_of_sequence(std::uint64_t seed) {
                     target = sums.at(slot_at(draw.source));
                     oracle = lane.oracles.at(draw.source);
                     break;
-                case 2:
-                    target = std::move(sums.at(slot_at(draw.source)));
+                case 2: {
+                    auto source = run.get_mut(slot_at(draw.source).raw()).expect("the slot is below the count");
+                    target = std::move(*source);
                     oracle = std::move(lane.oracles.at(draw.source));
                     break;
+                }
                 case 3:
                     CRUCIBLE_FATAL_INVARIANT((target == sums.at(slot_at(draw.source)))
                                              == (oracle == lane.oracles.at(draw.source)));

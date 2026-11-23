@@ -105,7 +105,7 @@ template <typename T>
     }
     if (!refuses_with(fs::sync<fs::sync_op::Fsync>(ctx, source.ref()), Errno::ebadf)) return answered(name, "Fsync");
     bool const refuses_read = bytes.with_mut([&ctx, &source](auto run) noexcept {
-        return refuses_with(fs::read_full(ctx, source.ref(), run.view()), Errno::ebadf);
+        return refuses_with(fs::read_full(ctx, source.ref(), std::move(run)), Errno::ebadf);
     });
     if (!refuses_read) {
         return answered(name, "read_full");
@@ -144,7 +144,7 @@ template <typename T>
         return answered(name, "send_bytes");
     }
     bool const refuses_receive = bytes.with_mut([&ctx, &source](auto run) noexcept {
-        return refuses_with(fixy::net::receive_bytes(ctx, source.ref(), run.view()), Errno::ebadf);
+        return refuses_with(fixy::net::receive_bytes(ctx, source.ref(), std::move(run)), Errno::ebadf);
     });
     if (!refuses_receive) {
         return answered(name, "receive_bytes");

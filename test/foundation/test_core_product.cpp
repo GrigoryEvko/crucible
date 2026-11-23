@@ -308,8 +308,11 @@ void test_the_hard_cases() {
         pairs.with_mut([](auto cells) noexcept {
             for (std::size_t index = 0; index < 36; index += 2) {
                 T const value = T{3} * static_cast<T>(index + 1);
-                *cells.get(index).expect("a test reads an element at or past the count of its array") = value;
-                *cells.get(index + 1).expect("a test reads an element at or past the count of its array") = -value;
+                auto first = cells.get_mut(index).expect("a test reads an element at or past the count of its array");
+                *first = value;
+                auto second =
+                    cells.get_mut(index + 1).expect("a test reads an element at or past the count of its array");
+                *second = -value;
             }
         });
         pairs.with_element(::fixy::index<36>(), [tiny](T& value) noexcept { value = tiny; });
@@ -358,9 +361,10 @@ void test_the_hard_cases_are_inside_the_bound() {
             right.values = with_mut(std::move(right.values), [&](auto right_run) noexcept {
                 auto const term_at = [](auto& run, ::crucible::test::MatrixPlace const& place, std::size_t row,
                                         std::size_t column) noexcept -> T& {
-                    return *run.get(::crucible::test::position_in(place, ::crucible::test::MatrixRow{row},
-                                                                  ::crucible::test::MatrixColumn{column}))
-                                .expect("a test reads an element at or past the count of its View");
+                    auto element = run.get_mut(::crucible::test::position_in(place, ::crucible::test::MatrixRow{row},
+                                                                             ::crucible::test::MatrixColumn{column}))
+                                       .expect("a test reads an element at or past the count of its View");
+                    return *element;
                 };
                 for (std::size_t inner = 0; inner < depth; ++inner) {
                     for (std::size_t row = 0; row < 2; ++row) {
