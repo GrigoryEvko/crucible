@@ -1,0 +1,36 @@
+#include <forge/Door.h>
+
+// Each cast to a reference of this unit can build a forge::Door, or a class
+// that holds one, with no call to its door: a cast of a base to a derived
+// class that holds a Door, a reinterpret_cast of the object of an int, and a
+// reinterpret_cast of a pointer object.  Outside a template, the front end
+// gives the conversion of a cast to a reference no location, so the rule of
+// main gave no line.  The cast of a base to a pointer of a derived class is
+// the control: it keeps its line.
+namespace forge {
+
+struct Base {
+    int base = 0;
+};
+
+struct Other {
+    int other = 0;
+};
+
+template <class P> struct Derived : Base {
+    int count() const { return 2; }
+};
+
+template <class P> struct Shifted : Other, Base {
+    int count() const { return 3; }
+};
+
+int downcast_reference(Base& base) { return static_cast<Derived<Door>&>(base).count(); }
+
+Door& reinterpret_int(int* value) { return reinterpret_cast<Door&>(*value); }
+
+Door& reinterpret_pointer_object(Door*& pointer) { return reinterpret_cast<Door&>(pointer); }
+
+int downcast_pointer(Base* base) { return static_cast<Shifted<Door>*>(base)->count(); }
+
+}  // namespace forge

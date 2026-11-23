@@ -1,0 +1,19 @@
+# Each cast to a reference of src/casts.cpp can build a forge::Door, or a
+# class that holds one, with no call to its door: a cast of a base to a
+# derived class that holds a Door (28), a reinterpret_cast of the object of an
+# int (30), and a reinterpret_cast of a pointer object through a reference to
+# it (32).  Outside a template, the front end gives the conversion of a cast
+# to a reference no location, and the plugin of main read a conversion only
+# at its own location, so it gave no line for the three.  The cast of a base
+# to a pointer of a derived class keeps its one line (34).  No ledger row
+# admits one, so the rule gives an error for each finding.
+
+compile casts src/casts.cpp stage=c
+exit casts pass
+judge casts
+finding casts proof-routes pointer-cast src/casts.cpp:28:84 | pointer-cast: forge::Door
+finding casts proof-routes pointer-cast src/casts.cpp:30:74 | pointer-cast: forge::Door
+finding casts proof-routes pointer-cast src/casts.cpp:32:90 | pointer-cast: forge::Door
+finding casts proof-routes pointer-cast src/casts.cpp:34:43 | pointer-cast: forge::Door
+finding casts quarantine raw-pointer-object src/casts.cpp:30:28 | value
+finding casts quarantine raw-pointer-object src/casts.cpp:34:28 | base

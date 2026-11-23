@@ -1,0 +1,37 @@
+#include <forge/Door.h>
+
+#include <new>
+
+// No cast of this unit builds a forge::Door or a class that holds one: a cast
+// of a derived class to its base, which an implicit conversion also makes, a
+// cast that adds const, a cast to an rvalue reference of the class of its
+// object, a placement new into storage of no class, and the decay of an
+// array of a range loop.  The conversion of each one has no location, as the
+// conversion of a cast to a reference has none.
+namespace forge {
+
+template <class P> struct Tagged {
+    int value = 0;
+};
+
+struct Child : Tagged<Door> {
+    int extra = 0;
+};
+
+Tagged<Door>& upcast(Child& child) { return static_cast<Tagged<Door>&>(child); }
+
+Tagged<Door> const& add_const(Tagged<Door>& tagged) { return static_cast<Tagged<Door> const&>(tagged); }
+
+Tagged<Door>&& to_rvalue(Tagged<Door>& tagged) { return static_cast<Tagged<Door>&&>(tagged); }
+
+int build_in(unsigned char (&storage)[sizeof(Tagged<Door>)]) { return (::new (storage) Tagged<Door>{})->value; }
+
+int sum_of(Tagged<Door> (&tags)[2]) {
+    int sum = 0;
+    for (Tagged<Door> const& tag : tags) {
+        sum += tag.value;
+    }
+    return sum;
+}
+
+}  // namespace forge

@@ -588,12 +588,13 @@ bool spells_cast_at(location_t location) {
 // True when the cast CONVERSION to a pointer or a reference views an object
 // of its target class: only the cv-qualifiers or the value category change,
 // as std::move does.  Such a cast builds no object, so it is no proof route.
-// The source object decides, after each conversion that keeps the bits: a
-// pointer to the class for a target pointer, and an object of the class for
-// a target reference.  Outside a template, the front end binds a reference
-// to the address of its object, so the source of a target reference can also
-// be a pointer to the class there.  A reinterpret_cast<Door&> of a pointer
-// object takes the address of that pointer, which points to no class.
+// The source object decides, after each conversion that keeps the bits.  In
+// a template body, the source is the expression of the cast: a pointer to
+// the class for a target pointer, and an object of the class for a target
+// reference.  Outside a template, the front end converts addresses: the
+// source is a pointer or a reference, and the object that it names decides.
+// So a reinterpret_cast<Door&> of a pointer object, also through a reference
+// to that pointer, names the pointer, which is no class.
 bool is_same_class_view(tree conversion, bool is_pattern) {
     tree target = TREE_TYPE(TREE_TYPE(conversion));
     tree source = TREE_OPERAND(conversion, 0);
@@ -602,12 +603,17 @@ bool is_same_class_view(tree conversion, bool is_pattern) {
     }
     source = tree_strip_any_location_wrapper(source);
     STRIP_NOPS(source);
-    tree type = TREE_TYPE(source) != NULL_TREE ? non_reference(TREE_TYPE(source)) : NULL_TREE;
-    bool is_address = TYPE_PTR_P(TREE_TYPE(conversion)) || !is_pattern;
-    if (type != NULL_TREE && is_address && TYPE_PTR_P(type)) {
-        type = TREE_TYPE(type);
-    } else if (TYPE_PTR_P(TREE_TYPE(conversion))) {
+    tree type = TREE_TYPE(source);
+    if (type == NULL_TREE) {
         return false;
+    }
+    if (!is_pattern) {
+        type = TYPE_PTR_P(type) || TYPE_REF_P(type) ? TREE_TYPE(type) : NULL_TREE;
+    } else {
+        type = non_reference(type);
+        if (TYPE_PTR_P(TREE_TYPE(conversion))) {
+            type = TYPE_PTR_P(type) ? TREE_TYPE(type) : NULL_TREE;
+        }
     }
     return type != NULL_TREE && CLASS_TYPE_P(type) && TYPE_MAIN_VARIANT(type) == TYPE_MAIN_VARIANT(target);
 }
@@ -634,6 +640,50 @@ void check_cast(tree conversion, location_t location, bool is_pattern) {
         return;
     }
     if (!is_pattern && !spells_cast_at(location)) {
+        return;
+    }
+    record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
+}
+
+// A conversion with no location to a pointer or a reference whose target
+// holds a proof type.  Outside a template, the front end gives a cast to a
+// reference no location of its own: it puts the location on the dereference
+// of the result, and the address of that result folds the dereference away.
+// No implicit conversion makes a pointer or a reference to a class from an
+// object of an unrelated class, of a base class or of no class, so such a
+// conversion comes from a cast: a static_cast to a derived class, a
+// reinterpret_cast or a cast of C.  A conversion from an object of the target
+// type (is_same_class_view), from an array of it (a decay), from a derived
+// class (an upcast) and from void (the storage of a new-expression) is no
+// route.  A conversion of the sum of a pointer and an offset is the inner
+// part of a cast to a pointer of a derived class, whose null test holds the
+// location and gives the line.  The line counts at LOCATION, the place of
+// the nearest expression with a location.
+void check_unlocated_cast(tree conversion, location_t location) {
+    tree target = TREE_TYPE(conversion);
+    tree proof = cast_target_proof(target);
+    if (proof == NULL_TREE || is_null_pointer(TREE_OPERAND(conversion, 0)) || is_same_class_view(conversion, false)) {
+        return;
+    }
+    tree source = tree_strip_any_location_wrapper(TREE_OPERAND(conversion, 0));
+    STRIP_NOPS(source);
+    tree type = source != NULL_TREE ? TREE_TYPE(source) : NULL_TREE;
+    if (type == NULL_TREE || !POINTER_TYPE_P(type) || TREE_CODE(source) == POINTER_PLUS_EXPR) {
+        return;
+    }
+    // The decay of an array, such as the array of a range loop or of an
+    // initializer list, converts the address of the array to the address of
+    // its first element.  The initialization of an array converts the address
+    // of its first element back to the array.  So the elements decide.
+    tree object = strip_array_types(TREE_TYPE(type));
+    tree target_object = strip_array_types(TREE_TYPE(target));
+    if (object == NULL_TREE || target_object == NULL_TREE) {
+        return;
+    }
+    object = TYPE_MAIN_VARIANT(object);
+    target_object = TYPE_MAIN_VARIANT(target_object);
+    bool const is_upcast = CLASS_TYPE_P(object) && CLASS_TYPE_P(target_object) && DERIVED_FROM_P(target_object, object);
+    if (VOID_TYPE_P(object) || object == target_object || is_upcast) {
         return;
     }
     record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
@@ -1585,6 +1635,8 @@ void check_expression_rules(tree node, BodyWalk& walk) {
         case POINTER_PLUS_EXPR:
             if (!walk.is_pattern && EXPR_HAS_LOCATION(node)) {
                 check_cast(node, EXPR_LOCATION(node), false);
+            } else if (!walk.is_pattern && (TREE_CODE(node) == NOP_EXPR || TREE_CODE(node) == CONVERT_EXPR)) {
+                check_unlocated_cast(node, walk.last);
             }
             break;
         case STATIC_CAST_EXPR:

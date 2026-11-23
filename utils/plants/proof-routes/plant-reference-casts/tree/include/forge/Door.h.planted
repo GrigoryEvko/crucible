@@ -1,0 +1,22 @@
+#pragma once
+
+// A proof type: a witness row of the rule table names it.  Its constructor is
+// private, and the template Opener is a friend of it.
+namespace forge {
+
+class Door {
+    int secret = 0;
+    Door() = default;
+    template <class U> friend class Opener;
+};
+
+template <class T> class Opener {
+public:
+    int read() const { return 1; }
+};
+
+template <class T> int route(T*) { return 0; }
+
+template <auto M> struct Steal {};
+
+}  // namespace forge

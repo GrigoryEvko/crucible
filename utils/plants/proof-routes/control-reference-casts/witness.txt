@@ -1,0 +1,13 @@
+# No cast of src/casts.cpp builds a forge::Door or a class that holds one,
+# and no line names the rule proof-routes: a cast of a derived class to its
+# base, a cast that adds const, a cast to an rvalue reference of the class of
+# its object, a placement new into storage of no class, and the decay of an
+# array of a range loop.  The front end gives the conversion of each one no
+# location, as it gives a cast to a reference.  The rule quarantine gives its
+# lines for the two arrays and for the placement new.
+
+compile casts src/casts.cpp stage=c
+exit casts pass
+finding casts quarantine c-array-object src/casts.cpp:27:30 | storage
+finding casts quarantine c-array-object src/casts.cpp:29:27 | tags
+finding casts quarantine raw-new-delete src/casts.cpp:27:101 | placement new
