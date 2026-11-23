@@ -11,8 +11,12 @@ Rule
                          unless its class has a door that consumes a const
                          object: a const&& member function or a mutable field
     Decision 9 of misc/12_10_2026_linear.md: a closure with a linear capture is
-    linear by its parts, the API that runs it takes it by value, and the call
-    is std::move(closure)().
+    linear by its parts, and the API that runs it takes it by value.  A
+    closure whose body moves a linear capture out runs through call_once of
+    include/foundation/Linear.h, the once door that the rule must-consume
+    reads.  A closure whose body only borrows its linear capture ends through
+    a drop door, because the rule must-consume refuses a once door that ends
+    a capture that the body did not consume (capture-unconsumed).
 
 Ledger, write
     assay.guard.engines.plugin.linear_family.
