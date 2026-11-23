@@ -92,6 +92,8 @@ OTHER_BUILDS = {
 # The other builds that a change of a test runs with no --all-configurations.  The build of release, for the level of
 # the host, runs only on request.
 SELECTED_BUILDS = {name: mode for name, mode in OTHER_BUILDS.items() if name != "build-release"}
+# The labels of the tests that only the build of bench-fuzz holds, which the gate gives to each of its runs.
+BENCH_LABELS = gate.OWN_TEST_LABELS["bench-fuzz"]
 # The ledger of the rule door-unit with no row, and with a row of the count 2.
 DOOR_LEDGER = "format 1\nrule door-unit\n"
 DOOR_PATH = "utils/ledgers/door-unit.txt"
@@ -1948,7 +1950,12 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             "--build-only",
             not any("--build-only" in line.split() for line in words["build"])
             and bool(words["build-bench-fuzz"])
-            and all(line.endswith("--build-only") for line in words["build-bench-fuzz"]),
+            and all("--build-only" in line.split() for line in words["build-bench-fuzz"]),
+        )
+        expect(
+            f"bench-fuzz runs only the tests of its own labels, and default runs each test: {words}",
+            all(line.endswith(f"--labels {BENCH_LABELS}") for line in words["build-bench-fuzz"])
+            and not any("--labels" in line.split() for line in words["build"]),
         )
         broken = verdicts["broken"]
         expect(
@@ -1974,7 +1981,12 @@ def touched_cases(expect: testing.Expect) -> None:
         cases = (
             ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
             ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
-            ("a module of the test launcher", LAUNCHER_MODULE, objects, f"-j {POOL_SLOTS} --build-only"),
+            (
+                "a module of the test launcher",
+                LAUNCHER_MODULE,
+                objects,
+                f"-j {POOL_SLOTS} --build-only --labels {BENCH_LABELS}",
+            ),
         )
         for label, path, expected, shown in cases:
             commit = commit_change(root, path, "VALUE = 2\n", f"Change {path}")
@@ -2364,7 +2376,7 @@ def base_run_cases(expect: testing.Expect) -> None:
             batch_verdict.focus == (gate.Focus("release-v3", ("test_broken",)),)
             and set(ran) == {"build-release-v3", "build-bench-fuzz"}
             and ran["build-release-v3"][-1].startswith(f"-j {POOL_SLOTS} --only ")
-            and ran["build-bench-fuzz"] == [f"-j {POOL_SLOTS}"]
+            and ran["build-bench-fuzz"] == [f"-j {POOL_SLOTS} --labels {BENCH_LABELS}"]
             and base_verdict.configurations == ("release-v3", "bench-fuzz")
             and base_verdict.problems == batch_verdict.problems
             and base_verdict.final == head

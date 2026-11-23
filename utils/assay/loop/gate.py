@@ -44,7 +44,9 @@ Selection
             or of a build file at the top of the tree
           - bench-fuzz for a change of bench/ or test/fuzz/, and for a change
             of an input of the test fuzz_afl_probe (AFL_PROBE_INPUTS), which
-            only that build holds
+            only that build holds.  bench-fuzz runs only the tests of
+            OWN_TEST_LABELS: the benches and the fuzz harnesses.  Its other
+            tests run with the flags of default, which runs them
           - each configuration for a change of the quarantine plugin or of
             the rule table, and for --all-configurations.  Also for a
             candidate whose composition summed two changes of one count of a
@@ -787,6 +789,10 @@ BENCH_PREFIXES = ("bench/", "test/fuzz/")
 # selection).
 AFL_PROBE_INPUTS = ("utils/assay/loop/fuzz.py", "utils/assay/setup/install.py", "utils/pins.txt")
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
+# The ctest labels of the tests that only the build of a configuration holds (the selection).  bench-fuzz is the
+# preset default with the benches and the fuzz harnesses on, so each other test of its build runs with the flags of
+# default, which runs it.  On 2026-11-23 the labels gave the 53 tests that only bench-fuzz holds, of its 4673.
+OWN_TEST_LABELS = {"bench-fuzz": "bench|fuzz_property|fuzz_boundary"}
 LEDGER_PREFIX = "utils/ledgers/"
 # The sentence that the gate adds to the message of a commit with a written file (the built files).
 BUILT_NOTE = "The gate wrote {paths} from the build of the composed tree."
@@ -1933,15 +1939,19 @@ class Gate:
 
         A run of the full suite with `is_plain` runs the tests of the changed inputs.  The run of the touched tests
         writes the file of --only into the directory of the logs, with the name of its round (log_name()).  A run with
-        `is_build_only` gets --build-only.
+        `is_build_only` gets --build-only.  A configuration of OWN_TEST_LABELS gets --labels with its labels in each
+        mode.
         """
+        labels = OWN_TEST_LABELS.get(run.configuration.name)
+        own = ["--labels", labels] if labels is not None else []
         if run.mode is Mode.TOUCHED:
             self.logs.mkdir(parents=True, exist_ok=True)
             only = self.logs / log_name(run.configuration, "only.txt", is_again)
             only.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
-            return ["--only", str(only), "--build-only"] if run.is_build_only else ["--only", str(only)]
+            words = ["--only", str(only), "--build-only"] if run.is_build_only else ["--only", str(only)]
+            return [*words, *own]
         words = ["--all"] if run.mode is Mode.FULL and not is_plain else []
-        return [*words, "--build-only"] if run.is_build_only else words
+        return [*words, "--build-only", *own] if run.is_build_only else [*words, *own]
 
     def touched_names(self, change: guard_inputs.Change) -> tuple[str, ...]:
         """Return each touched test of the build of ALWAYS, sorted: it reads the build, and the change touches its inputs.

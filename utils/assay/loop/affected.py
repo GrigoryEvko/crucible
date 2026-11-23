@@ -163,6 +163,14 @@ Tests that read the build
     selection).  The script skips such a test with no change to its record,
     also with --all.
 
+    `--labels REGEX` selects only the tests with a label that REGEX matches
+    in full (the property LABELS).  The script skips each other test with no
+    change to its record, also with --all.  The gate gives the option to
+    bench-fuzz, the preset default with the benches and the fuzz harnesses
+    on.  Each other test of that build runs with the flags of default, so
+    bench-fuzz runs only the tests that the build of default does not hold
+    (OWN_TEST_LABELS of assay.loop.gate).
+
 The one run of a test
     Configuration default of the gate is the one run of each test whose
     result does not depend on the configuration, so `--build-only` skips it
@@ -421,7 +429,8 @@ Programs
     version.
 
 Usage:
-    loop test BUILD_DIR [-j N] [--no-build] [--all] [--only FILE] [--build-only] [--plan] [-- CTEST_ARGUMENT...]
+    loop test BUILD_DIR [-j N] [--no-build] [--all] [--only FILE] [--build-only] [--labels REGEX] [--plan]
+              [-- CTEST_ARGUMENT...]
     guard selftest loop.affected [--ctest CTEST]
 
 --no-build  Do not build first.  Then a stale executable can look unchanged.
@@ -430,7 +439,8 @@ Usage:
 --build-only  Skip each test of the master guard that reads no build (the tests that read the build), and each
               test that configuration default of the gate runs: a negative fixture, a self-test of a tool and the
               test of the parse builds.  Parse no parse build, and remove the records of the fixtures of the build.
---plan      Print what the script would run, and run nothing.
+--labels    Select only the tests with a label that REGEX matches in full.
+--plan     Print what the script would run, and run nothing.
 --ctest     The ctest of the fake build tree of the self-test.  The default
             is the ctest of PATH, when it gives the pinned version.
 
@@ -511,6 +521,8 @@ FIXTURE_PROPERTIES = ("FIXTURES_REQUIRED", "FIXTURES_SETUP")
 ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 # The property that names the tests that a test runs after (the layers).
 DEPENDS_PROPERTY = "DEPENDS"
+# The property of the labels of a test, which --labels reads.
+LABELS_PROPERTY = "LABELS"
 # The plan of the last call in the state directory, and its format (the plan).
 PLAN_FILE = "plan.json"
 PLAN_FORMAT = 1
@@ -539,6 +551,8 @@ KIND_EXECUTABLE = "executable"
 KIND_TRACED = "traced"
 # The kind of a test that --only does not name.  The script skips it, and it reads no input of it.
 KIND_UNNAMED = "unnamed"
+# The kind of a test with no label that --labels matches.  The script skips it, and it reads no input of it.
+KIND_UNLABELED = "unlabeled"
 # The kinds of a test that a fingerprint judges.
 FINGERPRINTED = (KIND_GUARD, KIND_EXECUTABLE, KIND_TRACED)
 
@@ -555,6 +569,7 @@ REASON_STORE = "the shared store holds a pass with the same inputs"
 REASON_SKIPPED = "the state of this build directory or the shared store holds a pass with the same inputs"
 REASON_FAILED = "the test failed in this build directory with the same inputs"
 REASON_UNNAMED = "--only does not name the test"
+REASON_UNLABELED = "--labels matches no label of the test"
 REASON_UNSETTLED = "the census check of the rule quarantine refuses the record of the fixture"
 REASON_BUILD_FREE = "the test reads no build, and the configuration default of the gate runs it (--build-only)"
 REASON_DEFAULT = (
@@ -744,6 +759,11 @@ def runs_in_default(test: ctest_reader.TestEntry) -> bool:
     Such a test is a negative fixture, the self-test of a tool, or the test of the parse builds.
     """
     return is_fixture(test.command) or is_selftest(test.command) or test.name == PARSE_BUILDS_TEST
+
+
+def has_label(test: ctest_reader.TestEntry, labels: re.Pattern[str]) -> bool:
+    """Tell if `labels` matches one label of a test in full (the option --labels)."""
+    return any(labels.fullmatch(label) for label in test.words_of(LABELS_PROPERTY))
 
 
 def launcher_options(command: tuple[str, ...]) -> tuple[int, str, test_launcher.Options]:
@@ -1339,11 +1359,12 @@ class Planner:
 
     def decide(self, tests: tuple[ctest_reader.TestEntry, ...], run_all: bool,
                only: frozenset[str] | None = None, is_build_only: bool = False,
-               unsettled: frozenset[str] = frozenset()) -> list[Decision]:
+               unsettled: frozenset[str] = frozenset(), labels: re.Pattern[str] | None = None) -> list[Decision]:
         """Return the decision for each test (the record, the shared store).
 
         With `only`, each test that it does not name gets the kind KIND_UNNAMED, and the script skips it (the tests
-        that read the build).  A fixture of `unsettled` runs also when `only` does not name it.  Complexity: classify()
+        that read the build).  A fixture of `unsettled` runs also when `only` does not name it.  With `labels`, each
+        test with no label that it matches gets the kind KIND_UNLABELED, and the script skips it.  Complexity: classify()
         for each test that `only` names.  For each test of FINGERPRINTED with no record of its own, one open of one
         entry of the store.
         """
@@ -1354,6 +1375,9 @@ class Planner:
             is_unsettled = test.name in unsettled and is_fixture(test.command)
             if only is not None and test.name not in only and not is_unsettled:
                 decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
+                continue
+            if labels is not None and not has_label(test, labels):
+                decisions.append(Decision(test, KIND_UNLABELED, REASON_UNLABELED, is_skipped=True))
                 continue
             decision = self.classify(test)
             if only is not None and test.name not in only:
@@ -1897,10 +1921,12 @@ def unsettled_fixtures(build_dir: Path, source_root: Path,
 
 
 def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only: bool,
-        ctest_arguments: list[str], only: frozenset[str] | None = None, is_build_only: bool = False) -> int:
+        ctest_arguments: list[str], only: frozenset[str] | None = None, is_build_only: bool = False,
+        labels: re.Pattern[str] | None = None) -> int:
     """Build, decide, run and record.  Return the exit code of the script.
 
-    With `only`, the script selects only the tests that it names.  With `is_build_only`, it skips each test of the
+    With `only`, the script selects only the tests that it names.  With `labels`, it selects only the tests with a
+    label that the pattern matches in full.  With `is_build_only`, it skips each test of the
     kind KIND_GUARD (the tests that read the build) and each test that configuration default runs (the one run of a
     test).  It then parses no parse build, and it removes the records of the fixtures of the build, so the build has no
     fixture run (assay.guard.engines.plugin.fixtures).
@@ -1943,8 +1969,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if is_build_only:
             shutil.rmtree(build_dir / cost_record.FIXTURE_DIRECTORY, ignore_errors=True)
         unsettled = unsettled_fixtures(build_dir, Path(trees.source_root), tests) if only is not None else frozenset()
-        decisions = planner.decide(tests, run_all, only, is_build_only, unsettled)
+        decisions = planner.decide(tests, run_all, only, is_build_only, unsettled, labels)
         unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
+        unlabeled = sum(decision.kind == KIND_UNLABELED for decision in decisions)
         build_free = sum(decision.reason == REASON_BUILD_FREE for decision in decisions)
         skipped = [decision.test.name for decision in decisions if decision.is_skipped]
         selected = [decision.test.name for decision in decisions if not decision.is_skipped]
@@ -1983,9 +2010,11 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
               f"skip code, {not_run} did not run.")
         if unnamed:
             check_report.write_line(f"loop test: {unnamed} tests skipped, because --only does not name them.")
+        if unlabeled:
+            check_report.write_line(f"loop test: {unlabeled} tests skipped, because {REASON_UNLABELED}.")
         if build_free:
             check_report.write_line(f"loop test: {build_free} tests skipped, because {REASON_BUILD_FREE}.")
-        print(f"loop test: {len(skipped) - unnamed - build_free} tests skipped, because {REASON_SKIPPED} "
+        print(f"loop test: {len(skipped) - unnamed - unlabeled - build_free} tests skipped, because {REASON_SKIPPED} "
               f"({state_dir / 'skipped.txt'}).  The script reports no skipped test as passed.")
         if status != 0 and failed == 0 and counts[ctest_reader.TestStatus.NOTRUN] == 0:
             print(f"loop test: ctest exited with status {status} after its tests, and no test failed: read its "
@@ -2668,6 +2697,17 @@ def unit_cases(expect: DetailedExpect) -> None:
            "and configuration default runs each of them",
            all(item.is_skipped and item.reason == REASON_DEFAULT for item in skipped)
            and not any(item.reason == REASON_DEFAULT for item in kept))
+    bench = ctest_reader.TestEntry("bench_row", ("/s/b/bench_row",), {LABELS_PROPERTY: ("bench", "latency")})
+    smoke = ctest_reader.TestEntry("fuzz_row", ("/s/b/fuzz_row",), {LABELS_PROPERTY: ("fuzz_boundary", "fuzz_smoke")})
+    plain = ctest_reader.TestEntry("test_row", ("/s/b/test_row",), {LABELS_PROPERTY: ("benchmark",)})
+    unlabeled = ctest_reader.TestEntry("test_bare", ("/s/b/test_bare",))
+    picked = planner.decide((bench, smoke, plain, unlabeled), True, None, False, frozenset(),
+                            re.compile("bench|fuzz_boundary"))
+    expect("--labels keeps each test with a label that the pattern matches in full, and skips a test whose label it "
+           "matches only in part and a test with no label, also with --all",
+           [(item.test.name, item.is_skipped, item.kind == KIND_UNLABELED) for item in picked]
+           == [("bench_row", False, False), ("fuzz_row", False, False), ("test_row", True, True),
+               ("test_bare", True, True)])
     layer_cases(expect)
     shard_cases(expect)
     run_shard_cases(expect)
@@ -2898,6 +2938,7 @@ def main(argv: list[str]) -> int:
                                                                 "selects only those tests")
     parser.add_argument("--build-only", action="store_true", help="skip each test of the master guard that reads no "
                                                                   "build (THE TESTS THAT READ THE BUILD)")
+    parser.add_argument("--labels", default=None, help="select only the tests with a label that REGEX matches in full")
     parser.add_argument("--ctest", help="the ctest of the fake build tree of --self-test; the default is the ctest "
                                         "of PATH, when it gives the pinned version")
     parser.add_argument("--self-test", action="store_true")
@@ -2924,6 +2965,11 @@ def main(argv: list[str]) -> int:
     except OSError as error:
         check_report.write_line(f"loop test: the file of --only cannot be read: {error}")
         return 2
+    try:
+        labels = re.compile(options.labels) if options.labels is not None else None
+    except re.error as error:
+        check_report.write_line(f"loop test: --labels takes a regular expression, not {options.labels!r}: {error}")
+        return 2
     build_dir = options.build_dir.resolve()
     with contextlib.ExitStack() as stack:
         if not options.plan and jobserver.client_path(os.environ) is None:
@@ -2937,7 +2983,7 @@ def main(argv: list[str]) -> int:
                 stack.callback(os.environ.pop, jobserver.VARIABLE, None)
         try:
             return run(build_dir, options.jobs, not options.no_build, options.all, options.plan, ctest_arguments,
-                       only, options.build_only)
+                       only, options.build_only, labels)
         except RunnerError as error:
             print(f"loop test: {error}")
             return 2
