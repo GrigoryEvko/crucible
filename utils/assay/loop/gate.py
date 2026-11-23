@@ -49,8 +49,12 @@ Selection
           - bench-fuzz for a change of bench/ or test/fuzz/, and for a change
             of an input of the test fuzz_afl_probe (AFL_PROBE_INPUTS), which
             only that build holds.  bench-fuzz runs only the tests of
-            OWN_TEST_LABELS: the benches and the fuzz harnesses.  Its other
-            tests run with the flags of default, which runs them
+            OWN_TEST_LABELS, the benches and the fuzz harnesses, and each
+            check that reads its build, such as guard_plugin
+            (checks_the_build() of assay.loop.affected).  Such a check
+            reads the units of the benches, which no other build compiles.
+            The other tests of bench-fuzz run with the flags of default,
+            which runs them
           - each configuration other than those of ON_REQUEST for a change
             of the quarantine plugin or of the rule table, and for
             --all-configurations.  Also for a
@@ -809,7 +813,8 @@ AFL_PROBE_INPUTS = ("utils/assay/loop/fuzz.py", "utils/assay/setup/install.py", 
 EVERY_PREFIXES = ("utils/tools/quarantine/", "utils/rule-table.txt")
 # The ctest labels of the tests that only the build of a configuration holds (the selection).  bench-fuzz is the
 # preset default with the benches and the fuzz harnesses on, so each other test of its build runs with the flags of
-# default, which runs it.  On 2026-11-23 the labels gave the 53 tests that only bench-fuzz holds, of its 4673.
+# default, which runs it.  On 2026-11-23 the labels gave the 53 tests that only bench-fuzz holds, of its 4673.  The
+# option --labels also keeps each check that reads the build, because the units of the benches are only in bench-fuzz.
 OWN_TEST_LABELS = {"bench-fuzz": "bench|fuzz_property|fuzz_boundary"}
 LEDGER_PREFIX = "utils/ledgers/"
 # The sentence that the gate adds to the message of a commit with a written file (the built files).

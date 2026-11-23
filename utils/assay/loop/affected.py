@@ -164,12 +164,16 @@ Tests that read the build
     also with --all.
 
     `--labels REGEX` selects only the tests with a label that REGEX matches
-    in full (the property LABELS).  The script skips each other test with no
-    change to its record, also with --all.  The gate gives the option to
+    in full (the property LABELS), and each check that reads the build
+    (checks_the_build()).  The script skips each other test with no change
+    to its record, also with --all.  The gate gives the option to
     bench-fuzz, the preset default with the benches and the fuzz harnesses
     on.  Each other test of that build runs with the flags of default, so
     bench-fuzz runs only the tests that the build of default does not hold
-    (OWN_TEST_LABELS of assay.loop.gate).
+    (OWN_TEST_LABELS of assay.loop.gate).  A check that reads the build,
+    such as guard_plugin, an elf rule or a build rule, reads the units of
+    the benches and of the fuzz harnesses too, which no other build
+    compiles.  Thus it runs in bench-fuzz.
 
 The one run of a test
     Configuration default of the gate is the one run of each test whose
@@ -523,6 +527,9 @@ ENVIRONMENT_PROPERTIES = ("ENVIRONMENT", "ENVIRONMENT_MODIFICATION")
 DEPENDS_PROPERTY = "DEPENDS"
 # The property of the labels of a test, which --labels reads.
 LABELS_PROPERTY = "LABELS"
+# The option of a check that reads the objects or the records of each unit of a build, such as guard_plugin
+# (checks_the_build()).
+BUILD_DIR_OPTION = "--build-dir"
 # The plan of the last call in the state directory, and its format (the plan).
 PLAN_FILE = "plan.json"
 PLAN_FORMAT = 1
@@ -764,6 +771,17 @@ def runs_in_default(test: ctest_reader.TestEntry) -> bool:
 def has_label(test: ctest_reader.TestEntry, labels: re.Pattern[str]) -> bool:
     """Tell if `labels` matches one label of a test in full (the option --labels)."""
     return any(labels.fullmatch(label) for label in test.words_of(LABELS_PROPERTY))
+
+
+def checks_the_build(test: ctest_reader.TestEntry) -> bool:
+    """Tell if the command of a test gives BUILD_DIR_OPTION after the launcher prefix (the option --labels).
+
+    Such a test checks the objects or the records of each unit of a build, such as guard_plugin, an elf rule or a build
+    rule.  Its result depends on the units that the build compiles, so --labels keeps it.  Complexity: linear in the
+    words of the command.
+    """
+    start, _ = launcher_prefix(test.command)
+    return BUILD_DIR_OPTION in test.command[start:]
 
 
 def launcher_options(command: tuple[str, ...]) -> tuple[int, str, test_launcher.Options]:
@@ -1376,7 +1394,7 @@ class Planner:
             if only is not None and test.name not in only and not is_unsettled:
                 decisions.append(Decision(test, KIND_UNNAMED, REASON_UNNAMED, is_skipped=True))
                 continue
-            if labels is not None and not has_label(test, labels):
+            if labels is not None and not has_label(test, labels) and not checks_the_build(test):
                 decisions.append(Decision(test, KIND_UNLABELED, REASON_UNLABELED, is_skipped=True))
                 continue
             decision = self.classify(test)
@@ -2701,13 +2719,31 @@ def unit_cases(expect: DetailedExpect) -> None:
     smoke = ctest_reader.TestEntry("fuzz_row", ("/s/b/fuzz_row",), {LABELS_PROPERTY: ("fuzz_boundary", "fuzz_smoke")})
     plain = ctest_reader.TestEntry("test_row", ("/s/b/test_row",), {LABELS_PROPERTY: ("benchmark",)})
     unlabeled = ctest_reader.TestEntry("test_bare", ("/s/b/test_bare",))
-    picked = planner.decide((bench, smoke, plain, unlabeled), True, None, False, frozenset(),
+    plugin_check = ctest_reader.TestEntry(
+        "guard_plugin", ("/usr/bin/python3", "/s/utils/bin/guard", "check", "--engine", "plugin", "--build-dir", "/s/b"),
+        {LABELS_PROPERTY: ("ci_guard",)})
+    witness = ctest_reader.TestEntry(
+        "guard_step_cost_witness", ("/usr/bin/python3", "/s/utils/bin/guard", "witness", "--rule", "step-cost"),
+        {LABELS_PROPERTY: ("ci_guard", "build")})
+    picked = planner.decide((bench, smoke, plain, unlabeled, plugin_check, witness), True, None, False, frozenset(),
                             re.compile("bench|fuzz_boundary"))
-    expect("--labels keeps each test with a label that the pattern matches in full, and skips a test whose label it "
-           "matches only in part and a test with no label, also with --all",
+    expect("--labels keeps each test with a label that the pattern matches in full and each check that reads the "
+           "build, and skips a test whose label it matches only in part, a test with no label and a witness, also "
+           "with --all",
            [(item.test.name, item.is_skipped, item.kind == KIND_UNLABELED) for item in picked]
            == [("bench_row", False, False), ("fuzz_row", False, False), ("test_row", True, True),
-               ("test_bare", True, True)])
+               ("test_bare", True, True), ("guard_plugin", False, False), ("guard_step_cost_witness", True, True)])
+    launched_check = ctest_reader.TestEntry(
+        "guard_object_size", ("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", LAUNCHER_SUBCOMMAND,
+                              "--build-dir", "/s/b", "--name", "guard_object_size", "/usr/bin/python3",
+                              "/s/utils/bin/guard", "check", "--rule", "object-size", "--build-dir", "/s/b"))
+    launched_test = ctest_reader.TestEntry(
+        "test_launched", ("/usr/bin/python3", "-S", f"/s/utils/bin/{LOOP_MASTER}", LAUNCHER_SUBCOMMAND,
+                          "--build-dir", "/s/b", "--name", "test_launched", "/s/b/test_launched"))
+    expect("a check reads the build when its command gives --build-dir after the launcher prefix, and the option "
+           "--build-dir of the launcher alone does not make a check",
+           checks_the_build(launched_check) and checks_the_build(plugin_check)
+           and not checks_the_build(launched_test) and not checks_the_build(witness))
     layer_cases(expect)
     shard_cases(expect)
     run_shard_cases(expect)
