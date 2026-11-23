@@ -10,10 +10,10 @@
 //
 // The second is the cross-check that matters more.  A synthetic proves
 // the predicate matches the shape the predicate was written for, which
-// is close to circular.  What settles it is the production handle: a
-// PermissionedChannel's ConsumerHandle must answer yes to exactly
-// the consumer predicate, and its ProducerHandle to exactly the producer
-// one, with no synthetic in the way.
+// is close to circular.  What settles it is the production handle: the
+// ConsumerEnd of a PermissionedChannel and the consumer handle of its frame
+// must answer yes to exactly the consumer predicate, and its ProducerEnd and
+// producer handle to exactly the producer one, with no synthetic in the way.
 //
 // The single-writer poles are witnessed here by synthetics alone.  The
 // SwmrSession concept of fixy/channels/SwmrSession.h requires
@@ -22,6 +22,7 @@
 
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 
 #include <cstdio>
@@ -87,23 +88,24 @@ auto handle_traits_root() noexcept {
 }
 using Spsc = c::channel_t<int, 8, decltype(handle_traits_root())>;
 
-// The production handles answer exactly one predicate each.  These are
-// the cells that are not circular: neither handle was written with this
-// header in view, and the trait reads the member it actually has.
-static_assert(c::is_consumer_handle_v<Spsc::ConsumerHandle>);
-static_assert(!c::is_producer_handle_v<Spsc::ConsumerHandle>);
-static_assert(!c::is_swmr_writer_v<Spsc::ConsumerHandle>);
-static_assert(!c::is_swmr_reader_v<Spsc::ConsumerHandle>);
+// The production ends answer exactly one predicate each.  These are
+// the cells that are not circular: neither end was written with this
+// header in view, and the trait reads the member it actually has.  The
+// handles of a frame show the same members, and the body below reads them.
+static_assert(c::is_consumer_handle_v<Spsc::ConsumerEnd>);
+static_assert(!c::is_producer_handle_v<Spsc::ConsumerEnd>);
+static_assert(!c::is_swmr_writer_v<Spsc::ConsumerEnd>);
+static_assert(!c::is_swmr_reader_v<Spsc::ConsumerEnd>);
 
-static_assert(c::is_producer_handle_v<Spsc::ProducerHandle>);
-static_assert(!c::is_consumer_handle_v<Spsc::ProducerHandle>);
-static_assert(!c::is_swmr_writer_v<Spsc::ProducerHandle>);
-static_assert(!c::is_swmr_reader_v<Spsc::ProducerHandle>);
+static_assert(c::is_producer_handle_v<Spsc::ProducerEnd>);
+static_assert(!c::is_consumer_handle_v<Spsc::ProducerEnd>);
+static_assert(!c::is_swmr_writer_v<Spsc::ProducerEnd>);
+static_assert(!c::is_swmr_reader_v<Spsc::ProducerEnd>);
 
 // And the payload the trait recovers is the channel's own element type,
 // not something the synthetic taught it.
-static_assert(std::is_same_v<c::consumer_handle_value_t<Spsc::ConsumerHandle>, int>);
-static_assert(std::is_same_v<c::producer_handle_value_t<Spsc::ProducerHandle>, int>);
+static_assert(std::is_same_v<c::consumer_handle_value_t<Spsc::ConsumerEnd>, int>);
+static_assert(std::is_same_v<c::producer_handle_value_t<Spsc::ProducerEnd>, int>);
 
 // The channel itself is not a handle of any pole.  It hands handles out;
 // it is not one.
@@ -112,8 +114,8 @@ static_assert(!c::is_producer_handle_v<Spsc>);
 
 // A different element type carries through.
 using SpscBytes = c::channel_t<unsigned char, 8, decltype(handle_traits_root())>;
-static_assert(std::is_same_v<c::consumer_handle_value_t<SpscBytes::ConsumerHandle>, unsigned char>);
-static_assert(std::is_same_v<c::producer_handle_value_t<SpscBytes::ProducerHandle>, unsigned char>);
+static_assert(std::is_same_v<c::consumer_handle_value_t<SpscBytes::ConsumerEnd>, unsigned char>);
+static_assert(std::is_same_v<c::producer_handle_value_t<SpscBytes::ProducerEnd>, unsigned char>);
 
 // ── the run-time reads ──────────────────────────────────────────────
 
@@ -142,11 +144,11 @@ void every_predicate_reads_at_run_time() {
         EXPECT(!c::is_swmr_writer_v<synth_swmr_hybrid>);
         EXPECT(!c::is_swmr_reader_v<synth_swmr_hybrid>);
 
-        // The production handles, read the same way.
-        EXPECT(c::is_consumer_handle_v<Spsc::ConsumerHandle>);
-        EXPECT(c::is_producer_handle_v<Spsc::ProducerHandle>);
-        EXPECT(!c::is_consumer_handle_v<Spsc::ProducerHandle>);
-        EXPECT(!c::is_producer_handle_v<Spsc::ConsumerHandle>);
+        // The production ends, read the same way.
+        EXPECT(c::is_consumer_handle_v<Spsc::ConsumerEnd>);
+        EXPECT(c::is_producer_handle_v<Spsc::ProducerEnd>);
+        EXPECT(!c::is_consumer_handle_v<Spsc::ProducerEnd>);
+        EXPECT(!c::is_producer_handle_v<Spsc::ConsumerEnd>);
     }
 }
 
@@ -158,21 +160,32 @@ void the_recognized_handles_carry_a_value() {
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(handle_traits_root());
 
-    auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
+    auto token = c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                              [](auto producer, auto consumer) noexcept {
+                                  // The handles of the frame answer the predicates of their ends.
+                                  EXPECT(c::is_producer_handle_v<decltype(producer)>);
+                                  EXPECT(!c::is_consumer_handle_v<decltype(producer)>);
+                                  EXPECT(c::is_consumer_handle_v<decltype(consumer)>);
+                                  EXPECT(!c::is_producer_handle_v<decltype(consumer)>);
+                                  static_assert(std::is_same_v<c::producer_handle_value_t<decltype(producer)>, int>);
+                                  static_assert(std::is_same_v<c::consumer_handle_value_t<decltype(consumer)>, int>);
 
-    EXPECT(producer.try_push(7));
+                                  EXPECT(producer.try_push(7));
 
-    auto popped = consumer.try_pop();
-    EXPECT(popped.is_some());
-    if (popped.is_some()) {
-        EXPECT(std::move(popped).expect("the test above found an item") == 7);
-    }
+                                  auto popped = consumer.try_pop();
+                                  EXPECT(popped.is_some());
+                                  if (popped.is_some()) {
+                                      EXPECT(std::move(popped).expect("the test above found an item") == 7);
+                                  }
 
-    // An empty channel reports empty through the Option, which is the
-    // shape is_consumer_handle_v insists on.
-    auto empty = consumer.try_pop();
-    EXPECT(empty.is_none());
+                                  // An empty channel reports empty through the Option, which is the
+                                  // shape is_consumer_handle_v insists on.
+                                  auto empty = consumer.try_pop();
+                                  EXPECT(empty.is_none());
+                                  std::move(producer).close();
+                                  return std::move(consumer).release();
+                              });
+    ::foundation::linear::drop(std::move(token));
 }
 
 }  // namespace

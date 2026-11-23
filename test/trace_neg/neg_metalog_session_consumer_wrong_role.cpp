@@ -1,13 +1,15 @@
 // Negative-compile test.  This file must fail to compile.
 //
 // mint_metalog_consumer_session runs the draining protocol, so it takes the
-// consumer handle.  This call passes the producer handle, and the gate
-// refuses it.
+// consumer handle of a frame.  This call passes the producer handle of the
+// producer door, and the gate refuses it.
 
 #include <crucible/MetaLog.h>
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -15,23 +17,22 @@
 
 namespace consumer_wrong_role_fixture {
 struct Tag {};
-inline auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace consumer_wrong_role_fixture
 
 int main() {
-    using Log = consumer_wrong_role_fixture::Log;
     const auto ctx = ::foundation::effects::testing::foreground();
+    auto root = ::foundation::permissions::mint_permission_root<
+        ::crucible::metalog_tag::Whole<consumer_wrong_role_fixture::Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [producer_perm, consumer_perm] =
-        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(
-            consumer_wrong_role_fixture::log_root());
-    (void)consumer_perm;
-    auto producer = log.producer(std::move(producer_perm));
-    auto head = ::crucible::metalog_session::mint_metalog_consumer_session<Log>(ctx, std::move(producer));
-    (void)head;
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_producer(
+        log, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept -> void {
+            auto head = ::crucible::metalog_session::mint_metalog_consumer_session<Log>(ctx, std::move(producer));
+            (void)head;
+        });
     return 0;
 }

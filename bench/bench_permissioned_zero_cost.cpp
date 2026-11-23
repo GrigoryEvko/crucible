@@ -35,6 +35,10 @@
 //   - The setup splits one root into two tokens.  The pool of the
 //     channel takes the producer token, and the consumer handle takes
 //     the consumer token.
+//   - Each handle lives in the body of a frame door of
+//     fixy/concurrent/PermissionedChannel.h.  The frame opens before
+//     the timed row, and the row runs in its body.  A report owns its
+//     samples, so the body moves it into a local of the row.
 
 #include <cstdint>
 #include <utility>
@@ -106,14 +110,16 @@ bench::Report wrapped_mpsc_push() {
     auto [producer_root, consumer_perm] = bench_halves();
     (void)consumer_perm;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
-    auto p_opt = ch->producer(kNondet);
-    CRUCIBLE_BENCH_CHECK(p_opt.is_some());
-    auto p = std::move(p_opt).expect("the test above found a producer");
     Item i = 0;
-    return bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
-        const bool ok = p.try_push(++i);
-        bench::do_not_optimize(ok);
+    bench::Report report{};
+    auto const lent = ::fixy::concurrent::with_producer(*ch, kNondet, [&i, &report](auto p) noexcept {
+        report = bench::run("wrapped Permissioned MPSC.ProducerHandle::try_push", [&] {
+            const bool ok = p.try_push(++i);
+            bench::do_not_optimize(ok);
+        });
     });
+    CRUCIBLE_BENCH_CHECK(lent.is_some());
+    return report;
 }
 
 bench::Report bare_mpsc_pop() {
@@ -132,20 +138,25 @@ bench::Report bare_mpsc_pop() {
 bench::Report wrapped_mpsc_pop() {
     auto [producer_root, consumer_perm] = bench_halves();
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(kAlloc, std::move(producer_root));
-    {
-        auto p_opt = ch->producer(kNondet);
-        CRUCIBLE_BENCH_CHECK(p_opt.is_some());
-        auto p = std::move(p_opt).expect("the test above found a producer");
+    // The producer share goes back to the pool at the end of its frame, before
+    // the consumer frame opens.
+    auto const filled = ::fixy::concurrent::with_producer(*ch, kNondet, [](auto p) noexcept {
         for (Item i = 0; i < kCap / 2; ++i)
             (void)p.try_push(i);
-    }
-    auto c = ch->consumer(std::move(consumer_perm));
+    });
+    CRUCIBLE_BENCH_CHECK(filled.is_some());
     // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
-    return bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&] {
-        auto v = c.try_pop(merge);
-        bench::do_not_optimize(v);
+    bench::Report report{};
+    // The row reaches the linear consumer handle through a Ref.
+    ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm), [&merge, &report](auto c) noexcept {
+        report = bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&merge, popper = ::fixy::to(c)] {
+            auto v = popper->try_pop(merge);
+            bench::do_not_optimize(v);
+        });
+        ::foundation::linear::drop(std::move(c));
     });
+    return report;
 }
 
 // A context that holds Nondet and no other atom: the context of an endpoint
@@ -163,50 +174,60 @@ template <class Round>
 
 // The hot pop through the consumer handle.  Each round pushes one item and
 // pops it, so the ring holds at most one item and each pop finds one.  The
-// closure owns the consumer handle, the harness borrows the closure, and
-// end_round ends it.
+// producer frame and the consumer frame open before the row.  The closure
+// owns the consumer handle of the inner frame, the harness borrows the
+// closure, and end_round ends it.
 bench::Report handle_mpsc_round_trip() {
     auto [producer_root, consumer_perm] = bench_halves();
     const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
-    auto p_opt = ch->producer(kNondet);
-    CRUCIBLE_BENCH_CHECK(p_opt.is_some());
-    auto p = std::move(p_opt).expect("the test above found a producer");
     const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
-    Item i = 0;
-    auto round = [&p, &i, merge, c = ch->consumer(std::move(consumer_perm))]() mutable {
-        const bool pushed = p.try_push(++i);
-        auto v = c.try_pop(merge);
-        bench::do_not_optimize(pushed);
-        bench::do_not_optimize(v);
-    };
-    bench::Report report = bench::run("MPSC push, then ConsumerHandle::try_pop", round);
-    end_round(std::move(round));
+    bench::Report report{};
+    auto const lent = ::fixy::concurrent::with_producer(
+        *ch, kNondet, [&ch, &report, merge, consumer_perm = std::move(consumer_perm)](auto p) mutable noexcept {
+            ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm),
+                                              [&p, &report, merge](auto consumer) noexcept {
+                                                  Item i = 0;
+                                                  auto round = [&p, &i, merge, c = std::move(consumer)]() mutable {
+                                                      const bool pushed = p.try_push(++i);
+                                                      auto v = c.try_pop(merge);
+                                                      bench::do_not_optimize(pushed);
+                                                      bench::do_not_optimize(v);
+                                                  };
+                                                  report = bench::run("MPSC push, then ConsumerHandle::try_pop", round);
+                                                  end_round(std::move(round));
+                                              });
+        });
+    CRUCIBLE_BENCH_CHECK(lent.is_some());
     return report;
 }
 
 // The same round through an endpoint, whose pop takes the tag of Nondet
-// from the context of the endpoint.  The closure owns the endpoint, and
-// end_round ends it.
+// from the context of the endpoint.  The closure owns the endpoint over the
+// consumer handle of the inner frame, and end_round ends it.
 bench::Report endpoint_mpsc_round_trip() {
     auto [producer_root, consumer_perm] = bench_halves();
     const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::Box<Channel> ch = ::fixy::mint_box<Channel>(alloc, std::move(producer_root));
-    auto p_opt = ch->producer(kNondet);
-    CRUCIBLE_BENCH_CHECK(p_opt.is_some());
-    auto p = std::move(p_opt).expect("the test above found a producer");
-    Item i = 0;
-    auto round =
-        [&p, &i,
-         endpoint = ::fixy::channels::mint_endpoint<Channel, ::fixy::channels::Direction::Consumer>(
-             MergeCtx{::foundation::effects::testing::test()}, ch->consumer(std::move(consumer_perm)))]() mutable {
-            const bool pushed = p.try_push(++i);
-            auto v = endpoint.try_recv();
-            bench::do_not_optimize(pushed);
-            bench::do_not_optimize(v);
-        };
-    bench::Report report = bench::run("MPSC push, then Endpoint::try_recv", round);
-    end_round(std::move(round));
+    bench::Report report{};
+    auto const lent = ::fixy::concurrent::with_producer(
+        *ch, kNondet, [&ch, &report, consumer_perm = std::move(consumer_perm)](auto p) mutable noexcept {
+            ::fixy::concurrent::with_consumer(*ch, std::move(consumer_perm), [&p, &report](auto consumer) noexcept {
+                Item i = 0;
+                auto round =
+                    [&p, &i,
+                     endpoint = ::fixy::channels::mint_endpoint<Channel, ::fixy::channels::Direction::Consumer>(
+                         MergeCtx{::foundation::effects::testing::test()}, std::move(consumer))]() mutable {
+                        const bool pushed = p.try_push(++i);
+                        auto v = endpoint.try_recv();
+                        bench::do_not_optimize(pushed);
+                        bench::do_not_optimize(v);
+                    };
+                report = bench::run("MPSC push, then Endpoint::try_recv", round);
+                end_round(std::move(round));
+            });
+        });
+    CRUCIBLE_BENCH_CHECK(lent.is_some());
     return report;
 }
 

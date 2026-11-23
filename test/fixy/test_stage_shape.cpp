@@ -9,16 +9,17 @@
 // so the reads are not folded away.
 //
 // And the cell the wall cannot state: a stage body whose parameters are
-// a real channel's ConsumerHandle and ProducerHandle is recognized as a
-// stage, and the values the shape recovers are the channel's element
-// types.  The header's fakes prove the predicate matches the shape
-// it was written for; this proves it matches the shape the channels
-// actually have.
+// a real channel's ConsumerEnd and ProducerEnd, or the handles of a frame,
+// is recognized as a stage, and the values the shape recovers are the
+// channel's element types.  The header's fakes prove the predicate matches
+// the shape it was written for; this proves it matches the shape the
+// channels actually have.
 
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/StageShape.h>
 
 #include <foundation/Linear.h>
+#include <foundation/permissions/Permission.h>
 
 #include <cstdio>
 #include <type_traits>
@@ -48,8 +49,8 @@ using IntSpsc = c::PermissionedChannel<c::ChannelForm::wire, int, 8, StageShapeT
 using FloatSpsc = c::PermissionedChannel<c::ChannelForm::wire, float, 8, StageShapeTag, StageShapeBrand>;
 
 // A body that drains one real channel into another is a stage.  Nothing
-// about these two handle types was written with StageShape in view.
-void real_pass_through(IntSpsc::ConsumerHandle&& in, IntSpsc::ProducerHandle&& out) noexcept {
+// about these two end types was written with StageShape in view.
+void real_pass_through(IntSpsc::ConsumerEnd&& in, IntSpsc::ProducerEnd&& out) noexcept {
     ::foundation::linear::drop(std::move(in));
     ::foundation::linear::drop(std::move(out));
 }
@@ -62,7 +63,7 @@ static_assert(c::pipeline_stage_is_value_preserving_v<&real_pass_through>);
 
 // A body that changes the element type is a stage that is not value
 // preserving, and the shape recovers both element types.
-void real_int_to_float(IntSpsc::ConsumerHandle&& in, FloatSpsc::ProducerHandle&& out) noexcept {
+void real_int_to_float(IntSpsc::ConsumerEnd&& in, FloatSpsc::ProducerEnd&& out) noexcept {
     ::foundation::linear::drop(std::move(in));
     ::foundation::linear::drop(std::move(out));
 }
@@ -73,7 +74,7 @@ static_assert(!c::pipeline_stage_is_value_preserving_v<&real_int_to_float>);
 
 // Two real inputs into one real output is variadic but not the
 // one-to-one shape.
-void real_fan_in(IntSpsc::ConsumerHandle&&, IntSpsc::ConsumerHandle&&, IntSpsc::ProducerHandle&&) noexcept {}
+void real_fan_in(IntSpsc::ConsumerEnd&&, IntSpsc::ConsumerEnd&&, IntSpsc::ProducerEnd&&) noexcept {}
 static_assert(c::VariadicPipelineStage<&real_fan_in>);
 static_assert(!c::PipelineStage<&real_fan_in>);
 static_assert(c::StageArity<&real_fan_in>::input_count == 2);
@@ -81,19 +82,31 @@ static_assert(c::StageArity<&real_fan_in>::output_count == 1);
 
 // The producer ahead of the consumer breaks the data-flow order, with
 // real handles as with fakes.
-void real_out_of_order(IntSpsc::ProducerHandle&&, IntSpsc::ConsumerHandle&&) noexcept {}
+void real_out_of_order(IntSpsc::ProducerEnd&&, IntSpsc::ConsumerEnd&&) noexcept {}
 static_assert(!c::VariadicPipelineStage<&real_out_of_order>);
 static_assert(!c::PipelineStage<&real_out_of_order>);
 
 // A real handle taken by lvalue reference is not a stage: a stage
 // consumes its handles.
-void real_lvalue_in(IntSpsc::ConsumerHandle&, IntSpsc::ProducerHandle&&) noexcept {}
+void real_lvalue_in(IntSpsc::ConsumerEnd&, IntSpsc::ProducerEnd&&) noexcept {}
 static_assert(!c::PipelineStage<&real_lvalue_in>);
 
 // The channel itself is not a handle, so a body taking channels is not
 // a stage.
 void real_takes_channels(IntSpsc&&, IntSpsc&&) noexcept {}
 static_assert(!c::PipelineStage<&real_takes_channels>);
+
+// A stage over the handles of a frame.  No code outside the body of a frame
+// door names the scope brand of its call, so the stage is a template over its
+// two handles.
+template <class In, class Out>
+void real_frame_pass_through(In&& in, Out&& out) noexcept {
+    ::foundation::linear::drop(std::move(in));
+    ::foundation::linear::drop(std::move(out));
+}
+
+// The tag of the channel whose two tokens open the frame below.
+struct FrameStageTag {};
 
 // ── the run-time reads ──────────────────────────────────────────────
 
@@ -147,11 +160,31 @@ void the_recognized_stage_body_runs() {
     fake_producer<int> out{};
     f_one_to_one(std::move(in), std::move(out));
 
-    // The real-handle body is not called: constructing a live
-    // ConsumerHandle needs the channel's split permissions, and this
-    // file's claim is about the shape, not about the drain.  The handles
-    // are exercised in test_handle_traits.cpp.
+    // The bodies over the ends are not called: only a frame door makes an
+    // end, and this file's claim is about the shape, not about the drain.
+    // The handles are exercised in test_handle_traits.cpp.
     EXPECT(c::PipelineStage<&real_pass_through>);
+
+    // The handles of a frame read the same way as the ends, and the stage
+    // that the shape admitted runs with them.  The root and the channel type
+    // stay in this body, so the brand of the root leaves no scope.
+    auto root =
+        ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, FrameStageTag>>();
+    using FrameSpsc = c::channel_t<int, 8, decltype(root)>;
+    FrameSpsc channel{};
+    auto [producer_perm, consumer_perm] =
+        ::foundation::permissions::mint_permission_split<FrameSpsc::producer_tag, FrameSpsc::consumer_tag>(
+            std::move(root));
+    c::with_ends(
+        channel, std::move(producer_perm), std::move(consumer_perm), [](auto producer, auto consumer) noexcept {
+            using In = decltype(consumer);
+            using Out = decltype(producer);
+            static_assert(c::PipelineStage<&real_frame_pass_through<In, Out>>);
+            static_assert(c::pipeline_stage_is_value_preserving_v<&real_frame_pass_through<In, Out>>);
+            static_assert(std::is_same_v<c::pipeline_stage_input_value_t<&real_frame_pass_through<In, Out>>, int>);
+            EXPECT((c::PipelineStage<&real_frame_pass_through<In, Out>>));
+            real_frame_pass_through(std::move(consumer), std::move(producer));
+        });
 }
 
 }  // namespace

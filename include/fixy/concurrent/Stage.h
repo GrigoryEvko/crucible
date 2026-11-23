@@ -277,7 +277,10 @@ public:
     using row_discipline = ::fixy::row_discipline::stage;
     using row_payload = ::foundation::diag::row_payloads<Ctx, consumer_handle_type, producer_handle_type>;
 
-    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
+    // The body of the stage.  A function and no data member: the type of the
+    // body can name the scope brand of a frame of a channel, and no object of
+    // static storage duration holds such a brand (foundation/Brand.h).
+    [[nodiscard]] static consteval auto fn_ptr() noexcept { return FnPtr; }
 
     static constexpr bool is_value_preserving = pipeline_stage_is_value_preserving_v<FnPtr>;
 
@@ -349,7 +352,10 @@ public:
     static constexpr std::size_t input_count = StageArity<FnPtr>::input_count;
     static constexpr std::size_t output_count = StageArity<FnPtr>::output_count;
     static constexpr bool is_value_preserving = false;
-    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
+    // The body of the stage.  A function and no data member: the type of the
+    // body can name the scope brand of a frame of a channel, and no object of
+    // static storage duration holds such a brand (foundation/Brand.h).
+    [[nodiscard]] static consteval auto fn_ptr() noexcept { return FnPtr; }
 
     template <std::size_t I>
         requires(I < input_count)
@@ -438,7 +444,10 @@ public:
     static constexpr std::size_t input_count = 1;
     static constexpr std::size_t output_count = 1;
     static constexpr bool is_value_preserving = std::is_same_v<input_value_type, output_value_type>;
-    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
+    // The body of the stage.  A function and no data member: the type of the
+    // body can name the scope brand of a frame of a channel, and no object of
+    // static storage duration holds such a brand (foundation/Brand.h).
+    [[nodiscard]] static consteval auto fn_ptr() noexcept { return FnPtr; }
 
     template <std::size_t I>
         requires(I == 0)

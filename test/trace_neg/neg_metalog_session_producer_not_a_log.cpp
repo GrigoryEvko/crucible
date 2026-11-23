@@ -8,6 +8,8 @@
 #include <crucible/MetaLogSession.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -15,23 +17,22 @@
 
 namespace producer_not_a_log_fixture {
 struct Tag {};
-inline auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace producer_not_a_log_fixture
 
 int main() {
-    using Log = producer_not_a_log_fixture::Log;
     const auto ctx = ::foundation::effects::testing::foreground();
+    auto root = ::foundation::permissions::mint_permission_root<
+        ::crucible::metalog_tag::Whole<producer_not_a_log_fixture::Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [producer_perm, consumer_perm] =
-        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(
-            producer_not_a_log_fixture::log_root());
-    (void)consumer_perm;
-    auto producer = log.producer(std::move(producer_perm));
-    auto head = ::crucible::metalog_session::mint_metalog_producer_session<int>(ctx, std::move(producer));
-    (void)head;
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_producer(
+        log, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept -> void {
+            auto head = ::crucible::metalog_session::mint_metalog_producer_session<int>(ctx, std::move(producer));
+            (void)head;
+        });
     return 0;
 }

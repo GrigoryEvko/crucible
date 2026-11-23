@@ -12,11 +12,17 @@
 // session in a Seat of foundation/core/Seat.h, which the harness holds for
 // the row (measure_with).  Each step runs on the session in the storage of
 // the Seat and puts the next session there.
+//
+// Each handle lives in the body of a frame door (with_writer and with_reader
+// of fixy/channels/SwmrSession.h).  The frame opens before the timed row, and
+// the row runs in its body.  A report owns its samples, so it is no result of
+// a frame: the body moves the report into a local of the row.
 
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
 
+#include <foundation/Linear.h>
 #include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -73,13 +79,6 @@ template <typename Body>
     return run_of(name).measure(static_cast<Body&&>(body));
 }
 
-// A reader of the channel, which has a free share by construction.
-[[nodiscard]] Swmr::ReaderHandle take_reader(Swmr& swmr) noexcept {
-    auto reader = ses::mint_swmr_reader<Swmr>(kReader, swmr);
-    CRUCIBLE_BENCH_CHECK(reader.is_some());
-    return std::move(reader).expect("the pool lends a share");
-}
-
 [[nodiscard]] bench::Report raw_publish() {
     cc::AtomicSnapshot<Payload> snapshot{payload_at(0)};
     std::uint64_t seq = 0;
@@ -91,30 +90,40 @@ template <typename Body>
 
 [[nodiscard]] bench::Report handle_publish() {
     Swmr swmr{reader_root(), payload_at(0)};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
     std::uint64_t seq = 0;
-    return measure("SwmrSession.WriterHandle.publish", [&] {
-        writer.publish(payload_at(++seq));
-        bench::mark_changed(seq);
+    bench::Report report{};
+    // The row reaches the linear writer handle through a Ref, and the body
+    // ends the writer token after the row.
+    ses::with_writer(swmr, writer_root(), [&seq, &report](auto writer) noexcept {
+        report = measure("SwmrSession.WriterHandle.publish", [&seq, publisher = ::fixy::to(writer)] {
+            publisher->publish(payload_at(++seq));
+            bench::mark_changed(seq);
+        });
+        ::foundation::linear::drop(std::move(writer).release());
     });
+    return report;
 }
 
 [[nodiscard]] bench::Report session_send() {
     Swmr swmr{reader_root(), payload_at(0)};
     std::uint64_t seq = 0;
     // The step takes a generic lambda, so the brand of the session stays in the
-    // template parameter of the lambda.
-    auto [report, session] = bench::measure_with(
-        run_of("SwmrSession session send"),
-        ::foundation::core::mint_seat(
-            ses::mint_writer_runtime_session<Swmr>(kForeground, ses::mint_swmr_writer<Swmr>(swmr, writer_root()))),
-        [&seq](auto& seat) noexcept {
-            Payload const next = payload_at(++seq);
-            seat.step([&next](auto&& held) noexcept { return std::move(held).send(kForeground, next); });
-            bench::mark_changed(seq);
-        });
-    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-    return std::move(report);
+    // template parameter of the lambda.  The session takes the writer handle of
+    // the frame.
+    bench::Report report{};
+    ses::with_writer(swmr, writer_root(), [&seq, &report](auto writer) noexcept {
+        auto [measured, session] = bench::measure_with(
+            run_of("SwmrSession session send"),
+            ::foundation::core::mint_seat(ses::mint_writer_runtime_session<Swmr>(kForeground, std::move(writer))),
+            [&seq](auto& seat) noexcept {
+                Payload const next = payload_at(++seq);
+                seat.step([&next](auto&& held) noexcept { return std::move(held).send(kForeground, next); });
+                bench::mark_changed(seq);
+            });
+        std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        report = std::move(measured);
+    });
+    return report;
 }
 
 [[nodiscard]] bench::Report raw_load() {
@@ -128,12 +137,18 @@ template <typename Body>
 
 [[nodiscard]] bench::Report handle_load() {
     Swmr swmr{reader_root(), payload_at(123)};
-    const auto reader = take_reader(swmr);
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
-    return measure("SwmrSession.ReaderHandle.load", [&] {
-        const Payload observed = reader.load(spin);
-        bench::do_not_optimize(observed);
+    bench::Report report{};
+    // The channel has a free share by construction, so the reader door runs
+    // its body.
+    auto const read = ses::with_reader(kReader, swmr, [&spin, &report](auto reader) noexcept {
+        report = measure("SwmrSession.ReaderHandle.load", [&] {
+            const Payload observed = reader.load(spin);
+            bench::do_not_optimize(observed);
+        });
     });
+    CRUCIBLE_BENCH_CHECK(read.is_some());
+    return report;
 }
 
 [[nodiscard]] bench::Report raw_try_load() {
@@ -146,18 +161,25 @@ template <typename Body>
 
 [[nodiscard]] bench::Report session_recv() {
     Swmr swmr{reader_root(), payload_at(123)};
-    auto [report, session] = bench::measure_with(
-        run_of("SwmrSession session recv"),
-        ::foundation::core::mint_seat(ses::mint_reader_runtime_session<Swmr>(kReader, take_reader(swmr))),
-        [](auto& seat) noexcept {
-            seat.step([](auto&& held) noexcept {
-                auto [observed, next] = std::move(held).recv(kReader);
-                bench::do_not_optimize(observed);
-                return std::move(next);
+    bench::Report report{};
+    // The session takes the reader handle of the frame.  The channel has a
+    // free share by construction, so the reader door runs its body.
+    auto const read = ses::with_reader(kReader, swmr, [&report](auto reader) noexcept {
+        auto [measured, session] = bench::measure_with(
+            run_of("SwmrSession session recv"),
+            ::foundation::core::mint_seat(ses::mint_reader_runtime_session<Swmr>(kReader, std::move(reader))),
+            [](auto& seat) noexcept {
+                seat.step([](auto&& held) noexcept {
+                    auto [observed, next] = std::move(held).recv(kReader);
+                    bench::do_not_optimize(observed);
+                    return std::move(next);
+                });
             });
-        });
-    std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
-    return std::move(report);
+        std::move(session).take().detach(s::detach_reason::InfiniteLoopProtocol{});
+        report = std::move(measured);
+    });
+    CRUCIBLE_BENCH_CHECK(read.is_some());
+    return report;
 }
 
 }  // namespace

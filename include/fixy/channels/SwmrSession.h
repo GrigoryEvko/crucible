@@ -25,6 +25,21 @@
 // The writer handle is linear (foundation/Linear.h).  Its door is
 // release(), which gives the writer role back to the session and the
 // token back to the caller.
+//
+// Frame doors
+//     The frame doors open the end of one role and give the body a handle of
+//     that end by value, as the frame doors of fixy/concurrent/
+//     PermissionedChannel.h do: with_writer(session, token, body) gives the
+//     result of the body, and with_reader(ctx, session, body) gives an Option
+//     of the result, with no value while the reader root is out of the pool.
+//     The handle type takes the scope brand of the call, so a handle does not
+//     outlive the frame of its door.  The ends (WriterEnd and ReaderEnd) are
+//     nested classes, so the check of synchronized{} of foundation/Transfer.h
+//     reads their doors.  The type of an end stays spellable, but no code
+//     outside the frame doors gets a value of it: each claim door takes a
+//     SwmrFrameKey, whose only friends are the frame doors.  The residuals
+//     of that header hold here too: a session in a Box or an Option that the
+//     body ends, and an owner thread that keeps the closure past the body.
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
@@ -33,6 +48,7 @@
 #include <fixy/session/Handle.h>
 
 #include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
@@ -66,37 +82,136 @@ using WriterRuntimeProto = ::fixy::session::Loop<::fixy::session::Send<T, ::fixy
 template <typename T>
 using ReaderRuntimeProto = ::fixy::session::dual_of_t<WriterRuntimeProto<T>>;
 
+// The handles of the two roles (frame doors).  The definitions follow the
+// session.
+template <class Swmr, ::foundation::brand::IsBrand Scope>
+class WriterHandle;
+template <class Swmr, ::foundation::brand::IsBrand Scope>
+class ReaderHandle;
+
+// The key of the claim doors of a session (frame doors).  The definition
+// follows the declarations of the doors that it befriends.
+class SwmrFrameKey;
+
+namespace detail {
+
+// The handle that a frame door of the session gives its body on the scope
+// brand Scope, through the member alias templates of the session.
+template <class Swmr, class Scope>
+using writer_handle_of_t = typename Swmr::template writer_handle<Scope>;
+template <class Swmr, class Scope>
+using reader_handle_of_t = typename Swmr::template reader_handle<Scope>;
+
+}  // namespace detail
+
 // The reader door lends a share of a pool, and the schedule decides its
 // outcome, so the door takes a context that holds Nondet.  The surface reads
 // the door with the witness context of the load of a reader pole
-// (fixy/concurrent/HandleTraits.h), which holds Nondet.
+// (fixy/concurrent/HandleTraits.h), which holds Nondet.  Each claim door
+// takes the key of the frame doors, which the surface names as a parameter
+// and does not build.
 template <typename S>
 concept SwmrSessionSurface =
-    requires {
+    requires(S& session, SwmrFrameKey const& key,
+             ::foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&& token,
+             ::fixy::concurrent::detail::load_witness_ctx const& ctx) {
         typename S::value_type;
-        typename S::writer_tag;
-        typename S::writer_brand;
         typename S::reader_tag;
         typename S::reader_brand;
-        typename S::WriterHandle;
-        typename S::ReaderHandle;
-        {
-            std::declval<S&>().writer(
-                std::declval<
-                    ::foundation::permissions::Permission<typename S::writer_tag, typename S::writer_brand>&&>())
-        } -> std::same_as<typename S::WriterHandle>;
-        {
-            std::declval<S&>().reader(std::declval<::fixy::concurrent::detail::load_witness_ctx const&>())
-        } -> std::same_as<::fixy::Option<typename S::ReaderHandle>>;
-    } && ::fixy::concurrent::IsSwmrWriter<typename S::WriterHandle>
-    && ::fixy::concurrent::IsSwmrReader<typename S::ReaderHandle>
-    && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::WriterHandle>, typename S::value_type>
-    && std::is_same_v<::fixy::concurrent::swmr_reader_value_t<typename S::ReaderHandle>, typename S::value_type>;
+        typename S::WriterEnd;
+        typename S::ReaderEnd;
+        { session.writer(key, std::move(token)) } -> std::same_as<typename S::WriterEnd>;
+        { session.reader(key, ctx) } -> std::same_as<::fixy::Option<typename S::ReaderEnd>>;
+    }
+    && ::fixy::concurrent::IsSwmrWriter<typename S::WriterEnd>
+    && ::fixy::concurrent::IsSwmrReader<typename S::ReaderEnd>
+    && std::is_same_v<::fixy::concurrent::swmr_writer_value_t<typename S::WriterEnd>, typename S::value_type>
+    && std::is_same_v<::fixy::concurrent::swmr_reader_value_t<typename S::ReaderEnd>, typename S::value_type>;
 
-// The writer handle of the channel.  A reference to a handle is not a
-// handle, so an lvalue fails.
+// The writer handle of a frame of the session, and the reader handle.  A
+// reference to a handle is not a handle, so an lvalue fails.
 template <typename Swmr, typename Handle>
-concept SwmrWriterHandleOf = std::same_as<Handle, typename Swmr::WriterHandle>;
+concept SwmrWriterHandleOf = std::same_as<Handle, WriterHandle<Swmr, typename Handle::scope_type>>;
+template <typename Swmr, typename Handle>
+concept SwmrReaderHandleOf = std::same_as<Handle, ReaderHandle<Swmr, typename Handle::scope_type>>;
+
+// The writer door (frame doors).  The writer token opens the end, and the
+// body gets its handle.
+template <class... Refused, class Swmr, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && SwmrSessionSurface<Swmr>
+         && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::writer_handle_of_t<Swmr, Scope>>
+auto with_writer(Swmr& session,
+                 ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& token,
+                 Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::writer_handle_of_t<Swmr, Scope>>;
+
+// The reader door (frame doors).  It lends a share of the reader pool, and it
+// gives no value while the reader root is out of the pool.  The context fits
+// the lend of the pool (PoolCtx), so it holds Nondet.
+template <class... Refused, class Ctx, class Swmr, class Body,
+          ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+         && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
+         && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
+         && ::fixy::concurrent::HandleLendFrameBody<Body>
+[[nodiscard]] auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
+    -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
+        std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>>;
+
+// A body that the caller names binds to these overloads, so the refusal
+// gives its reason.
+template <class... Refused, class Swmr, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && SwmrSessionSurface<Swmr>
+             && ::fixy::concurrent::HandleNamedFrameBody<Body, detail::writer_handle_of_t<Swmr, Scope>>
+void with_writer(Swmr& session,
+                 ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& token,
+                 Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+template <class... Refused, class Ctx, class Swmr, class Body,
+          ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+             && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
+             && ::fixy::concurrent::HandleNamedFrameBody<Body, detail::reader_handle_of_t<Swmr, Scope>>
+void with_reader(Ctx const& ctx, Swmr& session, Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+// The key of the claim doors of a session (frame doors), as ChannelFrameKey of
+// fixy/concurrent/PermissionedChannel.h is for a channel.  Its constructor is
+// private and user-provided, its only friends are the frame doors, and it
+// does not copy.  Each handle names the key as its one friend, and only
+// build_handle_, a private door of the key, calls the constructor of a
+// handle.
+class SwmrFrameKey final {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr SwmrFrameKey() noexcept {}
+
+    // The handle of a frame over the end that a claim door gave.
+    template <class Handle, class End>
+    [[nodiscard]] static constexpr Handle build_handle_(End&& end) noexcept {
+        return Handle{static_cast<End&&>(end)};
+    }
+
+    template <class... Refused, class Swmr, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && SwmrSessionSurface<Swmr>
+             && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::writer_handle_of_t<Swmr, Scope>>
+    friend auto
+    with_writer(Swmr& session,
+                ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& token,
+                Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::writer_handle_of_t<Swmr, Scope>>;
+
+    template <class... Refused, class Ctx, class Swmr, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0)
+             && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
+             && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
+             && ::fixy::concurrent::HandleLendFrameBody<Body>
+    friend auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
+        -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
+            std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>>;
+
+public:
+    SwmrFrameKey(SwmrFrameKey const&) = delete("a key of the frame doors lives in the frame of one door call");
+    SwmrFrameKey& operator=(SwmrFrameKey const&) = delete("a key of the frame doors does not change");
+    ~SwmrFrameKey() = default;
+};
 
 // The caller mints the reader root and hands it to the constructor, and
 // the pool that holds it is the root of trust for the reader tag.  The
@@ -142,14 +257,14 @@ public:
                 T const& initial) noexcept
         : snapshot_{initial}, reader_pool_{std::move(reader_root)} {}
 
-    class[[= ::foundation::linear::linear{}]] WriterHandle {
+    class[[= ::foundation::linear::linear{}]] WriterEnd {
         // The move clears the binding, so a moved-from writer cannot
         // publish while the permission lives in the handle it moved to.
         ::foundation::ChannelBinding<SwmrSession> session_;
         [[no_unique_address]] ::foundation::permissions::Permission<writer_tag, writer_brand> perm_;
 
-        constexpr WriterHandle(SwmrSession& session,
-                               ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept
+        constexpr WriterEnd(SwmrSession& session,
+                            ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept
             : session_{session, ::foundation::BindingKey<SwmrSession>{}}, perm_{std::move(perm)} {}
 
         // A moved-from handle holds no claim, so only the bound one gives
@@ -170,17 +285,16 @@ public:
         // pipeline joins no stage after the writer.
         using channel_type = SwmrSession;
 
-        WriterHandle(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
-        WriterHandle&
-        operator=(WriterHandle const&) = delete("SwmrSession::WriterHandle owns the linear writer permission");
-        constexpr WriterHandle(WriterHandle&&) noexcept = default;
+        WriterEnd(WriterEnd const&) = delete("SwmrSession::WriterEnd owns the linear writer permission");
+        WriterEnd& operator=(WriterEnd const&) = delete("SwmrSession::WriterEnd owns the linear writer permission");
+        constexpr WriterEnd(WriterEnd&&) noexcept = default;
         // An assignment would write over the writer token of the target, and
         // the move assignment of a Permission does nothing, so the token of
         // the target would leave through no door.
-        WriterHandle& operator=(WriterHandle&&) = delete(
-            "SwmrSession::WriterHandle owns the linear writer permission, and an assignment would drop the "
+        WriterEnd& operator=(WriterEnd&&) = delete(
+            "SwmrSession::WriterEnd owns the linear writer permission, and an assignment would drop the "
             "token of the target: bind the handle to a new name");
-        ~WriterHandle() { release_claim_(); }
+        ~WriterEnd() { release_claim_(); }
 
         // The release door.  The handle gives the writer role back to the
         // session and the token back to the caller, and it is unbound after
@@ -196,7 +310,7 @@ public:
         [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
     };
 
-    class ReaderHandle {
+    class ReaderEnd {
         // The move clears the binding, so a moved-from reader cannot load
         // while the share lives in the handle it moved to.  The binding is to
         // a const session, so a reader reads the snapshot and writes no part
@@ -205,9 +319,8 @@ public:
         ::foundation::ChannelBinding<SwmrSession const> session_;
         ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand> guard_;
 
-        constexpr ReaderHandle(
-            SwmrSession const& session,
-            ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
+        constexpr ReaderEnd(SwmrSession const& session,
+                            ::foundation::permissions::SharedPermissionGuard<reader_tag, reader_brand>&& guard) noexcept
             : session_{session, ::foundation::BindingKey<SwmrSession const>{}}, guard_{std::move(guard)} {}
 
         friend class SwmrSession;
@@ -219,12 +332,10 @@ public:
         using row_payload = T;
         using channel_type = SwmrSession;
 
-        ReaderHandle(ReaderHandle const&) = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
-        ReaderHandle&
-        operator=(ReaderHandle const&) = delete("SwmrSession::ReaderHandle owns one SharedPermissionPool share");
-        constexpr ReaderHandle(ReaderHandle&&) noexcept = default;
-        ReaderHandle&
-        operator=(ReaderHandle&&) = delete("SwmrSession::ReaderHandle share lifetime is fixed at construction");
+        ReaderEnd(ReaderEnd const&) = delete("SwmrSession::ReaderEnd owns one SharedPermissionPool share");
+        ReaderEnd& operator=(ReaderEnd const&) = delete("SwmrSession::ReaderEnd owns one SharedPermissionPool share");
+        constexpr ReaderEnd(ReaderEnd&&) noexcept = default;
+        ReaderEnd& operator=(ReaderEnd&&) = delete("SwmrSession::ReaderEnd share lifetime is fixed at construction");
 
         // The load spins with no exit while a write is in flight, so the
         // context owns Div (AtomicSnapshot::load).  The value of a load is the
@@ -252,12 +363,23 @@ public:
         }
     };
 
+    // The handles that the frame doors give a body on the scope brand Scope.
+    template <::foundation::brand::IsBrand Scope>
+    using writer_handle = WriterHandle<SwmrSession, Scope>;
+    template <::foundation::brand::IsBrand Scope>
+    using reader_handle = ReaderHandle<SwmrSession, Scope>;
+
+    // The claim doors of the ends.  Each takes the key of the frame doors, so
+    // only a frame door opens an end, and the end lives in a handle of the
+    // frame.
+
     // Takes the claim of the writer role first, so a second live writer
     // handle ends the process here.
-    [[nodiscard]] WriterHandle writer(::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept {
+    [[nodiscard]] WriterEnd writer(SwmrFrameKey const& /*key*/,
+                                   ::foundation::permissions::Permission<writer_tag, writer_brand>&& perm) noexcept {
         writer_claim_.take("two live writer handles of one SWMR session. One call site minted the writer root two "
                            "times.");
-        return WriterHandle{*this, std::move(perm)};
+        return WriterEnd{*this, std::move(perm)};
     }
 
     // The door is out of line.  Inline, the test of the lend and the end of
@@ -274,10 +396,11 @@ public:
     // context that holds Nondet (PoolCtx).
     template <class Ctx>
         requires ::foundation::permissions::PoolCtx<reader_tag, Ctx>
-    [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderHandle> reader(Ctx const& ctx) noexcept {
+    [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderEnd> reader(SwmrFrameKey const& /*key*/,
+                                                                  Ctx const& ctx) noexcept {
         auto lent = reader_pool_.lend(ctx);
         if (lent.is_none()) return ::fixy::none;
-        return ::fixy::some(ReaderHandle{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
+        return ::fixy::some(ReaderEnd{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
     }
 
     // The reader root while it is out of the pool (the lease of
@@ -321,25 +444,145 @@ private:
     ::foundation::EndpointClaim writer_claim_;
 };
 
-template <SwmrSessionSurface Swmr>
-[[nodiscard]] auto mint_swmr_writer(
-    Swmr& session,
-    ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& perm) noexcept {
-    return session.writer(std::move(perm));
+// The writer handle of a frame (frame doors): the writer end of a session on
+// the scope brand of one call of a frame door.  The handle derives from its
+// end privately, so no code outside it binds a reference to the end, and it
+// shows each door of the end.  The constructor is private, and the key of the
+// frame doors is its one friend, so only a frame door builds a handle.  The
+// writer end is linear, so the handle is linear too.  Its first argument is
+// the session, which is no linear value, so the handle marks its own end
+// (foundation/Linear.h).
+template <class Swmr, ::foundation::brand::IsBrand Scope>
+class[[= ::foundation::linear::linear{}]] WriterHandle : private Swmr::WriterEnd {
+    using End = typename Swmr::WriterEnd;
+
+    explicit WriterHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class SwmrFrameKey;
+
+public:
+    using value_type = typename End::value_type;
+    using tag_type = typename End::tag_type;
+    using brand_type = typename End::brand_type;
+    using row_discipline = typename End::row_discipline;
+    using row_payload = typename End::row_payload;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+
+    WriterHandle(WriterHandle&&) noexcept = default;
+    WriterHandle(WriterHandle const&) = delete("a writer handle owns the linear writer permission");
+    WriterHandle& operator=(WriterHandle const&) = delete("a writer handle owns the linear writer permission");
+    WriterHandle& operator=(WriterHandle&&) = delete(
+        "a writer handle owns the linear writer permission, and an assignment would drop the token of the "
+        "target");
+    ~WriterHandle() = default;
+
+    // The end whose doors the handle shows.  The shape traits of fixy/
+    // concurrent/HandleTraits.h read the signature of each door there.
+    using frame_end_type = End;
+
+    // The doors of the end.  Each door forwards to the door of the same name
+    // of the end, which gives a value and no reference or address into the
+    // session.  The handle states each door as its own member, so the rule
+    // escape-doors reads it.
+    void publish(value_type const& value) noexcept { End::publish(value); }
+
+    [[nodiscard]] auto release() && noexcept { return static_cast<End&&>(*this).release(); }
+
+    [[nodiscard]] std::uint64_t version() const noexcept { return End::version(); }
+};
+
+// The reader handle of a frame (frame doors): the reader end of a session on
+// the scope brand of one call of a frame door, as WriterHandle is for the
+// writer.
+template <class Swmr, ::foundation::brand::IsBrand Scope>
+class ReaderHandle : private Swmr::ReaderEnd {
+    using End = typename Swmr::ReaderEnd;
+
+    explicit ReaderHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class SwmrFrameKey;
+
+public:
+    using value_type = typename End::value_type;
+    using tag_type = typename End::tag_type;
+    using row_discipline = typename End::row_discipline;
+    using row_payload = typename End::row_payload;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+
+    ReaderHandle(ReaderHandle&&) noexcept = default;
+    ReaderHandle(ReaderHandle const&) = delete("a reader handle owns one share of the reader pool");
+    ReaderHandle& operator=(ReaderHandle const&) = delete("a reader handle owns one share of the reader pool");
+    ReaderHandle& operator=(ReaderHandle&&) = delete("the life of the share of a reader handle is fixed at its build");
+    ~ReaderHandle() = default;
+
+    // The end whose doors the handle shows, as for the writer handle.
+    using frame_end_type = End;
+
+    // The doors of the end, as the writer handle states them.  The load keeps
+    // the gate of the load of the end.
+    template <class Ctx>
+        requires requires(End const& end, Ctx const& ctx) { end.load(ctx); }
+    [[nodiscard]] value_type load(Ctx const& ctx) const noexcept {
+        return End::load(ctx);
+    }
+
+    [[nodiscard]] auto token() const noexcept { return End::token(); }
+
+    [[nodiscard]] ::fixy::Option<value_type> try_load(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return End::try_load(nondet);
+    }
+
+    [[nodiscard]] std::uint64_t version() const noexcept { return End::version(); }
+};
+
+template <class... Refused, class Swmr, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && SwmrSessionSurface<Swmr>
+         && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::writer_handle_of_t<Swmr, Scope>>
+auto with_writer(Swmr& session,
+                 ::foundation::permissions::Permission<typename Swmr::writer_tag, typename Swmr::writer_brand>&& token,
+                 Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::writer_handle_of_t<Swmr, Scope>> {
+    SwmrFrameKey const key{};
+    return ::foundation::linear::call_once(
+        static_cast<Body&&>(body),
+        SwmrFrameKey::build_handle_<detail::writer_handle_of_t<Swmr, Scope>>(session.writer(key, std::move(token))));
 }
 
-// The gate of the reader mint: a channel of the SWMR shape, and a context
-// that fits the lend of its reader pool (PoolCtx), so the context holds
-// Nondet.
-template <typename Ctx, typename Swmr>
-concept CtxFitsSwmrReaderMint =
-    SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>;
-
-template <typename Swmr, class Ctx>
-    requires CtxFitsSwmrReaderMint<Ctx, Swmr>
-[[nodiscard]] auto mint_swmr_reader(Ctx const& ctx, Swmr& session) noexcept {
-    return session.reader(ctx);
+template <class... Refused, class Ctx, class Swmr, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0)
+         && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
+         && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
+         && ::fixy::concurrent::HandleLendFrameBody<Body>
+auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
+    -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
+        std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>> {
+    using handle_type = detail::reader_handle_of_t<Swmr, Scope>;
+    using result_type = std::invoke_result_t<Body&&, handle_type>;
+    using value_type = ::fixy::concurrent::detail::handle_frame_value_t<result_type>;
+    SwmrFrameKey const key{};
+    auto lent = session.reader(key, ctx);
+    if (lent.is_none()) {
+        ::fixy::concurrent::detail::end_unlent_body_(static_cast<Body&&>(body));
+        return ::fixy::none;
+    }
+    handle_type handle =
+        SwmrFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent reader end"));
+    if constexpr (std::is_void_v<result_type>) {
+        ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
+        return ::fixy::Option<value_type>::some(::foundation::core::Unit{});
+    } else {
+        return ::fixy::Option<value_type>::some(
+            ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
+    }
 }
+
+// A writer handle and a reader handle of a frame of the session that the
+// handle names.
+template <class Pole>
+concept SwmrWriterPole = std::same_as<Pole, WriterHandle<typename Pole::channel_type, typename Pole::scope_type>>;
+template <class Pole>
+concept SwmrReaderPole = std::same_as<Pole, ReaderHandle<typename Pole::channel_type, typename Pole::scope_type>>;
 
 // The pole table of a session (fixy/session/Admission.h, section The pole
 // table of a channel): the writer handle runs the writer protocol, and each
@@ -350,12 +593,10 @@ template <typename Swmr, class Ctx>
 // bare tag of Nondet from the context of the step, and that context holds
 // Nondet.
 template <class Pole>
-    requires SwmrSessionSurface<typename Pole::channel_type>
-          && (std::same_as<Pole, typename Pole::channel_type::WriterHandle>
-              || std::same_as<Pole, typename Pole::channel_type::ReaderHandle>)
+    requires SwmrSessionSurface<typename Pole::channel_type> && (SwmrWriterPole<Pole> || SwmrReaderPole<Pole>)
 struct swmr_pole_protocols {
     using value_type = typename Pole::channel_type::value_type;
-    static constexpr bool is_writer = std::same_as<Pole, typename Pole::channel_type::WriterHandle>;
+    static constexpr bool is_writer = SwmrWriterPole<Pole>;
     using writer_protocol = WriterRuntimeProto<value_type>;
     using reader_protocol = ReaderRuntimeProto<value_type>;
     using self_protocol = std::conditional_t<is_writer, writer_protocol, reader_protocol>;
@@ -388,9 +629,9 @@ concept CtxFitsSwmrWriterSession =
     SwmrSessionSurface<Swmr> && SwmrWriterHandleOf<Swmr, Handle> && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
 template <typename Ctx, typename Swmr, typename Handle>
-concept CtxFitsSwmrReaderSession = SwmrSessionSurface<Swmr> && std::same_as<Handle, typename Swmr::ReaderHandle>
-                                && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>
-                                && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>;
+concept CtxFitsSwmrReaderSession =
+    SwmrSessionSurface<Swmr> && SwmrReaderHandleOf<Swmr, Handle> && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>
+    && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>;
 
 // Each mint opens the handle on the protocol that the table above names
 // for its role.
@@ -422,6 +663,20 @@ struct ReaderTag {
 struct WriterBrand {};
 struct ReaderBrand {};
 }  // namespace detail::swmr_session_witness
+
+// The tags and the brands that the witness rows of the handles of a frame
+// name.  No code builds a session of them.  They are outside a detail
+// namespace, so the witness fixture of each row uses no detail name.
+namespace frame_witness {
+struct WriterTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct ReaderTag {
+    using permission_row = ::foundation::effects::Row<>;
+};
+struct WriterBrand {};
+struct ReaderBrand {};
+}  // namespace frame_witness
 
 }  // namespace fixy::channels::swmr_session
 

@@ -43,8 +43,8 @@ using ::fixy::concurrent::VariadicPipelineStage;
 template <class T>
 struct is_endpoint : std::false_type {};
 
-template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
-struct is_endpoint<Endpoint<Substr, Dir, Ctx>> : std::true_type {
+template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
+struct is_endpoint<Endpoint<Substr, Dir, Ctx, Handle>> : std::true_type {
     static constexpr Direction direction = Dir;
 };
 

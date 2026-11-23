@@ -11,6 +11,8 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
+#include <utility>
+
 namespace swmr_writer_session_lvalue_fixture {
 struct WriterTag {
     using permission_row = ::foundation::effects::Row<>;
@@ -29,11 +31,12 @@ int main() {
     using namespace swmr_writer_session_lvalue_fixture;
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
-    namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Swmr swmr{reader_root(), 1};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
-    auto session = ses::mint_writer_runtime_session<Swmr>(ctx, writer);
-    (void)session;
+    auto token = ses::with_writer(swmr, writer_root(), [&ctx](auto writer) noexcept {
+        auto session = ses::mint_writer_runtime_session<Swmr>(ctx, writer);
+        (void)session;
+        return std::move(writer).release();
+    });
     return 0;
 }

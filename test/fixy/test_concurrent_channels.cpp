@@ -56,24 +56,32 @@ auto bulk_root() noexcept {
 
 using Spsc = c::channel_t<int, 8, decltype(trace_root())>;
 using Mpsc = c::channel_t<int, 8, decltype(meta_root())>;
-// The lend of a producer gives the Option of the base.
+// The lend of a producer gives the Option of the base: the result of the
+// body, or Unit for a body that gives void.
 static_assert(
-    std::is_same_v<decltype(std::declval<Mpsc&>().producer(std::declval<::foundation::effects::cap::Nondet>())),
-                   ::foundation::core::Option<Mpsc::ProducerHandle>>);
+    std::is_same_v<decltype(c::with_producer(std::declval<Mpsc&>(), std::declval<::foundation::effects::cap::Nondet>(),
+                                             [](auto) noexcept { return 0; })),
+                   ::foundation::core::Option<int>>);
+static_assert(
+    std::is_same_v<decltype(c::with_producer(std::declval<Mpsc&>(), std::declval<::foundation::effects::cap::Nondet>(),
+                                             [](auto) noexcept {})),
+                   ::foundation::core::Option<::foundation::core::Unit>>);
 using OtherSpsc = c::channel_t<int, 8, decltype(other_root())>;
 
 // ── Ownership is in the types ────────────────────────────────────────
 
-static_assert(!std::is_copy_constructible_v<Spsc::ProducerHandle>);
-static_assert(!std::is_copy_assignable_v<Spsc::ProducerHandle>);
-static_assert(std::is_move_constructible_v<Spsc::ProducerHandle>);
+// The ends of the roles.  The handles of a frame read the same in
+// run_spsc_handles.
+static_assert(!std::is_copy_constructible_v<Spsc::ProducerEnd>);
+static_assert(!std::is_copy_assignable_v<Spsc::ProducerEnd>);
+static_assert(std::is_move_constructible_v<Spsc::ProducerEnd>);
 // A handle binds to one channel for life.  Rebinding would orphan the
 // original permission and let a second producer coexist with it.
-static_assert(!std::is_move_assignable_v<Spsc::ProducerHandle>);
-static_assert(!std::is_move_assignable_v<Spsc::ConsumerHandle>);
-static_assert(!std::is_copy_constructible_v<Mpsc::ProducerHandle>);
-static_assert(std::is_move_constructible_v<Mpsc::ProducerHandle>);
-static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
+static_assert(!std::is_move_assignable_v<Spsc::ProducerEnd>);
+static_assert(!std::is_move_assignable_v<Spsc::ConsumerEnd>);
+static_assert(!std::is_copy_constructible_v<Mpsc::ProducerEnd>);
+static_assert(std::is_move_constructible_v<Mpsc::ProducerEnd>);
+static_assert(!std::is_move_assignable_v<Mpsc::ConsumerEnd>);
 
 // The channel's identity is its address: the ring's atomics depend on a
 // stable one.
@@ -115,16 +123,16 @@ static_assert(c::cell_line_footprint(65) == 128);
 // Two control lines for the SPSC ring, its head and the line of the copies
 // of the producer, and one for the head of the MPSC ring, plus the cell,
 // which holds the turn word of the MPSC ring.
-static_assert(Spsc::ProducerHandle::per_call_working_set == 2 * 64 + 64);
-static_assert(Mpsc::ProducerHandle::per_call_working_set == 1 * 64 + 64);
+static_assert(Spsc::ProducerEnd::per_call_working_set == 2 * 64 + 64);
+static_assert(Mpsc::ProducerEnd::per_call_working_set == 1 * 64 + 64);
 
 // Unknown is the maximum, so a type that declares nothing reads as too
 // big to parallelize blindly rather than as free.
 struct DeclaresNothing {};
-static_assert(c::HasStaticPerCallWorkingSet<Spsc::ProducerHandle>);
+static_assert(c::HasStaticPerCallWorkingSet<Spsc::ProducerEnd>);
 static_assert(!c::HasStaticPerCallWorkingSet<DeclaresNothing>);
 static_assert(c::per_call_working_set_of_v<DeclaresNothing> == c::unknown_per_call_working_set);
-static_assert(c::per_call_working_set_of_v<Spsc::ProducerHandle> == Spsc::ProducerHandle::per_call_working_set);
+static_assert(c::per_call_working_set_of_v<Spsc::ProducerEnd> == Spsc::ProducerEnd::per_call_working_set);
 
 // The saturating add is what keeps a composed footprint from wrapping
 // into a small number and reading as cache-resident.
@@ -168,22 +176,17 @@ template <class Channel, class Producer, class Consumer>
     return 0;
 }
 
-[[nodiscard]] int spsc_split_and_run() {
-    Spsc channel{};
-
-    // The split of the root makes the two endpoint tokens, and no other
-    // path gives a token of this brand.
-    auto whole = trace_root();
-
-    // The whole permission is the proof that no handle is alive, so the
-    // body reaches the ring itself.  Here it leaves one value behind.
-    auto returned =
-        channel.with_recombined_access(std::move(whole), [](auto& ring) noexcept { (void)ring.try_push(100); });
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(returned));
-
-    auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
+// The pushes and pops of the two handles of the SPSC frame, and then the
+// read of the size on a third thread.
+template <class Producer, class Consumer>
+[[nodiscard]] int run_spsc_handles(Spsc const& channel, Producer&& producer, Consumer&& consumer) {
+    // The handles of the frame keep the ownership of their ends.
+    static_assert(!std::is_copy_constructible_v<Producer>);
+    static_assert(!std::is_copy_assignable_v<Producer>);
+    static_assert(std::is_move_constructible_v<Producer>);
+    static_assert(!std::is_move_assignable_v<Producer>);
+    static_assert(!std::is_move_assignable_v<Consumer>);
+    static_assert(c::per_call_working_set_of_v<Producer> == Spsc::ProducerEnd::per_call_working_set);
 
     // An empty pop gives the value -1, which no push gave.
     if (consumer.try_pop().value_or(-1) != 100) {
@@ -217,13 +220,32 @@ template <class Channel, class Producer, class Consumer>
         std::fprintf(stderr, "SPSC consumer popped from an empty channel\n");
         return 1;
     }
+    return size_on_a_third_thread(channel, std::move(producer), std::move(consumer));
+}
+
+[[nodiscard]] int spsc_split_and_run() {
+    Spsc channel{};
+
+    // The split of the root makes the two endpoint tokens, and no other
+    // path gives a token of this brand.
+    auto whole = trace_root();
+
+    // The whole permission is the proof that no handle is alive, so the
+    // body reaches the ring itself.  Here it leaves one value behind.
+    auto returned =
+        channel.with_recombined_access(std::move(whole), [](auto& ring) noexcept { (void)ring.try_push(100); });
+    auto [producer_perm, consumer_perm] =
+        perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(std::move(returned));
 
     // Always false by construction: there is no refcount to drain, and
     // the accessor exists only so this channel matches the shape of the
     // pool-backed ones.  Surrendering the recombined whole permission
     // is what proves no endpoint handle is alive here.
     static_assert(!Spsc::is_exclusive_active());
-    return size_on_a_third_thread(channel, std::move(producer), std::move(consumer));
+    return c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                        [&channel](auto producer, auto consumer) noexcept {
+                            return run_spsc_handles(channel, std::move(producer), std::move(consumer));
+                        });
 }
 
 // ── Runtime: the MPSC pool ───────────────────────────────────────────
@@ -253,58 +275,104 @@ template <class Channel>
         Mpsc::RecombinedParts{.root = std::move(root), .consumer = std::move(consumer_perm)},
         [](Mpsc::RecombinedRing& ring) noexcept { static_cast<void>(ring.try_push(41)); });
     channel.deposit_producer_root(std::move(returned.root));
-    auto consumer = channel.consumer(std::move(returned.consumer));
-    const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
-    int const popped = consumer.try_pop(merge).value_or(-1);
-    ::foundation::linear::drop(std::move(consumer));
+    int const popped = c::with_consumer(channel, std::move(returned.consumer), [](auto consumer) noexcept {
+        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+        int const item = consumer.try_pop(merge).value_or(-1);
+        ::foundation::linear::drop(std::move(consumer));
+        return item;
+    });
     if (popped != 41) {
         std::fprintf(stderr, "the body of with_recombined_access did not reach the ring of a merge channel\n");
         return 1;
     }
-    if (channel.is_exclusive_active() || channel.producer(kSnapshot).is_none()) {
+    if (channel.is_exclusive_active() || c::with_producer(channel, kSnapshot, [](auto) noexcept {}).is_none()) {
         std::fprintf(stderr, "the pool of a merge channel did not lend after the deposit of its root\n");
         return 1;
     }
     return 0;
 }
 
-[[nodiscard]] int mpsc_pool_accounting() {
-    auto [producer_root, consumer_perm] =
-        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
-    Mpsc channel{std::move(producer_root)};
-    auto consumer = channel.consumer(std::move(consumer_perm));
+// A lend door that lends no end calls no body, and it ends the body at
+// end_unrun_body of foundation/Linear.h.  The body holds the producer handle
+// of a wire channel, and the end of that handle closes the wire.  So the
+// consumer of the wire sees the close after the refused lend.
+[[nodiscard]] int mpsc_refused_lend_ends_its_body() {
+    auto merge_tokens = perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
+    Mpsc merge{std::move(merge_tokens.at(::foundation::core::index<0>()))};
+    auto root = merge.try_withdraw_producer_root(kSnapshot).expect("the root comes out with no producer out");
+    auto wire_tokens = perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(trace_root());
+    Spsc wire{};
+    bool const is_lent = c::with_producer(
+        wire, std::move(wire_tokens.at(::foundation::core::index<0>())), [&merge](auto producer) noexcept {
+            return c::with_producer(merge, kSnapshot,
+                                    [held = std::move(producer)](auto) mutable noexcept { std::move(held).close(); })
+                .is_some();
+        });
+    bool const is_closed =
+        c::with_consumer(wire, std::move(wire_tokens.at(::foundation::core::index<1>())), [](auto consumer) noexcept {
+            bool const closed = consumer.is_closed();
+            ::foundation::linear::drop(std::move(consumer));
+            return closed;
+        });
+    merge.deposit_producer_root(std::move(root));
+    c::with_consumer(merge, std::move(merge_tokens.at(::foundation::core::index<1>())),
+                     [](auto consumer) noexcept { ::foundation::linear::drop(std::move(consumer)); });
+    if (is_lent || !is_closed) {
+        fixy::report(fixy::Sink::Err,
+                     "a refused lend called its body, or it did not end the producer that the body held\n");
+        return 1;
+    }
+    return 0;
+}
 
+// The result of two nested producer frames when the pool lends no share to
+// one of them.
+constexpr int kNoProducerLent = -1;
+
+// The checks of the pool while two producer handles of a merge channel live.
+template <class First, class Second>
+[[nodiscard]] int check_two_producers(Mpsc& channel, First& first, Second& second) {
+    if (channel.outstanding_producers() != 2) {
+        std::fprintf(stderr, "the pool counted %llu shares where two were out\n",
+                     static_cast<unsigned long long>(channel.outstanding_producers()));
+        return 1;
+    }
+
+    // The producer root comes out of the pool only when no share is out.
+    if (can_withdraw_root(channel)) {
+        std::fprintf(stderr, "the producer root came out while producers were still out\n");
+        return 1;
+    }
+
+    if (!first.try_push(1) || !second.try_push(2)) {
+        std::fprintf(stderr, "a producer handle could not push\n");
+        return 1;
+    }
+    return 0;
+}
+
+// The checks of the pool of a merge channel while the consumer handle of
+// the frame of mpsc_pool_accounting lives.
+template <class Consumer>
+[[nodiscard]] int check_pool_accounting(Mpsc& channel, Consumer&& consumer) {
     if (channel.outstanding_producers() != 0 || channel.is_exclusive_active()) {
         std::fprintf(stderr, "a fresh MPSC channel reported outstanding producers\n");
         return 1;
     }
 
-    {
-        auto first_lent = channel.producer(kSnapshot);
-        auto second_lent = channel.producer(kSnapshot);
-        if (first_lent.is_none() || second_lent.is_none()) {
-            std::fprintf(stderr, "the pool refused a second producer — the fractional side is not fractional\n");
-            return 1;
-        }
-        auto first = std::move(first_lent).expect("the test above found a producer");
-        auto second = std::move(second_lent).expect("the test above found a producer");
-        if (channel.outstanding_producers() != 2) {
-            std::fprintf(stderr, "the pool counted %llu shares where two were out\n",
-                         static_cast<unsigned long long>(channel.outstanding_producers()));
-            return 1;
-        }
-
-        // The producer root comes out of the pool only when no share is out.
-        if (can_withdraw_root(channel)) {
-            std::fprintf(stderr, "the producer root came out while producers were still out\n");
-            return 1;
-        }
-
-        if (!first.try_push(1) || !second.try_push(2)) {
-            std::fprintf(stderr, "a producer handle could not push\n");
-            return 1;
-        }
+    // The two producer frames nest, so the two handles hold two shares at
+    // the same time.
+    auto lent_twice = c::with_producer(channel, kSnapshot, [&channel](auto first) noexcept {
+        return c::with_producer(channel, kSnapshot, [&channel, first = std::move(first)](auto second) mutable noexcept {
+            return check_two_producers(channel, first, second);
+        });
+    });
+    int const lent = std::move(lent_twice).value_or(::foundation::core::none).value_or(kNoProducerLent);
+    if (lent == kNoProducerLent) {
+        std::fprintf(stderr, "the pool refused a second producer — the fractional side is not fractional\n");
+        return 1;
     }
+    if (lent != 0) return lent;
 
     if (channel.outstanding_producers() != 0) {
         std::fprintf(stderr, "the pool did not reclaim its shares when the handles went out of scope\n");
@@ -314,7 +382,7 @@ template <class Channel>
     // With no share out, the root comes out, and the pool lends no share
     // while it is out.
     auto root = channel.try_withdraw_producer_root(kSnapshot).expect("the root comes out with no producer out");
-    bool const is_lent_while_out = channel.producer(kSnapshot).is_some();
+    bool const is_lent_while_out = c::with_producer(channel, kSnapshot, [](auto) noexcept {}).is_some();
     channel.deposit_producer_root(std::move(root));
     if (is_lent_while_out) {
         std::fprintf(stderr, "the pool lent a share while its root was out\n");
@@ -323,12 +391,9 @@ template <class Channel>
 
     // The pool lends again once the root is back, which is what makes the
     // exclusive window scoped rather than terminal.
-    {
-        auto after = channel.producer(kSnapshot);
-        if (after.is_none()) {
-            std::fprintf(stderr, "the pool stayed exclusive after the body returned\n");
-            return 1;
-        }
+    if (c::with_producer(channel, kSnapshot, [](auto) noexcept {}).is_none()) {
+        std::fprintf(stderr, "the pool stayed exclusive after the body returned\n");
+        return 1;
     }
 
     // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
@@ -349,10 +414,25 @@ template <class Channel>
     // The release door gives the consumer role and its token back, and the
     // released handle names no channel.  The token opens a new consumer
     // handle with no second claim.
-    auto second_consumer = channel.consumer(std::move(consumer).release());
-    if (consumer.channel_identity().is_bound() || !second_consumer.channel_identity().is_bound()) return 1;
-    ::foundation::linear::drop(std::move(second_consumer).release());
+    auto token = std::move(consumer).release();
+    bool const is_released_bound = consumer.channel_identity().is_bound();
+    bool is_second_bound = false;
+    auto second_token = c::with_consumer(channel, std::move(token), [&is_second_bound](auto second_consumer) noexcept {
+        is_second_bound = second_consumer.channel_identity().is_bound();
+        return std::move(second_consumer).release();
+    });
+    ::foundation::linear::drop(std::move(second_token));
+    if (is_released_bound || !is_second_bound) return 1;
     return 0;
+}
+
+[[nodiscard]] int mpsc_pool_accounting() {
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Mpsc::producer_tag, Mpsc::consumer_tag>(meta_root());
+    Mpsc channel{std::move(producer_root)};
+    return c::with_consumer(channel, std::move(consumer_perm), [&channel](auto consumer) noexcept {
+        return check_pool_accounting(channel, std::move(consumer));
+    });
 }
 
 // Several producer threads, each holding its own pool share.  The
@@ -366,42 +446,42 @@ template <class Channel>
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(bulk_root());
     BulkChannel channel{std::move(producer_root)};
-    auto consumer = channel.consumer(std::move(consumer_perm));
 
     fixy::Atomic<int> failures{0};
     fixy::Atomic<int> finished{0};
     int received = 0;
     long long sum = 0;
 
-    {
-        std::vector<std::jthread> producers;
-        for (int p = 0; p < kProducers; ++p) {
-            producers.emplace_back([&channel, &failures, &finished] {
-                auto lent = channel.producer(kSnapshot);
-                if (lent.is_none()) {
-                    static_cast<void>(failures.fetch_add_acq_rel(1));
-                    static_cast<void>(finished.fetch_add_acq_rel(1));
-                    return;
+    auto consumer_token = c::with_consumer(
+        channel, std::move(consumer_perm), [&channel, &failures, &finished, &received, &sum](auto consumer) noexcept {
+            {
+                std::vector<std::jthread> producers;
+                for (int p = 0; p < kProducers; ++p) {
+                    producers.emplace_back([&channel, &failures, &finished] {
+                        bool const is_lent = c::with_producer(channel, kSnapshot, [](auto handle) noexcept {
+                                                 for (int i = 0; i < kPerProducer;) {
+                                                     if (handle.try_push(1)) ++i;
+                                                 }
+                                             }).is_some();
+                        if (!is_lent) static_cast<void>(failures.fetch_add_acq_rel(1));
+                        static_cast<void>(finished.fetch_add_acq_rel(1));
+                    });
                 }
-                auto handle = std::move(lent).expect("the test above found a producer");
-                for (int i = 0; i < kPerProducer;) {
-                    if (handle.try_push(1)) ++i;
-                }
-                static_cast<void>(finished.fetch_add_acq_rel(1));
-            });
-        }
 
-        const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
-        while (received < kProducers * kPerProducer) {
-            auto item = consumer.try_pop(merge);
-            if (item.is_some()) {
-                sum += std::move(item).expect("the test above found an item");
-                ++received;
-            } else if (finished.load_acquire() == kProducers && consumer.empty_approx(kSnapshot)) {
-                break;
+                const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
+                while (received < kProducers * kPerProducer) {
+                    auto item = consumer.try_pop(merge);
+                    if (item.is_some()) {
+                        sum += std::move(item).expect("the test above found an item");
+                        ++received;
+                    } else if (finished.load_acquire() == kProducers && consumer.empty_approx(kSnapshot)) {
+                        break;
+                    }
+                }
             }
-        }
-    }
+            return std::move(consumer).release();
+        });
+    ::foundation::linear::drop(std::move(consumer_token));
 
     if (failures.load_acquire() != 0) {
         std::fprintf(stderr, "the pool refused a producer thread a share\n");
@@ -424,6 +504,7 @@ int main() {
     if (const int rc = spsc_split_and_run(); rc != 0) return rc;
     if (const int rc = mpsc_pool_accounting(); rc != 0) return rc;
     if (const int rc = mpsc_recombined_access(); rc != 0) return rc;
+    if (const int rc = mpsc_refused_lend_ends_its_body(); rc != 0) return rc;
     if (const int rc = mpsc_many_producer_threads(); rc != 0) return rc;
     return 0;
 }

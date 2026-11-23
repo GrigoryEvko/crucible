@@ -3,8 +3,8 @@
 // channel gets a second producer.
 //
 // The two channels here carry the same value type and the same capacity.
-// The fixture splits the token correctly for its own channel.  The call
-// that gives the token to the other channel fails.
+// The fixture splits the token correctly for its own channel.  The frame
+// door that gives the token to the other channel fails.
 
 #include <fixy/concurrent/PermissionedChannel.h>
 
@@ -27,10 +27,13 @@ using MetaChannel = c::channel_t<int, 8, decltype(meta_root())>;
 
 int main() {
     MetaChannel meta{};
-    auto [trace_producer, trace_consumer] =
+    auto trace_tokens =
         perm::mint_permission_split<TraceChannel::producer_tag, TraceChannel::consumer_tag>(trace_root());
-    (void)trace_consumer;
 
-    auto wrong = meta.producer(std::move(trace_producer));
-    return wrong.try_push(1) ? 0 : 1;
+    auto wrong =
+        c::with_producer(meta, std::move(trace_tokens.at(::foundation::core::index<0>())), [](auto producer) noexcept {
+            [[maybe_unused]] bool const is_pushed = producer.try_push(1);
+            return std::move(producer).release();
+        });
+    return 0;
 }

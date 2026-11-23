@@ -4,7 +4,8 @@
 // channel.  The mint names the protocol of the peer, but it mints one end,
 // and the consumer pole of the channel is minted apart, with a protocol that
 // this mint cannot see.  So its gate refuses a Resource that reaches a pole
-// of a channel, as the gate of mint_session does.
+// of a channel, as the gate of mint_session does.  The pole is the frame
+// handle of the producer, so the mint stands in the body of the frame door.
 //
 // Expected diagnostic: no mint_checkpoint_session admits the pole, because
 // the Resource reaches a pole of a channel.
@@ -35,11 +36,10 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>> ctx{eff::testing::bg()};
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto handle =
-        s::mint_checkpoint_session<Decider, s::dual_of_t<Decider>>(ctx, channel.producer(std::move(producer_perm)));
-    static_cast<void>(handle);
-    static_cast<void>(consumer_perm);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        auto handle = s::mint_checkpoint_session<Decider, s::dual_of_t<Decider>>(ctx, std::move(producer));
+        static_cast<void>(handle);
+    });
     return 0;
 }

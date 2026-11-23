@@ -2,7 +2,9 @@
 //
 // A single-writer stage drains a consumer endpoint.  A producer endpoint
 // has no pop, so it cannot feed the stage, and mint_swmr_stage_from_endpoint
-// rejects the call.
+// rejects the call.  The frame opens the two ends of the channel, so the
+// body names the consumer handle of the frame, and only the direction of
+// the endpoint is wrong.
 //
 // Expected diagnostic: CtxFitsSwmrStageFromEndpoint is not satisfied.
 
@@ -24,7 +26,10 @@ using In = c::channel_t<int, 8, decltype(in_root())>;
 struct Writer {
     void publish(int const&) noexcept {}
 };
-inline void body(In::ConsumerHandle&&, Writer&&) noexcept {}
+// The consumer handle carries the scope brand of its frame, so the body is
+// a template over the type of the handle.
+template <class Input>
+void body(Input&&, Writer&&) noexcept {}
 }  // namespace swmr_direction_fixture
 
 int main() {
@@ -33,10 +38,14 @@ int main() {
     namespace eff = ::foundation::effects;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     In in{};
-    auto [in_p, in_c] = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
-    (void)in_c;
-    auto stage = channels::mint_swmr_stage_from_endpoint<&body>(
-        ctx, channels::mint_endpoint<In, channels::Direction::Producer>(ctx, in.producer(std::move(in_p))), Writer{});
-    std::move(stage).run();
+    auto in_tokens = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
+    auto consumer_token = c::with_ends(
+        in, std::move(in_tokens.at(::foundation::core::index<0>())),
+        std::move(in_tokens.at(::foundation::core::index<1>())), [&ctx](auto producer, auto consumer) noexcept {
+            auto stage = channels::mint_swmr_stage_from_endpoint<&body<decltype(consumer)>>(
+                ctx, channels::mint_endpoint<In, channels::Direction::Producer>(ctx, std::move(producer)), Writer{});
+            std::move(stage).run();
+            return std::move(consumer).release();
+        });
     return 0;
 }

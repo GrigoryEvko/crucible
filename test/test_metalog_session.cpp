@@ -9,6 +9,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/os/ThreadTasks.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
@@ -22,6 +23,7 @@ namespace {
 
 namespace ms = ::crucible::metalog_session;
 namespace fp = ::foundation::permissions;
+namespace cc = ::fixy::concurrent;
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
@@ -45,36 +47,42 @@ constexpr ::foundation::effects::cap::Nondet kSnapshot = ::foundation::effects::
 // the row and the source of the context of the caller.
 constexpr FgCtx kPure = ::foundation::effects::testing::foreground();
 
+// A scope brand that the checks name.  No frame door gives a handle on it, and
+// each check below reads a frame handle of the log on it.
+struct CheckScope {};
+
 // The gate of each mint reads the context, the log and the handle.
-static_assert(ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle>
-              && ms::CtxFitsMetaLogConsumerSession<FgCtx, PermissionedLog, PermissionedLog::ConsumerHandle>);
-static_assert(!ms::CtxFitsMetaLogProducerSession<int, PermissionedLog, PermissionedLog::ProducerHandle>,
+static_assert(
+    ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::producer_handle<CheckScope>>
+    && ms::CtxFitsMetaLogConsumerSession<FgCtx, PermissionedLog, PermissionedLog::consumer_handle<CheckScope>>);
+static_assert(!ms::CtxFitsMetaLogProducerSession<int, PermissionedLog, PermissionedLog::producer_handle<CheckScope>>,
               "an int is not an execution context");
-static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, int, PermissionedLog::ProducerHandle>,
+static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, int, PermissionedLog::producer_handle<CheckScope>>,
               "an int is not a permissioned log");
-static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ConsumerHandle>,
+static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::consumer_handle<CheckScope>>,
               "the producer mint takes a producer");
-static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::ProducerHandle&>,
+static_assert(!ms::CtxFitsMetaLogProducerSession<FgCtx, PermissionedLog, PermissionedLog::producer_handle<CheckScope>&>,
               "the mint takes the handle by move");
 
 // The write of the log table appends in the context of the step, so that
 // context has a pure source.  A context whose source permits atoms does not
 // step the producer.  The read takes each context.
 template <typename Ctx>
-concept AppendsIn = ::fixy::session::PoleWritesIn<PermissionedLog::ProducerHandle, Ctx, ms::MetaLogRecord>;
+concept AppendsIn = ::fixy::session::PoleWritesIn<PermissionedLog::producer_handle<CheckScope>, Ctx, ms::MetaLogRecord>;
 static_assert(AppendsIn<FgCtx>);
 static_assert(!AppendsIn<::fixy::TestRunnerCtx>);
 static_assert(!AppendsIn<::foundation::effects::ExecCtx<::foundation::effects::Test, ::foundation::effects::Row<>>>);
-static_assert(::fixy::session::PoleReadsIn<PermissionedLog::ConsumerHandle, ::fixy::TestRunnerCtx, ms::MetaLogRecord>);
+static_assert(::fixy::session::PoleReadsIn<PermissionedLog::consumer_handle<CheckScope>, ::fixy::TestRunnerCtx,
+                                           ms::MetaLogRecord>);
 
 // A mint cannot throw.
 static_assert(noexcept(ms::mint_metalog_producer_session<PermissionedLog>(
-    std::declval<FgCtx const&>(), std::declval<PermissionedLog::ProducerHandle&&>())));
+    std::declval<FgCtx const&>(), std::declval<PermissionedLog::producer_handle<CheckScope>&&>())));
 static_assert(noexcept(ms::mint_metalog_consumer_session<PermissionedLog>(
-    std::declval<FgCtx const&>(), std::declval<PermissionedLog::ConsumerHandle&&>())));
+    std::declval<FgCtx const&>(), std::declval<PermissionedLog::consumer_handle<CheckScope>&&>())));
 
-using ProducerSession = ms::ProducerSessionHandle<PermissionedLog, FgCtx>;
-using ConsumerSession = ms::ConsumerSessionHandle<PermissionedLog, FgCtx>;
+using ProducerSession = ms::ProducerSessionHandle<PermissionedLog, FgCtx, CheckScope>;
+using ConsumerSession = ms::ConsumerSessionHandle<PermissionedLog, FgCtx, CheckScope>;
 
 // A Loop at the head is unrolled one iteration, so each first handle sits
 // at the choice of its loop body.
@@ -90,13 +98,13 @@ static_assert(std::is_same_v<ProducerSession::perm_set, fp::EmptyPermSet>);
 static_assert(std::is_same_v<ConsumerSession::perm_set, fp::EmptyPermSet>);
 
 // The session owns the handle, so the handle is its Resource by value.
-static_assert(std::is_same_v<ProducerSession::resource_type, PermissionedLog::ProducerHandle>);
-static_assert(std::is_same_v<ConsumerSession::resource_type, PermissionedLog::ConsumerHandle>);
+static_assert(std::is_same_v<ProducerSession::resource_type, PermissionedLog::producer_handle<CheckScope>>);
+static_assert(std::is_same_v<ConsumerSession::resource_type, PermissionedLog::consumer_handle<CheckScope>>);
 
 // A handle is exactly one pointer.  The permission token it carries is
 // empty and collapses into the binding.
-static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
-static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
+static_assert(sizeof(PermissionedLog::producer_handle<CheckScope>) == sizeof(void*));
+static_assert(sizeof(PermissionedLog::consumer_handle<CheckScope>) == sizeof(void*));
 
 // The wrapper names one MetaLog for life, so it has no copy and no move.
 static_assert(std::is_same_v<PermissionedLog::value_type, ::crucible::TensorMeta>);
@@ -141,15 +149,14 @@ void run_test(::fixy::TextView name, Body body) {
     return fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(log_root());
 }
 
-[[nodiscard]] auto mint_handles(PermissionedLog& log) {
-    auto [pp, cp] = mint_halves();
-    return ::fixy::Record{log.producer(std::move(pp)), log.consumer(std::move(cp))};
-}
+// The frame door with_ends of fixy/concurrent/PermissionedChannel.h opens the
+// two ends of the log and gives each handle to a body.  Each check runs in
+// that body, and each handle gives its token back at the end of the body.
 
 void test_permissioned_bulk_drain() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 3> records{
         make_meta(1),
@@ -157,53 +164,65 @@ void test_permissioned_bulk_drain() {
         make_meta(3),
     };
 
-    // The pure append takes a context whose row is empty, and it appends where
-    // the plain append appends.
-    const FgCtx fg = ::foundation::effects::testing::foreground();
-    const ::crucible::MetaIndex start = producer.try_append_pure(fg, records.view());
-    CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
+    cc::with_ends(
+        log, std::move(producer_token), std::move(consumer_token), [&records](auto producer, auto consumer) noexcept {
+            // The pure append takes a context whose row is empty, and it
+            // appends where the plain append appends.
+            const FgCtx fg = ::foundation::effects::testing::foreground();
+            const ::crucible::MetaIndex start = producer.try_append_pure(fg, records.view());
+            CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
+            CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
 
-    ::fixy::FixedArray<::crucible::TensorMeta, 3> drained{};
-    std::size_t next = 0;
-    const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta& meta) {
-        drained.with_element(::fixy::Index<3>::check(next++).expect("the drain gives at most the appended records"),
-                             [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
-    });
+            ::fixy::FixedArray<::crucible::TensorMeta, 3> drained{};
+            std::size_t next = 0;
+            const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta& meta) {
+                drained.with_element(
+                    ::fixy::Index<3>::check(next++).expect("the drain gives at most the appended records"),
+                    [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+            });
 
-    CRUCIBLE_TEST_ASSERT(kTest, count == records.size());
-    CRUCIBLE_TEST_ASSERT(kTest, next == records.size());
-    for (std::size_t i = 0; i < records.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(
-            kTest, same_meta(*drained.get(i).expect("a test reads an element at or past the count of its array"),
-                             *records.get(i).expect("a test reads an element at or past the count of its array")));
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == records.size());
+            CRUCIBLE_TEST_ASSERT(kTest, count == records.size());
+            CRUCIBLE_TEST_ASSERT(kTest, next == records.size());
+            for (std::size_t i = 0; i < records.size(); ++i) {
+                CRUCIBLE_TEST_ASSERT(
+                    kTest,
+                    same_meta(*drained.get(i).expect("a test reads an element at or past the count of its array"),
+                              *records.get(i).expect("a test reads an element at or past the count of its array")));
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == records.size());
+            ::foundation::linear::drop(std::move(producer).release());
+            ::foundation::linear::drop(std::move(consumer).release());
+        });
 }
 
 void test_single_append_drain() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
     const ::crucible::TensorMeta source = make_meta(42);
-    CRUCIBLE_TEST_ASSERT(kTest, producer.try_append_one_pure(kPure, source));
+    // The release door gives each role and its token back.
+    auto [producer_back, consumer_back] = cc::with_ends(
+        log, std::move(producer_token), std::move(consumer_token), [&source](auto producer, auto consumer) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, producer.try_append_one_pure(kPure, source));
 
-    auto drained = consumer.try_drain_one();
-    CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), source));
+            auto drained = consumer.try_drain_one();
+            CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
+            CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), source));
 
-    auto empty = consumer.try_drain_one();
-    CRUCIBLE_TEST_ASSERT(kTest, empty.is_none());
+            auto empty = consumer.try_drain_one();
+            CRUCIBLE_TEST_ASSERT(kTest, empty.is_none());
+            return ::fixy::Record{std::move(producer).release(), std::move(consumer).release()};
+        });
 
-    // The release door gives each role and its token back, and each token
-    // opens a new handle of its role with no second claim.
-    auto second_producer = log.producer(std::move(producer).release());
-    auto second_consumer = log.consumer(std::move(consumer).release());
-    CRUCIBLE_TEST_ASSERT(kTest, second_producer.try_append_one_pure(kPure, source));
-    CRUCIBLE_TEST_ASSERT(kTest, second_consumer.size_approx(kSnapshot) == 1);
-    ::foundation::linear::drop(std::move(second_producer).release());
-    ::foundation::linear::drop(std::move(second_consumer).release());
+    // Each token opens a new handle of its role with no second claim.
+    cc::with_ends(log, std::move(producer_back), std::move(consumer_back),
+                  [&source](auto second_producer, auto second_consumer) noexcept {
+                      CRUCIBLE_TEST_ASSERT(kTest, second_producer.try_append_one_pure(kPure, source));
+                      CRUCIBLE_TEST_ASSERT(kTest, second_consumer.size_approx(kSnapshot) == 1);
+                      ::foundation::linear::drop(std::move(second_producer).release());
+                      ::foundation::linear::drop(std::move(second_consumer).release());
+                  });
 }
 
 // A drain with a limit stops at the limit, and the next drain takes the
@@ -211,44 +230,50 @@ void test_single_append_drain() {
 void test_partial_drain() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 5> source{
         make_meta(1), make_meta(2), make_meta(3), make_meta(4), make_meta(5),
     };
-    const ::crucible::MetaIndex start = producer.try_append_pure(kPure, source.view());
-    CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
+    cc::with_ends(
+        log, std::move(producer_token), std::move(consumer_token), [&source](auto producer, auto consumer) noexcept {
+            const ::crucible::MetaIndex start = producer.try_append_pure(kPure, source.view());
+            CRUCIBLE_TEST_ASSERT(kTest, start.is_valid());
+            CRUCIBLE_TEST_ASSERT(kTest, start.raw() == 0);
 
-    ::fixy::FixedArray<::crucible::TensorMeta, 3> first_three{};
-    std::size_t next = 0;
-    const std::uint32_t drained_count = consumer.drain(
-        [&](const ::crucible::TensorMeta& meta) {
-            first_three.with_element(
-                ::fixy::Index<3>::check(next++).expect("the drain gives at most its limit of records"),
-                [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
-        },
-        /*max_items=*/3);
-    CRUCIBLE_TEST_ASSERT(kTest, drained_count == 3);
-    CRUCIBLE_TEST_ASSERT(kTest, next == 3);
-    for (std::size_t i = 0; i < first_three.size(); ++i) {
-        CRUCIBLE_TEST_ASSERT(
-            kTest, same_meta(*first_three.get(i).expect("a test reads an element at or past the count of its array"),
-                             *source.get(i).expect("a test reads an element at or past the count of its array")));
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, producer.size_approx(kSnapshot) == 2);
+            ::fixy::FixedArray<::crucible::TensorMeta, 3> first_three{};
+            std::size_t next = 0;
+            const std::uint32_t drained_count = consumer.drain(
+                [&](const ::crucible::TensorMeta& meta) {
+                    first_three.with_element(
+                        ::fixy::Index<3>::check(next++).expect("the drain gives at most its limit of records"),
+                        [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+                },
+                /*max_items=*/3);
+            CRUCIBLE_TEST_ASSERT(kTest, drained_count == 3);
+            CRUCIBLE_TEST_ASSERT(kTest, next == 3);
+            for (std::size_t i = 0; i < first_three.size(); ++i) {
+                CRUCIBLE_TEST_ASSERT(
+                    kTest,
+                    same_meta(*first_three.get(i).expect("a test reads an element at or past the count of its array"),
+                              *source.get(i).expect("a test reads an element at or past the count of its array")));
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, producer.size_approx(kSnapshot) == 2);
 
-    ::fixy::FixedArray<::crucible::TensorMeta, 2> rest{};
-    std::size_t rest_next = 0;
-    const std::uint32_t remaining = consumer.drain([&](const ::crucible::TensorMeta& meta) {
-        rest.with_element(::fixy::Index<2>::check(rest_next++).expect("the drain gives the records that stay"),
-                          [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, remaining == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<0>()), source.at(::fixy::index<3>())));
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<1>()), source.at(::fixy::index<4>())));
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
+            ::fixy::FixedArray<::crucible::TensorMeta, 2> rest{};
+            std::size_t rest_next = 0;
+            const std::uint32_t remaining = consumer.drain([&](const ::crucible::TensorMeta& meta) {
+                rest.with_element(::fixy::Index<2>::check(rest_next++).expect("the drain gives the records that stay"),
+                                  [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+            });
+            CRUCIBLE_TEST_ASSERT(kTest, remaining == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<0>()), source.at(::fixy::index<3>())));
+            CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<1>()), source.at(::fixy::index<4>())));
+            CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
+            ::foundation::linear::drop(std::move(producer).release());
+            ::foundation::linear::drop(std::move(consumer).release());
+        });
 }
 
 // A bulk append returns the index of the first record it wrote, and copy_at()
@@ -256,36 +281,45 @@ void test_partial_drain() {
 void test_metaindex_propagates() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
     const ::fixy::FixedArray<::crucible::TensorMeta, 3> second{make_meta(30), make_meta(40), make_meta(50)};
 
-    const ::crucible::MetaIndex idx_first = producer.try_append_pure(kPure, first.view());
-    CRUCIBLE_TEST_ASSERT(kTest, idx_first.is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, idx_first.raw() == 0);
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token),
+                  [&first, &second](auto producer, auto consumer) noexcept {
+                      const ::crucible::MetaIndex idx_first = producer.try_append_pure(kPure, first.view());
+                      CRUCIBLE_TEST_ASSERT(kTest, idx_first.is_valid());
+                      CRUCIBLE_TEST_ASSERT(kTest, idx_first.raw() == 0);
 
-    const ::crucible::MetaIndex idx_second = producer.try_append_pure(kPure, second.view());
-    CRUCIBLE_TEST_ASSERT(kTest, idx_second.is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, idx_second.raw() == first.size());
+                      const ::crucible::MetaIndex idx_second = producer.try_append_pure(kPure, second.view());
+                      CRUCIBLE_TEST_ASSERT(kTest, idx_second.is_valid());
+                      CRUCIBLE_TEST_ASSERT(kTest, idx_second.raw() == first.size());
 
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{0}), make_meta(10)));
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{2}), make_meta(30)));
+                      CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{0}), make_meta(10)));
+                      CRUCIBLE_TEST_ASSERT(kTest, same_meta(consumer.copy_at(::crucible::MetaIndex{2}), make_meta(30)));
+                      ::foundation::linear::drop(std::move(producer).release());
+                      ::foundation::linear::drop(std::move(consumer).release());
+                  });
 }
 
 void test_empty_drain() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
-    (void)producer;
+    auto [producer_token, consumer_token] = mint_halves();
 
-    std::size_t visited = 0;
-    const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta&) { ++visited; });
-    CRUCIBLE_TEST_ASSERT(kTest, count == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, visited == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, consumer.head_index() == 0);
+    // The producer appends nothing, and it gives its token back.
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
+        std::size_t visited = 0;
+        const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta&) { ++visited; });
+        CRUCIBLE_TEST_ASSERT(kTest, count == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, visited == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, consumer.size_approx(kSnapshot) == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, consumer.tail_index() == 0);
+        CRUCIBLE_TEST_ASSERT(kTest, consumer.head_index() == 0);
+        ::foundation::linear::drop(std::move(producer).release());
+        ::foundation::linear::drop(std::move(consumer).release());
+    });
 }
 
 // Each side holds its session through its mint, stops by its own choice and
@@ -314,54 +348,59 @@ struct ConsumerResult {
 
 // Each body owns its handle, and it gives its result back.  The thread door
 // joins both threads before it returns, and the test reads the results from
-// the value of the call.
+// the value of the call.  The two bodies take the handles of one frame by
+// move, so the thread door runs inside that frame.
 void test_typed_session_round_trip() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
     constexpr int kCount = 128;
 
-    auto produce = [handle = std::move(producer)]() mutable noexcept {
-        const FgCtx ctx = ::foundation::effects::testing::foreground();
-        auto head =
-            ::foundation::core::mint_seat(ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
-        for (int i = 0; i < kCount; ++i) {
-            head.step([&ctx, i](auto&& held) noexcept {
-                return std::move(held).template select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10));
-            });
-        }
-        auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
-        return ProducerResult{.is_done = true,
-                              .has_handle_back = back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount)};
-    };
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
+        auto produce = [handle = std::move(producer)]() mutable noexcept {
+            const FgCtx ctx = ::foundation::effects::testing::foreground();
+            auto head = ::foundation::core::mint_seat(
+                ms::mint_metalog_producer_session<PermissionedLog>(ctx, std::move(handle)));
+            for (int i = 0; i < kCount; ++i) {
+                head.step([&ctx, i](auto&& held) noexcept {
+                    return std::move(held).template select<0>(::fixy::session::no_label).send(ctx, make_meta(i + 10));
+                });
+            }
+            auto back = std::move(head).take().template select<1>(::fixy::session::no_label).close();
+            const bool has_handle_back = back.size_approx(kSnapshot) <= static_cast<std::uint32_t>(kCount);
+            ::foundation::linear::drop(std::move(back).release());
+            return ProducerResult{.is_done = true, .has_handle_back = has_handle_back};
+        };
 
-    auto consume = [handle = std::move(consumer)]() mutable noexcept {
-        const BgCtx ctx{::foundation::effects::testing::bg()};
-        int matched = 0;
-        auto head =
-            ::foundation::core::mint_seat(ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle)));
-        for (int i = 0; i < kCount; ++i) {
-            head.step([&ctx, &matched, i](auto&& held) noexcept {
-                auto [meta, next] = std::move(held).template select<0>(::fixy::session::no_label).recv(ctx);
-                matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
-                return std::move(next);
-            });
-        }
-        auto back = std::move(head).take().select<1>(::fixy::session::no_label).close();
-        return ConsumerResult{.matched = matched,
-                              .has_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount) ? 1 : 0};
-    };
+        auto consume = [handle = std::move(consumer)]() mutable noexcept {
+            const BgCtx ctx{::foundation::effects::testing::bg()};
+            int matched = 0;
+            auto head = ::foundation::core::mint_seat(
+                ms::mint_metalog_consumer_session<PermissionedLog>(ctx, std::move(handle)));
+            for (int i = 0; i < kCount; ++i) {
+                head.step([&ctx, &matched, i](auto&& held) noexcept {
+                    auto [meta, next] = std::move(held).template select<0>(::fixy::session::no_label).recv(ctx);
+                    matched += same_meta(meta, make_meta(i + 10)) ? 1 : 0;
+                    return std::move(next);
+                });
+            }
+            auto back = std::move(head).take().template select<1>(::fixy::session::no_label).close();
+            const int has_handle_back = back.tail_index() == static_cast<std::uint32_t>(kCount) ? 1 : 0;
+            ::foundation::linear::drop(std::move(back).release());
+            return ConsumerResult{.matched = matched, .has_handle_back = has_handle_back};
+        };
 
-    const ::fixy::BgLoadCtx bg{::foundation::effects::testing::bg()};
-    auto const [produced, consumed] =
-        ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(produce), std::move(consume))
-            .expect("the thread door starts the producer and the consumer");
+        const ::fixy::BgLoadCtx bg{::foundation::effects::testing::bg()};
+        auto const [produced, consumed] =
+            ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(produce), std::move(consume))
+                .expect("the thread door starts the producer and the consumer");
 
-    CRUCIBLE_TEST_ASSERT(kTest, produced.is_done);
-    CRUCIBLE_TEST_ASSERT(kTest, produced.has_handle_back);
-    CRUCIBLE_TEST_ASSERT(kTest, consumed.has_handle_back == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, consumed.matched == kCount);
+        CRUCIBLE_TEST_ASSERT(kTest, produced.is_done);
+        CRUCIBLE_TEST_ASSERT(kTest, produced.has_handle_back);
+        CRUCIBLE_TEST_ASSERT(kTest, consumed.has_handle_back == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, consumed.matched == kCount);
+    });
 }
 
 // A session that ends at once gives back a handle that still reaches the
@@ -370,17 +409,22 @@ void test_session_gives_the_handle_back() {
     const FgCtx fg = ::foundation::effects::testing::foreground();
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
+    auto [producer_token, consumer_token] = mint_halves();
 
-    auto producer_head = ms::mint_metalog_producer_session<PermissionedLog>(fg, std::move(producer));
-    auto consumer_head = ms::mint_metalog_consumer_session<PermissionedLog>(fg, std::move(consumer));
-    auto producer_back = std::move(producer_head).select<1>(::fixy::session::no_label).close();
-    auto consumer_back = std::move(consumer_head).select<1>(::fixy::session::no_label).close();
+    cc::with_ends(
+        log, std::move(producer_token), std::move(consumer_token), [&fg](auto producer, auto consumer) noexcept {
+            auto producer_head = ms::mint_metalog_producer_session<PermissionedLog>(fg, std::move(producer));
+            auto consumer_head = ms::mint_metalog_consumer_session<PermissionedLog>(fg, std::move(consumer));
+            auto producer_back = std::move(producer_head).template select<1>(::fixy::session::no_label).close();
+            auto consumer_back = std::move(consumer_head).template select<1>(::fixy::session::no_label).close();
 
-    CRUCIBLE_TEST_ASSERT(kTest, producer_back.try_append_one_pure(fg, make_meta(7)));
-    auto drained = consumer_back.try_drain_one();
-    CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
-    CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
+            CRUCIBLE_TEST_ASSERT(kTest, producer_back.try_append_one_pure(fg, make_meta(7)));
+            auto drained = consumer_back.try_drain_one();
+            CRUCIBLE_TEST_ASSERT(kTest, drained.is_some());
+            CRUCIBLE_TEST_ASSERT(kTest, same_meta(std::move(drained).expect("the log holds one record"), make_meta(7)));
+            ::foundation::linear::drop(std::move(producer_back).release());
+            ::foundation::linear::drop(std::move(consumer_back).release());
+        });
 }
 
 // A use of a moved-from handle ends the process.  The move gives the
@@ -400,28 +444,44 @@ template <typename Handle>
 void log_producer() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
-    [[maybe_unused]] auto moved = std::move(producer);
-    (void)opaque_ref(producer).try_append_one_pure(kPure, make_meta(1));
+    auto [producer_token, consumer_token] = mint_halves();
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
+        auto moved = std::move(producer);
+        (void)opaque_ref(producer).try_append_one_pure(kPure, make_meta(1));
+        ::foundation::linear::drop(std::move(moved).release());
+        ::foundation::linear::drop(std::move(consumer).release());
+    });
 }
 
 void log_consumer() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
-    auto [producer, consumer] = mint_handles(log);
-    [[maybe_unused]] auto moved = std::move(consumer);
-    (void)opaque_ref(consumer).try_drain_one();
+    auto [producer_token, consumer_token] = mint_halves();
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
+        auto moved = std::move(consumer);
+        (void)opaque_ref(consumer).try_drain_one();
+        ::foundation::linear::drop(std::move(producer).release());
+        ::foundation::linear::drop(std::move(moved).release());
+    });
 }
 
 // One call site that runs two times mints two roots of one brand.  The
-// claim of each role refuses the second live handle of that role.
+// claim of each role refuses the second live handle of that role, so the
+// second frame of a role, inside the first, ends the process.
 void second_live_producer() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
-    [[maybe_unused]] auto held = log.producer(std::move(first_producer));
-    [[maybe_unused]] auto second = log.producer(std::move(second_producer));
+    cc::with_producer(log, std::move(first_producer),
+                      [&log, second_producer = std::move(second_producer)](auto held) mutable noexcept {
+                          cc::with_producer(log, std::move(second_producer), [](auto second) noexcept {
+                              ::foundation::linear::drop(std::move(second).release());
+                          });
+                          ::foundation::linear::drop(std::move(held).release());
+                      });
+    ::foundation::linear::drop(std::move(first_consumer));
+    ::foundation::linear::drop(std::move(second_consumer));
 }
 
 void second_live_consumer() {
@@ -429,8 +489,15 @@ void second_live_consumer() {
     PermissionedLog log{raw_log};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
-    [[maybe_unused]] auto held = log.consumer(std::move(first_consumer));
-    [[maybe_unused]] auto second = log.consumer(std::move(second_consumer));
+    cc::with_consumer(log, std::move(first_consumer),
+                      [&log, second_consumer = std::move(second_consumer)](auto held) mutable noexcept {
+                          cc::with_consumer(log, std::move(second_consumer), [](auto second) noexcept {
+                              ::foundation::linear::drop(std::move(second).release());
+                          });
+                          ::foundation::linear::drop(std::move(held).release());
+                      });
+    ::foundation::linear::drop(std::move(first_producer));
+    ::foundation::linear::drop(std::move(second_producer));
 }
 
 // The consumer drains the first record, and the tail moves past it.  The
@@ -440,13 +507,15 @@ void copy_of_a_released_record() {
     ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
     PermissionedLog log{raw_log};
     auto [producer_token, consumer_token] = mint_halves();
-    auto producer = log.producer(std::move(producer_token));
-    auto consumer = log.consumer(std::move(consumer_token));
-    const ::crucible::TensorMeta record = make_meta(1);
-    CRUCIBLE_FATAL_INVARIANT(producer.try_append_one_pure(kPure, record)
-                             && producer.try_append_one_pure(kPure, record));
-    CRUCIBLE_FATAL_INVARIANT(consumer.drain([](const ::crucible::TensorMeta&) noexcept {}, 1) == 1);
-    (void)consumer.copy_at(::crucible::MetaIndex{0});
+    cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
+        const ::crucible::TensorMeta record = make_meta(1);
+        CRUCIBLE_FATAL_INVARIANT(producer.try_append_one_pure(kPure, record)
+                                 && producer.try_append_one_pure(kPure, record));
+        CRUCIBLE_FATAL_INVARIANT(consumer.drain([](const ::crucible::TensorMeta&) noexcept {}, 1) == 1);
+        (void)consumer.copy_at(::crucible::MetaIndex{0});
+        ::foundation::linear::drop(std::move(producer).release());
+        ::foundation::linear::drop(std::move(consumer).release());
+    });
 }
 
 // Each attack runs in a child through expect_dies of the Check family, and

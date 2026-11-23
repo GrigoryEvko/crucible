@@ -38,17 +38,14 @@ template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand
 using RuntimeMetricsChannel =
     ::fixy::channels::swmr_session::SwmrSession<RuntimeMetricsSample, RuntimeMetricsWriterTag, RuntimeMetricsReaderTag,
                                                 ReaderBrand, WriterBrand>;
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
-using RuntimeMetricsWriter = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::WriterHandle;
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
-using RuntimeMetricsReader = typename RuntimeMetricsChannel<ReaderBrand, WriterBrand>::ReaderHandle;
-
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
-[[nodiscard]] RuntimeMetricsWriter<ReaderBrand, WriterBrand>
-mint_metrics_writer(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
-                    ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission) noexcept {
-    return ::fixy::channels::swmr_session::mint_swmr_writer<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(
-        channel, std::move(permission));
+// The writer door of the channel: the body gets the writer handle of one
+// frame (with_writer of fixy/channels/SwmrSession.h), and the door gives the
+// result of the body.  The handle ends with the frame.
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Body>
+auto with_metrics_writer(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
+                         ::foundation::permissions::Permission<RuntimeMetricsWriterTag, WriterBrand>&& permission,
+                         Body&& body) noexcept {
+    return ::fixy::channels::swmr_session::with_writer(channel, std::move(permission), std::forward<Body>(body));
 }
 
 // Two consumers read this channel. The Keeper acts on a sample: it
@@ -62,15 +59,16 @@ mint_metrics_writer(RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
 // The role now rides in the type. Both roles read the same channel and
 // hold the same share, so the wrapper adds no state and no work; what
 // it adds is that KeeperMetricsReader and CanopyMetricsReader are
-// distinct types and do not convert.
-template <typename Role, ::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
+// distinct types and do not convert.  Handle is the reader handle of one
+// frame of the reader door, so the role reader holds the scope brand of that
+// frame and ends with it.
+template <typename Role, class Handle>
 class RuntimeMetricsRoleReader final {
 public:
     using role_type = Role;
     using value_type = RuntimeMetricsSample;
 
-    explicit RuntimeMetricsRoleReader(RuntimeMetricsReader<ReaderBrand, WriterBrand>&& handle) noexcept
-        : handle_{std::move(handle)} {}
+    explicit RuntimeMetricsRoleReader(Handle&& handle) noexcept : handle_{std::move(handle)} {}
 
     RuntimeMetricsRoleReader(RuntimeMetricsRoleReader const&) =
         delete("a metrics reader owns one SharedPermissionPool share");
@@ -99,41 +97,51 @@ public:
     [[nodiscard]] std::uint64_t version() const noexcept { return handle_.version(); }
 
 private:
-    RuntimeMetricsReader<ReaderBrand, WriterBrand> handle_;
+    Handle handle_;
 };
 
 struct KeeperMetricsRole {};
 struct CanopyMetricsRole {};
 
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
-using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole, ReaderBrand, WriterBrand>;
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand>
-using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole, ReaderBrand, WriterBrand>;
+template <class Handle>
+using KeeperMetricsReader = RuntimeMetricsRoleReader<KeeperMetricsRole, Handle>;
+template <class Handle>
+using CanopyMetricsReader = RuntimeMetricsRoleReader<CanopyMetricsRole, Handle>;
 
-// Each reader mint lends a share of the reader pool of the channel.  The lend
-// fails while the reader root is out, and the schedule decides when the root
-// comes back, so the mint takes a context that holds Nondet (the gate of
-// mint_swmr_reader).
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx>
-    requires ::fixy::channels::swmr_session::CtxFitsSwmrReaderMint<Ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>>
-[[nodiscard]] ::fixy::Option<KeeperMetricsReader<ReaderBrand, WriterBrand>>
-mint_keeper_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
-    using Reader = KeeperMetricsReader<ReaderBrand, WriterBrand>;
-    auto handle =
-        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(ctx, channel);
-    if (handle.is_none()) return ::fixy::none;
-    return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
+// The gate of a reader door of the channel: the context fits the lend of the
+// reader pool (PoolCtx), so it holds Nondet.
+template <class Ctx>
+concept CtxFitsMetricsReaderDoor = ::foundation::permissions::PoolCtx<RuntimeMetricsReaderTag, Ctx>;
+
+// Each reader door lends a share of the reader pool of the channel, and the
+// body gets the reader of its role over the reader handle of one frame
+// (with_reader of fixy/channels/SwmrSession.h).  The lend fails while the
+// reader root is out, and the schedule decides when the root comes back, so
+// the door takes a context that holds Nondet, and it gives an Option of the
+// result of the body.  The door owns the body, as with_reader does: the body
+// moves into the closure that the door gives to with_reader, and that closure
+// calls it one time.  When the lend fails, with_reader ends that closure, and
+// the body with it.
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx, class Body>
+    requires CtxFitsMetricsReaderDoor<Ctx> && (!std::is_reference_v<Body>)
+[[nodiscard]] auto with_keeper_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
+                                              Body&& body) noexcept {
+    return ::fixy::channels::swmr_session::with_reader(
+        ctx, channel, [owned = std::move(body)](auto handle) mutable noexcept {
+            return ::foundation::linear::call_once(std::move(owned),
+                                                   KeeperMetricsReader<decltype(handle)>{std::move(handle)});
+        });
 }
 
-template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx>
-    requires ::fixy::channels::swmr_session::CtxFitsSwmrReaderMint<Ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>>
-[[nodiscard]] ::fixy::Option<CanopyMetricsReader<ReaderBrand, WriterBrand>>
-mint_canopy_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel) noexcept {
-    using Reader = CanopyMetricsReader<ReaderBrand, WriterBrand>;
-    auto handle =
-        ::fixy::channels::swmr_session::mint_swmr_reader<RuntimeMetricsChannel<ReaderBrand, WriterBrand>>(ctx, channel);
-    if (handle.is_none()) return ::fixy::none;
-    return ::fixy::Option<Reader>::some(Reader{std::move(handle).expect("the reader pool lent a share")});
+template <::foundation::brand::IsBrand ReaderBrand, ::foundation::brand::IsBrand WriterBrand, class Ctx, class Body>
+    requires CtxFitsMetricsReaderDoor<Ctx> && (!std::is_reference_v<Body>)
+[[nodiscard]] auto with_canopy_metrics_reader(Ctx const& ctx, RuntimeMetricsChannel<ReaderBrand, WriterBrand>& channel,
+                                              Body&& body) noexcept {
+    return ::fixy::channels::swmr_session::with_reader(
+        ctx, channel, [owned = std::move(body)](auto handle) mutable noexcept {
+            return ::foundation::linear::call_once(std::move(owned),
+                                                   CanopyMetricsReader<decltype(handle)>{std::move(handle)});
+        });
 }
 
 }  // namespace crucible::observe

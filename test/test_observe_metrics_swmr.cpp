@@ -105,29 +105,42 @@ void test_writer_publish_keeper_and_canopy_readers() {
     auto initial = observe::fresh_metrics_sample(make_metrics(0.0), steps);
     Channel channel{metrics_reader_root(), initial};
 
-    auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
-
-    auto keeper = observe::mint_keeper_metrics_reader(kTest, channel).expect("a fresh channel has a free reader share");
-    auto canopy = observe::mint_canopy_metrics_reader(kTest, channel).expect("a fresh channel has a free reader share");
-
     // The sample of step zero, graded seven steps later.
     ::fixy::SequenceStamp const sampled = steps.stamp();
     for (int step = 0; step < 7; ++step)
         static_cast<void>(steps.advance());
     auto sample = observe::metrics_sample_at(make_metrics(100.0), steps, sampled);
     CRUCIBLE_REQUIRE(sample.staleness().value == 7);
-    writer.publish(sample);
 
-    auto keeper_sample = keeper.load(kTest);
-    auto canopy_sample = canopy.load(kTest);
-    CRUCIBLE_REQUIRE(keeper.try_load(kNondet).is_some());
+    // The two reader frames open inside the frame of the writer, so the
+    // writer and the two readers live at the same time.  The writer body ends
+    // its handle on each path, so the checks of the readers stand in the
+    // innermost body, which holds no linear value.
+    bool const is_each_lent =
+        observe::with_metrics_writer(channel, metrics_writer_root(), [&channel, &sample](auto writer) noexcept {
+            writer.publish(sample);
+            auto const lent =
+                observe::with_keeper_metrics_reader(kTest, channel, [&channel, &sample](auto keeper) noexcept {
+                    return observe::with_canopy_metrics_reader(
+                               kTest, channel,
+                               [&channel, &sample, &keeper](auto canopy) noexcept {
+                                   auto keeper_sample = keeper.load(kTest);
+                                   auto canopy_sample = canopy.load(kTest);
+                                   CRUCIBLE_REQUIRE(keeper.try_load(kNondet).is_some());
 
-    CRUCIBLE_REQUIRE(near(keeper_sample.peek().meb_lambda_max, 101.0));
-    CRUCIBLE_REQUIRE(near(canopy_sample.peek().ntk_alpha_drift, 107.0));
-    CRUCIBLE_REQUIRE(keeper_sample.peek().delta_g_count == 3);
-    CRUCIBLE_REQUIRE(near(canopy_sample.peek().delta_g.at(::fixy::index<2>()), 110.0));
-    CRUCIBLE_REQUIRE(keeper_sample.staleness() == sample.staleness());
-    CRUCIBLE_REQUIRE(channel.outstanding_readers() == 2);
+                                   CRUCIBLE_REQUIRE(near(keeper_sample.peek().meb_lambda_max, 101.0));
+                                   CRUCIBLE_REQUIRE(near(canopy_sample.peek().ntk_alpha_drift, 107.0));
+                                   CRUCIBLE_REQUIRE(keeper_sample.peek().delta_g_count == 3);
+                                   CRUCIBLE_REQUIRE(near(canopy_sample.peek().delta_g.at(::fixy::index<2>()), 110.0));
+                                   CRUCIBLE_REQUIRE(keeper_sample.staleness() == sample.staleness());
+                                   CRUCIBLE_REQUIRE(channel.outstanding_readers() == 2);
+                               })
+                        .is_some();
+                });
+            ::foundation::linear::drop(std::move(writer).release());
+            return lent == ::fixy::some(true);
+        });
+    CRUCIBLE_REQUIRE(is_each_lent);
 }
 
 void test_exclusive_drain_waits_for_readers() {
@@ -135,10 +148,8 @@ void test_exclusive_drain_waits_for_readers() {
         ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(make_metrics(0.0), steps)};
 
-    {
-        auto reader = observe::mint_keeper_metrics_reader(kTest, channel);
-        CRUCIBLE_REQUIRE(reader.is_some());
-        // The reader root stays in the pool while a reader lives.
+    // The reader root stays in the pool while a reader lives.
+    auto const lent = observe::with_keeper_metrics_reader(kTest, channel, [&channel](auto /*reader*/) noexcept {
         bool const is_refused = channel.try_withdraw_reader_root(kTest).match(
             [&channel](auto root) noexcept {
                 channel.deposit_reader_root(std::move(root));
@@ -146,9 +157,10 @@ void test_exclusive_drain_waits_for_readers() {
             },
             []() noexcept { return true; });
         CRUCIBLE_REQUIRE(is_refused);
-    }
+    });
+    CRUCIBLE_REQUIRE(lent.is_some());
 
-    // The end of the scope gives the share of the reader back, so the root
+    // The end of the frame gives the share of the reader back, so the root
     // comes out.
     auto root = channel.try_withdraw_reader_root(kTest).expect("the root comes out with no reader out");
     bool const is_root_out = channel.is_exclusive_active();

@@ -1,12 +1,12 @@
 // Negative compile test.  This file must fail to compile.
 //
-// mint_swmr_reader lends a share of the reader pool.  The lend fails while
-// the reader root is out, and the schedule decides when the root comes back,
-// so the mint takes a context that holds Nondet.  The foreground context
-// holds no atom, so the mint refuses it.
+// The reader door with_reader lends a share of the reader pool.  The lend
+// fails while the reader root is out, and the schedule decides when the root
+// comes back, so the door takes a context that holds Nondet.  The foreground
+// context holds no atom, so the door refuses it.
 //
-// Expected diagnostic: CtxFitsSwmrReaderMint is not satisfied, because the
-// context owns no Nondet.
+// Expected diagnostic: PoolCtx is not satisfied, because the context owns no
+// Nondet.
 
 #include <fixy/channels/SwmrSession.h>
 
@@ -32,7 +32,6 @@ int main() {
     namespace eff = ::foundation::effects;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(ctx, swmr);
-    (void)reader;
-    return 0;
+    auto lent = ses::with_reader(ctx, swmr, [](auto reader) noexcept { return reader.version(); });
+    return lent.is_some() ? 0 : 1;
 }

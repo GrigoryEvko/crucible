@@ -18,10 +18,13 @@ int main() {
     using Wire = ::fixy::concurrent::channel_t<int, 8, decltype(root)>;
     Wire channel{};
     ::fixy::concurrent::EventCount events{};
-    auto [producer_perm, consumer_perm] =
+    auto tokens =
         ::foundation::permissions::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    auto got = consumer.receive_waiting<::fixy::concurrent::SpinThenPark<1000>>(
-        ::foundation::effects::testing::foreground(), events);
-    return got.is_ok() ? 0 : 1;
+    auto token = ::fixy::concurrent::with_consumer(
+        channel, std::move(tokens.at(::foundation::core::index<1>())), [&events](auto consumer) noexcept {
+            [[maybe_unused]] auto got = consumer.template receive_waiting<::fixy::concurrent::SpinThenPark<1000>>(
+                ::foundation::effects::testing::foreground(), events);
+            return std::move(consumer).release();
+        });
+    return 0;
 }

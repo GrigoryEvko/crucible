@@ -637,12 +637,12 @@ int check_keyed_recording() {
 
 struct RecordedLog {
     using value_type = int;
-    struct ProducerHandle {
+    struct ProducerEnd {
         using channel_type = RecordedLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
     };
-    struct ConsumerHandle {
+    struct ConsumerEnd {
         using channel_type = RecordedLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
@@ -652,7 +652,7 @@ struct RecordedLog {
 int check_pole_select_recording() {
     s::SessionEventLog log;
     auto recorded = s::mint_recorded_session(
-        s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(bg_ctx(), RecordedLog::ProducerHandle{}),
+        s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(bg_ctx(), RecordedLog::ProducerEnd{}),
         s::mint_session_event_writer(log), kSelf, kPeer);
     auto at_end = std::move(recorded).select<1>(s::no_label);
     (void)std::move(at_end).close();

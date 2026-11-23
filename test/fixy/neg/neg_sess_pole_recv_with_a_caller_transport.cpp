@@ -3,7 +3,9 @@
 // A session over a pole of a channel receives through the read that the
 // pole table of its channel names, in the context of the step.  A
 // transport of the caller would move the values of one channel in a second
-// way, so the receive of a pole takes no transport.
+// way, so the receive of a pole takes no transport.  The session runs over
+// the frame handle of the consumer, so it opens in the body of the frame
+// door.
 //
 // Expected diagnostic: [Pole_Owns_Its_Transport] at the receive of the
 // handle.
@@ -32,15 +34,16 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer = channel.producer(std::move(producer_perm));
-    (void)producer.try_push(7);
-    auto head = channels::mint_substrate_session<Channel, channels::Direction::Consumer>(
-        ctx, channel.consumer(std::move(consumer_perm)));
-    auto [value, next] =
-        std::move(head).recv([](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); });
-    (void)value;
-    std::move(next).detach(::fixy::session::detach_reason::TestInstrumentation{});
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_ends(channel, std::move(tokens.at(::foundation::core::index<0>())),
+                 std::move(tokens.at(::foundation::core::index<1>())), [&ctx](auto producer, auto consumer) noexcept {
+                     (void)producer.try_push(7);
+                     std::move(producer).close();
+                     auto head = channels::mint_substrate_session<Channel, channels::Direction::Consumer>(
+                         ctx, std::move(consumer));
+                     auto received = std::move(head).recv(
+                         [](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); });
+                     (void)received;
+                 });
     return 0;
 }

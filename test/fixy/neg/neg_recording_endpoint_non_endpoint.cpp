@@ -2,7 +2,8 @@
 //
 // mint_recording_endpoint wraps an endpoint.  A bare channel handle is not
 // an endpoint: it was never bound to a context, so no gate has admitted
-// its protocol, and the mint does not accept it.
+// its protocol, and the mint does not accept it.  The handle is the frame
+// handle of the producer, so the call stands in the body of the frame door.
 //
 // Expected diagnostic: no overload of mint_recording_endpoint takes a
 // channel handle.
@@ -28,13 +29,12 @@ int main() {
     namespace perm = ::foundation::permissions;
     namespace s = ::fixy::session;
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    (void)consumer_perm;
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     s::SessionEventLog log;
-    auto recorded =
-        channels::mint_recording_endpoint(channel.producer(std::move(producer_perm)), s::mint_session_event_writer(log),
-                                          s::RoleTagId{1}, s::RoleTagId{2});
-    (void)recorded;
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&log](auto producer) noexcept {
+        auto recorded = channels::mint_recording_endpoint(std::move(producer), s::mint_session_event_writer(log),
+                                                          s::RoleTagId{1}, s::RoleTagId{2});
+        (void)recorded;
+    });
     return 0;
 }

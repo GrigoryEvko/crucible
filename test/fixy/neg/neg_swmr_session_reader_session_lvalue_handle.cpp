@@ -32,9 +32,9 @@ int main() {
     namespace eff = ::foundation::effects;
     const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(ctx, swmr);
-    auto handle = std::move(reader).expect("the pool lends a share");
-    auto session = ses::mint_reader_runtime_session<Swmr>(ctx, handle);
-    (void)session;
-    return 0;
+    auto lent = ses::with_reader(ctx, swmr, [&ctx](auto reader) noexcept {
+        auto session = ses::mint_reader_runtime_session<Swmr>(ctx, reader);
+        (void)session;
+    });
+    return lent.is_some() ? 0 : 1;
 }

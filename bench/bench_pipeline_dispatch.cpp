@@ -163,8 +163,8 @@ static_assert(LargePipeline::inline_safe);
 
 template <class Stage>
 [[nodiscard]] static auto mint_bench_stage() noexcept {
-    return cc::mint_stage<Stage::fn_ptr>(kForeground, typename Stage::consumer_handle_type{},
-                                         typename Stage::producer_handle_type{});
+    return cc::mint_stage<Stage::fn_ptr()>(kForeground, typename Stage::consumer_handle_type{},
+                                           typename Stage::producer_handle_type{});
 }
 
 // Each stage of the list, in order, on the calling thread.

@@ -1,29 +1,34 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// A MetaLog producer endpoint appends only.  The consumer-side drain method
-// is structurally absent from ProducerHandle.
+// A MetaLog producer endpoint appends only.  The producer door of the log
+// gives its body a MetaLogProducerHandle, and the consumer-side drain method
+// is structurally absent from it.
 
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 
 #include <utility>
 
 namespace {
 struct Tag {};
-auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace
 
 int main() {
+    auto root = ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [pp, cp] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root());
-    (void)cp;
-    auto producer = log.producer(std::move(pp));
-    [[maybe_unused]] auto record = producer.try_drain_one();
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_producer(log, std::move(tokens.at(::foundation::core::index<0>())),
+                                      [](auto producer) noexcept -> void {
+                                          [[maybe_unused]] auto record = producer.try_drain_one();
+                                          ::foundation::linear::drop(std::move(producer).release());
+                                      });
     return 0;
 }

@@ -22,12 +22,12 @@ namespace recorded_pole_select_fixture {
 namespace s = ::fixy::session;
 struct IntLog {
     using value_type = int;
-    struct ProducerHandle {
+    struct ProducerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
     };
-    struct ConsumerHandle {
+    struct ConsumerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
@@ -39,10 +39,10 @@ int main() {
     using namespace recorded_pole_select_fixture;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     s::SessionEventLog log;
-    auto recorded = s::mint_recorded_session(
-        s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerHandle{}),
-        s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
-    auto at_end = std::move(recorded).select<1>([](IntLog::ProducerHandle&, std::size_t) noexcept { return true; });
+    auto recorded =
+        s::mint_recorded_session(s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerEnd{}),
+                                 s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+    auto at_end = std::move(recorded).select<1>([](IntLog::ProducerEnd&, std::size_t) noexcept { return true; });
     std::move(at_end).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

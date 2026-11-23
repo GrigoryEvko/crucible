@@ -67,38 +67,50 @@ void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, ParcelTag>>();
         using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
-        // The two handles have the shapes that a stage reads, with a Box as
-        // the payload, and they name one channel.
-        static_assert(c::is_producer_handle_v<Channel::ProducerHandle>);
-        static_assert(c::is_consumer_handle_v<Channel::ConsumerHandle>);
-        static_assert(std::is_same_v<c::producer_handle_value_t<Channel::ProducerHandle>, fixy::Box<Parcel>>);
-        static_assert(std::is_same_v<c::consumer_handle_value_t<Channel::ConsumerHandle>, fixy::Box<Parcel>>);
-        static_assert(c::HandlesShareChannel<Channel::ProducerHandle, Channel::ConsumerHandle>);
-        // Each handle states the capacity of the channel.
-        static_assert(Channel::ProducerHandle::channel_capacity == 2 && Channel::ConsumerHandle::channel_capacity == 2);
-        static_assert(!std::is_copy_constructible_v<Channel::ProducerHandle>);
-        static_assert(!std::is_move_assignable_v<Channel::ConsumerHandle>);
+        // The two ends have the shapes that a stage reads, with a Box as the
+        // payload, and they name one channel.  The handles of the frame read
+        // the same in the body below.
+        static_assert(c::is_producer_handle_v<Channel::ProducerEnd>);
+        static_assert(c::is_consumer_handle_v<Channel::ConsumerEnd>);
+        static_assert(std::is_same_v<c::producer_handle_value_t<Channel::ProducerEnd>, fixy::Box<Parcel>>);
+        static_assert(std::is_same_v<c::consumer_handle_value_t<Channel::ConsumerEnd>, fixy::Box<Parcel>>);
+        static_assert(c::HandlesShareChannel<Channel::ProducerEnd, Channel::ConsumerEnd>);
+        // Each end states the capacity of the channel.
+        static_assert(Channel::ProducerEnd::channel_capacity == 2 && Channel::ConsumerEnd::channel_capacity == 2);
+        static_assert(!std::is_copy_constructible_v<Channel::ProducerEnd>);
+        static_assert(!std::is_move_assignable_v<Channel::ConsumerEnd>);
         static_assert(!std::is_move_constructible_v<Channel>);
         Channel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
-        auto producer = channel.producer(std::move(producer_perm));
-        auto consumer = channel.consumer(std::move(consumer_perm));
+        c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                     [&test](auto producer, auto consumer) noexcept {
+                         using Producer = decltype(producer);
+                         using Consumer = decltype(consumer);
+                         static_assert(c::is_producer_handle_v<Producer>);
+                         static_assert(c::is_consumer_handle_v<Consumer>);
+                         static_assert(std::is_same_v<c::producer_handle_value_t<Producer>, fixy::Box<Parcel>>);
+                         static_assert(std::is_same_v<c::consumer_handle_value_t<Consumer>, fixy::Box<Parcel>>);
+                         static_assert(c::HandlesShareChannel<Producer, Consumer>);
+                         static_assert(Producer::channel_capacity == 2 && Consumer::channel_capacity == 2);
+                         static_assert(!std::is_copy_constructible_v<Producer>);
+                         static_assert(!std::is_move_assignable_v<Consumer>);
 
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_pop().is_none());
-        CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(1)).is_none());
-        CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(2)).is_none());
-        fixy::Option<fixy::Box<Parcel>> const refused = producer.try_push(make_parcel(3));
-        CRUCIBLE_TEST_ASSERT(test, label_of(refused) == 3);
-        CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 3);
+                         CRUCIBLE_TEST_ASSERT(test, consumer.try_pop().is_none());
+                         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(1)).is_none());
+                         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(2)).is_none());
+                         fixy::Option<fixy::Box<Parcel>> const refused = producer.try_push(make_parcel(3));
+                         CRUCIBLE_TEST_ASSERT(test, label_of(refused) == 3);
+                         CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 3);
 
-        fixy::Option<fixy::Box<Parcel>> const first = consumer.try_pop();
-        fixy::Option<fixy::Box<Parcel>> const second = consumer.try_pop();
-        CRUCIBLE_TEST_ASSERT(test, label_of(first) == 1);
-        CRUCIBLE_TEST_ASSERT(test, label_of(second) == 2);
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_pop().is_none());
-        ::foundation::linear::drop(std::move(producer));
-        ::foundation::linear::drop(std::move(consumer));
+                         fixy::Option<fixy::Box<Parcel>> const first = consumer.try_pop();
+                         fixy::Option<fixy::Box<Parcel>> const second = consumer.try_pop();
+                         CRUCIBLE_TEST_ASSERT(test, label_of(first) == 1);
+                         CRUCIBLE_TEST_ASSERT(test, label_of(second) == 2);
+                         CRUCIBLE_TEST_ASSERT(test, consumer.try_pop().is_none());
+                         ::foundation::linear::drop(std::move(producer));
+                         ::foundation::linear::drop(std::move(consumer));
+                     });
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
@@ -113,17 +125,18 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
         Channel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        auto producer = channel.producer(std::move(producer_perm));
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_receive().err() == fixy::some(c::NoItem::Empty));
-        CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(5)).is_none());
-        std::move(producer).close();
+        c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                     [&test](auto producer, auto consumer) noexcept {
+                         CRUCIBLE_TEST_ASSERT(test, consumer.try_receive().err() == fixy::some(c::NoItem::Empty));
+                         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(5)).is_none());
+                         std::move(producer).close();
 
-        CRUCIBLE_TEST_ASSERT(test, consumer.is_closed());
-        fixy::Option<fixy::Box<Parcel>> const last = consumer.try_receive().ok();
-        CRUCIBLE_TEST_ASSERT(test, label_of(last) == 5);
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_receive().err() == fixy::some(c::NoItem::Closed));
-        ::foundation::linear::drop(std::move(consumer));
+                         CRUCIBLE_TEST_ASSERT(test, consumer.is_closed());
+                         fixy::Option<fixy::Box<Parcel>> const last = consumer.try_receive().ok();
+                         CRUCIBLE_TEST_ASSERT(test, label_of(last) == 5);
+                         CRUCIBLE_TEST_ASSERT(test, consumer.try_receive().err() == fixy::some(c::NoItem::Closed));
+                         ::foundation::linear::drop(std::move(consumer));
+                     });
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
@@ -137,12 +150,13 @@ void end_of_channel_ends_each_object(fixy::TestRunnerCtx const& test) noexcept {
         Channel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
-        auto producer = channel.producer(std::move(producer_perm));
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(7)).is_none());
-        CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(8)).is_none());
-        ::foundation::linear::drop(std::move(producer));
-        ::foundation::linear::drop(std::move(consumer));
+        c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                     [&test](auto producer, auto consumer) noexcept {
+                         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(7)).is_none());
+                         CRUCIBLE_TEST_ASSERT(test, producer.try_push(make_parcel(8)).is_none());
+                         ::foundation::linear::drop(std::move(producer));
+                         ::foundation::linear::drop(std::move(consumer));
+                     });
         CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 2);
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
@@ -215,13 +229,17 @@ void two_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
         BulkChannel channel{};
         auto [producer_perm, consumer_perm] =
             perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(std::move(root));
-        ParcelFeeder feed{channel.producer(std::move(producer_perm))};
-        ParcelDrain drain{channel.consumer(std::move(consumer_perm))};
-        auto const joined =
-            ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
-                                       std::move(feed), std::move(drain))
-                .expect("the test starts the producer thread and the consumer thread");
-        count = joined.at(::fixy::index<1>());
+        count = c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                             [](auto producer, auto consumer) noexcept {
+                                 ParcelFeeder feed{std::move(producer)};
+                                 ParcelDrain drain{std::move(consumer)};
+                                 auto const joined = ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()},
+                                                                                ::fixy::thread::ThreadOptions{},
+                                                                                std::move(feed), std::move(drain))
+                                                         .expect("the test starts the producer thread and the "
+                                                                 "consumer thread");
+                                 return joined.at(::fixy::index<1>());
+                             });
     }
     CRUCIBLE_TEST_ASSERT(test, count.received == kBulkParcels);
     CRUCIBLE_TEST_ASSERT(test, count.out_of_order == 0);

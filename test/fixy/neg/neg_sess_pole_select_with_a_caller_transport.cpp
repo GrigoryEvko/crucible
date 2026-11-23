@@ -20,12 +20,12 @@ namespace pole_select_fixture {
 namespace s = ::fixy::session;
 struct IntLog {
     using value_type = int;
-    struct ProducerHandle {
+    struct ProducerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
     };
-    struct ConsumerHandle {
+    struct ConsumerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
@@ -36,8 +36,8 @@ struct IntLog {
 int main() {
     using namespace pole_select_fixture;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto head = s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerHandle{});
-    auto at_end = std::move(head).select<1>([](IntLog::ProducerHandle&, std::size_t) noexcept { return true; });
+    auto head = s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerEnd{});
+    auto at_end = std::move(head).select<1>([](IntLog::ProducerEnd&, std::size_t) noexcept { return true; });
     std::move(at_end).detach(s::detach_reason::TestInstrumentation{});
     return 0;
 }

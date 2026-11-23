@@ -57,26 +57,13 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
     RowPlaces const places{.spread = spread, .consumer = ::fixy::some(consumer_cpu)};
     StealTicks const steal_before = read_steal(places, ThreadCount{2});
     MemoryReading memory{.start = read_resident()};
-    typename Channel::ProducerHandle producer = channel.producer(std::move(producer_perm));
     // Each Box that the producer minted ends in the consumer, or in the
     // producer when the row stopped while the ring was full.
     std::uint64_t minted = 0;
     std::uint64_t kept = 0;
-    auto const push = [&control, &producer, &minted, &kept] [[gnu::always_inline]] () noexcept {
-        ::fixy::Box<Message> box = ::fixy::mint_box<Message>(bench_alloc(), Message{.stamp = kMessageStamp});
-        ++minted;
-        ::fixy::Option<::fixy::Box<Message>> rest = producer.try_push(std::move(box));
-        while (rest.is_some()) {
-            if (read_phase(control) == Phase::Stop) {
-                ++kept;
-                return;
-            }
-            CRUCIBLE_SPIN_PAUSE;
-            rest = producer.try_push(std::move(rest).expect("the test above found a Box"));
-        }
-    };
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
-    auto measure = [&control, &push, &memory, main_cpu, placement]() noexcept {
+    // The measure of the main thread over the push of the frame below.
+    auto measure_row = [&control, &memory, main_cpu, placement](auto const& push) noexcept {
         while (control.ready.value.load_acquire() < 1)
             CRUCIBLE_SPIN_PAUSE;
         Window const window = run_window_loop<BoxPushOp>(control, push, main_cpu);
@@ -122,44 +109,72 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
         control.phase.phase.store_release(Phase::Stop);
         return result;
     };
-    // The worker owns the consumer end: it pops each Box and drops it until
-    // the row stops, then it takes each Box that the ring still holds.  It
-    // gives the count of the Box values that it dropped.
-    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm))]() mutable noexcept {
-        auto end = std::move(owned);
-        std::uint64_t dropped = 0;
-        static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
-        auto const drop = [&dropped](::fixy::Box<Message>&& box) noexcept {
-            if (box->stamp != kMessageStamp) [[unlikely]]
-                refuse_message(box->stamp);
-            ::fixy::Box<Message> const ended{std::move(box)};
-            ++dropped;
-        };
-        while (read_phase(control) != Phase::Stop) {
-            ::fixy::Option<::fixy::Box<Message>> popped = end.try_pop();
-            if (popped.is_none()) {
-                CRUCIBLE_SPIN_PAUSE;
-                continue;
-            }
-            drop(std::move(popped).expect("the test above found a Box"));
-        }
-        for (::fixy::Option<::fixy::Box<Message>> popped = end.try_pop(); popped.is_some(); popped = end.try_pop())
-            drop(std::move(popped).expect("the loop test found a Box"));
-        ::foundation::linear::drop(std::move(end));
-        return dropped;
-    };
     ::fixy::thread::ThreadOptions const options{
         .name = "alloc-box-pop",
         .affinity = ::fixy::AffinityMask::single(static_cast<std::uint16_t>(consumer_cpu.raw())),
     };
-    auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, options, std::move(popper), measure)
-                      .expect("the thread door starts the worker of a box channel row");
-    std::uint64_t const dropped = values.at(::foundation::core::index<0>());
-    RowResult result = std::move(values.at(::foundation::core::index<1>()));
-    ::foundation::linear::drop(std::move(producer));
-    if (minted != dropped + kept) [[unlikely]]
+    std::uint64_t consumer_dropped = 0;
+    RowResult result{};
+    // The frame door opens the two ends before the window.  The worker starts
+    // and joins in its body, so each end ends inside the frame.  A report owns
+    // its samples, so the row is no result of the frame: the body moves it
+    // into result.
+    ::fixy::concurrent::with_ends(
+        channel, std::move(producer_perm), std::move(consumer_perm),
+        [&control, &measure_row, &options, &minted, &kept, &consumer_dropped, &result](auto producer,
+                                                                                       auto consumer) noexcept {
+            // The push reaches the linear producer handle through a Ref.
+            auto const push = [&control, sender = ::fixy::to(producer), &minted,
+                               &kept] [[gnu::always_inline]] () noexcept {
+                ::fixy::Box<Message> box = ::fixy::mint_box<Message>(bench_alloc(), Message{.stamp = kMessageStamp});
+                ++minted;
+                ::fixy::Option<::fixy::Box<Message>> rest = sender->try_push(std::move(box));
+                while (rest.is_some()) {
+                    if (read_phase(control) == Phase::Stop) {
+                        ++kept;
+                        return;
+                    }
+                    CRUCIBLE_SPIN_PAUSE;
+                    rest = sender->try_push(std::move(rest).expect("the test above found a Box"));
+                }
+            };
+            auto measure = [&measure_row, &push]() noexcept { return measure_row(push); };
+            // The worker owns the consumer end: it pops each Box and drops it
+            // until the row stops, then it takes each Box that the ring still
+            // holds.  It gives the count of the Box values that it dropped.
+            auto popper = [&control, owned = std::move(consumer)]() mutable noexcept {
+                auto end = std::move(owned);
+                std::uint64_t dropped = 0;
+                static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
+                auto const drop = [&dropped](::fixy::Box<Message>&& box) noexcept {
+                    if (box->stamp != kMessageStamp) [[unlikely]]
+                        refuse_message(box->stamp);
+                    ::fixy::Box<Message> const ended{std::move(box)};
+                    ++dropped;
+                };
+                while (read_phase(control) != Phase::Stop) {
+                    ::fixy::Option<::fixy::Box<Message>> popped = end.try_pop();
+                    if (popped.is_none()) {
+                        CRUCIBLE_SPIN_PAUSE;
+                        continue;
+                    }
+                    drop(std::move(popped).expect("the test above found a Box"));
+                }
+                for (::fixy::Option<::fixy::Box<Message>> popped = end.try_pop(); popped.is_some();
+                     popped = end.try_pop())
+                    drop(std::move(popped).expect("the loop test found a Box"));
+                ::foundation::linear::drop(std::move(end));
+                return dropped;
+            };
+            auto values = ::fixy::thread::run_beside(Starter{eff::testing::bg()}, options, std::move(popper), measure)
+                              .expect("the thread door starts the worker of a box channel row");
+            consumer_dropped = values.at(::foundation::core::index<0>());
+            result = std::move(values.at(::foundation::core::index<1>()));
+            ::foundation::linear::drop(std::move(producer));
+        });
+    if (minted != consumer_dropped + kept) [[unlikely]]
         ::fixy::fatal("the box channel row minted {} Box values, the consumer dropped {} and the producer kept {}",
-                      minted, dropped, kept);
+                      minted, consumer_dropped, kept);
     memory.end = read_resident();
     std::size_t harness = 0;
     for (bench::Report const& report : result.latency)
@@ -174,8 +189,7 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
 }  // namespace
 
 void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
-    ::fixy::report(::fixy::Sink::Out,
-                   "\n=== base box-channel: a Box of 64 bytes across a PermissionedBoxChannel ===\n");
+    bench::print("\n=== base box-channel: a Box of 64 bytes across a PermissionedBoxChannel ===\n");
     ::fixy::FixedList<RowResult, kMaxRows> rows{};
     ::fixy::FixedArray<Placement, 2> const placements{Placement::same_l3, Placement::other_l3};
     for (Placement const placement : placements) {

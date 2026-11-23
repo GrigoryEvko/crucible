@@ -2,7 +2,7 @@
 // from.  Two root sites of one user tag give two brands, so the two
 // channels here have one value type, one capacity and one tag, and they
 // are still two types.  A producer token of the second site does not
-// open the channel of the first site.
+// open the channel of the first site at its frame door.
 
 #include <fixy/concurrent/PermissionedChannel.h>
 
@@ -26,10 +26,13 @@ using SecondChannel = c::channel_t<int, 8, decltype(second_root())>;
 
 int main() {
     FirstChannel first{};
-    auto [second_producer, second_consumer] =
+    auto second_tokens =
         perm::mint_permission_split<SecondChannel::producer_tag, SecondChannel::consumer_tag>(second_root());
-    (void)second_consumer;
 
-    auto wrong = first.producer(std::move(second_producer));
-    return wrong.try_push(1) ? 0 : 1;
+    auto wrong = c::with_producer(first, std::move(second_tokens.at(::foundation::core::index<0>())),
+                                  [](auto producer) noexcept {
+                                      [[maybe_unused]] bool const is_pushed = producer.try_push(1);
+                                      return std::move(producer).release();
+                                  });
+    return 0;
 }

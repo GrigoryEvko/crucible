@@ -13,6 +13,8 @@
 #include <crucible/PermissionedMetaLog.h>
 #include <fixy/Ctx.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -20,20 +22,22 @@
 
 namespace {
 struct Tag {};
-auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace
 
 int main() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
+    auto root = ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [pp, cp] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root());
-    (void)cp;
-    auto producer = log.producer(std::move(pp));
-    const ::fixy::FixedArray<::crucible::TensorMeta, 1> record{};
-    (void)producer.try_append_pure(test.in_row<::foundation::effects::Row<>>(), record.view());
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_producer(
+        log, std::move(tokens.at(::foundation::core::index<0>())), [&test](auto producer) noexcept -> void {
+            const ::fixy::FixedArray<::crucible::TensorMeta, 1> record{};
+            (void)producer.try_append_pure(test.in_row<::foundation::effects::Row<>>(), record.view());
+            ::foundation::linear::drop(std::move(producer).release());
+        });
     return 0;
 }

@@ -10,6 +10,9 @@
 // the text of its refusal.  The positive
 // cases show that a claim comes back when its handle ends, and that a
 // pipeline over one channel instance for each link passes the check.
+//
+// A frame door gives each handle to its body, so an attack opens the second
+// handle of a role in the frame of the first one.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -67,10 +70,10 @@ using Mpsc = c::channel_t<int, 8, decltype(mpsc_root())>;
 using Swmr = ses::SwmrSession<int, WriterTag, ReaderTag, foundation::brand::brand_of_t<decltype(reader_root())>,
                               foundation::brand::brand_of_t<decltype(writer_root())>>;
 
-// Two root sites of one tag give two channel types, and their handles
-// name two channels.
+// Two root sites of one tag give two channel types, and their ends name two
+// channels.  A handle names the channel of its end.
 static_assert(!std::is_same_v<Link, OtherLink>);
-static_assert(!std::is_same_v<Link::ProducerHandle::channel_type, OtherLink::ConsumerHandle::channel_type>);
+static_assert(!std::is_same_v<Link::ProducerEnd::channel_type, OtherLink::ConsumerEnd::channel_type>);
 static_assert(!std::is_same_v<Link::brand_type, OtherLink::brand_type>);
 
 auto link_halves() noexcept { return perm::mint_permission_split<Link::producer_tag, Link::consumer_tag>(link_root()); }
@@ -81,31 +84,52 @@ void second_spsc_producer() {
     Link channel{};
     auto [first_producer, first_consumer] = link_halves();
     auto [second_producer, second_consumer] = link_halves();
-    [[maybe_unused]] auto held = channel.producer(std::move(first_producer));
-    [[maybe_unused]] auto second = channel.producer(std::move(second_producer));
+    auto token = c::with_producer(
+        channel, std::move(first_producer),
+        [&channel, second = std::move(second_producer)](auto held) mutable noexcept {
+            foundation::linear::drop(c::with_producer(channel, std::move(second),
+                                                      [](auto again) noexcept { return std::move(again).release(); }));
+            return std::move(held).release();
+        });
+    foundation::linear::drop(std::move(token));
 }
 
 void second_spsc_consumer() {
     Link channel{};
     auto [first_producer, first_consumer] = link_halves();
     auto [second_producer, second_consumer] = link_halves();
-    [[maybe_unused]] auto held = channel.consumer(std::move(first_consumer));
-    [[maybe_unused]] auto second = channel.consumer(std::move(second_consumer));
+    auto token = c::with_consumer(
+        channel, std::move(first_consumer),
+        [&channel, second = std::move(second_consumer)](auto held) mutable noexcept {
+            foundation::linear::drop(c::with_consumer(channel, std::move(second),
+                                                      [](auto again) noexcept { return std::move(again).release(); }));
+            return std::move(held).release();
+        });
+    foundation::linear::drop(std::move(token));
 }
 
 void recombined_access_while_a_handle_lives() {
     Link channel{};
     auto [producer, consumer] = link_halves();
-    [[maybe_unused]] auto held = channel.producer(std::move(producer));
-    (void)channel.with_recombined_access(link_root(), [](auto&) noexcept {});
+    auto token = c::with_producer(channel, std::move(producer), [&channel](auto held) noexcept {
+        static_cast<void>(channel.with_recombined_access(link_root(), [](auto&) noexcept {}));
+        return std::move(held).release();
+    });
+    foundation::linear::drop(std::move(token));
 }
 
 void second_mpsc_consumer() {
     auto [first_producer, first_consumer] = mpsc_halves();
     auto [second_producer, second_consumer] = mpsc_halves();
     Mpsc channel{std::move(first_producer)};
-    [[maybe_unused]] auto held = channel.consumer(std::move(first_consumer));
-    [[maybe_unused]] auto second = channel.consumer(std::move(second_consumer));
+    auto token = c::with_consumer(
+        channel, std::move(first_consumer),
+        [&channel, second = std::move(second_consumer)](auto held) mutable noexcept {
+            foundation::linear::drop(c::with_consumer(channel, std::move(second),
+                                                      [](auto again) noexcept { return std::move(again).release(); }));
+            return std::move(held).release();
+        });
+    foundation::linear::drop(std::move(token));
 }
 
 // A recombined access of a merge channel needs the root of this channel out of
@@ -168,8 +192,12 @@ void deposit_during_a_recombined_access() {
 
 void second_swmr_writer() {
     Swmr session{reader_root(), 0};
-    [[maybe_unused]] auto held = ses::mint_swmr_writer<Swmr>(session, writer_root());
-    [[maybe_unused]] auto second = ses::mint_swmr_writer<Swmr>(session, writer_root());
+    auto token = ses::with_writer(session, writer_root(), [&session](auto held) noexcept {
+        foundation::linear::drop(
+            ses::with_writer(session, writer_root(), [](auto second) noexcept { return std::move(second).release(); }));
+        return std::move(held).release();
+    });
+    foundation::linear::drop(std::move(token));
 }
 
 // The target of a move takes the claim of the source session, so the claim
@@ -177,18 +205,25 @@ void second_swmr_writer() {
 // assignment, because the assignment would drop the token of the target.
 void writer_move_keeps_the_source_claim() {
     Swmr session{reader_root(), 0};
-    auto source = ses::mint_swmr_writer<Swmr>(session, writer_root());
-    [[maybe_unused]] auto target = std::move(source);
-    [[maybe_unused]] auto second = ses::mint_swmr_writer<Swmr>(session, writer_root());
+    auto token = ses::with_writer(session, writer_root(), [&session](auto source) noexcept {
+        auto target = std::move(source);
+        foundation::linear::drop(
+            ses::with_writer(session, writer_root(), [](auto second) noexcept { return std::move(second).release(); }));
+        return std::move(target).release();
+    });
+    foundation::linear::drop(std::move(token));
 }
 
 // A stage body that drains one link into the next.  The body does nothing,
-// because the cases below check the mint and not the transfer.
-inline void into_link(Link::ConsumerHandle&&, Link::ProducerHandle&&) noexcept {}
+// because the cases below check the mint and not the transfer.  Each handle
+// names the scope of its frame, so the body is a template over the handles.
+template <class In, class Out>
+void into_link(In&&, Out&&) noexcept {}
 
 // Two links of one type, from one root site.  The first stage writes the
 // first link, and the second stage drains the second link, so no value
-// goes from one to the other.
+// goes from one to the other.  Each handle opens in the frame of the handle
+// before it, and the innermost body mints the stages and the pipeline.
 void pipeline_joins_two_links_of_one_type() {
     const fixy::HotFgCtx ctx = foundation::effects::testing::foreground();
     const fixy::BgDrainCtx coordinator{foundation::effects::testing::bg()};
@@ -200,11 +235,36 @@ void pipeline_joins_two_links_of_one_type() {
     auto [first_producer, first_consumer] = link_halves();
     auto [second_producer, second_consumer] = link_halves();
     auto [sink_producer, sink_consumer] = link_halves();
-    auto writes_first = c::mint_stage<&into_link>(ctx, source.consumer(std::move(source_consumer)),
-                                                  first.producer(std::move(first_producer)));
-    auto drains_second = c::mint_stage<&into_link>(ctx, second.consumer(std::move(second_consumer)),
-                                                   sink.producer(std::move(sink_producer)));
-    [[maybe_unused]] auto crossed = c::mint_pipeline(coordinator, std::move(writes_first), std::move(drains_second));
+    c::with_consumer(
+        source, std::move(source_consumer),
+        [&ctx, &coordinator, &first, &second, &sink, first_producer = std::move(first_producer),
+         second_consumer = std::move(second_consumer),
+         sink_producer = std::move(sink_producer)](auto source_in) mutable noexcept {
+            c::with_producer(
+                first, std::move(first_producer),
+                [&ctx, &coordinator, &second, &sink, source_in = std::move(source_in),
+                 second_consumer = std::move(second_consumer),
+                 sink_producer = std::move(sink_producer)](auto first_out) mutable noexcept {
+                    c::with_consumer(
+                        second, std::move(second_consumer),
+                        [&ctx, &coordinator, &sink, source_in = std::move(source_in), first_out = std::move(first_out),
+                         sink_producer = std::move(sink_producer)](auto second_in) mutable noexcept {
+                            c::with_producer(
+                                sink, std::move(sink_producer),
+                                [&ctx, &coordinator, source_in = std::move(source_in), first_out = std::move(first_out),
+                                 second_in = std::move(second_in)](auto sink_out) mutable noexcept {
+                                    auto writes_first =
+                                        c::mint_stage<&into_link<decltype(source_in), decltype(first_out)>>(
+                                            ctx, std::move(source_in), std::move(first_out));
+                                    auto drains_second =
+                                        c::mint_stage<&into_link<decltype(second_in), decltype(sink_out)>>(
+                                            ctx, std::move(second_in), std::move(sink_out));
+                                    [[maybe_unused]] auto crossed = c::mint_pipeline(
+                                        coordinator, std::move(writes_first), std::move(drains_second));
+                                });
+                        });
+                });
+        });
 }
 
 // A refused claim ends the process, so each attack runs in a child through
@@ -238,6 +298,15 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  10 attacks refused\n");
 }
 
+// True when the reader door lends a reader of the session and the reader
+// loads expected.  The lend of a share and the load take Nondet, which the
+// context holds.
+[[nodiscard]] bool loads_expected(::fixy::TestRunnerCtx const& spin, Swmr& session, int expected) noexcept {
+    return ses::with_reader(spin, session,
+                            [&spin, expected](auto reader) noexcept { return reader.load(spin) == expected; })
+        .value_or(false);
+}
+
 // A claim comes back when its handle ends, so a handle made later from a
 // second root of the same site takes the role.  The end of the producer
 // closes the channel, and the later producer opens it again.
@@ -245,50 +314,64 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     Link channel{};
     {
         auto [producer, consumer] = link_halves();
-        auto held_producer = channel.producer(std::move(producer));
-        auto held_consumer = channel.consumer(std::move(consumer));
-        auto moved = std::move(held_producer);
-        if (!moved.try_push(3)) return 1;
-        if (held_consumer.try_pop().value_or(-1) != 3) return 1;
+        bool const is_through = c::with_ends(
+            channel, std::move(producer), std::move(consumer), [](auto held_producer, auto held_consumer) noexcept {
+                auto moved = std::move(held_producer);
+                bool const has_item = moved.try_push(3) && held_consumer.try_pop().value_or(-1) == 3;
+                foundation::linear::drop(std::move(moved));
+                foundation::linear::drop(std::move(held_consumer));
+                return has_item;
+            });
+        if (!is_through) return 1;
     }
     if (!channel.is_closed()) return 1;
     auto [producer, consumer] = link_halves();
-    auto again = channel.producer(std::move(producer));
-    if (channel.is_closed()) return 1;
-    if (!again.try_push(4)) return 1;
-    auto later_consumer = channel.consumer(std::move(consumer));
-    bool const has_item = later_consumer.try_receive().value_or(-1) == 4;
-    bool const is_open = later_consumer.try_receive().err().value_or(c::NoItem::Closed) == c::NoItem::Empty;
-    ::foundation::linear::drop(std::move(later_consumer));
-    if (!has_item || !is_open) return 1;
+    // The later producer opens the channel, and the later consumer opens in
+    // its frame after the push.
+    bool const is_open_again = c::with_producer(
+        channel, std::move(producer), [&channel, consumer = std::move(consumer)](auto again) mutable noexcept {
+            bool const has_pushed = !channel.is_closed() && again.try_push(4);
+            bool const has_received = c::with_consumer(channel, std::move(consumer), [](auto later_consumer) noexcept {
+                bool const has_item = later_consumer.try_receive().value_or(-1) == 4;
+                bool const is_open = later_consumer.try_receive().err().value_or(c::NoItem::Closed) == c::NoItem::Empty;
+                foundation::linear::drop(std::move(later_consumer));
+                return has_item && is_open;
+            });
+            foundation::linear::drop(std::move(again));
+            return has_pushed && has_received;
+        });
+    if (!is_open_again) return 1;
 
-    Swmr session{reader_root(), 0};
-    { [[maybe_unused]] auto first_writer = ses::mint_swmr_writer<Swmr>(session, writer_root()); }
-    auto later_writer = ses::mint_swmr_writer<Swmr>(session, writer_root());
-    later_writer.publish(5);
     // The context of each reader: the lend of a share and the load take Nondet.
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
-    // True when the reader exists and loads the expected value.
-    const auto loads = [&spin](auto const& reader, int expected) noexcept {
-        return reader.match([expected, &spin](auto const& handle) noexcept { return handle.load(spin) == expected; },
-                            []() noexcept { return false; });
-    };
-    const auto reader = ses::mint_swmr_reader<Swmr>(spin, session);
-    if (!loads(reader, 5)) return 1;
+    Swmr session{reader_root(), 0};
+    ses::with_writer(session, writer_root(),
+                     [](auto first_writer) noexcept { foundation::linear::drop(std::move(first_writer)); });
+    bool const is_published = ses::with_writer(session, writer_root(), [&spin, &session](auto later_writer) noexcept {
+        later_writer.publish(5);
+        bool const is_loaded = loads_expected(spin, session, 5);
+        foundation::linear::drop(std::move(later_writer));
+        return is_loaded;
+    });
+    if (!is_published) return 1;
 
     // A move of a writer handle keeps the claim of its session in the
     // target, and the target writes the session.
     Swmr moved_session{reader_root(), 0};
-    auto source = ses::mint_swmr_writer<Swmr>(moved_session, writer_root());
-    auto target = std::move(source);
-    target.publish(7);
-    const auto moved_reader = ses::mint_swmr_reader<Swmr>(spin, moved_session);
-    if (!loads(moved_reader, 7)) return 1;
+    bool const is_moved_published =
+        ses::with_writer(moved_session, writer_root(), [&spin, &moved_session](auto source) noexcept {
+            auto target = std::move(source);
+            target.publish(7);
+            bool const is_loaded = loads_expected(spin, moved_session, 7);
+            foundation::linear::drop(std::move(target));
+            return is_loaded;
+        });
+    if (!is_moved_published) return 1;
     return 0;
 }
 
 // A chain in which each link is one channel instance passes the check at
-// the mint and runs.
+// the mint and runs.  The link opens its two ends in one frame.
 [[nodiscard]] int pipeline_over_one_link_runs() {
     const fixy::HotFgCtx ctx = foundation::effects::testing::foreground();
     const fixy::BgDrainCtx coordinator{foundation::effects::testing::bg()};
@@ -298,12 +381,30 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     auto [source_producer, source_consumer] = link_halves();
     auto [link_producer, link_consumer] = link_halves();
     auto [sink_producer, sink_consumer] = link_halves();
-    auto writes_link = c::mint_stage<&into_link>(ctx, source.consumer(std::move(source_consumer)),
-                                                 link.producer(std::move(link_producer)));
-    auto drains_link = c::mint_stage<&into_link>(ctx, link.consumer(std::move(link_consumer)),
-                                                 sink.producer(std::move(sink_producer)));
-    auto pipeline = c::mint_pipeline(coordinator, std::move(writes_link), std::move(drains_link));
-    std::move(pipeline).run(coordinator);
+    c::with_consumer(
+        source, std::move(source_consumer),
+        [&ctx, &coordinator, &link, &sink, link_producer = std::move(link_producer),
+         link_consumer = std::move(link_consumer),
+         sink_producer = std::move(sink_producer)](auto source_in) mutable noexcept {
+            c::with_ends(link, std::move(link_producer), std::move(link_consumer),
+                         [&ctx, &coordinator, &sink, source_in = std::move(source_in),
+                          sink_producer = std::move(sink_producer)](auto link_out, auto link_in) mutable noexcept {
+                             c::with_producer(
+                                 sink, std::move(sink_producer),
+                                 [&ctx, &coordinator, source_in = std::move(source_in), link_out = std::move(link_out),
+                                  link_in = std::move(link_in)](auto sink_out) mutable noexcept {
+                                     auto writes_link =
+                                         c::mint_stage<&into_link<decltype(source_in), decltype(link_out)>>(
+                                             ctx, std::move(source_in), std::move(link_out));
+                                     auto drains_link =
+                                         c::mint_stage<&into_link<decltype(link_in), decltype(sink_out)>>(
+                                             ctx, std::move(link_in), std::move(sink_out));
+                                     auto pipeline =
+                                         c::mint_pipeline(coordinator, std::move(writes_link), std::move(drains_link));
+                                     std::move(pipeline).run(coordinator);
+                                 });
+                         });
+        });
     return 0;
 }
 

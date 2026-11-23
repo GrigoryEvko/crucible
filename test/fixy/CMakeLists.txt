@@ -4858,9 +4858,61 @@ fixy_neg_compile_test(neg_channel_push_waiting_park_from_the_foreground
 # A handle owns a linear token or a pool share; copying it would
 # duplicate the one and double-count the other.
 fixy_neg_compile_test(neg_channel_producer_handle_copied
-  "use of deleted function"
-  "ProducerHandle owns the producer token or one pool share"
+  "use of deleted function .fixy::concurrent::ProducerHandle<Channel, Scope>::ProducerHandle\\(const fixy::concurrent::ProducerHandle<Channel, Scope>&\\)"
+  "a producer handle owns the producer token or one pool share"
   "copy would duplicate it")
+
+# The frame doors of a channel: a handle does not leave the frame of its
+# door.  Plant 08 of the audit of the threads in door form, for a wire and
+# for a merge: an Option of the end outside the body takes no handle.
+fixy_neg_compile_test(neg_channel_frame_end_kept_past_its_frame
+  "is an inaccessible base of"
+  "ProducerEnd")
+fixy_neg_compile_test(neg_merge_frame_end_kept_past_its_frame
+  "is an inaccessible base of"
+  "ProducerEnd")
+# A result that holds the handle, by value or in a closure, does not leave.
+# The result gate is a constraint of the door, with no deleted twin.
+fixy_neg_compile_test(neg_channel_frame_result_holds_the_handle
+  "no matching function for call to"
+  "required for the satisfaction of .FrameResult<")
+fixy_neg_compile_test(neg_channel_frame_result_holds_a_closure_of_the_handle
+  "no matching function for call to"
+  "required for the satisfaction of .FrameResult<")
+fixy_neg_compile_test(neg_merge_frame_result_holds_the_handle
+  "no matching function for call to"
+  "required for the satisfaction of .FrameResult<")
+fixy_neg_compile_test(neg_merge_frame_result_holds_a_closure_of_the_handle
+  "no matching function for call to"
+  "required for the satisfaction of .FrameResult<")
+# An object of static storage duration holds no handle of a frame.
+fixy_neg_compile_test(neg_channel_frame_handle_in_a_static_slot
+  "static or thread storage duration holds a value of a scope brand"
+  "slot_of")
+fixy_neg_compile_test(neg_merge_frame_handle_in_a_static_slot
+  "static or thread storage duration holds a value of a scope brand"
+  "slot_of")
+# A frame door owns its body and calls it one time, so a named body is
+# refused with its reason.
+fixy_neg_compile_test(neg_channel_frame_named_body
+  "use of deleted function"
+  "a frame door of a channel owns its body")
+# No code outside the frame doors opens an end, and no caller names the
+# scope brand of a door.
+fixy_neg_compile_test(neg_channel_claim_door_without_the_key
+  "no matching function for call to"
+  "ChannelFrameKey")
+fixy_neg_compile_test(neg_channel_frame_named_scope_brand
+  "no matching function for call to"
+  "Refused = .*NamedScope")
+# The drain and the recombined access borrow their body, so a body that
+# holds a linear value by value finds no door.
+fixy_neg_compile_test(neg_channel_drain_drop_holds_a_linear_value
+  "no matching function for call to"
+  "HoldsNoLinearValue")
+fixy_neg_compile_test(neg_channel_recombined_access_body_holds_a_linear_value
+  "no matching function for call to"
+  "HoldsNoLinearValue")
 
 # The role is in the handle type: a producer has no pop.
 fixy_neg_compile_test(neg_channel_pop_from_producer_handle
@@ -4870,16 +4922,17 @@ fixy_neg_compile_test(neg_channel_pop_from_producer_handle
 # Two channels with the same value type and capacity still have
 # distinct tags, so an endpoint token from one cannot open the other.
 fixy_neg_compile_test(neg_channel_foreign_tag_permission
-  "no known conversion for argument 1"
-  "channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*TraceTag"
-  "channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*MetaTag")
+  "no matching function for call to .with_producer\\(MetaChannel&, "
+  "no known conversion for argument 2 from .*channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*TraceTag"
+  "to .foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<fixy::concurrent::ChannelForm::wire, .*MetaTag>")
 
 # Two root sites of one tag give two brands.  The token of the second site
-# does not open the channel of the first, although the tag is the same.
+# does not open the channel of the first at its frame door, although the tag
+# is the same.  The conversion names one tag on the two sides.
 fixy_neg_compile_test(neg_channel_foreign_brand_permission
-  "no known conversion for argument 1 from .*Permission<fixy::concurrent::channel_tag::Producer<fixy::concurrent::ChannelForm::wire, \\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&"
-  "PermissionedChannel<Form, T, Capacity, UserTag, Brand, Lanes>::producer\\(foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<Form, UserTag>, Brand>&&\\) requires  Form == fixy::concurrent::ChannelForm::wire"
-  "UserTag = \\{anonymous\\}::TraceTag. Brand = foundation::permissions::<lambda\\(\\)>. fixy::concurrent::LaneCount \\.\\.\\.Lanes = \\{\\}\\]")
+  "no matching function for call to .with_producer\\(FirstChannel&, "
+  "no known conversion for argument 2 from .*Producer<fixy::concurrent::ChannelForm::wire, \\{anonymous\\}::TraceTag>.* to .foundation::permissions::Permission<fixy::concurrent::channel_tag::Producer<fixy::concurrent::ChannelForm::wire, \\{anonymous\\}::TraceTag>, foundation::permissions::<lambda\\(\\)> >&&."
+  "fixy::concurrent::with_producer\\(Channel&, foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&&, Body&&\\) .with Refused = \\{\\}. Channel = PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, \\{anonymous\\}::TraceTag, foundation::permissions::<lambda\\(\\)> >")
 
 # ── The channel sessions, the endpoints and the stage bridge ──────────
 #
@@ -4964,10 +5017,10 @@ fixy_neg_compile_test(neg_sess_recorded_pole_branch_with_a_caller_transport
   "Pole_Owns_Its_Transport. a branch over a pole of a channel reads a label word")
 fixy_neg_compile_test(neg_substrate_session_lvalue_handle
   "no matching function for call to .mint_substrate_session<substrate_lvalue_fixture::Channel"
-  "cannot convert .producer.")
+  "satisfaction of .FrameHandleOfDirection<Handle, Substr, Dir>. .with Handle = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, substrate_lvalue_fixture::Tag, foundation::permissions::._anon_[0-9]+>, fixy::concurrent::._anon_[0-9]+>&. Substr =")
 fixy_neg_compile_test(neg_substrate_session_not_bridgeable
   "no matching function for call to .mint_substrate_session<substrate_table_fixture::FakeChannel"
-  "incomplete type .struct fixy::channels::handle_for<substrate_table_fixture::FakeChannel")
+  "satisfaction of .HasEndFor<Substr, Dir>. .with Substr = substrate_table_fixture::FakeChannel. Dir =")
 # The consumer end of a channel runs the dual of the producer end, and the
 # protocol of each end is an alias, so no unit gives one end a protocol of its
 # own: not through a specialization in a probe region, and not through a
@@ -4985,7 +5038,7 @@ fixy_neg_compile_test(neg_substrate_session_one_end_protocol
 # relation of the two sides.
 fixy_neg_compile_test(neg_sess_plain_session_over_a_channel_pole
   "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<long int"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, plain_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, plain_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>, fixy::concurrent::._anon_[0-9]+>")
 fixy_neg_compile_test(neg_sess_session_over_a_held_channel_pole
   "no matching function for call to .mint_session<fixy::session::Loop<fixy::session::Send<long int"
   "ReachesAChannelPole<Resource>. .with Resource = held_pole_fixture::HeldPole")
@@ -5008,19 +5061,19 @@ fixy_neg_compile_test(neg_sess_session_over_an_unreadable_class
 # fork and the rewind of a handle at End.
 fixy_neg_compile_test(neg_sess_permissioned_session_over_a_channel_pole
   "no matching function for call to .mint_permissioned_session<fixy::session::Loop<fixy::session::Send<long int"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, permissioned_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, permissioned_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>, fixy::concurrent::._anon_[0-9]+>")
 fixy_neg_compile_test(neg_sess_callback_session_over_a_channel_pole
   "no matching function for call to .with_session<fixy::session::End"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, callback_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, callback_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>, fixy::concurrent::._anon_[0-9]+>")
 fixy_neg_compile_test(neg_sess_test_channel_over_channel_poles
   "no matching function for call to .mint_test_channel<fixy::session::Loop<fixy::session::Send<long int"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, test_channel_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>::ProducerHandle")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, test_channel_pole_fixture::Tag, foundation::permissions::._anon_[0-9]+>, fixy::concurrent::._anon_[0-9]+>")
 fixy_neg_compile_test(neg_sess_async_channel_over_channel_poles
   "no matching function for call to .mint_forked_async_channel<"
   "ReachesAChannelPole<Resource>. .with Resource = async_pole_fixture::HeldProducer")
 fixy_neg_compile_test(neg_sess_rewind_over_a_channel_pole
   "no matching function for call to .fixy::session::HandleFactory::rewind<fixy::session::Loop<fixy::session::Send<long int"
-  "ReachesAChannelPole<Resource>. .with Resource = rewind_pole_fixture::IntLog::ProducerHandle")
+  "ReachesAChannelPole<Resource>. .with Resource = rewind_pole_fixture::IntLog::ProducerEnd")
 # A pole table stands in the file of its template.  A table that names the
 # template of another header stops the build.
 fixy_neg_compile_test(neg_sess_pole_table_outside_its_template_file
@@ -5028,10 +5081,10 @@ fixy_neg_compile_test(neg_sess_pole_table_outside_its_template_file
   "no matching function for call to .mint_substrate_session<borrowed_table_fixture::Channel")
 fixy_neg_compile_test(neg_sess_crash_session_over_a_channel_pole
   "no matching function for call to .mint_crash_session<Proto, crash_pole_fixture::Alice, crash_pole_fixture::Bob>"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<")
 fixy_neg_compile_test(neg_sess_checkpoint_session_over_a_channel_pole
   "no matching function for call to .mint_checkpoint_session<checkpoint_pole_fixture::Decider"
-  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::PermissionedChannel<")
+  "ReachesAChannelPole<Resource>. .with Resource = fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<")
 fixy_neg_compile_test(neg_sess_second_pole_table_for_a_bridged_pole
   "call to non-.constexpr. function .void fixy::session::detail::two_pole_tables_know_one_pole"
   "no matching function for call to .mint_substrate_session<second_table_fixture::Channel")
@@ -5052,17 +5105,19 @@ fixy_neg_compile_test(neg_endpoint_payload_row_outside_ctx
 # The stage mints consume their endpoints by move, in the direction the
 # body names, one endpoint for each parameter of the body.
 fixy_neg_compile_test(neg_stage_from_endpoints_lvalue_endpoint
-  "no matching function for call to .mint_stage_from_endpoints<stage_lvalue_fixture::body>"
+  "no matching function for call to .mint_stage_from_endpoints<.& body<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, stage_lvalue_fixture::InTag,"
   "satisfaction of .IsMovedEndpoint<ConsumerEp>.")
 fixy_neg_compile_test(neg_stage_from_endpoints_swapped_direction
-  "no matching function for call to .mint_stage_from_endpoints<stage_swap_fixture::body>"
+  "no matching function for call to .mint_stage_from_endpoints<.& body<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, stage_swap_fixture::InTag,"
   "satisfaction of .IsConsumerEndpoint<ConsumerEp>.")
 fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_arity_mismatch
-  "no matching function for call to .mint_mpmc_stage_from_endpoints<mpmc_arity_fixture::fan_in>"
-  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>.")
+  "no matching function for call to .mint_mpmc_stage_from_endpoints<\\(& fan_in<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, mpmc_arity_fixture::InTag, "
+  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>."
+  "Row<> >&, fixy::channels::Endpoint<(?:(?!Endpoint<).)*mpmc_arity_fixture::InTag(?:(?!Endpoint<).)*Direction::Consumer(?:(?!Endpoint<).)*, fixy::channels::Endpoint<(?:(?!Endpoint<).)*mpmc_arity_fixture::OutTag(?:(?!Endpoint<).)*Direction::Producer(?:(?!Endpoint<).)*\\).$")
 fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_lvalue_endpoint
-  "no matching function for call to .mint_mpmc_stage_from_endpoints<mpmc_lvalue_fixture::fan_in>"
-  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>.")
+  "no matching function for call to .mint_mpmc_stage_from_endpoints<\\(& fan_in<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, mpmc_lvalue_fixture::LeftTag, "
+  "satisfaction of .CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints ...>."
+  "> >&, fixy::channels::Endpoint<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, mpmc_lvalue_fixture::RightTag, ")
 
 # The mint of a stage with more than one input or output takes the handles
 # themselves.  A handle of a different channel does not name its parameter,
@@ -5071,17 +5126,19 @@ fixy_neg_compile_test(neg_mpmc_stage_from_endpoints_lvalue_endpoint
 fixy_neg_compile_test(neg_mpmc_stage_mint_handle_type_mismatch
   "no matching function for call to .mint_mpmc_stage<mpmc_mismatch_fixture::fan_in>"
   "required for the satisfaction of .VariadicStageHandlesMatch<FnPtr, Handles \\.\\.\\.>."
-  "mpmc_mismatch_fixture::OtherTag, mpmc_mismatch_fixture::FixtureBrand>::ConsumerHandle")
+  "mpmc_mismatch_fixture::OtherTag, mpmc_mismatch_fixture::FixtureBrand>::ConsumerEnd")
 fixy_neg_compile_test(neg_mpmc_stage_mint_row_not_admitted
   "no matching function for call to .mint_mpmc_stage<mpmc_row_fixture::fan_in>"
   "required for the satisfaction of .CtxFitsVariadicStage<FnPtr, Ctx>."
   "variadic_stage_rows_admitted<FnPtr, Ctx>")
 fixy_neg_compile_test(neg_swmr_stage_non_writer
-  "no matching function for call to .mint_swmr_stage_from_endpoint<swmr_writer_fixture::body>"
-  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
+  "no matching function for call to .mint_swmr_stage_from_endpoint<\\(& body<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, swmr_writer_fixture::InTag, "
+  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>."
+  "fixy::channels::Direction::Consumer, .*, swmr_writer_fixture::NotAWriter\\).")
 fixy_neg_compile_test(neg_swmr_stage_producer_endpoint
-  "no matching function for call to .mint_swmr_stage_from_endpoint<swmr_direction_fixture::body>"
-  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>.")
+  "no matching function for call to .mint_swmr_stage_from_endpoint<\\(& body<fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, swmr_direction_fixture::InTag, "
+  "satisfaction of .CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>."
+  "fixy::channels::Direction::Producer, .*, swmr_direction_fixture::Writer\\).")
 
 # The mint of a single-writer stage takes the consumer handle and the
 # writer.  A body whose second parameter has no publish is not a publish
@@ -5099,7 +5156,7 @@ fixy_neg_compile_test(neg_swmr_stage_mint_row_not_admitted
 # The recording wrapper takes an endpoint and a session event log.
 fixy_neg_compile_test(neg_recording_endpoint_non_endpoint
   "no matching function for call to .mint_recording_endpoint"
-  "is not derived from .fixy::channels::Endpoint<Substr, Dir, Ctx>.")
+  "is not derived from .fixy::channels::Endpoint<Substr, Dir, Ctx, Handle>.")
 fixy_neg_compile_test(neg_recording_endpoint_wrong_log_type
   "no matching function for call to .mint_recording_endpoint"
   "cannot convert .not_a_log. .type .int.. to type .fixy::session::SessionEventWriter.")
@@ -5134,47 +5191,55 @@ fixy_test(test_concurrent_snapshot)
 fixy_test(test_concurrent_swmr_session)
 set_tests_properties(test_concurrent_swmr_session PROPERTIES PROCESSORS 16)
 
-# The writer mint takes the writer permission of a channel of the SWMR
-# shape, and the reader mint lends from a channel that can change.
+# The writer door takes the writer permission of a session of the SWMR
+# shape, and the reader door lends from a session that can change.
 fixy_neg_compile_test(neg_swmr_session_writer_wrong_permission_tag
-  "invalid initialization of reference of type .foundation::permissions::Permission<swmr_writer_tag_fixture::WriterTag"
-  "from expression of type .foundation::permissions::Permission<swmr_writer_tag_fixture::ReaderTag")
+  "no matching function for call to .with_writer\\(swmr_writer_tag_fixture::Swmr&, foundation::permissions::Permission<swmr_writer_tag_fixture::ReaderTag, "
+  "no known conversion for argument 2 from .foundation::permissions::Permission<swmr_writer_tag_fixture::ReaderTag, .* to .foundation::permissions::Permission<swmr_writer_tag_fixture::WriterTag, ")
 # The session names the brand of its writer root, so a writer root minted
-# at another site does not become a second writer.
+# at another site does not become a second writer.  The conversion names
+# one tag on the two sides, so only the brand refuses it.
 fixy_neg_compile_test(neg_swmr_session_writer_other_brand
-  "cannot convert .foundation::permissions::Permission<swmr_writer_brand_fixture::WriterTag"
-  "initializing argument 1 of .*SwmrSession<T, WriterTag, ReaderTag, ReaderBrand, WriterBrand>::writer\\(")
+  "no matching function for call to .with_writer\\(swmr_writer_brand_fixture::Swmr&, foundation::permissions::Permission<swmr_writer_brand_fixture::WriterTag, "
+  "no known conversion for argument 2 from .foundation::permissions::Permission<swmr_writer_brand_fixture::WriterTag, foundation::permissions::<lambda\\(\\)> >. to .foundation::permissions::Permission<swmr_writer_brand_fixture::WriterTag, foundation::permissions::<lambda\\(\\)> >&&.")
 fixy_neg_compile_test(neg_swmr_session_writer_non_surface
-  "no matching function for call to .mint_swmr_writer<swmr_writer_surface_fixture::NotAChannel>"
-  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = swmr_writer_surface_fixture::NotAChannel.")
+  "no matching function for call to .with_writer\\(swmr_writer_surface_fixture::NotAChannel&, "
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = swmr_writer_surface_fixture::NotAChannel."
+  "the required expression .session.writer\\(key, std::move\\(token\\)\\). is invalid")
 fixy_neg_compile_test(neg_swmr_session_reader_non_surface
-  "no matching function for call to .mint_swmr_reader<int>"
+  "no matching function for call to .with_reader\\(const fixy::TestRunnerCtx&, int&, "
   "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = int.")
 fixy_neg_compile_test(neg_swmr_session_reader_const_channel
-  "no matching function for call to .mint_swmr_reader"
-  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::channels::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag")
+  "no matching function for call to .with_reader\\(const fixy::TestRunnerCtx&, std::add_const_t<fixy::channels::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag"
+  "satisfaction of .SwmrSessionSurface<Swmr>. .with Swmr = const fixy::channels::swmr_session::SwmrSession<int, swmr_reader_const_fixture::WriterTag"
+  "the required expression .session.reader\\(key, ctx\\). is invalid")
 # The lend of a reader share and the read with no wait take Nondet, so a
 # context with no Nondet and a call with no tag fail.
 fixy_neg_compile_test(neg_swmr_session_reader_ctx_without_nondet
-  "no matching function for call to .mint_swmr_reader<swmr_reader_nondet_fixture::Swmr>"
+  "no matching function for call to .with_reader\\(const foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >&, swmr_reader_nondet_fixture::Swmr&, "
+  "required for the satisfaction of .PoolCtx<typename Swmr::reader_tag, Ctx>."
   "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
 fixy_neg_compile_test(neg_swmr_session_try_load_without_nondet
-  "no matching function for call to .*ReaderHandle::try_load\\(\\)"
+  "no matching function for call to .fixy::channels::swmr_session::ReaderHandle<.*>::try_load\\(\\)."
   "candidate expects 1 argument, 0 provided")
 
 # Each session mint takes the handle of its own role, by move.
 fixy_neg_compile_test(neg_swmr_session_writer_session_reader_handle
   "no matching function for call to .mint_writer_runtime_session<swmr_writer_session_role_fixture::Swmr>"
-  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>."
+  "satisfaction of .SwmrWriterHandleOf<Swmr, Handle>. .with Swmr = .*Handle = fixy::channels::swmr_session::ReaderHandle<")
 fixy_neg_compile_test(neg_swmr_session_writer_session_lvalue_handle
   "no matching function for call to .mint_writer_runtime_session<swmr_writer_session_lvalue_fixture::Swmr>"
-  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+  "satisfaction of .CtxFitsSwmrWriterSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>."
+  "satisfaction of .SwmrWriterHandleOf<Swmr, Handle>. .with Swmr = .*Handle = fixy::channels::swmr_session::WriterHandle<.*>&.")
 fixy_neg_compile_test(neg_swmr_session_reader_session_writer_handle
   "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_role_fixture::Swmr>"
-  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>."
+  "satisfaction of .SwmrReaderHandleOf<Swmr, Handle>. .with Swmr = .*Handle = fixy::channels::swmr_session::WriterHandle<")
 fixy_neg_compile_test(neg_swmr_session_reader_session_lvalue_handle
   "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_lvalue_fixture::Swmr>"
-  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>.")
+  "satisfaction of .CtxFitsSwmrReaderSession<[A-Za-z]+, [A-Za-z]+, [A-Za-z]+>."
+  "satisfaction of .SwmrReaderHandleOf<Swmr, Handle>. .with Swmr = .*Handle = fixy::channels::swmr_session::ReaderHandle<.*>&.")
 # The read of a reader session takes the tag of Nondet from the context of
 # the step, so the mint refuses a context with no Nondet.
 fixy_neg_compile_test(neg_swmr_session_reader_session_without_nondet
@@ -5384,12 +5449,12 @@ fixy_neg_compile_test(neg_pipeline_chain_input_capacity_unstated
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeInputCapacityUnstated, 0, 0, 0\\}")
 # One payload on two channels.  The payloads of the two stages agree, so
-# only the channel that each handle names can refuse the chain.  The two
-# last regexes pin the producer on channel A and the consumer on channel B.
+# only the channel that each end names can refuse the chain.  The two last
+# regexes pin the producer on channel A and the consumer on channel B.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "&writes_a\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerHandle&&, fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
+  "&writes_a\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::InTag, <unnamed>::FixtureBrand>::ConsumerEnd&&, fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerEnd&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerEnd&&"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 # One payload, one capacity and one tag on two channels.  The roots of the
 # two channels come from two call sites, so only the brand of each channel
@@ -5398,8 +5463,8 @@ fixy_neg_compile_test(neg_pipeline_mint_chain_across_channels
 # own site.
 fixy_neg_compile_test(neg_pipeline_mint_chain_across_root_sites
   "required for the satisfaction of .pipeline_chain<Stages \\.\\.\\.>."
-  "PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerHandle&&"
+  "PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ProducerEnd&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::LinkTag, foundation::permissions::\\._anon_[0-9]+>::ConsumerEnd&&"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 fixy_neg_compile_test(neg_pipeline_mint_empty_pack
   "no matching function for call to .mint_pipeline\\(const fixy::BgDrainCtx&\\)."
@@ -5488,8 +5553,8 @@ fixy_neg_compile_test(neg_pipeline_dag_unreachable_stage
 # refuse it.
 fixy_neg_compile_test(neg_pipeline_dag_edge_across_channels
   "required for the satisfaction of .StageGraphWellFormed<Graph>."
-  "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerHandle&&\\)"
-  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerHandle&&"
+  "StagePack<fixy::concurrent::Stage<&writes_a\\(.*<unnamed>::ATag, <unnamed>::FixtureBrand>::ProducerEnd&&\\)"
+  "&drains_b\\(fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, <unnamed>::BTag, <unnamed>::FixtureBrand>::ConsumerEnd&&"
   "StageGraphCheck\\{fixy::concurrent::StageGraphFault::EdgeAcrossChannels, 0, 0, 0\\}")
 # The fourth refusal: the one edge joins one channel, and its producer states
 # a capacity of eight values and its consumer a capacity of four.
@@ -5840,7 +5905,7 @@ fixy_neg_compile_test(neg_os_clock_reader_ctx_without_nondet
 # endpoint refuses a context with no Nondet.  A receive from a socket reads
 # a peer, so a context with IO and Block and no Nondet cannot receive.
 fixy_neg_compile_test(neg_mpsc_pop_without_nondet_tag
-  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, \\{anonymous\\}::UserTag, \\{anonymous\\}::UserBrand>::ConsumerHandle::try_pop\\(\\)."
+  "no matching function for call to .fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, \\{anonymous\\}::UserTag, \\{anonymous\\}::UserBrand>, .*>::try_pop\\(\\)."
   "candidate expects 1 argument, 0 provided")
 fixy_neg_compile_test(neg_mpsc_pop_tag_from_ctx_without_nondet
   "no matching function for call to .mint_from_ctx<foundation::effects::Effect::Nondet>\\(const fixy::BgDrainCtx&\\)."
@@ -5891,7 +5956,7 @@ fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag
   "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_mpsc_drain_with_state
   "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
-  "__is_empty")
+  "required for the satisfaction of .ChannelDrainDrop<Drop, T, Form>. .with Drop = .*. T = int. Form = fixy::concurrent::ChannelForm::merge.")
 # The claim of a drain of a merge channel takes the lease of the producer
 # root, so a claim with no lease finds no door.
 fixy_neg_compile_test(neg_mpsc_drain_claim_without_root

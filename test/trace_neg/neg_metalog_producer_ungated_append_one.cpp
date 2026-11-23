@@ -5,11 +5,14 @@
 // of one record with no context would skip the gate, so the endpoint has no
 // such append.
 //
-// Expected diagnostic: the producer handle has no member try_append_one.
+// Expected diagnostic: the producer handle of the frame has no member
+// try_append_one.
 
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -17,18 +20,20 @@
 
 namespace {
 struct Tag {};
-auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace
 
 int main() {
+    auto root = ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [pp, cp] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(log_root());
-    (void)cp;
-    auto producer = log.producer(std::move(pp));
-    (void)producer.try_append_one(::crucible::TensorMeta{});
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_producer(log, std::move(tokens.at(::foundation::core::index<0>())),
+                                      [](auto producer) noexcept -> void {
+                                          (void)producer.try_append_one(::crucible::TensorMeta{});
+                                          ::foundation::linear::drop(std::move(producer).release());
+                                      });
     return 0;
 }

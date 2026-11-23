@@ -32,11 +32,11 @@ int main() {
     using namespace swmr_reader_session_role_fixture;
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
-    namespace perm = ::foundation::permissions;
     const ::fixy::TestRunnerCtx ctx{eff::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto writer = ses::mint_swmr_writer<Swmr>(swmr, writer_root());
-    auto session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(writer));
-    (void)session;
+    ses::with_writer(swmr, writer_root(), [&ctx](auto writer) noexcept {
+        auto session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(writer));
+        (void)session;
+    });
     return 0;
 }

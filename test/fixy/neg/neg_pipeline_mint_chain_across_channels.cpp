@@ -2,7 +2,7 @@
 //
 // The first stage writes channel A, and the second stage drains channel B.
 // The two channels carry int, so the payloads agree, and no value goes from
-// one stage to the other: the second stage waits on B forever.  Each handle
+// one stage to the other: the second stage waits on B forever.  Each end
 // names its channel, and the chain asks that the producer of one stage and
 // the consumer of the next name the same channel.  No context and no stage
 // is built from nothing here, so the mint takes them as parameters.
@@ -18,7 +18,9 @@ namespace {
 namespace cc = fixy::concurrent;
 
 // The fixture builds no channel, so one named brand stands in for the
-// brand of a root site.  The tags keep the four channels apart.
+// brand of a root site.  The tags keep the four channels apart.  The chain
+// is a fact of the types, so each body takes the ends of its channels, and
+// no frame door opens a handle.
 struct InTag {};
 struct ATag {};
 struct BTag {};
@@ -29,8 +31,8 @@ using AChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, ATag, Fi
 using BChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, BTag, FixtureBrand>;
 using OutChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, OutTag, FixtureBrand>;
 
-inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
-inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}
+inline void writes_a(InChannel::ConsumerEnd&&, AChannel::ProducerEnd&&) noexcept {}
+inline void drains_b(BChannel::ConsumerEnd&&, OutChannel::ProducerEnd&&) noexcept {}
 
 using WritesA = cc::Stage<&writes_a, fixy::HotFgCtx>;
 using DrainsB = cc::Stage<&drains_b, fixy::HotFgCtx>;

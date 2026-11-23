@@ -41,11 +41,10 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer = channels::mint_substrate_session<Channel, channels::Direction::Producer>(
-        ctx, channel.producer(std::move(producer_perm)));
-    std::move(producer).detach(::fixy::session::detach_reason::TestInstrumentation{});
-    static_cast<void>(consumer_perm);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        auto head = channels::mint_substrate_session<Channel, channels::Direction::Producer>(ctx, std::move(producer));
+        std::move(head).detach(::fixy::session::detach_reason::TestInstrumentation{});
+    });
     return 0;
 }

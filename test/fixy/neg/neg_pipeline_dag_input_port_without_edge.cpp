@@ -13,13 +13,15 @@ namespace input_without_edge_fixture {
 namespace cc = ::fixy::concurrent;
 
 // The fixture builds no channel, so one named brand stands in for the
-// brand of a root site.  Each handle names one channel, so each edge of
-// the graph connects two handles of one channel.
+// brand of a root site.  The graph is a fact of the types, so each body
+// takes the ends of its channels, and no frame door opens a handle.  Each
+// end names one channel, so each edge of the graph connects two ends of
+// one channel.
 struct LinkTag {};
 struct FixtureBrand {};
 using Link = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, LinkTag, FixtureBrand>;
-inline void plain(Link::ConsumerHandle&&, Link::ProducerHandle&&) noexcept {}
-inline void fan_in(Link::ConsumerHandle&&, Link::ConsumerHandle&&, Link::ProducerHandle&&) noexcept {}
+inline void plain(Link::ConsumerEnd&&, Link::ProducerEnd&&) noexcept {}
+inline void fan_in(Link::ConsumerEnd&&, Link::ConsumerEnd&&, Link::ProducerEnd&&) noexcept {}
 using Plain = cc::Stage<&plain, fixy::HotFgCtx>;
 using FanIn = cc::MpmcStage<&fan_in, fixy::HotFgCtx>;
 using HalfWired = cc::StageGraph<cc::StagePack<Plain, FanIn>, cc::EdgePack<cc::StageEdge<0, 1, 0, 0>>>;

@@ -134,7 +134,7 @@ static_assert(fc::BorrowsNoKeyOwner<HeldRef, OtherBrand>);
 
 static_assert(!::fixy::concurrent::RingValue<HeldRef>);
 
-// A holder by value is admitted, and so is a consumer handle of a channel of
+// A holder by value is admitted, and so is the consumer end of a channel of
 // holders: the channel states synchronized{}, so the walk reads its payload as
 // held (the borrow of a root door).
 static_assert(fc::BorrowsNoKeyOwner<Holder, HolderBrand>);
@@ -142,8 +142,10 @@ struct ChannelTag final {};
 struct ChannelBrand final {};
 using HolderWire =
     ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, Holder, 8, ChannelTag, ChannelBrand>;
-static_assert(fc::BorrowsNoKeyOwner<HolderWire::ConsumerHandle, HolderBrand>);
-static_assert(fc::BorrowsNoKeyOwner<HolderRef<fc::Ref<HolderWire::ConsumerHandle, ChannelBrand>>, HolderBrand>);
+static_assert(fc::BorrowsNoKeyOwner<HolderWire::ConsumerEnd, HolderBrand>);
+static_assert(fc::BorrowsNoKeyOwner<HolderRef<fc::Ref<HolderWire::ConsumerEnd, ChannelBrand>>, HolderBrand>);
+// The consumer handle of a frame holds the same end, on a named scope brand.
+static_assert(fc::BorrowsNoKeyOwner<HolderWire::consumer_handle<ChannelBrand>, HolderBrand>);
 
 }  // namespace
 

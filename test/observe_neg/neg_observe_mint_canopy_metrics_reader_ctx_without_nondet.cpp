@@ -1,9 +1,9 @@
 // Negative-compile test. This file must fail to compile.
 //
-// mint_canopy_metrics_reader lends a share of the reader pool of the
+// with_canopy_metrics_reader lends a share of the reader pool of the
 // channel.  The lend fails while the reader root is out, and the schedule
-// decides when the root comes back, so the mint takes a context that holds
-// Nondet.  The foreground context holds no atom, so the mint refuses it.
+// decides when the root comes back, so the door takes a context that holds
+// Nondet.  The foreground context holds no atom, so the door refuses it.
 
 #include <crucible/observe/Metrics.h>
 #include <fixy/Ctx.h>
@@ -22,7 +22,7 @@ int main() {
     using Channel =
         crucible::observe::RuntimeMetricsChannel<::foundation::brand::brand_of_t<decltype(reader_root)>, WriterBrand>;
     Channel channel{std::move(reader_root)};
-    auto reader = crucible::observe::mint_canopy_metrics_reader(ctx, channel);
-    (void)reader;
+    (void)crucible::observe::with_canopy_metrics_reader(ctx, channel,
+                                                        [](auto reader) noexcept -> void { (void)reader.version(); });
     return 0;
 }

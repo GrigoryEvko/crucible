@@ -5,7 +5,9 @@
 // names its two protocols, and the table of the SPSC channel names others.
 // So its gate refuses a Resource that reaches a pole of a channel, as the
 // gate of mint_session does.  A pole enters a session only through the pole
-// door, which takes the two protocols from the table of the channel.
+// door, which takes the two protocols from the table of the channel.  The
+// poles are the frame handles of the two ends, so the fork stands in the body
+// of the frame door.
 //
 // Expected diagnostic: no mint_forked_async_channel admits the Resources,
 // because each one reaches a pole of a channel.
@@ -40,13 +42,18 @@ inline auto channel_root() noexcept {
 }
 using Channel = c::channel_t<int, 8, decltype(channel_root())>;
 
+// A frame handle carries the scope brand of its frame, so each wrapper takes
+// that brand as a parameter.  The brand names no channel, so only the member
+// holds the pole.
+template <class Scope>
 struct HeldProducer {
     static constexpr std::size_t channel_capacity = 1;
-    Channel::ProducerHandle pole;
+    Channel::producer_handle<Scope> pole;
 };
+template <class Scope>
 struct HeldConsumer {
     static constexpr std::size_t channel_capacity = 1;
-    Channel::ConsumerHandle pole;
+    Channel::consumer_handle<Scope> pole;
 };
 
 using BgCtx = ::fixy::BgDrainCtx;
@@ -76,11 +83,15 @@ int main() {
     namespace perm = ::foundation::permissions;
     const BgCtx ctx{eff::testing::bg()};
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto back = s::mint_forked_async_channel<LeftProto, RightProto, Left, Right>(
-        ctx, perm::mint_permission_root<Whole>(), HeldProducer{.pole = channel.producer(std::move(producer_perm))},
-        HeldConsumer{.pole = channel.consumer(std::move(consumer_perm))}, AnyBody{}, AnyBody{});
-    ::foundation::linear::drop(std::move(back));
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_ends(channel, std::move(tokens.at(::foundation::core::index<0>())),
+                 std::move(tokens.at(::foundation::core::index<1>())), [&ctx](auto producer, auto consumer) noexcept {
+                     auto back = s::mint_forked_async_channel<LeftProto, RightProto, Left, Right>(
+                         ctx, perm::mint_permission_root<Whole>(),
+                         HeldProducer<typename decltype(producer)::scope_type>{.pole = std::move(producer)},
+                         HeldConsumer<typename decltype(consumer)::scope_type>{.pole = std::move(consumer)}, AnyBody{},
+                         AnyBody{});
+                     ::foundation::linear::drop(std::move(back));
+                 });
     return 0;
 }

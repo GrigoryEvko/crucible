@@ -1,8 +1,8 @@
 // Negative compile test.  This file must fail to compile.
 //
-// mint_swmr_writer asks for a channel of the SWMR shape.  A type that
-// names the channel's member types but has no writer() and no reader()
-// is not a channel, so the mint refuses it.
+// The writer door with_writer asks for a session of the SWMR shape.  A type
+// that names the member types of a session but has no writer() and no
+// reader() is not a session, so the door refuses it.
 //
 // Expected diagnostic: SwmrSessionSurface is not satisfied.
 
@@ -11,6 +11,8 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
+#include <utility>
+
 namespace swmr_writer_surface_fixture {
 struct WriterTag {
     using permission_row = ::foundation::effects::Row<>;
@@ -18,12 +20,18 @@ struct WriterTag {
 struct ReaderTag {
     using permission_row = ::foundation::effects::Row<>;
 };
+// The fake builds no session, so two named brands stand in for the brands of
+// the two root sites.
+struct WriterBrand {};
+struct ReaderBrand {};
 struct NotAChannel {
     using value_type = int;
     using writer_tag = WriterTag;
+    using writer_brand = WriterBrand;
     using reader_tag = ReaderTag;
-    struct WriterHandle {};
-    struct ReaderHandle {};
+    using reader_brand = ReaderBrand;
+    struct WriterEnd {};
+    struct ReaderEnd {};
 };
 }  // namespace swmr_writer_surface_fixture
 
@@ -32,7 +40,7 @@ int main() {
     namespace ses = ::fixy::channels::swmr_session;
     namespace perm = ::foundation::permissions;
     NotAChannel fake{};
-    auto writer = ses::mint_swmr_writer<NotAChannel>(fake, perm::mint_permission_root<WriterTag>());
-    (void)writer;
+    auto token = ses::with_writer(fake, perm::mint_permission_root<WriterTag>(),
+                                  [](auto writer) noexcept { return std::move(writer).release(); });
     return 0;
 }

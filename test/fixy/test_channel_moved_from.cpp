@@ -16,17 +16,21 @@
 // The door gives the role back to the channel and the token back to the
 // caller, so the token opens a new handle.  A released handle names no
 // channel, as a moved-from handle does.
+//
+// A frame door gives each handle to its body, so each case moves the handle
+// in that body.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <fixy/os/ThreadTasks.h>
 
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -50,24 +54,22 @@ auto threaded_root() noexcept {
 using Spsc = c::channel_t<int, 8, decltype(spsc_root())>;
 using Mpsc = c::channel_t<int, 8, decltype(mpsc_root())>;
 
-// The binding costs one pointer, and it keeps the handle move-only.
-static_assert(sizeof(Spsc::ProducerHandle) == sizeof(void*));
-static_assert(sizeof(Spsc::ConsumerHandle) == sizeof(void*));
-static_assert(sizeof(Mpsc::ConsumerHandle) == sizeof(void*));
-static_assert(!std::is_copy_constructible_v<Spsc::ProducerHandle>);
-static_assert(std::is_nothrow_move_constructible_v<Spsc::ProducerHandle>);
-static_assert(!std::is_move_assignable_v<Spsc::ProducerHandle>);
-static_assert(!std::is_move_assignable_v<Mpsc::ConsumerHandle>);
+// The binding costs one pointer, and it keeps the handle move-only.  The
+// type of a handle names the scope of its frame, so each body below gives
+// this check the types of its handles.
+template <class Handle>
+[[nodiscard]] consteval bool is_one_move_only_pointer() noexcept {
+    return sizeof(Handle) == sizeof(void*) && !std::is_copy_constructible_v<Handle>
+        && std::is_nothrow_move_constructible_v<Handle> && !std::is_move_assignable_v<Handle>;
+}
 
 // A handle that holds a linear token carries the annotation linear.  The
 // producer handle of an MPSC channel holds a share of a pool, which is not
 // linear, so that handle is not linear.
-static_assert(foundation::linear::is_marked_linear(^^Spsc::ProducerHandle));
-static_assert(foundation::linear::is_marked_linear(^^Spsc::ConsumerHandle));
-static_assert(foundation::linear::is_marked_linear(^^Mpsc::ConsumerHandle));
-static_assert(foundation::linear::is_linear_v<Spsc::ProducerHandle>);
-static_assert(foundation::linear::is_linear_v<Mpsc::ConsumerHandle>);
-static_assert(!foundation::linear::is_linear_v<Mpsc::ProducerHandle>);
+template <class Handle>
+[[nodiscard]] consteval bool is_linear_handle() noexcept {
+    return foundation::linear::is_marked_linear(^^Handle) && foundation::linear::is_linear_v<Handle>;
+}
 
 // A class that binds a handle to itself, as a channel does: only it builds
 // the key of a binding to it.
@@ -92,9 +94,9 @@ struct BoundValue {
     return 0;
 }
 
-[[nodiscard]] auto spsc_handles(Spsc& channel) {
-    auto [producer, consumer] = perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(spsc_root());
-    return std::pair{channel.producer(std::move(producer)), channel.consumer(std::move(consumer))};
+// The two tokens of a root of the SPSC site.
+[[nodiscard]] auto spsc_halves() {
+    return perm::mint_permission_split<Spsc::producer_tag, Spsc::consumer_tag>(spsc_root());
 }
 
 // The pool of an MPSC channel takes the producer half of the root, and
@@ -114,49 +116,67 @@ template <typename Handle>
 
 void spsc_producer() {
     Spsc channel{};
-    auto [producer, consumer] = spsc_handles(channel);
-    [[maybe_unused]] auto moved = std::move(producer);
-    (void)opaque_ref(producer).try_push(1);
+    auto [producer_perm, consumer_perm] = spsc_halves();
+    c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                 [](auto producer, auto consumer) noexcept {
+                     auto moved = std::move(producer);
+                     static_cast<void>(opaque_ref(producer).try_push(1));
+                     ::foundation::linear::drop(std::move(moved));
+                     ::foundation::linear::drop(std::move(consumer));
+                 });
 }
 
 void spsc_consumer() {
     Spsc channel{};
-    auto [producer, consumer] = spsc_handles(channel);
-    [[maybe_unused]] auto moved = std::move(consumer);
-    (void)opaque_ref(consumer).try_pop();
+    auto [producer_perm, consumer_perm] = spsc_halves();
+    c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                 [](auto producer, auto consumer) noexcept {
+                     auto moved = std::move(consumer);
+                     static_cast<void>(opaque_ref(consumer).try_pop());
+                     ::foundation::linear::drop(std::move(moved));
+                     ::foundation::linear::drop(std::move(producer));
+                 });
 }
 
 void mpsc_producer() {
     auto [producer_root, consumer_perm] = mpsc_halves();
     (void)consumer_perm;
     Mpsc channel{std::move(producer_root)};
-    auto producer = channel.producer(::foundation::effects::testing::test().nondet)
-                        .expect("the channel lends a producer while no exclusive is out");
-    [[maybe_unused]] auto moved = std::move(producer);
-    (void)opaque_ref(producer).try_push(1);
+    static_cast<void>(
+        c::with_producer(channel, ::foundation::effects::testing::test().nondet, [](auto producer) noexcept {
+            static_assert(!foundation::linear::is_linear_v<decltype(producer)>);
+            [[maybe_unused]] auto moved = std::move(producer);
+            static_cast<void>(opaque_ref(producer).try_push(1));
+        }).expect("the channel lends a producer while no exclusive is out"));
 }
 
 // The moved-from producer holds no pool share, so the producer root comes out
-// of the pool.  A push from it while the root is out is the push that the
-// withdrawn root forbids.
+// of the pool in the frame of the producer.  A push from it while the root is
+// out is the push that the withdrawn root forbids.
 void mpsc_producer_in_drained_window() {
     auto [producer_root, consumer_perm] = mpsc_halves();
     (void)consumer_perm;
     Mpsc channel{std::move(producer_root)};
     ::foundation::effects::cap::Nondet const nondet = ::foundation::effects::testing::test().nondet;
-    auto producer = channel.producer(nondet).expect("the channel lends a producer while no exclusive is out");
-    { [[maybe_unused]] auto moved = std::move(producer); }
-    auto root = channel.try_withdraw_producer_root(nondet).expect("the root comes out with no producer out");
-    (void)opaque_ref(producer).try_push(1);
-    channel.deposit_producer_root(std::move(root));
+    static_cast<void>(c::with_producer(channel, nondet, [&channel, nondet](auto producer) noexcept {
+                          { [[maybe_unused]] auto moved = std::move(producer); }
+                          auto root = channel.try_withdraw_producer_root(nondet).expect(
+                              "the root comes out with no producer out");
+                          static_cast<void>(opaque_ref(producer).try_push(1));
+                          channel.deposit_producer_root(std::move(root));
+                      }).expect("the channel lends a producer while no exclusive is out"));
 }
 
 void mpsc_consumer() {
     auto [producer_root, consumer_perm] = mpsc_halves();
     Mpsc channel{std::move(producer_root)};
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    [[maybe_unused]] auto moved = std::move(consumer);
-    (void)opaque_ref(consumer).try_pop(::foundation::effects::testing::test().nondet);
+    c::with_consumer(channel, std::move(consumer_perm), [](auto consumer) noexcept {
+        static_assert(is_one_move_only_pointer<decltype(consumer)>());
+        static_assert(is_linear_handle<decltype(consumer)>());
+        auto moved = std::move(consumer);
+        static_cast<void>(opaque_ref(consumer).try_pop(::foundation::effects::testing::test().nondet));
+        ::foundation::linear::drop(std::move(moved));
+    });
 }
 
 void binding_after_move() {
@@ -182,53 +202,75 @@ void moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) {
 
 [[nodiscard]] int moved_into_handles_work() {
     Spsc channel{};
-    auto [producer, consumer] = spsc_handles(channel);
-    auto producer_moved = std::move(producer);
-    auto consumer_moved = std::move(consumer);
-    if (!producer_moved.try_push(7)) return 1;
-    if (consumer_moved.try_pop().value_or(-1) != 7) return 1;
-    // The release door gives each role and its token back, and the
-    // released handle names no channel.  Each token opens a new handle of
-    // its role with no second claim.
-    auto second_producer = channel.producer(std::move(producer_moved).release());
-    auto second_consumer = channel.consumer(std::move(consumer_moved).release());
-    if (producer_moved.channel_identity().is_bound() || consumer_moved.channel_identity().is_bound()) return 1;
-    if (!second_producer.try_push(8) || second_consumer.size_approx(::foundation::effects::testing::test().nondet) != 1)
-        return 1;
-    foundation::linear::drop(std::move(second_producer).release());
-    foundation::linear::drop(std::move(second_consumer).release());
-    return 0;
+    auto [producer_perm, consumer_perm] = spsc_halves();
+    return c::with_ends(
+        channel, std::move(producer_perm), std::move(consumer_perm), [&channel](auto producer, auto consumer) noexcept {
+            static_assert(is_one_move_only_pointer<decltype(producer)>());
+            static_assert(is_one_move_only_pointer<decltype(consumer)>());
+            static_assert(is_linear_handle<decltype(producer)>());
+            static_assert(is_linear_handle<decltype(consumer)>());
+            auto producer_moved = std::move(producer);
+            auto consumer_moved = std::move(consumer);
+            bool const is_through = producer_moved.try_push(7) && consumer_moved.try_pop().value_or(-1) == 7;
+            // The release door gives each role and its token back, and the
+            // released handle names no channel.  Each token opens a new handle
+            // of its role with no second claim, while the released handles
+            // live.
+            auto producer_token = std::move(producer_moved).release();
+            auto consumer_token = std::move(consumer_moved).release();
+            bool const is_unbound =
+                !producer_moved.channel_identity().is_bound() && !consumer_moved.channel_identity().is_bound();
+            bool const is_open_again =
+                c::with_ends(channel, std::move(producer_token), std::move(consumer_token),
+                             [](auto second_producer, auto second_consumer) noexcept {
+                                 bool const has_item =
+                                     second_producer.try_push(8)
+                                     && second_consumer.size_approx(::foundation::effects::testing::test().nondet) == 1;
+                                 foundation::linear::drop(std::move(second_producer).release());
+                                 foundation::linear::drop(std::move(second_consumer).release());
+                                 return has_item;
+                             });
+            return is_through && is_unbound && is_open_again ? 0 : 1;
+        });
 }
 
 // The producer handle is moved into the thread that pushes, and the consumer
-// stays here.  The thread sanitizer preset runs this with no report.
+// stays on the calling thread.  The thread sanitizer preset runs this with no
+// report.
 [[nodiscard]] int handle_moved_into_a_thread() {
     using Channel = c::channel_t<int, 64, decltype(threaded_root())>;
     constexpr int kItems = 2000;
     Channel channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(threaded_root());
-    auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
-
-    long long sum = 0;
-    int received = 0;
-    {
-        std::jthread pusher{[handle = std::move(producer)]() mutable noexcept {
-            for (int i = 1; i <= kItems;) {
-                if (handle.try_push(i)) ++i;
-            }
-        }};
-        while (received < kItems) {
-            auto item = consumer.try_pop();
-            if (item.is_some()) {
-                sum += std::move(item).expect("the test above found an item");
-                ++received;
-            }
-        }
-    }
-    const long long expected = static_cast<long long>(kItems) * (kItems + 1) / 2;
-    return sum == expected ? 0 : 1;
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    return c::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                        [&ctx](auto producer, auto consumer) noexcept {
+                            auto values = ::fixy::thread::run_beside(
+                                              ctx, ::fixy::thread::ThreadOptions{},
+                                              [handle = std::move(producer)]() mutable noexcept {
+                                                  for (int i = 1; i <= kItems;) {
+                                                      if (handle.try_push(i)) ++i;
+                                                  }
+                                                  ::foundation::linear::drop(std::move(handle));
+                                              },
+                                              [owned = std::move(consumer)]() mutable noexcept {
+                                                  long long sum = 0;
+                                                  int received = 0;
+                                                  while (received < kItems) {
+                                                      auto item = owned.try_pop();
+                                                      if (item.is_some()) {
+                                                          sum += std::move(item).expect("the test above found an item");
+                                                          ++received;
+                                                      }
+                                                  }
+                                                  ::foundation::linear::drop(std::move(owned));
+                                                  return sum;
+                                              })
+                                              .expect("the thread door starts the thread that pushes");
+                            const long long expected = static_cast<long long>(kItems) * (kItems + 1) / 2;
+                            return values.at(::fixy::index<1>()) == expected ? 0 : 1;
+                        });
 }
 
 }  // namespace

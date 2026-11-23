@@ -60,7 +60,7 @@ static_assert(std::is_same_v<typename S1::producer_handle_type, FakeProducer<int
 static_assert(std::is_same_v<typename S1::input_value_type, int>);
 static_assert(std::is_same_v<typename S1::output_value_type, int>);
 static_assert(S1::is_value_preserving);
-static_assert(S1::fn_ptr == &stage_pass_through);
+static_assert(S1::fn_ptr() == &stage_pass_through);
 
 using S2 = Stage<&stage_transform_int_to_float, BgDrainCtx>;
 static_assert(std::is_same_v<typename S2::input_value_type, int>);

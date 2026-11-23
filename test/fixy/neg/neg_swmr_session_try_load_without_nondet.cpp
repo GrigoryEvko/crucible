@@ -33,8 +33,9 @@ int main() {
     namespace ses = ::fixy::channels::swmr_session;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(ctx, swmr).expect("the pool lends a share");
-    auto value = reader.try_load();
-    (void)value;
-    return 0;
+    auto lent = ses::with_reader(ctx, swmr, [](auto reader) noexcept {
+        auto value = reader.try_load();
+        (void)value;
+    });
+    return lent.is_some() ? 0 : 1;
 }

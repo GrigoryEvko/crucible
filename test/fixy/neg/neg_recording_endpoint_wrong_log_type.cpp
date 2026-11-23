@@ -2,7 +2,8 @@
 //
 // The recorder writes each step to a session event log through the one
 // writer of the log.  An int is not a writer, so mint_recording_endpoint
-// does not accept it.
+// does not accept it.  The endpoint runs over the frame handle of the
+// producer, so the call stands in the body of the frame door.
 //
 // Expected diagnostic: no overload of mint_recording_endpoint takes an int
 // as the writer.
@@ -31,13 +32,13 @@ int main() {
     namespace s = ::fixy::session;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    (void)consumer_perm;
-    int not_a_log = 0;
-    auto recorded = channels::mint_recording_endpoint(channels::mint_endpoint<Channel, channels::Direction::Producer>(
-                                                          ctx, channel.producer(std::move(producer_perm))),
-                                                      not_a_log, s::RoleTagId{1}, s::RoleTagId{2});
-    (void)recorded;
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        int not_a_log = 0;
+        auto recorded = channels::mint_recording_endpoint(
+            channels::mint_endpoint<Channel, channels::Direction::Producer>(ctx, std::move(producer)), not_a_log,
+            s::RoleTagId{1}, s::RoleTagId{2});
+        (void)recorded;
+    });
     return 0;
 }

@@ -82,12 +82,16 @@
 // Permissioned rows
 //   The rows of the permissioned channel run each worker beside the main
 //   thread through run_beside of fixy/os/ThreadTasks.h, and not on a raw
-//   thread.  The end of the channel of each worker moves into the body of its
-//   worker, and the body moves it onto its own stack, so no end shares a line
-//   with an object of the frame of the main thread.  A body borrows only the
-//   atomics of the row (RowControl), as the door of the thread asks.  The
-//   count of the bodies is a count of template arguments, so these rows take
-//   the counts 2, 4, 8 and 16.
+//   thread.  The main thread opens the frames of its own producer end and of
+//   the consumer end (the frame doors of fixy/concurrent/
+//   PermissionedChannel.h), and the workers start and join in the inner body.
+//   The consumer end moves into the body of its worker, and the body moves it
+//   onto its own stack.  Each producer worker opens the frame of its own end
+//   in its body, on its own stack.  So no end shares a line with an object of
+//   the frame of the main thread.  A body borrows only the atomics of the row
+//   (RowControl) and the channel, which is synchronized, as the door of the
+//   thread asks.  The count of the bodies is a count of template arguments, so
+//   these rows take the counts 2, 4, 8 and 16.
 //
 // Phases of a row
 //   1. The window: each thread runs the op and counts it for kWindowNs.  The
@@ -989,17 +993,22 @@ struct RowChannel<OpKind::LanesPermissionedPush, Threads, Root> {
     using type = ::fixy::concurrent::channel_t<Item, kLaneCapacity, Root, ::fixy::concurrent::LaneCount{Threads - 1}>;
 };
 
-// The producer handle of the slot Slot of a permissioned row: a share that
-// the pool of a merge lends, or the lane of the slot of a lanes channel.  No
-// exclusive is out in the bench, so an empty lend ends the process.
-template <OpKind Kind, std::size_t Slot, class Channel>
-[[nodiscard]] typename Channel::ProducerHandle lend_producer(Channel& channel) noexcept {
+// Opens the producer frame of the slot Slot of a permissioned row, and runs
+// the body on its handle: a share that the pool of a merge lends, or the lane
+// of the slot of a lanes channel.  The caller writes the body at the call, and
+// the frame door owns it.  No exclusive is out in the bench, so an empty lend
+// ends the process.  The handle ends at the end of the frame: a share goes
+// back to the pool, and the end of a lane ends the lane.
+template <OpKind Kind, std::size_t Slot, class Channel, class Body>
+void with_slot_producer(Channel& channel, Body&& body) noexcept {
     eff::cap::Nondet const nondet = eff::testing::test().nondet;
     if constexpr (Kind == OpKind::LanesPermissionedPush) {
-        return channel.producer(nondet, typename Channel::lane_index{::fixy::index<Slot>()})
-            .expect("the channel lends the lane of a slot while no exclusive is out");
+        auto lent = ::fixy::concurrent::with_producer(
+            channel, nondet, typename Channel::lane_index{::fixy::index<Slot>()}, std::forward<Body>(body));
+        static_cast<void>(std::move(lent).expect("the channel lends the lane of a slot while no exclusive is out"));
     } else {
-        return channel.producer(nondet).expect("the channel lends a producer while no exclusive is out");
+        auto lent = ::fixy::concurrent::with_producer(channel, nondet, std::forward<Body>(body));
+        static_cast<void>(std::move(lent).expect("the channel lends a producer while no exclusive is out"));
     }
 }
 
@@ -1037,23 +1046,24 @@ template <class Measure, class Body, class... Rest>
     return std::move(values.at(::foundation::core::index<1>()));
 }
 
-// The body of a producer worker of a permissioned row: it moves its end onto
-// its own stack and pushes into it until the row stops.  The end goes back to
-// the pool of the channel when the body ends, and the end of a lane ends the
-// lane.
-template <OpKind Kind, class Producer>
-[[nodiscard]] auto make_beside_pusher(RowControl& control, ::fixy::Index<kMaxThreads> line_index,
-                                      Producer&& producer) noexcept {
-    return [&control, line_index, owned = std::move(producer)]() mutable noexcept {
-        auto end = std::move(owned);
-        // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
-        control.lines.with_element(line_index, [&control, &end](ThreadLine& line) noexcept {
-            run_producer_loop<Kind>(
-                control,
-                [&control, &end] [[gnu::always_inline]] () noexcept {
-                    push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
-                },
-                line);
+// The body of the producer worker of the slot Slot of a permissioned row: it
+// opens the frame of its end on its own stack and pushes into it until the
+// row stops.  The lend comes before the worker counts itself ready, so it is
+// outside the windows.  The end goes back to the pool of the channel at the
+// end of its frame, and the end of a lane ends the lane.
+template <OpKind Kind, std::size_t Slot, class Channel>
+[[nodiscard]] auto make_beside_pusher(RowControl& control, Channel& channel) noexcept {
+    return [&control, &channel]() noexcept {
+        with_slot_producer<Kind, Slot>(channel, [&control](auto end) noexcept {
+            // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
+            control.lines.with_element(::fixy::index<Slot>(), [&control, &end](ThreadLine& line) noexcept {
+                run_producer_loop<Kind>(
+                    control,
+                    [&control, &end] [[gnu::always_inline]] () noexcept {
+                        push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
+                    },
+                    line);
+            });
         });
     };
 }
@@ -1076,37 +1086,11 @@ template <OpKind Kind, class Consumer>
     }
 }
 
-// One row of a permissioned channel with Threads threads: the main thread and
-// the workers of slots 1 to Threads - 2 push, each through a producer handle
-// that the pool lends, and the worker of the last slot pops through the
-// consumer handle.  The producer of slot k of a lanes channel pushes into
-// lane k.  Each worker owns its end in its own frame, so no end shares a line
-// with an object that the main thread writes.  The channel of a row lives in
-// the frame of the row, and the row is not inline, so the stack holds the
-// channel of one row at a time and not the channels of each count of threads.
-template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
-[[nodiscard, gnu::noinline]] RowResult run_permissioned_row(bench::Spread const& spread,
-                                                            std::index_sequence<Producers...> /*pushers*/) {
-    auto root =
-        perm::mint_permission_root<::fixy::concurrent::channel_tag::Whole<kRowForm<Kind>, PermissionedRowTag>>();
-    using Channel = typename RowChannel<Kind, Threads, decltype(root)>::type;
-    RowControl control{};
-    auto [producer_root, consumer_perm] =
-        perm::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(root));
-    Channel channel{std::move(producer_root)};
-    typename Channel::ProducerHandle producer = lend_producer<Kind, 0>(channel);
-    auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
-        push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
-    };
-    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
-    auto measure = [&control, &spread, &push, main_cpu]() noexcept {
-        while (control.ready.value.load_acquire() + 1 < Threads)
-            CRUCIBLE_SPIN_PAUSE;
-        return finish_row<Kind>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot, main_cpu, push);
-    };
-    // The worker of the last slot moves its end onto its own stack and pops
-    // until the row stops.
-    auto popper = [&control, owned = channel.consumer(std::move(consumer_perm))]() mutable noexcept {
+// The body of the consumer worker of the last slot of a permissioned row: it
+// moves its end onto its own stack and pops until the row stops.
+template <OpKind Kind, std::uint32_t Threads, class Consumer>
+[[nodiscard]] auto make_beside_popper(RowControl& control, Consumer&& consumer) noexcept {
+    return [&control, owned = std::move(consumer)]() mutable noexcept {
         auto end = std::move(owned);
         // The consumer writes only the line of its own slot, and each field of a line is an Atomic.
         // The loop borrows the end as its source, so no body holds the end, and the end drops after the loop.
@@ -1122,12 +1106,53 @@ template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
                                    [item_sum](ThreadLine& line) noexcept { line.cell.store_release(item_sum); });
         ::foundation::linear::drop(std::move(end));
     };
-    // The producer of the main thread goes back to the pool of the channel at
-    // the end of its scope.
-    return run_beside_workers(spread, bench::ThreadSlot{1}, measure,
-                              make_beside_pusher<Kind>(control, ::fixy::index<Producers + 1>(),
-                                                       lend_producer<Kind, Producers + 1>(channel))...,
-                              std::move(popper));
+}
+
+// One row of a permissioned channel with Threads threads: the main thread and
+// the workers of slots 1 to Threads - 2 push, each through a producer handle
+// that the pool lends, and the worker of the last slot pops through the
+// consumer handle.  The producer of slot k of a lanes channel pushes into
+// lane k.  Each worker owns its end in its own frame, so no end shares a line
+// with an object that the main thread writes.  The channel of a row lives in
+// the frame of the row, and the row is not inline, so the stack holds the
+// channel of one row at a time and not the channels of each count of threads.
+//
+// The frame of the producer of the main thread opens first, and the consumer
+// frame opens in its body, so each end of the main thread lives until each
+// worker has joined.  The workers start and join in the inner body.  A report
+// owns its samples, so the row is no result of a frame: the inner body moves
+// it into result.
+template <OpKind Kind, std::uint32_t Threads, std::size_t... Producers>
+[[nodiscard, gnu::noinline]] RowResult run_permissioned_row(bench::Spread const& spread,
+                                                            std::index_sequence<Producers...> /*pushers*/) {
+    auto root =
+        perm::mint_permission_root<::fixy::concurrent::channel_tag::Whole<kRowForm<Kind>, PermissionedRowTag>>();
+    using Channel = typename RowChannel<Kind, Threads, decltype(root)>::type;
+    RowControl control{};
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<typename Channel::producer_tag, typename Channel::consumer_tag>(std::move(root));
+    Channel channel{std::move(producer_root)};
+    bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
+    RowResult result{};
+    with_slot_producer<Kind, 0>(channel, [&control, &spread, &channel, &result, main_cpu,
+                                          consumer_perm = std::move(consumer_perm)](auto producer) mutable noexcept {
+        ::fixy::concurrent::with_consumer(
+            channel, std::move(consumer_perm),
+            [&control, &spread, &channel, &result, &producer, main_cpu](auto consumer) noexcept {
+                auto push = [&control, &producer] [[gnu::always_inline]] () noexcept {
+                    push_waiting(control, [&producer]() noexcept { return producer.try_push(Item{1}); });
+                };
+                auto measure = [&control, &spread, &push, main_cpu]() noexcept {
+                    while (control.ready.value.load_acquire() + 1 < Threads)
+                        CRUCIBLE_SPIN_PAUSE;
+                    return finish_row<Kind>(control, ThreadCount{Threads}, ConsumerPlace::LastSlot, main_cpu, push);
+                };
+                result = run_beside_workers(spread, bench::ThreadSlot{1}, measure,
+                                            make_beside_pusher<Kind, Producers + 1>(control, channel)...,
+                                            make_beside_popper<Kind, Threads>(control, std::move(consumer)));
+            });
+    });
+    return result;
 }
 
 // The permissioned row of a count of threads, or no row for a count that the

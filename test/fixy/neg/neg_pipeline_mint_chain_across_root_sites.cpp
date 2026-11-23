@@ -42,8 +42,10 @@ using AChannel = cc::channel_t<int, 8, decltype(a_root())>;
 using BChannel = cc::channel_t<int, 8, decltype(b_root())>;
 using OutChannel = cc::channel_t<int, 8, decltype(out_root())>;
 
-inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
-inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}
+// The chain is a fact of the types, so each body takes the ends of its
+// channels, and no frame door opens a handle.
+inline void writes_a(InChannel::ConsumerEnd&&, AChannel::ProducerEnd&&) noexcept {}
+inline void drains_b(BChannel::ConsumerEnd&&, OutChannel::ProducerEnd&&) noexcept {}
 
 using WritesA = cc::Stage<&writes_a, fixy::HotFgCtx>;
 using DrainsB = cc::Stage<&drains_b, fixy::HotFgCtx>;

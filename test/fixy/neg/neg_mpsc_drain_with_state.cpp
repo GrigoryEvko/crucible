@@ -7,7 +7,7 @@
 // drop fails.
 //
 // Expected diagnostic: drain has no candidate, because the class of the drop
-// is not empty.
+// is not empty, so the drop of a merge fails ChannelDrainDrop.
 
 #include <fixy/concurrent/PermissionedChannel.h>
 

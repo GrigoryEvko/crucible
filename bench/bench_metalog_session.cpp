@@ -13,6 +13,7 @@
 #include <crucible/PermissionedMetaLog.h>
 
 #include <fixy/Core.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 
 #include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
@@ -73,18 +74,21 @@ bench::Report bench_raw_append_raw_drain(::crucible::MetaLog& log) {
     return report;
 }
 
-bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& producer,
-                                              PermissionedLog::ConsumerHandle& consumer, ::crucible::MetaLog& log) {
+// The row reaches the two linear handles through a Ref of each, so no closure
+// holds a reference to a handle.
+template <class Producer, class Consumer>
+bench::Report bench_permissioned_append_drain(Producer& producer, Consumer& consumer, ::crucible::MetaLog& log) {
     reset_log(log);
     std::uint32_t i = 0;
     const auto pure = ::foundation::effects::testing::foreground();
-    auto report = bench::run("round-trip: permissioned append + drain", [&] {
-        const auto meta = make_meta(++i);
-        const bool appended = producer.try_append_one_pure(pure, meta);
-        bench::do_not_optimize(appended);
-        const auto drained = consumer.try_drain_one().value_or(::crucible::TensorMeta{});
-        bench::do_not_optimize(drained.version);
-    });
+    auto report = bench::run("round-trip: permissioned append + drain",
+                             [&i, &pure, appender = ::fixy::to(producer), drainer = ::fixy::to(consumer)] {
+                                 const auto meta = make_meta(++i);
+                                 const bool appended = appender->try_append_one_pure(pure, meta);
+                                 bench::do_not_optimize(appended);
+                                 const auto drained = drainer->try_drain_one().value_or(::crucible::TensorMeta{});
+                                 bench::do_not_optimize(drained.version);
+                             });
     reset_log(log);
     return report;
 }
@@ -95,8 +99,8 @@ bench::Report bench_permissioned_append_drain(PermissionedLog::ProducerHandle& p
 // the row (run_with).  Each step runs on the session in the storage of the
 // Seat and puts the next session there.  The steps take generic lambdas, so
 // the brand of each session stays in the template parameter of its lambda.
-bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
-                                    PermissionedLog::ConsumerHandle&& consumer, ::crucible::MetaLog& log) {
+template <class Producer, class Consumer>
+bench::Report bench_typed_send_recv(Producer producer, Consumer consumer, ::crucible::MetaLog& log) {
     namespace ses = ::crucible::metalog_session;
     const auto ctx = ::foundation::effects::testing::foreground();
 
@@ -121,8 +125,8 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
             });
         });
     auto [prod, cons] = std::move(seats);
-    static_cast<void>(std::move(prod).take().select<1>(::fixy::session::no_label).close());
-    static_cast<void>(std::move(cons).take().select<1>(::fixy::session::no_label).close());
+    static_cast<void>(std::move(prod).take().template select<1>(::fixy::session::no_label).close());
+    static_cast<void>(std::move(cons).take().template select<1>(::fixy::session::no_label).close());
     reset_log(log);
     return std::move(report);
 }
@@ -130,8 +134,8 @@ bench::Report bench_typed_send_recv(PermissionedLog::ProducerHandle&& producer,
 }  // namespace
 
 int main() {
-    static_assert(sizeof(PermissionedLog::ProducerHandle) == sizeof(void*));
-    static_assert(sizeof(PermissionedLog::ConsumerHandle) == sizeof(void*));
+    static_assert(sizeof(PermissionedLog::ProducerEnd) == sizeof(void*));
+    static_assert(sizeof(PermissionedLog::ConsumerEnd) == sizeof(void*));
 
     ::fixy::Box<::crucible::MetaLog> raw_owner = ::fixy::mint_box<::crucible::MetaLog>(kAlloc, kAlloc);
     ::crucible::MetaLog& raw = *raw_owner;
@@ -139,31 +143,37 @@ int main() {
 
     namespace fp = ::foundation::permissions;
     auto [pp, cp] = fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(log_root());
-    auto producer = log.producer(std::move(pp));
-    auto consumer = log.consumer(std::move(cp));
 
-    // A braced list runs its initializers in order, so the typed run takes
-    // the handles only after the permissioned run is done with them.
-    ::fixy::FixedArray<bench::Report, 3> reports{
-        bench_raw_append_raw_drain(raw),
-        bench_permissioned_append_drain(producer, consumer, raw),
-        bench_typed_send_recv(std::move(producer), std::move(consumer), raw),
-    };
+    // The frame of the two ends opens before the timed rows, and the rows run
+    // in its body.  A report owns its samples, so it is no result of a frame,
+    // and the body also writes the reports.
+    ::fixy::concurrent::with_ends(log, std::move(pp), std::move(cp), [&raw](auto producer, auto consumer) noexcept {
+        static_assert(sizeof(producer) == sizeof(void*));
+        static_assert(sizeof(consumer) == sizeof(void*));
 
-    bench::emit_reports_text(reports.view());
+        // A braced list runs its initializers in order, so the typed run takes
+        // the handles only after the permissioned run is done with them.
+        ::fixy::FixedArray<bench::Report, 3> reports{
+            bench_raw_append_raw_drain(raw),
+            bench_permissioned_append_drain(producer, consumer, raw),
+            bench_typed_send_recv(std::move(producer), std::move(consumer), raw),
+        };
 
-    bench::print("\n=== MetaLogSession deltas ===\n");
-    ::fixy::FixedArray<bench::Compare, 2> const compares{
-        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
-        bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),
-    };
-    bench::emit_compares(compares.view());
+        bench::emit_reports_text(reports.view());
 
-    bench::print("\n=== verdict (TIER A — structural) ===\n");
-    bench::print("  PermissionedMetaLog handles are pointer-sized.\n");
-    bench::print("  Timed MetaLog deltas above are informational; the bodies copy a\n");
-    bench::print("  168-byte TensorMeta and are sensitive to harness layout.\n");
+        bench::print("\n=== MetaLogSession deltas ===\n");
+        ::fixy::FixedArray<bench::Compare, 2> const compares{
+            bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<1>())),
+            bench::compare(reports.at(::fixy::index<0>()), reports.at(::fixy::index<2>())),
+        };
+        bench::emit_compares(compares.view());
 
-    bench::emit_reports_json(reports.view(), bench::env_json());
+        bench::print("\n=== verdict (TIER A — structural) ===\n");
+        bench::print("  PermissionedMetaLog handles are pointer-sized.\n");
+        bench::print("  Timed MetaLog deltas above are informational; the bodies copy a\n");
+        bench::print("  168-byte TensorMeta and are sensitive to harness layout.\n");
+
+        bench::emit_reports_json(reports.view(), bench::env_json());
+    });
     return 0;
 }

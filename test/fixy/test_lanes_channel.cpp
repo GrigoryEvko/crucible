@@ -4,7 +4,8 @@
 // opens each lane again, the doors of the producer root, and the refusals of
 // the doors.  test_channel_wait runs the form on threads.  Each case mints
 // its root and names its channel in its own scope, so no brand leaves the
-// scope that made it.
+// scope that made it.  Each handle lives in the body of a frame door, so a
+// case opens the frame of each producer in the frame of the one before it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -56,15 +57,46 @@ void expect_receives(Consumer& consumer, ::fixy::FixedArray<int, N> const& expec
     }
 }
 
-// A producer handle of a lane.  No root is out of the pool in these cases, so
-// an empty lend ends the test.
-template <class Channel>
-[[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel, c::LaneIndex<kLanes> lane) noexcept {
-    return channel.producer(kNondet, lane).expect("the pool lends a producer while its root is in the pool");
+// Ends the test when the producer door lent no producer.  No root is out of
+// the pool in the cases that call it.
+void expect_lent(::fixy::Option<::fixy::Unit> lent) noexcept {
+    static_cast<void>(std::move(lent).expect("the pool lends a producer while its root is in the pool"));
+}
+
+// Ends a producer handle, which is not linear, as the end of its scope does.
+// The parameter takes the handle and ends before the next statement.
+template <class Producer>
+void end_producer(Producer /*ended*/) noexcept {}
+
+// Opens the frame of a producer of each lane, each in the frame of the one
+// before it.  The innermost body gives each carried value and then the three
+// handles to step through the once door.  A lend door ends a body that it did
+// not call, and a closure marks no end of its own, so step holds no linear
+// value.  A linear value that step needs goes in carried, by move, and each
+// body holds it directly.
+template <class Channel, class Step, class... Carried>
+void open_each_lane(Channel& channel, Step step, Carried... carried) noexcept {
+    expect_lent(c::with_producer(
+        channel, kNondet, kFirst,
+        [&channel, step = std::move(step), ... carried = std::move(carried)](auto first) mutable noexcept {
+            expect_lent(c::with_producer(
+                channel, kNondet, kSecond,
+                [&channel, step = std::move(step), ... carried = std::move(carried),
+                 first = std::move(first)](auto second) mutable noexcept {
+                    expect_lent(c::with_producer(
+                        channel, kNondet, kThird,
+                        [step = std::move(step), ... carried = std::move(carried), first = std::move(first),
+                         second = std::move(second)](auto third) mutable noexcept {
+                            ::foundation::linear::call_once(std::move(step), std::move(carried)..., std::move(first),
+                                                            std::move(second), std::move(third));
+                        }));
+                }));
+        }));
 }
 
 // ── The refusals ────────────────────────────────────────────────────────
 
+// The second lend of one lane opens in the frame of the first one.
 void second_producer_of_a_lane() {
     auto root = perm::mint_permission_root<RootTag>();
     using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
@@ -72,8 +104,9 @@ void second_producer_of_a_lane() {
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
-    [[maybe_unused]] auto held = lend(channel, kSecond);
-    [[maybe_unused]] auto second = lend(channel, kSecond);
+    expect_lent(c::with_producer(channel, kNondet, kSecond, [&channel](auto /*held*/) noexcept {
+        expect_lent(c::with_producer(channel, kNondet, kSecond, [](auto /*second*/) noexcept {}));
+    }));
 }
 
 void producer_of_a_lane_that_ended() {
@@ -83,8 +116,9 @@ void producer_of_a_lane_that_ended() {
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
-    std::move(lend(channel, kSecond)).close();
-    [[maybe_unused]] auto again = lend(channel, kSecond);
+    expect_lent(
+        c::with_producer(channel, kNondet, kSecond, [](auto producer) noexcept { std::move(producer).close(); }));
+    expect_lent(c::with_producer(channel, kNondet, kSecond, [](auto /*again*/) noexcept {}));
 }
 
 // A drain takes the lease of the producer root, which a live producer keeps in
@@ -97,9 +131,10 @@ void root_at_rest_while_a_producer_lives() {
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
-    [[maybe_unused]] auto held = lend(channel, kFirst);
-    auto rested = channel.claim_producer_root_at_rest();
-    channel.deposit_producer_root(std::move(rested));
+    expect_lent(c::with_producer(channel, kNondet, kFirst, [&channel](auto /*held*/) noexcept {
+        auto rested = channel.claim_producer_root_at_rest();
+        channel.deposit_producer_root(std::move(rested));
+    }));
 }
 
 // A refused door ends the process, so each attack runs in a child through
@@ -126,35 +161,41 @@ void order_and_end_through_the_handles(::fixy::TestRunnerCtx const& test) noexce
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
-    Lanes::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
-    {
-        Lanes::ProducerHandle first = lend(channel, kFirst);
-        Lanes::ProducerHandle second = lend(channel, kSecond);
-        Lanes::ProducerHandle third = lend(channel, kThird);
-        CRUCIBLE_TEST_ASSERT(test, first.lane() == kFirst && third.lane() == kThird);
-        CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 3);
-        CRUCIBLE_TEST_ASSERT(test, third.try_push(31) && second.try_push(21));
-        expect_receives(consumer, ::fixy::FixedArray<int, 1>{kEmpty});
-        CRUCIBLE_TEST_ASSERT(test, first.try_push(11) && first.try_push(12));
-        expect_receives(consumer, ::fixy::FixedArray<int, 5>{11, 21, 31, 12, kEmpty});
+    // The consumer goes to the step with the producers, so the step ends each
+    // producer before it reads the end of the stream.
+    c::with_consumer(channel, std::move(consumer_perm), [&channel, &test](auto opened_consumer) noexcept {
+        open_each_lane(
+            channel,
+            [&channel, &test](auto consumer, auto first, auto second, auto third) noexcept {
+                CRUCIBLE_TEST_ASSERT(test, first.lane() == kFirst && third.lane() == kThird);
+                CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 3);
+                CRUCIBLE_TEST_ASSERT(test, third.try_push(31) && second.try_push(21));
+                expect_receives(consumer, ::fixy::FixedArray<int, 1>{kEmpty});
+                CRUCIBLE_TEST_ASSERT(test, first.try_push(11) && first.try_push(12));
+                expect_receives(consumer, ::fixy::FixedArray<int, 5>{11, 21, 31, 12, kEmpty});
 
-        // A full lane refuses a push.
-        for (int item = 22; item < 26; ++item) {
-            CRUCIBLE_TEST_ASSERT(test, second.try_push(item));
-        }
-        CRUCIBLE_TEST_ASSERT(test, !second.try_push(26));
+                // A full lane refuses a push.
+                for (int item = 22; item < 26; ++item) {
+                    CRUCIBLE_TEST_ASSERT(test, second.try_push(item));
+                }
+                CRUCIBLE_TEST_ASSERT(test, !second.try_push(26));
 
-        // The end of the third producer ends its lane, which leaves the turn
-        // after its last item.
-        std::move(third).close();
-        expect_receives(consumer, ::fixy::FixedArray<int, 2>{22, kEmpty});
-        CRUCIBLE_TEST_ASSERT(test, !channel.is_closed() && !consumer.is_closed());
-    }
-    // The ends of the first and the second producer end their lanes.
-    expect_receives(consumer, ::fixy::FixedArray<int, 4>{23, 24, 25, kClosed});
-    CRUCIBLE_TEST_ASSERT(test, channel.is_closed() && consumer.is_closed());
-    CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 0);
-    ::foundation::linear::drop(std::move(consumer));
+                // The end of the third producer ends its lane, which leaves the
+                // turn after its last item.
+                std::move(third).close();
+                expect_receives(consumer, ::fixy::FixedArray<int, 2>{22, kEmpty});
+                CRUCIBLE_TEST_ASSERT(test, !channel.is_closed() && !consumer.is_closed());
+
+                // The ends of the first and the second producer end their lanes.
+                end_producer(std::move(first));
+                end_producer(std::move(second));
+                expect_receives(consumer, ::fixy::FixedArray<int, 4>{23, 24, 25, kClosed});
+                CRUCIBLE_TEST_ASSERT(test, channel.is_closed() && consumer.is_closed());
+                CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 0);
+                ::foundation::linear::drop(std::move(consumer));
+            },
+            std::move(opened_consumer));
+    });
 }
 
 // The drain gives the items that the lanes hold in the order of the turn, to a
@@ -165,12 +206,9 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
     auto [producer_root, consumer_perm] =
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
-    {
-        Lanes::ProducerHandle first = lend(channel, kFirst);
-        Lanes::ProducerHandle second = lend(channel, kSecond);
-        Lanes::ProducerHandle third = lend(channel, kThird);
+    open_each_lane(channel, [&test](auto first, auto second, auto /*third*/) noexcept {
         CRUCIBLE_TEST_ASSERT(test, first.try_push(11) && first.try_push(12) && second.try_push(21));
-    }
+    });
     CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
     ::fixy::FixedList<int, 4> drained{};
     // The lease of the producer root opens the claim of the drain, and it goes
@@ -190,15 +228,13 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test, !channel.is_closed());
 
     // Each lane opens again: a new stream on the same channel.
-    Lanes::ConsumerHandle consumer = channel.consumer(std::move(consumer_perm));
-    {
-        Lanes::ProducerHandle first = lend(channel, kFirst);
-        Lanes::ProducerHandle second = lend(channel, kSecond);
-        Lanes::ProducerHandle third = lend(channel, kThird);
-        CRUCIBLE_TEST_ASSERT(test, second.try_push(22) && first.try_push(13));
-    }
-    expect_receives(consumer, ::fixy::FixedArray<int, 3>{13, 22, kClosed});
-    ::foundation::linear::drop(std::move(consumer));
+    c::with_consumer(channel, std::move(consumer_perm), [&channel, &test](auto consumer) noexcept {
+        open_each_lane(channel, [&test](auto first, auto second, auto /*third*/) noexcept {
+            CRUCIBLE_TEST_ASSERT(test, second.try_push(22) && first.try_push(13));
+        });
+        expect_receives(consumer, ::fixy::FixedArray<int, 3>{13, 22, kClosed});
+        ::foundation::linear::drop(std::move(consumer));
+    });
 }
 
 // While the producer root is out of the pool, the door lends no producer, and
@@ -211,7 +247,8 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
         perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
     Lanes channel{std::move(producer_root)};
     auto withdrawn = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
-    CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && channel.producer(kNondet, kFirst).is_none());
+    bool const is_lend_refused = c::with_producer(channel, kNondet, kFirst, [](auto /*lent*/) noexcept {}).is_none();
+    CRUCIBLE_TEST_ASSERT(test, channel.is_exclusive_active() && is_lend_refused);
     auto back = channel.with_recombined_access(
         Lanes::RecombinedParts{.root = std::move(withdrawn), .consumer = std::move(consumer_perm)},
         [](Lanes::RecombinedRing& ring) noexcept { static_cast<void>(ring.try_push(kSecond, 7)); });
@@ -219,15 +256,13 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test, !channel.is_exclusive_active());
 
     // The item of the recombined access waits in the second lane for the turn.
-    Lanes::ConsumerHandle consumer = channel.consumer(std::move(back.consumer));
-    {
-        Lanes::ProducerHandle first = lend(channel, kFirst);
-        Lanes::ProducerHandle second = lend(channel, kSecond);
-        Lanes::ProducerHandle third = lend(channel, kThird);
-        CRUCIBLE_TEST_ASSERT(test, first.try_push(1));
-    }
-    expect_receives(consumer, ::fixy::FixedArray<int, 3>{1, 7, kClosed});
-    ::foundation::linear::drop(std::move(consumer));
+    c::with_consumer(channel, std::move(back.consumer), [&channel, &test](auto consumer) noexcept {
+        open_each_lane(channel, [&test](auto first, auto /*second*/, auto /*third*/) noexcept {
+            CRUCIBLE_TEST_ASSERT(test, first.try_push(1));
+        });
+        expect_receives(consumer, ::fixy::FixedArray<int, 3>{1, 7, kClosed});
+        ::foundation::linear::drop(std::move(consumer));
+    });
 }
 
 }  // namespace

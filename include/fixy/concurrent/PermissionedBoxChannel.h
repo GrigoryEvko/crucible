@@ -5,8 +5,10 @@
 // copyable value, and a Box is no such value.  So the channel holds a
 // PermissionedChannel of the same form over the words of a Box (the word of
 // A Box of foundation/core/Ref.h), and the channel class is the authority of
-// those words.  Each handle of this channel holds the handle of the same role
-// of the inner channel.
+// those words.  Each end of this channel holds the end of the same role of
+// the inner channel.  The frame doors of fixy/concurrent/
+// PermissionedChannel.h open the ends and give each body a handle of its end,
+// as they do for that channel.
 //
 // Owners
 //     Each producer handle belongs to its producer thread, and the consumer
@@ -185,16 +187,16 @@ public:
         }
     }
 
-    class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerHandle {
-        typename cell_channel::ProducerHandle cells_;
+    class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerEnd {
+        typename cell_channel::ProducerEnd cells_;
 
-        explicit ProducerHandle(typename cell_channel::ProducerHandle&& cells) noexcept : cells_{std::move(cells)} {}
+        explicit ProducerEnd(typename cell_channel::ProducerEnd&& cells) noexcept : cells_{std::move(cells)} {}
         friend class PermissionedBoxChannel;
 
     public:
         // A push touches the lines of the channel of the words and one cell of
         // a word, and not the object of the Box.
-        static constexpr std::size_t per_call_working_set = cell_channel::ProducerHandle::per_call_working_set;
+        static constexpr std::size_t per_call_working_set = cell_channel::ProducerEnd::per_call_working_set;
         using row_discipline = typename disciplines::producer;
         using row_payload = value_type;
         using brand_type = Brand;
@@ -207,14 +209,14 @@ public:
         // type of the handle, as from the type of the channel.
         static constexpr std::size_t channel_capacity = Capacity;
 
-        ProducerHandle(ProducerHandle const&) =
-            delete("ProducerHandle owns the producer token or one pool share — copy would duplicate it");
-        ProducerHandle& operator=(ProducerHandle const&) =
-            delete("ProducerHandle owns the producer token or one pool share — assignment would overwrite it");
-        ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&) =
-            delete("ProducerHandle binds to ONE channel for life — rebinding would orphan the original token");
-        ~ProducerHandle() = default;
+        ProducerEnd(ProducerEnd const&) =
+            delete("ProducerEnd owns the producer token or one pool share — copy would duplicate it");
+        ProducerEnd& operator=(ProducerEnd const&) =
+            delete("ProducerEnd owns the producer token or one pool share — assignment would overwrite it");
+        ProducerEnd(ProducerEnd&&) noexcept = default;
+        ProducerEnd& operator=(ProducerEnd&&) =
+            delete("ProducerEnd binds to ONE channel for life — rebinding would orphan the original token");
+        ~ProducerEnd() = default;
 
         // The release door of the inner handle of a wire.
         [[nodiscard]] ::foundation::permissions::Permission<producer_tag, Brand> release() && noexcept
@@ -261,13 +263,13 @@ public:
         }
     };
 
-    class[[= ::foundation::linear::linear{}]] ConsumerHandle
-        : public detail::box_consumer_pops<Form, value_type, ConsumerHandle> {
-        typename cell_channel::ConsumerHandle cells_;
+    class[[= ::foundation::linear::linear{}]] ConsumerEnd
+        : public detail::box_consumer_pops<Form, value_type, ConsumerEnd> {
+        typename cell_channel::ConsumerEnd cells_;
 
-        explicit ConsumerHandle(typename cell_channel::ConsumerHandle&& cells) noexcept : cells_{std::move(cells)} {}
+        explicit ConsumerEnd(typename cell_channel::ConsumerEnd&& cells) noexcept : cells_{std::move(cells)} {}
         friend class PermissionedBoxChannel;
-        friend class detail::box_consumer_pops<Form, value_type, ConsumerHandle>;
+        friend class detail::box_consumer_pops<Form, value_type, ConsumerEnd>;
 
         // The bodies of the pops of detail::box_consumer_pops.  The pack holds
         // the tag of Nondet for a merge and no value for a wire, and each pop
@@ -293,7 +295,7 @@ public:
 
     public:
         // A pop touches the same lines, and not the object of the Box.
-        static constexpr std::size_t per_call_working_set = cell_channel::ConsumerHandle::per_call_working_set;
+        static constexpr std::size_t per_call_working_set = cell_channel::ConsumerEnd::per_call_working_set;
         using row_discipline = typename disciplines::consumer;
         using row_payload = value_type;
         using brand_type = Brand;
@@ -301,14 +303,14 @@ public:
         static constexpr ChannelForm channel_form = Form;
         static constexpr std::size_t channel_capacity = Capacity;
 
-        ConsumerHandle(ConsumerHandle const&) =
-            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
-        ConsumerHandle& operator=(ConsumerHandle const&) =
-            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
-        ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&) =
-            delete("ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission");
-        ~ConsumerHandle() = default;
+        ConsumerEnd(ConsumerEnd const&) =
+            delete("ConsumerEnd owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerEnd& operator=(ConsumerEnd const&) =
+            delete("ConsumerEnd owns the Consumer Permission — assignment would overwrite the linear token");
+        ConsumerEnd(ConsumerEnd&&) noexcept = default;
+        ConsumerEnd& operator=(ConsumerEnd&&) =
+            delete("ConsumerEnd binds to ONE channel for life — rebinding would orphan the original Permission");
+        ~ConsumerEnd() = default;
 
         // The release door of the inner handle.
         [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
@@ -347,32 +349,45 @@ public:
         }
     };
 
+    // The handles that the frame doors of fixy/concurrent/
+    // PermissionedChannel.h give a body on the scope brand Scope.
+    template <::foundation::brand::IsBrand Scope>
+    using producer_handle = ProducerHandle<PermissionedBoxChannel, Scope>;
+    template <::foundation::brand::IsBrand Scope>
+    using consumer_handle = ConsumerHandle<PermissionedBoxChannel, Scope>;
+
+    // The claim doors of the ends.  Each takes the key of the frame doors and
+    // gives it to the door of the inner channel, so only a frame door opens an
+    // end.
+
     // The producer door of a wire, which the inner channel gives: it takes the
     // claim of the producer role.
-    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
+    [[nodiscard]] ProducerEnd producer(ChannelFrameKey const& key,
+                                       ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
         requires(Form == ChannelForm::wire)
     {
-        return ProducerHandle{cells_.producer(std::move(perm))};
+        return ProducerEnd{cells_.producer(key, std::move(perm))};
     }
 
     // The producer door of a merge.  It lends a share of the producer pool, or
     // gives no value while an exclusive transition is in flight.  A lent handle
     // opens the channel.  The lend reads the schedule, so the door takes the
     // tag of Nondet, as the door of the inner channel does.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle>
-    producer(::foundation::effects::cap::Nondet nondet) noexcept
+    [[nodiscard]] ::foundation::core::Option<ProducerEnd> producer(ChannelFrameKey const& key,
+                                                                   ::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = cells_.producer(nondet);
+        auto lent = cells_.producer(key, nondet);
         if (lent.is_none()) return ::foundation::core::none;
-        return ::foundation::core::Option<ProducerHandle>::some(
-            ProducerHandle{std::move(lent).expect("the test above found a producer")});
+        return ::foundation::core::Option<ProducerEnd>::some(
+            ProducerEnd{std::move(lent).expect("the test above found a producer")});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
     // handle ends the process here.
-    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
-        return ConsumerHandle{cells_.consumer(std::move(perm))};
+    [[nodiscard]] ConsumerEnd consumer(ChannelFrameKey const& key,
+                                       ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+        return ConsumerEnd{cells_.consumer(key, std::move(perm))};
     }
 
     // The two doors of the producer root of a merge, as the inner channel gives

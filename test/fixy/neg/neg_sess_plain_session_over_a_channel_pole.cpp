@@ -8,7 +8,8 @@
 // So its gate refuses a
 // Resource that reaches a pole of a channel, and a pole enters a session
 // only through the pole door, which takes the two protocols from the table
-// of the channel.
+// of the channel.  The pole is the frame handle of the producer, so the mint
+// stands in the body of the frame door.
 //
 // Expected diagnostic: no mint_session admits the pole, because the
 // Resource reaches a pole of a channel.
@@ -37,11 +38,10 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer =
-        s::mint_session<s::Loop<s::Send<long, s::Continue>>>(ctx, channel.producer(std::move(producer_perm)));
-    std::move(producer).detach(s::detach_reason::TestInstrumentation{});
-    static_cast<void>(consumer_perm);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        auto session = s::mint_session<s::Loop<s::Send<long, s::Continue>>>(ctx, std::move(producer));
+        std::move(session).detach(s::detach_reason::TestInstrumentation{});
+    });
     return 0;
 }

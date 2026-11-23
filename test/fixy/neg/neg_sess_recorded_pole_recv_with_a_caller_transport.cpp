@@ -3,7 +3,8 @@
 // A recorded session over a pole of a channel steps through the read of the
 // pole table of its channel, as the session that it wraps does.  The recorder
 // refuses a transport of the caller on a pole, so a recorded pole moves the
-// values of its channel in one way.
+// values of its channel in one way.  The endpoint runs over the frame handle
+// of the consumer, so it opens in the body of the frame door.
 //
 // Expected diagnostic: [Pole_Owns_Its_Transport] at the receive of the
 // recorder.
@@ -34,18 +35,19 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer = channel.producer(std::move(producer_perm));
-    (void)producer.try_push(7);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     s::SessionEventLog log;
-    auto recorded =
-        channels::mint_recording_endpoint(channels::mint_endpoint<Channel, channels::Direction::Consumer>(
-                                              ctx, channel.consumer(std::move(consumer_perm))),
-                                          s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
-    auto [value, next] =
-        std::move(recorded).recv([](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); });
-    (void)value;
-    std::move(next).detach(s::detach_reason::TestInstrumentation{});
+    c::with_ends(
+        channel, std::move(tokens.at(::foundation::core::index<0>())),
+        std::move(tokens.at(::foundation::core::index<1>())), [&ctx, &log](auto producer, auto consumer) noexcept {
+            (void)producer.try_push(7);
+            std::move(producer).close();
+            auto recorded = channels::mint_recording_endpoint(
+                channels::mint_endpoint<Channel, channels::Direction::Consumer>(ctx, std::move(consumer)),
+                s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
+            auto received =
+                std::move(recorded).recv([](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); });
+            (void)received;
+        });
     return 0;
 }

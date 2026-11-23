@@ -134,8 +134,15 @@ using EndpointCh1 = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::
                                                             EndpointTag1, EndpointBrand>;
 using EndpointCh2 = ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::wire, int, 64,
                                                             EndpointTag2, EndpointBrand>;
-using ConsumerEndpoint = ::fixy::channels::Endpoint<EndpointCh1, ::fixy::channels::Direction::Consumer, EndpointFgCtx>;
-using ProducerEndpoint = ::fixy::channels::Endpoint<EndpointCh2, ::fixy::channels::Direction::Producer, EndpointFgCtx>;
+// A scope brand that the cell names, and the frame handles on it.  No frame
+// door gives a handle on it.
+struct EndpointScope {};
+using EndpointIn1 = ::fixy::concurrent::ConsumerHandle<EndpointCh1, EndpointScope>;
+using EndpointOut2 = ::fixy::concurrent::ProducerHandle<EndpointCh2, EndpointScope>;
+using ConsumerEndpoint =
+    ::fixy::channels::Endpoint<EndpointCh1, ::fixy::channels::Direction::Consumer, EndpointFgCtx, EndpointIn1>;
+using ProducerEndpoint =
+    ::fixy::channels::Endpoint<EndpointCh2, ::fixy::channels::Direction::Producer, EndpointFgCtx, EndpointOut2>;
 
 // A machine with one edge, Idle to Busy, for the transition predicate.
 struct Idle {};
@@ -327,7 +334,7 @@ struct foundation::contracts::armed_cell<::fixy::concurrent::detail::has_load> {
 template <>
 struct foundation::contracts::armed_cell<::fixy::channels::detail::is_endpoint> {
     using accepts = witnesses<w::ConsumerEndpoint, w::ProducerEndpoint>;
-    using refuses = witnesses<int, w::EndpointCh1::ConsumerHandle, w::ConsumerEndpoint&>;
+    using refuses = witnesses<int, w::EndpointIn1, w::ConsumerEndpoint&>;
 };
 
 template <>

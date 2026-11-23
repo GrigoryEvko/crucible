@@ -4,6 +4,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 #include <cstdint>
 #include <utility>
@@ -363,14 +364,17 @@ int main() {
     auto [producer_perm, consumer_perm] =
         ::foundation::permissions::mint_permission_split<typename Channel::producer_tag,
                                                          typename Channel::consumer_tag>(std::move(whole));
-    auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
+    auto token = ::fixy::concurrent::with_ends(
+        channel, std::move(producer_perm), std::move(consumer_perm), [](auto producer, auto consumer) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(42));
+            CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(84));
 
-    CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(42));
-    CRUCIBLE_TEST_ASSERT(kTest, producer.try_push(84));
-
-    Hist streamed;
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::observe::drain_record_stream(streamed, consumer, 8) == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, streamed.total_count() == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, streamed.percentile(100.0) >= 84);
+            Hist streamed;
+            CRUCIBLE_TEST_ASSERT(kTest, crucible::observe::drain_record_stream(streamed, consumer, 8) == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, streamed.total_count() == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, streamed.percentile(100.0) >= 84);
+            std::move(producer).close();
+            return std::move(consumer).release();
+        });
+    ::foundation::linear::drop(std::move(token));
 }

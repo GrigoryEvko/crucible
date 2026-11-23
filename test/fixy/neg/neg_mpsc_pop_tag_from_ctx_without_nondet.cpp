@@ -1,11 +1,14 @@
 // The bare tag of Nondet comes only from a context whose row holds Nondet.
 // A function under the drain context, which holds Bg and Alloc, cannot
-// mint the tag, so it cannot pop an MPSC channel.  The failure is the
-// constraint of mint_from_ctx, at the call.
+// mint the tag, so the consumer handle of its frame cannot pop an MPSC
+// channel.  The failure is the constraint of mint_from_ctx, at the call.
 
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/effects/Capability.h>
+#include <foundation/permissions/Permission.h>
+
+#include <utility>
 
 namespace {
 
@@ -14,9 +17,13 @@ struct UserBrand {};
 
 using Channel = fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, UserTag, UserBrand>;
 
-[[maybe_unused]] void attempt(fixy::BgDrainCtx const& drain, Channel::ConsumerHandle& consumer) {
-    [[maybe_unused]] auto item = consumer.try_pop(foundation::effects::extract_bare(
-        foundation::effects::mint_from_ctx<foundation::effects::Effect::Nondet>(drain)));
+[[maybe_unused]] auto attempt(fixy::BgDrainCtx const& drain, Channel& channel,
+                              foundation::permissions::Permission<Channel::consumer_tag, UserBrand>&& token) noexcept {
+    return fixy::concurrent::with_consumer(channel, std::move(token), [&drain](auto consumer) noexcept {
+        [[maybe_unused]] auto item = consumer.try_pop(foundation::effects::extract_bare(
+            foundation::effects::mint_from_ctx<foundation::effects::Effect::Nondet>(drain)));
+        return std::move(consumer).release();
+    });
 }
 
 }  // namespace

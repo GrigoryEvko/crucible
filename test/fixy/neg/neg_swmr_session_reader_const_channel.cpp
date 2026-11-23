@@ -1,11 +1,12 @@
 // Negative compile test.  This file must fail to compile.
 //
-// mint_swmr_reader lends a share of the channel's reader pool, which
-// changes the pool.  A const channel cannot lend a share, so the mint
-// refuses it.  The context holds Nondet, so only the const channel fails.
+// The reader door with_reader lends a share of the reader pool of the
+// session, which changes the pool.  A const session cannot lend a share, so
+// the door refuses it.  The context holds Nondet, so only the const session
+// fails.
 //
 // Expected diagnostic: SwmrSessionSurface is not satisfied for the const
-// channel.
+// session.
 
 #include <fixy/Ctx.h>
 #include <fixy/channels/SwmrSession.h>
@@ -33,7 +34,6 @@ int main() {
     namespace ses = ::fixy::channels::swmr_session;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader(ctx, std::as_const(swmr));
-    (void)reader;
-    return 0;
+    auto lent = ses::with_reader(ctx, std::as_const(swmr), [](auto reader) noexcept { return reader.version(); });
+    return lent.is_some() ? 0 : 1;
 }

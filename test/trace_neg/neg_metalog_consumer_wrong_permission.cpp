@@ -1,33 +1,34 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// PermissionedMetaLog::consumer takes the Permission of the consumer tag,
-// and that parameter type is its whole admission.  This call passes the
-// Permission of the producer tag of the same root, so no consumer handle
-// can be made from it.
+// The consumer door of PermissionedMetaLog takes the Permission of the
+// consumer tag, and that parameter type is its whole admission.  This call
+// passes the Permission of the producer tag of the same root, so the door
+// opens no consumer end from it.
 
 #include <crucible/MetaLog.h>
 #include <crucible/PermissionedMetaLog.h>
 
+#include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/Linear.h>
 #include <foundation/permissions/Permission.h>
 
 #include <utility>
 
 namespace consumer_wrong_permission_fixture {
 struct Tag {};
-inline auto log_root() noexcept {
-    return ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
-}
-using Log = ::crucible::permissioned_metalog_t<decltype(log_root())>;
 }  // namespace consumer_wrong_permission_fixture
 
 int main() {
-    using Log = consumer_wrong_permission_fixture::Log;
+    auto root = ::foundation::permissions::mint_permission_root<
+        ::crucible::metalog_tag::Whole<consumer_wrong_permission_fixture::Tag>>();
+    using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
     ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
     Log log{raw};
-    auto [wrong, unused] = ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(
-        consumer_wrong_permission_fixture::log_root());
-    (void)unused;
-    auto consumer = log.consumer(std::move(wrong));
-    (void)consumer;
+    auto tokens =
+        ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
+    ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));
+    ::fixy::concurrent::with_consumer(
+        log, std::move(tokens.at(::foundation::core::index<0>())),
+        [](auto consumer) noexcept -> void { ::foundation::linear::drop(std::move(consumer).release()); });
     return 0;
 }

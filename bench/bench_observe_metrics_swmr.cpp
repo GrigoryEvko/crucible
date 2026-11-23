@@ -1,7 +1,9 @@
 #include <crucible/observe/Metrics.h>
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Stale.h>
 #include <foundation/Brand.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
 
@@ -32,36 +34,45 @@ int main() {
     ::fixy::SequenceSource const steps =
         ::fixy::mint_sequence_source(::fixy::ColdInitCtx{::foundation::effects::testing::init()});
     Channel channel{metrics_reader_root(), observe::fresh_metrics_sample(metrics, steps)};
-    auto writer = observe::mint_metrics_writer(channel, metrics_writer_root());
     // The context of the reader: the lend of its share and its load take
     // Nondet, and the load spins, so it also takes Div.
     const ::fixy::TestRunnerCtx spin{::foundation::effects::testing::test()};
-    auto minted = observe::mint_keeper_metrics_reader(spin, channel);
-    if (minted.is_none()) {
+    auto sample = observe::fresh_metrics_sample(metrics, steps);
+    std::uint64_t seq = 0;
+    bool is_read = false;
+
+    // The writer frame and the reader frame open before the timed row, and
+    // the row runs in the inner body.  The row reaches the writer handle
+    // through a Ref, so no closure holds a reference to the linear handle.
+    auto writer_token = observe::with_metrics_writer(channel, metrics_writer_root(), [&](auto writer) noexcept {
+        auto const publisher = ::fixy::to(writer);
+        auto const read = observe::with_keeper_metrics_reader(spin, channel, [&](auto reader) noexcept {
+            ::fixy::FixedArray<bench::Report, 1> const reports{
+                bench::Run{"RuntimeMetrics SWMR publish"}.samples(100000).warmup(10000).max_wall_ms(3000).measure(
+                    [&, publisher] {
+                        metrics.meb_lambda_max = static_cast<double>(seq++);
+                        sample = observe::fresh_metrics_sample(metrics, steps);
+                        publisher->publish(sample);
+                        bench::mark_changed(seq);
+                    })};
+
+            auto observed = reader.load(spin);
+
+            using ::fixy::TextView;
+            bench::emit_reports_text(reports.view());
+            bench::print("\nbench_observe_metrics_swmr:\n");
+            bench::print("  target_p99_lt_100ns: {}\n",
+                         reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? TextView{"yes"} : TextView{"no"});
+            bench::print("  final_lambda_max:    {}\n", ::fixy::Fixed<0>{observed.peek().meb_lambda_max});
+            bench::emit_reports_json(reports.view(), bench::env_json());
+        });
+        is_read = read.is_some();
+        return std::move(writer).release();
+    });
+    ::foundation::linear::drop(std::move(writer_token));
+    if (!is_read) {
         ::fixy::report(::fixy::Sink::Err, "failed to mint runtime metrics reader\n");
         return 1;
     }
-    auto reader = std::move(minted).expect("the reader share is present");
-
-    auto sample = observe::fresh_metrics_sample(metrics, steps);
-    std::uint64_t seq = 0;
-    ::fixy::FixedArray<bench::Report, 1> const reports{
-        bench::Run{"RuntimeMetrics SWMR publish"}.samples(100000).warmup(10000).max_wall_ms(3000).measure([&] {
-            metrics.meb_lambda_max = static_cast<double>(seq++);
-            sample = observe::fresh_metrics_sample(metrics, steps);
-            writer.publish(sample);
-            bench::mark_changed(seq);
-        })};
-
-    auto observed = reader.load(spin);
-
-    using ::fixy::TextView;
-    bench::emit_reports_text(reports.view());
-    bench::print("\nbench_observe_metrics_swmr:\n");
-    bench::print("  target_p99_lt_100ns: {}\n",
-                 reports.at(::fixy::index<0>()).pct.p99 < 100.0 ? TextView{"yes"} : TextView{"no"});
-    bench::print("  final_lambda_max:    {}\n", ::fixy::Fixed<0>{observed.peek().meb_lambda_max});
-    bench::emit_reports_json(reports.view(), bench::env_json());
-
     return 0;
 }

@@ -25,7 +25,10 @@ struct Writer {
     void publish(int const&) noexcept {}
 };
 struct NotAWriter {};
-inline void body(In::ConsumerHandle&&, Writer&&) noexcept {}
+// The consumer handle carries the scope brand of its frame, so the body is
+// a template over the type of the handle.
+template <class Input>
+void body(Input&&, Writer&&) noexcept {}
 }  // namespace swmr_writer_fixture
 
 int main() {
@@ -34,11 +37,11 @@ int main() {
     namespace eff = ::foundation::effects;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     In in{};
-    auto [in_p, in_c] = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
-    (void)in_p;
-    auto stage = channels::mint_swmr_stage_from_endpoint<&body>(
-        ctx, channels::mint_endpoint<In, channels::Direction::Consumer>(ctx, in.consumer(std::move(in_c))),
-        NotAWriter{});
-    std::move(stage).run();
+    auto in_tokens = perm::mint_permission_split<In::producer_tag, In::consumer_tag>(in_root());
+    c::with_consumer(in, std::move(in_tokens.at(::foundation::core::index<1>())), [&ctx](auto in_handle) noexcept {
+        auto stage = channels::mint_swmr_stage_from_endpoint<&body<decltype(in_handle)>>(
+            ctx, channels::mint_endpoint<In, channels::Direction::Consumer>(ctx, std::move(in_handle)), NotAWriter{});
+        std::move(stage).run();
+    });
     return 0;
 }

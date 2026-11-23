@@ -22,6 +22,7 @@
 
 #include <fixy/Ctx.h>
 #include <foundation/ChannelBinding.h>
+#include <foundation/Linear.h>
 #include <foundation/core/Choice.h>
 #include <foundation/effects/Effect.h>
 
@@ -33,6 +34,23 @@
 namespace fixy::concurrent {
 
 namespace detail {
+
+// The class whose doors a shape trait reads: the end of a frame handle,
+// which names it as frame_end_type, or the type itself.  A frame handle shows
+// the doors of its end through forwarders, which are templates, so the
+// address of a door of the handle names no one function.
+template <typename T, typename = void>
+struct door_source {
+    using type = T;
+};
+
+template <typename T>
+struct door_source<T, std::void_t<typename T::frame_end_type>> {
+    using type = typename T::frame_end_type;
+};
+
+template <typename T>
+using door_source_t = typename door_source<T>::type;
 
 // ── the consumer pole: Option<P> try_pop() ──────────────────────────
 //
@@ -77,8 +95,8 @@ struct try_pop_shape {
 };
 
 template <typename T>
-struct try_pop_shape<T, std::void_t<decltype(&T::try_pop)>> {
-    using mptr_t = decltype(&T::try_pop);
+struct try_pop_shape<T, std::void_t<decltype(&door_source_t<T>::try_pop)>> {
+    using mptr_t = decltype(&door_source_t<T>::try_pop);
     using decomp = consumer_signature_decomp<mptr_t>;
     static constexpr bool matches = decomp::matches;
     static constexpr bool is_merge = decomp::is_merge;
@@ -120,8 +138,8 @@ struct try_push_shape {
 };
 
 template <typename T>
-struct try_push_shape<T, std::void_t<decltype(&T::try_push)>> {
-    using mptr_t = decltype(&T::try_push);
+struct try_push_shape<T, std::void_t<decltype(&door_source_t<T>::try_push)>> {
+    using mptr_t = decltype(&door_source_t<T>::try_push);
     using decomp = producer_signature_decomp<mptr_t>;
     static constexpr bool matches = decomp::matches;
     using payload = typename decomp::payload;
@@ -154,8 +172,8 @@ struct publish_shape {
 };
 
 template <typename T>
-struct publish_shape<T, std::void_t<decltype(&T::publish)>> {
-    using mptr_t = decltype(&T::publish);
+struct publish_shape<T, std::void_t<decltype(&door_source_t<T>::publish)>> {
+    using mptr_t = decltype(&door_source_t<T>::publish);
     using decomp = publish_signature_decomp<mptr_t>;
     static constexpr bool matches = decomp::matches;
     using payload = typename decomp::payload;
@@ -196,8 +214,8 @@ struct plain_load_shape {
 };
 
 template <typename T>
-struct plain_load_shape<T, std::void_t<decltype(&T::load)>> {
-    using decomp = load_signature_decomp<decltype(&T::load)>;
+struct plain_load_shape<T, std::void_t<decltype(&door_source_t<T>::load)>> {
+    using decomp = load_signature_decomp<decltype(&door_source_t<T>::load)>;
     static constexpr bool matches = decomp::matches && !std::is_void_v<typename decomp::payload>;
     using payload = typename decomp::payload;
 };
@@ -233,19 +251,19 @@ template <typename T, typename = void>
 struct has_try_push : std::false_type {};
 
 template <typename T>
-struct has_try_push<T, std::void_t<decltype(&T::try_push)>> : std::true_type {};
+struct has_try_push<T, std::void_t<decltype(&door_source_t<T>::try_push)>> : std::true_type {};
 
 template <typename T, typename = void>
 struct has_try_pop : std::false_type {};
 
 template <typename T>
-struct has_try_pop<T, std::void_t<decltype(&T::try_pop)>> : std::true_type {};
+struct has_try_pop<T, std::void_t<decltype(&door_source_t<T>::try_pop)>> : std::true_type {};
 
 template <typename T, typename = void>
 struct has_publish : std::false_type {};
 
 template <typename T>
-struct has_publish<T, std::void_t<decltype(&T::publish)>> : std::true_type {};
+struct has_publish<T, std::void_t<decltype(&door_source_t<T>::publish)>> : std::true_type {};
 
 // A member named load of any shape: a plain member, or a load of the reader
 // pole that is a template over its context.  The probe is part of has_load,
@@ -256,7 +274,7 @@ struct load_member_probe {
 };
 
 template <typename T>
-struct load_member_probe<T, std::void_t<decltype(&T::load)>> {
+struct load_member_probe<T, std::void_t<decltype(&door_source_t<T>::load)>> {
     static constexpr bool found = true;
 };
 
@@ -375,4 +393,92 @@ concept HandlesAgreeOnCapacity =
     StatesHandleCapacity<Producer> && StatesHandleCapacity<Consumer>
     && static_cast<std::size_t>(Producer::channel_capacity) == static_cast<std::size_t>(Consumer::channel_capacity);
 
+// The gates of a frame door of a channel, which gives its body each handle
+// by value on the scope brand of the call (the frame doors of
+// fixy/concurrent/PermissionedChannel.h and fixy/channels/SwmrSession.h).
+
+// A body of a frame door: a closure that the caller gives up, which takes each
+// handle by value and does not throw.  A frame door runs its body one time,
+// so the door owns the body and calls it through the once door call_once of
+// foundation/Linear.h.  A body can then hold a linear value by value, such as
+// a handle or a token of an outer frame, and the rule must-consume reads the
+// consume of each such value in the body.  Body is the deduced type of a
+// forwarding parameter, so a named body deduces a reference.
+template <class Body, class... Handles>
+concept HandleFrameBody =
+    ::foundation::linear::OnceClosure<Body, Handles...> && std::is_nothrow_invocable_v<Body&&, Handles...>;
+
+// A body of a frame door that the caller names: a second name of the closure
+// could call it again.  The named twin of each door binds to it.
+template <class Body, class... Handles>
+concept HandleNamedFrameBody =
+    std::is_lvalue_reference_v<Body> && std::is_invocable_v<std::remove_reference_t<Body>&, Handles...>;
+
+// A body whose result leaves the frame: void, or a value that holds no borrow
+// and names no brand of the frame (FrameResult of foundation/core/Choice.h).
+// A handle in the result names the scope brand, also inside a closure or a
+// sum, so such a result does not leave.
+template <class Body, class Scope, class... Handles>
+concept HandleFrameLeaves = HandleFrameBody<Body, Handles...>
+                         && ::foundation::core::FrameResult<std::invoke_result_t<Body&&, Handles...>, Scope>;
+
+// A body of a frame door that lends its end, such as the producer door of a
+// merge channel.  The lend fails while the root of the end is out of the
+// pool, and then the door calls no body and ends it at end_unrun_body of
+// foundation/Linear.h.  So the body holds no linear value, or each linear value
+// that it holds states its own end.
+template <class Body>
+concept HandleLendFrameBody =
+    ::foundation::linear::HoldsNoLinearValue<Body> || ::foundation::linear::UnrunBody<std::remove_cvref_t<Body>>;
+
+// A frame handle of the end of a role of a channel: the handle that a frame
+// door of the channel gives on the scope brand that the handle names.  A
+// channel family names its handles through the member alias templates
+// producer_handle and consumer_handle.
+template <class Pole, class Channel>
+concept FrameProducerHandleOf = requires {
+    typename Pole::scope_type;
+} && std::same_as<Pole, typename Channel::template producer_handle<typename Pole::scope_type>>;
+template <class Pole, class Channel>
+concept FrameConsumerHandleOf = requires {
+    typename Pole::scope_type;
+} && std::same_as<Pole, typename Channel::template consumer_handle<typename Pole::scope_type>>;
+
+// The producer pole of a channel: its producer end, or a frame handle of that
+// end.  A gate of a session reads the end, which runs the protocol of each of
+// its handles, and a session runs over a handle.  No code outside the frame
+// doors gets a value of an end.
+template <class Pole, class Channel>
+concept ProducerPoleOf = std::same_as<Pole, typename Channel::ProducerEnd> || FrameProducerHandleOf<Pole, Channel>;
+template <class Pole, class Channel>
+concept ConsumerPoleOf = std::same_as<Pole, typename Channel::ConsumerEnd> || FrameConsumerHandleOf<Pole, Channel>;
+
+namespace detail {
+
+// The value of a frame door that can open no end: the result of the body, or
+// Unit for a body that gives void.
+template <class Given>
+using handle_frame_value_t = std::conditional_t<std::is_void_v<Given>, ::foundation::core::Unit, Given>;
+
+// The end of the body of a lend door that lent no end (HandleLendFrameBody).
+// A body that holds a linear value ends at end_unrun_body, so each such
+// value ends at its own end.  Each other body ends with no work.
+template <class Body>
+    requires HandleLendFrameBody<Body>
+constexpr void end_unlent_body_(Body&& body) noexcept {
+    if constexpr (::foundation::linear::LinearValue<std::remove_cvref_t<Body>>) {
+        ::foundation::linear::end_unrun_body(static_cast<Body&&>(body),
+                                             ::foundation::linear::UnrunReason::lend_refused);
+    } else {
+        static_cast<void>(body);
+    }
+}
+
+}  // namespace detail
+
 }  // namespace fixy::concurrent
+
+// The reason of the named twin of each frame door.
+#define CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL                                                           \
+    "a frame door of a channel owns its body and calls it one time, and a named body keeps a second name " \
+    "that can call it again: pass the body with std::move, or write it at the call"

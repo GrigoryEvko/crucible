@@ -67,57 +67,76 @@ inline constexpr std::uint64_t kNoLabel = ~std::uint64_t{0};
                      []() noexcept { return kNoLabel; });
 }
 
-// A producer handle of the channel.  A test lends while no exclusive is out,
-// so an empty lend ends the process.
-template <class Channel>
-[[nodiscard]] typename Channel::ProducerHandle lend(Channel& channel) noexcept {
-    return channel.producer(eff::testing::test().nondet)
-        .expect("the channel lends a producer while no exclusive is out");
+// The tag of a lend and of a pop of a merge.
+constexpr eff::cap::Nondet kMerge = eff::testing::test().nondet;
+
+// The result of the body of a producer frame.  A test lends while no
+// exclusive is out, so an empty lend ends the process.
+template <class Value>
+[[nodiscard]] Value expect_lent(fixy::Option<Value>&& lent) noexcept {
+    return std::move(lent).expect("the channel lends a producer while no exclusive is out");
 }
 
 // Two producers push into one ring, and the pop gives a Box of each object.
-// A full ring gives the Box of the push back, with its object.
+// A full ring gives the Box of the push back, with its object.  The consumer
+// frame is the outer frame, and the two producer frames take the consumer
+// handle by move.
 void push_pop_and_full_ring(fixy::TestRunnerCtx const& test) noexcept {
     {
         auto root = perm::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::merge, ParcelTag>>();
         using Channel = c::box_channel_t<Parcel, 2, decltype(root)>;
-        // The two handles have the shapes that a stage reads, with a Box as
-        // the payload, and they name one channel.
-        static_assert(c::is_producer_handle_v<Channel::ProducerHandle>);
-        static_assert(c::is_consumer_handle_v<Channel::ConsumerHandle>);
-        static_assert(std::is_same_v<c::producer_handle_value_t<Channel::ProducerHandle>, fixy::Box<Parcel>>);
-        static_assert(std::is_same_v<c::consumer_handle_value_t<Channel::ConsumerHandle>, fixy::Box<Parcel>>);
-        static_assert(c::HandlesShareChannel<Channel::ProducerHandle, Channel::ConsumerHandle>);
-        // Each handle states the capacity of the channel.
-        static_assert(Channel::ProducerHandle::channel_capacity == 2 && Channel::ConsumerHandle::channel_capacity == 2);
-        static_assert(!std::is_copy_constructible_v<Channel::ProducerHandle>);
-        static_assert(!std::is_move_assignable_v<Channel::ConsumerHandle>);
+        // The two ends have the shapes that a stage reads, with a Box as the
+        // payload, and they name one channel.  The handles of the frames read
+        // the same in the body below.
+        static_assert(c::is_producer_handle_v<Channel::ProducerEnd>);
+        static_assert(c::is_consumer_handle_v<Channel::ConsumerEnd>);
+        static_assert(std::is_same_v<c::producer_handle_value_t<Channel::ProducerEnd>, fixy::Box<Parcel>>);
+        static_assert(std::is_same_v<c::consumer_handle_value_t<Channel::ConsumerEnd>, fixy::Box<Parcel>>);
+        static_assert(c::HandlesShareChannel<Channel::ProducerEnd, Channel::ConsumerEnd>);
+        // Each end states the capacity of the channel.
+        static_assert(Channel::ProducerEnd::channel_capacity == 2 && Channel::ConsumerEnd::channel_capacity == 2);
+        static_assert(!std::is_copy_constructible_v<Channel::ProducerEnd>);
+        static_assert(!std::is_move_assignable_v<Channel::ConsumerEnd>);
         static_assert(!std::is_move_constructible_v<Channel>);
+        // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
+        static_assert(c::is_merge_consumer_handle_v<Channel::ConsumerEnd>);
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        // A pop of an MPSC channel is a merge, so it takes the tag of Nondet.
-        const eff::cap::Nondet merge = eff::testing::test().nondet;
-        static_assert(c::is_merge_consumer_handle_v<Channel::ConsumerHandle>);
-        {
-            auto first = lend(channel);
-            auto second = lend(channel);
-            CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 2);
-            CRUCIBLE_TEST_ASSERT(test, consumer.try_pop(merge).is_none());
-            CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(1)).is_none());
-            CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(2)).is_none());
-            fixy::Option<fixy::Box<Parcel>> const refused = first.try_push(make_parcel(3));
-            CRUCIBLE_TEST_ASSERT(test, label_of(refused) == 3);
-            CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 3);
+        c::with_consumer(channel, std::move(consumer_perm), [&test, &channel](auto consumer) noexcept {
+            static_cast<void>(expect_lent(c::with_producer(
+                channel, kMerge, [&test, &channel, consumer = std::move(consumer)](auto first) mutable noexcept {
+                    static_cast<void>(expect_lent(c::with_producer(
+                        channel, kMerge,
+                        [&test, &channel, &first, consumer = std::move(consumer)](auto second) mutable noexcept {
+                            using Producer = decltype(second);
+                            using Consumer = decltype(consumer);
+                            static_assert(c::is_producer_handle_v<Producer>);
+                            static_assert(c::is_consumer_handle_v<Consumer>);
+                            static_assert(std::is_same_v<c::producer_handle_value_t<Producer>, fixy::Box<Parcel>>);
+                            static_assert(std::is_same_v<c::consumer_handle_value_t<Consumer>, fixy::Box<Parcel>>);
+                            static_assert(c::HandlesShareChannel<Producer, Consumer>);
+                            static_assert(Producer::channel_capacity == 2 && Consumer::channel_capacity == 2);
+                            static_assert(!std::is_copy_constructible_v<Producer>);
+                            static_assert(!std::is_move_assignable_v<Consumer>);
+                            static_assert(c::is_merge_consumer_handle_v<Consumer>);
+                            CRUCIBLE_TEST_ASSERT(test, channel.outstanding_producers() == 2);
+                            CRUCIBLE_TEST_ASSERT(test, consumer.try_pop(kMerge).is_none());
+                            CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(1)).is_none());
+                            CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(2)).is_none());
+                            fixy::Option<fixy::Box<Parcel>> const refused = first.try_push(make_parcel(3));
+                            CRUCIBLE_TEST_ASSERT(test, label_of(refused) == 3);
+                            CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 3);
 
-            fixy::Option<fixy::Box<Parcel>> const one = consumer.try_pop(merge);
-            fixy::Option<fixy::Box<Parcel>> const two = consumer.try_pop(merge);
-            CRUCIBLE_TEST_ASSERT(test, label_of(one) == 1);
-            CRUCIBLE_TEST_ASSERT(test, label_of(two) == 2);
-            CRUCIBLE_TEST_ASSERT(test, consumer.try_pop(merge).is_none());
-        }
-        ::foundation::linear::drop(std::move(consumer));
+                            fixy::Option<fixy::Box<Parcel>> const one = consumer.try_pop(kMerge);
+                            fixy::Option<fixy::Box<Parcel>> const two = consumer.try_pop(kMerge);
+                            CRUCIBLE_TEST_ASSERT(test, label_of(one) == 1);
+                            CRUCIBLE_TEST_ASSERT(test, label_of(two) == 2);
+                            CRUCIBLE_TEST_ASSERT(test, consumer.try_pop(kMerge).is_none());
+                            ::foundation::linear::drop(std::move(consumer));
+                        })));
+                })));
+        });
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
@@ -132,25 +151,23 @@ void receive_to_the_end_of_the_stream(fixy::TestRunnerCtx const& test) noexcept 
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        const eff::cap::Nondet merge = eff::testing::test().nondet;
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_receive(merge).err() == fixy::some(c::NoItem::Empty));
-        {
-            auto second = lend(channel);
-            {
-                auto first = lend(channel);
-                CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(5)).is_none());
-            }
-            CRUCIBLE_TEST_ASSERT(test, !channel.is_closed());
-            CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(6)).is_none());
-        }
-        CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
-        fixy::Option<fixy::Box<Parcel>> const fifth = consumer.try_receive(merge).ok();
-        fixy::Option<fixy::Box<Parcel>> const sixth = consumer.try_receive(merge).ok();
-        CRUCIBLE_TEST_ASSERT(test, label_of(fifth) == 5);
-        CRUCIBLE_TEST_ASSERT(test, label_of(sixth) == 6);
-        CRUCIBLE_TEST_ASSERT(test, consumer.try_receive(merge).err() == fixy::some(c::NoItem::Closed));
-        ::foundation::linear::drop(std::move(consumer));
+        c::with_consumer(channel, std::move(consumer_perm), [&test, &channel](auto consumer) noexcept {
+            CRUCIBLE_TEST_ASSERT(test, consumer.try_receive(kMerge).err() == fixy::some(c::NoItem::Empty));
+            static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test, &channel](auto second) noexcept {
+                static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test](auto first) noexcept {
+                    CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(5)).is_none());
+                })));
+                CRUCIBLE_TEST_ASSERT(test, !channel.is_closed());
+                CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(6)).is_none());
+            })));
+            CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
+            fixy::Option<fixy::Box<Parcel>> const fifth = consumer.try_receive(kMerge).ok();
+            fixy::Option<fixy::Box<Parcel>> const sixth = consumer.try_receive(kMerge).ok();
+            CRUCIBLE_TEST_ASSERT(test, label_of(fifth) == 5);
+            CRUCIBLE_TEST_ASSERT(test, label_of(sixth) == 6);
+            CRUCIBLE_TEST_ASSERT(test, consumer.try_receive(kMerge).err() == fixy::some(c::NoItem::Closed));
+            ::foundation::linear::drop(std::move(consumer));
+        });
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
 }
@@ -164,14 +181,15 @@ void end_of_channel_ends_each_object(fixy::TestRunnerCtx const& test) noexcept {
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        {
-            auto first = lend(channel);
-            auto second = lend(channel);
-            CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(7)).is_none());
-            CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(8)).is_none());
-        }
-        ::foundation::linear::drop(std::move(consumer));
+        c::with_consumer(channel, std::move(consumer_perm), [&test, &channel](auto consumer) noexcept {
+            static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test, &channel](auto first) noexcept {
+                static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test, &first](auto second) noexcept {
+                    CRUCIBLE_TEST_ASSERT(test, first.try_push(make_parcel(7)).is_none());
+                    CRUCIBLE_TEST_ASSERT(test, second.try_push(make_parcel(8)).is_none());
+                })));
+            })));
+            ::foundation::linear::drop(std::move(consumer));
+        });
         CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 2);
     }
     CRUCIBLE_TEST_ASSERT(test, live_parcels.load_acquire() == 0);
@@ -214,15 +232,16 @@ void drain_gives_each_item_in_order(fixy::TestRunnerCtx const& test) noexcept {
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
         Channel channel{std::move(producer_root)};
-        auto consumer = channel.consumer(std::move(consumer_perm));
-        {
-            auto first = lend(channel);
-            auto second = lend(channel);
-            CRUCIBLE_TEST_ASSERT(test, first.try_push(make_entry(11)).is_none());
-            CRUCIBLE_TEST_ASSERT(test, second.try_push(make_entry(12)).is_none());
-            CRUCIBLE_TEST_ASSERT(test, first.try_push(make_entry(13)).is_none());
-        }
-        ::foundation::linear::drop(std::move(consumer));
+        c::with_consumer(channel, std::move(consumer_perm), [&test, &channel](auto consumer) noexcept {
+            static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test, &channel](auto first) noexcept {
+                static_cast<void>(expect_lent(c::with_producer(channel, kMerge, [&test, &first](auto second) noexcept {
+                    CRUCIBLE_TEST_ASSERT(test, first.try_push(make_entry(11)).is_none());
+                    CRUCIBLE_TEST_ASSERT(test, second.try_push(make_entry(12)).is_none());
+                    CRUCIBLE_TEST_ASSERT(test, first.try_push(make_entry(13)).is_none());
+                })));
+            })));
+            ::foundation::linear::drop(std::move(consumer));
+        });
         CRUCIBLE_TEST_ASSERT(test, end_count == 0);
     }
     CRUCIBLE_TEST_ASSERT(test, end_count == 3);
@@ -250,9 +269,14 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
             auto [producer_root, consumer_perm] =
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             fixy::Box<Channel> channel = fixy::mint_box<Channel>(eff::testing::test().alloc, std::move(producer_root));
-            auto producer = lend(*channel);
-            { fixy::Box<Channel> const ending = std::move(channel); }
-            static_cast<void>(producer.try_push(make_parcel(1)));
+            Channel& held = *channel;
+            // The body ends the Box of the channel while its producer handle
+            // lives: the brand of the frame does not cover an owner of the
+            // channel that the body ends.
+            static_cast<void>(expect_lent(c::with_producer(held, kMerge, [&channel](auto producer) noexcept {
+                { fixy::Box<Channel> const ending = std::move(channel); }
+                static_cast<void>(producer.try_push(make_parcel(1)));
+            })));
             ::foundation::linear::drop(std::move(consumer_perm));
         },
         ::fixy::TextView{"a claim of the exclusive of a SharedPermissionPool at rest found a share or the lease out"});
@@ -264,15 +288,16 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
             auto [producer_root, consumer_perm] =
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             Channel channel{std::move(producer_root)};
-            auto consumer = channel.consumer(std::move(consumer_perm));
-            auto lease = channel.try_withdraw_producer_root(eff::testing::test().nondet)
-                             .expect("the root comes out with no producer out");
-            {
-                Channel::DrainClaim claim = channel.claim_drain(lease);
-                channel.drain(claim, [](std::uint64_t) noexcept {});
-            }
-            channel.deposit_producer_root(std::move(lease));
-            ::foundation::linear::drop(std::move(consumer));
+            c::with_consumer(channel, std::move(consumer_perm), [&channel](auto consumer) noexcept {
+                auto lease = channel.try_withdraw_producer_root(eff::testing::test().nondet)
+                                 .expect("the root comes out with no producer out");
+                {
+                    Channel::DrainClaim claim = channel.claim_drain(lease);
+                    channel.drain(claim, [](std::uint64_t) noexcept {});
+                }
+                channel.deposit_producer_root(std::move(lease));
+                ::foundation::linear::drop(std::move(consumer));
+            });
         },
         ::fixy::TextView{"a drain of a merge channel while its consumer handle lives."});
 }
@@ -352,6 +377,21 @@ struct ParcelDrain {
     }
 };
 
+// The four threads of the bulk test, over the three producer handles and the
+// consumer handle of the frames.  It gives the count of the consumer.
+template <class First, class Second, class Third, class Consumer>
+[[nodiscard]] ParcelCount move_many_boxes(First&& first, Second&& second, Third&& third, Consumer&& consumer) noexcept {
+    ParcelFeeder first_feed{std::move(first), 0};
+    ParcelFeeder second_feed{std::move(second), 1};
+    ParcelFeeder third_feed{std::move(third), 2};
+    ParcelDrain drain{std::move(consumer)};
+    auto const joined = ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()},
+                                                   ::fixy::thread::ThreadOptions{}, std::move(first_feed),
+                                                   std::move(second_feed), std::move(third_feed), std::move(drain))
+                            .expect("the test starts the three producer threads and the consumer thread");
+    return joined.at(::fixy::index<3>());
+}
+
 // Three producer threads move many Boxes to one consumer thread through a
 // small ring.  The consumer reads each object that its producer wrote before
 // the push, so the labels of each producer arrive in its order, and the end
@@ -366,15 +406,26 @@ void three_threads_move_many_boxes(fixy::TestRunnerCtx const& test) noexcept {
         auto [producer_root, consumer_perm] =
             perm::mint_permission_split<BulkChannel::producer_tag, BulkChannel::consumer_tag>(std::move(root));
         BulkChannel channel{std::move(producer_root)};
-        ParcelFeeder first{lend(channel), 0};
-        ParcelFeeder second{lend(channel), 1};
-        ParcelFeeder third{lend(channel), 2};
-        ParcelDrain drain{channel.consumer(std::move(consumer_perm))};
-        auto const joined =
-            ::fixy::thread::run_joined(::fixy::BgDrainCtx{eff::testing::bg()}, ::fixy::thread::ThreadOptions{},
-                                       std::move(first), std::move(second), std::move(third), std::move(drain))
-                .expect("the test starts the three producer threads and the consumer thread");
-        count = joined.at(::fixy::index<3>());
+        // The consumer frame is the outer frame, and the three producer frames
+        // nest in it.  Each inner body takes the handles of the outer frames
+        // by move.
+        count = c::with_consumer(channel, std::move(consumer_perm), [&channel](auto consumer) noexcept {
+            return expect_lent(c::with_producer(
+                channel, kMerge, [&channel, consumer = std::move(consumer)](auto first) mutable noexcept {
+                    return expect_lent(
+                        c::with_producer(channel, kMerge,
+                                         [&channel, consumer = std::move(consumer),
+                                          first = std::move(first)](auto second) mutable noexcept {
+                                             return expect_lent(c::with_producer(
+                                                 channel, kMerge,
+                                                 [consumer = std::move(consumer), first = std::move(first),
+                                                  second = std::move(second)](auto third) mutable noexcept {
+                                                     return move_many_boxes(std::move(first), std::move(second),
+                                                                            std::move(third), std::move(consumer));
+                                                 }));
+                                         }));
+                }));
+        });
     }
     CRUCIBLE_TEST_ASSERT(test, count.received == kProducers * kParcelsOfProducer);
     CRUCIBLE_TEST_ASSERT(test, count.out_of_order == 0);

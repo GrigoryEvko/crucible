@@ -4,7 +4,8 @@
 // with a protocol of its own.  A crash session is a session of one end, and
 // it cannot see the protocol of the producer end.  So its gate refuses a
 // Resource that reaches a pole of a channel, as the gate of mint_session
-// does.
+// does.  The pole is the frame handle of the consumer, so the mint stands in
+// the body of the frame door.
 //
 // Expected diagnostic: no mint_crash_session admits the pole, because the
 // Resource reaches a pole of a channel.
@@ -36,13 +37,13 @@ int main() {
     using Proto = s::Offer<s::Recv<long, s::End>, s::Recv<s::Crash<Bob>, s::End>>;
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc>> ctx{eff::testing::bg()};
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    s::CrashCell<Alice, Bob> own;
-    const s::CrashCell<Bob, Alice> peer;
-    auto handle = s::mint_crash_session<Proto, Alice, Bob>(ctx, channel.consumer(std::move(consumer_perm)), peer,
-                                                           s::mint_crash_writer(own));
-    static_cast<void>(handle);
-    static_cast<void>(producer_perm);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_consumer(channel, std::move(tokens.at(::foundation::core::index<1>())), [&ctx](auto consumer) noexcept {
+        s::CrashCell<Alice, Bob> own;
+        const s::CrashCell<Bob, Alice> peer;
+        auto handle =
+            s::mint_crash_session<Proto, Alice, Bob>(ctx, std::move(consumer), peer, s::mint_crash_writer(own));
+        static_cast<void>(handle);
+    });
     return 0;
 }

@@ -207,14 +207,18 @@ struct StreamDrain {
     Stream channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Stream::producer_tag, Stream::consumer_tag>(std::move(root));
-    StreamFeed feed{channel.producer(std::move(producer_perm))};
-    StreamDrain drain{channel.consumer(std::move(consumer_perm)), budget};
-    // The door owns the two bodies, and it ends each linear body after the join.
-    auto [fed, received] =
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(feed), std::move(drain))
-            .expect("the test starts the producer thread and the consumer thread");
-    static_cast<void>(fed);
-    return received;
+    return cc::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                         [&ctx, budget](auto producer, auto consumer) noexcept {
+                             StreamFeed feed{std::move(producer)};
+                             StreamDrain drain{std::move(consumer), budget};
+                             // The door owns the two bodies, and it ends each linear body after the join.
+                             auto [fed, received] = ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{},
+                                                                               std::move(feed), std::move(drain))
+                                                        .expect("the test starts the producer thread and the "
+                                                                "consumer thread");
+                             static_cast<void>(fed);
+                             return received;
+                         });
 }
 
 // Determinism: the budget picks a spin or a sleep, and the values do not

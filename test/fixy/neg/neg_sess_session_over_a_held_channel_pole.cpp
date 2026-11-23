@@ -25,8 +25,12 @@ inline auto channel_root() noexcept {
     return ::foundation::permissions::mint_permission_root<c::channel_tag::Whole<c::ChannelForm::wire, Tag>>();
 }
 using Channel = c::channel_t<int, 8, decltype(channel_root())>;
+// The frame handle carries the scope brand of its frame, so the wrapper
+// takes that brand as a parameter.  The brand names no channel, so only the
+// member holds the pole.
+template <class Scope>
 struct HeldPole {
-    Channel::ProducerHandle pole;
+    Channel::producer_handle<Scope> pole;
 };
 }  // namespace held_pole_fixture
 
@@ -37,11 +41,11 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer = s::mint_session<s::Loop<s::Send<long, s::Continue>>>(
-        ctx, HeldPole{.pole = channel.producer(std::move(producer_perm))});
-    std::move(producer).detach(s::detach_reason::TestInstrumentation{});
-    static_cast<void>(consumer_perm);
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        auto session = s::mint_session<s::Loop<s::Send<long, s::Continue>>>(
+            ctx, HeldPole<typename decltype(producer)::scope_type>{.pole = std::move(producer)});
+        std::move(session).detach(s::detach_reason::TestInstrumentation{});
+    });
     return 0;
 }

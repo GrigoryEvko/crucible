@@ -27,9 +27,33 @@ static_assert(
     std::is_same_v<permissioned_metalog_t<::foundation::permissions::Permission<Witness::whole_tag, WitnessBrand>>,
                    Witness>);
 
+// A scope brand that the checks name, and the frame handles on it.  No frame
+// door gives a handle on it.
+struct CheckScope {};
+using Producer = MetaLogProducerHandle<WitnessTag, WitnessBrand, CheckScope>;
+using Consumer = MetaLogConsumerHandle<WitnessTag, WitnessBrand, CheckScope>;
+static_assert(std::is_same_v<Witness::producer_handle<CheckScope>, Producer>);
+static_assert(std::is_same_v<Witness::consumer_handle<CheckScope>, Consumer>);
+
+// The log binds a MetaLog by reference, so it is not Sendable.  A handle
+// names the tag and the brand of its log and not the log, so a body can move
+// each handle to the thread of its role.
+static_assert(!::foundation::transfer::Sendable<Witness>);
+static_assert(::foundation::transfer::Sendable<Producer> && ::foundation::transfer::Sendable<Consumer>);
+static_assert(Witness::channel_form == ::fixy::concurrent::ChannelForm::wire);
+
+// No code outside the frame doors opens an end: each claim door takes the
+// key of the frame doors.
+template <class Log>
+concept OpensAnEndWithNoKey = requires(Log& log) {
+    log.producer(std::declval<::foundation::permissions::Permission<typename Log::producer_tag, WitnessBrand>&&>());
+};
+static_assert(!OpensAnEndWithNoKey<Witness>);
+static_assert(!std::is_constructible_v<Producer, Witness::ProducerEnd&&>);
+
 // An assignment would drop the token of the target endpoint.
-static_assert(!std::is_move_assignable_v<Witness::ProducerHandle>
-              && !std::is_move_assignable_v<Witness::ConsumerHandle>);
+static_assert(!std::is_move_assignable_v<Witness::ProducerEnd> && !std::is_move_assignable_v<Witness::ConsumerEnd>);
+static_assert(!std::is_move_assignable_v<Producer> && !std::is_move_assignable_v<Consumer>);
 
 // True when a public member function of Owner returns a reference or a
 // pointer to a TensorMeta.  After the consumer releases a record, the
@@ -52,16 +76,18 @@ consteval bool gives_a_record_address() {
 }
 
 static_assert(!gives_a_record_address<MetaLog>());
-static_assert(!gives_a_record_address<Witness::ProducerHandle>());
-static_assert(!gives_a_record_address<Witness::ConsumerHandle>());
+static_assert(!gives_a_record_address<Witness::ProducerEnd>());
+static_assert(!gives_a_record_address<Witness::ConsumerEnd>());
 
-// Each handle holds a linear token, so each handle is linear, and
-// release() gives the token back.
-static_assert(::foundation::linear::is_marked_linear(^^Witness::ProducerHandle)
-              && ::foundation::linear::is_marked_linear(^^Witness::ConsumerHandle));
-static_assert(std::is_same_v<decltype(std::declval<Witness::ProducerHandle>().release()),
+// Each end and each handle holds a linear token, so each is linear, and
+// release() gives the token back.  A handle marks its own end, so the drop
+// door ends it.
+static_assert(::foundation::linear::is_marked_linear(^^Witness::ProducerEnd)
+              && ::foundation::linear::is_marked_linear(^^Witness::ConsumerEnd));
+static_assert(::foundation::linear::DroppableLinear<Producer> && ::foundation::linear::DroppableLinear<Consumer>);
+static_assert(std::is_same_v<decltype(std::declval<Producer>().release()),
                              ::foundation::permissions::Permission<Witness::producer_tag, WitnessBrand>>);
-static_assert(std::is_same_v<decltype(std::declval<Witness::ConsumerHandle>().release()),
+static_assert(std::is_same_v<decltype(std::declval<Consumer>().release()),
                              ::foundation::permissions::Permission<Witness::consumer_tag, WitnessBrand>>);
 
 // The check finds a member that returns a reference to a record.

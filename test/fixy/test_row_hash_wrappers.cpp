@@ -428,14 +428,10 @@ static_assert(row_hash_contribution_v<::fixy::AtomicMonotonic<std::uint64_t>>
 // two claims.
 static_assert(row_hash_contribution_v<PipelineWitness> != row_hash_contribution_v<StageWitness>);
 static_assert(row_hash_contribution_v<StageWitness> != row_hash_contribution_v<SwmrStageWitness>);
-static_assert(row_hash_contribution_v<SpscWitness::ProducerHandle>
-              != row_hash_contribution_v<SpscWitness::ConsumerHandle>);
-static_assert(row_hash_contribution_v<MpscWitness::ProducerHandle>
-              != row_hash_contribution_v<SpscWitness::ProducerHandle>);
-static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
-              != row_hash_contribution_v<MpscWitness::ProducerHandle>);
-static_assert(row_hash_contribution_v<LanesWitness::ProducerHandle>
-              != row_hash_contribution_v<LanesWitness::ConsumerHandle>);
+static_assert(row_hash_contribution_v<SpscWitness::ProducerEnd> != row_hash_contribution_v<SpscWitness::ConsumerEnd>);
+static_assert(row_hash_contribution_v<MpscWitness::ProducerEnd> != row_hash_contribution_v<SpscWitness::ProducerEnd>);
+static_assert(row_hash_contribution_v<LanesWitness::ProducerEnd> != row_hash_contribution_v<MpscWitness::ProducerEnd>);
+static_assert(row_hash_contribution_v<LanesWitness::ProducerEnd> != row_hash_contribution_v<LanesWitness::ConsumerEnd>);
 static_assert(row_hash_contribution_v<::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}, void>>
               != row_hash_contribution_v<::fixy::concurrent::SpscRing<int, 8>>);
 

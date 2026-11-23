@@ -48,11 +48,14 @@ namespace crucible::metalog_session {
 using MetaLogRecord = ::crucible::TensorMeta;
 
 // The shape of a permissioned log that the facade uses: the brand, the
-// three tags, the two role-typed handles, and the operations that the log
-// table calls.
+// three tags, the two role-typed ends, and the operations that the log
+// table calls.  Each claim door takes the key of the frame doors of
+// fixy/concurrent/PermissionedChannel.h, which the surface names as a
+// parameter and does not build.
 template <typename Log>
 concept MetaLogSessionSurface =
-    requires(Log& log, typename Log::ProducerHandle& producer, typename Log::ConsumerHandle& consumer,
+    requires(Log& log, typename Log::ProducerEnd& producer, typename Log::ConsumerEnd& consumer,
+             ::fixy::concurrent::ChannelFrameKey const& key,
              ::foundation::permissions::Permission<typename Log::producer_tag, typename Log::brand_type> prod_perm,
              ::foundation::permissions::Permission<typename Log::consumer_tag, typename Log::brand_type> cons_perm,
              ::fixy::View<const MetaLogRecord> records, const MetaLogRecord& record,
@@ -61,33 +64,35 @@ concept MetaLogSessionSurface =
         typename Log::brand_type;
         typename Log::producer_tag;
         typename Log::consumer_tag;
-        typename Log::ProducerHandle;
-        typename Log::ConsumerHandle;
+        typename Log::ProducerEnd;
+        typename Log::ConsumerEnd;
 
         requires std::same_as<typename Log::value_type, MetaLogRecord>;
-        requires std::same_as<typename Log::ProducerHandle::value_type, MetaLogRecord>;
-        requires std::same_as<typename Log::ConsumerHandle::value_type, MetaLogRecord>;
+        requires std::same_as<typename Log::ProducerEnd::value_type, MetaLogRecord>;
+        requires std::same_as<typename Log::ConsumerEnd::value_type, MetaLogRecord>;
 
-        { log.producer(std::move(prod_perm)) } -> std::same_as<typename Log::ProducerHandle>;
-        { log.consumer(std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerHandle>;
+        { log.producer(key, std::move(prod_perm)) } -> std::same_as<typename Log::ProducerEnd>;
+        { log.consumer(key, std::move(cons_perm)) } -> std::same_as<typename Log::ConsumerEnd>;
         { producer.try_append_pure(pure, records) } -> std::same_as<::crucible::MetaIndex>;
         { producer.try_append_one_pure(pure, record) } -> std::same_as<bool>;
         { consumer.try_drain_one() } -> std::same_as<::fixy::Option<MetaLogRecord>>;
     };
 
-// The gate of each mint: a log of the right shape, the handle of the
-// mint's role passed by move, and the gate of the pole door of
+// The gate of each mint: a log of the right shape, a frame handle of the
+// end of the mint's role passed by move, and the gate of the pole door of
 // fixy/session/Handle.h for that handle.  The handle is a template
 // parameter so that each refusal is a clause of this one concept: a type
 // that is not a permissioned log, a handle of the other role, and a handle
 // passed as an lvalue all fail here.
 template <typename Ctx, typename Log, typename Handle>
-concept CtxFitsMetaLogProducerSession = MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ProducerHandle>
-                                     && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
+concept CtxFitsMetaLogProducerSession =
+    MetaLogSessionSurface<Log> && ::fixy::concurrent::FrameProducerHandleOf<Handle, Log>
+    && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
 template <typename Ctx, typename Log, typename Handle>
-concept CtxFitsMetaLogConsumerSession = MetaLogSessionSurface<Log> && std::same_as<Handle, typename Log::ConsumerHandle>
-                                     && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
+concept CtxFitsMetaLogConsumerSession =
+    MetaLogSessionSurface<Log> && ::fixy::concurrent::FrameConsumerHandleOf<Handle, Log>
+    && ::fixy::session::CtxFitsPoleSession<Ctx, Handle>;
 
 template <typename Log, typename Ctx, typename Handle>
     requires CtxFitsMetaLogProducerSession<Ctx, Log, Handle>
@@ -103,12 +108,13 @@ template <typename Log, typename Ctx, typename Handle>
         ctx, std::forward<Handle>(handle));
 }
 
-template <MetaLogSessionSurface Log, typename Ctx>
+// The first session handle over the frame handle of the scope brand Scope.
+template <MetaLogSessionSurface Log, typename Ctx, typename Scope>
 using ProducerSessionHandle = decltype(mint_metalog_producer_session<Log>(
-    std::declval<Ctx const&>(), std::declval<typename Log::ProducerHandle>()));
+    std::declval<Ctx const&>(), std::declval<typename Log::template producer_handle<Scope>>()));
 
-template <MetaLogSessionSurface Log, typename Ctx>
+template <MetaLogSessionSurface Log, typename Ctx, typename Scope>
 using ConsumerSessionHandle = decltype(mint_metalog_consumer_session<Log>(
-    std::declval<Ctx const&>(), std::declval<typename Log::ConsumerHandle>()));
+    std::declval<Ctx const&>(), std::declval<typename Log::template consumer_handle<Scope>>()));
 
 }  // namespace crucible::metalog_session

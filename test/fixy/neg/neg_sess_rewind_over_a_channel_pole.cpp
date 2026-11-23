@@ -20,12 +20,12 @@ namespace rewind_pole_fixture {
 namespace s = ::fixy::session;
 struct IntLog {
     using value_type = int;
-    struct ProducerHandle {
+    struct ProducerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
     };
-    struct ConsumerHandle {
+    struct ConsumerEnd {
         using channel_type = IntLog;
         static constexpr s::Network session_network = s::Network::Local;
         [[no_unique_address]] s::MoveOnlyResource move_only{};
@@ -36,7 +36,7 @@ struct IntLog {
 int main() {
     using namespace rewind_pole_fixture;
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto head = s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerHandle{});
+    auto head = s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerEnd{});
     auto at_end = std::move(head).select<1>(s::no_label);
     auto rewound = s::HandleFactory::rewind<s::Loop<s::Send<long, s::Continue>>, void>(std::move(at_end));
     static_cast<void>(rewound);

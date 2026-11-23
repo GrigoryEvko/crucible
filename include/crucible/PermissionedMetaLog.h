@@ -18,17 +18,22 @@
 // which gives the role back to the wrapper and the token back to the
 // caller.
 //
-// The endpoint accessors are members named producer and consumer, not
-// mint_ free functions.  Their admission is the parameter type and the
-// claim: a caller that cannot produce a Permission<producer_tag, Brand>
-// cannot call producer().  So there is no constraint for a negative
-// fixture to fire, and a mint_ name would claim a gate that they do not
-// have.
+// The log is a wire of the frame doors of fixy/concurrent/
+// PermissionedChannel.h: with_producer, with_consumer and with_ends open its
+// ends and give a body a handle of each, on the scope brand of the call, so
+// no handle outlives the frame of its door.  The ends (ProducerEnd and
+// ConsumerEnd) are nested classes, and the check of synchronized{} of
+// foundation/Transfer.h reads their doors.  The type of an end stays
+// spellable, but each claim door takes the key of the frame doors, so no
+// code outside them gets a value of an end.  The residuals of that header
+// hold here too: a log in a Box or an Option that the body ends, and an
+// owner thread that keeps the closure past the body.
 
 #include <crucible/MetaLog.h>
 
 #include <fixy/Aliases.h>
 #include <fixy/Core.h>
+#include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/session/NetworkModel.h>
 #include <foundation/Brand.h>
 #include <foundation/ChannelBinding.h>
@@ -64,6 +69,13 @@ struct Consumer {
 
 }  // namespace metalog_tag
 
+// The handles of the two roles (the frame doors).  The definitions follow the
+// log.
+template <typename UserTag, ::foundation::brand::IsFreshBrand Brand, ::foundation::brand::IsBrand Scope>
+class MetaLogProducerHandle;
+template <typename UserTag, ::foundation::brand::IsFreshBrand Brand, ::foundation::brand::IsBrand Scope>
+class MetaLogConsumerHandle;
+
 // UserTag and Brand have no default.  A default tag would give every log
 // that omits it one set of Permission types.  The erased brand would let a
 // token of every root site open the endpoints.
@@ -82,6 +94,8 @@ public:
     using whole_tag = metalog_tag::Whole<UserTag>;
     using producer_tag = metalog_tag::Producer<UserTag>;
     using consumer_tag = metalog_tag::Consumer<UserTag>;
+    // The log has one producer and one consumer, as a wire has.
+    static constexpr ::fixy::concurrent::ChannelForm channel_form = ::fixy::concurrent::ChannelForm::wire;
 
     explicit constexpr PermissionedMetaLog(::crucible::MetaLog& log) noexcept : log_{log} {}
 
@@ -94,15 +108,15 @@ public:
     PermissionedMetaLog&
     operator=(PermissionedMetaLog&&) = delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
 
-    class[[= ::foundation::linear::linear{}]] ProducerHandle {
+    class[[= ::foundation::linear::linear{}]] ProducerEnd {
         // The move clears the binding, so a moved-from handle cannot
         // append or drain through the Permission it no longer holds.  The
         // binding names the wrapper, which holds the log and the claims.
         ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<producer_tag, Brand> perm_;
 
-        constexpr ProducerHandle(PermissionedMetaLog& wrapper,
-                                 ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
+        constexpr ProducerEnd(PermissionedMetaLog& wrapper,
+                              ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
             : ch_{wrapper, ::foundation::BindingKey<PermissionedMetaLog>{}}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
@@ -110,23 +124,24 @@ public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = producer_tag;
         using brand_type = Brand;
+        using channel_type = PermissionedMetaLog;
 
         // The producer picks alone when it appends and when it stops, and no
         // peer reads a label, so a session over the handle states the Local
         // network (fixy/session/NetworkModel.h).
         static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
 
-        ProducerHandle(const ProducerHandle&) =
-            delete("MetaLog ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
-        ProducerHandle& operator=(const ProducerHandle&) =
-            delete("MetaLog ProducerHandle owns the Producer Permission — assignment would overwrite the linear token");
-        constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&) = delete(
-            "MetaLog ProducerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
+        ProducerEnd(const ProducerEnd&) =
+            delete("MetaLog ProducerEnd owns the Producer Permission — copy would duplicate the linear token");
+        ProducerEnd& operator=(const ProducerEnd&) =
+            delete("MetaLog ProducerEnd owns the Producer Permission — assignment would overwrite the linear token");
+        constexpr ProducerEnd(ProducerEnd&&) noexcept = default;
+        ProducerEnd& operator=(ProducerEnd&&) = delete(
+            "MetaLog ProducerEnd binds to one MetaLog for life — rebinding would orphan the original Permission");
 
         // A moved-from handle holds no claim, so only the bound one gives
         // the role back.
-        ~ProducerHandle() {
+        ~ProducerEnd() {
             if (ch_.is_bound()) ch_->producer_claim_.release();
         }
 
@@ -176,12 +191,12 @@ public:
     // is needed to observe the latest value.  The head index is read with get,
     // which acquires against the producer's release and is what makes the
     // appended records visible.
-    class[[= ::foundation::linear::linear{}]] ConsumerHandle {
+    class[[= ::foundation::linear::linear{}]] ConsumerEnd {
         ::foundation::ChannelBinding<PermissionedMetaLog> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
 
-        constexpr ConsumerHandle(PermissionedMetaLog& wrapper,
-                                 ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
+        constexpr ConsumerEnd(PermissionedMetaLog& wrapper,
+                              ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
             : ch_{wrapper, ::foundation::BindingKey<PermissionedMetaLog>{}}, perm_{std::move(perm)} {}
         friend class PermissionedMetaLog;
 
@@ -189,24 +204,25 @@ public:
         using value_type = ::crucible::TensorMeta;
         using tag_type = consumer_tag;
         using brand_type = Brand;
+        using channel_type = PermissionedMetaLog;
 
         // The consumer picks alone when it drains and when it stops, so a
         // session over the handle states the Local network.
         static constexpr ::fixy::session::Network session_network = ::fixy::session::Network::Local;
 
-        ConsumerHandle(const ConsumerHandle&) =
-            delete("MetaLog ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
-        ConsumerHandle& operator=(const ConsumerHandle&) =
-            delete("MetaLog ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
-        constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&) = delete(
-            "MetaLog ConsumerHandle binds to one MetaLog for life — rebinding would orphan the original Permission");
+        ConsumerEnd(const ConsumerEnd&) =
+            delete("MetaLog ConsumerEnd owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerEnd& operator=(const ConsumerEnd&) =
+            delete("MetaLog ConsumerEnd owns the Consumer Permission — assignment would overwrite the linear token");
+        constexpr ConsumerEnd(ConsumerEnd&&) noexcept = default;
+        ConsumerEnd& operator=(ConsumerEnd&&) = delete(
+            "MetaLog ConsumerEnd binds to one MetaLog for life — rebinding would orphan the original Permission");
 
-        ~ConsumerHandle() {
+        ~ConsumerEnd() {
             if (ch_.is_bound()) ch_->consumer_claim_.release();
         }
 
-        // The release door, as for ProducerHandle.
+        // The release door, as for ProducerEnd.
         [[nodiscard]] ::foundation::permissions::Permission<consumer_tag, Brand> release() && noexcept {
             ch_->consumer_claim_.release();
             ch_.unbind();
@@ -271,18 +287,27 @@ public:
         }
     };
 
-    // Each accessor takes the claim of its role first, so a second live
-    // handle of the role ends the process here.
-    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept {
+    // The handles that the frame doors give a body on the scope brand Scope.
+    template <::foundation::brand::IsBrand Scope>
+    using producer_handle = MetaLogProducerHandle<UserTag, Brand, Scope>;
+    template <::foundation::brand::IsBrand Scope>
+    using consumer_handle = MetaLogConsumerHandle<UserTag, Brand, Scope>;
+
+    // The claim doors of the ends.  Each takes the key of the frame doors, so
+    // only a frame door opens an end.  Each takes the claim of its role first,
+    // so a second live handle of the role ends the process here.
+    [[nodiscard]] ProducerEnd producer(::fixy::concurrent::ChannelFrameKey const& /*key*/,
+                                       ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept {
         producer_claim_.take("two live producer handles of one MetaLog. One call site minted the root of the log "
                              "two times.");
-        return ProducerHandle{*this, std::move(perm)};
+        return ProducerEnd{*this, std::move(perm)};
     }
 
-    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+    [[nodiscard]] ConsumerEnd consumer(::fixy::concurrent::ChannelFrameKey const& /*key*/,
+                                       ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
         consumer_claim_.take("two live consumer handles of one MetaLog. One call site minted the root of the log "
                              "two times.");
-        return ConsumerHandle{*this, std::move(perm)};
+        return ConsumerEnd{*this, std::move(perm)};
     }
 
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
@@ -291,6 +316,87 @@ private:
     ::crucible::MetaLog& log_;
     ::foundation::EndpointClaim producer_claim_;
     ::foundation::EndpointClaim consumer_claim_;
+};
+
+// The producer handle of a frame of a log (the frame doors): the producer
+// end on the scope brand of one call of a frame door.  The handle derives
+// from its end privately, so no code outside it binds a reference to the end,
+// and it shows each door of the end.  The constructor is private, and the key
+// of the frame doors is its one friend, so only a frame door builds a handle.
+// The handle takes the tag and the brand of its log, and not the log.  The
+// log binds a MetaLog by reference, so it is not Sendable, and rule 8 of
+// foundation/Transfer.h reads each type argument of a specialization.  The
+// tag and the brand hold no state, so the handle is Sendable when its end is.
+// No argument is linear, so the handle marks its own end (foundation/
+// Linear.h).
+template <typename UserTag, ::foundation::brand::IsFreshBrand Brand, ::foundation::brand::IsBrand Scope>
+class[[= ::foundation::linear::linear{}]] MetaLogProducerHandle
+    : private PermissionedMetaLog<UserTag, Brand>::ProducerEnd {
+    using End = typename PermissionedMetaLog<UserTag, Brand>::ProducerEnd;
+
+    explicit MetaLogProducerHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class ::fixy::concurrent::ChannelFrameKey;
+
+public:
+    using value_type = typename End::value_type;
+    using tag_type = typename End::tag_type;
+    using brand_type = typename End::brand_type;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+    static constexpr ::fixy::session::Network session_network = End::session_network;
+
+    MetaLogProducerHandle(MetaLogProducerHandle&&) noexcept = default;
+    MetaLogProducerHandle(MetaLogProducerHandle const&) =
+        delete("a MetaLog producer handle owns the producer permission, and a copy would duplicate the linear token");
+    MetaLogProducerHandle&
+    operator=(MetaLogProducerHandle const&) = delete("a MetaLog producer handle owns the producer permission");
+    MetaLogProducerHandle&
+    operator=(MetaLogProducerHandle&&) = delete("a MetaLog producer handle binds to one MetaLog for its life");
+    ~MetaLogProducerHandle() = default;
+
+    using End::release;
+    using End::size_approx;
+    using End::try_append_one_pure;
+    using End::try_append_pure;
+};
+
+// The consumer handle of a frame of a log (the frame doors), as
+// MetaLogProducerHandle is for the producer.
+template <typename UserTag, ::foundation::brand::IsFreshBrand Brand, ::foundation::brand::IsBrand Scope>
+class[[= ::foundation::linear::linear{}]] MetaLogConsumerHandle
+    : private PermissionedMetaLog<UserTag, Brand>::ConsumerEnd {
+    using End = typename PermissionedMetaLog<UserTag, Brand>::ConsumerEnd;
+
+    explicit MetaLogConsumerHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class ::fixy::concurrent::ChannelFrameKey;
+
+public:
+    using value_type = typename End::value_type;
+    using tag_type = typename End::tag_type;
+    using brand_type = typename End::brand_type;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+    static constexpr ::fixy::session::Network session_network = End::session_network;
+
+    MetaLogConsumerHandle(MetaLogConsumerHandle&&) noexcept = default;
+    MetaLogConsumerHandle(MetaLogConsumerHandle const&) =
+        delete("a MetaLog consumer handle owns the consumer permission, and a copy would duplicate the linear token");
+    MetaLogConsumerHandle&
+    operator=(MetaLogConsumerHandle const&) = delete("a MetaLog consumer handle owns the consumer permission");
+    MetaLogConsumerHandle&
+    operator=(MetaLogConsumerHandle&&) = delete("a MetaLog consumer handle binds to one MetaLog for its life");
+    ~MetaLogConsumerHandle() = default;
+
+    using End::advance_tail;
+    using End::copy_at;
+    using End::drain;
+    using End::head_index;
+    using End::release;
+    using End::size_approx;
+    using End::tail_index;
+    using End::try_drain_one;
 };
 
 namespace detail {

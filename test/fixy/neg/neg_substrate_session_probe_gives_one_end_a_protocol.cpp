@@ -42,13 +42,15 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    auto producer = channels::mint_substrate_session<Channel, channels::Direction::Producer>(
-        ctx, channel.producer(std::move(producer_perm)));
-    auto consumer = channels::mint_substrate_session<Channel, channels::Direction::Consumer>(
-        ctx, channel.consumer(std::move(consumer_perm)));
-    std::move(producer).detach(::fixy::session::detach_reason::TestInstrumentation{});
-    std::move(consumer).detach(::fixy::session::detach_reason::TestInstrumentation{});
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_ends(channel, std::move(tokens.at(::foundation::core::index<0>())),
+                 std::move(tokens.at(::foundation::core::index<1>())), [&ctx](auto producer, auto consumer) noexcept {
+                     auto sender = channels::mint_substrate_session<Channel, channels::Direction::Producer>(
+                         ctx, std::move(producer));
+                     auto receiver = channels::mint_substrate_session<Channel, channels::Direction::Consumer>(
+                         ctx, std::move(consumer));
+                     std::move(sender).detach(::fixy::session::detach_reason::TestInstrumentation{});
+                     std::move(receiver).detach(::fixy::session::detach_reason::TestInstrumentation{});
+                 });
     return 0;
 }

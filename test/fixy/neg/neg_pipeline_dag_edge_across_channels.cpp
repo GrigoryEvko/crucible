@@ -18,7 +18,9 @@ namespace {
 namespace cc = fixy::concurrent;
 
 // The fixture builds no channel, so one named brand stands in for the
-// brand of a root site.  The tags keep the four channels apart.
+// brand of a root site.  The tags keep the four channels apart.  The graph
+// is a fact of the types, so each body takes the ends of its channels, and
+// no frame door opens a handle.
 struct InTag {};
 struct ATag {};
 struct BTag {};
@@ -29,8 +31,8 @@ using AChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, ATag, Fi
 using BChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, BTag, FixtureBrand>;
 using OutChannel = cc::PermissionedChannel<cc::ChannelForm::wire, int, 8, OutTag, FixtureBrand>;
 
-inline void writes_a(InChannel::ConsumerHandle&&, AChannel::ProducerHandle&&) noexcept {}
-inline void drains_b(BChannel::ConsumerHandle&&, OutChannel::ProducerHandle&&) noexcept {}
+inline void writes_a(InChannel::ConsumerEnd&&, AChannel::ProducerEnd&&) noexcept {}
+inline void drains_b(BChannel::ConsumerEnd&&, OutChannel::ProducerEnd&&) noexcept {}
 
 using WritesA = cc::Stage<&writes_a, fixy::HotFgCtx>;
 using DrainsB = cc::Stage<&drains_b, fixy::HotFgCtx>;

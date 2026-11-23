@@ -108,8 +108,8 @@ template <class Producer, class Consumer>
     return sum;
 }
 
-template <class Producer, class Consumer>
-[[gnu::noinline, gnu::aligned(64)]] Item run_lanes_rounds(Producer& first, Producer& second, Consumer& consumer,
+template <class First, class Second, class Consumer>
+[[gnu::noinline, gnu::aligned(64)]] Item run_lanes_rounds(First& first, Second& second, Consumer& consumer,
                                                           Item rounds) noexcept {
     Item sum = 0;
     for (Item round = 0; round < rounds; ++round) {
@@ -127,19 +127,21 @@ void report_wire() noexcept {
     Wire channel{};
     auto [producer_perm, consumer_perm] =
         perm::mint_permission_split<Wire::producer_tag, Wire::consumer_tag>(std::move(root));
-    auto producer = channel.producer(std::move(producer_perm));
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    bench::Report const row =
-        bench::run("wire push then pop", [producer_ref = ::fixy::to(producer), consumer_ref = ::fixy::to(consumer)] {
-            bool const is_pushed = push_once(*producer_ref, 7);
-            bench::do_not_optimize(is_pushed);
-            Item const item = pop_wire_once(*consumer_ref);
-            bench::do_not_optimize(item);
-        });
-    print_row("wire push then pop", row);
-    bench::do_not_optimize(run_wire_rounds(producer, consumer, 64));
-    ::foundation::linear::drop(std::move(producer));
-    ::foundation::linear::drop(std::move(consumer));
+    // The frame of the two ends opens before the row, and the row runs in its body.
+    cc::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
+                  [](auto producer, auto consumer) noexcept {
+                      bench::Report const row = bench::run("wire push then pop", [producer_ref = ::fixy::to(producer),
+                                                                                  consumer_ref = ::fixy::to(consumer)] {
+                          bool const is_pushed = push_once(*producer_ref, 7);
+                          bench::do_not_optimize(is_pushed);
+                          Item const item = pop_wire_once(*consumer_ref);
+                          bench::do_not_optimize(item);
+                      });
+                      print_row("wire push then pop", row);
+                      bench::do_not_optimize(run_wire_rounds(producer, consumer, 64));
+                      ::foundation::linear::drop(std::move(producer));
+                      ::foundation::linear::drop(std::move(consumer));
+                  });
 }
 
 void report_merge() noexcept {
@@ -149,18 +151,25 @@ void report_merge() noexcept {
         perm::mint_permission_split<Merge::producer_tag, Merge::consumer_tag>(std::move(root));
     Merge channel{std::move(producer_root)};
     ::foundation::effects::cap::Nondet const merge = ::foundation::effects::testing::test().nondet;
-    auto producer = channel.producer(merge).expect("the pool lends a producer while its root is in the pool");
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    bench::Report const row = bench::run(
-        "merge push then pop", [producer_ref = ::fixy::to(producer), consumer_ref = ::fixy::to(consumer), merge] {
-            bool const is_pushed = push_once(*producer_ref, 7);
-            bench::do_not_optimize(is_pushed);
-            Item const item = pop_merge_once(*consumer_ref, merge);
-            bench::do_not_optimize(item);
+    // The producer frame and the consumer frame open before the row, and the
+    // row runs in the inner body.
+    auto lent = cc::with_producer(
+        channel, merge, [&channel, merge, consumer_perm = std::move(consumer_perm)](auto producer) mutable noexcept {
+            cc::with_consumer(channel, std::move(consumer_perm), [&producer, merge](auto consumer) noexcept {
+                bench::Report const row =
+                    bench::run("merge push then pop",
+                               [producer_ref = ::fixy::to(producer), consumer_ref = ::fixy::to(consumer), merge] {
+                                   bool const is_pushed = push_once(*producer_ref, 7);
+                                   bench::do_not_optimize(is_pushed);
+                                   Item const item = pop_merge_once(*consumer_ref, merge);
+                                   bench::do_not_optimize(item);
+                               });
+                print_row("merge push then pop", row);
+                bench::do_not_optimize(run_merge_rounds(producer, consumer, merge, 64));
+                ::foundation::linear::drop(std::move(consumer));
+            });
         });
-    print_row("merge push then pop", row);
-    bench::do_not_optimize(run_merge_rounds(producer, consumer, merge, 64));
-    ::foundation::linear::drop(std::move(consumer));
+    static_cast<void>(std::move(lent).expect("the pool lends a producer while its root is in the pool"));
 }
 
 void report_lanes() noexcept {
@@ -171,24 +180,36 @@ void report_lanes() noexcept {
     Lanes channel{std::move(producer_root)};
     // The lend of a lane reads the schedule, so it takes the tag of Nondet.
     ::foundation::effects::cap::Nondet const lend = ::foundation::effects::testing::test().nondet;
-    auto first = channel.producer(lend, kFirstLane).expect("the pool lends the producer of the first lane");
-    auto second = channel.producer(lend, kSecondLane).expect("the pool lends the producer of the second lane");
-    auto consumer = channel.consumer(std::move(consumer_perm));
-    bench::Report const row = bench::run(
-        "lanes push into two lanes then two receives",
-        [first_ref = ::fixy::to(first), second_ref = ::fixy::to(second), consumer_ref = ::fixy::to(consumer)] {
-            bool const is_first_pushed = push_once(*first_ref, 7);
-            bench::do_not_optimize(is_first_pushed);
-            bool const is_second_pushed = push_once(*second_ref, 8);
-            bench::do_not_optimize(is_second_pushed);
-            Item const first_item = receive_lanes_once(*consumer_ref);
-            bench::do_not_optimize(first_item);
-            Item const second_item = receive_lanes_once(*consumer_ref);
-            bench::do_not_optimize(second_item);
+    // The frame of each lane and the consumer frame open before the row, and
+    // the row runs in the innermost body.
+    auto first_lent = cc::with_producer(
+        channel, lend, kFirstLane,
+        [&channel, lend, consumer_perm = std::move(consumer_perm)](auto first) mutable noexcept {
+            auto second_lent = cc::with_producer(
+                channel, lend, kSecondLane,
+                [&channel, &first, consumer_perm = std::move(consumer_perm)](auto second) mutable noexcept {
+                    cc::with_consumer(channel, std::move(consumer_perm), [&first, &second](auto consumer) noexcept {
+                        bench::Report const row =
+                            bench::run("lanes push into two lanes then two receives",
+                                       [first_ref = ::fixy::to(first), second_ref = ::fixy::to(second),
+                                        consumer_ref = ::fixy::to(consumer)] {
+                                           bool const is_first_pushed = push_once(*first_ref, 7);
+                                           bench::do_not_optimize(is_first_pushed);
+                                           bool const is_second_pushed = push_once(*second_ref, 8);
+                                           bench::do_not_optimize(is_second_pushed);
+                                           Item const first_item = receive_lanes_once(*consumer_ref);
+                                           bench::do_not_optimize(first_item);
+                                           Item const second_item = receive_lanes_once(*consumer_ref);
+                                           bench::do_not_optimize(second_item);
+                                       });
+                        print_row("lanes push into two lanes then two receives", row);
+                        bench::do_not_optimize(run_lanes_rounds(first, second, consumer, 64));
+                        ::foundation::linear::drop(std::move(consumer));
+                    });
+                });
+            static_cast<void>(std::move(second_lent).expect("the pool lends the producer of the second lane"));
         });
-    print_row("lanes push into two lanes then two receives", row);
-    bench::do_not_optimize(run_lanes_rounds(first, second, consumer, 64));
-    ::foundation::linear::drop(std::move(consumer));
+    static_cast<void>(std::move(first_lent).expect("the pool lends the producer of the first lane"));
 }
 
 }  // namespace

@@ -4,7 +4,9 @@
 // sends the label word of the keyed message with a write of a word of its
 // own.  The pole table of the bridge moves the values of the channel and no
 // label word, so a keyed step over a pole has no word to put through the
-// table, and the step refuses a write of the caller.
+// table, and the step refuses a write of the caller.  The session runs over
+// the frame handle of the producer, so it opens in the body of the frame
+// door.
 //
 // Expected diagnostic: [Pole_Owns_Its_Transport] at the send of the handle
 // factory.
@@ -36,13 +38,12 @@ int main() {
     namespace perm = ::foundation::permissions;
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Channel channel{};
-    auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
-    (void)consumer_perm;
-    auto head = channels::mint_substrate_session<Channel, channels::Direction::Producer>(
-        ctx, channel.producer(std::move(producer_perm)));
-    auto next =
-        ::fixy::session::HandleFactory::send(std::move(head), [](auto&, std::size_t) noexcept -> bool { return true; });
-    std::move(next).detach(::fixy::session::detach_reason::TestInstrumentation{});
+    auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
+    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx](auto producer) noexcept {
+        auto head = channels::mint_substrate_session<Channel, channels::Direction::Producer>(ctx, std::move(producer));
+        auto next = ::fixy::session::HandleFactory::send(std::move(head),
+                                                         [](auto&, std::size_t) noexcept -> bool { return true; });
+        std::move(next).detach(::fixy::session::detach_reason::TestInstrumentation{});
+    });
     return 0;
 }

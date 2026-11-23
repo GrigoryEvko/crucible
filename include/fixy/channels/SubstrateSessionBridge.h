@@ -1,10 +1,11 @@
 #pragma once
 
-// The session that a channel handle runs.  handle_for names the handle of
-// each role of a channel, and default_proto_for_t names the protocol of that
-// role.  mint_substrate_session takes the handle by move and gives the
-// first session handle, so the session owns the channel handle for its
-// whole life.
+// The session that a channel handle runs.  end_for names the end of each role
+// of a channel, and default_proto_for_t names the protocol of that role.
+// mint_substrate_session takes a frame handle of the end by move and gives
+// the first session handle, so the session owns the channel handle for its
+// whole life.  The handle carries the scope brand of its frame, so the
+// session ends inside that frame too.
 //
 // The table holds each form of the permissioned channel of
 // fixy/concurrent/PermissionedChannel.h.
@@ -47,20 +48,28 @@ concept IsBridgedChannel = std::same_as<Substr, std::remove_cvref_t<Substr>>
 
 }  // namespace detail
 
-// Each form names its handles ProducerHandle and ConsumerHandle, so one rule
-// gives the handle of each role of each form.
+// Each form names its ends ProducerEnd and ConsumerEnd, so one rule gives the
+// end of each role of each form.  A session and an endpoint run over a frame
+// handle of the end (the frame doors of fixy/concurrent/
+// PermissionedChannel.h), and each gate reads the end, whose pole shape and
+// protocol are those of each of its handles.
 template <class Substr, Direction Dir>
-struct handle_for;
+struct end_for;
 
 template <class Substr, Direction Dir>
     requires detail::IsBridgedChannel<Substr>
-struct handle_for<Substr, Dir> {
-    using type = std::conditional_t<Dir == Direction::Producer, typename Substr::ProducerHandle,
-                                    typename Substr::ConsumerHandle>;
+struct end_for<Substr, Dir> {
+    using type =
+        std::conditional_t<Dir == Direction::Producer, typename Substr::ProducerEnd, typename Substr::ConsumerEnd>;
 };
 
 template <class Substr, Direction Dir>
-using handle_for_t = typename handle_for<Substr, Dir>::type;
+using end_for_t = typename end_for<Substr, Dir>::type;
+
+// A pole of the direction of the channel: its end, or a frame handle of it.
+template <class Pole, class Substr, Direction Dir>
+concept PoleOfDirection = (Dir == Direction::Producer && ::fixy::concurrent::ProducerPoleOf<Pole, Substr>)
+                       || (Dir == Direction::Consumer && ::fixy::concurrent::ConsumerPoleOf<Pole, Substr>);
 
 // A loop with no exit branch is the deliberate spelling of a stream that
 // runs until it is torn down.  Shutdown is a detach carrying a typed
@@ -86,41 +95,43 @@ using default_proto_for_t = std::conditional_t<Dir == Direction::Producer, produ
 namespace detail {
 
 template <class Substr, Direction Dir>
-concept HasHandleFor = requires { typename handle_for<Substr, Dir>::type; };
+concept HasEndFor = requires { typename end_for<Substr, Dir>::type; };
 
 template <class Substr, Direction Dir>
 concept HasDefaultProtoFor = requires { typename default_proto_for_t<Substr, Dir>; };
 
-// The handle of a direction has the pole shape of that direction, so a
-// stage can take it.  fixy/concurrent/StageShape.h reads the same shape.
+// The end of a direction has the pole shape of that direction, so a stage
+// can take a handle of it.  fixy/concurrent/StageShape.h reads the same
+// shape.
 template <class Substr, Direction Dir>
-concept HandleHasPoleOf =
-    (Dir == Direction::Producer && ::fixy::concurrent::is_producer_handle_v<handle_for_t<Substr, Dir>>)
-    || (Dir == Direction::Consumer && ::fixy::concurrent::is_consumer_handle_v<handle_for_t<Substr, Dir>>);
+concept EndHasPoleOf = (Dir == Direction::Producer && ::fixy::concurrent::is_producer_handle_v<end_for_t<Substr, Dir>>)
+                    || (Dir == Direction::Consumer && ::fixy::concurrent::is_consumer_handle_v<end_for_t<Substr, Dir>>);
 
 }  // namespace detail
 
-// A direction is bridgeable when the table names both its handle and its
-// protocol, and the handle has the pole shape of the direction.  Only the
-// two channels have a row, so the concept is closed over them.
+// A direction is bridgeable when the table names both its end and its
+// protocol, and the end has the pole shape of the direction.  Only the
+// channels of the table have a row, so the concept is closed over them.
 template <class Substr, Direction Dir>
-concept IsBridgeableDirection = detail::HasHandleFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir>
-                             && detail::HandleHasPoleOf<Substr, Dir>;
+concept IsBridgeableDirection =
+    detail::HasEndFor<Substr, Dir> && detail::HasDefaultProtoFor<Substr, Dir> && detail::EndHasPoleOf<Substr, Dir>;
 
 // The pole table of the bridge (fixy/session/Admission.h, section The pole
-// table of a channel): a handle of a bridged channel runs the protocol of
-// its direction, and each handle of the other direction runs the protocol of
-// that direction.  The producer writes with try_push and the consumer reads
-// with try_pop.  The pop of a merge takes the bare tag of Nondet from the
-// context of the step, so that context holds Nondet.
+// table of a channel): an end of a bridged channel, and each frame handle of
+// the end, runs the protocol of its direction, and each pole of the other
+// direction runs the protocol of that direction.  The producer writes with
+// try_push and the consumer reads with try_pop.  The pop of a merge takes
+// the bare tag of Nondet from the context of the step, so that context holds
+// Nondet.
 template <class Pole>
     requires detail::IsBridgedChannel<typename Pole::channel_type>
-          && (std::same_as<Pole, typename Pole::channel_type::ProducerHandle>
-              || std::same_as<Pole, typename Pole::channel_type::ConsumerHandle>)
+          && (::fixy::concurrent::ProducerPoleOf<Pole, typename Pole::channel_type>
+              || ::fixy::concurrent::ConsumerPoleOf<Pole, typename Pole::channel_type>)
 struct bridged_pole_protocols {
     using value_type = typename Pole::channel_type::value_type;
-    static constexpr Direction direction =
-        std::same_as<Pole, typename Pole::channel_type::ProducerHandle> ? Direction::Producer : Direction::Consumer;
+    static constexpr Direction direction = ::fixy::concurrent::ProducerPoleOf<Pole, typename Pole::channel_type>
+                                             ? Direction::Producer
+                                             : Direction::Consumer;
     static constexpr Direction other_direction =
         direction == Direction::Producer ? Direction::Consumer : Direction::Producer;
     using self_protocol = default_proto_for_t<typename Pole::channel_type, direction>;
@@ -148,24 +159,36 @@ struct bridged_pole_protocols {
 };
 
 // The gate of mint_substrate_session: a bridgeable direction, and the gate
-// of the pole door of fixy/session/Handle.h for its handle.  So the context
+// of the pole door of fixy/session/Handle.h for its end.  So the context
 // admits each effect that a payload of the protocol carries.  The pop of a
 // merge pole takes the bare tag of Nondet, so the context of such a pole
 // holds Nondet.
 template <class Substr, Direction Dir, class Ctx>
 concept CtxFitsSubstrateSessionMint =
     ::foundation::effects::IsExecCtx<Ctx> && IsBridgeableDirection<Substr, Dir>
-    && ::fixy::session::CtxFitsPoleSession<Ctx, handle_for_t<Substr, Dir>>
-    && (!::fixy::concurrent::is_merge_consumer_handle_v<handle_for_t<Substr, Dir>>
+    && ::fixy::session::CtxFitsPoleSession<Ctx, end_for_t<Substr, Dir>>
+    && (!::fixy::concurrent::is_merge_consumer_handle_v<end_for_t<Substr, Dir>>
         || ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>);
+
+// A frame handle of the end of the direction of the channel.
+template <class Handle, class Substr, Direction Dir>
+concept FrameHandleOfDirection =
+    (Dir == Direction::Producer && ::fixy::concurrent::FrameProducerHandleOf<Handle, Substr>)
+    || (Dir == Direction::Consumer && ::fixy::concurrent::FrameConsumerHandleOf<Handle, Substr>);
+
+// The gate of mint_substrate_session for one handle: the gate of the
+// direction, and a frame handle of its end that comes in by move.
+template <class Substr, Direction Dir, class Ctx, class Handle>
+concept CtxFitsSubstrateSessionHandle =
+    CtxFitsSubstrateSessionMint<Substr, Dir, Ctx> && FrameHandleOfDirection<Handle, Substr, Dir>;
 
 // The handle comes in by move.  The caller keeps only a moved-from handle,
 // which reaches no channel, so the session and the caller never act on the
 // channel at the same time.  The pole door takes the protocol of the handle
 // from the table above.
-template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsSubstrateSessionMint<Substr, Dir, Ctx>
-[[nodiscard]] constexpr auto mint_substrate_session(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept {
+template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
+    requires CtxFitsSubstrateSessionHandle<Substr, Dir, Ctx, Handle>
+[[nodiscard]] constexpr auto mint_substrate_session(Ctx const& ctx, Handle&& handle) noexcept {
     return ::fixy::session::SessionMintDoor::open_pole<::fixy::session::DefaultAbandonmentPolicy>(ctx,
                                                                                                   std::move(handle));
 }

@@ -369,6 +369,10 @@ enum class UnrunReason : std::uint8_t {
     start_refused,
     // A test of a refused start ends the body that came back.
     refusal_test,
+    // A frame door could not lend the end that the body takes, such as the
+    // producer end of a merge channel while its root is out of the pool, so
+    // the door ends the body that it did not call.
+    lend_refused,
 };
 
 // A body that no door called and that holds a linear value by value: a

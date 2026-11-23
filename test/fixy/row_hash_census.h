@@ -466,6 +466,12 @@ inline constexpr StatedVocabulary kVocabularyNamespaces[] = {
     {^^::fixy::concurrent::drain_claim_witness,
      "the tag and the brand that the witness row of the drain claim of a channel names: no code builds a channel of "
      "them, and they are no carriers"},
+    {^^::fixy::channels::swmr_session::frame_witness,
+     "the tags and the brands that the witness rows of the handles of a frame of a session name: no code builds a "
+     "session of them, and they are no carriers"},
+    {^^::fixy::channels::endpoint_witness,
+     "the tags and the context that the witness row of an endpoint names: no code builds a channel of them, and they "
+     "are no carriers"},
     // The element ops are in the target namespace of their header, whose name
     // follows the target (the target namespace of foundation/Platform.h).
     {std::meta::parent_of(^^::foundation::core::elementwise::Sum),
@@ -732,6 +738,14 @@ using MpscBoxWitness = ::fixy::concurrent::PermissionedBoxChannel<::fixy::concur
 struct PureRegionBrand {};
 using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
+// The handles of a frame on a named scope brand.  A frame door gives its body
+// a handle on the scope brand of its call, and no code names that brand, so
+// the witnesses name a brand of their own.
+struct FrameScopeBrand {};
+using SpscProducerHandleWitness = ::fixy::concurrent::ProducerHandle<SpscWitness, FrameScopeBrand>;
+using SpscConsumerHandleWitness = ::fixy::concurrent::ConsumerHandle<SpscWitness, FrameScopeBrand>;
+using SwmrWriterHandleWitness = ::fixy::channels::swmr_session::WriterHandle<SwmrWitness, FrameScopeBrand>;
+using SwmrReaderHandleWitness = ::fixy::channels::swmr_session::ReaderHandle<SwmrWitness, FrameScopeBrand>;
 
 using PureDet = fa::lattices::DetSafeLattice::At<fa::lattices::DetSafeTier::Pure>;
 using ViewInt = ::foundation::core::View<int>;
@@ -863,8 +877,12 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::LaneRing, ^^::fixy::concurrent::LaneRing<int, 8, ::fixy::concurrent::LaneCount{2}, void>},
     {^^::fixy::concurrent::PermissionedChannel, ^^SpscWitness},
     {^^::fixy::concurrent::PermissionedBoxChannel, ^^SpscBoxWitness},
+    {^^::fixy::concurrent::ProducerHandle, ^^SpscProducerHandleWitness},
+    {^^::fixy::concurrent::ConsumerHandle, ^^SpscConsumerHandleWitness},
     {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
     {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
+    {^^::fixy::channels::swmr_session::WriterHandle, ^^SwmrWriterHandleWitness},
+    {^^::fixy::channels::swmr_session::ReaderHandle, ^^SwmrReaderHandleWitness},
     {^^::fixy::concurrent::Stage, ^^StageWitness},
     {^^::fixy::concurrent::MpmcStage, ^^MpmcStageWitness},
     {^^::fixy::concurrent::SwmrStage, ^^SwmrStageWitness},
@@ -1454,6 +1472,12 @@ inline constexpr StatedZero kZeros[] = {
      "the trait that names the proof of a side of a brand: it holds a type and is never a value"},
     {^^::fixy::concurrent::SpscEndKey,
      "the key of the constructor of an end: an empty class that lives for one construction inside a split"},
+    {^^::fixy::concurrent::ChannelFrameKey,
+     "the key of the claim doors of a channel: an empty class that only a frame door builds, and it lives for one "
+     "call of the door"},
+    {^^::fixy::channels::swmr_session::SwmrFrameKey,
+     "the key of the claim doors of a session: an empty class that only a frame door builds, and it lives for one "
+     "call of the door"},
     {^^::fixy::concurrent::SpscSplitParts,
      "the result of the split mint: the split and the key of each side, which a binding takes apart at once"},
     {^^::fixy::concurrent::DequeBottom,
@@ -1741,7 +1765,7 @@ inline constexpr StatedZero kZeros[] = {
      "the count of the live producer handles of one channel and the end of its stream: a member of the channel that "
      "folds, and never a value in a signature"},
 
-    {^^::fixy::channels::handle_for, kMetafunction},
+    {^^::fixy::channels::end_for, kMetafunction},
     {^^::fixy::channels::bridged_pole_protocols, kMetafunction},
     {^^::fixy::channels::swmr_session::swmr_pole_protocols, kMetafunction},
     {^^::fixy::channels::log_pole_protocols, kMetafunction},

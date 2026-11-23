@@ -33,11 +33,14 @@ int main() {
     using namespace swmr_reader_session_nondet_fixture;
     namespace ses = ::fixy::channels::swmr_session;
     namespace eff = ::foundation::effects;
+    // The lend of the reader share takes Nondet, so the reader door takes the
+    // context of the test.
     const ::fixy::TestRunnerCtx reader_ctx{eff::testing::test()};
     const eff::ExecCtx<eff::ctx_cap::Fg, eff::Row<>> ctx = eff::testing::foreground();
     Swmr swmr{reader_root(), 1};
-    auto reader = ses::mint_swmr_reader<Swmr>(reader_ctx, swmr).expect("the pool lends a share");
-    auto session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(reader));
-    (void)session;
-    return 0;
+    auto lent = ses::with_reader(reader_ctx, swmr, [&ctx](auto reader) noexcept {
+        auto session = ses::mint_reader_runtime_session<Swmr>(ctx, std::move(reader));
+        (void)session;
+    });
+    return lent.is_some() ? 0 : 1;
 }

@@ -4,9 +4,11 @@
 // the two once, at construction.  Every send and receive afterwards runs
 // with no further check.
 //
-// The endpoint owns its handle.  The channel outlives the handle by
-// construction, and the handle releases its permission when the endpoint
-// ends.
+// The endpoint owns its handle.  The handle is a frame handle of a channel
+// (the frame doors of fixy/concurrent/PermissionedChannel.h), and its type
+// carries the scope brand of the frame, so the endpoint ends inside the
+// frame and the channel outlives it.  The handle releases its permission
+// when the endpoint ends.
 //
 // Design notes:
 //   - A handle of fixy/concurrent is move-constructible, and its move
@@ -39,16 +41,23 @@ namespace fixy::channels {
 template <class Substr, Direction Dir, class Ctx>
 concept CtxFitsEndpointMint = CtxFitsSubstrateSessionMint<Substr, Dir, Ctx> && std::copy_constructible<Ctx>;
 
+// The gate of an endpoint over one handle: the gate of the direction, and a
+// frame handle of the end of the direction (the frame doors of
+// fixy/concurrent/PermissionedChannel.h).  The handle carries the scope brand
+// of its frame, so the endpoint ends inside that frame.
+template <class Substr, Direction Dir, class Ctx, class Handle>
+concept CtxFitsEndpointHandle = CtxFitsEndpointMint<Substr, Dir, Ctx> && FrameHandleOfDirection<Handle, Substr, Dir>;
+
 class EndpointDoor;
 
-template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsEndpointMint<Substr, Dir, Ctx>
+template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
+    requires CtxFitsEndpointHandle<Substr, Dir, Ctx, Handle>
 class [[nodiscard]] Endpoint {
 public:
     using substrate_type = Substr;
     static constexpr Direction direction = Dir;
     using ctx_type = Ctx;
-    using handle_type = handle_for_t<Substr, Dir>;
+    using handle_type = Handle;
     using value_type = typename Substr::value_type;
     using user_tag = typename Substr::user_tag;
     using proto_type = default_proto_for_t<Substr, Dir>;
@@ -139,9 +148,9 @@ public:
     [[nodiscard]] constexpr Ctx ctx() const noexcept { return ctx_; }
 };
 
-template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsEndpointMint<Substr, Dir, Ctx>
-[[nodiscard]] constexpr auto mint_endpoint(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept {
+template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
+    requires CtxFitsEndpointHandle<Substr, Dir, Ctx, Handle>
+[[nodiscard]] constexpr auto mint_endpoint(Ctx const& ctx, Handle&& handle) noexcept {
     return ::fixy::session::detail::late_door_t<EndpointDoor, Substr>::template make_<Substr, Dir>(ctx,
                                                                                                    std::move(handle));
 }
@@ -154,27 +163,29 @@ template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
 // member.  The member does that check again and builds the endpoint.  The
 // class is final, and no object of it exists.
 class EndpointDoor final : ::foundation::NoObject<EndpointDoor> {
-    template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
-        requires CtxFitsEndpointMint<Substr, Dir, Ctx>
-    friend constexpr auto mint_endpoint(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept;
+    template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
+        requires CtxFitsEndpointHandle<Substr, Dir, Ctx, Handle>
+    friend constexpr auto mint_endpoint(Ctx const& ctx, Handle&& handle) noexcept;
 
-    template <class Substr, Direction Dir, class Ctx>
-    [[nodiscard]] static constexpr auto make_(Ctx const& ctx, handle_for_t<Substr, Dir>&& handle) noexcept
-        -> Endpoint<Substr, Dir, Ctx> {
-        static_assert(CtxFitsEndpointMint<Substr, Dir, Ctx>,
+    template <class Substr, Direction Dir, class Ctx, class Handle>
+    [[nodiscard]] static constexpr auto make_(Ctx const& ctx, Handle&& handle) noexcept
+        -> Endpoint<Substr, Dir, Ctx, Handle> {
+        static_assert(CtxFitsEndpointHandle<Substr, Dir, Ctx, Handle>,
                       "fixy::channels::diagnostic [Endpoint_Door_Refused]: the endpoint door accepts only a "
                       "context and a handle that mint_endpoint accepts.");
-        return Endpoint<Substr, Dir, Ctx>{ctx, std::move(handle)};
+        return Endpoint<Substr, Dir, Ctx, Handle>{ctx, std::move(handle)};
     }
 };
 
 // The tags and the context that only checks name.  The witness roster
 // (the witness rows of utils/rule-table.txt) and the check file of this header
-// spell an endpoint over them, and no code builds a channel of them.
-namespace detail::endpoint_witness {
+// spell an endpoint over them, and no code builds a channel of them.  The
+// namespace is public, because a witness row names no detail namespace of the
+// base.
+namespace endpoint_witness {
 struct UserTag {};
 struct UserBrand {};
 using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg, ::foundation::effects::Row<>>;
-}  // namespace detail::endpoint_witness
+}  // namespace endpoint_witness
 
 }  // namespace fixy::channels

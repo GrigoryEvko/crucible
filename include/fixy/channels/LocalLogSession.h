@@ -23,14 +23,16 @@
 // its receive after the producer stopped finds no record, and its handle
 // waits.  The steps of the two sides face each other only while both go on.
 //
-// A channel is a log when it names value_type, ProducerHandle and
-// ConsumerHandle, and each of its two handles states the Local network.  The
-// table knows the two handles of such a channel.  crucible/MetaLogSession.h
+// A channel is a log when it names value_type, ProducerEnd and ConsumerEnd,
+// and each of its two ends states the Local network.  The table knows the two
+// ends of such a channel and each frame handle of an end.
+// crucible/MetaLogSession.h
 // opens the poles of the MetaLog through this table.  The write of the table
 // appends one record with try_append_one_pure in the context of the step, so
 // that context has a pure source.  The read drains one record with
 // try_drain_one.  Each tries one time.
 
+#include <fixy/concurrent/HandleTraits.h>
 #include <fixy/session/Admission.h>
 #include <fixy/session/Fold.h>
 #include <fixy/session/NetworkModel.h>
@@ -148,31 +150,32 @@ inline constexpr ::fixy::session::transition::seal relation_seal{.kind = ^^side_
 
 namespace fixy::channels {
 
-// A channel whose two handles append and drain records, each over the Local
-// network.
+// A channel whose two ends append and drain records, each over the Local
+// network.  The frame handles of the ends (the frame doors of
+// fixy/concurrent/PermissionedChannel.h) carry the network of their ends.
 template <class Channel>
 concept LocalLogChannel =
     requires {
         typename Channel::value_type;
-        typename Channel::ProducerHandle;
-        typename Channel::ConsumerHandle;
-    } && ::fixy::session::LocalCarrier<typename Channel::ProducerHandle>
-    && ::fixy::session::LocalCarrier<typename Channel::ConsumerHandle>;
+        typename Channel::ProducerEnd;
+        typename Channel::ConsumerEnd;
+    } && ::fixy::session::LocalCarrier<typename Channel::ProducerEnd>
+    && ::fixy::session::LocalCarrier<typename Channel::ConsumerEnd>;
 
 // The pole table of a log channel (fixy/session/Admission.h, section The pole
-// table of a channel).
+// table of a channel).  An end of the channel and each frame handle of the
+// end run the protocol of its role.
 template <class Pole>
     requires ::fixy::session::ChannelPole<Pole> && LocalLogChannel<::fixy::session::pole_channel_t<Pole>>
-          && (std::same_as<Pole, typename ::fixy::session::pole_channel_t<Pole>::ProducerHandle>
-              || std::same_as<Pole, typename ::fixy::session::pole_channel_t<Pole>::ConsumerHandle>)
+          && (::fixy::concurrent::ProducerPoleOf<Pole, ::fixy::session::pole_channel_t<Pole>>
+              || ::fixy::concurrent::ConsumerPoleOf<Pole, ::fixy::session::pole_channel_t<Pole>>)
 struct log_pole_protocols {
     using value_type = typename ::fixy::session::pole_channel_t<Pole>::value_type;
     using producer_protocol = ::fixy::session::Loop<
         ::fixy::session::Select<::fixy::session::Send<value_type, ::fixy::session::Continue>, ::fixy::session::End>>;
     using consumer_protocol = ::fixy::session::Loop<
         ::fixy::session::Select<::fixy::session::Recv<value_type, ::fixy::session::Continue>, ::fixy::session::End>>;
-    static constexpr bool is_producer =
-        std::same_as<Pole, typename ::fixy::session::pole_channel_t<Pole>::ProducerHandle>;
+    static constexpr bool is_producer = ::fixy::concurrent::ProducerPoleOf<Pole, ::fixy::session::pole_channel_t<Pole>>;
     using self_protocol = std::conditional_t<is_producer, producer_protocol, consumer_protocol>;
     using peer_protocol = std::conditional_t<is_producer, consumer_protocol, producer_protocol>;
 

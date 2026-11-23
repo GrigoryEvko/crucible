@@ -66,21 +66,73 @@
 //     ends one time in a stream, so the producer door refuses a lane that
 //     ended, and the drain of the channel opens each lane again.
 //
-// The endpoint accessors are members named producer and consumer rather
-// than mint_ free functions.  Their admission is the parameter type and the
-// claim or the pool.  A caller that cannot produce a Permission<producer_tag,
-// Brand> cannot open a wire producer, so there is no requires-clause for a
-// negative fixture to fire, and a mint_ name would claim a gate that they do
-// not have.
+// Frame doors
+//     A frame door opens the end of one role, gives its body a handle of that
+//     end by value, and gives the result of the body.  The handle type takes
+//     the scope brand of the call (CRUCIBLE_SCOPE_BRAND of foundation/
+//     Brand.h), so no code outside the body can spell it.  The rule
+//     brand-escape of the quarantine plugin refuses a result and an object of
+//     static or thread storage duration that holds the brand, and the gate of
+//     each door refuses at the type a result that names it (FrameResult of
+//     foundation/core/Choice.h).  So a handle does not outlive the frame of
+//     its door, and each handle ends before its channel.  That gate is a
+//     constraint of each door, with no deleted twin: each candidate of a
+//     call takes a scope brand of its own, so a twin would compile the body
+//     again on a second handle type, and nested frames would double that at
+//     each level.  The doors:
+//         with_producer(channel, token, body)          a wire
+//         with_producer(channel, nondet, body)         a merge
+//         with_producer(channel, nondet, lane, body)   a lanes channel
+//         with_consumer(channel, token, body)          each form
+//         with_ends(channel, producer token, consumer token, body)
+//                                                      a wire
+//     A door of a pooled form gives an Option of the result of the body (Unit
+//     for a body that gives void), and no value while the producer root is
+//     out of the pool.
+//
+//     A door runs its body one time, so it owns the body and calls it through
+//     the once door call_once of foundation/Linear.h, and a named body meets
+//     a deleted twin with its reason.  A body can then hold a linear value by
+//     value, and the rule must-consume reads each consume of it.  The doors
+//     take this form and not the gate HoldsNoLinearValue of a borrowed body:
+//     nested frames, such as the four frames of the pipeline of
+//     src/BackgroundThread.cpp, give an inner body the handles of the outer
+//     frames, and the inner body consumes them.  A capture by reference of a
+//     linear value hides that consume from each rule, so an inner body takes
+//     the outer handles by move.  The doors serve each channel family that names its
+//     ends, its tags and its form in the shape of this header:
+//     fixy/concurrent/PermissionedBoxChannel.h and crucible/
+//     PermissionedMetaLog.h.
+//
+//     The ends of the roles (ProducerEnd and ConsumerEnd) are nested classes,
+//     so the check of synchronized{} of foundation/Transfer.h reads their
+//     doors.  A handle (ProducerHandle, ConsumerHandle) derives from its end
+//     privately and shows the doors of the end, so no code outside it binds
+//     a reference to the end.  The type of an end stays spellable, but no
+//     code outside the frame doors gets a value of it: each constructor of an
+//     end is private, and each claim door that makes an end takes a
+//     ChannelFrameKey, whose only friends are the frame doors.  The doors are
+//     free functions and no members, because the door check cannot read a
+//     member template with a pack before a defaulted brand.
+//
+//     What the brand does not cover:
+//       - A channel in a Box or an Option that the body ends.  The body can
+//         end the owner of the channel while it holds a handle, and the next
+//         push then writes a channel that ended.
+//       - An owner thread that keeps the closure past the body.  A thread
+//         door of an object that outlives the body can keep a closure that
+//         holds a handle, and the type of the thread erases the closure.
 
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/EventCount.h>
+#include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/LaneRing.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/SpscRing.h>
 #include <fixy/concurrent/WorkingSet.h>
 
 #include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
@@ -330,6 +382,205 @@ inline constexpr LaneCount lane_count_of_v<Lanes> = Lanes;
 template <ChannelForm Form, LaneCount... Lanes>
 concept LanesFitForm = sizeof...(Lanes) == (Form == ChannelForm::lanes ? std::size_t{1} : std::size_t{0});
 
+// The handles of the two roles (frame doors).  The definitions follow the
+// channel.
+template <class Channel, ::foundation::brand::IsBrand Scope>
+class ProducerHandle;
+template <class Channel, ::foundation::brand::IsBrand Scope>
+class ConsumerHandle;
+
+// A channel of the form Form.  Each channel family states its form in
+// channel_form.
+template <class Channel, ChannelForm Form>
+concept ChannelOfForm = requires { Channel::channel_form; } && (Channel::channel_form == Form);
+
+namespace detail {
+
+// The handle that a frame door of the channel gives its body on the scope
+// brand Scope.  Each channel family names its handles through the member
+// alias templates producer_handle and consumer_handle.
+template <class Channel, class Scope>
+using producer_handle_of_t = typename Channel::template producer_handle<Scope>;
+template <class Channel, class Scope>
+using consumer_handle_of_t = typename Channel::template consumer_handle<Scope>;
+
+}  // namespace detail
+
+// The producer door of a wire (frame doors).  The producer token opens the
+// end, and the body gets its handle.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
+auto with_producer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&& token,
+    Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>;
+
+// The producer door of a merge (frame doors).  It lends a share of the pool,
+// and it gives no value while the producer root is out of the pool.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+[[nodiscard]] auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
+    -> ::foundation::core::Option<
+        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+
+// The producer door of a lanes channel (frame doors).  It lends a share of
+// the pool for the producer of the lane, and it gives no value while the
+// producer root is out of the pool.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+[[nodiscard]] auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet,
+                                 typename Channel::lane_index lane, Body&& body) noexcept
+    -> ::foundation::core::Option<
+        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+
+// The consumer door of each form (frame doors).  The consumer token opens the
+// end, and the body gets its handle.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && HandleFrameLeaves<Body, Scope, detail::consumer_handle_of_t<Channel, Scope>>
+auto with_consumer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&& token,
+    Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::consumer_handle_of_t<Channel, Scope>>;
+
+// The door of the two ends of a wire (frame doors).  The body gets the
+// producer handle and the consumer handle of one frame.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>,
+                              detail::consumer_handle_of_t<Channel, Scope>>
+auto with_ends(Channel& channel,
+               ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&&
+                   producer_token,
+               ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&&
+                   consumer_token,
+               Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>,
+                                                             detail::consumer_handle_of_t<Channel, Scope>>;
+
+// A body that the caller names binds to these overloads, so the refusal
+// gives its reason.
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+             && HandleNamedFrameBody<Body, detail::producer_handle_of_t<Channel, Scope>>
+void with_producer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&& token,
+    Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
+             && HandleNamedFrameBody<Body, detail::producer_handle_of_t<Channel, Scope>>
+void with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet,
+                   Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
+             && HandleNamedFrameBody<Body, detail::producer_handle_of_t<Channel, Scope>>
+void with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, typename Channel::lane_index lane,
+                   Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && HandleNamedFrameBody<Body, detail::consumer_handle_of_t<Channel, Scope>>
+void with_consumer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&& token,
+    Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+             && HandleNamedFrameBody<Body, detail::producer_handle_of_t<Channel, Scope>,
+                                     detail::consumer_handle_of_t<Channel, Scope>>
+void with_ends(Channel& channel,
+               ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&&
+                   producer_token,
+               ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&&
+                   consumer_token,
+               Body&& body) = delete(CRUCIBLE_HANDLE_FRAME_NAMED_BODY_REFUSAL);
+
+// A drop of the drain of a channel of the form Form: it takes each item and
+// does not throw.  The drop of a merge is empty, because the order of its
+// items reads the merge.  A body of the recombined access takes the ring of
+// the access.
+template <class Drop, class T, ChannelForm Form>
+concept ChannelDrainDrop =
+    (Form != ChannelForm::merge || __is_empty(__remove_cvref(Drop))) && std::is_nothrow_invocable_v<Drop&, T>;
+template <class Body, class Ring>
+concept RecombinedAccessBody = std::is_invocable_v<Body, Ring&>;
+
+// The key of the claim doors of a channel (frame doors).  Its constructor is
+// private, and its only friends are the frame doors, so only a frame door
+// calls a claim door of a channel.  A claim door takes the key by reference to
+// const, so a channel that passes the key on to its inner channel copies
+// nothing, and the key does not copy.  Its constructor is user-provided, and
+// its seal makes its assignment user-provided, so no byte route, such as
+// std::bit_cast, builds a key.  Each handle names the key as its one friend,
+// and only build_handle_, a private door of the key, calls the constructor of
+// a handle.
+class ChannelFrameKey final {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr ChannelFrameKey() noexcept {}
+
+    // The handle of a frame over the end that a claim door gave.
+    template <class Handle, class End>
+    [[nodiscard]] static constexpr Handle build_handle_(End&& end) noexcept {
+        return Handle{static_cast<End&&>(end)};
+    }
+
+    template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
+    friend auto with_producer(
+        Channel& channel,
+        ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&& token,
+        Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>;
+
+    template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
+             && HandleLendFrameBody<Body>
+    friend auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
+        -> ::foundation::core::Option<
+            detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+
+    template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
+             && HandleLendFrameBody<Body>
+    friend auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet,
+                              typename Channel::lane_index lane, Body&& body) noexcept
+        -> ::foundation::core::Option<
+            detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+
+    template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0)
+             && HandleFrameLeaves<Body, Scope, detail::consumer_handle_of_t<Channel, Scope>>
+    friend auto with_consumer(
+        Channel& channel,
+        ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&& token,
+        Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::consumer_handle_of_t<Channel, Scope>>;
+
+    template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>,
+                                  detail::consumer_handle_of_t<Channel, Scope>>
+    friend auto
+    with_ends(Channel& channel,
+              ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&&
+                  producer_token,
+              ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&&
+                  consumer_token,
+              Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>,
+                                                            detail::consumer_handle_of_t<Channel, Scope>>;
+
+public:
+    ChannelFrameKey(ChannelFrameKey const&) = delete("a key of the frame doors lives in the frame of one door call");
+    ChannelFrameKey& operator=(ChannelFrameKey const&) = delete("a key of the frame doors does not change");
+    ~ChannelFrameKey() = default;
+};
+
 // UserTag and Brand have no default.  A default tag would give every channel
 // that omits it one set of Permission types.  The erased brand would let a
 // token of every root site open the endpoints.  The lanes form names the
@@ -458,7 +709,7 @@ public:
         requires(is_pooled)
         : producer_pool_{std::move(producer_root)} {}
 
-    class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerHandle {
+    class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerEnd {
         // The move clears the binding, so a moved-from handle cannot push: a
         // defaulted move of an empty Permission is a no-op, and a reference
         // or a plain pointer would let the source and the target both go on
@@ -471,16 +722,16 @@ public:
         // in another form.  Each constructor builds it.
         [[no_unique_address]] typename parts::lane lane_;
 
-        constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
+        constexpr ProducerEnd(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
             requires(Form == ChannelForm::wire)
             : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}},
               share_{std::move(share)},
               lane_{::foundation::core::index<0>()} {}
-        constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
+        constexpr ProducerEnd(PermissionedChannel& channel, typename parts::producer_share&& share) noexcept
             requires(Form == ChannelForm::merge)
             : ch_{channel.side_.bind()}, share_{std::move(share)}, lane_{::foundation::core::index<0>()} {}
-        constexpr ProducerHandle(PermissionedChannel& channel, typename parts::producer_share&& share,
-                                 typename parts::lane&& lane) noexcept
+        constexpr ProducerEnd(PermissionedChannel& channel, typename parts::producer_share&& share,
+                              typename parts::lane&& lane) noexcept
             requires(Form == ChannelForm::lanes)
             : ch_{channel.side_.bind()}, share_{std::move(share)}, lane_{std::move(lane)} {}
         friend class PermissionedChannel;
@@ -517,13 +768,13 @@ public:
         // type of the handle, as from the type of the channel.
         static constexpr std::size_t channel_capacity = ring_type::channel_capacity;
 
-        ProducerHandle(const ProducerHandle&) =
-            delete("ProducerHandle owns the producer token or one pool share — copy would duplicate it");
-        ProducerHandle& operator=(const ProducerHandle&) =
-            delete("ProducerHandle owns the producer token or one pool share — assignment would overwrite it");
-        constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
-        ProducerHandle& operator=(ProducerHandle&&) = delete(
-            "ProducerHandle binds to ONE channel for life — rebinding would orphan the original token "
+        ProducerEnd(const ProducerEnd&) =
+            delete("ProducerEnd owns the producer token or one pool share — copy would duplicate it");
+        ProducerEnd& operator=(const ProducerEnd&) =
+            delete("ProducerEnd owns the producer token or one pool share — assignment would overwrite it");
+        constexpr ProducerEnd(ProducerEnd&&) noexcept = default;
+        ProducerEnd& operator=(ProducerEnd&&) = delete(
+            "ProducerEnd binds to ONE channel for life — rebinding would orphan the original token "
             "and silently allow a second producer to coexist");
 
         // A moved-from handle holds no role, so only the bound one ends a
@@ -531,7 +782,7 @@ public:
         // producer of the lanes form ends its lane.  The token or the share
         // ends with the handle, after this body, so no item of this producer
         // comes after the end.
-        ~ProducerHandle() {
+        ~ProducerEnd() {
             if (ch_.is_bound()) end_();
         }
 
@@ -606,17 +857,17 @@ public:
         }
     };
 
-    class[[= ::foundation::linear::linear{}]] ConsumerHandle : public detail::consumer_pops<Form, T, ConsumerHandle> {
+    class[[= ::foundation::linear::linear{}]] ConsumerEnd : public detail::consumer_pops<Form, T, ConsumerEnd> {
         // A binding that the move clears, for the same reason as in
-        // ProducerHandle.
+        // ProducerEnd.
         ::foundation::ChannelBinding<PermissionedChannel> ch_;
         [[no_unique_address]] ::foundation::permissions::Permission<consumer_tag, Brand> perm_;
 
-        constexpr ConsumerHandle(PermissionedChannel& channel,
-                                 ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
+        constexpr ConsumerEnd(PermissionedChannel& channel,
+                              ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept
             : ch_{channel, ::foundation::BindingKey<PermissionedChannel>{}}, perm_{std::move(perm)} {}
         friend class PermissionedChannel;
-        friend class detail::consumer_pops<Form, T, ConsumerHandle>;
+        friend class detail::consumer_pops<Form, T, ConsumerEnd>;
 
         // The bodies of the pops of detail::consumer_pops.  The pack holds
         // the tag of Nondet for a merge and no value for a wire or a lanes
@@ -674,18 +925,18 @@ public:
         static constexpr ChannelForm channel_form = Form;
         static constexpr std::size_t channel_capacity = ring_type::channel_capacity;
 
-        ConsumerHandle(const ConsumerHandle&) =
-            delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
-        ConsumerHandle& operator=(const ConsumerHandle&) =
-            delete("ConsumerHandle owns the Consumer Permission — assignment would overwrite the linear token");
-        constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
-        ConsumerHandle& operator=(ConsumerHandle&&) = delete(
-            "ConsumerHandle binds to ONE channel for life — rebinding would orphan the original Permission "
+        ConsumerEnd(const ConsumerEnd&) =
+            delete("ConsumerEnd owns the Consumer Permission — copy would duplicate the linear token");
+        ConsumerEnd& operator=(const ConsumerEnd&) =
+            delete("ConsumerEnd owns the Consumer Permission — assignment would overwrite the linear token");
+        constexpr ConsumerEnd(ConsumerEnd&&) noexcept = default;
+        ConsumerEnd& operator=(ConsumerEnd&&) = delete(
+            "ConsumerEnd binds to ONE channel for life — rebinding would orphan the original Permission "
             "and silently allow a second consumer to coexist, and the pop of each ring has one consumer");
 
         // A moved-from handle holds no claim, so only the bound one gives the
         // role back.
-        ~ConsumerHandle() {
+        ~ConsumerEnd() {
             if (ch_.is_bound()) ch_->consumer_claim_.release();
         }
 
@@ -739,16 +990,28 @@ public:
         }
     };
 
+    // The handles that the frame doors give a body on the scope brand Scope
+    // (the frame doors).
+    template <::foundation::brand::IsBrand Scope>
+    using producer_handle = ProducerHandle<PermissionedChannel, Scope>;
+    template <::foundation::brand::IsBrand Scope>
+    using consumer_handle = ConsumerHandle<PermissionedChannel, Scope>;
+
+    // The claim doors of the ends.  Each takes the key of the frame doors, so
+    // only a frame door opens an end, and the end lives in a handle of the
+    // frame.
+
     // The producer door of a wire channel.  It takes the claim of the
     // producer role first, so a second live producer handle ends the process
     // here.  A producer handle opens the channel.
-    [[nodiscard]] ProducerHandle producer(::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
+    [[nodiscard]] ProducerEnd producer(ChannelFrameKey const& /*key*/,
+                                       ::foundation::permissions::Permission<producer_tag, Brand>&& perm) noexcept
         requires(Form == ChannelForm::wire)
     {
         producer_claim_.take("two live producer handles of one wire channel. One call site minted the root of the "
                              "channel two times.");
         side_.producers_.add_producer();
-        return ProducerHandle{*this, std::move(perm)};
+        return ProducerEnd{*this, std::move(perm)};
     }
 
     // The producer door of a merge channel.  It lends a pool share, and it
@@ -763,15 +1026,15 @@ public:
     // deposits the producer root at a time that the schedule decides, so the
     // door takes the tag of Nondet.  The producer tag has an empty row, so the
     // tag stands for a context, and a row on the tag stops the lend here.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle>
-    producer(::foundation::effects::cap::Nondet nondet) noexcept
+    [[nodiscard]] ::foundation::core::Option<ProducerEnd> producer(ChannelFrameKey const& /*key*/,
+                                                                   ::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
         auto lent = producer_pool_.lend(nondet);
         if (lent.is_none()) return ::foundation::core::none;
         side_.producers_.add_producer();
-        return ::foundation::core::Option<ProducerHandle>::some(
-            ProducerHandle{*this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share")});
+        return ::foundation::core::Option<ProducerEnd>::some(
+            ProducerEnd{*this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share")});
     }
 
     // The producer door of a lanes channel.  It lends a pool share for the
@@ -788,8 +1051,8 @@ public:
     // claim of the lane, reads the end of the lane under that claim, and
     // builds the handle.  The lend reads the schedule, as the lend of a merge
     // does, so the door takes the tag of Nondet.
-    [[nodiscard]] ::foundation::core::Option<ProducerHandle> producer(::foundation::effects::cap::Nondet nondet,
-                                                                      lane_index lane) noexcept
+    [[nodiscard]] ::foundation::core::Option<ProducerEnd>
+    producer(ChannelFrameKey const& /*key*/, ::foundation::effects::cap::Nondet nondet, lane_index lane) noexcept
         requires(Form == ChannelForm::lanes)
     {
         auto lent = producer_pool_.lend(nondet);
@@ -803,16 +1066,17 @@ public:
             ::foundation::core::fatal("a producer handle of a lane that ended. A lane ends one time in a stream, and "
                                       "the drain of the channel opens each lane again.");
         }
-        return ::foundation::core::Option<ProducerHandle>::some(ProducerHandle{
+        return ::foundation::core::Option<ProducerEnd>::some(ProducerEnd{
             *this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share"), prove_lane_(lane)});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
     // handle ends the process here.
-    [[nodiscard]] ConsumerHandle consumer(::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
+    [[nodiscard]] ConsumerEnd consumer(ChannelFrameKey const& /*key*/,
+                                       ::foundation::permissions::Permission<consumer_tag, Brand>&& perm) noexcept {
         consumer_claim_.take("two live consumer handles of one channel. One call site minted the root of the "
                              "channel two times.");
-        return ConsumerHandle{*this, std::move(perm)};
+        return ConsumerEnd{*this, std::move(perm)};
     }
 
     // The two tokens of the recombined access of a merge or a lanes channel:
@@ -902,9 +1166,16 @@ public:
     // the identity of the pool tells two such channels apart.  The body gets
     // the ring of the access: it can fill the ring before the first session.
     // The drain empties what the last session left.  The token comes back, so
-    // the caller can split the whole again or deposit the lease.
+    // the caller can split the whole again or deposit the lease.  The access
+    // borrows its body, so the body holds no linear value (HoldsNoLinearValue
+    // of foundation/Linear.h).  The access and the drain have no deleted
+    // twin: the channel states synchronized{}, and the door check of
+    // foundation/Transfer.h finds no specialization of a deleted member
+    // template for its probe body, so it would refuse the channel.  A body
+    // that holds a linear value meets the failed constraint, which names the
+    // gate.
     template <typename Body>
-        requires std::is_invocable_v<Body, RecombinedRing&>
+        requires RecombinedAccessBody<Body, RecombinedRing> && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] recombined_token
     with_recombined_access(recombined_token&& token,
                            Body&& body) noexcept(std::is_nothrow_invocable_v<Body, RecombinedRing&>) {
@@ -1090,10 +1361,11 @@ public:
     // opens each lane again for a new stream (the drain of
     // fixy/concurrent/LaneRing.h), so its drop can hold state.  An owner of
     // items that end only through a door, such as the words of a Box channel,
-    // calls it at its own end.  Complexity: linear in the count of the items.
+    // calls it at its own end.  The drain borrows its drop and calls it for
+    // each item, so the drop holds no linear value (HoldsNoLinearValue of
+    // foundation/Linear.h).  Complexity: linear in the count of the items.
     template <typename Drop>
-        requires(Form != ChannelForm::merge || __is_empty(__remove_cvref(Drop)))
-             && std::is_nothrow_invocable_v<Drop&, T>
+        requires ChannelDrainDrop<Drop, T, Form> && ::foundation::linear::HoldsNoLinearValue<Drop>
     void drain(DrainClaim& claim, Drop&& drop) noexcept {
         if (!claim.is_claim_of(*this)) [[unlikely]] {
             ::foundation::core::fatal("a drain of a channel with the claim of another channel of its type.  Take "
@@ -1247,7 +1519,308 @@ private:
     ::foundation::EndpointClaim consumer_claim_;
 };
 
-// Pushes item through the producer handle.  While the channel is full, the
+// The producer handle of a frame (the frame doors): the producer end of a
+// channel on the scope brand of one call of a frame door.  The handle derives
+// from its end privately, so no code outside it binds a reference to the end,
+// and it shows each door of the end.  The constructor is private, and the key
+// of the frame doors is its one friend, so only a frame door builds a handle.
+// The end of a wire is linear, so the handle of a wire is linear too.  The
+// handle serves the ends of this header and of fixy/concurrent/
+// PermissionedBoxChannel.h.  Its first argument is the channel, which is no
+// linear value, so the handle marks its own end, and the drop door ends it
+// (foundation/Linear.h).
+template <class Channel, ::foundation::brand::IsBrand Scope>
+class[[= ::foundation::linear::linear_when<Channel::ProducerEnd::channel_form == ChannelForm::wire>]] ProducerHandle
+    : private Channel::ProducerEnd {
+    using End = typename Channel::ProducerEnd;
+
+    explicit ProducerHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class ChannelFrameKey;
+
+public:
+    using row_discipline = typename End::row_discipline;
+    using row_payload = typename End::row_payload;
+    using brand_type = typename End::brand_type;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+    static constexpr std::size_t per_call_working_set = End::per_call_working_set;
+    static constexpr ChannelForm channel_form = End::channel_form;
+    static constexpr std::size_t channel_capacity = End::channel_capacity;
+
+    ProducerHandle(ProducerHandle&&) noexcept = default;
+    ProducerHandle(ProducerHandle const&) =
+        delete("a producer handle owns the producer token or one pool share, and a copy would duplicate it");
+    ProducerHandle& operator=(ProducerHandle const&) =
+        delete("a producer handle owns the producer token or one pool share, and an assignment would overwrite it");
+    ProducerHandle& operator=(ProducerHandle&&) =
+        delete("a producer handle binds to one channel for its life, and an assignment would orphan its token");
+    ~ProducerHandle() = default;
+
+    // The end whose doors the handle shows.  The shape traits of fixy/
+    // concurrent/HandleTraits.h read the signature of each door there.
+    using frame_end_type = End;
+
+    // The doors of the end.  Each door forwards to the door of the same name
+    // of the end, which gives a value and no reference or address into the
+    // channel.  The handle states each door as its own member, with the
+    // parameters of the door of the end and a deduced result, so the rule
+    // escape-doors reads it and a call converts its arguments as before.  A
+    // door that a form of the end lacks takes a constraint, so no other form
+    // instantiates it.
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return End::capacity(); }
+
+    [[nodiscard]] constexpr auto channel_identity() const noexcept { return End::channel_identity(); }
+
+    void close() && noexcept
+        requires requires(End&& end) { static_cast<End&&>(end).close(); }
+    {
+        static_cast<End&&>(*this).close();
+    }
+
+    [[nodiscard]] auto empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return End::empty_approx(nondet);
+    }
+
+    [[nodiscard]] auto release() && noexcept
+        requires requires(End&& end) { static_cast<End&&>(end).release(); }
+    {
+        return static_cast<End&&>(*this).release();
+    }
+
+    [[nodiscard]] auto size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return End::size_approx(nondet);
+    }
+
+    // The push of a value channel takes the value by reference to const, and
+    // the push of a channel of owners takes the owner by move.
+    [[nodiscard]] auto try_push(row_payload const& item) noexcept
+        requires requires(End& end, row_payload const& value) { end.try_push(value); }
+    {
+        return End::try_push(item);
+    }
+
+    [[nodiscard]] auto try_push(row_payload&& item) noexcept
+        requires(!requires(End& end, row_payload const& value) { end.try_push(value); })
+             && requires(End& end, row_payload&& value) { end.try_push(static_cast<row_payload&&>(value)); }
+    {
+        return End::try_push(static_cast<row_payload&&>(item));
+    }
+
+    // The lane of the producer of a lanes channel.
+    [[nodiscard]] constexpr auto lane() const noexcept
+        requires(channel_form == ChannelForm::lanes)
+    {
+        return End::lane();
+    }
+
+    // The push that waits of an end that gives it as a member, such as the
+    // end of a channel of Box objects.
+    template <WaitPolicy Policy, class Ctx>
+        requires requires(End& end, Ctx const& ctx, EventCount& room, row_payload&& item) {
+            end.template push_waiting<Policy>(ctx, room, std::move(item));
+        }
+    void push_waiting(Ctx const& ctx, EventCount& room, row_payload&& item) noexcept {
+        End::template push_waiting<Policy>(ctx, room, std::move(item));
+    }
+};
+
+// The consumer handle of a frame (the frame doors): the consumer end of a
+// channel on the scope brand of one call of a frame door, as ProducerHandle
+// is for the producer.  The consumer end of each form is linear.
+template <class Channel, ::foundation::brand::IsBrand Scope>
+class[[= ::foundation::linear::linear{}]] ConsumerHandle : private Channel::ConsumerEnd {
+    using End = typename Channel::ConsumerEnd;
+
+    explicit ConsumerHandle(End&& end) noexcept : End{std::move(end)} {}
+    friend class ChannelFrameKey;
+
+public:
+    using row_discipline = typename End::row_discipline;
+    using row_payload = typename End::row_payload;
+    using brand_type = typename End::brand_type;
+    using channel_type = typename End::channel_type;
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+    static constexpr std::size_t per_call_working_set = End::per_call_working_set;
+    static constexpr ChannelForm channel_form = End::channel_form;
+    static constexpr std::size_t channel_capacity = End::channel_capacity;
+
+    ConsumerHandle(ConsumerHandle&&) noexcept = default;
+    ConsumerHandle(ConsumerHandle const&) =
+        delete("a consumer handle owns the consumer token, and a copy would duplicate the linear token");
+    ConsumerHandle& operator=(ConsumerHandle const&) =
+        delete("a consumer handle owns the consumer token, and an assignment would overwrite the linear token");
+    ConsumerHandle& operator=(ConsumerHandle&&) =
+        delete("a consumer handle binds to one channel for its life, and the pop of each ring has one consumer");
+    ~ConsumerHandle() = default;
+
+    // The end whose doors the handle shows, as for the producer handle.
+    using frame_end_type = End;
+
+    // The doors of the end, as the producer handle states them.
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept { return End::capacity(); }
+
+    [[nodiscard]] constexpr auto channel_identity() const noexcept { return End::channel_identity(); }
+
+    [[nodiscard]] auto empty_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return End::empty_approx(nondet);
+    }
+
+    [[nodiscard]] bool is_closed() const noexcept { return End::is_closed(); }
+
+    // The wait states the gate of the wait of the end, so a refusal names it.
+    template <WaitPolicy Policy, class Ctx, class... PopTag>
+        requires CtxFitsWaitPolicy<Ctx, Policy>
+              && requires(End& end, Ctx const& ctx, EventCount& events, PopTag... tag) {
+                     end.template receive_waiting<Policy>(ctx, events, tag...);
+                 }
+    [[nodiscard]] auto receive_waiting(Ctx const& ctx, EventCount& events, PopTag... tag) noexcept {
+        return End::template receive_waiting<Policy>(ctx, events, tag...);
+    }
+
+    [[nodiscard]] auto release() && noexcept { return static_cast<End&&>(*this).release(); }
+
+    [[nodiscard]] auto size_approx(::foundation::effects::cap::Nondet nondet) const noexcept {
+        return End::size_approx(nondet);
+    }
+
+    // The pop of a wire takes no tag, and the pop of a merge or a lanes
+    // channel takes the tag of Nondet.
+    [[nodiscard]] auto try_pop() noexcept
+        requires requires(End& end) { end.try_pop(); }
+    {
+        return End::try_pop();
+    }
+
+    [[nodiscard]] auto try_pop(::foundation::effects::cap::Nondet nondet) noexcept
+        requires requires(End& end, ::foundation::effects::cap::Nondet tag) { end.try_pop(tag); }
+    {
+        return End::try_pop(nondet);
+    }
+
+    [[nodiscard]] auto try_receive() noexcept
+        requires requires(End& end) { end.try_receive(); }
+    {
+        return End::try_receive();
+    }
+
+    [[nodiscard]] auto try_receive(::foundation::effects::cap::Nondet nondet) noexcept
+        requires requires(End& end, ::foundation::effects::cap::Nondet tag) { end.try_receive(tag); }
+    {
+        return End::try_receive(nondet);
+    }
+};
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
+auto with_producer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&& token,
+    Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>> {
+    ChannelFrameKey const key{};
+    return ::foundation::linear::call_once(static_cast<Body&&>(body),
+                                           ChannelFrameKey::build_handle_<detail::producer_handle_of_t<Channel, Scope>>(
+                                               channel.producer(key, std::move(token))));
+}
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
+    -> ::foundation::core::Option<
+        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>> {
+    using handle_type = detail::producer_handle_of_t<Channel, Scope>;
+    using result_type = std::invoke_result_t<Body&&, handle_type>;
+    using value_type = detail::handle_frame_value_t<result_type>;
+    ChannelFrameKey const key{};
+    auto lent = channel.producer(key, nondet);
+    if (lent.is_none()) {
+        detail::end_unlent_body_(static_cast<Body&&>(body));
+        return ::foundation::core::none;
+    }
+    handle_type handle =
+        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    if constexpr (std::is_void_v<result_type>) {
+        ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
+        return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});
+    } else {
+        return ::foundation::core::Option<value_type>::some(
+            ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
+    }
+}
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, typename Channel::lane_index lane,
+                   Body&& body) noexcept
+    -> ::foundation::core::Option<
+        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>> {
+    using handle_type = detail::producer_handle_of_t<Channel, Scope>;
+    using result_type = std::invoke_result_t<Body&&, handle_type>;
+    using value_type = detail::handle_frame_value_t<result_type>;
+    ChannelFrameKey const key{};
+    auto lent = channel.producer(key, nondet, lane);
+    if (lent.is_none()) {
+        detail::end_unlent_body_(static_cast<Body&&>(body));
+        return ::foundation::core::none;
+    }
+    handle_type handle =
+        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    if constexpr (std::is_void_v<result_type>) {
+        ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
+        return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});
+    } else {
+        return ::foundation::core::Option<value_type>::some(
+            ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
+    }
+}
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && HandleFrameLeaves<Body, Scope, detail::consumer_handle_of_t<Channel, Scope>>
+auto with_consumer(
+    Channel& channel,
+    ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&& token,
+    Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::consumer_handle_of_t<Channel, Scope>> {
+    ChannelFrameKey const key{};
+    return ::foundation::linear::call_once(static_cast<Body&&>(body),
+                                           ChannelFrameKey::build_handle_<detail::consumer_handle_of_t<Channel, Scope>>(
+                                               channel.consumer(key, std::move(token))));
+}
+
+template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::wire>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>,
+                              detail::consumer_handle_of_t<Channel, Scope>>
+auto with_ends(Channel& channel,
+               ::foundation::permissions::Permission<typename Channel::producer_tag, typename Channel::brand_type>&&
+                   producer_token,
+               ::foundation::permissions::Permission<typename Channel::consumer_tag, typename Channel::brand_type>&&
+                   consumer_token,
+               Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>,
+                                                             detail::consumer_handle_of_t<Channel, Scope>> {
+    ChannelFrameKey const key{};
+    // The producer end opens first, so the claims of the two roles come in
+    // one order on each call.
+    auto producer = ChannelFrameKey::build_handle_<detail::producer_handle_of_t<Channel, Scope>>(
+        channel.producer(key, std::move(producer_token)));
+    auto consumer = ChannelFrameKey::build_handle_<detail::consumer_handle_of_t<Channel, Scope>>(
+        channel.consumer(key, std::move(consumer_token)));
+    return ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(producer), std::move(consumer));
+}
+
+// A producer of a channel of values: the producer end of the channel, or a
+// handle of that end.  The producer of a channel of Box objects names the
+// channel of its words, and its end is no end of that channel, so it is no
+// producer of values.
+template <class Producer>
+concept ValueProducer =
+    std::same_as<Producer, typename Producer::channel_type::ProducerEnd>
+    || std::same_as<Producer, ProducerHandle<typename Producer::channel_type, typename Producer::scope_type>>;
+
+// Pushes item through the producer.  While the channel is full, the
 // call waits by Policy (the policy of fixy/concurrent/EventCount.h): Spin
 // spins, and SpinThenPark spins for its budget and then parks on room.  The
 // condition of the wait is a push, so the push after the entry of a park in
@@ -1255,10 +1828,10 @@ private:
 // that notifies room after each receive then loses no wake of this producer.
 // The gate of the policy refuses a policy that parks to a context of the hot
 // path, because that context owns no Block.  The call is a free function, and
-// it reaches the channel only through the push of the handle, so a handle has
+// it reaches the channel only through the push of the end, so an end has
 // no door that the check of foundation/Transfer.h cannot read.
 template <WaitPolicy Policy, class Ctx, class Producer>
-    requires CtxFitsWaitPolicy<Ctx, Policy> && std::same_as<Producer, typename Producer::channel_type::ProducerHandle>
+    requires CtxFitsWaitPolicy<Ctx, Policy> && ValueProducer<Producer>
 void push_waiting(Ctx const& ctx, Producer& producer, EventCount& room,
                   typename Producer::row_payload const& item) noexcept {
     // The closure borrows the handle through a Ref, so the handle stays the

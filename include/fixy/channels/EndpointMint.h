@@ -28,10 +28,10 @@ namespace fixy::channels {
 // exchange.  The requires-clause restates what the parameter type already
 // asks, so that the gate of this mint is one named concept.
 
-template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx>
+template <class Substr, Direction Dir, ::foundation::effects::IsExecCtx Ctx, class Handle>
     requires IsBridgeableDirection<Substr, Dir>
 [[nodiscard]] constexpr auto
-mint_recording_endpoint(Endpoint<Substr, Dir, Ctx>&& ep, ::fixy::session::SessionEventWriter writer,
+mint_recording_endpoint(Endpoint<Substr, Dir, Ctx, Handle>&& ep, ::fixy::session::SessionEventWriter writer,
                         ::fixy::session::RoleTagId self_role, ::fixy::session::RoleTagId peer_role) noexcept {
     return ::fixy::session::mint_recorded_session(std::move(ep).into_session(), std::move(writer), self_role,
                                                   peer_role);

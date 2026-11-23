@@ -18,8 +18,16 @@ using FgCtx = ::foundation::effects::ExecCtx<::foundation::effects::ctx_cap::Fg,
 using Ch1 = concurrent::PermissionedChannel<concurrent::ChannelForm::wire, int, 64, UTag1, UBrand>;
 using Ch2 = concurrent::PermissionedChannel<concurrent::ChannelForm::wire, int, 64, UTag2, UBrand>;
 
-using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx>;
-using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx>;
+// A scope brand that the checks name, and the frame handles on it.  No frame
+// door gives a handle on it.
+struct CheckScope {};
+template <class Channel>
+using InOf = concurrent::ConsumerHandle<Channel, CheckScope>;
+template <class Channel>
+using OutOf = concurrent::ProducerHandle<Channel, CheckScope>;
+
+using ConsEp = Endpoint<Ch1, Direction::Consumer, FgCtx, InOf<Ch1>>;
+using ProdEp = Endpoint<Ch2, Direction::Producer, FgCtx, OutOf<Ch2>>;
 
 static_assert(IsEndpoint<ConsEp>);
 static_assert(IsEndpoint<ProdEp>);
@@ -37,7 +45,7 @@ static_assert(IsMovedEndpoint<ConsEp>);
 static_assert(IsMovedEndpoint<ConsEp&&>);
 static_assert(!IsMovedEndpoint<ConsEp&>);
 
-inline void int_stage_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&) noexcept {}
+inline void int_stage_body(InOf<Ch1>&&, OutOf<Ch2>&&) noexcept {}
 
 static_assert(concurrent::PipelineStage<&int_stage_body>);
 
@@ -57,8 +65,8 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, FgCtx, ConsEp&, ProdEp
 
 struct UTagFloat {};
 using ChFloat = concurrent::PermissionedChannel<concurrent::ChannelForm::wire, float, 64, UTagFloat, UBrand>;
-using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, FgCtx>;
-using FloatProdEp = Endpoint<ChFloat, Direction::Producer, FgCtx>;
+using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, FgCtx, InOf<ChFloat>>;
+using FloatProdEp = Endpoint<ChFloat, Direction::Producer, FgCtx, OutOf<ChFloat>>;
 
 // Direction, body shape and context all agree in the four rejections below.
 // Only the payload type differs.
@@ -77,18 +85,16 @@ static_assert(StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
 // stage and the endpoint mint takes the MPSC producer endpoint.
 struct UTagMpsc {};
 using ChMpsc = concurrent::PermissionedChannel<concurrent::ChannelForm::merge, int, 64, UTagMpsc, UBrand>;
-using MpscProdEp = Endpoint<ChMpsc, Direction::Producer, FgCtx>;
+using MpscProdEp = Endpoint<ChMpsc, Direction::Producer, FgCtx, OutOf<ChMpsc>>;
 
-inline void feed_mpsc_body(typename Ch1::ConsumerHandle&&, typename ChMpsc::ProducerHandle&&) noexcept {}
+inline void feed_mpsc_body(InOf<Ch1>&&, OutOf<ChMpsc>&&) noexcept {}
 
-static_assert(concurrent::is_producer_handle_v<typename ChMpsc::ProducerHandle>);
+static_assert(concurrent::is_producer_handle_v<OutOf<ChMpsc>>);
 static_assert(concurrent::PipelineStage<&feed_mpsc_body>);
 static_assert(CtxFitsStageFromEndpoints<&feed_mpsc_body, FgCtx, ConsEp, MpscProdEp>);
 
-inline void fan_in_body(typename Ch1::ConsumerHandle&&, typename Ch1::ConsumerHandle&&,
-                        typename Ch2::ProducerHandle&&) noexcept {}
-inline void fan_out_body(typename Ch1::ConsumerHandle&&, typename Ch2::ProducerHandle&&,
-                         typename Ch2::ProducerHandle&&) noexcept {}
+inline void fan_in_body(InOf<Ch1>&&, InOf<Ch1>&&, OutOf<Ch2>&&) noexcept {}
+inline void fan_out_body(InOf<Ch1>&&, OutOf<Ch2>&&, OutOf<Ch2>&&) noexcept {}
 
 static_assert(concurrent::VariadicPipelineStage<&fan_in_body>);
 static_assert(!concurrent::PipelineStage<&fan_in_body>);

@@ -15,13 +15,29 @@ using SmallSpsc =
 using SmallMpsc =
     ::fixy::concurrent::PermissionedChannel<::fixy::concurrent::ChannelForm::merge, int, 64, UserTag, UserBrand>;
 using endpoint_witness::FgCtx;
-using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx>;
-using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx>;
-using MpscProdEp = Endpoint<SmallMpsc, Direction::Producer, FgCtx>;
+// A scope brand that the checks name.  An endpoint holds a frame handle of the
+// end of its direction, on the scope brand of its frame.
+struct CheckScope {};
+using SpscProducer = ::fixy::concurrent::ProducerHandle<SmallSpsc, CheckScope>;
+using SpscConsumer = ::fixy::concurrent::ConsumerHandle<SmallSpsc, CheckScope>;
+using MpscProducer = ::fixy::concurrent::ProducerHandle<SmallMpsc, CheckScope>;
+using ProdEp = Endpoint<SmallSpsc, Direction::Producer, FgCtx, SpscProducer>;
+using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, FgCtx, SpscConsumer>;
+using MpscProdEp = Endpoint<SmallMpsc, Direction::Producer, FgCtx, MpscProducer>;
 
-static_assert(std::is_same_v<typename ProdEp::handle_type, typename SmallSpsc::ProducerHandle>);
-static_assert(std::is_same_v<typename ConsEp::handle_type, typename SmallSpsc::ConsumerHandle>);
-static_assert(std::is_same_v<typename MpscProdEp::handle_type, typename SmallMpsc::ProducerHandle>);
+static_assert(std::is_same_v<typename ProdEp::handle_type, SpscProducer>);
+static_assert(std::is_same_v<typename ConsEp::handle_type, SpscConsumer>);
+static_assert(std::is_same_v<typename MpscProdEp::handle_type, MpscProducer>);
+
+// An endpoint takes a frame handle of the end of its direction, and no end
+// and no handle of the other direction.
+template <class Handle>
+concept NamesProducerEndpointOver = requires { typename Endpoint<SmallSpsc, Direction::Producer, FgCtx, Handle>; };
+static_assert(NamesProducerEndpointOver<SpscProducer>);
+static_assert(!NamesProducerEndpointOver<SpscConsumer>);
+static_assert(!NamesProducerEndpointOver<typename SmallSpsc::ProducerEnd>);
+static_assert(CtxFitsEndpointHandle<SmallSpsc, Direction::Producer, FgCtx, SpscProducer>
+              && !CtxFitsEndpointHandle<SmallSpsc, Direction::Producer, FgCtx, SpscProducer&>);
 static_assert(std::is_same_v<typename ProdEp::value_type, int>);
 static_assert(std::is_same_v<typename ProdEp::user_tag, UserTag>);
 static_assert(std::is_same_v<typename ProdEp::ctx_type, FgCtx>);
