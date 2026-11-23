@@ -87,7 +87,10 @@ void producer_of_a_lane_that_ended() {
     [[maybe_unused]] auto again = lend(channel, kSecond);
 }
 
-void drain_while_a_producer_lives() {
+// A drain takes the lease of the producer root, which a live producer keeps in
+// the pool, so only the claim at rest of an owner with no tag can meet a live
+// producer, and it ends the process.
+void root_at_rest_while_a_producer_lives() {
     auto root = perm::mint_permission_root<RootTag>();
     using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
     auto [producer_root, consumer_perm] =
@@ -95,8 +98,8 @@ void drain_while_a_producer_lives() {
     ::foundation::linear::drop(std::move(consumer_perm));
     Lanes channel{std::move(producer_root)};
     [[maybe_unused]] auto held = lend(channel, kFirst);
-    Lanes::DrainClaim claim = channel.claim_drain();
-    channel.drain(claim, [](int) noexcept {});
+    auto rested = channel.claim_producer_root_at_rest();
+    channel.deposit_producer_root(std::move(rested));
 }
 
 // A refused door ends the process, so each attack runs in a child through
@@ -107,8 +110,9 @@ void refusals_end_the_process(::fixy::TestRunnerCtx const& test) noexcept {
                                ::fixy::TextView{"two live producer handles of one lane of a lanes channel"});
     ::fixy::check::expect_dies(test, producer_of_a_lane_that_ended,
                                ::fixy::TextView{"a producer handle of a lane that ended"});
-    ::fixy::check::expect_dies(test, drain_while_a_producer_lives,
-                               ::fixy::TextView{"a drain of a lanes channel while a producer handle lives."});
+    ::fixy::check::expect_dies(test, root_at_rest_while_a_producer_lives,
+                               ::fixy::TextView{"a claim of the exclusive of a SharedPermissionPool at rest found a "
+                                                "share or the lease out"});
 }
 
 // ── The stream ──────────────────────────────────────────────────────────
@@ -169,12 +173,16 @@ void drain_opens_each_lane(::fixy::TestRunnerCtx const& test) noexcept {
     }
     CRUCIBLE_TEST_ASSERT(test, channel.is_closed());
     ::fixy::FixedList<int, 4> drained{};
+    // The lease of the producer root opens the claim of the drain, and it goes
+    // back to the pool after the claim ends.
+    auto lease = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
     {
-        Lanes::DrainClaim claim = channel.claim_drain();
+        Lanes::DrainClaim claim = channel.claim_drain(lease);
         channel.drain(claim, [&drained](int item) noexcept {
             static_cast<void>(drained.append(item).expect("the drain gives at most four items"));
         });
     }
+    channel.deposit_producer_root(std::move(lease));
     CRUCIBLE_TEST_ASSERT(test, drained.size() == 3);
     CRUCIBLE_TEST_ASSERT(test, *drained.get(0).expect("a first item") == 11);
     CRUCIBLE_TEST_ASSERT(test, *drained.get(1).expect("a second item") == 21);

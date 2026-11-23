@@ -5859,6 +5859,11 @@ fixy_neg_compile_test(neg_mpsc_ring_pop_without_nondet_tag
 fixy_neg_compile_test(neg_mpsc_drain_with_state
   "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::drain\\("
   "__is_empty")
+# The claim of a drain of a merge channel takes the lease of the producer
+# root, so a claim with no lease finds no door.
+fixy_neg_compile_test(neg_mpsc_drain_claim_without_root
+  "no matching function for call to .fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::merge, int, 8, .anonymous.::UserTag, .anonymous.::UserBrand>::claim_drain\\(\\)."
+  "candidate expects 1 argument, 0 provided")
 fixy_neg_compile_test(neg_nondet_tag_from_the_source_of_a_narrow_ctx
   "no matching function for call to .foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >::cap\\(\\) const."
   "required for the satisfaction of .Subrow<foundation::effects::cap_permitted_row_t<Cap>, Row>.")

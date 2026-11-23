@@ -936,8 +936,9 @@ public:
     // root comes out as the lease of the pool of this channel.  While the
     // root is out, the pool lends no share, so no push lands: a live consumer
     // can drain the ring to empty with no push at the same time.  The lease
-    // and the consumer token open with_recombined_access.
-    // deposit_producer_root gives the lease back, and the pool lends again.
+    // and the consumer token open with_recombined_access, and the lease opens
+    // the claim of a drain.  deposit_producer_root gives the lease back, and
+    // the pool lends again.
     //
     // A claim door: its result is the exclusive token of the pool, which one
     // compare-exchange of the pool makes.  The write of the parked root after
@@ -973,10 +974,12 @@ public:
     // the process there, and no handle starts while the claim lives.  Its end
     // gives the two claims back.  The claim belongs to the thread that took
     // it, and no two threads read it, so it states thread_bound{} and
-    // not_shareable{}.  The constructor is private, and the claim door
-    // claim_drain is its one caller, so no thread builds a claim past the two
-    // claims (the build of a token of foundation/Transfer.h).  A holder of the
-    // channel with no token, such as the end of a Box channel, takes one.
+    // not_shareable{}.  The constructor is private, and the claim doors
+    // claim_drain are its callers, so no thread builds a claim past the two
+    // claims (the build of a token of foundation/Transfer.h).  The claim of a
+    // merge or a lanes channel also takes the lease of the producer root.  A
+    // holder of a pooled channel with no tag, such as the end of a Box
+    // channel, takes the root with claim_producer_root_at_rest.
     class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
         DrainClaim {
         friend class PermissionedChannel;
@@ -1018,27 +1021,71 @@ public:
         PermissionedChannel* channel_ = nullptr;
     };
 
-    // Takes the claim of each role of this channel for a drain.  A live handle
-    // of a role, a recombined access, a deposit or a second drain claim ends
-    // the process here.  A claim door: its result is the claim, which the two
-    // atomic exchanges of the claims make, and only the thread that holds the
-    // claim drains until the claim ends (the doors of a synchronized class of
+    // Takes the claim of each role of a wire for a drain.  A live handle of a
+    // role, a recombined access or a second drain claim ends the process
+    // here.  A claim door: its result is the claim, which the two atomic
+    // exchanges of the claims make, and only the thread that holds the claim
+    // drains until the claim ends (the doors of a synchronized class of
     // foundation/Transfer.h).
-    [[nodiscard]] DrainClaim claim_drain() noexcept { return DrainClaim{*this}; }
+    [[nodiscard]] DrainClaim claim_drain() noexcept
+        requires(Form == ChannelForm::wire)
+    {
+        return DrainClaim{*this};
+    }
+
+    // Takes the claim of each role of a merge or a lanes channel for a drain.
+    // The lease of the producer root is the proof that no producer handle
+    // lives: the pool gave it with a count of zero, and it lends no share
+    // while the root is out.  The claim holds the claim of the producer side,
+    // so no deposit gives the root back while the claim lives.  The
+    // compare-exchange of the upgrade read the end of each producer handle
+    // with acquire order, so the drain finds each item that a producer
+    // published.  A lease of another channel of the same type ends the
+    // process, because only the identity of the pool tells two such channels
+    // apart.  This test of the identity is the residual that the type cannot
+    // carry: channels of one type share a type, as the class-level stage
+    // proofs share one.  A claim door, as the claim of a wire is.
+    [[nodiscard]] DrainClaim claim_drain(producer_lease const& root) noexcept
+        requires(is_pooled)
+    {
+        if (!root.is_lease_of(producer_pool_)) [[unlikely]] {
+            ::foundation::core::fatal("a drain of a {} channel with the producer root of another channel of its "
+                                      "type.  Give the root of this channel.",
+                                      pooled_text_({.merge = "merge", .lanes = "lanes"}));
+        }
+        return DrainClaim{*this};
+    }
+
+    // The producer root of a merge or a lanes channel at rest, for an owner of
+    // the channel that ends with no context, such as the end of a channel of
+    // Box objects that drains its ring (SharedPermissionPool::
+    // claim_exclusive_at_rest).  The door has no context because the end of
+    // the Box channel has none.  It ends the process only on a live producer
+    // handle or a root out, which correct code never has: the owner holds the
+    // fact that each producer handle ended before its end, so the outcome is
+    // certain.  A caller with a tag of Nondet takes the root with
+    // try_withdraw_producer_root.  A claim door:
+    // its result is the exclusive token of the pool, which one
+    // compare-exchange of the pool makes.
+    [[nodiscard]] producer_lease claim_producer_root_at_rest() noexcept
+        requires(is_pooled)
+    {
+        return producer_pool_.claim_exclusive_at_rest();
+    }
 
     // Gives each item that the ring still holds to drop, the oldest first.
-    // The claim holds the claims of the two roles, and a pooled form also
-    // takes the exclusive of its pool here.  So a live handle of each role
-    // ends the process, and no handle starts while the drain runs.  The claim
-    // holds the role of the consumer, so a wire drains with the proof of the
-    // one consumer of its ring (the proven form of fixy/concurrent/SpscRing.h).
-    // A claim of
-    // another channel of the same type ends the process, because only the
-    // identity of a channel tells two such channels apart.  Each producer
+    // The claim holds the claims of the two roles, and the claim of a pooled
+    // form came from the lease of its producer root.  So no handle of a role
+    // lives, and no handle starts while the drain runs.  The claim holds the
+    // role of the consumer, so a wire drains with the proof of the one
+    // consumer of its ring (the proven form of fixy/concurrent/SpscRing.h).  A
+    // claim of another channel of the same type ends the process, because only
+    // the identity of a channel tells two such channels apart.  Each producer
     // handle of a merge published the turn word of each of its items before
-    // its end, and the upgrade reads that end with acquire order, so the drain
-    // finds each item.  The order of the items of a merge reads the merge, so
-    // its drop holds no state, as the drain of the MPSC ring asks.  The drain
+    // its end, and the upgrade that gave the lease read that end with acquire
+    // order, so the drain finds each item.  The order of the items of a merge
+    // reads the merge, so its drop holds no state, as the drain of the MPSC
+    // ring asks.  The drain
     // of a lanes channel gives the items in the order of the turn, and then
     // opens each lane again for a new stream (the drain of
     // fixy/concurrent/LaneRing.h), so its drop can hold state.  An owner of
@@ -1059,13 +1106,7 @@ public:
                 drop(std::move(item).expect("the test above found an item"));
             }
         } else {
-            auto exclusive = ::foundation::permissions::detail::ChannelPoolDoor::try_upgrade(producer_pool_);
-            if (exclusive.is_none()) [[unlikely]] {
-                ::foundation::core::fatal("a drain of a {} channel while a producer handle lives.",
-                                          pooled_text_({.merge = "merge", .lanes = "lanes"}));
-            }
             side_.ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
-            producer_pool_.deposit_exclusive(std::move(exclusive).expect("the test above found the exclusive"));
         }
     }
 

@@ -127,6 +127,25 @@ void merge_recombined_access_with_the_root_of_another_channel() {
     ::foundation::linear::drop(std::move(parts.consumer));
 }
 
+// A drain of a merge channel claims with the lease of the root of this channel.
+// A second channel of the same site has the same type, so the lease of its root
+// fits the claim by its type, but it proves nothing about the producers of this
+// channel.  Only the identity of the pool tells the two apart.
+void merge_drain_with_the_root_of_another_channel() {
+    auto [producer_root, consumer_perm] = mpsc_halves();
+    auto [other_root, other_consumer] = mpsc_halves();
+    ::foundation::linear::drop(std::move(consumer_perm));
+    ::foundation::linear::drop(std::move(other_consumer));
+    Mpsc channel{std::move(producer_root)};
+    Mpsc other{std::move(other_root)};
+    auto lease = other.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
+    {
+        Mpsc::DrainClaim claim = channel.claim_drain(lease);
+        channel.drain(claim, [](int) noexcept {});
+    }
+    other.deposit_producer_root(std::move(lease));
+}
+
 // The deposit of the lease of another channel of the same site during a
 // recombined access would let the pool lend a producer while the body owns
 // the ring.  The claim of the producer side refuses it first.
@@ -206,6 +225,9 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
         test, merge_recombined_access_with_the_root_of_another_channel,
         ::fixy::TextView{"recombined access to a merge channel with the producer root of another channel"});
     ::fixy::check::expect_dies(
+        test, merge_drain_with_the_root_of_another_channel,
+        ::fixy::TextView{"a drain of a merge channel with the producer root of another channel of its type"});
+    ::fixy::check::expect_dies(
         test, deposit_during_a_recombined_access,
         ::fixy::TextView{
             "a deposit of the producer root of a merge channel while a recombined access or a drain runs"});
@@ -213,7 +235,7 @@ void attacks_end_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(test, writer_move_keeps_the_source_claim, kSecondSwmrWriter);
     ::fixy::check::expect_dies(test, pipeline_joins_two_links_of_one_type,
                                ::fixy::TextView{"a pipeline joins two channels of one type"});
-    ::fixy::check::pass(test, "  9 attacks refused\n");
+    ::fixy::check::pass(test, "  10 attacks refused\n");
 }
 
 // A claim comes back when its handle ends, so a handle made later from a

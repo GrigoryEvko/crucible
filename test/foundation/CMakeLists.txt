@@ -1888,6 +1888,10 @@ foundation_neg_compile_test(neg_share_pool_lend_nondet_tag_refuses_row
 foundation_neg_compile_test(neg_share_pool_upgrade_nondet_tag_refuses_row
   "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::try_upgrade\\(foundation::effects::cap::Nondet&?\\)."
   "::try_upgrade\\(foundation::effects::cap::Nondet\\) requires +permission_row_empty")
+# The claim at rest takes no context, so only a tag with an empty row has it.
+foundation_neg_compile_test(neg_share_pool_claim_at_rest_refuses_row
+  "no matching function for call to .foundation::permissions::SharedPermissionPool<.anonymous.::NeedsIo, .*>::claim_exclusive_at_rest\\(\\)."
+  "constraints not satisfied")
 # The check of a statement of synchronized{} reads the doors of the class: a
 # door with no proof, a mutable plain member, a token of an unrelated class, a
 # LoanKey, a template door with no proof, a template door that the probe body
@@ -2009,6 +2013,13 @@ target_link_libraries(test_share_pool_double_deposit_aborts PRIVATE fixy)
 foundation_test(test_share_pool_deposit_under_ignore test_share_pool_double_deposit_aborts.cpp)
 target_link_libraries(test_share_pool_deposit_under_ignore PRIVATE fixy)
 crucible_contract_ignore_target(test_share_pool_deposit_under_ignore)
+
+# The claim of the exclusive of a pool at rest ends the process while a share
+# or the lease is out, and gives the exclusive of an idle pool.  Each attack
+# runs in a child process through expect_dies of the Check family, so the
+# test links fixy.
+foundation_test(test_share_pool_claim_at_rest)
+target_link_libraries(test_share_pool_claim_at_rest PRIVATE fixy)
 
 # ── The row-mismatch message builder ──────────────────────────────────
 #

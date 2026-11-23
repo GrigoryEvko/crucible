@@ -238,8 +238,9 @@ void drain_gives_each_item_in_order(fixy::TestRunnerCtx const& test) noexcept {
 // A drain while a handle of one role lives ends the process, so no handle can
 // push or pop while the drain claims the ring.  Each drain runs in a child
 // through expect_dies of the Check family.  The first child ends a Box channel
-// while a producer handle lives, and the drain of the end refuses.  The second
-// child drains a plain MPSC channel while its consumer handle lives.
+// while a producer handle lives, and the claim of the producer root at rest of
+// the end refuses.  The second child drains a plain MPSC channel while its
+// consumer handle lives.
 void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::check::expect_dies(
         test,
@@ -254,7 +255,7 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
             static_cast<void>(producer.try_push(make_parcel(1)));
             ::foundation::linear::drop(std::move(consumer_perm));
         },
-        ::fixy::TextView{"a drain of a merge channel while a producer handle lives."});
+        ::fixy::TextView{"a claim of the exclusive of a SharedPermissionPool at rest found a share or the lease out"});
     ::fixy::check::expect_dies(
         test,
         []() noexcept {
@@ -264,8 +265,13 @@ void drain_refuses_a_live_handle(fixy::TestRunnerCtx const& test) noexcept {
                 perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(std::move(root));
             Channel channel{std::move(producer_root)};
             auto consumer = channel.consumer(std::move(consumer_perm));
-            Channel::DrainClaim claim = channel.claim_drain();
-            channel.drain(claim, [](std::uint64_t) noexcept {});
+            auto lease = channel.try_withdraw_producer_root(eff::testing::test().nondet)
+                             .expect("the root comes out with no producer out");
+            {
+                Channel::DrainClaim claim = channel.claim_drain(lease);
+                channel.drain(claim, [](std::uint64_t) noexcept {});
+            }
+            channel.deposit_producer_root(std::move(lease));
             ::foundation::linear::drop(std::move(consumer));
         },
         ::fixy::TextView{"a drain of a merge channel while its consumer handle lives."});

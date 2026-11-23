@@ -141,6 +141,20 @@ concept WithdrawsRootWithNoTag = requires(Channel& channel) { channel.try_withdr
 static_assert(LendsWithTag<Merge> && !LendsWithNoTag<Merge> && !LendsWithNoTag<Lanes>);
 static_assert(!WithdrawsRootWithNoTag<Merge> && !WithdrawsRootWithNoTag<Lanes>);
 
+// The claim of a drain of a pooled form takes the lease of the producer root,
+// which proves that no producer handle lives.  A wire claims with no lease.
+// Only a pooled form takes its root at rest, for an owner with no tag.
+template <typename Channel>
+concept ClaimsDrainWithNoRoot = requires(Channel& channel) { channel.claim_drain(); };
+template <typename Channel>
+concept ClaimsDrainWithRoot =
+    requires(Channel& channel, typename Channel::producer_lease const& root) { channel.claim_drain(root); };
+template <typename Channel>
+concept ClaimsRootAtRest = requires(Channel& channel) { channel.claim_producer_root_at_rest(); };
+static_assert(ClaimsDrainWithNoRoot<Wire> && !ClaimsDrainWithNoRoot<Merge> && !ClaimsDrainWithNoRoot<Lanes>);
+static_assert(!ClaimsDrainWithRoot<Wire> && ClaimsDrainWithRoot<Merge> && ClaimsDrainWithRoot<Lanes>);
+static_assert(!ClaimsRootAtRest<Wire> && ClaimsRootAtRest<Merge> && ClaimsRootAtRest<Lanes>);
+
 // Each handle states the capacity of its channel, so a check of the waits
 // reads it from the type of the handle.  A lanes channel holds the capacity
 // of each lane times the count of its lanes.

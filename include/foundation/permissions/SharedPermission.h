@@ -21,7 +21,6 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>
-#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -317,6 +316,10 @@ public:
 // out.  The body is in src/foundation/SharedPermission.cpp.
 [[noreturn]] CRUCIBLE_COLD void shared_permission_pool_outlived_abort_() noexcept;
 
+// A claim of the exclusive of a pool at rest found a share or the lease out.
+// The body is in src/foundation/SharedPermission.cpp.
+[[noreturn]] CRUCIBLE_COLD void shared_permission_pool_not_at_rest_abort_() noexcept;
+
 // The context a pool operation runs in: one that admits the tag's row and
 // holds Nondet.  A lend fails while the exclusive is out, and an upgrade
 // fails while a share is out.  Another thread ends a share or deposits the
@@ -326,30 +329,6 @@ public:
 template <typename Tag, typename Ctx>
 concept PoolCtx = CtxAdmitsPermission<Tag, Ctx>
                && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Nondet>;
-
-namespace detail {
-
-// Internal door of the channels.  An upgrade with no context, for the
-// drain of the merge and lanes forms of PermissionedChannel, which takes no
-// context yet.  It asks for the exclusive of a pool that the channel itself
-// owns, for a tag whose row is empty.  The schedule decides its outcome, as
-// it decides the outcome of try_upgrade(ctx).  No other code calls the door.
-// The rule owners keeps each use of a detail namespace of the base out of the
-// code outside the base, and the fixtures neg_share_pool_*_without_ctx_* hold
-// that a lend or an upgrade with no context and no tag does not compile.
-class ChannelPoolDoor final : ::foundation::NoObject<ChannelPoolDoor> {
-public:
-    template <typename Tag, typename Brand>
-    [[nodiscard]] static ::foundation::core::Option<ExclusiveLease<Tag, Brand>>
-    try_upgrade(SharedPermissionPool<Tag, Brand>& pool) noexcept {
-        static_assert(permission_row_empty(^^Tag), "the internal door of the channels upgrades only a pool of a tag "
-                                                   "whose permission row is empty.  A tag with effects uses "
-                                                   "try_upgrade(ctx).");
-        return pool.try_upgrade_raw_();
-    }
-};
-
-}  // namespace detail
 
 // The pool carries the brand of the exclusive it was built from, so its
 // shares are shares of that region and its upgrade hands that region
@@ -410,6 +389,28 @@ public:
         requires(permission_row_empty(^^Tag))
     {
         return try_upgrade_raw_();
+    }
+
+    // The exclusive of a pool at rest, for an owner that ends with no
+    // context, such as the destructor of a channel that drains its ring.  A
+    // destructor takes no argument, so this door takes no context and no tag.
+    // The caller holds the fact that no share and no lease is out: each
+    // holder ended before the call, and its end happens before the call.  So
+    // the outcome is certain in correct code, and the door reads no schedule.
+    // A share or a lease out cannot occur in correct code, so the door ends
+    // the process in each build, as the claim of a role of a channel does
+    // (EndpointClaim::take of foundation/ChannelBinding.h).  A caller that
+    // has a context, such as an explicit drain of a channel, takes the lease
+    // of try_upgrade as its proof and does not call this door.  Only a tag
+    // whose row is empty has the door, because no context admits a row here.
+    [[nodiscard]] ExclusiveLease<Tag, Brand> claim_exclusive_at_rest() noexcept
+        requires(permission_row_empty(^^Tag))
+    {
+        ::foundation::core::Option<ExclusiveLease<Tag, Brand>> claimed = try_upgrade_raw_();
+        if (claimed.is_none()) [[unlikely]] {
+            shared_permission_pool_not_at_rest_abort_();
+        }
+        return std::move(claimed).expect("the test above found the exclusive");
     }
 
     // The holder of the lease gives the exclusive back (the lease).  While
@@ -490,7 +491,6 @@ private:
     }
 
     friend class SharedPermissionGuard<Tag, Brand>;
-    friend class detail::ChannelPoolDoor;
 
     // Holds a value exactly when the exclusive-out bit is clear.
     std::optional<Permission<Tag, Brand>> parked_;

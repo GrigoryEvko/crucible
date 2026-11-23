@@ -165,10 +165,24 @@ public:
         : cells_{std::move(producer_root)} {}
 
     // Each object that the ring still holds ends here (the words).  The drop
-    // holds no state, as the drain of a merge asks.
+    // holds no state, as the drain of a merge asks.  A destructor takes no
+    // tag of Nondet, so a merge takes its producer root at rest: each
+    // producer handle borrows the channel and ended before this end, and a
+    // live one ends the process.  The root goes back to the pool after the
+    // claim of the drain ends, because a deposit takes the claim of the
+    // producer side.
     ~PermissionedBoxChannel() {
-        typename cell_channel::DrainClaim claim = cells_.claim_drain();
-        cells_.drain(claim, [](word_type word) noexcept { static_cast<void>(open_(word)); });
+        if constexpr (Form == ChannelForm::wire) {
+            typename cell_channel::DrainClaim claim = cells_.claim_drain();
+            cells_.drain(claim, WordDrop{});
+        } else {
+            typename cell_channel::producer_lease root = cells_.claim_producer_root_at_rest();
+            {
+                typename cell_channel::DrainClaim claim = cells_.claim_drain(root);
+                cells_.drain(claim, WordDrop{});
+            }
+            cells_.deposit_producer_root(std::move(root));
+        }
     }
 
     class[[= ::foundation::linear::linear_when<Form == ChannelForm::wire>]] ProducerHandle {
@@ -410,6 +424,12 @@ private:
     [[nodiscard]] static value_type open_(word_type word) noexcept {
         return ::foundation::core::claim_box(word, ::foundation::core::box_word_key<PermissionedBoxChannel>{});
     }
+
+    // The drop of the drain at the end: the object of each word ends.  The
+    // class is empty, as the drain of a merge asks.
+    struct WordDrop final {
+        void operator()(word_type word) const noexcept { static_cast<void>(open_(word)); }
+    };
 
     cell_channel cells_;
 };

@@ -40,6 +40,17 @@ void shared_permission_pool_outlived_abort_() noexcept {
     os::abort_process();
 }
 
+// The cold path of a claim of the exclusive of a pool at rest that found a
+// share or the lease out.  It is in a source file, and no includer of
+// SharedPermission.h compiles the report.
+void shared_permission_pool_not_at_rest_abort_() noexcept {
+    core::report(core::Sink::Err,
+                 "crucible: fatal contract violation: a claim of the exclusive of a SharedPermissionPool at rest found "
+                 "a share or the lease out.  The owner that claims at rest ends each share and gives the lease back "
+                 "before the claim.\n");
+    os::abort_process();
+}
+
 // The cold path of a deposit of a lease that came out of another pool of
 // the same type.  It is in a source file, and no includer of
 // SharedPermission.h compiles the report.
