@@ -6,12 +6,29 @@
 #include <foundation/Brand.h>
 #include <foundation/core/AllocTag.h>
 #include <foundation/core/BumpArena.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
 
 namespace planted {
 
 namespace fc = ::foundation::core;
+
+// A class outside the base that states owns_its_storage{} and holds a View
+// still holds a borrow, so a return of it that names a local list is a
+// finding.
+struct[[= ::foundation::core::owns_its_storage{}]] MarkedHolder {
+    fc::View<int const> run{};
+};
+
+MarkedHolder marked_holder_of_local_list() {
+    fc::FixedList<int, 4> list{};
+    return MarkedHolder{std::as_const(list).view()};
+}
 
 struct[[= ::foundation::brand::arena_family_brand{}]] PlantArena final {};
 
