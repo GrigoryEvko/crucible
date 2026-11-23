@@ -1474,28 +1474,24 @@ struct NoPayload final {};
 // End of a linear alternative
 //   A Result and a OneOf have no empty state, so a consumer leaves the
 //   moved-from alternative in place, and the end of the sum ends it.  A test
-//   build (CRUCIBLE_QTT_TRACK_CONSUME, as the consume tracker of fixy/Qtt.h
-//   reads it) keeps one mark beside an owning sum with a linear alternative.
-//   A consumer sets the mark, and so does the move of the sum, for its
-//   source.  The end of a sum whose active alternative is linear and whose
-//   mark is clear ends the process.  The rule must-consume refuses such an
-//   end at compile time where it sees it, so the mark is a test oracle of
-//   the rule.  A Release build and a sum with no linear alternative keep an
-//   empty mark, so their layout and their code do not change.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-inline constexpr bool tracks_alternative_ends_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
-#else
-inline constexpr bool tracks_alternative_ends_ = false;
-#endif
+//   build (has_test_oracles of foundation/Platform.h) keeps one mark beside
+//   an owning sum with a linear alternative.  A consumer sets the mark, and
+//   so does the move of the sum, for its source.  The end of a sum whose
+//   active alternative is linear and whose mark is clear ends the process.
+//   The rule must-consume refuses such an end at compile time where it sees
+//   it, so the mark is a test oracle of the rule.  A Release build and a sum
+//   with no linear alternative keep an empty mark, so their layout and their
+//   code do not change.
+inline constexpr bool tracks_alternative_ends_ = ::foundation::has_test_oracles;
 
 // Oracle of the tag
 //   Each door of a slot writes the index of an alternative (the doors of the
 //   tag), and the compile refuses each byte route into a sum.  So the read
 //   of the tag of a slot states that the tag is below the count, with no
 //   test, and the optimizer folds each check that the tag makes true.  A test
-//   build (CRUCIBLE_QTT_TRACK_CONSUME, as for the end of a linear
-//   alternative) keeps one compare of the tag with the count in the read,
-//   and a tag that names no alternative ends the process.  The compare is a
+//   build (has_test_oracles, as for the end of a linear alternative) keeps
+//   one compare of the tag with the count in the read, and a tag that names
+//   no alternative ends the process.  The compare is a
 //   test oracle of the doors and of the rule forged-tag: a test that forges a
 //   tag in a region of the class PROBE reaches it, and so does a route that
 //   no rule refuses in a test or a bench, such as a reinterpret_cast to a
@@ -1503,11 +1499,7 @@ inline constexpr bool tracks_alternative_ends_ = false;
 //   build of the benches and the fuzz harnesses).  A Release build reads the
 //   tag with no compare, so a tag that names no alternative is undefined
 //   there.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-inline constexpr bool checks_read_tags_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
-#else
-inline constexpr bool checks_read_tags_ = false;
-#endif
+inline constexpr bool checks_read_tags_ = ::foundation::has_test_oracles;
 
 // The exit of the oracle.  The read of the tag is in index_ of each slot, and
 // no template of a namespace holds it, so no unit can specialize the read.

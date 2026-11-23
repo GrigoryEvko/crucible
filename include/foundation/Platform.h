@@ -285,6 +285,25 @@ static_assert(__GCC_DESTRUCTIVE_SIZE == 64,
 // header includes no system header and no stdio.  Each program that expands
 // an assertion macro links the library foundation.
 
+// Test oracles
+//   A build with a sanitizer sets CRUCIBLE_QTT_TRACK_CONSUME=1 on each target
+//   (the preset flags).  That build runs the test oracles of the base: the
+//   consume tracker of fixy/Qtt.h, the mark of a linear end and the compare
+//   of the tag of a sum of foundation/core/Choice.h, and the check of a proof
+//   of fixy/Fn.h.  A build that sets nothing, or sets 0, runs none of them.
+//   has_test_oracles reads the macro one time, and each oracle and each test
+//   of an oracle reads has_test_oracles.  Only fixy/Qtt.h reads the macro
+//   again, for the ABI tag of a tracked build.
+namespace foundation {
+
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+inline constexpr bool has_test_oracles = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+inline constexpr bool has_test_oracles = false;
+#endif
+
+}  // namespace foundation
+
 namespace foundation::detail {
 
 // True when a tracer, such as a debugger, is attached to the process.  The

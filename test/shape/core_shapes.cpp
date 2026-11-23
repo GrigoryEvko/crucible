@@ -26,10 +26,10 @@
 //
 // A test build arms the consume tracker of fixy/Qtt.h on each unit, as a test
 // oracle of the rule must-consume.  The probes read the Release form of a
-// Linear in each build, so this unit keeps the tracker off.  The unit is an
+// Linear in each build, so this unit takes back the flag of the build, and
+// has_test_oracles of foundation/Platform.h is false in it.  The unit is an
 // object of its own, and no target links it.
 #undef CRUCIBLE_QTT_TRACK_CONSUME
-#define CRUCIBLE_QTT_TRACK_CONSUME 0
 
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>

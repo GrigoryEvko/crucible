@@ -429,13 +429,12 @@ struct ForgedWords {
 // alternative.  The quarantine plugin refuses each such route out of a PROBE
 // region, and the checked lifetime start refuses a third route at compile
 // time (neg_core_option_plain_lifetime_start).  In a test build
-// (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag compares it with the
-// count, so each read of the state of a forged sum ends the process: is_some
-// or is_ok, and == in each order of the operands.  A Release build reads the
-// tag with no compare, so a forged tag is undefined there.  Each case reads
-// checks_read_tags_ of Choice.h, the switch of the oracle, and it forges a
-// tag only when the switch is on.  A Release build reads the tag of a real
-// sum.
+// (has_test_oracles of foundation/Platform.h), the read of the tag compares
+// it with the count, so each read of the state of a forged sum ends the
+// process: is_some or is_ok, and == in each order of the operands.  A Release
+// build reads the tag with no compare, so a forged tag is undefined there.
+// Each case reads has_test_oracles, and it forges a tag only when the switch
+// is on.  A Release build reads the tag of a real sum.
 template <class Sum>
 void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundation::core::TextView refusal) {
     expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(forged == real); }, refusal);
@@ -449,7 +448,7 @@ void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundati
 void test_forged_tag_by_memcpy() {
     static_assert(sizeof(Option<std::uint64_t>) == sizeof(ForgedWords));
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
-    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+    if constexpr (!::foundation::has_test_oracles) {
         CRUCIBLE_FATAL_INVARIANT(real.is_some() && real == Option<std::uint64_t>::some(std::uint64_t{7}));
         return;
     }
@@ -464,7 +463,7 @@ void test_forged_tag_by_memcpy() {
 
 void test_forged_tag_by_union_member() {
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
-    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+    if constexpr (!::foundation::has_test_oracles) {
         CRUCIBLE_FATAL_INVARIANT(real.is_some());
         return;
     }
@@ -490,7 +489,7 @@ void test_forged_result_tag_by_memcpy() {
     using Word = ::foundation::core::Result<std::uint64_t, Refusal>;
     static_assert(sizeof(Word) == sizeof(ForgedWords));
     Word const real{std::uint64_t{7}};
-    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+    if constexpr (!::foundation::has_test_oracles) {
         CRUCIBLE_FATAL_INVARIANT(real.is_ok());
         return;
     }
@@ -1418,11 +1417,11 @@ void test_full_linear_end_aborts() {
 // Result for its source, leave nothing owed, and a Result whose active
 // alternative is droppable owes nothing.  A Release build keeps no mark: the
 // end destroys the alternative and does not end the process.  The case reads
-// tracks_alternative_ends_ of Choice.h, the switch of the mark.
+// has_test_oracles, the switch of the mark.
 void test_owed_alternative_end_aborts() {
     constexpr ::foundation::core::TextView kOwedEnd{
         "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
-    if constexpr (::foundation::core::detail::tracks_alternative_ends_) {
+    if constexpr (::foundation::has_test_oracles) {
         expect_dies(test_context(), [] noexcept { end_owed_linear_value(); }, kOwedEnd);
         expect_dies(test_context(), [] noexcept { end_owed_linear_error(); }, kOwedEnd);
     } else {

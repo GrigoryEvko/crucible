@@ -111,12 +111,11 @@
 
 // The consume tracker's key.  A preset sets it for every target at
 // once; a bare include that never sees it gets the off build, and the
-// ABI tag below is what keeps the two from meeting quietly.
-#ifndef CRUCIBLE_QTT_TRACK_CONSUME
-#define CRUCIBLE_QTT_TRACK_CONSUME 0
-#endif
-
-#if CRUCIBLE_QTT_TRACK_CONSUME
+// ABI tag below is what keeps the two from meeting quietly.  The tree
+// defines no default of the key, so a build that sets nothing leaves it
+// undefined.  Each oracle reads has_test_oracles of foundation/Platform.h,
+// and only the ABI tag below reads the key, with the same answer.
+#if defined(CRUCIBLE_QTT_TRACK_CONSUME) && CRUCIBLE_QTT_TRACK_CONSUME
 #define CRUCIBLE_QTT_ABI [[gnu::abi_tag("qtt_tracked")]]
 #else
 #define CRUCIBLE_QTT_ABI
@@ -232,10 +231,10 @@ private:
 // is the empty one.  The fact is a concept, because niche is an open template
 // and a gate reads it only through a concept (the rule home).
 template <class T>
-concept TracksInNiche = CRUCIBLE_QTT_TRACK_CONSUME != 0 && !::foundation::core::detail::UndeclaredNicheOf<T>;
+concept TracksInNiche = ::foundation::has_test_oracles && !::foundation::core::detail::UndeclaredNicheOf<T>;
 
 template <auto Grade, class T>
-using ConsumeTracker = ConsumeTrackerImpl<Grade, T, CRUCIBLE_QTT_TRACK_CONSUME != 0 && !TracksInNiche<T>>;
+using ConsumeTracker = ConsumeTrackerImpl<Grade, T, ::foundation::has_test_oracles && !TracksInNiche<T>>;
 
 }  // namespace detail
 
@@ -519,9 +518,10 @@ template <class T, class... Args>
     return Affine<T>{std::in_place, std::forward<Args>(args)...};
 }
 
-// What the tracker costs, named once so a caller and a test can read
-// the same answer instead of each testing the macro.
-inline constexpr bool qtt_consume_tracked = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+// What the tracker costs, named once so a caller and a test can read the
+// same answer instead of each testing the macro: the switch of the test
+// oracles of the base (has_test_oracles of foundation/Platform.h).
+inline constexpr bool qtt_consume_tracked = ::foundation::has_test_oracles;
 
 // The pins of the tracked build stay in this header.  They hold only in
 // a translation unit that sets CRUCIBLE_QTT_TRACK_CONSUME: each unit of a

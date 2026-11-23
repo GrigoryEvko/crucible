@@ -122,15 +122,8 @@ template <class Proof>
 //   A Refined is the proof of its predicate, so a mint of a refined pack runs
 //   no check in Release.  mint_refined_trusted builds a Refined with no call
 //   of the predicate, so a false proof can reach the mint.  A test build
-//   (CRUCIBLE_QTT_TRACK_CONSUME, as for the end of a linear alternative) runs
-//   the predicate in the mint as a test oracle, and a false proof ends the
-//   process.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-inline constexpr bool checks_proofs_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
-#else
-inline constexpr bool checks_proofs_ = false;
-#endif
-
+//   (has_test_oracles of foundation/Platform.h) runs the predicate in the mint
+//   as a test oracle, and a false proof ends the process.
 [[noreturn]] CRUCIBLE_COLD inline void report_false_proof_() noexcept {
     ::foundation::core::fatal(
         "fixy::fn: the Refined of the mint fails the predicate of the pack, so a trusted mint made a false proof");
@@ -189,7 +182,7 @@ template <class Proof, class T, class... Atoms>
 template <class Proof>
 [[nodiscard]] constexpr proved_payload_t<Proof>
 take_proved_(Proof&& proof) noexcept(std::is_nothrow_move_constructible_v<proved_payload_t<Proof>>) {
-    if constexpr (checks_proofs_) {
+    if constexpr (::foundation::has_test_oracles) {
         if (!static_cast<bool>(proved_predicate_t<Proof>{}(proof.value()))) [[unlikely]] {
             report_false_proof_();
         }

@@ -146,16 +146,13 @@ private:
 
 // True in a test build, which arms the export check of each name of the
 // tables as a test oracle.  A build with a sanitizer is a test build, and it
-// sets CRUCIBLE_QTT_TRACK_CONSUME, as the consume tracker of fixy/Qtt.h reads
-// it.  A table takes a name only as an internal name or a Sanitized name, and
-// each of the two types proves the checks of the validator of the loader.  So
-// a Release build exports with no check.  Only the test door of a Sanitized
-// name (UncheckedSchemaNameDoor) plants a name that the validator refuses.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-constexpr bool kChecksExportedNames = CRUCIBLE_QTT_TRACK_CONSUME != 0;
-#else
-constexpr bool kChecksExportedNames = false;
-#endif
+// runs the test oracles of the base (has_test_oracles of
+// foundation/Platform.h).  A table takes a name only as an internal name or a
+// Sanitized name, and each of the two types proves the checks of the validator
+// of the loader.  So a Release build exports with no check.  Only the test
+// door of a Sanitized name (UncheckedSchemaNameDoor) plants a name that the
+// validator refuses.
+constexpr bool kChecksExportedNames = ::foundation::has_test_oracles;
 
 // True when the name of entry passes sanitize_schema_name, the validator that
 // the loader runs on each name of a file.  The export of a test build writes

@@ -612,10 +612,10 @@ static_assert(mint_fn<int, refined_by_positive>(::fixy::mint_refined_constant<::
     // can make a false proof.  A test build runs the predicate in the mint of
     // the binding, and the false proof ends the process.  A Release build
     // runs no check there, and the binding holds the value of the proof.  The
-    // case reads the value of the switch of the oracle, because fixy/Qtt.h
-    // defines CRUCIBLE_QTT_TRACK_CONSUME as 0 in a build that sets nothing.
+    // case reads has_test_oracles of foundation/Platform.h, the switch of the
+    // oracle.
     int const refused = -admitted;
-    if constexpr (::fixy::detail::refinement::checks_proofs_) {
+    if constexpr (::foundation::has_test_oracles) {
         ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
         constexpr ::fixy::TextView kFalseProof{
             "fixy::fn: the Refined of the mint fails the predicate of the pack, so a trusted mint made a false proof"};

@@ -179,8 +179,9 @@ that the axis does not apply to the row.
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_cyclic_buffer` | `include/fixy/CyclicBuffer.h` | Y | Y | Y | Y | token | · | HS14: 5 |
-| `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 7 |
-| `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
+| `mint_fn(T0_0)` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_fn(T0_2)` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_foreign_owned_region` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 15 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -189,7 +190,7 @@ that the axis does not apply to the row.
 | `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_owned_region` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
-| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 23 |
+| `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 26 |
 | `mint_refined_constant` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_refined_trusted` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_sealed_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -420,4 +421,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 180 | 62 | 114 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 181 | 62 | 115 | 4 | 0 | 2 |

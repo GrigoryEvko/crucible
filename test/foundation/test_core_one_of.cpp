@@ -90,13 +90,12 @@ void test_each_alternative() {
     CRUCIBLE_FATAL_INVARIANT(wide.which().raw() == 0 && refused.which().raw() == 1 && narrow.which().raw() == 2);
 }
 
-// The oracle of the tag of Choice.h.  In a test build
-// (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag of a OneOf compares it
-// with the count, and a tag that names no alternative ends the process.  A
-// Release build reads the tag with no compare, so a forged tag is undefined
-// there.  Each case reads checks_read_tags_ of Choice.h, the switch of the
-// oracle, and it forges a tag only when the switch is on.  A Release build
-// reads the tag of a real OneOf.
+// The oracle of the tag of Choice.h.  In a test build (has_test_oracles of
+// foundation/Platform.h), the read of the tag of a OneOf compares it with the
+// count, and a tag that names no alternative ends the process.  A Release
+// build reads the tag with no compare, so a forged tag is undefined there.
+// Each case reads has_test_oracles, and it forges a tag only when the
+// switch is on.  A Release build reads the tag of a real OneOf.
 
 // The bytes of a Reading whose tag names no alternative: the storage word,
 // and a tag word whose low byte is the tag.
@@ -126,7 +125,7 @@ constexpr ::foundation::core::TextView kForgedTag{
 // leaves its range.  Each read of a forged tag below runs in a child through
 // expect_dies of the Check family.
 void test_which_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
-    if constexpr (::foundation::core::detail::checks_read_tags_) {
+    if constexpr (::foundation::has_test_oracles) {
         Reading const forged = forge_reading();
         expect_dies(test, [&forged] noexcept { static_cast<void>(forged.which()); }, kForgedTag);
     } else {
@@ -140,7 +139,7 @@ void test_which_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test)
 // active.
 void test_match_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
     Reading const real = read_word(9u);
-    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+    if constexpr (!::foundation::has_test_oracles) {
         CRUCIBLE_FATAL_INVARIANT(real.is<std::uint16_t>() && real == read_word(9u));
         return;
     }
@@ -322,10 +321,10 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // took ends the process in a test build.  expect and the move of the OneOf
 // for its source leave nothing owed, and a droppable active alternative owes
 // nothing.  A Release build keeps no mark: the end destroys the alternative
-// and does not end the process.  The case reads tracks_alternative_ends_ of
-// Choice.h, the switch of the mark.
+// and does not end the process.  The case reads has_test_oracles, the
+// switch of the mark.
 void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx const& test) {
-    if constexpr (::foundation::core::detail::tracks_alternative_ends_) {
+    if constexpr (::foundation::has_test_oracles) {
         expect_dies(
             test, [] noexcept { end_owed_linear_alternative(); },
             ::foundation::core::TextView{

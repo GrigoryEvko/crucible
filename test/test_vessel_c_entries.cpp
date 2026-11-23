@@ -49,13 +49,9 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 int g_failures = 0;
 
 // True in a test build, whose export checks each name of the tables again, as
-// vessel_api.cpp reads the same key.  A build with a sanitizer sets
-// CRUCIBLE_QTT_TRACK_CONSUME.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-constexpr bool kExportChecksNames = CRUCIBLE_QTT_TRACK_CONSUME != 0;
-#else
-constexpr bool kExportChecksNames = false;
-#endif
+// vessel_api.cpp reads the same switch: has_test_oracles of
+// foundation/Platform.h.
+constexpr bool kExportChecksNames = ::foundation::has_test_oracles;
 
 #define EXPECT(cond, msg)                                                                          \
     do {                                                                                           \
