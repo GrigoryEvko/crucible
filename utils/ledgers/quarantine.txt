@@ -580,6 +580,7 @@ test/foundation/ | opted-out | 1 | PROBE: the child reads a reserved page that n
 test/foundation/ | opted-out | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
 test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
+test/foundation/ | opted-out | 6 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | opted-out | 3 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
@@ -616,6 +617,7 @@ test/foundation/ | region | 1 | PROBE: the child reads a reserved page that no c
 test/foundation/ | region | 3 | PROBE: the identity walk reads a pointer, a member pointer and a bfloat16 value | -
 test/foundation/ | region | 1 | PROBE: the layout test reads the address of the first element of each array of a buffer | the layout test of the SwissTableBuffer reads the address of the first element of each array as an integer, and no type of the base gives the address of a View as an integer
 test/foundation/ | region | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
+test/foundation/ | region | 2 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | region | 1 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/foundation/ | region | 1 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
 test/foundation/ | region | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
