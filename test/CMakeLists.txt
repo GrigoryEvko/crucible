@@ -713,6 +713,9 @@ crucible_test(test_storage_nbytes_simd)
 # transpose, a broadcast row and a scalar, and each refusal of the door.
 crucible_test(test_tensor_meta_strided)
 crucible_test(test_tensor_meta_synthetic_address)
+# Each route from bytes to a TensorMeta refuses a size or a stride past the
+# bound of a TensorDim, and a slot reads back the lane that it wrote.
+crucible_test(test_tensor_dim_bound)
 crucible_test(test_trace_ring_pop_batch)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.
@@ -2512,6 +2515,26 @@ crucible_neg_compile_test(neg_tensor_meta_dim_raw_assignment
 crucible_neg_compile_test(neg_tensor_meta_dim_above_max
   "foundation/contracts/Pre\\.h:[0-9]+:[0-9]+: error: .__builtin_trap\\(\\). is not a constant expression"
   "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+
+# Each lane of a TensorDimArray holds a TensorDim, so the conversion of a
+# slot does not check the bound.  Four fixtures close each road to a lane
+# that holds no TensorDim:
+#   * neg_tensor_dim_const_slot_from_ref and neg_tensor_dim_slot_from_ref:
+#     only the subscript of the block makes a slot.
+#   * neg_tensor_dim_array_protocol_decode and neg_tensor_dim_array_bit_cast:
+#     no byte door of the Protocol or the Scalar family makes a block.
+crucible_neg_compile_test(neg_tensor_dim_const_slot_from_ref
+  "error: .constexpr crucible::TensorDimArray::ConstSlot::ConstSlot\\(foundation::core::Ref<const long int>\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_dim_slot_from_ref
+  "error: .constexpr crucible::TensorDimArray::Slot::Slot\\(foundation::core::Ref<crucible::TensorDimArray>, crucible::TensorDimArray::LaneIndex\\). is private within this context"
+  "crucible/TensorMeta\\.h:[0-9]+:[0-9]+: note: declared private here")
+crucible_neg_compile_test(neg_tensor_dim_array_protocol_decode
+  "no matching function for call to .decode<crucible::TensorDimArray>\\(foundation::core::View<const std::byte, 64>\\)."
+  "the expression .decodes_at\\(.*\\(\\^\\^ T\\) \\[with T = crucible::TensorDimArray\\]. evaluated to .false.")
+crucible_neg_compile_test(neg_tensor_dim_array_bit_cast
+  "no matching function for call to .bit_cast<crucible::TensorDimArray>\\(const foundation::core::FixedArray<long int, 8>&\\)."
+  "the expression .is_plain_at\\(.*\\(\\^\\^ T, 0\\) \\[with T = crucible::TensorDimArray\\]. evaluated to .false.")
 
 # TensorMeta::data_ptr stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14

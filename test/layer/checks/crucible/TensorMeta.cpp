@@ -70,6 +70,16 @@ static_assert(is_unequal_after([](TensorMeta& meta) { meta.grad_fn_hash = grad_f
 // The Protocol family gives a descriptor a hash, an image and a format, and no
 // decode: a byte door would skip the claims of decode_tensor_meta.
 static_assert(::fixy::Encodable<TensorMeta> && !::fixy::Decodable<TensorMeta>);
+
+// A block of lanes has a hash and an image too, and no byte door makes one: a
+// lane from bytes would skip the bound of a TensorDim.
+static_assert(::fixy::Encodable<TensorDimArray> && !::fixy::Decodable<TensorDimArray>);
+static_assert(!::fixy::BitValid<TensorDimArray>);
+static_assert(!::foundation::lifetime::ImplicitLifetimeThroughout<TensorDimArray>);
+
+// Only the subscript of a block makes a slot.
+static_assert(!std::is_constructible_v<TensorDimArray::Slot, ::fixy::Ref<TensorDimArray>, TensorDimArray::LaneIndex>);
+static_assert(!std::is_constructible_v<TensorDimArray::ConstSlot, ::fixy::Ref<int64_t const>>);
 static_assert(::fixy::encoded_size_v<TensorMeta> == 2 * 8 * sizeof(int64_t) + 8 + 8 + 4 + 8);
 
 // The hash reads no local part: two descriptors that differ only in the data

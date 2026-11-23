@@ -40,8 +40,15 @@ inline constexpr int64_t kMaxTensorDimExtent = ::fixy::max_of<int64_t> / kTensor
 using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, int64_t>;
 
 // The lanes of the sizes or of the strides of a tensor.  The Protocol family
-// takes its equality, hash and codec from the private block of lanes.
-struct[[= ::fixy::derive_protocol{}]] TensorDimArray {
+// takes its equality, hash and image from the private block of lanes.
+//
+// Each lane holds a TensorDim.  Slot::operator= is the one write of a lane,
+// and it takes a TensorDim, so the bound is an invariant of the block.  No
+// byte door makes a block: no_start_over_bytes refuses decode of the family,
+// decode and bit_cast of the Scalar family, and a lifetime start over bytes.
+// Lanes from outside go through decode_tensor_meta, which checks the bound of
+// each lane once.
+struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TensorDimArray {
     // The index of one lane.
     using LaneIndex = ::fixy::Index<kMaxTensorNDim>;
 
@@ -59,30 +66,52 @@ public:
     // The lane of a block that the subscript of a block that is not const
     // names.  It holds the block and the index, and a write goes through the
     // element door of the lanes, so no reference to a lane leaves the block.
-    struct Slot {
-        ::fixy::Ref<TensorDimArray> array;
-        LaneIndex lane;
-
+    // Only the subscript of the block makes a slot, so each slot names a lane
+    // of a block, and the lane holds a TensorDim.
+    class Slot {
+    public:
         constexpr void operator=(TensorDim dim) const noexcept {
             int64_t const written = dim.value();
-            array->lanes_.with_element(lane, [written](int64_t& held) noexcept { held = written; });
+            array_->lanes_.with_element(lane_, [written](int64_t& held) noexcept { held = written; });
         }
 
-        [[nodiscard]] constexpr int64_t value() const noexcept { return array->lanes_.at(lane); }
+        [[nodiscard]] constexpr int64_t value() const noexcept { return array_->lanes_.at(lane_); }
 
+        // The lane holds a TensorDim: the one write of a lane takes a
+        // TensorDim, and no byte door makes a block.  So the mint does not
+        // check the bound again.
         [[nodiscard]] constexpr operator TensorDim() const noexcept {
             return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(value());
         }
+
+    private:
+        friend struct TensorDimArray;
+
+        constexpr Slot(::fixy::Ref<TensorDimArray> array, LaneIndex lane) noexcept : array_{array}, lane_{lane} {}
+
+        ::fixy::Ref<TensorDimArray> array_;
+        LaneIndex lane_;
     };
 
-    struct ConstSlot {
-        ::fixy::Ref<const int64_t> lane;
+    // The lane of a const block, which the subscript of a const block names.
+    // Only that subscript makes one, so the lane holds a TensorDim.
+    class ConstSlot {
+    public:
+        [[nodiscard]] constexpr int64_t value() const noexcept { return *lane_; }
 
-        [[nodiscard]] constexpr int64_t value() const noexcept { return *lane; }
-
+        // The lane holds a TensorDim: the one write of a lane takes a
+        // TensorDim, and no byte door makes a block.  So the mint does not
+        // check the bound again.
         [[nodiscard]] constexpr operator TensorDim() const noexcept {
-            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane);
+            return ::fixy::mint_refined_trusted<::fixy::bounded_above<kMaxTensorDimExtent>>(*lane_);
         }
+
+    private:
+        friend struct TensorDimArray;
+
+        constexpr explicit ConstSlot(::fixy::Ref<const int64_t> lane) noexcept : lane_{lane} {}
+
+        ::fixy::Ref<const int64_t> lane_;
     };
 
     [[nodiscard]] constexpr Slot operator[](std::size_t index) noexcept {
