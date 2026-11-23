@@ -973,7 +973,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::RegionRefDoor,
      "a door of the Region family to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::ArrayRefDoor,
-     "a door of FixedArray and HeapArray to the body of get of a run: static members only, never a value"},
+     "a door of FixedArray and HeapArray to the body of get of a run and to the stage of enumerate(): static "
+     "members only, never a value"},
     {^^::foundation::core::ListRefDoor, "a door of FixedList to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::BrandedRefDoor,
      "a door of the cursor of a branded view to the door of a Ref: static members only, never a value"},

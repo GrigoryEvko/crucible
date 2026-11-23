@@ -200,11 +200,13 @@ template <class T, std::size_t Align>
 class HeapArray;
 
 // The door of a FixedArray and a HeapArray to the body of each get of a run
-// (RegionRefDoor of foundation/core/Region.h).  Its one member is private,
-// and the two arrays are its friends.  The invariant: a FixedArray holds N
-// live elements from its first element, and a HeapArray holds the count of
-// its state from the first element of its state, so get() names the first
-// element and the count of live elements.  A home owner row of
+// and to the root stage of enumerate() (RegionRefDoor of
+// foundation/core/Region.h).  Its members are private, and the two arrays are
+// its friends.  The invariant: a FixedArray holds N live elements from its
+// first element, and a HeapArray holds the count of its state from the first
+// element of its state, so get() names the first element and the count of
+// live elements.  enumerate() of a FixedArray gives the View of its N
+// elements and the fresh brand of its call.  A home owner row of
 // utils/rule-table.txt keeps this definition in this header.
 class ArrayRefDoor final : ::foundation::NoObject<ArrayRefDoor> {
     template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
@@ -220,6 +222,13 @@ class ArrayRefDoor final : ::foundation::NoObject<ArrayRefDoor> {
     [[nodiscard]] CRUCIBLE_INLINE static constexpr auto element_at_(T* first, std::size_t count,
                                                                     std::size_t position) noexcept {
         return RegionRefDoor::element_at_<Brand>(first, count, position);
+    }
+
+    // The root stage of enumerate() over each element of the View of an array,
+    // with the brand of the call of the verb.
+    template <::foundation::brand::IsBrand Brand, class Element, std::size_t Count>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr auto enumerate_stage_(View<Element, Count> elements) noexcept {
+        return RegionRefDoor::enumerate_stage_<Brand>(elements);
     }
 };
 
@@ -659,7 +668,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto enumerate() const& noexcept {
         using Stage = detail::EnumerateStage<T const, N, Fresh, N>;
-        return Walk<Stage>{Stage{view()}};
+        return Walk<Stage>{ArrayRefDoor::enumerate_stage_<Fresh>(view())};
     }
     void enumerate() const&& =
         delete("a loop over a temporary FixedArray points into an object that the full expression ends");

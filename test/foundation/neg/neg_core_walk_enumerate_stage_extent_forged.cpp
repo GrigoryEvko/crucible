@@ -2,8 +2,8 @@
 // the template of the root stage of enumerate().  A caller that deduces the
 // template from the walk of a View<int const, 4> could name the stage of a
 // dynamic extent over a run of 100 elements, and each step past the fourth
-// would make an Index<4> past 4.  The one public constructor takes a whole
-// View of the count, so the stage of a dynamic extent has none.
+// would make an Index<4> past 4.  The constructor from a whole View takes a
+// View of the count only, so the stage of a dynamic extent has none.
 
 #include <foundation/core/Array.h>
 

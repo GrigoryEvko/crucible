@@ -355,10 +355,13 @@ class ArrayRefDoor;
 // run of the family holds count live elements from its first element, and
 // each brand is the fresh brand of a public call of get() or of enumerate(),
 // or the brand of the frame of a ViewMut.  element_at_ is the body of each
-// get of a run, and it compares the position with the count first.  View,
-// ViewMut, and the stage and the cursor of enumerate() are its friends.  The
-// doors of Array.h and List.h reach element_at_ for their owners.  A home
-// owner row of utils/rule-table.txt keeps this definition in this header.
+// get of a run, and it compares the position with the count first.
+// enumerate_stage_ builds the root stage of enumerate() over a whole View,
+// with the brand of the call of the verb.  View, ViewMut, and the stage and
+// the cursor of enumerate() are its friends.  The doors of Array.h and List.h
+// reach element_at_, and the door of Array.h reaches enumerate_stage_, for
+// their owners.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
 class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
     template <class T, std::size_t Extent>
         requires ViewElement<T> && ViewExtent<T, Extent>
@@ -388,6 +391,14 @@ class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
             return Option<Ref<T, Brand>>{none};
         }
         return Option<Ref<T, Brand>>::some(detail::RefDoor::lend<Brand>(first[position]));
+    }
+
+    // The root stage of enumerate() over each element of a View of Count
+    // elements, from the position 0, with the brand of the call of the verb.
+    template <::foundation::brand::IsBrand Brand, class Element, std::size_t Count>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::EnumerateStage<Element, Count, Brand, Count>
+    enumerate_stage_(View<Element, Count> elements) noexcept {
+        return detail::EnumerateStage<Element, Count, Brand, Count>{elements};
     }
 };
 
@@ -738,7 +749,7 @@ public:
         requires(sizeof...(Refused) == 0 && Extent != dynamic_extent)
     [[nodiscard]] constexpr auto enumerate() const noexcept {
         using Stage = detail::EnumerateStage<T, Extent, Fresh, Extent>;
-        return Walk<Stage>{Stage{*this}};
+        return Walk<Stage>{RegionRefDoor::enumerate_stage_<Fresh>(*this)};
     }
 
     // The walk of each element one time, from the last element:
@@ -2021,9 +2032,11 @@ public:
 // position of its first element in the View, so a limit or a skip keeps the
 // index of each element.  The root has the extent Count, and a limit or a
 // skip gives a dynamic extent.  The run ends at or before the position Count,
-// so each index of a pair is below Count.  The one public constructor takes
-// a whole View of Count elements, and only a limit or a skip of a stage
-// builds a run from a later position.
+// so each index of a pair is below Count.  The constructor from a whole View
+// of Count elements is private, and RegionRefDoor builds the root stage only
+// for the enumerate() verbs, with the fresh brand of their call.  So no
+// caller names the brand of a Ref of the stage.  Only a limit or a skip of a
+// stage builds a run from a later position.
 template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t Extent>
 class EnumerateStage final {
     View<Element, Extent> run_;
@@ -2031,6 +2044,12 @@ class EnumerateStage final {
 
     template <class Other, std::size_t OtherCount, ::foundation::brand::IsBrand OtherBrand, std::size_t OtherExtent>
     friend class EnumerateStage;
+    friend class ::foundation::core::RegionRefDoor;
+
+    // Each element of a View of Count elements, from the position 0.
+    constexpr explicit EnumerateStage(View<Element, Count> elements) noexcept
+        requires(Extent == Count)
+        : run_{elements} {}
 
     // The run from the position start of a View of Count elements.  The
     // caller proves start + run.size() at most Count.
@@ -2064,11 +2083,6 @@ public:
     static constexpr bool is_exact = true;
     static constexpr std::size_t extent = Extent;
     static constexpr bool cursor_borrows_stage = false;
-
-    // Each element of a View of Count elements, from the position 0.
-    constexpr explicit EnumerateStage(View<Element, Count> elements) noexcept
-        requires(Extent == Count)
-        : run_{elements} {}
 
     // The loops run over the positions of the run in the View, so the one
     // loop variable is the index and the offset of the element.

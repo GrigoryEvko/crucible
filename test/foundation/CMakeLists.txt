@@ -5234,6 +5234,12 @@ foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
 foundation_neg_compile_test(neg_core_walk_enumerate_stage_start_forged
   "EnumerateStage\\(foundation::core::View<Element, Extent>, std::size_t\\).*is private within this context"
   "count_forged")
+# The root stage of enumerate() over a whole View comes only from the
+# enumerate() verbs of a View and of a FixedArray, with the fresh brand of
+# their call, so a unit that names a brand builds no stage of it.
+foundation_neg_compile_test(neg_core_enumerate_stage_named_brand
+  "EnumerateStage\\(foundation::core::View<T, Extent>\\) requires +Extent == Count .with Element = int. long unsigned int Count = 4. Brand = NamedBrand. long unsigned int Extent = 4.. is private within this context"
+  "Region\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_walk_enumerate_stage_extent_forged
   "no matching function for call to .foundation::core::detail::EnumerateStage<const int, 4, .*, 18446744073709551615>::EnumerateStage"
   "count_forged")
