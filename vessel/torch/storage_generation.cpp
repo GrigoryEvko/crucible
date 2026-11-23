@@ -4,6 +4,7 @@
 
 #include <crucible/ForegroundCtx.h>
 #include <fixy/Core.h>
+#include <foundation/core/Immortal.h>
 #include <foundation/effects/Ctx.h>
 
 #include <c10/core/CPUAllocator.h>
@@ -18,18 +19,6 @@ namespace crucible::vessel {
 namespace {
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the CPU allocator of PyTorch is a class with virtual functions")
-
-// The count of the allocations of the process.  Each allocation takes the
-// next value, also on two threads at one time.  64 bits do not wrap in the
-// life of a process.
-::fixy::Atomic<uint64_t> g_allocations{};
-
-// The known generation of a new allocation, from the low word of the count
-// (crucible::StorageGeneration::known).
-[[nodiscard]] crucible::StorageGeneration next_generation() noexcept {
-    const auto low = static_cast<uint32_t>(g_allocations.fetch_add_acq_rel(1) + 1);
-    return crucible::StorageGeneration::known(crucible::AllocationCount{low});
-}
 
 class GenerationAllocator final : public c10::Allocator {
 public:
@@ -72,34 +61,60 @@ public:
     }
 
 private:
+    // The known generation of a new allocation, from the low word of the
+    // count of the allocations (crucible::StorageGeneration::known).
+    [[nodiscard]] crucible::StorageGeneration next_generation() noexcept {
+        const auto low = static_cast<uint32_t>(allocations_.fetch_add_acq_rel(1) + 1);
+        return crucible::StorageGeneration::known(crucible::AllocationCount{low});
+    }
+
+    // The count of the allocations.  Each allocation takes the next value,
+    // also on two threads at one time.  64 bits do not wrap in the life of a
+    // process.
+    ::fixy::Atomic<uint64_t> allocations_{};
     // The address of the inner allocator, or 0 before the first attach.
     ::fixy::Atomic<uint64_t> inner_{};
 };
 
-// The storage of the allocator.  A union does not end its member, so the
-// allocator lives as long as the process: a storage that it made keeps its
-// address as the allocator of the storage, also after the static
-// destructors.
-union GenerationAllocatorStore {
-    GenerationAllocator allocator;
-
-    GenerationAllocatorStore() noexcept : allocator{} {}
-    ~GenerationAllocatorStore() {}
-
-    GenerationAllocatorStore(const GenerationAllocatorStore&) = delete("one allocator lives in the process");
-    GenerationAllocatorStore& operator=(const GenerationAllocatorStore&) = delete("one allocator lives in the process");
+// The allocator and the state of its sessions: one object for the process,
+// because PyTorch has one CPU allocator for the process.  An allocation and a
+// free reach the allocator from each thread.  The thread of the sessions
+// (storage_generation.h) is the one reader and the one writer of the other
+// fields, at the attach, at the detach and at each change.
+struct GenerationState {
+    GenerationAllocator allocator{};
+    // The count of the attached sessions.
+    uint32_t sessions = 0;
+    // The CPU allocator before the first attach, and the priority at which
+    // its set took (attach_generation_allocator).  No allocator before an
+    // attach that took.
+    c10::Allocator* prior = nullptr;
+    uint8_t priority = 0;
 };
 
-[[nodiscard]] GenerationAllocator& the_allocator() noexcept {
-    static GenerationAllocatorStore store;
-    return store.allocator;
-}
+// The holder of the state.  Its constructor builds the state in an Immortal,
+// and its destructor is trivial.  So the allocator lives as long as the
+// process: a storage that it made keeps its address as the allocator of the
+// storage, also after the static destructors.
+class GenerationStore {
+public:
+    GenerationStore() noexcept { held_.fill(); }
 
-// The state of the sessions.  The thread of the sessions writes it at the
-// attach, at the detach and at each change, as storage_generation.h states.
-uint32_t g_sessions = 0;
-c10::Allocator* g_prior = nullptr;
-uint8_t g_priority = 0;
+    GenerationStore(const GenerationStore&) = delete("one allocator lives in the process");
+    GenerationStore& operator=(const GenerationStore&) = delete("one allocator lives in the process");
+
+    [[nodiscard]] GenerationState& state() noexcept { return *held_.get(); }
+
+private:
+    ::foundation::core::Immortal<GenerationState> held_{};
+};
+
+// The state of the process.  The first call builds it, one time, also when
+// two threads call at one time: the build of a static local is thread-safe.
+[[nodiscard]] GenerationState& the_generation_state() noexcept {
+    static GenerationStore store;
+    return store.state();
+}
 
 // Ends the process when the calling thread is not the thread of the sessions:
 // a claim of a Vigil lives, and another thread holds it (the threads of
@@ -147,9 +162,10 @@ void delete_generation_allocation(void* data) noexcept {
 // the first op of its Vigil sets the allocator of its mode.
 bool attach_generation_allocator() noexcept {
     require_session_thread();
-    GenerationAllocator& allocator = the_allocator();
-    if (g_sessions > 0) {
-        ++g_sessions;
+    GenerationState& state = the_generation_state();
+    GenerationAllocator& allocator = state.allocator;
+    if (state.sessions > 0) {
+        ++state.sessions;
         return g_allocator_follow.switch_mode.load_acquire() != kNoAllocatorSwitch;
     }
     c10::Allocator* const prior = c10::GetCPUAllocator();
@@ -157,8 +173,8 @@ bool attach_generation_allocator() noexcept {
         // A library set the generation allocator again with no session, so
         // the allocator of an earlier attach is its inner allocator.  An
         // allocator that never attached has none, and it refuses.
-        if (g_prior == nullptr) return false;
-        ++g_sessions;
+        if (state.prior == nullptr) return false;
+        ++state.sessions;
         begin_period();
         change_at(crucible::ContextMode::COMPILED);
         return true;
@@ -167,9 +183,9 @@ bool attach_generation_allocator() noexcept {
     for (uint32_t priority = 0; priority <= UINT8_MAX; ++priority) {
         c10::SetCPUAllocator(&allocator, static_cast<uint8_t>(priority));
         if (c10::GetCPUAllocator() != &allocator) continue;
-        g_prior = prior;
-        g_priority = static_cast<uint8_t>(priority);
-        ++g_sessions;
+        state.prior = prior;
+        state.priority = static_cast<uint8_t>(priority);
+        ++state.sessions;
         begin_period();
         change_at(crucible::ContextMode::COMPILED);
         return true;
@@ -179,10 +195,11 @@ bool attach_generation_allocator() noexcept {
 
 void detach_generation_allocator() noexcept {
     require_session_thread();
-    if (g_sessions == 0) return;
-    --g_sessions;
-    if (g_sessions > 0) return;
-    if (c10::GetCPUAllocator() == &the_allocator()) c10::SetCPUAllocator(g_prior, g_priority);
+    GenerationState& state = the_generation_state();
+    if (state.sessions == 0) return;
+    --state.sessions;
+    if (state.sessions > 0) return;
+    if (c10::GetCPUAllocator() == &state.allocator) c10::SetCPUAllocator(state.prior, state.priority);
     end_follow();
 }
 
@@ -193,25 +210,28 @@ void detach_generation_allocator() noexcept {
 // parent of the divergent op with the key that the parent gave them.
 void change_cpu_allocator(crucible::ContextMode mode) noexcept {
     require_session_thread();
-    if (g_sessions == 0) {
+    GenerationState& state = the_generation_state();
+    if (state.sessions == 0) {
         end_follow();
         return;
     }
-    GenerationAllocator& allocator = the_allocator();
+    GenerationAllocator& allocator = state.allocator;
     c10::Allocator* const current = c10::GetCPUAllocator();
     if (mode == crucible::ContextMode::RECORD) {
-        if (current == g_prior) c10::SetCPUAllocator(&allocator, g_priority);
+        if (current == state.prior) c10::SetCPUAllocator(&allocator, state.priority);
         change_at(crucible::ContextMode::COMPILED);
         return;
     }
-    if (current == &allocator) c10::SetCPUAllocator(g_prior, g_priority);
+    if (current == &allocator) c10::SetCPUAllocator(state.prior, state.priority);
     begin_period();
     change_at(crucible::ContextMode::RECORD);
 }
 
-uint64_t generation_allocator_address() noexcept { return std::bit_cast<uint64_t>(&the_allocator()); }
+uint64_t generation_allocator_address() noexcept { return std::bit_cast<uint64_t>(&the_generation_state().allocator); }
 
-uint64_t generation_inner_address() noexcept { return std::bit_cast<uint64_t>(the_allocator().inner()); }
+uint64_t generation_inner_address() noexcept {
+    return std::bit_cast<uint64_t>(the_generation_state().allocator.inner());
+}
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
