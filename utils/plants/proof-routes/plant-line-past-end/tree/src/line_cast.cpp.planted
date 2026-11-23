@@ -1,0 +1,14 @@
+#include <forge/Door.h>
+
+// A #line directive maps the code after it onto line 2 of this file, an
+// empty line.  The cast after it is then past the end of the line that the
+// file cache of the plugin reads.  The plugin of main ended there with
+// std::out_of_range from basic_string::substr.
+namespace forge {
+
+Door* before_directive(void* raw) { return static_cast<Door*>(raw); }
+
+#line 2
+Door* after_directive(void* raw) { return static_cast<Door*>(raw); }
+
+}  // namespace forge

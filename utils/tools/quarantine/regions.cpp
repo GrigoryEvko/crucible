@@ -86,7 +86,11 @@ Place region_place(location_t location, const char* macro, const char* pragma, l
 }
 
 // The line of the source that holds expansion, and the index of the column of
-// expansion in it.  Returns false when the plugin cannot read the line.
+// expansion in it.  Returns false when the plugin cannot read the line, or
+// when the column is past the end of the line that the file cache gives: the
+// file cache reads the line from the disk, and a #line directive, a line
+// marker or an edit of the file during the compile moves the line.  The
+// callers then refuse the region.
 bool region_line_at(location_t expansion, std::string& text, std::size_t& at) {
     expanded_location where = expand_location(expansion);
     if (where.file == nullptr || where.line <= 0 || where.column <= 0) {
@@ -98,7 +102,7 @@ bool region_line_at(location_t expansion, std::string& text, std::size_t& at) {
     }
     text.assign(line.get_buffer(), line.length());
     at = static_cast<std::size_t>(where.column - 1);
-    return true;
+    return at <= text.size();
 }
 
 bool is_blank(char byte) { return byte == ' ' || byte == '\t' || byte == '\r'; }

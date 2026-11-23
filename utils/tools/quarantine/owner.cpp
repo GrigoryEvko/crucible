@@ -113,7 +113,10 @@ struct SpelledName {
 // The identifier that the source spells at the start of the range of
 // LOCATION, after each space, '(' and ':' there, or "" when none.  The
 // spelling location decides, so a macro of a system header gives the
-// identifier of its definition.  Complexity: O(length of the line).
+// identifier of its definition.  The file cache reads the line from the
+// disk, so the column can be past the end of the line that it gives: after a
+// #line directive or a line marker, or after an edit of the file during the
+// compile.  Such a column gives "".  Complexity: O(length of the line).
 SpelledName spelled_name_at(location_t location) {
     SpelledName spelled;
     location_t start = linemap_resolve_location(line_table, get_start(location), LRK_SPELLING_LOCATION, nullptr);
@@ -127,6 +130,9 @@ SpelledName spelled_name_at(location_t location) {
     }
     std::string text(line.get_buffer(), line.length());
     std::size_t at = static_cast<std::size_t>(from.column - 1);
+    if (at > text.size()) {
+        return spelled;
+    }
     while (at < text.size() && (text[at] == ' ' || text[at] == '\t' || text[at] == '(' || text[at] == ':')) {
         ++at;
     }

@@ -1,0 +1,32 @@
+# A #line directive maps the code after it onto an empty line of its file.
+# The column of each name after it is then past the end of the line that the
+# file cache of the plugin reads.  The plugin refuses the directive, and each
+# walk of the end of the unit runs after the error.  The plugin of main ended
+# with std::out_of_range at the cast and at the region after the directive,
+# so it gave no note of the walks.
+#
+# The cast before the directive gives its pointer-cast line.  The cast after
+# it gives none, because the plugin reads no name past the end of a line.  The
+# region before the directive opens and closes, and the plugin refuses each
+# macro of the region after it.
+
+compile cast src/line_cast.cpp out=no
+exit cast fail
+error cast src/line_cast.cpp:12 | quarantine: 'src/line_cast.cpp' holds a '#line' directive
+note cast src/line_cast.cpp:9 | quarantine: raw-pointer-object before_directive
+note cast src/line_cast.cpp:9 | quarantine: raw-pointer-object raw
+note cast src/line_cast.cpp:9 | quarantine: pointer-cast pointer-cast: forge::Door
+note cast src/line_cast.cpp:2 | quarantine: raw-pointer-object after_directive
+note cast src/line_cast.cpp:2 | quarantine: raw-pointer-object raw
+
+compile region src/line_region.cpp out=no
+exit region fail
+error region src/line_region.cpp:14 | quarantine: 'src/line_region.cpp' holds a '#line' directive
+error region src/line_region.cpp:2 | write the reason of a region as one plain string literal in the call
+error region src/line_region.cpp:4 | write 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' alone on its line
+error region {repo}/include/foundation/Quarantine.h:21 | 'CRUCIBLE_END_I_KNOW_WHAT_IM_DOING' has no open region
+note region src/line_region.cpp:9 | quarantine: region PROBE: a region before the directive
+note region src/line_region.cpp:10 | quarantine: opted-out raw-pointer-object before
+note region src/line_region.cpp:10 | quarantine: unmarked-static probe::before
+note region src/line_region.cpp:3 | quarantine: raw-pointer-object after
+note region src/line_region.cpp:3 | quarantine: unmarked-static probe::after
