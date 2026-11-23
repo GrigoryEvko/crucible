@@ -10,7 +10,9 @@ hold.  Exit 0 when each case holds, else 1.
 """
 
 import functools
+import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -27,6 +29,8 @@ OPEN_HEADER = (
     "    constexpr explicit Open(int value) noexcept : value_{value} {}\n};\n}  // namespace planted\n"
 )
 CLOSED_HEADER = OPEN_HEADER.replace("public:\n", "")
+# A class whose constructor is public and whose destructor is private: the compiler refuses only the destructor.
+PRIVATE_END_HEADER = OPEN_HEADER.replace("public:\n", "    ~Open() = default;\npublic:\n")
 OPEN_ROW = "witness <planted/Open.h> private | planted::Open | planted::Open{42}\n"
 
 
@@ -60,11 +64,17 @@ def text_cases(expect: testing.Expect) -> None:
     ).witnesses[0]
     expect("a fixture whose expression names the brand declares it", "struct brand {};" in writer.render(branded))
     manifest = writer.manifest_text((witness,))
+    pattern = manifest_pattern(manifest)
     expect(
         "the manifest gives the name of the test and its two diagnostics",
         '"name": "neg_witness_planted_open_direct_construction"' in manifest
         and '"reason": "is private within this context"' in manifest
-        and '"constructor": "\\\\bOpen\\\\("' in manifest,
+        and is_constructor_named("planted::Open::Open(int) [with T = int]", pattern),
+    )
+    expect(
+        f"the constructor pattern of the manifest does not match the destructor of the class: {pattern}",
+        not is_constructor_named("'planted::Open::~Open()' is private within this context", pattern)
+        and not is_constructor_named("planted::OpenTwo(int)", pattern),
     )
     expect(
         "the manifest gives the type and the header of each row",
@@ -125,18 +135,21 @@ def mode_cases(expect: testing.Expect) -> None:
         expect("--check refuses two rows with one slug", status == ExitCode.FINDINGS and "gives it too" in text)
 
 
-def names_constructor(output: str, base: str) -> bool:
-    """Return True when OUTPUT holds BASE and `(` after a character that is no part of an identifier, as `\\bBASE\\(`.
+def manifest_pattern(manifest: str) -> str:
+    """Return the constructor pattern of the first fixture record of a manifest, as `loop fixture` reads it."""
+    record = json.loads(manifest)["fixtures"][0]
+    pattern = record["constructor"]
+    if not isinstance(pattern, str):
+        raise TypeError(f"the constructor pattern of the manifest is not a text: {pattern!r}")
+    return pattern
 
-    Complexity: linear in the length of OUTPUT.
+
+def is_constructor_named(output: str, pattern: str) -> bool:
+    """Return True when the constructor pattern matches OUTPUT, as `loop fixture` searches a diagnostic.
+
+    Complexity: linear in the length of OUTPUT for the patterns of the writer.
     """
-    start = output.find(f"{base}(")
-    while start >= 0:
-        before = output[start - 1] if start > 0 else " "
-        if not (before.isalnum() or before == "_"):
-            return True
-        start = output.find(f"{base}(", start + 1)
-    return False
+    return re.search(pattern, output, flags=re.MULTILINE) is not None
 
 
 def compile_one(compiler: str, root: Path, fixture: Path) -> proc.Completed:
@@ -171,12 +184,24 @@ def compile_cases(expect: testing.Expect) -> None:
             "a fixture over a public constructor compiles, which is the red that the fixture exists to show",
             compile_one(compiler, root, fixture).exit == 0,
         )
+        pattern = manifest_pattern((root / writer.FIXTURE_DIR / writer.MANIFEST_NAME).read_text(encoding="utf-8"))
         plant(root, OPEN_ROW, CLOSED_HEADER)
         refused = compile_one(compiler, root, fixture)
         output = refused.out + refused.err
         expect(
             "a fixture over a private constructor fails with the text of its refusal and the constructor before `(`",
-            refused.exit != 0 and writer.REFUSAL_TEXTS["private"] in output and names_constructor(output, "Open"),
+            refused.exit != 0 and writer.REFUSAL_TEXTS["private"] in output and is_constructor_named(output, pattern),
+        )
+        plant(root, OPEN_ROW, PRIVATE_END_HEADER)
+        ended = compile_one(compiler, root, fixture)
+        ended_output = ended.out + ended.err
+        expect(
+            "a fixture over a public constructor and a private destructor fails with the text of the refusal, and "
+            "the constructor pattern of the manifest does not match, so the fixture does not pass",
+            ended.exit != 0
+            and writer.REFUSAL_TEXTS["private"] in ended_output
+            and "~Open(" in ended_output
+            and not is_constructor_named(ended_output, pattern),
         )
 
 

@@ -23,10 +23,12 @@ Fixtures
 Diagnostics
     A fixture spells its construction with curly brackets, `T{args}`.  GCC
     writes the constructor that it refuses with parentheses,
-    `T(args) [with ...]`.  The pattern `\\bT\\(` then matches a text of the
-    compiler, and not the text of the fixture.  It is the second diagnostic
-    of each fixture.  The first diagnostic is the text of the refusal of the
-    row.
+    `T(args) [with ...]`.  The pattern `(?<!~)\\bT\\(` then matches a text of
+    the compiler, and not the text of the fixture.  It does not match the
+    destructor `~T(`, so a refusal of a private destructor alone does not
+    pass for a refusal of the constructor (constructor_pattern()).  It is the
+    second diagnostic of each fixture.  The first diagnostic is the text of
+    the refusal of the row.
 
 Modes
     --write   write each fixture and the manifest, and remove each fixture of
@@ -134,6 +136,17 @@ def base_name(name: str) -> str:
     return name.rsplit("::", 1)[-1]
 
 
+def constructor_pattern(name: str) -> str:
+    """Return the second diagnostic of the fixture of a class: its constructor as the compiler writes it (the fixtures).
+
+    The pattern is a regular expression of Python, which `loop fixture` searches.  It matches the last name of the
+    class and `(` after a character that is no part of a name and is not `~`.  So it does not match the destructor of
+    the class, which the compiler writes as `~T(` when it refuses a private destructor.  The pattern holds no `[` and
+    no `;`, because CMake splits the list of the diagnostics of a fixture on them.
+    """
+    return f"(?<!~)\\b{base_name(name)}\\("
+
+
 def render(witness: ruletable.Witness) -> str:
     """Return the text of the fixture of a witness row."""
     brand = BRAND_DECLARATION if "forge::brand" in witness.expression else ""
@@ -176,7 +189,7 @@ def manifest_text(witnesses: tuple[ruletable.Witness, ...]) -> str:
             {
                 "name": fixture_name(witness).removesuffix(".cpp"),
                 "reason": REFUSAL_TEXTS[witness.refusal],
-                "constructor": f"\\b{base_name(witness.name)}\\(",
+                "constructor": constructor_pattern(witness.name),
             }
             for witness in witnesses
         ),
