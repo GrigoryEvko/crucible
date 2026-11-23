@@ -83,7 +83,7 @@ template <core::FpMode Mode, class Brand>
     ::fixy::StridedViewMut<float, 2, Brand> target_square = square_of(std::move(output));
     bool const is_walked = ::fixy::walk([scale](float& target, float const& value,
                                                 float const& offset) noexcept { target = value * scale + offset; },
-                                        target_square.view(), square_of(input), bias)
+                                        target_square, square_of(input), bias)
                                .is_ok();
     if (!is_walked) ::fixy::fatal("the three views of the kernel have one shape");
 }

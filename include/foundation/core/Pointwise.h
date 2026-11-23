@@ -215,7 +215,7 @@ template <class T, std::size_t Rank>
 }
 template <class T, std::size_t Rank, class Brand>
 [[nodiscard]] constexpr StridedView<T, Rank> plain_view_of_(StridedViewMut<T, Rank, Brand>& view) noexcept {
-    return view.view();
+    return writable_view_of_(view);
 }
 template <class T, std::size_t Rank, class Brand>
 [[nodiscard]] constexpr StridedView<T const, Rank> plain_view_of_(StridedViewMut<T, Rank, Brand> const& view) noexcept {

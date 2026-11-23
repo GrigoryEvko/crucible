@@ -94,7 +94,6 @@
 
 namespace {
 
-using Plane = ::fixy::StridedView<float, 2>;
 using PlaneRead = ::fixy::StridedView<float const, 2>;
 using Storage = ::fixy::HeapArray<float, 64>;
 
@@ -271,7 +270,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }
 }
 
-[[gnu::noinline, gnu::hot]] void walk_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
+template <class Out>
+[[gnu::noinline, gnu::hot]] void walk_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
     bool const is_walked =
         ::fixy::walk([](float& target, float const& first, float const& second) noexcept { target = first + second; },
                      out, left, right)
@@ -279,7 +279,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     if (!is_walked) ::fixy::fatal("the three views of the bench have one shape");
 }
 
-[[gnu::noinline, gnu::hot]] void walk_three(Plane out, PlaneRead first, PlaneRead second, PlaneRead third) noexcept {
+template <class Out>
+[[gnu::noinline, gnu::hot]] void walk_three(Out& out, PlaneRead first, PlaneRead second, PlaneRead third) noexcept {
     bool const is_walked =
         ::fixy::walk([](float& target, float const& a, float const& b, float const& c) noexcept { target = a * b + c; },
                      out, first, second, third)
@@ -288,12 +289,13 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The count of the adds, so the bench reads a result of the scope.
-[[gnu::noinline, gnu::hot]] std::size_t scope_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
-    return ::fixy::mint_strided_scope(left, [out, right](auto first) noexcept {
-        auto const second = first.parallel(right).expect("the views of the bench have one shape");
-        auto const target = first.parallel(out).expect("the views of the bench have one shape");
+template <class Out>
+[[gnu::noinline, gnu::hot]] std::size_t scope_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
+    return ::fixy::mint_strided_scope(out, [left, right](auto target) noexcept {
+        auto const first = target.parallel(left).expect("the views of the bench have one shape");
+        auto const second = target.parallel(right).expect("the views of the bench have one shape");
         std::size_t adds = 0;
-        for (auto const index : first.indices()) {
+        for (auto const index : target.indices()) {
             target.at(index) = first.at(index) + second.at(index);
             ++adds;
         }
@@ -304,10 +306,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // The walk over the branded views of a scope, with the output first as in
 // walk_add.  The result is the count of the elements, so the bench reads a
 // result of the scope.
-[[gnu::noinline, gnu::hot]] std::size_t scope_walk_add(Plane out, PlaneRead left, PlaneRead right) noexcept {
-    return ::fixy::mint_strided_scope(left, [out, right](auto first) noexcept {
-        auto const second = first.parallel(right).expect("the views of the bench have one shape");
-        auto const target = first.parallel(out).expect("the views of the bench have one shape");
+template <class Out>
+[[gnu::noinline, gnu::hot]] std::size_t scope_walk_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
+    return ::fixy::mint_strided_scope(out, [left, right](auto target) noexcept {
+        auto const first = target.parallel(left).expect("the views of the bench have one shape");
+        auto const second = target.parallel(right).expect("the views of the bench have one shape");
         ::fixy::walk([](float& sum, float const& augend, float const& addend) noexcept { sum = augend + addend; },
                      target, first, second);
         return first.view().count();
@@ -505,46 +508,45 @@ template <class Out>
                   four_views, roof);
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), plane_sizes.view(), plane_strides.view(), 0)
                           .expect("a dense plane has no overlap");
-        Plane const out_view = unique.view();
         print_row(level, "walk dense",
                   measure(bench::Run{"walk dense"}, wall,
                           [&] {
-                              walk_add(out_view, left_view, right_view);
+                              walk_add(unique, left_view, right_view);
                               bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk broadcast",
                   measure(bench::Run{"walk broadcast"}, wall,
                           [&] {
-                              walk_add(out_view, left_view, broadcast);
+                              walk_add(unique, left_view, broadcast);
                               bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk step 2",
                   measure(bench::Run{"walk step 2"}, wall,
                           [&] {
-                              walk_add(out_view, every_second, right_view);
+                              walk_add(unique, every_second, right_view);
                               bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk transposed",
                   measure(bench::Run{"walk transposed"}, wall,
                           [&] {
-                              walk_add(out_view, transposed, right_view);
+                              walk_add(unique, transposed, right_view);
                               bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk three inputs",
                   measure(bench::Run{"walk three inputs"}, wall,
                           [&] {
-                              walk_three(out_view, left_view, right_view, third_view);
+                              walk_three(unique, left_view, right_view, third_view);
                               bench::do_not_optimize(unique);
                           }),
                   four_views, roof);
         print_row(level, "scope dense",
                   measure(bench::Run{"scope dense"}, wall,
                           [&] {
-                              std::size_t const adds = scope_add(out_view, left_view, right_view);
+                              std::size_t const adds = scope_add(unique, left_view, right_view);
                               bench::do_not_optimize(adds);
                               bench::do_not_optimize(unique);
                           }),
@@ -552,7 +554,7 @@ template <class Out>
         print_row(level, "scope transposed",
                   measure(bench::Run{"scope transposed"}, wall,
                           [&] {
-                              std::size_t const adds = scope_add(out_view, transposed, right_view);
+                              std::size_t const adds = scope_add(unique, transposed, right_view);
                               bench::do_not_optimize(adds);
                               bench::do_not_optimize(unique);
                           }),
@@ -560,7 +562,7 @@ template <class Out>
         print_row(level, "scope walk dense",
                   measure(bench::Run{"scope walk dense"}, wall,
                           [&] {
-                              std::size_t const adds = scope_walk_add(out_view, left_view, right_view);
+                              std::size_t const adds = scope_walk_add(unique, left_view, right_view);
                               bench::do_not_optimize(adds);
                               bench::do_not_optimize(unique);
                           }),
@@ -568,7 +570,7 @@ template <class Out>
         print_row(level, "scope walk transposed",
                   measure(bench::Run{"scope walk transposed"}, wall,
                           [&] {
-                              std::size_t const adds = scope_walk_add(out_view, transposed, right_view);
+                              std::size_t const adds = scope_walk_add(unique, transposed, right_view);
                               bench::do_not_optimize(adds);
                               bench::do_not_optimize(unique);
                           }),

@@ -89,6 +89,25 @@ static_assert(std::is_nothrow_move_constructible_v<StridedViewMut<int, 2, CheckB
 static_assert(!std::is_constructible_v<StridedViewMut<int, 2, CheckBrand>, StridedView<int, 2>>);
 static_assert(!std::is_default_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
 
+// The plain view of a unique view reads: its elements are const, also for a
+// unique view that is not const.  A copy of a plain view that writes would be
+// a second writer.
+static_assert(
+    std::is_same_v<decltype(std::declval<StridedViewMut<int, 2, CheckBrand>&>().view()), StridedView<int const, 2>>);
+
+// The body of the scope of a unique view gives a value that holds no borrow,
+// so the result holds no plain view of the branded view, which writes.  The
+// scope of a plain view takes that body.
+struct GivesView final {
+    template <class Brand>
+    constexpr StridedView<int, 2> operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
+        return view.view();
+    }
+};
+static_assert(CanMintUniqueStridedScope<int, 2, GivesCount, CheckBrand>);
+static_assert(CanMintStridedScope<int, 2, GivesView, CheckBrand>);
+static_assert(!CanMintUniqueStridedScope<int, 2, GivesView, CheckBrand>);
+
 // The test of no overlap: a dense matrix and its transpose pass, a stride
 // that steps inside the span of a smaller axis and a stride of zero fail,
 // and an axis of size one reads no stride.
@@ -116,9 +135,8 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
     FixedArray<std::size_t, 2> const strides{4, 1};
     return values.with_mut([&sizes, &strides](auto run) noexcept {
         auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
-        StridedView<int, 2> const matrix = unique.view();
         int total = 0;
-        if (walk([&total](int& element) noexcept { total += element; }, matrix).is_err()) return -1;
+        if (walk([&total](int& element) noexcept { total += element; }, unique).is_err()) return -1;
         return total;
     });
 }
@@ -131,8 +149,7 @@ static_assert(matrix_sum() == 66);
     FixedArray<std::size_t, 2> const strides{4, 1};
     return values.with_mut([&sizes, &strides](auto run) noexcept {
         auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
-        StridedView<int, 2> const matrix = unique.view();
-        return mint_strided_scope(matrix, [](auto branded) noexcept {
+        return mint_strided_scope(unique, [](auto branded) noexcept {
             int total = 0;
             walk([&total](int& element) noexcept { total += element; }, branded);
             return total;
@@ -141,8 +158,8 @@ static_assert(matrix_sum() == 66);
 }
 static_assert(scope_sum() == 66);
 
-// A strided view refers to its elements (the transfer).  The walk above
-// writes each element through a const view of int, so a const view of
+// A strided view refers to its elements (the transfer).  A walk writes each
+// element through a const view of int, so a const view of
 // elements that are not const is no shared read.  A view of const elements
 // moves to another thread and two threads read it.
 static_assert(::foundation::transfer::Sendable<StridedView<float const, 2>>

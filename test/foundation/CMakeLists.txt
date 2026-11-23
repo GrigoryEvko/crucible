@@ -5072,6 +5072,25 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "use of deleted function"
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
 
+# The plain view of a unique strided view reads, so no copy of it writes.  The
+# walk and the scope of a unique view borrow a named unique view that is not
+# const, and the body of the scope gives no plain view that writes.
+foundation_neg_compile_test(neg_core_strided_view_mut_view_writes
+  "conversion from .StridedView<const int,\\[\\.\\.\\.\\]>. to non-scalar type .StridedView<int,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_strided_view_mut_view_writes\\.cpp:19:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_strided_walk_const_unique
+  "use of deleted function .void foundation::core::walk\\(Body&&, const StridedViewMut<First, Rank, Brand>&, StridedView<Rest, Rank>\\.\\.\\.\\)"
+  "a const StridedViewMut writes nothing, so it gives no writer to the walk: walk its view\\(\\) to read")
+foundation_neg_compile_test(neg_core_strided_walk_moved_unique
+  "use of deleted function .void foundation::core::walk\\(Body&&, StridedViewMut<First, Rank, Brand>&&, StridedView<Rest, Rank>\\.\\.\\.\\)"
+  "the walk borrows a named StridedViewMut for the call: pass the view, not std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_strided_scope_const_unique
+  "use of deleted function .void foundation::core::mint_strided_scope\\(const StridedViewMut<T, Rank, Brand>&, Body&&\\)"
+  "a const StridedViewMut writes nothing, so it gives no writer to a scope: give its view\\(\\) to read")
+foundation_neg_compile_test(neg_core_strided_scope_gives_writer
+  "no matching function for call to .mint_strided_scope\\(foundation::core::StridedViewMut<int, 2, main\\(\\)::<lambda\\(\\)> >&, "
+  "CanMintUniqueStridedScope<T, Rank, Body, Fresh>\\)\\) constexpr auto foundation::core::mint_strided_scope\\(StridedViewMut<T, Rank, Brand>&, Body&&\\)")
+
 # The offset of a row in one view does not read another view, and the body
 # of a walk of rows gives no value, so no index of the walk leaves it.
 foundation_neg_compile_test(neg_core_rows_offset_of_other_view

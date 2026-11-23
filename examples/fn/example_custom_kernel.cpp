@@ -175,13 +175,19 @@ int main() {
     const ::fixy::FixedArray<float, K * N> b{5.f, 6.f, 7.f, 8.f};
     ::fixy::FixedArray<float, M * N> c{};
 
-    // The kernel writes C through the run that the frame door of c lends.
+    // The kernel writes C through the run that the frame door of c lends.  The
+    // scope of the unique view of the run gives the kernel the plain view that
+    // writes, for the call of the scope only.
     c.with_mut([&bound, &a, &b](auto run) noexcept {
         auto out = matrix_of(std::move(run), ::fixy::FixedArray<std::size_t, 2>{M, N});
-        bound.value()(
-            out.view(),
-            ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
-            ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
+        static_cast<void>(::fixy::mint_strided_scope(out, [&bound, &a, &b](auto const target) noexcept {
+            bound.value()(target.view(),
+                          ::fixy::side_as<::fixy::side::LeftFactor>(
+                              matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
+                          ::fixy::side_as<::fixy::side::RightFactor>(
+                              matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
+            return ::fixy::Unit{};
+        }));
     });
 
     // C = [[1*5 + 2*7, 1*6 + 2*8], [3*5 + 4*7, 3*6 + 4*8]] = [[19, 22], [43, 50]].

@@ -359,9 +359,10 @@ that the axis does not apply to the row.
 | `mint_static_text(const char*)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_static_text(const char*, std::size_t)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_strided_scope` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 8 |
+| `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 18 |
-| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 5 |
+| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 
 ## include/foundation/diag/
 
@@ -419,4 +420,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 179 | 62 | 113 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 180 | 62 | 114 | 4 | 0 | 3 |

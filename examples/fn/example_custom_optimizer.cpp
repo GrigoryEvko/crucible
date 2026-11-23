@@ -198,19 +198,31 @@ int main() {
     ::fixy::FixedArray<float, N> v{};
     const ::fixy::FixedArray<float, N> grad{0.1f, -0.2f, 0.05f, 0.0f};
 
-    // The step writes the three state arrays through the runs that their frame doors lend.
+    // The step writes the three state arrays through the runs that their frame doors lend.  The scope of
+    // the unique view of each run gives the step the plain view that writes, for the call of the scope only.
     params.with_mut([&bound, &m, &v, &grad](auto params_run) noexcept {
         auto params_line = line_of(std::move(params_run));
         m.with_mut([&bound, &v, &grad, &params_line](auto first_moment_run) noexcept {
             auto first_moment_line = line_of(std::move(first_moment_run));
             v.with_mut([&bound, &grad, &params_line, &first_moment_line](auto second_moment_run) noexcept {
                 auto second_moment_line = line_of(std::move(second_moment_run));
-                bound.value()(::fixy::side_as<buffer_role::Parameters>(params_line.view()),
-                              ::fixy::side_as<buffer_role::FirstMoment>(first_moment_line.view()),
-                              ::fixy::side_as<buffer_role::SecondMoment>(second_moment_line.view()),
-                              ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
-                              AdamHyperparameters{
-                                  .learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});
+                static_cast<void>(::fixy::mint_strided_scope(params_line, [&](auto const params_scope) noexcept {
+                    return ::fixy::mint_strided_scope(first_moment_line, [&](auto const first_moment_scope) noexcept {
+                        return ::fixy::mint_strided_scope(
+                            second_moment_line, [&](auto const second_moment_scope) noexcept {
+                                bound.value()(::fixy::side_as<buffer_role::Parameters>(params_scope.view()),
+                                              ::fixy::side_as<buffer_role::FirstMoment>(first_moment_scope.view()),
+                                              ::fixy::side_as<buffer_role::SecondMoment>(second_moment_scope.view()),
+                                              ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
+                                              AdamHyperparameters{.learning_rate = 0.01f,
+                                                                  .beta1 = 0.9f,
+                                                                  .beta2 = 0.999f,
+                                                                  .epsilon = 1e-8f,
+                                                                  .step = 1});
+                                return ::fixy::Unit{};
+                            });
+                    });
+                }));
             });
         });
     });

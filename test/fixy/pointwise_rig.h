@@ -479,10 +479,9 @@ template <class E, Walker Under = Walker::Pointwise, class Op, std::size_t... Is
         auto unique_out = ::fixy::mint_strided_view_mut(std::move(frame_run), sizes_of(drawn.out),
                                                         strides_of(drawn.out), drawn.out.offset)
                               .expect("the output fits the run");
-        ::fixy::StridedView<E> const expected_out = unique_out.view();
         return ::fixy::walk(
                    [op](E& target, auto const&... values) noexcept { target = oracle_output<E, Op>(op(values...)); },
-                   expected_out, input_of(expected_run, Is)...)
+                   unique_out, input_of(expected_run, Is)...)
             .is_ok();
     });
 

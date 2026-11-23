@@ -502,7 +502,7 @@ template <int Lanes, class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 multiply_by_tree_in_lanes(StridedViewMut<T, Rank, Brand>& out, std::type_identity_t<LeftFactorOf<T>> const& left,
                           std::type_identity_t<RightFactorOf<T>> const& right) noexcept {
-    return detail::multiply_by_tree_<T, Lanes>(out.view(), left.value(), right.value());
+    return detail::multiply_by_tree_<T, Lanes>(detail::writable_view_of_(out), left.value(), right.value());
 }
 
 // The matrix product with the lanes of one register of the target.
@@ -511,7 +511,8 @@ template <class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 multiply_by_tree(StridedViewMut<T, Rank, Brand>& out, std::type_identity_t<LeftFactorOf<T>> const& left,
                  std::type_identity_t<RightFactorOf<T>> const& right) noexcept {
-    return detail::multiply_by_tree_<T, simd::native_lanes<T>>(out.view(), left.value(), right.value());
+    return detail::multiply_by_tree_<T, simd::native_lanes<T>>(detail::writable_view_of_(out), left.value(),
+                                                               right.value());
 }
 
 // The tree sum of the runs of runs, element by element, with Lanes lanes in
@@ -524,7 +525,7 @@ template <int Lanes, class T, std::size_t Rank, class Brand>
 [[nodiscard]] Result<Unit, ProductError>
 sum_strided_runs_by_tree_in_lanes(StridedViewMut<T, Rank, Brand>& out,
                                   std::type_identity_t<StridedView<T const, 2>> runs) noexcept {
-    return detail::sum_strided_runs_by_tree_<T, Lanes>(out.view(), runs);
+    return detail::sum_strided_runs_by_tree_<T, Lanes>(detail::writable_view_of_(out), runs);
 }
 
 // The sum of runs with the lanes of one register of the target.

@@ -96,8 +96,10 @@
 //                       axes of a size above one by stride, and each stride
 //                       must be larger than the span of the axes before it
 // A unique view is the one writer of its elements, and it does not copy.  It
-// has the reads of a view, the plain view(), and a transpose of a static
-// rank.  The pointwise walk of foundation/core/Pointwise.h writes through it.
+// has the reads of a view, the read view() of const elements, and a transpose
+// of a static rank.  The doors that borrow it for one call write through it:
+// the walk and the scope below, and the pointwise walk of
+// foundation/core/Pointwise.h.
 //
 // Walk
 //   walk(body, views...)
@@ -105,6 +107,10 @@
 //                       the sizes, with the element at that index of each
 //                       view.  The views must have equal sizes, else the walk
 //                       gives ShapeMismatch and calls body for no index
+//   walk(body, unique, views...)
+//                       the same walk with the elements of the unique view
+//                       first.  The walk borrows unique for the call, and
+//                       body writes its elements
 // The order of the walk is the row-major order of the logical sizes: the last
 // axis changes first.  The order does not depend on the strides, on the
 // target or on the path that the walk takes, so a body that reduces the
@@ -125,6 +131,12 @@
 //                       calls body with the BrandedStridedView of view, with
 //                       the fresh brand of the instance of the mint, and
 //                       gives the result of body
+//   mint_strided_scope(unique, body)
+//                       the same scope over the elements of the unique view.
+//                       The mint borrows unique for the call.  The result of
+//                       body holds no borrow (HoldsNoBorrow of
+//                       foundation/core/Choice.h), so the result holds no
+//                       writer
 //   BrandedStridedView<T, Rank, Brand>
 //                       the view of one scope.  Its sizes never change, so an
 //                       index that it proves stays below its sizes
@@ -431,6 +443,17 @@ struct StridedIndexEnd final {};
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires ViewElement<T> && (!std::is_const_v<T>) && StridedRank<Rank>
 class StridedViewMut;
+
+namespace detail {
+
+// The plain view of the elements of a unique view, which writes them.  Only
+// the doors of the base that borrow the unique view for one call read it, so
+// the plain view is a part of the one writer.  A const unique view writes
+// nothing, so the reader does not take one.
+template <class T, std::size_t Rank, class Brand>
+[[nodiscard]] constexpr StridedView<T, Rank> writable_view_of_(StridedViewMut<T, Rank, Brand>& view) noexcept;
+
+}  // namespace detail
 
 // The arguments of mint_strided_view: sizes and strides of std::size_t, with
 // one fixed extent at most max_strided_rank when the two have fixed extents.
@@ -923,13 +946,17 @@ template <class Lanes>
 //
 //   rank(), count(), sizes(), strides(), size(axis), stride(axis), is_dense()
 //                       as the StridedView of the same parts gives them
-//   view()              the plain StridedView, with no brand
+//   view()              the plain StridedView of const elements, with no
+//                       brand.  It reads, and it writes nothing
 //   transpose(a, b)     of a static rank: consumes the view, and gives the
 //                       unique view with the two axes in place of each other
-// A unique view of a different layout of the same run comes from the mint
-// with that layout.  An Option of this class reads its members through
-// reflection, because the class does not copy, so no member gives an Option
-// of this class.
+// The writes go through the doors that borrow the unique view for one call:
+// walk(body, unique, views...) and mint_strided_scope(unique, body) below,
+// and the pointwise walk of foundation/core/Pointwise.h.  A const unique view
+// writes nothing, so it gives no writer to a door.  A unique view of a
+// different layout of the same run comes from the mint with that layout.  An
+// Option of this class reads its members through reflection, because the
+// class does not copy, so no member gives an Option of this class.
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires ViewElement<T> && (!std::is_const_v<T>) && StridedRank<Rank>
 class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut final {
@@ -945,6 +972,10 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut 
     friend constexpr Option<StridedViewMut<U, detail::minted_rank<SizesExtent, StridesExtent>, OtherBrand>>
     core::mint_strided_view_mut(ViewMut<U, OtherBrand, RunExtent> run, View<S, SizesExtent> sizes,
                                 View<D, StridesExtent> strides, std::size_t offset) noexcept;
+
+    template <class U, std::size_t OtherRank, class OtherBrand>
+    friend constexpr StridedView<U, OtherRank>
+    detail::writable_view_of_(StridedViewMut<U, OtherRank, OtherBrand>& view) noexcept;
 
     // The unique view of view, with no check (the doors of the parts).  The
     // mint proves that no two indexes of view name one element and that the
@@ -987,10 +1018,10 @@ public:
         return view_.stride(axis);
     }
 
-    // The plain view of the elements.  It has no brand, so it proves no
-    // difference of two runs, and the write through it is the write of this
-    // borrow.
-    [[nodiscard]] constexpr StridedView<T, Rank> view() & noexcept { return view_; }
+    // The plain view of the elements, for a read.  A plain view copies, so a
+    // plain view that writes would be a second writer, and the elements of
+    // this view are const.  It has no brand, so it proves no difference of
+    // two runs.
     [[nodiscard]] constexpr StridedView<T const, Rank> view() const& noexcept { return view_; }
 
     // The view with the axes first and second in place of each other.  A new
@@ -1001,6 +1032,15 @@ public:
         return StridedViewMut{view_.transpose(first, second)};
     }
 };
+
+namespace detail {
+
+template <class T, std::size_t Rank, class Brand>
+constexpr StridedView<T, Rank> writable_view_of_(StridedViewMut<T, Rank, Brand>& view) noexcept {
+    return view.view_;
+}
+
+}  // namespace detail
 
 // The unique view of the elements of the ViewMut run with the sizes and the
 // strides, with the element at the zero index at the position offset of run,
@@ -1317,6 +1357,36 @@ template <class Body, class First, class... Rest, std::size_t Rank>
 void walk(Body&& body, StridedView<First, Rank> first,
           StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// The walk above with the elements of the unique view first as its first
+// view.  The walk borrows first for the call, so the plain view of first that
+// it walks is a part of the one writer.  It calls the walk above, so it gives
+// the same result in the same order, and ShapeMismatch for views of other
+// sizes.  O(count) calls of body, and O(rank * views) for the plan.
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires CanWalk<Body, First, Rest...>
+[[nodiscard]] constexpr Result<Unit, ShapeMismatch> walk(Body&& body, StridedViewMut<First, Rank, Brand>& first,
+                                                         StridedView<Rest, Rank>... rest) noexcept {
+    return walk(static_cast<Body&&>(body), detail::writable_view_of_(first), rest...);
+}
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (LinearWalkBody).
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires LinearWalkBody<Body, First, Rest...>
+void walk(Body&& body, StridedViewMut<First, Rank, Brand>& first,
+          StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A const unique view writes nothing, so it gives no writer to the walk.  A
+// moved unique view is no borrow of the writer that the caller keeps.
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires CanWalk<Body, First, Rest...>
+void walk(Body&& body, StridedViewMut<First, Rank, Brand> const& first, StridedView<Rest, Rank>... rest) =
+    delete("a const StridedViewMut writes nothing, so it gives no writer to the walk: walk its view() to read");
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires CanWalk<Body, First, Rest...>
+void walk(Body&& body, StridedViewMut<First, Rank, Brand>&& first, StridedView<Rest, Rank>... rest) =
+    delete("the walk borrows a named StridedViewMut for the call: pass the view, not std::move(view)");
+
 // ── The scope ───────────────────────────────────────────────────────────
 
 // The coordinates of an index below the sizes of the BrandedStridedView of
@@ -1444,17 +1514,30 @@ concept CanMintStridedScope =
     && !std::is_void_v<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>
     && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>, ^^Brand);
 
-// The mint of a strided scope.  BrandedStridedView names it as a friend, and
-// this header defines it after BrandedStridedView.
+// The arguments of the scope of a unique view: the arguments of
+// mint_strided_scope, and a result of the body that holds no borrow
+// (HoldsNoBorrow of foundation/core/Choice.h).  The branded view of the scope
+// writes, so a plain view or a reference in the result would be a writer
+// that outlives the borrow of the call.
+template <class T, std::size_t Rank, class Body, class Brand>
+concept CanMintUniqueStridedScope = CanMintStridedScope<T, Rank, Body, Brand>
+                                 && HoldsNoBorrow<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>;
+
+// The two mints of a strided scope.  BrandedStridedView names them as
+// friends, and this header defines them after BrandedStridedView.
 template <class... Refused, class T, std::size_t Rank, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0 && CanMintStridedScope<T, Rank, Body, Fresh>)
 [[nodiscard]] constexpr auto mint_strided_scope(StridedView<T, Rank> view, Body&& body) noexcept;
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintUniqueStridedScope<T, Rank, Body, Fresh>)
+[[nodiscard]] constexpr auto mint_strided_scope(StridedViewMut<T, Rank, Brand>& view, Body&& body) noexcept;
 
 // The strided view of one scope.  It comes only from mint_strided_scope and
 // from parallel(), and its sizes never change, so each StridedIndex<Rank,
 // Brand> stays below them.  It holds the strided view that the mint took.
-// The two friends that build one are the mint, with the fresh brand of its
+// The friends that build one are the two mints, with the fresh brand of their
 // instance, and parallel() of a branded strided view of the same brand, from
 // a strided view of the same sizes.
 template <class T, std::size_t Rank, ::foundation::brand::IsBrand Brand>
@@ -1466,6 +1549,10 @@ class BrandedStridedView final {
     template <class... Refused, class U, std::size_t OtherRank, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0 && CanMintStridedScope<U, OtherRank, Body, Fresh>)
     friend constexpr auto mint_strided_scope(StridedView<U, OtherRank> view, Body&& body) noexcept;
+    template <class... Refused, class U, std::size_t OtherRank, ::foundation::brand::IsBrand ViewBrand, class Body,
+              ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0 && CanMintUniqueStridedScope<U, OtherRank, Body, Fresh>)
+    friend constexpr auto mint_strided_scope(StridedViewMut<U, OtherRank, ViewBrand>& view, Body&& body) noexcept;
     template <class U, std::size_t OtherRank, ::foundation::brand::IsBrand OtherBrand>
         requires ViewElement<U> && StridedRank<OtherRank>
     friend class BrandedStridedView;
@@ -1578,6 +1665,42 @@ template <class... Refused, class T, std::size_t Rank, class Body,
     requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
              && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>>
 void mint_strided_scope(StridedView<T, Rank> view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// Calls body with the branded view of the elements of the unique view view,
+// with the fresh brand of the instance of the mint, and gives the result of
+// body: the scope above.  The mint borrows view for the call, so the branded
+// view is a part of the one writer while body runs.  The mint refuses a body
+// whose result holds a borrow, so the result holds no writer.  The mint builds
+// the branded view itself, so its own fresh brand is the brand of the scope.
+// The pack refuses each explicit argument, so no caller names the brand.
+// O(1), and one call of body.
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0 && CanMintUniqueStridedScope<T, Rank, Body, Fresh>)
+constexpr auto mint_strided_scope(StridedViewMut<T, Rank, Brand>& view, Body&& body) noexcept {
+    return static_cast<Body&&>(body)(BrandedStridedView<T, Rank, Fresh>{detail::writable_view_of_(view)});
+}
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
+             && std::is_invocable_v<Body&&, BrandedStridedView<T, Rank, Fresh>>
+void mint_strided_scope(StridedViewMut<T, Rank, Brand>& view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A const unique view writes nothing, so it gives no writer to a scope.  A
+// moved unique view is no borrow of the writer that the caller keeps.
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintUniqueStridedScope<T, Rank, Body, Fresh>)
+void mint_strided_scope(StridedViewMut<T, Rank, Brand> const& view, Body&& body) =
+    delete("a const StridedViewMut writes nothing, so it gives no writer to a scope: give its view() to read");
+template <class... Refused, class T, std::size_t Rank, ::foundation::brand::IsBrand Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0 && CanMintUniqueStridedScope<T, Rank, Body, Fresh>)
+void mint_strided_scope(StridedViewMut<T, Rank, Brand>&& view, Body&& body) =
+    delete("the scope borrows a named StridedViewMut for the call: pass the view, not std::move(view)");
 
 // Calls body one time for each index of the branded views of one scope, in
 // row-major order, with the element at that index of each view: the walk,

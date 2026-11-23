@@ -151,7 +151,7 @@ struct MultiplyAddBias final {
                     ::fixy::LeftFactorOf<float> left, ::fixy::RightFactorOf<float> right,
                     ::fixy::Side<side::Bias, ::fixy::StridedView<float const, 2>> bias) const noexcept {
         bool const is_multiplied = ::fixy::multiply_by_tree(out, left, right).is_ok();
-        ::fixy::StridedView<float, 2> const products = out.view();
+        ::fixy::StridedView<float const, 2> const products = out.view();
         bool const is_added =
             is_multiplied && ::fixy::write_pointwise(out, ::fixy::elementwise::Sum{}, products, bias.value()).is_ok();
         if (!is_added) [[unlikely]] {
@@ -214,7 +214,7 @@ struct DivideInPlace final {
     void operator()(::fixy::KernelCall<Brand, Mode> const& /*call*/, ::fixy::StridedViewMut<float, Rank, OutBrand>& out,
                     ::fixy::Side<side::Denominator, float> denominator) const noexcept {
         ::fixy::FixedArray<float, 1> const one{denominator.value()};
-        ::fixy::StridedView<float, Rank> const numerators = out.view();
+        ::fixy::StridedView<float const, Rank> const numerators = out.view();
         bool const is_written = ::fixy::write_pointwise(out, ::fixy::elementwise::Quotient{}, numerators,
                                                         detail::splat_<Rank>(one.view(), out))
                                     .is_ok();
@@ -266,7 +266,7 @@ struct AddScaledInPlace final {
                     ::fixy::Side<side::Scale, float> scale,
                     ::fixy::Side<side::Other, ::fixy::StridedView<float const, Rank>> other) const noexcept {
         ::fixy::FixedArray<float, 1> const one{scale.value()};
-        ::fixy::StridedView<float, Rank> const addends = out.view();
+        ::fixy::StridedView<float const, Rank> const addends = out.view();
         bool const is_written = ::fixy::write_pointwise(out, ::fixy::elementwise::FusedMultiplyAdd{},
                                                         detail::splat_<Rank>(one.view(), out), other.value(), addends)
                                     .is_ok();

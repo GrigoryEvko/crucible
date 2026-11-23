@@ -96,7 +96,8 @@ template <class Out>
 // The walk of Strided.h is a kernel of its own too: inlined into a lambda of
 // main, which GCC compiles as cold code, the same walk took three times the
 // time of this kernel.
-[[gnu::noinline, gnu::hot]] void walk_add(::fixy::StridedView<float, 2> out, PlaneRead left, PlaneRead right) noexcept {
+template <class Out>
+[[gnu::noinline, gnu::hot]] void walk_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
     bool const is_walked =
         ::fixy::walk([](float& target, float const& first, float const& second) noexcept { target = first + second; },
                      out, left, right)
@@ -104,13 +105,13 @@ template <class Out>
     if (!is_walked) ::fixy::fatal("the three views of the budget have one shape");
 }
 
-[[gnu::noinline, gnu::hot]] std::size_t scope_add(::fixy::StridedView<float, 2> out, PlaneRead left,
-                                                  PlaneRead right) noexcept {
-    return ::fixy::mint_strided_scope(left, [out, right](auto first) noexcept {
-        auto const second = first.parallel(right).expect("the views of the budget have one shape");
-        auto const target = first.parallel(out).expect("the views of the budget have one shape");
+template <class Out>
+[[gnu::noinline, gnu::hot]] std::size_t scope_add(Out& out, PlaneRead left, PlaneRead right) noexcept {
+    return ::fixy::mint_strided_scope(out, [left, right](auto target) noexcept {
+        auto const first = target.parallel(left).expect("the views of the budget have one shape");
+        auto const second = target.parallel(right).expect("the views of the budget have one shape");
         std::size_t adds = 0;
-        for (auto const index : first.indices()) {
+        for (auto const index : target.indices()) {
             target.at(index) = first.at(index) + second.at(index);
             ++adds;
         }
@@ -241,11 +242,10 @@ int main() {
     out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), plane_sizes.view(), plane_strides.view(), 0)
                           .expect("a dense plane has no overlap");
-        ::fixy::StridedView<float, 2> const out_view = unique.view();
         has_failure = judge(budget(5),
                             measure(bench::Run{"scope dense"},
                                     [&] {
-                                        std::size_t const adds = scope_add(out_view, left_view, right_view);
+                                        std::size_t const adds = scope_add(unique, left_view, right_view);
                                         bench::do_not_optimize(adds);
                                     }),
                             roof_ns)
@@ -253,13 +253,13 @@ int main() {
         has_failure = judge(budget(6),
                             measure(bench::Run{"scope transposed"},
                                     [&] {
-                                        std::size_t const adds = scope_add(out_view, transposed, right_view);
+                                        std::size_t const adds = scope_add(unique, transposed, right_view);
                                         bench::do_not_optimize(adds);
                                     }),
                             roof_ns)
                    || has_failure;
         has_failure =
-            judge(budget(7), measure(bench::Run{"walk dense"}, [&] { walk_add(out_view, left_view, right_view); }),
+            judge(budget(7), measure(bench::Run{"walk dense"}, [&] { walk_add(unique, left_view, right_view); }),
                   roof_ns)
             || has_failure;
     });
