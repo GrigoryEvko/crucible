@@ -1,0 +1,41 @@
+// No return names an owner that ends with the frame: a Ref and a run of an
+// arena that a parameter by a marked reference names, a Ref of the arena of a
+// Box that a parameter by a marked reference holds, and the value of an
+// element of a local arena.  Each marked parameter has its deleted twin.
+#include <foundation/Brand.h>
+#include <foundation/Platform.h>
+#include <foundation/core/AllocTag.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Quantity.h>
+#include <foundation/core/Ref.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct[[= ::foundation::brand::arena_family_brand{}]] PlantArena final {};
+
+fc::Ref<int, PlantArena> ref_of_marked_reference(fc::Alloc alloc,
+                                                 fc::BumpArena<PlantArena>& arena CRUCIBLE_LIFETIMEBOUND) {
+    return arena.make<int>(alloc, 1);
+}
+fc::Ref<int, PlantArena> ref_of_marked_reference(fc::Alloc, fc::BumpArena<PlantArena>&&) = delete("the twin");
+
+fc::ArenaRun<int, PlantArena> run_of_marked_reference(fc::Alloc alloc,
+                                                      fc::BumpArena<PlantArena>& arena CRUCIBLE_LIFETIMEBOUND) {
+    return arena.array(alloc, 4, 2);
+}
+fc::ArenaRun<int, PlantArena> run_of_marked_reference(fc::Alloc, fc::BumpArena<PlantArena>&&) = delete("the twin");
+
+fc::Ref<int, PlantArena> ref_of_marked_box(fc::Alloc alloc,
+                                           fc::Box<fc::BumpArena<PlantArena>>& arena CRUCIBLE_LIFETIMEBOUND) {
+    return arena->make<int>(alloc, 3);
+}
+fc::Ref<int, PlantArena> ref_of_marked_box(fc::Alloc, fc::Box<fc::BumpArena<PlantArena>>&&) = delete("the twin");
+
+int value_of_local_arena(fc::Alloc alloc) {
+    fc::BumpArena<PlantArena> arena = fc::mint_bump_arena<PlantArena>(fc::ByteCount{4096});
+    return *arena.make<int>(alloc, 4);
+}
+
+}  // namespace planted

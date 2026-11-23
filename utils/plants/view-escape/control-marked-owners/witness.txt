@@ -1,0 +1,8 @@
+# No return names an owner that ends with the frame, and no line names the
+# rule view-escape: a Ref and a run of an arena that a parameter by a marked
+# reference names, a Ref of the arena of a Box that a parameter by a marked
+# reference holds, and the value of an element of a local arena.
+
+compile marked src/marked.cpp
+flag marked -freflection
+exit marked pass
