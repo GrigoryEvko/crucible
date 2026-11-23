@@ -17,6 +17,7 @@ crucible/CKernel.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/DimHash.cpp | 0.0 | ::fixy::tags::admitted_retags
 crucible/MerkleDag.cpp | 3.9 | ::foundation::transfer::door_probe_contexts, unknown
 crucible/MetaLogSession.cpp | 0.5 | ::fixy::session::combinators, ::fixy::session::pole_tables
+crucible/PermissionedMetaLog.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 crucible/Serialize.cpp | 8.4 | ::fixy::tags::admitted_retags
 crucible/SingletonInitGraph.cpp | 0.0 | unknown
 crucible/SwissTable.cpp | 0.1 | unknown
@@ -51,7 +52,7 @@ crucible/forge/_wip/Phases/Comm.cpp | 2.1 | ::fixy::tags::admitted_retags
 crucible/forge/recipes/Network.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/mimic/CogMimic.cpp | 0.8 | ::fixy::tags::admitted_retags
 crucible/mimic/_wip/network/Backend.cpp | 2.3 | ::fixy::tags::admitted_retags
-crucible/observe/Metrics.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
+crucible/observe/Metrics.cpp | 0.2 | ::foundation::permissions::permission_rows, ::foundation::transfer::door_probe_contexts, unknown
 crucible/perf/detail/BpfLoader.cpp | 0.2 | ::fixy::tags::admitted_retags
 crucible/topology/CongestionTelemetry.cpp | 0.5 | ::fixy::tags::admitted_retags
 crucible/topology/Discovery.cpp | 0.9 | ::fixy::tags::admitted_retags

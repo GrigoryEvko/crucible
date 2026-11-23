@@ -9,6 +9,6 @@ include/fixy/ | library-holder | 3 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
-test/fixy/ | library-holder | 11 | - | -
+test/fixy/ | library-holder | 7 | - | -
 test/fixy/ | pinned-holder | 1 | - | -
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -

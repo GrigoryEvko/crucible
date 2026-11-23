@@ -125,9 +125,6 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `mint_canopy_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_keeper_metrics_reader` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_metrics_writer` | `include/crucible/observe/Metrics.h` | Y | - | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_sdc_detector` | `include/crucible/observe/SdcDetect.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_synthetic_probes` | `include/crucible/observe/SyntheticProbe.h` | Y | Y | Y | Y | ctx | Y | HS14: 1 ⚠ |
 
@@ -221,9 +218,7 @@ that the axis does not apply to the row.
 | `mint_recording_endpoint` | `include/fixy/channels/EndpointMint.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_stage_from_endpoints` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_substrate_session` | `include/fixy/channels/SubstrateSessionBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 16 |
-| `mint_swmr_reader` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | ctx | Y | HS14: 7 |
 | `mint_swmr_stage_from_endpoint` | `include/fixy/channels/StageEndpointBridge.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_swmr_writer` | `include/fixy/channels/SwmrSession.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_writer_runtime_session` | `include/fixy/channels/SwmrSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/concurrent/
@@ -409,9 +404,9 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 9 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 252 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 266 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 52 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 65 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_scope_permission` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -421,5 +416,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 84 | 48 | 27 | 9 | 0 | 8 |
-| substrate (`include/foundation/`, `include/fixy/`) | 179 | 63 | 112 | 4 | 0 | 3 |
+| crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
+| substrate (`include/foundation/`, `include/fixy/`) | 177 | 62 | 111 | 4 | 0 | 3 |

@@ -3,20 +3,18 @@
 format 1
 rule brand-escape
 reason bench/ | the benches mint the root of a channel in a helper, name a branded type in an alias of the unit, and hold branded handles in a rig or in std::optional
-reason include/fixy/concurrent/ | each stage keeps the pointer of its function in a static member, and the type of that pointer holds the brand of a channel
 reason include/fixy/session/ | the crash transport returns the payload that the read of its caller gives, and a token in that payload has the brand of the root of the caller
 reason src/ | the background pipeline mints the root of each channel in a helper, and the class of the pipeline names each branded channel type in an alias
 reason test/ | the tests mint the root of a channel in a helper, name a branded type in an alias of the unit, and hold branded handles in std::optional
 bench/ | escaped-alias | 5 | - | -
-bench/ | escaped-return | 9 | - | -
-include/fixy/concurrent/ | escaped-static | 3 | - | -
+bench/ | escaped-return | 8 | - | -
 include/fixy/session/ | escaped-return | 1 | - | -
-src/ | escaped-alias | 8 | - | -
+src/ | escaped-alias | 4 | - | -
 src/ | escaped-return | 4 | - | -
 test/ | escaped-alias | 5 | - | -
-test/ | escaped-return | 6 | - | -
+test/ | escaped-return | 5 | - | -
 test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 27 | - | -
-test/fixy/ | escaped-container | 5 | - | -
+test/fixy/ | escaped-container | 2 | - | -
 test/fixy/ | escaped-return | 42 | - | -
 test/foundation/ | escaped-return | 5 | - | -

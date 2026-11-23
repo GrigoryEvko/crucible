@@ -112,12 +112,27 @@
       "constructor": "(?<!~)\\bEndpointDoor\\("
     },
     {
-      "name": "neg_witness_channels_swmr_session_swmrsession_readerhandle_direct_construction",
+      "name": "neg_witness_channels_swmr_session_readerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bReaderHandle\\("
     },
     {
-      "name": "neg_witness_channels_swmr_session_swmrsession_writerhandle_direct_construction",
+      "name": "neg_witness_channels_swmr_session_swmrframekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bSwmrFrameKey\\("
+    },
+    {
+      "name": "neg_witness_channels_swmr_session_swmrsession_readerend_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bReaderEnd\\("
+    },
+    {
+      "name": "neg_witness_channels_swmr_session_swmrsession_writerend_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bWriterEnd\\("
+    },
+    {
+      "name": "neg_witness_channels_swmr_session_writerhandle_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bWriterHandle\\("
     },
@@ -152,6 +167,11 @@
       "constructor": "(?<!~)\\bverdict_cell\\("
     },
     {
+      "name": "neg_witness_concurrent_channelframekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bChannelFrameKey\\("
+    },
+    {
       "name": "neg_witness_concurrent_chaselevdeque_ownerend_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bOwnerEnd\\("
@@ -160,6 +180,11 @@
       "name": "neg_witness_concurrent_chaselevdeque_stealerend_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bStealerEnd\\("
+    },
+    {
+      "name": "neg_witness_concurrent_consumerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bConsumerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_eventwait_direct_construction",
@@ -182,19 +207,19 @@
       "constructor": "(?<!~)\\bMpmcStage\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedboxchannel_consumerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedboxchannel_consumerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "(?<!~)\\bConsumerHandle\\("
+      "constructor": "(?<!~)\\bConsumerEnd\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedboxchannel_producerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedboxchannel_producerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "(?<!~)\\bProducerHandle\\("
+      "constructor": "(?<!~)\\bProducerEnd\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedchannel_consumerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedchannel_consumerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "(?<!~)\\bConsumerHandle\\("
+      "constructor": "(?<!~)\\bConsumerEnd\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_drainclaim_direct_construction",
@@ -202,9 +227,9 @@
       "constructor": "(?<!~)\\bDrainClaim\\("
     },
     {
-      "name": "neg_witness_concurrent_permissionedchannel_producerhandle_direct_construction",
+      "name": "neg_witness_concurrent_permissionedchannel_producerend_direct_construction",
       "reason": "is private within this context",
-      "constructor": "(?<!~)\\bProducerHandle\\("
+      "constructor": "(?<!~)\\bProducerEnd\\("
     },
     {
       "name": "neg_witness_concurrent_permissionedchannel_recombinedring_direct_construction",
@@ -225,6 +250,11 @@
       "name": "neg_witness_concurrent_pipelinedag_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bPipelineDag\\("
+    },
+    {
+      "name": "neg_witness_concurrent_producerhandle_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bProducerHandle\\("
     },
     {
       "name": "neg_witness_concurrent_sequencecells_readticket_direct_construction",
@@ -1854,11 +1884,23 @@
       "header": "fixy/session/Flow.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerHandle",
+      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerEnd",
       "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerHandle",
+      "type": "fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerEnd",
+      "header": "fixy/concurrent/PermissionedChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::ChannelFrameKey",
+      "header": "fixy/concurrent/PermissionedChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::drain_claim_witness::WitnessTag, fixy::concurrent::drain_claim_witness::WitnessBrand>, forge::brand>",
+      "header": "fixy/concurrent/PermissionedChannel.h"
+    },
+    {
+      "type": "fixy::concurrent::ConsumerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::drain_claim_witness::WitnessTag, fixy::concurrent::drain_claim_witness::WitnessBrand>, forge::brand>",
       "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
@@ -1894,19 +1936,31 @@
       "header": "fixy/concurrent/PermissionedChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerHandle",
+      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ProducerEnd",
       "header": "fixy/concurrent/PermissionedBoxChannel.h"
     },
     {
-      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerHandle",
+      "type": "fixy::concurrent::PermissionedBoxChannel<fixy::concurrent::ChannelForm::wire, int, 8, fixy::concurrent::detail::channel_witness::WitnessTag, fixy::concurrent::detail::channel_witness::WitnessBrand>::ConsumerEnd",
       "header": "fixy/concurrent/PermissionedBoxChannel.h"
     },
     {
-      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterHandle",
+      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::WriterEnd",
       "header": "fixy/channels/SwmrSession.h"
     },
     {
-      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::ReaderHandle",
+      "type": "fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::detail::swmr_session_witness::WriterTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderTag, fixy::channels::swmr_session::detail::swmr_session_witness::ReaderBrand, fixy::channels::swmr_session::detail::swmr_session_witness::WriterBrand>::ReaderEnd",
+      "header": "fixy/channels/SwmrSession.h"
+    },
+    {
+      "type": "fixy::channels::swmr_session::SwmrFrameKey",
+      "header": "fixy/channels/SwmrSession.h"
+    },
+    {
+      "type": "fixy::channels::swmr_session::WriterHandle<fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::frame_witness::WriterTag, fixy::channels::swmr_session::frame_witness::ReaderTag, fixy::channels::swmr_session::frame_witness::ReaderBrand, fixy::channels::swmr_session::frame_witness::WriterBrand>, forge::brand>",
+      "header": "fixy/channels/SwmrSession.h"
+    },
+    {
+      "type": "fixy::channels::swmr_session::ReaderHandle<fixy::channels::swmr_session::SwmrSession<int, fixy::channels::swmr_session::frame_witness::WriterTag, fixy::channels::swmr_session::frame_witness::ReaderTag, fixy::channels::swmr_session::frame_witness::ReaderBrand, fixy::channels::swmr_session::frame_witness::WriterBrand>, forge::brand>",
       "header": "fixy/channels/SwmrSession.h"
     },
     {
@@ -2654,7 +2708,7 @@
       "header": "fixy/concurrent/Stage.h"
     },
     {
-      "type": "fixy::channels::Endpoint<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 64, fixy::channels::detail::endpoint_witness::UserTag, fixy::channels::detail::endpoint_witness::UserBrand>, fixy::channels::Direction::Producer, fixy::channels::detail::endpoint_witness::FgCtx>",
+      "type": "fixy::channels::Endpoint<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 64, fixy::channels::endpoint_witness::UserTag, fixy::channels::endpoint_witness::UserBrand>, fixy::channels::Direction::Producer, fixy::channels::endpoint_witness::FgCtx, fixy::concurrent::ProducerHandle<fixy::concurrent::PermissionedChannel<fixy::concurrent::ChannelForm::wire, int, 64, fixy::channels::endpoint_witness::UserTag, fixy::channels::endpoint_witness::UserBrand>, forge::brand>>",
       "header": "fixy/channels/Endpoint.h"
     },
     {
