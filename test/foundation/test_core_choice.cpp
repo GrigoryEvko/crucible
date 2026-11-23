@@ -1360,32 +1360,36 @@ void test_expect_none() {
         ::foundation::core::TextView{"the linear Option is full on purpose"});
 }
 
-// Three classes that state their own end, each with a linear sum as a data
-// member.  The drop door ends such a class, and the sum ends with it.
-struct[[= ::foundation::linear::linear{}]] TokenHolder {
-    Option<CountedToken> held;
-};
-struct[[= ::foundation::linear::linear{}]] TokenResultHolder {
-    Result<CountedToken, Refusal> held;
-};
-struct[[= ::foundation::linear::linear{}]] RefusalResultHolder {
-    Result<int, CountedToken> held;
-};
+// The probes of the run-time end of a linear sum.  Each one ends a sum that no
+// consumer took.  The rule must-consume refuses each such end at compile time,
+// and the drop door refuses a class that holds such a sum, so only this region
+// reaches the run-time end.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test ends a linear sum that no consumer took")
+// A full Option of a linear payload.
+void end_full_linear_option() noexcept {
+    Option<CountedToken> const held = Option<CountedToken>::some(CountedToken{82});
+}
 
-// The end of a full Option of a linear payload ends the process, where the
-// rule must-consume does not see the end: in a data member of a class that
-// states its own end, which the drop door ends.  The end of an empty one ends
-// no payload, and a droppable payload still ends with its Option.
+// A Result whose active alternative is a linear value.  Only a test build
+// keeps the mark that ends the process.
+[[maybe_unused]] void end_owed_linear_value() noexcept { Result<CountedToken, Refusal> const held{CountedToken{91}}; }
+
+// A Result whose active alternative is a linear error.
+[[maybe_unused]] void end_owed_linear_error() noexcept { Result<int, CountedToken> const refused = refuse_with(92); }
+
+// A Result of a linear error whose active alternative is a droppable value.
+void end_droppable_active_value() noexcept { Result<int, CountedToken> const kept{94}; }
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// The end of a full Option of a linear payload ends the process.  The end of
+// an empty one ends no payload, and a droppable payload still ends with its
+// Option.
 void test_full_linear_end_aborts() {
     constexpr ::foundation::core::TextView kFullEnd{
         "foundation: fatal: an Option of a linear payload ended with its payload: consume it with take, or end it with "
         "a named door"};
-    expect_dies(
-        test_context(),
-        [] noexcept { ::foundation::linear::drop(TokenHolder{Option<CountedToken>::some(CountedToken{82})}); },
-        kFullEnd);
+    expect_dies(test_context(), [] noexcept { end_full_linear_option(); }, kFullEnd);
     Option<CountedToken>{}.expect_none("an empty Option holds no token");
-    ::foundation::linear::drop(TokenHolder{Option<CountedToken>{}});
     {
         Option<CountedOwner> const owner = Option<CountedOwner>::some(CountedOwner{83});
         CRUCIBLE_FATAL_INVARIANT(live_owners == 1);
@@ -1394,22 +1398,16 @@ void test_full_linear_end_aborts() {
 }
 
 // The end of a Result whose active alternative is linear and that no consumer
-// took ends the process in a test build, where the rule must-consume does not
-// see the end: in a data member of a class that states its own end, which the
-// drop door ends.  A consumer, and the move of the Result for its source,
-// leave nothing owed, and a Result whose active alternative is droppable owes
-// nothing.  A Release build keeps no mark, so the cells that end the process
-// run only in a test build.
+// took ends the process in a test build.  A consumer, and the move of the
+// Result for its source, leave nothing owed, and a Result whose active
+// alternative is droppable owes nothing.  A Release build keeps no mark, so
+// the cells that end the process run only in a test build.
 void test_owed_alternative_end_aborts() {
     [[maybe_unused]] constexpr ::foundation::core::TextView kOwedEnd{
         "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
 #ifdef CRUCIBLE_QTT_TRACK_CONSUME
-    expect_dies(
-        test_context(),
-        [] noexcept { ::foundation::linear::drop(TokenResultHolder{Result<CountedToken, Refusal>{CountedToken{91}}}); },
-        kOwedEnd);
-    expect_dies(
-        test_context(), [] noexcept { ::foundation::linear::drop(RefusalResultHolder{refuse_with(92)}); }, kOwedEnd);
+    expect_dies(test_context(), [] noexcept { end_owed_linear_value(); }, kOwedEnd);
+    expect_dies(test_context(), [] noexcept { end_owed_linear_error(); }, kOwedEnd);
 #endif
     {
         Result<CountedToken, Refusal> first{CountedToken{93}};
@@ -1418,7 +1416,7 @@ void test_owed_alternative_end_aborts() {
         CRUCIBLE_FATAL_INVARIANT(taken.handle() == 93);
         ::foundation::linear::drop(static_cast<CountedToken&&>(taken));
     }
-    ::foundation::linear::drop(RefusalResultHolder{Result<int, CountedToken>{94}});
+    end_droppable_active_value();
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 }  // namespace

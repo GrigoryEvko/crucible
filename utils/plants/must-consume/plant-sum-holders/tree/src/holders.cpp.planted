@@ -1,0 +1,41 @@
+// The ends of a linear sum inside a door that ends its holder.  The door ends
+// each linear value that the holder holds, so each such value states its own
+// end (states_own_end of include/foundation/Linear.h).  A sum states none, so
+// the drop door refuses a class that holds one as a data member, and the door
+// end_unrun_body refuses a body that captures one.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that marks its own end and holds an Option of a token as a data
+// member.
+struct [[= ::foundation::linear::linear{}]] Holder {
+    Option<Token> held;
+};
+
+// The drop door would end the class and its full Option.
+void member_ends_in_a_door() { ::foundation::linear::drop(Holder{Option<Token>::some(Token{3})}); }
+
+// The door of an unrun body would end the body and its full Option.
+void capture_ends_in_a_door() {
+    auto body = [held = Option<Token>::some(Token{4})]() noexcept { return held.is_some(); };
+    ::foundation::linear::end_unrun_body(std::move(body), ::foundation::linear::UnrunReason::refusal_test);
+}
+
+}  // namespace planted

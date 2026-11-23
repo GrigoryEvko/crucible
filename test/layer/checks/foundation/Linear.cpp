@@ -70,6 +70,25 @@ struct[[= linear{}]] Numbered {
     ~Numbered() = default;
 };
 
+// A class that marks its own end and holds a token by value.
+struct[[= linear{}]] MarkedHolder {
+    Token token;
+};
+
+// A sum of a token, such as an Option of a token: it marks no end of its own.
+struct[[= linear{}]][[= sum{}]] TokenSum {
+    Token token;
+};
+
+// Classes that mark their own end and hold a sum of a token as a data member,
+// and a class that is linear by its parts.
+struct[[= linear{}]] SumHolder {
+    TokenSum held;
+};
+struct[[= linear{}]] PartsHolder {
+    HoldsToken held;
+};
+
 // A context and a key that a body of the once door takes by reference.
 struct OnceContext {
     int base = 0;
@@ -145,6 +164,18 @@ inline constexpr auto drop_probe = [](auto&& value) -> decltype(drop(static_cast
 static_assert(std::is_invocable_v<decltype(drop_probe), lc::Token&&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), lc::Token&>);
 static_assert(!std::is_invocable_v<decltype(drop_probe), int&&>);
+
+// A class states its own end when it marks its own end and each linear value
+// that it holds by value states its own end too.  A sum states none, so the
+// drop door refuses a class that holds one, and a class that holds a class
+// that is linear only by its parts.
+static_assert(states_own_end(^^lc::Token) && states_own_end(^^lc::MarkedHolder));
+static_assert(!marks_own_end(^^lc::TokenSum) && !states_own_end(^^lc::TokenSum));
+static_assert(marks_own_end(^^lc::SumHolder) && !states_own_end(^^lc::SumHolder));
+static_assert(marks_own_end(^^lc::PartsHolder) && !states_own_end(^^lc::PartsHolder));
+static_assert(std::is_invocable_v<decltype(drop_probe), lc::MarkedHolder&&>);
+static_assert(!std::is_invocable_v<decltype(drop_probe), lc::SumHolder&&>);
+static_assert(!std::is_invocable_v<decltype(drop_probe), lc::HoldsToken&&>);
 
 // The exchange door gives the old value back and leaves the replacement in
 // the slot, so the slot holds a live value after the call.
@@ -226,5 +257,15 @@ static_assert([] consteval {
     };
     return HoldsNoLinearValue<decltype(borrows)>;
 }());
+
+// The door end_unrun_body ends a body that holds a token by value, and it
+// refuses a body that holds a sum of a token, because the end of the body
+// would end the sum with no consume.
+using HoldsSumBody = decltype([held = lc::TokenSum{}]() noexcept { static_cast<void>(held); });
+inline constexpr auto unrun_probe =
+    [](auto&& body) -> decltype(end_unrun_body(static_cast<decltype(body)&&>(body), UnrunReason::refusal_test)) {};
+static_assert(UnrunBody<HoldsTokenBody> && !UnrunBody<HoldsSumBody>);
+static_assert(std::is_invocable_v<decltype(unrun_probe), HoldsTokenBody&&>);
+static_assert(!std::is_invocable_v<decltype(unrun_probe), HoldsSumBody&&>);
 
 }  // namespace foundation::linear

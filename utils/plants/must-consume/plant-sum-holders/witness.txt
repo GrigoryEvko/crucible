@@ -1,0 +1,14 @@
+# The ends of a linear sum inside a door that ends its holder: a data member
+# that the drop door ends (line 33), and a capture of a body that the door
+# end_unrun_body ends (line 38).  The run-time end of a full Option of a
+# linear payload caught them before.  A door ends each linear value that its
+# value holds, so the deleted twin of each door refuses a holder of a value
+# that states no end of its own (states_own_end of include/foundation/Linear.h).
+# The type gives the error, and the rule gives no line, because the rule reads
+# no body of a unit with an error.
+
+compile holders src/holders.cpp must-consume=on
+flag holders -freflection
+exit holders fail
+error holders src/holders.cpp:33 | the drop door ends a class only when each linear value that it holds states its own end
+error holders src/holders.cpp:38 | the door ends a body only when each linear value that the body holds states its own end

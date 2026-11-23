@@ -225,14 +225,14 @@ concept HoldsNoLinearValue =
     "the body holds a linear value by value, and the door calls it with no consume: keep the linear value a local " \
     "of the caller, and let the body capture it by reference or take it as a parameter"
 
-// True when the class states its own end: it carries the annotation linear,
-// it is no sum, and no type argument of its template is linear.  A class
-// that is linear only by the values that it holds, such as a class with a
-// linear member, a closure with a linear capture, an Option or a Record of a
-// token, states no end of its own.  Its end drops each linear value that it
-// holds, and no rule reads the end of such a value in the body of a door.
+// True when the class marks its own end: it carries the annotation linear, it
+// is no sum, and no type argument of its template is linear.  A class that is
+// linear only by the values that it holds, such as a class with a linear
+// member, a closure with a linear capture, an Option or a Record of a token,
+// marks no end of its own.  Its end drops each linear value that it holds,
+// and no rule reads the end of such a value in the body of a door.
 // Complexity: linear in the template arguments of the class.
-[[nodiscard]] consteval bool states_own_end(std::meta::info type) {
+[[nodiscard]] consteval bool marks_own_end(std::meta::info type) {
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
     if (!is_marked_linear(bare) || carries_annotation(bare, ^^sum)) return false;
     for (const ::foundation::reflect::TypeNode& argument :
@@ -241,6 +241,36 @@ concept HoldsNoLinearValue =
             !argument.is_value_argument
             && (!std::meta::is_class_type(argument.type) || std::meta::is_complete_type(argument.type));
         if (is_held_type && is_linear_type(argument.type)) return false;
+    }
+    return true;
+}
+
+[[nodiscard]] consteval bool parts_state_own_end(std::meta::info type);
+
+// True when the class states its own end: it marks its own end, and each
+// linear value that it holds by value states its own end too
+// (parts_state_own_end).  A door that ends such a class ends each value that
+// it holds with no run-time check.  Complexity: linear in the bases, the
+// members and the template arguments that the class reaches by value.
+[[nodiscard]] consteval bool states_own_end(std::meta::info type) {
+    return marks_own_end(type) && parts_state_own_end(type);
+}
+
+// True when each linear value that the class holds by value states its own
+// end: a base, a data member, a capture, or the element of an array that it
+// holds.  The end of the class ends each such value in its own frame.  A sum
+// of a linear payload, such as a data member Option<Token>, states no end of
+// its own, because its end with a payload drops a value that a consumer must
+// take, and the end of a class that holds one is no consume.  So such a class
+// goes to its consumers, and no door ends it.  Complexity: linear in the bases
+// and the members that the class reaches by value.
+[[nodiscard]] consteval bool parts_state_own_end(std::meta::info type) {
+    const std::meta::info bare = ::foundation::reflect::bare_type(type);
+    for (const ::foundation::reflect::TypeNode& part :
+         ::foundation::reflect::member_components_of(::foundation::reflect::TypeNode{bare, true})) {
+        if (!part.is_held_by_value) continue;
+        const std::meta::info held = std::meta::remove_all_extents(part.type);
+        if (is_linear_type(held) && !states_own_end(held)) return false;
     }
     return true;
 }
@@ -263,14 +293,24 @@ template <DroppableLinear T>
     static_cast<void>(dropped);
 }
 
-// A class that holds a linear value and states no end of its own would end
+// A class that holds a linear value and marks no end of its own would end
 // that value in the frame of the door, where no rule reads the end.  The
 // deleted twin gives the reason.
 template <LinearValue T>
-    requires(!states_own_end(^^T))
+    requires(!marks_own_end(^^T))
 constexpr void drop(T&&) = delete("the drop door ends only a class that states its own end.  This class is linear "
                                   "by the values that it holds: give each value to its consumer, or end each one at "
                                   "its own door");
+
+// A class that marks its own end and holds a linear value that states no end
+// of its own, such as a data member Option<Token>, would end that value in
+// the frame of the door with no consume.  The deleted twin gives the reason.
+template <LinearValue T>
+    requires(marks_own_end(^^T) && !parts_state_own_end(^^T))
+constexpr void drop(T&&) = delete("the drop door ends a class only when each linear value that it holds states its "
+                                  "own end.  This class holds a value that states no end of its own, such as an "
+                                  "Option of a linear payload: take that value out and give it to its consumer, or "
+                                  "give the class a consumer that does");
 
 // A named value stays with the caller, so a drop of it would leave a
 // second name for the value.  The deleted twin gives the reason.
@@ -332,10 +372,12 @@ enum class UnrunReason : std::uint8_t {
 };
 
 // A body that no door called and that holds a linear value by value: a
-// class, such as a closure with a linear capture, that states no end of its
-// own (states_own_end).
+// class, such as a closure with a linear capture, that marks no end of its
+// own (marks_own_end), and each linear value that it holds states its own end
+// (parts_state_own_end).  So the end of the body ends each such value with no
+// run-time check.
 template <class Body>
-concept UnrunBody = LinearValue<Body> && std::is_class_v<Body> && !states_own_end(^^Body);
+concept UnrunBody = LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && parts_state_own_end(^^Body);
 
 // The one door that ends a body that no door called and that holds a linear
 // value by value, such as a body that a refused start of a thread gives back.
@@ -354,5 +396,15 @@ template <class Body>
     requires(is_linear_type(^^Body))
 constexpr void end_unrun_body(Body&, UnrunReason) = delete("the door ends a body that the caller gives up.  Pass it "
                                                            "with std::move");
+
+// A body that holds a linear value that states no end of its own, such as a
+// capture Option<Token>, would end that value in the frame of the door with
+// no consume.  The deleted twin gives the reason.
+template <class Body>
+    requires(LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && !parts_state_own_end(^^Body))
+constexpr void end_unrun_body(Body&&, UnrunReason) = delete(
+    "the door ends a body only when each linear value that the body holds states its own end.  This body holds a "
+    "value that states no end of its own, such as an Option of a linear payload: give the body to call_once, and let "
+    "it consume that value");
 
 }  // namespace foundation::linear

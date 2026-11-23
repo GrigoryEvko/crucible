@@ -1421,6 +1421,16 @@ foundation_neg_compile_test(neg_linear_marked_class_without_the_shape
 foundation_neg_compile_test(neg_linear_drop_of_a_named_value
   "use of deleted function .constexpr void foundation::linear::drop\\(T&\\)"
   "the drop door ends a linear value that the caller gives up.  Pass it with std::move")
+# A door that ends a value ends each linear value that the value holds, so
+# each such value states its own end.  An Option of a token states none: the
+# drop door refuses a class that holds one as a data member, and the door
+# end_unrun_body refuses a body that captures one.
+foundation_neg_compile_test(neg_linear_drop_of_a_sum_holder
+  "use of deleted function .constexpr void foundation::linear::drop\\(T&&\\) \\[with T = \\{anonymous\\}::Holder\\]"
+  "the drop door ends a class only when each linear value that it holds states its own end")
+foundation_neg_compile_test(neg_linear_unrun_body_holds_a_sum
+  "use of deleted function .constexpr void foundation::linear::end_unrun_body\\(Body&&, UnrunReason\\)"
+  "the door ends a body only when each linear value that the body holds states its own end")
 
 # A token and a share guard live in a scope or a handle.  Each deletes its
 # class-scope operator new, so a new-expression and std::make_unique reach

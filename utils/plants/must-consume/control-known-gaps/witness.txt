@@ -16,14 +16,3 @@ exit gaps pass
 finding gaps must-consume unconsumed src/gaps.cpp:24:33 | planted::extended_temporary: parent (planted::Token)
 finding gaps quarantine raw-pointer-object src/gaps.cpp:37:18 | place
 finding gaps quarantine c-array-object src/gaps.cpp:42:41 | row
-
-# The end of a linear sum that the rule does not see, and that the end of a
-# full Option of a linear payload catches at run time (missed.cpp): a data
-# member that a drop door ends (line 32).  It gives no line.  A change that
-# refuses it makes this control fail, and moves it to a plant.  The
-# summaries of a closure and of a callee refuse the two other routes
-# (plant-sum-summaries).
-
-compile missed src/missed.cpp must-consume=on
-flag missed -freflection
-exit missed pass
