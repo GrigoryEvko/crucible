@@ -7,8 +7,13 @@ Rule
     plugin gives each other use the kind of the row.  The kinds are:
       * lifetime-start: a use of std::start_lifetime_as or
         std::start_lifetime_as_array outside include/foundation/Lifetime.h
-      * door-use: a use of host::InitOwner, the owner of the init door, or of
-        host::BackgroundOwner, the owner of the background door
+      * door-use: a use of host::InitOwner, the owner of the init door, of
+        host::BackgroundOwner, the owner of the background door, or of a
+        test door class that a name of the product befriends.  A definition
+        of the head class of a row of this kind with paths, outside those
+        paths, is a finding of the kind too, with the shape "definition HEAD"
+        (owner.cpp, the door definitions): a second definition is a friend
+        of the name, and a member of its own can build the name
       * testing-use: a use of the testing door foundation::effects::testing
       * detail-use: a use of a detail namespace of foundation or fixy outside
         the base and the check files of its headers
@@ -137,7 +142,9 @@ ACTIONS = {
     "Call foundation::lifetime::start_as_array",
     "door-use": "a use of the owner of a production door.  The owner gives a context with the effects of process "
     "startup or of a background thread.  Name it only in a reviewed process entry point or in the reviewed entry "
-    "function of a background thread, and give that use a ledger row with its reason",
+    "function of a background thread, and give that use a ledger row with its reason.  A finding with the shape "
+    "'definition HEAD' is a second definition of a door class outside the paths of its owner row.  Keep the one "
+    "definition in a file that the row admits",
     "testing-use": "a use of the testing door in code that ships.  The door mints a context with no key.  Code that "
     "ships takes its context from a real mint.  A self-test in a header can use the door: give its use a ledger row "
     "with the reason",

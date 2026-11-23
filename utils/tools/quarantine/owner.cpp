@@ -18,7 +18,8 @@
 //     an instantiation.  A call of syscall() whose number is the value of the
 //     macro SYS_NAME is a use of the function NAME, and so is a call of a
 //     primitive with the enumerator NAME.  A lambda is a part of the function
-//     that holds it.
+//     that holds it.  A definition of the head class of a row of a door kind
+//     with paths stands only at a site of the row too (the door definitions).
 //
 // Claims (the rule syscalls)
 //     The rule table names the system calls and the primitive of the base:
@@ -1134,13 +1135,14 @@ void check_owned_call(tree call, location_t location, tree function) {
 
 // ── The names of the source (the names of the source) ───────────────────
 
-// The name of a detail namespace, the prefixes of the shapes of a friend and
-// of a deduced use (the deduced uses), the shapes of a member splice and of a
-// walked return, and the files of the classes of the rule of the open static
-// members.
+// The name of a detail namespace, the prefixes of the shapes of a friend, of
+// a deduced use (the deduced uses) and of a definition of a door class (the
+// door definitions), the shapes of a member splice and of a walked return, and
+// the files of the classes of the rule of the open static members.
 constexpr char kDetailName[] = "detail";
 constexpr char kFriendPrefix[] = "friend ";
 constexpr char kDeducedPrefix[] = "deduced ";
+constexpr char kDefinitionPrefix[] = "definition ";
 constexpr char kSpliceShape[] = "member splice";
 constexpr char kWalkedShape[] = "walked return";
 constexpr const char* kMemberRoots[] = {"include/foundation/", "include/fixy/", "include/crucible/"};
@@ -2717,15 +2719,50 @@ void on_finish_parse_function_folded(void* gcc_data, void*) {
     }
 }
 
+// Door definitions
+//     The head of a row of a door kind with paths can be a class that a
+//     header only declares, such as a test door that a name of the product
+//     befriends.  A second definition of that class in another unit is a
+//     friend of the name too.  A member of its own, such as the initializer
+//     of a static data member, can build the name, and no code outside the
+//     class names the door.  So a definition of the head class of such a row,
+//     at a place that the row does not admit, is a finding of the kind of the
+//     row with the shape "definition HEAD" (check_door_definition).  The
+//     holder is the function that holds a local class, or namespace-scope.
+//     A row with no paths admits no site, and its head is a class of the
+//     base that the base defines.  A second definition of it outside the base
+//     is a definition of an entity of the base, which the rule base-namespace
+//     refuses in each mode.
+
+// The finding of a definition of the head class TYPE of a row of a door kind
+// with paths, at a place that the row does not admit (the door definitions).
+// Complexity: O(rows) for a class whose name is the last name of a head, and
+// one test of a set for each other class.
+void check_door_definition(tree type) {
+    if (!name_rules.has_rows) {
+        return;
+    }
+    build_name_rules();
+    tree decl = TYPE_MAIN_DECL(type);
+    const OwnerRow* row = row_headed_by(decl);
+    if (row == nullptr || !is_door_kind(row->kind) || row->paths.empty()) {
+        return;
+    }
+    record_named(row->kind, row, kDefinitionPrefix + row->entity, DECL_SOURCE_LOCATION(decl), current_function_decl,
+                 false);
+}
+
 // The declared types of each member of a class when the parser finishes it.
 // The parser finishes a member function with no PLUGIN_FINISH_DECL, and its
-// definition in a source file of the unit moves its location there.
+// definition in a source file of the unit moves its location there.  A
+// definition of a door class gets its finding here too (the door definitions).
 void on_finish_type_names(void* gcc_data, void*) {
     tree type = static_cast<tree>(gcc_data);
     if (type == NULL_TREE || !CLASS_TYPE_P(type) || TYPE_MAIN_DECL(type) == NULL_TREE
         || !may_count_at(DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(type)))) {
         return;
     }
+    check_door_definition(type);
     for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
         note_declared_types(member);
     }

@@ -2,8 +2,9 @@
 # time can build a name that no check read.  The owner row admits the door
 # only in the header that declares it and in the one test that defines it.
 # The friend declaration of the header and the admitted test give no
-# finding.  The use of the door in the product unit is a finding.  The class
-# definition itself is no use, so the finding stands at the call.
+# finding.  The definition of the class in the product unit is a finding at
+# the name of the class, and the use of the door there is a finding at the
+# call.
 
 compile entries test/c_entries.cpp stage=c
 exit entries pass
@@ -12,4 +13,5 @@ judge entries
 compile forge src/forge.cpp stage=c
 exit forge pass
 judge forge
+finding forge owners door-use src/forge.cpp:7:7 | namespace-scope: definition crucible::testing::UncheckedSchemaNameDoor
 finding forge owners door-use src/forge.cpp:16:36 | crucible::forge_name(): crucible::testing::UncheckedSchemaNameDoor

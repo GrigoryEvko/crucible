@@ -1,0 +1,16 @@
+// A product unit that defines the test door a second time.  The static
+// initializer of a member of the class calls the plant of the class, so no
+// code outside the class names the door, and the unit still builds a
+// Sanitized name that no check read.
+#include <crucible/SchemaTable.h>
+
+namespace crucible::testing {
+
+class UncheckedSchemaNameDoor final {
+public:
+    [[nodiscard]] static SanitizedName plant(int value) noexcept { return SanitizedName{value}; }
+
+    static inline const SanitizedName forged = plant(7);
+};
+
+}  // namespace crucible::testing

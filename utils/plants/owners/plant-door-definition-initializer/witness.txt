@@ -1,0 +1,17 @@
+# A product unit that defines the test door of a Sanitized name a second
+# time builds a name that no check read in the initializer of a static data
+# member of the class.  No code outside the class names the door, so the
+# unit has no use of the door.  The owner row admits the door only in the
+# header that declares it and in the one test that defines it.  The
+# definition of the class in the product unit is a finding at the name of the
+# class.  The friend declaration of the header and the definition of the
+# admitted test give no finding.
+
+compile entries test/c_entries.cpp stage=c
+exit entries pass
+judge entries
+
+compile forge src/forge.cpp stage=c
+exit forge pass
+judge forge
+finding forge owners door-use src/forge.cpp:9:7 | namespace-scope: definition crucible::testing::UncheckedSchemaNameDoor
