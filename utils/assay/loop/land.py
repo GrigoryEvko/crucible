@@ -98,6 +98,17 @@ Merge
     a patch stays a change of its row in the commit.  The verdict names each
     merged file and each file that the gate writes.
 
+Plain landing
+    `loop land` with no words in the work tree of a branch is the landing of
+    an agent (plain_words()).  It means `loop land --series BRANCH
+    --budget-reason PLAIN_BUDGET_REASON --` in the main work tree, for the
+    branch of the HEAD of the work tree.  Each crossed row of a budget then
+    gets the owner decision as its reason, as the owner decided on
+    2026-11-15.  The command refuses the main work tree, a HEAD with no
+    branch or with main, and a tracked file with a change that no commit
+    holds, because a landing takes only the commits.  The driver gets the
+    same empty words, and it reads the same branch from the same directory.
+
 Series
     `loop land --series BRANCH --` in the main work tree lands each commit
     of BRANCH that HEAD does not hold, from the oldest, each with its own
@@ -733,6 +744,7 @@ Driver
     tree and runs alone.
 
 Usage
+    loop land
     loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... [--block FILE AFTER BLOCK]...
               [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]... [--lower RULE ITEM]...
               [--lower-reason TEXT] [--right-of-way] [--check [--here] | --dry-run | --tree] -- [PATH]...
@@ -822,8 +834,12 @@ FLAG_V4 = "--v4"
 FLAGS = (FLAG_DRY_RUN, FLAG_TREE, FLAG_CHECK, FLAG_HERE, FLAG_EVERY, FLAG_RIGHT, FLAG_V4)
 END_OF_OPTIONS = "--"
 HELP_WORDS = (["-h"], ["--help"])
+# The reason of each crossed row of a budget of a plain `loop land` (the plain landing).
+PLAIN_BUDGET_REASON = "the owner decision of 2026-11-15: a correct change raises the limit"
 USAGE = (
-    "usage: loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
+    "usage: loop land\n"
+    "                 (in the work tree of a branch: land each commit of the branch, the landing of an agent)\n"
+    "       loop land -m SUBJECT [-m BODY]... [--patch FILE]... [--replace FILE OLD NEW]... "
     "[--block FILE AFTER BLOCK]...\n"
     "                 [--jobs N] [--all-configurations] [--v4] [--budget-reason TEXT | ITEM=TEXT]... "
     "[--lower RULE ITEM]... [--lower-reason TEXT]\n"
@@ -1427,6 +1443,38 @@ def parse(argv: Sequence[str], current: Path) -> tuple[Request, Options]:
         tuple(own),
     )
     return request, checked_options(flags, values, request)
+
+
+def plain_words(current: Path) -> tuple[Path, list[str]]:
+    """Return the main work tree and the words of a plain `loop land` in the work tree of a branch (the plain landing).
+
+    The words land the series of the branch, and each crossed row of a budget gets PLAIN_BUDGET_REASON.
+
+    Raises:
+        LandError: If the directory is in the main work tree, its HEAD names no branch or names main, or a tracked file
+            holds a change that no commit of the branch holds
+        git.GitError: If the directory is not in a git work tree, or git fails
+    """
+    tree = git.toplevel(current)
+    main_tree = heavy.main_work_tree(tree)
+    if tree.resolve() == main_tree.resolve():
+        raise LandError(
+            f"a plain loop land lands the branch of a work tree, and {tree} is the main work tree.  Run it in the work "
+            f"tree of your branch, or give the words of a request.\n{USAGE}"
+        )
+    found = git.run_any_exit(tree, "symbolic-ref", "-q", "--short", "HEAD")
+    branch = found.out.strip() if found.exit == 0 else ""
+    if not branch or branch == git.MAIN_BRANCH:
+        raise LandError(
+            f"the HEAD of the work tree {tree} names no branch other than {git.MAIN_BRANCH}.  Put the commits on a "
+            f"branch of their own"
+        )
+    if not git.is_clean(tree):
+        raise LandError(
+            f"a tracked file of the work tree {tree} holds a change that no commit of {branch} holds, and a landing "
+            f"takes only the commits.  Commit the change, then run loop land again"
+        )
+    return main_tree, ["--series", branch, "--budget-reason", PLAIN_BUDGET_REASON, END_OF_OPTIONS]
 
 
 def series_request(root: Path, revision: str, directory: Path) -> Request:
@@ -4495,7 +4543,10 @@ def main(argv: list[str]) -> int:
         return ExitCode.OK
     current = Path.cwd()
     try:
-        request, options = parse(argv, current)
+        words = argv
+        if not argv:
+            current, words = plain_words(current)
+        request, options = parse(words, current)
         root = git.toplevel(current)
         with tempfile.TemporaryDirectory(prefix="loop-land-series-") as scratch:
             if options.series:

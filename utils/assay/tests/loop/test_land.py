@@ -3289,6 +3289,51 @@ def planted_branch(root: Path, name: str, commits: Sequence[tuple[Mapping[str, s
     return made
 
 
+def plain_refusal(directory: Path) -> str:
+    """Return the refusal of a plain `loop land` in a directory, or "" when the command takes it."""
+    try:
+        land.plain_words(directory)
+    except land.LandError as problem:
+        return str(problem)
+    return ""
+
+
+def plain_cases(expect: testing.Expect) -> None:
+    """Hold the plain landing: the words of a plain `loop land` in the work tree of a branch, and its refusals."""
+    with tempfile.TemporaryDirectory(prefix="land-plain-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        planted_branch(root, "topic", (({"a.txt": "a\n"}, "Add a\n"),))
+        tree = work / "topic-tree"
+        git.run(root, "worktree", "add", str(tree), "topic")
+        main_tree, words = land.plain_words(tree / "utils")
+        request, found = land.parse(words, main_tree)
+        expect(
+            f"a plain loop land in a directory of the work tree of a branch lands the series of the branch from the "
+            f"main work tree, and each crossed row of a budget gets the owner decision: {words}",
+            main_tree.resolve() == root.resolve()
+            and words == ["--series", "topic", "--budget-reason", land.PLAIN_BUDGET_REASON, "--"]
+            and found.series == "topic"
+            and found.budget_reason == land.PLAIN_BUDGET_REASON
+            and request.is_empty,
+        )
+        (tree / "notes.txt").write_text("a file that no commit holds\n", encoding="utf-8")
+        untracked = plain_refusal(tree)
+        (tree / "shared.txt").write_text("a change that no commit holds\n", encoding="utf-8")
+        changed = plain_refusal(tree)
+        detached = work / "detached-tree"
+        git.run(root, "worktree", "add", "--detach", str(detached), "topic")
+        expect(
+            f"a plain loop land refuses the main work tree, a HEAD with no branch and a tracked change that no commit "
+            f"holds, and it takes a new file that no commit holds: {[plain_refusal(root), changed, untracked]}",
+            "is the main work tree" in plain_refusal(root)
+            and "names no branch" in plain_refusal(detached)
+            and "Commit the change" in changed
+            and untracked == "",
+        )
+
+
 def series_landing(
     root: Path, scratch: Path, branch: str, check: land.Check
 ) -> tuple[dict[int, land.Decision], land.BatchLanding]:
@@ -4458,6 +4503,7 @@ def main(argv: list[str]) -> int:
             newer_entry_cases,
             line_cases,
             stack_thread_cases,
+            plain_cases,
             series_cases,
             series_words_cases,
             series_cost_cases,

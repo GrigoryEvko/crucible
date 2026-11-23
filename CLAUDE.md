@@ -89,14 +89,17 @@ python3 utils/bin/loop heavy -j 32 -- ctest --test-dir build -R REGEX -j 32 --ou
 ### Landing a change
 
 ```bash
-git diff --binary -M --output=change.patch main...HEAD
-python3 utils/bin/loop land -m "SUBJECT" --patch change.patch --
+python3 utils/bin/loop land        # in your work tree: land each commit of your branch
 ```
 
-- Main moves only through `loop land`. It applies the patch to the main of that time, runs the gate, and then moves main.
-- Add `--check` to run the gate with no landing.
-- Add `--all-configurations` for a change of a header that most units include, such as a header of `include/foundation/core/`.
-- Add `--v4` to also build and test the preset `release` at the level of the host. No other option adds it.
+- Main moves only through `loop land`. It puts each commit of the branch on the main of that time, runs the gate, and then moves main.
+- Commit each change first. The command refuses a tracked file with a change that no commit holds.
+- A crossed row of a budget gets the owner decision of 2026-11-15 as its reason.
+- If the gate refuses the request, correct the cause, rebase the branch onto main, and run the command again.
+- `--check` runs the gate with no landing: `python3 utils/bin/loop land --series BRANCH --check --` in the main work tree.
+- The coordinator gives the options in the main work tree: `python3 utils/bin/loop land --series BRANCH [OPTIONS] --`.
+- `--all-configurations` builds each configuration other than `release`, for a change of a header that most units include.
+- `--v4` also builds and tests the preset `release` at the level of the host. No other option adds it.
 - One request at a time holds main. Its run uses each slot of the host, and the next request waits.
 - Work in a git work tree under `.worktrees/`. Do not edit the main work tree.
 
