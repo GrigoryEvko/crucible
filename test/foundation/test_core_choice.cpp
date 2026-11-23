@@ -424,25 +424,27 @@ struct ForgedWords {
     std::uint64_t tag = 2;
 };
 
-// The routes of a copy of bytes over a plain Option and a plain Result: a
-// memcpy and a union member.  The quarantine plugin refuses each of them out
-// of a PROBE region, and the checked lifetime start refuses a third route at
-// compile time (neg_core_option_plain_lifetime_start).  Each read of the state
-// of a forged sum ends the process: is_some or is_ok, and == in each order of
-// the operands.  So a forged tag never reads as a value.
+// The oracle of the tag of Choice.h.  A copy of bytes over a plain Option or
+// a plain Result, a memcpy or a union member, writes a tag that names no
+// alternative.  The quarantine plugin refuses each such route out of a PROBE
+// region, and the checked lifetime start refuses a third route at compile
+// time (neg_core_option_plain_lifetime_start).  In a test build
+// (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag compares it with the
+// count, so each read of the state of a forged sum ends the process: is_some
+// or is_ok, and == in each order of the operands.  A Release build reads the
+// tag with no compare, so the cases run only in a test build.
 template <class Sum>
 void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundation::core::TextView refusal) {
     expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(forged == real); }, refusal);
     expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(real == forged); }, refusal);
 }
 
-// The reports of a read of a forged tag.
-constexpr ::foundation::core::TextView kForgedOption{
-    "foundation: fatal: Option: the tag names no alternative, so a copy of bytes made this Option"};
-constexpr ::foundation::core::TextView kForgedResult{
-    "foundation: fatal: Result: the tag names no alternative, so a copy of bytes made this Result"};
+// The report of a read of a forged tag.
+[[maybe_unused]] constexpr ::foundation::core::TextView kForgedTag{
+    "foundation: fatal: a sum of the Choice family: the tag names no alternative, so a copy of bytes made this sum"};
 
 void test_forged_tag_by_memcpy() {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     static_assert(sizeof(Option<std::uint64_t>) == sizeof(ForgedWords));
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
     Option<std::uint64_t> forged{};
@@ -450,11 +452,13 @@ void test_forged_tag_by_memcpy() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of an Option")
     __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedOption);
-    expect_forged_compares_abort(forged, real, kForgedOption);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedTag);
+    expect_forged_compares_abort(forged, real, kForgedTag);
+#endif
 }
 
 void test_forged_tag_by_union_member() {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a union member reads the bytes of a different member as an Option")
     union Punned {
@@ -464,8 +468,9 @@ void test_forged_tag_by_union_member() {
     Punned const punned{ForgedWords{}};
     Option<std::uint64_t> const& forged = punned.option;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedOption);
-    expect_forged_compares_abort(forged, real, kForgedOption);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedTag);
+    expect_forged_compares_abort(forged, real, kForgedTag);
+#endif
 }
 
 // The error of the Result tests.
@@ -475,6 +480,7 @@ enum class Refusal : std::uint8_t {
 };
 
 void test_forged_result_tag_by_memcpy() {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     using Word = ::foundation::core::Result<std::uint64_t, Refusal>;
     static_assert(sizeof(Word) == sizeof(ForgedWords));
     Word const real{std::uint64_t{7}};
@@ -483,8 +489,9 @@ void test_forged_result_tag_by_memcpy() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a Result")
     __builtin_memcpy(static_cast<void*>(&forged), &words, sizeof(words));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_ok()); }, kForgedResult);
-    expect_forged_compares_abort(forged, real, kForgedResult);
+    expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_ok()); }, kForgedTag);
+    expect_forged_compares_abort(forged, real, kForgedTag);
+#endif
 }
 
 // A sum whose payload is a sum: an Option of a Result and a Result of an

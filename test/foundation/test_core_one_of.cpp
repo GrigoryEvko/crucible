@@ -90,6 +90,13 @@ void test_each_alternative() {
     CRUCIBLE_FATAL_INVARIANT(wide.which().raw() == 0 && refused.which().raw() == 1 && narrow.which().raw() == 2);
 }
 
+// The oracle of the tag of Choice.h.  In a test build
+// (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag of a OneOf compares it
+// with the count, and a tag that names no alternative ends the process.  A
+// Release build reads the tag with no compare, so the cases run only in a
+// test build.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+
 // The bytes of a Reading whose tag names no alternative: the storage word,
 // and a tag word whose low byte is the tag.
 struct ForgedBytes {
@@ -97,6 +104,10 @@ struct ForgedBytes {
     std::uint32_t tag_word = 200;
 };
 static_assert(sizeof(ForgedBytes) == sizeof(Reading));
+
+// The report of a read of a forged tag.
+constexpr ::foundation::core::TextView kForgedTag{
+    "foundation: fatal: a sum of the Choice family: the tag names no alternative, so a copy of bytes made this sum"};
 
 // A copy of bytes over a plain OneOf can write a tag that names no
 // alternative.  The rule forged-tag of the quarantine plugin refuses such a
@@ -110,25 +121,27 @@ static_assert(sizeof(ForgedBytes) == sizeof(Reading));
     return forged;
 }
 
-// which() of a forged OneOf ends the process, so no Index leaves its range.
-// Each walk of a forged tag below runs in a child through expect_dies of the
-// Check family.
-void test_which_refuses_a_forged_tag(TestRunnerCtx const& test) {
+#endif
+
+// which() of a forged OneOf ends the process in a test build, so no Index
+// leaves its range.  Each read of a forged tag below runs in a child through
+// expect_dies of the Check family.
+void test_which_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     Reading const forged = forge_reading();
-    expect_dies(
-        test, [&forged] noexcept { static_cast<void>(forged.which()); },
-        ::foundation::core::TextView{
-            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
+    expect_dies(test, [&forged] noexcept { static_cast<void>(forged.which()); }, kForgedTag);
+#endif
 }
 
-// Each walk of the tag of a forged OneOf ends the process: the borrow match,
-// the rvalue match and the compare of two OneOfs with the same forged tag.
-// So no arm reads the storage as the last alternative.  A read that compares
-// the tag with one index reads no alternative: is<T>() gives false, get<T>()
-// gives no value, and a compare with a OneOf of a real tag gives false.
-void test_match_refuses_a_forged_tag(TestRunnerCtx const& test) {
+// Each read of the tag of a forged OneOf ends the process in a test build:
+// the borrow match, the rvalue match, the compare of two OneOfs, is<T>() and
+// get<T>().  So no arm reads the storage as an alternative that is not
+// active.
+void test_match_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     Reading const forged = forge_reading();
     Reading const same_forged = forged;
+    Reading const real = read_word(9u);
     expect_dies(
         test,
         [&forged] noexcept {
@@ -136,8 +149,7 @@ void test_match_refuses_a_forged_tag(TestRunnerCtx const& test) {
                                            [](Refusal const&) noexcept { return 2; },
                                            [](std::uint16_t const&) noexcept { return 3; }));
         },
-        ::foundation::core::TextView{
-            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
+        kForgedTag);
     expect_dies(
         test,
         [&forged] noexcept {
@@ -145,17 +157,12 @@ void test_match_refuses_a_forged_tag(TestRunnerCtx const& test) {
                                                     [](Refusal) noexcept { return 2; },
                                                     [](std::uint16_t) noexcept { return 3; }));
         },
-        ::foundation::core::TextView{
-            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
-    expect_dies(
-        test, [&forged, &same_forged] noexcept { static_cast<void>(forged == same_forged); },
-        ::foundation::core::TextView{
-            "foundation: fatal: OneOf: the tag names no alternative, so a copy of bytes made this OneOf"});
-
-    Reading const real = read_word(9u);
-    CRUCIBLE_FATAL_INVARIANT(!forged.is<std::uint32_t>() && !forged.is<Refusal>() && !forged.is<std::uint16_t>());
-    CRUCIBLE_FATAL_INVARIANT(forged.get<std::uint16_t>().is_none());
-    CRUCIBLE_FATAL_INVARIANT(!(forged == real) && !(real == forged));
+        kForgedTag);
+    expect_dies(test, [&forged, &same_forged] noexcept { static_cast<void>(forged == same_forged); }, kForgedTag);
+    expect_dies(test, [&forged, &real] noexcept { static_cast<void>(real == forged); }, kForgedTag);
+    expect_dies(test, [&forged] noexcept { static_cast<void>(forged.is<std::uint32_t>()); }, kForgedTag);
+    expect_dies(test, [&forged] noexcept { static_cast<void>(forged.get<std::uint16_t>().is_none()); }, kForgedTag);
+#endif
 }
 
 void test_expect(TestRunnerCtx const& test) {

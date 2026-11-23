@@ -1488,6 +1488,33 @@ inline constexpr bool tracks_alternative_ends_ = CRUCIBLE_QTT_TRACK_CONSUME != 0
 inline constexpr bool tracks_alternative_ends_ = false;
 #endif
 
+// Oracle of the tag
+//   Each door of a slot writes the index of an alternative (the doors of the
+//   tag), and the compile refuses each byte route into a sum.  So the read
+//   of the tag of a slot states that the tag is below the count, with no
+//   test, and the optimizer folds each check that the tag makes true.  A test
+//   build (CRUCIBLE_QTT_TRACK_CONSUME, as for the end of a linear
+//   alternative) keeps one compare of the tag with the count in the read,
+//   and a tag that names no alternative ends the process.  The compare is a
+//   test oracle of the doors and of the rule forged-tag: a test that forges a
+//   tag in a region of the class PROBE reaches it, and so does a route that
+//   no rule refuses in a test or a bench, such as a reinterpret_cast to a
+//   different class, in each build with a sanitizer (the test builds and the
+//   build of the benches and the fuzz harnesses).  A Release build reads the
+//   tag with no compare, so a tag that names no alternative is undefined
+//   there.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+inline constexpr bool checks_read_tags_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+inline constexpr bool checks_read_tags_ = false;
+#endif
+
+// The exit of the oracle.  The read of the tag is in index_ of each slot, and
+// no template of a namespace holds it, so no unit can specialize the read.
+[[noreturn]] CRUCIBLE_COLD inline void report_forged_tag_() noexcept {
+    fatal("a sum of the Choice family: the tag names no alternative, so a copy of bytes made this sum");
+}
+
 template <bool IsTracked>
 struct EndMark {
     constexpr void spend() noexcept {}
@@ -2601,8 +2628,17 @@ class SumSlotOf<true, Ts...> {
 public:
     // The tag and the alternative at Index, with the key that only SumDoor
     // builds.  The key is empty and comes by value, so a read keeps no key on
-    // the stack.
-    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return cells_.tag_; }
+    // the stack.  The tag names an alternative (the oracle of the tag).
+    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept {
+        std::size_t const tag = cells_.tag_;
+        if constexpr (checks_read_tags_) {
+            if (tag >= sizeof...(Ts)) [[unlikely]] {
+                report_forged_tag_();
+            }
+        }
+        [[assume(tag < sizeof...(Ts))]];
+        return tag;
+    }
     [[nodiscard]] constexpr NoLend lend_(SumKey /*key*/) const noexcept { return NoLend{}; }
     // A plain sum holds no linear alternative (the end of a linear
     // alternative).
@@ -2676,8 +2712,17 @@ class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
 public:
     // The tag and the alternative at Index, with the key that only SumDoor
     // builds.  The key is empty and comes by value, so a read keeps no key on
-    // the stack.
-    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept { return tag_; }
+    // the stack.  The tag names an alternative (the oracle of the tag).
+    [[nodiscard]] constexpr std::size_t index_(SumKey /*key*/) const noexcept {
+        std::size_t const tag = tag_;
+        if constexpr (checks_read_tags_) {
+            if (tag >= sizeof...(Ts)) [[unlikely]] {
+                report_forged_tag_();
+            }
+        }
+        [[assume(tag < sizeof...(Ts))]];
+        return tag;
+    }
     [[nodiscard]] constexpr Lend lend_(SumKey /*key*/) const noexcept { return Lend{lend_count_}; }
     // A consumer takes the sum (the end of a linear alternative).
     constexpr void spend_(SumKey /*key*/) noexcept { end_mark_.spend(); }
@@ -2757,32 +2802,13 @@ using SumSlot = SumSlotOf<is_plain_sum_v<Ts...>, Ts...>;
 //   member, the Scalar family refuses a decode and a bit_cast into a sum, and
 //   the checked lifetime start of foundation/Lifetime.h refuses a sum over
 //   bytes.  Bytes from outside the program become a sum only through a decode
-//   of its parts and a constructor of the sum.
-
-// The fatal exits of a tag that names no alternative of an Option or a
-// Result.  The calls take no argument, so each inlined read of a tag adds
-// only a compare and a branch to one call.  The names start with report_,
-// as each cold fatal exit of the family does, so the rule codegen-shapes
-// reads a call of one as a fatal path.
-[[noreturn]] CRUCIBLE_COLD inline void report_forged_option_tag_() noexcept {
-    fatal("Option: the tag names no alternative, so a copy of bytes made this Option");
-}
-
-[[noreturn]] CRUCIBLE_COLD inline void report_forged_result_tag_() noexcept {
-    fatal("Result: the tag names no alternative, so a copy of bytes made this Result");
-}
+//   of its parts and a constructor of the sum.  So a read of the tag tests
+//   nothing in a Release build (the oracle of the tag).
 
 // A plain Option is the plain sum of the empty marker and the payload.  The
 // tag is 0 for no value and 1 for a value, as the tag of a Result is.  The
-// special members are implicit and trivial.
-//
-// Each constructor writes the tag 0 or 1.  But a copy of bytes over the sum,
-// such as a memcpy or a union member, can write a different word.  Such a tag
-// would read as a value, and two equal values could compare unequal.  So each
-// read of the state compares the tag with 1, and a larger tag ends the
-// process, as which() of a OneOf does.  The optimizer folds the second check
-// of one tag, and the check of a tag that a constructor of the same function
-// wrote.
+// special members are implicit and trivial.  The tag is the state (the doors
+// of the tag), so a read of the state is one test of the tag.
 template <class T>
 class OptionSlot<T, OptionForm::plain> {
     SumSlot<NoPayload, T> sum_{AlternativeAt<0>{}, NoPayload{}};
@@ -2790,28 +2816,18 @@ class OptionSlot<T, OptionForm::plain> {
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
-    [[nodiscard]] constexpr std::size_t tag_() const noexcept {
-        std::size_t const tag = sum_.index_(SumDoor::key());
-        if (tag > 1) [[unlikely]] {
-            report_forged_option_tag_();
-        }
-        return tag;
-    }
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
     [[nodiscard]] constexpr NoLend lend_() const noexcept { return NoLend{}; }
-    // The test of expect is one compare of the tag with 1.  The cold path
-    // tells a forged tag from an empty Option.
     constexpr void expect_value_(Fmt<> why) const noexcept {
-        std::size_t const tag = sum_.index_(SumDoor::key());
-        if (tag != 1) [[unlikely]] {
-            static_cast<void>(tag_());
+        if (!holds_()) [[unlikely]] {
             fatal(why);
         }
     }
-    // The tag is the state, so one compare of the two checked tags tests the
-    // two states, and no bool of a state is built for the compare.
-    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept { return tag_() == other.tag_(); }
+    // The tag is the state, so one compare of the two tags tests the two
+    // states, and no bool of a state is built for the compare.
+    [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
+        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
+    }
     [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
 
@@ -3004,9 +3020,8 @@ public:
 // value at index 1.  A tag that is not zero then tells that a value is
 // there, as the tag of a plain Option does, so a full Option and a Result
 // of a value have one tag, and a test of the tag reads the same in each.
-// The special members follow the sum.  Each read of the state compares the
-// tag with 1, and a larger tag, which only a copy of bytes writes, ends the
-// process, as in the plain Option.
+// The special members follow the sum, and a read of the state is one test of
+// the tag, as in the plain Option (the doors of the tag).
 template <class T, class E>
 class ResultSlot {
     SumSlot<E, T> sum_;
@@ -3014,26 +3029,16 @@ class ResultSlot {
     template <ChoicePayload U, ErrorValue F>
     friend class ::foundation::core::Result;
 
-    [[nodiscard]] constexpr std::size_t tag_() const noexcept {
-        std::size_t const tag = sum_.index_(SumDoor::key());
-        if (tag > 1) [[unlikely]] {
-            report_forged_result_tag_();
-        }
-        return tag;
-    }
-
-    [[nodiscard]] constexpr bool holds_() const noexcept { return tag_() != 0; }
+    [[nodiscard]] constexpr bool holds_() const noexcept { return sum_.index_(SumDoor::key()) != 0; }
     [[nodiscard]] constexpr auto lend_() const noexcept { return sum_.lend_(SumDoor::key()); }
-    // The test of expect is one compare of the tag with 1.  The cold path
-    // tells a forged tag from an error.
     constexpr void expect_value_(Fmt<> why) const noexcept {
-        std::size_t const tag = sum_.index_(SumDoor::key());
-        if (tag != 1) [[unlikely]] {
-            static_cast<void>(tag_());
+        if (!holds_()) [[unlikely]] {
             fatal(why);
         }
     }
-    [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept { return tag_() == other.tag_(); }
+    [[nodiscard]] constexpr bool same_state_(ResultSlot const& other) const noexcept {
+        return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
+    }
     [[nodiscard]] constexpr T& value_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr T const& value_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
     [[nodiscard]] constexpr E& error_() noexcept { return sum_.template alternative_<0>(SumDoor::key()); }

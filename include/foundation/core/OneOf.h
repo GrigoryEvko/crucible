@@ -16,14 +16,14 @@
 // that writes the active alternative in place is the frame door
 // one_of.with_mut(arms...) of foundation/core/Frame.h.  is<T>()
 // tells the active alternative, and which() gives its index as an Index<N>
-// of the Region family, after one compare of the tag with the count.  The
-// type has no operator*, no operator-> and no operator bool, and it is
-// [[nodiscard]].
+// of the Region family.  The type has no operator*, no operator-> and no
+// operator bool, and it is [[nodiscard]].
 //
-// Only a copy of bytes writes a tag that names no alternative.  A read that
-// must name the active alternative then ends the process: which(), each
-// match, and the compare of two OneOfs with the same tag.  is<T>() and get<T>()
-// compare the tag with one index, so such a tag gives false and no value.
+// Each door of the sum writes the index of the alternative that it builds,
+// and each byte route into a sum is refused at compile time (the doors of the
+// tag of Choice.h).  So the tag names the active alternative in each state:
+// which() gives the tag as an Index, and the last step of a walk of the tag
+// takes the last alternative with no compare.
 //
 // The storage is the sum of the family (Choice.h).  The sum of plain
 // alternatives holds the storage and a tag, and its copy, move and end are
@@ -55,19 +55,6 @@
 #include <type_traits>
 
 namespace foundation::core {
-
-namespace detail {
-
-// The fatal exit of a tag that names no alternative of a OneOf.  The call
-// takes no argument, so each inlined read of a tag adds only a compare and a
-// branch to one call.  The name starts with report_, as each cold fatal exit
-// of the family does, so the rule codegen-shapes reads a call of it as a
-// fatal path.
-[[noreturn]] CRUCIBLE_COLD inline void report_forged_one_of_tag_() noexcept {
-    fatal("OneOf: the tag names no alternative, so a copy of bytes made this OneOf");
-}
-
-}  // namespace detail
 
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
@@ -125,70 +112,62 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     }
 
     // Walks of the tag.  The match and the compare walk the tag from the
-    // first index.  Each step compares the tag with its index, the last step
-    // too.  A tag after the last index names no alternative, because only a
-    // copy of bytes writes it.  The walk then ends the process and runs no
-    // arm, so no arm reads the storage as the last alternative.  The compare
-    // at the last step is one compare and one branch to a cold call, and the
-    // optimizer folds it when it knows the tag.  Complexity: at most one
-    // compare for each alternative.
+    // first index.  Each step before the last one compares the tag with its
+    // index.  The tag names an alternative (the doors of the tag of
+    // Choice.h), so the last step takes the last alternative with no
+    // compare.  Complexity: at most one compare for each alternative but the
+    // last.
 
     // The arm at Index takes the alternative at Index (the walks of the tag).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result moved_from_(Arms&&... arms) && {
-        if (index_() == Index) {
-            slot_.spend_(detail::SumDoor::key());
-            return static_cast<Arms...[Index]&&>(arms...[Index])(static_cast<Ts...[Index]&&>(alternative_<Index>()));
+        if constexpr (Index + 1 != sizeof...(Ts)) {
+            if (index_() != Index) {
+                return static_cast<OneOf&&>(*this).template moved_from_<Index + 1, Result>(
+                    static_cast<Arms&&>(arms)...);
+            }
         }
-        if constexpr (Index + 1 == sizeof...(Ts)) {
-            detail::report_forged_one_of_tag_();
-        } else {
-            return static_cast<OneOf&&>(*this).template moved_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
-        }
+        slot_.spend_(detail::SumDoor::key());
+        return static_cast<Arms...[Index]&&>(arms...[Index])(static_cast<Ts...[Index]&&>(alternative_<Index>()));
     }
 
     // The compare of the alternative at Index and after, when the two tags
     // are equal (the walks of the tag).  Complexity: at most one compare of a
-    // tag for each alternative, and one compare of the active alternatives.
+    // tag for each alternative but the last, and one compare of the active
+    // alternatives.
     template <std::size_t Index>
     [[nodiscard]] constexpr bool equal_from_(OneOf const& other) const noexcept {
-        if (index_() == Index) {
-            return ::foundation::core::equal(alternative_<Index>(), other.template alternative_<Index>());
+        if constexpr (Index + 1 != sizeof...(Ts)) {
+            if (index_() != Index) {
+                return this->template equal_from_<Index + 1>(other);
+            }
         }
-        if constexpr (Index + 1 == sizeof...(Ts)) {
-            detail::report_forged_one_of_tag_();
-        } else {
-            return this->template equal_from_<Index + 1>(other);
-        }
+        return ::foundation::core::equal(alternative_<Index>(), other.template alternative_<Index>());
     }
 
     // The arm at Index takes a borrow of the alternative at Index (the walks
     // of the tag).
     template <std::size_t Index, class Result, class... Arms>
     constexpr Result borrowed_from_(Arms&&... arms) const {
-        if (index_() == Index) {
-            return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
+        if constexpr (Index + 1 != sizeof...(Ts)) {
+            if (index_() != Index) {
+                return this->template borrowed_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
+            }
         }
-        if constexpr (Index + 1 == sizeof...(Ts)) {
-            detail::report_forged_one_of_tag_();
-        } else {
-            return this->template borrowed_from_<Index + 1, Result>(static_cast<Arms&&>(arms)...);
-        }
+        return static_cast<Arms...[Index]&&>(arms...[Index])(alternative_<Index>());
     }
 
     // The arm at Index of the frame door takes the RefMut of the alternative
     // at Index, with the brand of the frame (the walks of the tag).
     template <std::size_t Index, class Result, class Brand, class... Arms>
     constexpr Result written_from_(Arms&&... arms) {
-        if (index_() == Index) {
-            return static_cast<Arms...[Index]&&>(arms...[Index])(
-                RefMut<Ts... [Index], Brand> { OneOfFrameKeyDoor::key_(), alternative_<Index>() });
+        if constexpr (Index + 1 != sizeof...(Ts)) {
+            if (index_() != Index) {
+                return this->template written_from_<Index + 1, Result, Brand>(static_cast<Arms&&>(arms)...);
+            }
         }
-        if constexpr (Index + 1 == sizeof...(Ts)) {
-            detail::report_forged_one_of_tag_();
-        } else {
-            return this->template written_from_<Index + 1, Result, Brand>(static_cast<Arms&&>(arms)...);
-        }
+        return static_cast<Arms...[Index]&&>(arms...[Index])(
+            RefMut<Ts... [Index], Brand> { OneOfFrameKeyDoor::key_(), alternative_<Index>() });
     }
 
 public:
@@ -203,20 +182,12 @@ public:
                 static_cast<U&&>(value)} {}
 
     // The index of the active alternative, as an Index of the Region family.
-    // Each constructor of the slot writes the index of the alternative that
-    // it builds.  But a copy of bytes over a plain OneOf, such as a copy that
-    // a byte buffer or a union member makes, can write a tag outside the
-    // alternatives, and a read through the Index would then leave its range.
-    // So which() compares the tag with the count one time, and a tag that
-    // names no alternative ends the process.
+    // Each door of the slot writes the index of the alternative that it
+    // builds (the doors of the tag of Choice.h), and the read of the tag
+    // states that the tag is below the count, so the optimizer removes the
+    // check of the Index.
     [[nodiscard]] constexpr Index<sizeof...(Ts)> which() const noexcept {
-        std::size_t const tag = index_();
-        if (tag >= sizeof...(Ts)) [[unlikely]] {
-            detail::report_forged_one_of_tag_();
-        }
-        // The compare above proves the tag below the count, so the optimizer
-        // removes the check of the Index.
-        return Index<sizeof...(Ts)>::check(tag).expect("the tag of a OneOf names an alternative");
+        return Index<sizeof...(Ts)>::check(index_()).expect("the tag of a OneOf names an alternative");
     }
 
     // True when the active alternative is T.  The cost is one compare.

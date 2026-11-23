@@ -258,10 +258,11 @@ SANITIZER_WORDS = ("-fsanitize", "-fno-sanitize")
 # HARDENING_OFF turns such a flag off.
 HARDENING_FLAGS = ("-fharden-compares", "-fharden-conditional-branches")
 HARDENING_OFF = "-fno-harden-"
-# The sentence of a claim that tells the check of the tag of a plain Option or Result (include/foundation/core/Choice.h).
-TAG_CHECK = (
-    "Each read of the state of a plain Option or Result compares the tag with 1 and branches to a call of the fatal "
-    "exit for a larger tag, which only a copy of bytes writes"
+# The sentence of a claim that tells the read of the tag of a plain sum (the oracle of the tag of
+# include/foundation/core/Choice.h).
+TAG_READ = (
+    "The read of the tag has no test: each door of a slot writes the index of an alternative, and the compile "
+    "refuses each byte route into a sum.  Only a test build compares the tag with the count"
 )
 # The number of second tests after one branch: one on each of its two edges.
 HARDENING_TESTS = 2
@@ -707,7 +708,10 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "view_zip_sum",
         "try_zip and fold of two walks of a dynamic extent is the compare of the two counts and the index loop of the "
-        "raw form, with no call",
+        "raw form, with no call.  At -O3, GCC puts the blocks of the scalar tail after the vector loop of the family "
+        "side in a different order, with one more return, so the targets of its branches are different",
+        branches=True,
+        longer=1,
     ),
     Probe(
         "walk_map_fold_f32",
@@ -912,51 +916,36 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "option_match",
-        f"the match of an Option is the check of the tag and one test of the tag, as the raw form is one test.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
+        f"the match of an Option is one test of the tag, as the raw form is one test.  {TAG_READ}",
     ),
     Probe(
         "option_loop",
-        "a loop over an Option is the check of the tag and one test of the tag.  The optimizer removes the check of the "
-        f"cursor, because the loop reads the cursor only after a compare with the end.  {TAG_CHECK}",
-        checks=("fatal",),
+        "a loop over an Option is one test of the tag.  The optimizer removes the check of the cursor, because the "
+        f"loop reads the cursor only after a compare with the end.  {TAG_READ}",
     ),
     Probe(
         "option_value_or",
-        "value_or of an Option is the check of the tag and one test of the tag.  The family form branches on no value "
-        "and the raw form branches on a value, so the targets of the branches are different.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
-        branches=True,
+        f"value_or of an Option is one test of the tag, as the raw form is one test.  {TAG_READ}",
     ),
     Probe(
         "option_take",
-        "a take of an Option of a word through a reference is the check of the tag, one test of the tag, the load of "
-        "the payload and the clear of the Option.  The clear writes the empty Option of 16 bytes with one store of a "
-        "zero vector, so each empty Option of at most 16 bytes has the same bytes, as a compare of the bytes in an "
-        "Atomic cell needs.  The raw form writes the one byte of its flag, so the family side has one more plain "
-        "instruction, the clear of the vector register.  The family form falls through to the take and the raw form "
-        f"falls through to the empty case, so the targets of the branches are different.  {TAG_CHECK}",
-        checks=("fatal",),
-        branches=True,
+        "a take of an Option of a word through a reference is one test of the tag, the load of the payload and the "
+        "clear of the Option.  The clear writes the empty Option of 16 bytes as two zero words, so each empty Option of "
+        "at most 16 bytes has the same bytes, as a compare of the bytes in an Atomic cell needs.  The raw form writes "
+        f"the one byte of its flag, so the family side has one more store.  {TAG_READ}",
+        longer=1,
     ),
     Probe(
         "option_is_some",
-        "is_some of an Option of a word in memory is the check of the tag word after the payload and a test of the "
-        "tag.  The flag of std::optional is a bool, so has_value loads its byte with no compare.  At -O3 the low bit "
-        f"of the checked tag is the bool.  {TAG_CHECK}",
-        checks=("fatal",),
+        "is_some of an Option of a word in memory is the load of the low byte of the tag word after the payload and "
+        "an and of its low bit.  The tag is 0 or 1, so GCC reads the state as that bit.  The flag of std::optional is "
+        f"a bool, so has_value loads its byte with no and.  {TAG_READ}",
+        longer=1,
     ),
     Probe(
         "option_ok_or",
-        "ok_or of an Option is the check of the tag, one test of the tag and one branch, as the raw form is one test "
-        "and one branch.  The two forms put the return of the value and of the error in a different order, so the "
-        "targets of their branches are different.  At -O3, GCC builds the tag and the value of the Result in two "
-        "registers and then merges them with a shift and an or, and the raw form sets the tag with one bts.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
-        branches=True,
+        f"ok_or of an Option is one test of the tag and one branch, as the raw form is one test and one branch.  "
+        f"{TAG_READ}",
     ),
     Probe(
         "option_clear_block",
@@ -1006,26 +995,23 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "option_sealed_match",
-        "the match of an Option of a sealed word comes in two registers and is the check of the tag word and one test "
-        f"of it, as the raw pair of a size and a flag word is one test.  {TAG_CHECK}",
-        checks=("fatal",),
+        "the match of an Option of a sealed word comes in two registers and is one test of the tag word, as the raw "
+        f"pair of a size and a flag word is one test.  {TAG_READ}",
     ),
     Probe(
         "option_equal",
-        "a compare of two Options of a 4-byte payload checks the two tags and compares them, and compares the payloads "
-        "only when both hold one, as the compare of two std::optional does.  The tag is the state, so the family side "
-        "builds no bool of a state.  At -O1, GCC puts the blocks of the family side in a different order, so the "
-        f"targets of its branches are different.  {TAG_CHECK}",
-        checks=("fatal",),
+        "a compare of two Options of a 4-byte payload compares the two tags, and compares the payloads only when both "
+        "hold one, as the compare of two std::optional does.  The tag is the state, so the family side builds no bool "
+        "of a state.  At -O1, GCC puts the blocks of the family side in a different order, so the targets of its "
+        f"branches are different.  {TAG_READ}",
         branches=True,
     ),
     Probe(
         "option_equal_word",
-        "a compare of two Options of a word checks the two tag words and compares them, and compares the payloads "
-        "only when both hold one, as the compare of two std::optional does.  The tag is the state, so the family side "
-        "builds no bool of a state.  At -O1, GCC puts the blocks of the family side in a different order, so the "
-        f"targets of its branches are different.  {TAG_CHECK}",
-        checks=("fatal",),
+        "a compare of two Options of a word compares the two tag words, and compares the payloads only when both hold "
+        "one, as the compare of two std::optional does.  The tag is the state, so the family side builds no bool of a "
+        "state.  At -O1, GCC puts the blocks of the family side in a different order, so the targets of its branches "
+        f"are different.  {TAG_READ}",
         branches=True,
     ),
     Probe(
@@ -1038,28 +1024,18 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "option_try",
-        "CRUCIBLE_TRY of an Option is the check of the tag and one test of the tag.  The value takes a second test of "
-        "the tag in expect, which the optimizer removes, because no code writes the operand between the two tests.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
+        "CRUCIBLE_TRY of an Option is one test of the tag.  The value takes a second test of the tag in expect, which "
+        f"the optimizer removes, because no code writes the operand between the two tests.  {TAG_READ}",
     ),
     Probe(
         "result_try",
-        "CRUCIBLE_TRY of a Result is the check of the tag and one test of the tag, and the optimizer removes the second "
-        "test of the tag in expect.  At -O3, the family form falls through to the return of the value and the raw form "
-        "falls through to the return of the error, so the targets of the branches are different.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
-        branches=True,
+        "CRUCIBLE_TRY of a Result is one test of the tag, and the optimizer removes the second test of the tag in "
+        f"expect.  {TAG_READ}",
     ),
     Probe(
         "result_try_convert",
-        "CRUCIBLE_TRY of a Result whose error converts to the error of the caller is the check of the tag and one test "
-        "of the tag.  The conversion of the error is one zero extension of its byte in each form.  At -O3, the family "
-        "form falls through to the return of the value and the raw form falls through to the return of the error, so "
-        f"the targets of the branches are different.  {TAG_CHECK}",
-        checks=("fatal",),
-        branches=True,
+        "CRUCIBLE_TRY of a Result whose error converts to the error of the caller is one test of the tag.  The "
+        f"conversion of the error is one zero extension of its byte in each form.  {TAG_READ}",
     ),
     Probe(
         "result_expect",
@@ -1069,9 +1045,7 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "result_match",
-        f"the match of a Result is the check of the tag and one test of the tag, as the raw form is one test.  "
-        f"{TAG_CHECK}",
-        checks=("fatal",),
+        f"the match of a Result is one test of the tag, as the raw form is one test.  {TAG_READ}",
     ),
     # The combinators of Option and Result.  The raw side of each pair is the hand match that the combinator replaces.
     Probe("option_map", "map of an Option is the code of the rvalue match whose empty arm gives an empty Option"),
@@ -1100,7 +1074,13 @@ PROBES: tuple[Probe, ...] = (
         "a read through as_ref of an Option is the code of the borrow match, with no test of the null pointer of the Ref",
     ),
     Probe("result_map", "map of a Result is the code of the rvalue match whose error arm gives the error"),
-    Probe("result_map_err", "map_err of a Result is the code of the rvalue match whose value arm gives the value"),
+    Probe(
+        "result_map_err",
+        "map_err of a Result is the code of the rvalue match whose value arm gives the value, with two more "
+        "instructions.  GCC gives each path of map_err its own return with a constant tag, and it moves the tag of the "
+        "source to the hand match in one instruction",
+        longer=2,
+    ),
     Probe(
         "result_try_map_err",
         "CRUCIBLE_TRY over map_err is the code of the hand test of the error and the return of the converted error",
@@ -1114,21 +1094,12 @@ PROBES: tuple[Probe, ...] = (
     Probe("result_is_err_and", "is_err_and of a Result is the code of the borrow match whose value arm gives false"),
     Probe(
         "one_of_match",
-        "the match of a OneOf of three alternatives compares the tag with each of the three indices, and a tag after "
-        "the last index branches to a call of the fatal exit.  The raw form of a tagged storage word takes the last "
-        "alternative with no compare.  A copy of bytes over a plain OneOf can write a tag that names no alternative, "
-        "and the arm of the last alternative would then read the storage as that alternative.  The family form falls "
-        "through to the arm of the first alternative and the raw form jumps to it, so the first branch tests the other "
-        "way",
-        checks=("fatal",),
-        branches=True,
+        "the match of a OneOf of three alternatives compares the tag with the first two indices and takes the last "
+        f"alternative with no compare, as the raw form of a tagged storage word does.  {TAG_READ}",
     ),
     Probe(
         "one_of_which",
-        "which() of a OneOf is the load of its tag and one compare with the count of the alternatives, with a branch "
-        "to a call of the fatal exit.  A copy of bytes over a plain OneOf can write a tag outside the alternatives, and "
-        "the Index that which() gives is trusted with no second check",
-        checks=("fatal",),
+        f"which() of a OneOf is the load of its tag, as the raw form is.  The Index needs no check.  {TAG_READ}",
     ),
     Probe(
         "one_of_get",

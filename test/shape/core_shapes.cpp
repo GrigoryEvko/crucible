@@ -1415,8 +1415,8 @@ result_or_else_raw(fixy::Result<std::uint32_t, Code32> result) noexcept {
                         [](Code32 const& code) noexcept { return code == Code32::late; });
 }
 
-// The match of a OneOf of three alternatives compares the tag with each of
-// the three indices, and a tag after the last index ends the process.
+// The match of a OneOf of three alternatives compares the tag with the first
+// two indices, and it takes the last alternative with no compare.
 [[gnu::used]] std::uint32_t one_of_match(fixy::OneOf<std::uint32_t, Code32, std::uint16_t> reading) noexcept {
     return std::move(reading).match([](std::uint32_t word) noexcept { return word * 3u; },
                                     [](Code32 code) noexcept { return static_cast<std::uint32_t>(code); },
