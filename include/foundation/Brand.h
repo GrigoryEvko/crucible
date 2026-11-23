@@ -186,9 +186,11 @@ struct arena_member_brand {};
 // run-time id or a graph type that takes the brand of its own arena.
 struct arena_family_brand {};
 
-// The mark of an arena class whose first template argument is its brand,
-// BumpArena and EpochArena of foundation/core/BumpArena.h.  The rule
-// brand-escape reads it, with arena_member_brand on that argument.
+// The mark of an owner class with a member tag among its type arguments, such
+// as BumpArena and EpochArena of foundation/core/BumpArena.h, whose first
+// argument is the brand, and SlotMap of foundation/core/SlotMap.h, whose third
+// argument is the brand.  The rule brand-escape reads it, with
+// arena_member_brand on the argument at any position.
 struct branded_arena {};
 
 // The mark of an epoch brand: EpochOf<Tag> of foundation/core/BumpArena.h, the

@@ -83,4 +83,23 @@ unsigned kept_carrier() noexcept {
     return carrier.kept.object == nullptr ? 0u : 1u;
 }
 
+// An owner whose member tag is a later template argument: a second member of
+// one tag, and a local of a table of a member tag.  One member of its own tag
+// gives no line.
+struct TableOwner {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Table<int, Tag> table{};
+};
+
+struct TwoTables {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Table<int, Tag> first{};
+    Table<int, Tag> second{};
+};
+
+unsigned local_table() noexcept {
+    Table<int, TableOwner::Tag> local{};
+    return local.slots;
+}
+
 }  // namespace planted

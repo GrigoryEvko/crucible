@@ -112,6 +112,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/AllocTag.h>
+#include <foundation/core/ArenaTag.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
@@ -143,24 +144,6 @@ concept CanMakeInArena = RefTarget<T> && !std::is_const_v<T> && std::is_triviall
 template <class T, class Marker>
 concept CanFillArenaArray = ViewElement<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
                          && std::is_nothrow_copy_constructible_v<T> && AllocationCapability<Marker>;
-
-// A member arena tag: a complete empty class with the annotation
-// arena_member_brand, and not a family tag.
-template <class Tag>
-concept ArenaMemberTag = ::foundation::brand::IsFreshBrand<Tag>
-                      && ::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand)
-                      && !::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand);
-
-// A family arena tag: a complete empty class with the annotation
-// arena_family_brand, and not a member tag.
-template <class Tag>
-concept ArenaFamilyTag = ::foundation::brand::IsFreshBrand<Tag>
-                      && ::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_family_brand)
-                      && !::foundation::linear::carries_annotation(^^Tag, ^^::foundation::brand::arena_member_brand);
-
-// A named arena tag: a member tag or a family tag.
-template <class Tag>
-concept NamedArenaTag = ArenaMemberTag<Tag> || ArenaFamilyTag<Tag>;
 
 // The brand of a BumpArena: a named arena tag, or the scope brand of
 // with_bump_arena.

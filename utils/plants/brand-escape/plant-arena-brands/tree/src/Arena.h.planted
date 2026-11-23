@@ -28,4 +28,11 @@ struct Option {
     bool is_full = false;
 };
 
+// An owner with the shape of SlotMap: its second template argument is its
+// brand, and the annotation branded_arena marks it.
+template <class T, class Tag>
+struct [[= ::foundation::brand::branded_arena{}]] Table {
+    unsigned slots = 0;
+};
+
 }  // namespace planted

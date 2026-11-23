@@ -9,7 +9,9 @@
 # owner of a member arena (72) reaches the arena with no capture, and a const
 # owner (73) gives no line.  A const pointer to an owner (78) reaches the
 # arena, because C++ const is shallow, and a pointer to a const owner (79)
-# gives no line of the rule.
+# gives no line of the rule.  An owner whose member tag is its second type
+# argument, with the shape of SlotMap, gives a second member of one tag (97)
+# and a local (101), and one member of its own tag (91) gives no line.
 
 compile arenas src/arenas.cpp linear-shapes=on errors=arenas
 flag arenas -freflection
@@ -20,6 +22,8 @@ finding arenas brand-escape arena-member src/arenas.cpp:30:23 | planted::Foreign
 finding arenas brand-escape arena-member src/arenas.cpp:36:24 | planted::Wrapped: arena, the arena of the member tag planted::Wrapped::Tag inside a different type
 finding arenas brand-escape arena-member src/arenas.cpp:40:19 | planted: global_arena, an object of the arena planted::Arena that is no member of the class of planted::Owner::Tag
 finding arenas brand-escape arena-member src/arenas.cpp:43:23 | planted::local_arena: local, an object of the arena planted::Arena that is no member of the class of planted::Owner::Tag
+finding arenas brand-escape arena-member src/arenas.cpp:97:21 | planted::TwoTables: second, a second member of the member tag planted::TwoTables::Tag
+finding arenas brand-escape arena-member src/arenas.cpp:101:33 | planted::local_table: local, an object of the arena planted::Table that is no member of the class of planted::TableOwner::Tag
 finding arenas brand-escape epoch-member src/arenas.cpp:55:35 | planted::NotCarrier: kept, planted::EpochOf
 finding arenas brand-escape epoch-member src/arenas.cpp:59:13 | planted::HoldsCarrier: carrier, planted::EpochOf
 finding arenas brand-escape epoch-member src/arenas.cpp:63:14 | planted::PointsToCarrier: carrier, planted::EpochOf

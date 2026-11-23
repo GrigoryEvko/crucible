@@ -543,10 +543,12 @@
 //     an index, holds no brand in its type, and the rule cannot see it.
 //
 // Arena brands
-//     An arena of include/foundation/core/BumpArena.h carries the annotation
-//     branded_arena of include/foundation/Brand.h, and its first type argument
-//     is its brand.  A member arena tag carries arena_member_brand: it names
-//     the one arena that a class holds as a member.  Two arenas of one tag
+//     An arena of include/foundation/core/BumpArena.h and a SlotMap of
+//     include/foundation/core/SlotMap.h carry the annotation branded_arena of
+//     include/foundation/Brand.h, and a type argument of each one is its
+//     brand: the first argument of an arena, the third of a SlotMap.  A member
+//     arena tag carries arena_member_brand: it names the one owner of the tag
+//     that a class holds as a member.  Two owners of one tag
 //     would share the brand, and a Ref of one would fit a field that names the
 //     other.  An epoch brand carries epoch_brand: EpochOf<Tag> names the bytes
 //     of one epoch of an epoch arena, and the end of the epoch ends them.  A
@@ -4314,20 +4316,25 @@ bool is_borrow_class(tree type) {
         || carries_annotation(attributes, linear_names.refers_deep, linear_names.transfer);
 }
 
-// The member tag of TYPE when TYPE is an arena of a member tag: a class with
-// the annotation branded_arena whose first type argument carries
-// arena_member_brand.  Null for each other type.
+// The member tag of TYPE when TYPE is an owner of a member tag: a class with
+// the annotation branded_arena with a type argument that carries
+// arena_member_brand, at any position, such as the first argument of an
+// arena and the brand of a SlotMap.  The first such argument is the tag.
+// Null for each other type.  Complexity: linear in the type arguments.
 tree member_arena_tag(tree type) {
     if (!carries_brand_mark(type, linear_names.branded_arena)) {
         return NULL_TREE;
     }
     tree info = CLASSTYPE_TEMPLATE_INFO(TYPE_MAIN_VARIANT(type));
     tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    if (arguments == NULL_TREE || TREE_VEC_LENGTH(arguments) < 1) {
-        return NULL_TREE;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument != NULL_TREE && TYPE_P(argument)
+            && carries_brand_mark(argument, linear_names.arena_member_brand)) {
+            return TYPE_MAIN_VARIANT(argument);
+        }
     }
-    tree tag = TREE_VEC_ELT(arguments, 0);
-    return carries_brand_mark(tag, linear_names.arena_member_brand) ? TYPE_MAIN_VARIANT(tag) : NULL_TREE;
+    return NULL_TREE;
 }
 
 // The first arena of a member tag that a value of TYPE holds as an owner:
