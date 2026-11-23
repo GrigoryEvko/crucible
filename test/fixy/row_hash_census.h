@@ -1024,6 +1024,8 @@ inline constexpr StatedZero kZeros[] = {
      "signature"},
     {^^::foundation::core::Unkeyed,
      "the brand of an owner with no key: it is empty, names no instance and is only a template argument"},
+    {^^::foundation::core::states_owner_brand,
+     "the base of a key brand that states the brand of its owners: it is empty and is never a value in a signature"},
     {^^::foundation::core::KeyBrands,
      "the list of the brands of the keys of a body of a root door: it is empty and is only a template argument"},
     {^^::foundation::KeyedBytes,

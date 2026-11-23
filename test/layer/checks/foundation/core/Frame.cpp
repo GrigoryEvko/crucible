@@ -148,6 +148,22 @@ static_assert(ReachesNoLoanKey<LoanKey<OtherBrand>, CheckBrand> && ReachesNoLoan
 static_assert(ReachesNoLoanKey<FixedArray<int, 4, CheckBrand>, CheckBrand>);
 static_assert(!ReachesNoLoanKey<int, ::foundation::brand::DefaultBrand> && !ReachesNoLoanKey<int, Unkeyed>);
 
+// The borrow of a root door: a body that borrows a keyed owner of the brand
+// gets no key of the brand, and a body that holds the owner by value gets
+// one.  A key brand that states the brand of its owners (states_owner_brand)
+// counts a borrow of an owner of that brand too.  A key brand of another
+// brand that states nothing counts only its own owners.
+struct StatedSideBrand final : states_owner_brand<CheckBrand> {};
+struct BorrowsKeyedOwner {
+    FixedArray<int, 4, CheckBrand>& owner;
+};
+struct HoldsKeyedOwner {
+    FixedArray<int, 4, CheckBrand> owner;
+};
+static_assert(!BorrowsNoKeyOwner<BorrowsKeyedOwner, CheckBrand> && BorrowsNoKeyOwner<HoldsKeyedOwner, CheckBrand>);
+static_assert(!BorrowsNoKeyOwner<BorrowsKeyedOwner, StatedSideBrand>);
+static_assert(BorrowsNoKeyOwner<HoldsKeyedOwner, StatedSideBrand> && BorrowsNoKeyOwner<BorrowsKeyedOwner, OtherBrand>);
+
 // A spelling with no key brand is the array of Unkeyed, with no key.  A
 // brand of a mint and a named brand are key brands.
 static_assert(std::is_same_v<FixedArray<int, 4>, FixedArray<int, 4, Unkeyed>>);

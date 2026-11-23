@@ -92,8 +92,12 @@ struct SpscSplitBrand final {};
 
 // The brand of the loan key of one side of the splits of a brand.  The two
 // sides have two brands, so the key of one side opens no frame of the other.
+// The brand states the brand of its splits (states_owner_brand of
+// foundation/core/Frame.h).  The walk of the borrow of a root door reads it,
+// so it counts a split of the brand as an owner of each side brand.  A root
+// door thus mints no key of a side for a body that borrows the split.
 template <class Brand, SpscSide Side>
-struct SpscSideBrand final {};
+struct SpscSideBrand final : ::foundation::core::states_owner_brand<Brand> {};
 
 // The gate of mint_spsc_split: an owner that splits, an allocation capability,
 // and arguments that build the owner.

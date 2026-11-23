@@ -194,6 +194,13 @@
 //   that reaches a key of the brand in either region, because a body could
 //   move its key into a field that the caller reads after the call.  An owner
 //   that moves into the body by value stays admitted (BorrowsNoKeyOwner).
+//   A key brand that opens one side of an owner of another brand, such as
+//   SpscSideBrand of fixy/concurrent/SpscEnds.h, states that brand: it
+//   derives from states_owner_brand<OwnerBrand>.  The walk then counts an
+//   owner of the stated brand as an owner of the key brand, so a body that
+//   borrows a split and names a key of one of its sides gets no second key of
+//   that side.  A statement only makes the walk refuse more bodies, so a
+//   brand that states a brand it does not open weakens no proof.
 //
 // Dispatch brand
 //   The body of a dispatch reaches its owners through outside data, such as the
@@ -334,6 +341,14 @@ struct dispatch_brand final {};
 template <class Brand>
 concept IsDispatchBrand = IsKeyBrand<Brand> && is_dispatch_brand_(^^Brand);
 
+// The statement of a key brand that opens one side of the owners of
+// OwnerBrand (the borrow of a root door): the key brand derives from it.  The
+// statement is a base and not a member alias, because GCC 16 lists no member
+// alias of a specialization whose argument is a fresh brand, and it lists each
+// base.  The class is empty, so a brand that derives from it stays empty.
+template <class OwnerBrand>
+struct states_owner_brand {};
+
 // The key of the frames of the keyed owners of one brand (the loan key).  The
 // class is empty, so it costs no byte and no instruction.  It is linear: each
 // path gives it back to its holder or ends it through a door.  It does not
@@ -435,9 +450,36 @@ namespace detail {
     return false;
 }
 
+// The brand of the owners that a key brand opens (the borrow of a root door):
+// the argument of the base states_owner_brand of the key brand, or the key
+// brand itself when it states none.  A brand that is not complete states
+// nothing.  It is a function that is no template, so no unit can specialize
+// what it gives.  Complexity: linear in the bases of the brand, at compile
+// time only.
+[[nodiscard]] consteval std::meta::info stated_owner_brand_(std::meta::info brand) {
+    namespace refl = ::foundation::reflect;
+    std::meta::info const bare = refl::bare_type(brand);
+    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) {
+        return bare;
+    }
+    for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        bool const is_statement = part.member == std::meta::info{} && std::meta::has_template_arguments(part.type)
+                               && std::meta::template_of(part.type) == ^^states_owner_brand;
+        if (is_statement) {
+            refl::TypeNodeList const arguments = refl::argument_components_of(part);
+            if (arguments.size() == 1) {
+                return arguments.begin()[0].type;
+            }
+        }
+    }
+    return bare;
+}
+
 // True for a keyed owner of the brand or a key of the brand: a complete class
-// with loan_key_mark whose template arguments name the brand.
-[[nodiscard]] consteval bool is_owner_or_key_of_(std::meta::info type, std::meta::info brand) {
+// with loan_key_mark whose template arguments name the brand, or the brand
+// of its owners that the brand states (stated_owner_brand_).
+[[nodiscard]] consteval bool is_owner_or_key_of_(std::meta::info type, std::meta::info brand,
+                                                 std::meta::info owner_brand) {
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) {
         return false;
     }
@@ -446,7 +488,7 @@ namespace detail {
     }
     ::foundation::reflect::TypeNode const node{type, false};
     for (::foundation::reflect::TypeNode const& argument : ::foundation::reflect::argument_components_of(node)) {
-        if (!argument.is_value_argument && argument.type == brand) {
+        if (!argument.is_value_argument && (argument.type == brand || argument.type == owner_brand)) {
             return true;
         }
     }
@@ -461,7 +503,8 @@ enum class BorrowRegion : unsigned char {
 };
 
 // True when the walk of the borrow of a root door reaches an owner of the
-// brand or a key of the brand through a borrow, or a class whose members it
+// brand or a key of the brand through a borrow (is_owner_or_key_of_, with
+// the brand of the owners that the brand states), or a class whose members it
 // cannot read.  Each node has a region, and the walk keeps one list for each
 // region, so a type read in one region is read again in the other:
 //   * the root is held.  A base and a member by value have the region of
@@ -491,6 +534,7 @@ enum class BorrowRegion : unsigned char {
     constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
     constexpr BorrowRegion held = BorrowRegion::held;
     constexpr BorrowRegion borrowed = BorrowRegion::borrowed;
+    std::meta::info const owner_brand = stated_owner_brand_(brand);
     refl::TypeNodeList held_nodes;
     refl::TypeNodeList borrowed_nodes;
     std::size_t next_held = 0;
@@ -519,7 +563,7 @@ enum class BorrowRegion : unsigned char {
         if ((is_class && !node.may_read_members) || refl::holds_unreadable_state(node)) {
             return true;
         }
-        if (region == borrowed && is_owner_or_key_of_(type, brand)) {
+        if (region == borrowed && is_owner_or_key_of_(type, brand, owner_brand)) {
             return true;
         }
         bool const is_box = is_class && tr::detail::states(type, ^^tr::by_arguments);
