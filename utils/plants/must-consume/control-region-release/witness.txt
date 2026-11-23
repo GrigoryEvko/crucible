@@ -1,0 +1,8 @@
+# A constructor of a holder template that takes a region by an rvalue
+# reference, reads its run, and ends it at its release door, an rvalue member,
+# gives no line of the rule must-consume, for each of its two tags: the call
+# of the rvalue member consumes the region.  The constructor of SharedRegion of
+# fixy/SharedRegion.h has this form.
+compile release src/release.cpp must-consume=on
+flag release -freflection
+exit release pass

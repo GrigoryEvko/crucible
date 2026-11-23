@@ -1,0 +1,75 @@
+// A holder template takes a region, a class that carries the annotation
+// linear, by an rvalue reference.  It reads the run of the region first, and
+// then it ends the region at its release door, an rvalue member, which gives
+// the token to the holder.  The call of the rvalue member consumes the
+// region, so no instance of the holder gives a line, for each tag.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+template <class Tag>
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+template <class Tag>
+class [[= ::foundation::linear::linear{}]] Region {
+public:
+    constexpr Region(int run, Token<Tag>&& token) noexcept : run_{run}, token_{std::move(token)} {}
+    constexpr Region(Region&&) noexcept = default;
+    constexpr Region& operator=(Region&& other) noexcept {
+        run_ = other.run_;
+        return *this;
+    }
+    Region(const Region&) = delete;
+
+    [[nodiscard]] constexpr int take_run() noexcept {
+        int const taken = run_;
+        run_ = 0;
+        return taken;
+    }
+    [[nodiscard]] constexpr Token<Tag> release() && noexcept { return std::move(token_); }
+
+private:
+    int run_ = 0;
+    Token<Tag> token_;
+};
+
+template <class Tag>
+class Holder {
+public:
+    constexpr explicit Holder(Region<Tag>&& region) noexcept
+        : run_{region.take_run()}, token_{std::move(region).release()} {}
+
+    [[nodiscard]] constexpr int run() const noexcept { return run_ + token_.handle; }
+    [[nodiscard]] constexpr Token<Tag> release() && noexcept { return std::move(token_); }
+
+private:
+    int run_ = 0;
+    Token<Tag> token_;
+};
+
+struct FirstTag {};
+struct SecondTag {};
+
+[[nodiscard]] int hold_two() noexcept {
+    Holder<FirstTag> first{Region<FirstTag>{1, Token<FirstTag>{2}}};
+    Holder<SecondTag> second{Region<SecondTag>{3, Token<SecondTag>{4}}};
+    int const total = first.run() + second.run();
+    ::foundation::linear::drop(std::move(first).release());
+    ::foundation::linear::drop(std::move(second).release());
+    return total;
+}
+
+}  // namespace planted
+
+int main() { return planted::hold_two() == 10 ? 0 : 1; }

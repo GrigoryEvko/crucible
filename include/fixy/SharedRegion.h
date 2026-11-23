@@ -187,9 +187,11 @@ public:
     // write beside a share.  This is the shape SharedPermissionPool uses for the
     // same reason, and it is why this class is not on the witness
     // roster: a constructor that consumes its own evidence guards
-    // nothing a private one would guard better.
+    // nothing a private one would guard better.  The run comes out first,
+    // and then the release door consumes the region and gives its
+    // permission to the pool, so the region ends at a door of its own.
     constexpr explicit SharedRegion(OwnedRegion<T, Tag, Brand>&& region) noexcept
-        : run_{take_run_(region)}, pool_{std::move(region.perm_)} {}
+        : run_{take_run_(region)}, pool_{std::move(region).release()} {}
 
     // A caller who offers the region without surrendering it means to go
     // on reading it exclusively, and the rvalue reference alone answers
