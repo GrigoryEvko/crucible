@@ -481,9 +481,7 @@ public:
     // next gets a region, diverges, does a rollback or loads.  Each of those
     // writes the regions that the foreground holds, and the publish stage can
     // then release the region.  No region before the first publication.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> active_region() const noexcept {
-        return newest_region_();
-    }
+    [[nodiscard]] ::fixy::Option<DagRef<const RegionNode>> active_region() const noexcept { return newest_region_(); }
 
     // Advanced only by the background thread, once per region transition.
     [[nodiscard]] uint64_t current_step() const noexcept { return step_.get(); }
@@ -543,7 +541,7 @@ public:
     // with no guard mismatch.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        for (const ::fixy::Ref<const RegionNode> region : newest_region_()) {
+        for (const DagRef<const RegionNode> region : newest_region_()) {
             return crucible::replay(*region, std::forward<GuardEval>(eval_guard),
                                     std::forward<RegionExec>(exec_region));
         }
@@ -563,7 +561,7 @@ public:
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
         return cipher_.with_mut(
             [this, &ctx](auto cipher) noexcept {
-                for (const ::fixy::Ref<const RegionNode> region : active_region()) {
+                for (const DagRef<const RegionNode> region : active_region()) {
                     return persist_into_(ctx, **cipher, region);
                 }
                 return false;
@@ -592,8 +590,8 @@ public:
                 release_unheld_loads_();
                 ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
                     ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, LOAD_BLOCK_BYTES);
-                const ::fixy::Option<::fixy::Ref<RegionNode>> loaded = load_head_(ctx, a, **cipher, *arena);
-                for (const ::fixy::Ref<RegionNode> region : loaded) {
+                const ::fixy::Option<DagRef<RegionNode>> loaded = load_head_(ctx, a, **cipher, *arena);
+                for (const DagRef<RegionNode> region : loaded) {
                     // Each region cut before the load holds ops that ran before it.
                     bg_.request_mark(ring_total_produced());
                     adopt_region_(fg, *region);
@@ -828,7 +826,7 @@ private:
 
     // The body of active_region.  The producer thread is the one writer of
     // the requested reset, so on that thread the comparison cannot race it.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<const RegionNode>> newest_region_() const noexcept {
+    [[nodiscard]] ::fixy::Option<DagRef<const RegionNode>> newest_region_() const noexcept {
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
             // The foreground reads a region of the pipeline only as const.
@@ -847,7 +845,7 @@ private:
     // The store is only ever made from open(), so holding one already
     // proves it is open.  One mint of the open view serves both calls.
     template <class Ctx, class Store>
-    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, ::fixy::Ref<const RegionNode> region) {
+    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, DagRef<const RegionNode> region) {
         auto open_view = store.mint_open_view(ctx);
         const ContentHash hash = store.store(ctx, open_view, Store::content_addressed(region));
         if (!hash) return false;
@@ -855,18 +853,18 @@ private:
     }
 
     template <class Ctx, class Store>
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
-                                                                     Store& store, ::fixy::BumpArena<DagArena>& arena) {
+    [[nodiscard]] ::fixy::Option<DagRef<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
+                                                                Store& store, ::fixy::BumpArena<DagArena>& arena) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
         // A refusal gives no region, and the report tells the person why the
         // store gave no region of its head.
         const auto loaded = store.load_content_addressed(ctx, open_view, a, store.head(), arena);
         return loaded.match(
-            [](auto const& payload) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
-                return ::fixy::Option<::fixy::Ref<RegionNode>>::some(payload.get());
+            [](auto const& payload) -> ::fixy::Option<DagRef<RegionNode>> {
+                return ::fixy::Option<DagRef<RegionNode>>::some(payload.get());
             },
-            [](LoadError reason) -> ::fixy::Option<::fixy::Ref<RegionNode>> {
+            [](LoadError reason) -> ::fixy::Option<DagRef<RegionNode>> {
                 ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store gives no region of its head: {}\n",
                                load_error_text(reason));
                 return ::fixy::none;
@@ -1124,7 +1122,7 @@ private:
         const ConstRegionLink alt = region_cache_.find_alternate(div_pos, schema_hash, shape_hash, diverged);
 
         bool is_switched = false;
-        for (const ::fixy::Ref<const RegionNode>& region : alt)
+        for (const DagRef<const RegionNode>& region : alt)
             is_switched = try_switch_region_(fg, *region, div_pos);
         if (is_switched) {
             // The switch leaves the context compiled, so advance past the
@@ -1210,7 +1208,7 @@ private:
         eager_ = live;
         const NumericsHash numerics = compute_numerics_hash(cfg_.numerics, live);
         cache_pending_region_();
-        for (const ::fixy::Ref<const RegionNode>& walked : pending_activation_)
+        for (const DagRef<const RegionNode>& walked : pending_activation_)
             region_cache_.insert(*walked);
         pending_activation_ = ::fixy::none;
         alignment_pos_ = alignment_pos_at(0);
@@ -1254,7 +1252,7 @@ private:
             region_cache_.insert(region);
             return;
         }
-        const ConstRegionLink taken = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
+        const ConstRegionLink taken = ConstRegionLink::some(::fixy::to(region));
         taken_region_.store_release(taken);
         if (region.num_ops() == 0) return;
 
@@ -1263,7 +1261,7 @@ private:
         // a region at each iteration boundary of a backlog, and each one has
         // the same ops, so a restart at each one would lose the matched ops.
         const bool continues_walk =
-            pending_activation_.is_some_and([&region, this](::fixy::Ref<const RegionNode> const& walked) noexcept {
+            pending_activation_.is_some_and([&region, this](DagRef<const RegionNode> const& walked) noexcept {
                 return holds_walk_(*walked, region, alignment_pos_.value());
             });
         pending_activation_ = taken;
@@ -1399,11 +1397,11 @@ private:
         list_external_reads_(region, resume_op);
         list_bound_scalars_(region, resume_op);
         if (region.plan.is_none()) return;
-        const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
         // The id of a slot is its position in the plan, which the inputs of
         // the ops name.
-        const ::fixy::View<const TensorSlot> plan_slots = plan->slots;
+        const ::fixy::View<const TensorSlot> plan_slots = plan->slots.view();
         for (uint32_t position = 0; position < plan_slots.size(); position++) {
             for (const ExternalSlotId target : mint_external_slot(plan_slots, SlotId{position})) {
                 ::fixy::Option<TensorData> data{::fixy::none};
@@ -1441,8 +1439,8 @@ private:
     // fill, so the list takes one allocation.
     [[gnu::cold]] void list_external_reads_(const RegionNode& region, uint32_t resume_op) {
         ::fixy::View<const TensorSlot> plan_slots{};
-        for (const ::fixy::Ref<MemoryPlan const> plan : region.plan)
-            plan_slots = plan->slots;
+        for (const DagRef<MemoryPlan const> plan : region.plan)
+            plan_slots = plan->slots.view();
         const auto each_read = [&region, plan_slots](auto&& on_read) {
             for (uint32_t i = 0; i < region.num_ops(); i++) {
                 const TraceEntry& te = region.op_at(i);

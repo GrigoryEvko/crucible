@@ -22,12 +22,11 @@ namespace crucible::fuzz::boundary {
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
     const auto alloc = test_alloc();
     const auto arms = static_cast<std::uint32_t>(values.size());
-    const auto branch = arena.make<BranchNode>(alloc);
+    const auto branch = mint_dag_node<BranchNode>(alloc, arena);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
     const auto arms_run = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    branch->set_arms(arms_run.view());
+    branch->set_arms(arms_run);
     for (std::uint32_t i = 0; i < arms; ++i)
         *branch->arms().get(i).expect("i is below the count of arms") =
             BranchNode::Arm{*values.get(i).expect("i is below the count of values"), TraceLink{}};
@@ -74,8 +73,8 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
     const auto alloc = test_alloc();
-    const ::fixy::Option<::fixy::Ref<BranchNode>> loaded = deserialize_branch(alloc, input, arena).ok();
-    for (const ::fixy::Ref<BranchNode> branch : loaded) {
+    const ::fixy::Option<DagRef<BranchNode>> loaded = deserialize_branch(alloc, input, arena).ok();
+    for (const DagRef<BranchNode> branch : loaded) {
         CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
         CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
@@ -84,12 +83,12 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
             return serialize_branch(::fixy::to(*branch), run.view());
         });
         CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
-        const ::fixy::Option<::fixy::Ref<BranchNode>> reloaded =
+        const ::fixy::Option<DagRef<BranchNode>> reloaded =
             deserialize_branch(alloc, image.view().window(0, written).expect("the writer writes inside its image"),
                                arena)
                 .ok();
         CRUCIBLE_FUZZ_CLAIM("branch", reloaded.is_some());
-        for (const ::fixy::Ref<BranchNode> again : reloaded) {
+        for (const DagRef<BranchNode> again : reloaded) {
             CRUCIBLE_FUZZ_CLAIM("branch", again->num_arms() == branch->num_arms());
             CRUCIBLE_FUZZ_CLAIM("branch", again->merkle_hash == branch->merkle_hash);
             for (std::uint32_t i = 0; i < branch->num_arms(); ++i) {

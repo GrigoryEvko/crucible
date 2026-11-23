@@ -86,22 +86,20 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
         m = make_synthetic_meta(ndim);
     const auto producers_run = arena.array(a, n_in, OpIndex{});
     const auto input_slots_run = arena.array(a, n_in, SlotId{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    te.set_inputs(input_metas, producers_run.view(), input_slots_run.view());
+    te.set_inputs(input_metas_run, producers_run, input_slots_run);
     const auto output_metas_run = arena.array(a, n_out, TensorMeta{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
     for (TensorMeta& m : output_metas)
         m = make_synthetic_meta(ndim);
     const auto output_slots_run = arena.array(a, n_out, SlotId{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    te.set_outputs(output_metas, output_slots_run.view());
+    te.set_outputs(output_metas_run, output_slots_run);
     const auto scalars_run = arena.array(a, n_scalar, int64_t{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<int64_t> scalars = scalars_run.view();
     for (int64_t& value : scalars)
         value = static_cast<int64_t>(bench_rand());
-    te.set_scalar_args(scalars);
+    te.set_scalar_args(scalars_run);
     return te;
 }
 
@@ -193,7 +191,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
         return bench::run("make_region (481 ops)", [&] {
             ::fixy::BumpArena<DagArena> region_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
-            const ::fixy::Ref<RegionNode> r = make_region(test.alloc, region_arena, ops);
+            const DagRef<RegionNode> r = make_region(test.alloc, region_arena, ops_run);
             bench::do_not_optimize(r);
         });
     }());
@@ -210,7 +208,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
         for (uint32_t i = 0; i < N; i++)
             *ops.get(i).expect("i is below N") = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
-        const ::fixy::Ref<RegionNode> region = make_region(test.alloc, dag_arena, ops);
+        const DagRef<RegionNode> region = make_region(test.alloc, dag_arena, ops_run);
         return bench::run("compute_merkle_hash (RegionNode)", [&] {
             auto h = compute_merkle_hash(*region);
             bench::do_not_optimize(h);
@@ -286,12 +284,14 @@ int run_bench(::fixy::os::Args const& arguments) {
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> copy = copy_run.view();
             ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
-            MemoryPlan plan_storage{};
+            // The plan is in the arena of the slots that it borrows, so it
+            // ends with them.
+            const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(test.alloc);
             BackgroundThread::PlanTarget const target = bg.plan_target();
             sweep_scratch.arena.with_epoch(
-                [target, alloc = test.alloc, &plan_storage, copy](PlanScratch::Epoch& epoch) noexcept {
-                    const ::fixy::Ref<MemoryPlan> plan =
-                        BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, copy)
+                [target, alloc = test.alloc, plan_storage, copy_run](PlanScratch::Epoch& epoch) noexcept {
+                    const DagRef<MemoryPlan> plan =
+                        BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, copy_run)
                             .expect("the slots of the bench fit in 64 bits");
                     bench::do_not_optimize(plan);
                 });
@@ -459,8 +459,13 @@ int run_bench(::fixy::os::Args const& arguments) {
 
             BackgroundThread bg{::foundation::effects::testing::test().alloc};
             bg.bind_meta_log(meta_log);
-            const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
-            TraceScratch scratch{Bytes{arena_bytes}};
+            // The block takes 256 bytes for each op, and at least 1 MiB.  The
+            // floor is a constant, and the bytes of the ops above the floor
+            // are the part of run time.
+            constexpr size_t kFloorBytes = size_t{1} << 20;
+            constexpr ::fixy::ArenaBlockSize kFloor{Bytes{kFloorBytes}};
+            const size_t op_bytes = static_cast<size_t>(trace.num_ops) * 256;
+            TraceScratch scratch{kFloor.plus(Bytes{op_bytes - ::fixy::min(op_bytes, kFloorBytes)})};
             // The body captures the state of the build and the metadata log
             // by a const reference, and not the BackgroundThread.
             BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());

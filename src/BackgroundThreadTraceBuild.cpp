@@ -164,13 +164,10 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it
     // with no check.
-    const auto op_arena_run = region_arena->array(a, count, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<TraceEntry> op_run = op_arena_run.view();
-    const auto op_data = trace_data.parallel(op_run).expect("the op run holds one op for each entry");
+    const ::fixy::ArenaRun<TraceEntry, DagArena> op_arena_run = region_arena->array(a, count, TraceEntry{});
+    const auto op_data = trace_data.parallel(op_arena_run.view()).expect("the op run holds one op for each entry");
 
-    const auto meta_arena_run = region_arena->array(a, total_metas, TensorMeta{});
-    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::ArenaRun<TensorMeta, DagArena> meta_arena_run = region_arena->array(a, total_metas, TensorMeta{});
     const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
     if (first_meta.is_valid()) {
         meta_log.copy_run(first_meta.raw(), meta_run);
@@ -179,16 +176,12 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     // The other runs of the ops: the scalars, the producer of each input,
     // and the slot ids of the inputs and then the outputs of each op.  Each
     // op takes its windows in order, so a cursor for each run gives the
-    // start of the next window.
-    const auto scalar_arena_run = region_arena->array(a, total_scalars, int64_t{0});
-    const auto producer_arena_run = region_arena->array(a, total_inputs, OpIndex{});
-    const auto slot_arena_run = region_arena->array(a, total_inputs + total_outputs, SlotId{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
+    // start of the next window.  Each window is a run of the region arena,
+    // which the entry of the op takes.
+    const ::fixy::ArenaRun<int64_t, DagArena> scalar_arena_run = region_arena->array(a, total_scalars, int64_t{0});
+    const ::fixy::ArenaRun<OpIndex, DagArena> producer_arena_run = region_arena->array(a, total_inputs, OpIndex{});
+    const ::fixy::ArenaRun<SlotId, DagArena> slot_arena_run =
+        region_arena->array(a, total_inputs + total_outputs, SlotId{});
     size_t scalar_cursor = 0;
     size_t producer_cursor = 0;
     size_t slot_cursor = 0;
@@ -280,43 +273,53 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
 
         // The scalars of each op go into its entry, also for an op with no
         // tensors, so they fold into the content hash.
-        const ::fixy::View<int64_t> scalars =
-            scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
+        const ::fixy::ArenaRun<int64_t, DagArena> scalars =
+            scalar_arena_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
         scalar_cursor += n_scalars;
-        ::fixy::copy(scalars, re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
+        ::fixy::copy(scalars.view(),
+                     re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
             .expect("the two runs hold the scalars of the op");
         te.set_scalar_args(scalars);
         // The tags and the data slots of the copied slots.
         te.scalar_kinds = re.scalar_kinds();
 
-        // The windows of this op.  An op with no metadata has no tensors,
-        // because the scan refused an op with tensors and no metadata index.
-        // It keeps the empty Views and the counts of zero, and its loops
-        // below run no step.
-        ::fixy::View<TensorMeta> input_metas{};
-        ::fixy::View<TensorMeta> output_metas{};
-        ::fixy::View<OpIndex> producers{};
-        ::fixy::View<SlotId> input_slot_ids{};
-        ::fixy::View<SlotId> output_slot_ids{};
+        // The windows of this op, as runs of the region arena.  An op with no
+        // metadata has no tensors, because the scan refused an op with
+        // tensors and no metadata index.  It keeps the empty runs and the
+        // counts of zero, and its loops below run no step.
+        ::fixy::ArenaRun<TensorMeta, DagArena> input_meta_window{};
+        ::fixy::ArenaRun<TensorMeta, DagArena> output_meta_window{};
+        ::fixy::ArenaRun<OpIndex, DagArena> producer_window{};
+        ::fixy::ArenaRun<SlotId, DagArena> input_slot_window{};
+        ::fixy::ArenaRun<SlotId, DagArena> output_slot_window{};
         if (ms.is_valid()) {
             uint16_t n_in = re.num_inputs;
             uint16_t n_out = re.num_outputs;
 
             const uint64_t meta_offset = ms.raw() - first_meta.raw();
-            input_metas = meta_run.window(meta_offset, n_in).expect("the copied run holds the metadata of each op");
-            output_metas =
-                meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds the metadata of each op");
+            input_meta_window =
+                meta_arena_run.window(meta_offset, n_in).expect("the copied run holds the metadata of each op");
+            output_meta_window =
+                meta_arena_run.window(meta_offset + n_in, n_out).expect("the copied run holds the metadata of each op");
 
-            producers = producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs of each op");
+            producer_window =
+                producer_arena_run.window(producer_cursor, n_in).expect("the scan counted the inputs of each op");
             producer_cursor += n_in;
-            input_slot_ids = slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs of each op");
+            input_slot_window =
+                slot_arena_run.window(slot_cursor, n_in).expect("the scan counted the inputs of each op");
             slot_cursor += n_in;
-            output_slot_ids = slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs of each op");
+            output_slot_window =
+                slot_arena_run.window(slot_cursor, n_out).expect("the scan counted the outputs of each op");
             slot_cursor += n_out;
 
-            te.set_inputs(input_metas, producers, input_slot_ids);
-            te.set_outputs(output_metas, output_slot_ids);
+            te.set_inputs(input_meta_window, producer_window, input_slot_window);
+            te.set_outputs(output_meta_window, output_slot_window);
         }
+        const ::fixy::View<TensorMeta> input_metas = input_meta_window.view();
+        const ::fixy::View<TensorMeta> output_metas = output_meta_window.view();
+        const ::fixy::View<OpIndex> producers = producer_window.view();
+        const ::fixy::View<SlotId> input_slot_ids = input_slot_window.view();
+        const ::fixy::View<SlotId> output_slot_ids = output_slot_window.view();
 
         // Prefetch the map slots the next op will probe.  Processing the
         // current op gives the lines time to arrive.  The last op has no
@@ -575,7 +578,8 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     }
 
     const ::fixy::Ref<TraceGraph> graph = alloc_trace_graph(a, scratch);
-    graph->ops = op_run;
+    // A plain View of an arena run: the View carries no brand of its arena.
+    graph->ops = op_arena_run.view();
     graph->slots = tensor_slots;
     graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
@@ -585,19 +589,12 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
 
     // The arena moves into the region with its runs.  A move of a Box moves
     // no byte of the arena.
-    BuiltRegion::Runs runs{};
-    runs.set_count<BuiltRegion::kOps>(count);
-    runs.set<BuiltRegion::kOps>(op_run);
-    runs.set_count<BuiltRegion::kMetas>(total_metas);
-    runs.set<BuiltRegion::kMetas>(meta_run);
-    runs.set_count<BuiltRegion::kScalars>(total_scalars);
-    runs.set<BuiltRegion::kScalars>(scalar_run);
-    runs.set_count<BuiltRegion::kProducers>(total_inputs);
-    runs.set<BuiltRegion::kProducers>(producer_run);
-    runs.set_count<BuiltRegion::kSlotIds>(total_inputs + total_outputs);
-    runs.set<BuiltRegion::kSlotIds>(slot_run);
-    runs.set_count<BuiltRegion::kSlots>(num_slots);
-    runs.set<BuiltRegion::kSlots>(tensor_slots);
+    const BuiltRegion::Runs runs{.ops = op_arena_run,
+                                 .metas = meta_arena_run,
+                                 .scalars = scalar_arena_run,
+                                 .producers = producer_arena_run,
+                                 .slot_ids = slot_arena_run,
+                                 .slots = tensor_slots_run};
     return BuiltTrace{
         .graph = graph,
         .region = BuiltRegion{BuiltRegion::Parts{

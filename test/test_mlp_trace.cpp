@@ -63,11 +63,11 @@ int main() {
     flush_and_wait_region_published(kTest, vigil);
 
     ::fixy::report(::fixy::Sink::Out, "\n   >>> Iteration boundary detected! <<<\n");
-    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    const DagRef<const RegionNode> region = vigil.active_region().expect("the flush published a region");
     ::fixy::report(::fixy::Sink::Out, "   BackgroundThread built RegionNode with {} ops\n", region->num_ops());
 
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
-    const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
+    const DagRef<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     ::fixy::report(::fixy::Sink::Out, "\n── Memory Plan ──\n");
     ::fixy::report(::fixy::Sink::Out, "   Pool size: {} bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
@@ -78,7 +78,7 @@ int main() {
 
     ::fixy::report(::fixy::Sink::Out, "\n   Slot details:\n");
     uint32_t s = 0;
-    for (const TensorSlot& slot : plan->slots) {
+    for (const TensorSlot& slot : plan->slots.view()) {
         ::fixy::report(::fixy::Sink::Out, "     [{}] {}  {} bytes  birth=op{}  death=op{}", s,
                        slot.is_external ? ::fixy::TextView{"EXTERN"} : ::fixy::TextView{"INTERN"},
                        static_cast<unsigned long long>(slot.nbytes), slot.birth_op.raw(), slot.death_op.raw());

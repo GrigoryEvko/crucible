@@ -7,9 +7,14 @@
 
 #include <fixy/handle/Published.h>
 
+#include <foundation/core/Ref.h>
+
 namespace {
 
+struct Store final {};
+
 struct HoldsBorrow {
+    using brand_type = Store;
     int& target;
 };
 
@@ -22,6 +27,6 @@ struct PublishesAddresses {
 int main() {
     int value = 0;
     HoldsBorrow const object{value};
-    const auto published = ::fixy::handle::mint_published(PublishesAddresses{}, object);
+    const auto published = ::fixy::handle::mint_published(PublishesAddresses{}, ::foundation::core::to(object));
     return published.get().target;
 }

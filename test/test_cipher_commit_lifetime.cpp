@@ -61,7 +61,7 @@ using ::fixy::cipher_tier::Warm;
 static auto g_test = ::foundation::effects::testing::test();
 
 // The region that a lifetime band holds.  A Ref is never null.
-using RegionRef = ::fixy::Ref<const RegionNode>;
+using RegionRef = crucible::DagRef<const RegionNode>;
 
 // The root of the store of one test: a new temporary directory of the base,
 // and the path of the store of the test in it.  The open of the store makes
@@ -109,20 +109,20 @@ static StoreRoot tmp_root_for(::fixy::TextView tag) {
 // Distinct hash_seed values give distinct schema hashes, and therefore
 // distinct content hashes, so each test writes its own object file
 // instead of colliding with a sibling's.
-static ::fixy::Ref<RegionNode> mint_region(::fixy::BumpArena<DagArena>& arena, uint64_t hash_seed) {
+static crucible::DagRef<RegionNode> mint_region(::fixy::BumpArena<DagArena>& arena, uint64_t hash_seed) {
     const auto ops_run = arena.array<crucible::TraceEntry>(g_test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
     crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");
     op.schema_hash = crucible::SchemaHash{hash_seed * 0x9E3779B97F4A7C15ULL};
-    return crucible::make_region(g_test.alloc, arena, ops);
+    return crucible::make_region(g_test.alloc, arena, ops_run);
 }
 
 static void test_commit_per_fleet_type_identity() {
     auto tmp = tmp_root_for("t01");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 1);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 1);
 
     auto wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -139,7 +139,7 @@ static void test_commit_per_program_type_identity() {
     auto tmp = tmp_root_for("t02");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 2);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 2);
 
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
 
@@ -160,7 +160,7 @@ static void test_commit_per_request_type_identity() {
     auto tmp = tmp_root_for("t03");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 3);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 3);
 
     auto wrapped = pinned<Lifetime_v::PER_REQUEST>(region);
 
@@ -174,7 +174,7 @@ static void test_fleet_satisfies_request() {
     auto tmp = tmp_root_for("t04");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 4);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 4);
 
     auto fleet_wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -189,7 +189,7 @@ static void test_fleet_satisfies_program() {
     auto tmp = tmp_root_for("t05");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 5);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 5);
 
     auto fleet_wrapped = pinned<Lifetime_v::PER_FLEET>(region);
 
@@ -203,7 +203,7 @@ static void test_program_satisfies_request() {
     auto tmp = tmp_root_for("t06");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 6);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 6);
 
     auto program_wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
 
@@ -216,7 +216,7 @@ static void test_program_self_match() {
     auto tmp = tmp_root_for("t07");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 7);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 7);
 
     auto wrapped = pinned<Lifetime_v::PER_PROGRAM>(region);
     auto result = c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), std::move(wrapped));
@@ -230,7 +230,7 @@ static void test_single_open_view_type_identity() {
     Cipher c = open_cipher(tmp);
     auto view = c.mint_open_view(store_ctx());
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 8);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 8);
 
     auto w_fleet = pinned<Lifetime_v::PER_FLEET>(region);
     auto w_program = pinned<Lifetime_v::PER_PROGRAM>(region);
@@ -249,7 +249,7 @@ static void test_round_trip_via_program_commit() {
     auto tmp = tmp_root_for("t09");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 9);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 9);
     ContentHash original_hash = region->content_hash;
     auto view = c.mint_open_view(store_ctx());
 
@@ -259,7 +259,7 @@ static void test_round_trip_via_program_commit() {
     CRUCIBLE_TEST_ASSERT(kTest, written == original_hash);
 
     ::fixy::BumpArena<DagArena> loader_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> loaded =
+    const crucible::DagRef<RegionNode> loaded =
         c.load_content_addressed(store_ctx(), view, g_test.alloc, written, loader_arena)
             .expect("the store loads the region it wrote")
             .get();
@@ -333,7 +333,7 @@ static void test_relax_down_then_commit_per_request() {
     auto tmp = tmp_root_for("t16");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 16);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 16);
 
     auto fleet = pinned<Lifetime_v::PER_FLEET>(region);
     auto program = ::fixy::relax<Lifetime_v::PER_PROGRAM>(std::move(fleet));
@@ -373,7 +373,7 @@ static void test_idempotent_commit_per_program() {
     auto tmp = tmp_root_for("t18");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 18);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 18);
 
     auto first =
         c.commit_per_program(store_ctx(), c.mint_open_view(store_ctx()), pinned<Lifetime_v::PER_PROGRAM>(region));
@@ -408,7 +408,7 @@ static void test_api_completeness_matrix() {
     auto tmp = tmp_root_for("t20");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 20);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 20);
 
     using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, RegionRef>;
     using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, RegionRef>;
@@ -432,7 +432,7 @@ static void test_content_hash_equality_across_overlay() {
     auto tmp = tmp_root_for("t15");
     Cipher c = open_cipher(tmp);
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
-    const ::fixy::Ref<RegionNode> region = mint_region(arena, 0xCAFEBABEULL);
+    const crucible::DagRef<RegionNode> region = mint_region(arena, 0xCAFEBABEULL);
     auto view = c.mint_open_view(store_ctx());
     ContentHash bare_hash = c.store(store_ctx(), view, Cipher::content_addressed(region));
 

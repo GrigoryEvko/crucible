@@ -834,7 +834,7 @@ witness <foundation/core/Ref.h> private | foundation::core::detail::BoxKey | fou
 # of the authority builds one.  Only a Box builds a word that holds an object.
 witness <foundation/core/Ref.h> private | foundation::core::box_word_key<forge::brand> | foundation::core::box_word_key<forge::brand>{}
 witness <fixy/handle/Published.h> private | fixy::handle::published_key | fixy::handle::published_key{}
-witness <fixy/handle/Published.h> no-match | fixy::handle::PublishedObject<const int> | fixy::handle::PublishedObject<const int>{forge::lvalue<foundation::core::Ref<const int, forge::brand>>()}
+witness <fixy/handle/Published.h> no-match | fixy::handle::PublishedObject<const int, forge::brand> | fixy::handle::PublishedObject<const int, forge::brand>{forge::lvalue<foundation::core::Ref<const int, forge::brand>>()}
 witness <foundation/core/Ref.h> private | foundation::core::BoxWord<int, forge::brand> | foundation::core::BoxWord<int, forge::brand>{forge::rvalue<int*>()}
 # A Hole has no constructor from a pointer, so the destructor and consume()
 # free only storage that a Hole or a Box allocated.  Each constructor of a

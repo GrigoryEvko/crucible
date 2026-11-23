@@ -128,7 +128,7 @@ void test_cache_dedup_and_cap() {
 
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    const auto region = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+    const auto region = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
     region->content_hash = ContentHash{0x1234};
 
     cache.insert(*region);
@@ -139,7 +139,7 @@ void test_cache_dedup_and_cap() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == 1);
 
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
-        const auto r = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+        const auto r = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
         r->content_hash = ContentHash{0x1234 + i};
         cache.insert(*r);
     }
@@ -147,7 +147,7 @@ void test_cache_dedup_and_cap() {
 
     // Insertion past the capacity evicts the oldest entry instead of
     // growing.
-    const auto overflow = make_region(test.alloc, arena, ::fixy::View<TraceEntry>{});
+    const auto overflow = make_region(test.alloc, arena, ::fixy::ArenaRun<TraceEntry const, DagArena>{});
     overflow->content_hash = ContentHash{0xFFFF};
     cache.insert(*overflow);
     CRUCIBLE_TEST_ASSERT(kTest, cache.size() == RegionCache::CAP);
@@ -191,7 +191,7 @@ void test_find_alternate_tracks_live_plan() {
     op1.schema_hash = SchemaHash{0x902};
     op1.shape_hash = ShapeHash{0x903};
 
-    const auto region = make_region(test.alloc, arena, ops);
+    const auto region = make_region(test.alloc, arena, ops_run);
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_none());
 
     cache.insert(*region);
@@ -214,9 +214,9 @@ void test_find_alternate_tracks_live_plan() {
     slot.death_op = OpIndex{1};
     slot.slot_id = SlotId{0};
     const auto plan = arena.make<MemoryPlan>(test.alloc);
-    plan->slots = slots;
+    plan->slots = slots_run;
     plan->pool_bytes = 4096;
-    region->plan = make_plan_link(*plan);
+    region->plan = make_plan_link(plan);
 
     CRUCIBLE_TEST_ASSERT(
         kTest, ::fixy::same_target(cache.find_alternate(0, op0.schema_hash, op0.shape_hash), ::fixy::some(region))
@@ -231,10 +231,9 @@ void test_find_alternate_tracks_live_plan() {
     // A matching position with the wrong shape is still a miss.
     CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(0, op0.schema_hash, ShapeHash{0xDEAD}).is_none());
     // And exclude still excludes.
-    CRUCIBLE_TEST_ASSERT(kTest, cache
-                                    .find_alternate(0, op0.schema_hash, op0.shape_hash,
-                                                    ConstRegionLink::some(::fixy::erase_brand(::fixy::to(*region))))
-                                    .is_none());
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        cache.find_alternate(0, op0.schema_hash, op0.shape_hash, ConstRegionLink::some(::fixy::to(*region))).is_none());
 
     ::fixy::check::pass(kTest, "  test_find_alternate_tracks_live_plan: PASSED\n");
 }

@@ -36,7 +36,7 @@ static constexpr auto A = BG.alloc;
 static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> kArenaBlock{size_t{1} << 18};
 
 // The ops, their arrays and the region are in dag_arena.
-static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops, uint64_t salt) {
+static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops, uint64_t salt) {
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = tensor_dim(64);
@@ -52,21 +52,19 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_are
         const auto input_metas_run = dag_arena.array(A, 1, meta);
         const auto producers_run = dag_arena.array(A, 1, OpIndex{});
         const auto input_slots_run = dag_arena.array(A, 1, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        te.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+        te.set_inputs(input_metas_run, producers_run, input_slots_run);
         const auto output_metas_run = dag_arena.array(A, 1, meta);
         const auto output_slots_run = dag_arena.array(A, 1, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        te.set_outputs(output_metas_run.view(), output_slots_run.view());
+        te.set_outputs(output_metas_run, output_slots_run);
     }
-    return make_region(A, dag_arena, ops);
+    return make_region(A, dag_arena, ops_run);
 }
 
 // The store serializes the producer index and the slot ids of each op, and
 // the bench does not set them.  Each one keeps the none() of its default
 // constructor, so the stored bytes do not depend on the arena.
 static void check_unset_ids(const RegionNode& region) {
-    for (const TraceEntry& op_record : region.ops) {
+    for (const TraceEntry& op_record : region.ops.view()) {
         for (const OpIndex producer : op_record.input_trace_indices())
             CRUCIBLE_BENCH_CHECK(!producer.is_valid());
         for (const SlotId slot_id : op_record.input_slot_ids())
@@ -134,7 +132,7 @@ int main() {
         ::fixy::BumpArena<DagArena> warm_dag_arena = ::fixy::mint_bump_arena<DagArena>(kArenaBlock);
         const RegionNode& warm_region = *synth_region(warm_dag_arena, num_ops, 0xC0FFEE + num_ops);
         check_unset_ids(warm_region);
-        const auto warm_payload = Cipher::content_addressed(::fixy::erase_brand(::fixy::to(warm_region)));
+        const auto warm_payload = Cipher::content_addressed(::fixy::to(warm_region));
         (void)cipher.store(ctx, open_view, warm_payload);  // prime the warm path
         const ContentHash warm_h = warm_region.content_hash;
 

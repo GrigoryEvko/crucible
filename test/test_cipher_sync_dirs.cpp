@@ -269,7 +269,7 @@ TraceLog g_trace_log{};
     const fixy::View<crucible::TraceEntry> ops = ops_run.view();
     ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0x5EC0};
     const crucible::ContentHash stored = cipher.store(
-        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops)));
+        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops_run)));
     const fixy::HeapArray<crucible::Cipher::SessionEvent> events =
         fixy::mint_heap_array(ctx.cap().alloc, 1,
                               crucible::Cipher::SessionEvent::cipher_event(

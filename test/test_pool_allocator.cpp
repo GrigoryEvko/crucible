@@ -38,7 +38,8 @@ using crucible::test::host_ptr;
 // context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
-static MemoryPlan make_manual_plan(::fixy::View<TensorSlot> slots, uint64_t pool_bytes, uint32_t num_ext) {
+static MemoryPlan make_manual_plan(::fixy::ArenaRun<TensorSlot const, DagArena> slots, uint64_t pool_bytes,
+                                   uint32_t num_ext) {
     MemoryPlan plan{};
     plan.slots = slots;
     plan.num_external = num_ext;
@@ -90,7 +91,7 @@ static void test_basic_init() {
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 3072, 1);
+    MemoryPlan plan = make_manual_plan(slots_run, 3072, 1);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -160,7 +161,7 @@ static void test_external_registration() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 1024, 1);
+    MemoryPlan plan = make_manual_plan(slots_run, 1024, 1);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -221,7 +222,7 @@ static void test_write_read_isolation() {
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 1024, 0);
+    MemoryPlan plan = make_manual_plan(slots_run, 1024, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -277,7 +278,7 @@ static void test_all_external() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 0, 2);
+    MemoryPlan plan = make_manual_plan(slots_run, 0, 2);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -319,7 +320,7 @@ static void test_reinit() {
                                                         .slot_id = SlotId{0},
                                                         .pad2 = {}};
 
-    MemoryPlan plan_a = make_manual_plan(slots_a, 512, 0);
+    MemoryPlan plan_a = make_manual_plan(slots_a_run, 512, 0);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan_a);
@@ -357,7 +358,7 @@ static void test_reinit() {
                                                          .slot_id = SlotId{1},
                                                          .pad2 = {}};
 
-    MemoryPlan plan_b = make_manual_plan(slots_b, 3072, 0);
+    MemoryPlan plan_b = make_manual_plan(slots_b_run, 3072, 0);
     pool.init(::foundation::effects::testing::test().alloc, plan_b);
     auto pv_b = pool.mint_initialized_view(kVigilForeground);
 
@@ -438,15 +439,15 @@ static void test_integration_with_sweep_line() {
                                                         .slot_id = SlotId{3},
                                                         .pad2 = {}};
 
-    crucible::MemoryPlan plan_storage{};
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = slot_arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-    sweep_scratch.arena.with_epoch(
-        [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-            static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
-                                  .expect("the slots of the test fit in 64 bits"));
-        });
-    // The plan is in the storage of the caller.
-    const crucible::MemoryPlan& plan = plan_storage;
+    sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
+                                    slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+                              .expect("the slots of the test fit in 64 bits"));
+    });
+    // The plan is in the arena of the slots.
+    const crucible::MemoryPlan& plan = *plan_storage;
     CRUCIBLE_TEST_ASSERT(kTest, plan.pool_bytes > 0);
 
     PoolAllocator pool;
@@ -523,7 +524,7 @@ static void test_device_of_slots() {
                                                        .slot_id = SlotId{1},
                                                        .pad2 = {}};
 
-    MemoryPlan plan = make_manual_plan(slots, 256, 1);
+    MemoryPlan plan = make_manual_plan(slots_run, 256, 1);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
     auto pv = pool.mint_initialized_view(kVigilForeground);
@@ -559,9 +560,7 @@ static void expect_abort_on_init(::fixy::TestRunnerCtx const& test, const Tensor
                                  ::fixy::TextView refusal) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 1, slot);
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<TensorSlot> const slots = slots_run.view();
-    MemoryPlan plan = make_manual_plan(slots, pool_bytes, 0);
+    MemoryPlan plan = make_manual_plan(slots_run, pool_bytes, 0);
     ::fixy::check::expect_dies(
         test,
         [&plan] noexcept {
@@ -652,7 +651,7 @@ static void test_slot_views() {
                                                          .pad = {},
                                                          .slot_id = SlotId{2},
                                                          .pad2 = {}};
-    MemoryPlan plan = make_manual_plan(slots, 1024, 1);
+    MemoryPlan plan = make_manual_plan(slots_run, 1024, 1);
 
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);

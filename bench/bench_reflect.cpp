@@ -487,6 +487,14 @@ int main() {
                                                                         {4, 5}, {5, 6}, {6, 7}, {7, 0}};
     volatile uint16_t bump = 0;  // prevents constant-fold
 
+    // The loop node of the rows of loopterm_hash.  Only mint_dag_node builds
+    // a node, so the node is in an arena before the timed bodies, and each
+    // body writes the three fields that loopterm_hash reads.
+    ::fixy::BumpArena<crucible::DagArena> loop_arena =
+        ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{4096});
+    const crucible::DagRef<crucible::LoopNode> loop_node =
+        crucible::mint_dag_node<crucible::LoopNode>(kAlloc, loop_arena);
+
     ::fixy::FixedArray<bench::Report, 9> refactor_reports{
         bench::run("feedback_signature  (family, 8 edges)",
                    [&] {
@@ -506,11 +514,10 @@ int main() {
                    }),
         bench::run("loopterm_hash       (family)",
                    [&] {
-                       crucible::LoopNode ln{};
-                       ln.term_kind = crucible::LoopTermKind::REPEAT;
-                       ln.repeat_count = 100u + bump;
-                       ln.epsilon = 1.0e-6f;
-                       auto h = crucible::loopterm_hash(ln);
+                       loop_node->term_kind = crucible::LoopTermKind::REPEAT;
+                       loop_node->repeat_count = 100u + bump;
+                       loop_node->epsilon = 1.0e-6f;
+                       auto h = crucible::loopterm_hash(*loop_node);
                        bench::do_not_optimize(h);
                    }),
         bench::run("loopterm_hash       (packed)",

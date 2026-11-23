@@ -131,21 +131,21 @@ int main() {
     put_slot(::foundation::core::index<SL_PROBS>(), make_int(SL_PROBS, SZ_BNCLS, 14, 14));
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    crucible::MemoryPlan plan_storage{};
+    const DagRef<MemoryPlan> plan_storage = arena.make<MemoryPlan>(test.alloc);
     crucible::PlanScratch sweep_scratch{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16}};
     BackgroundThread::PlanTarget const target = bt.plan_target();
     sweep_scratch.arena.with_epoch(
-        [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-            static_cast<void>(BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
+        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+            static_cast<void>(BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                                   .expect("the slots of the test fit in 64 bits"));
         });
-    // The plan is in the storage of the caller.
-    crucible::MemoryPlan& plan = plan_storage;
+    // The plan is in the arena of the slots.
+    crucible::MemoryPlan& plan = *plan_storage;
 
     ::fixy::report(::fixy::Sink::Out, "  plan: pool={} bytes, {} slots ({} external)\n",
                    static_cast<unsigned long>(plan.pool_bytes), plan.num_slots(), plan.num_external);
 
-    // The slot ids of each op are arrays of this arena.
+    // The slot ids of each op, the ops and the region are in this arena.
     ::fixy::BumpArena<DagArena> runs =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     const auto slots_of = [&](auto... slot_numbers) noexcept {
@@ -155,8 +155,8 @@ int main() {
     struct OpDef {
         SchemaHash schema;
         ShapeHash shape;
-        ::fixy::View<SlotId> in;
-        ::fixy::View<SlotId> out;
+        ::fixy::ArenaRun<SlotId, DagArena> in;
+        ::fixy::ArenaRun<SlotId, DagArena> out;
     };
     const ::foundation::core::FixedArray<OpDef, N_OPS> defs{
         OpDef{.schema = H_LN1, .shape = S_LN1, .in = slots_of(SL_X, SL_G1, SL_B1), .out = slots_of(SL_NORM1)},
@@ -176,23 +176,22 @@ int main() {
         OpDef{.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = slots_of(SL_LOGITS), .out = slots_of(SL_PROBS)},
     };
 
-    ::foundation::core::FixedArray<TraceEntry, N_OPS> ops{};
-    ops.with_mut([&test, &runs, &defs](auto run) noexcept {
-        for (auto [op, def] : run.view().walk().zip(defs.view().walk())) {
-            op->schema_hash = def->schema;
-            op->shape_hash = def->shape;
-            crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
-            crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
-        }
-    });
+    auto const ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
+    ::fixy::View<TraceEntry, N_OPS> const ops = ops_run.view().window<N_OPS>(0).expect("the run holds N_OPS ops");
+    for (auto [op, def] : ops.walk().zip(defs.view().walk())) {
+        op->schema_hash = def->schema;
+        op->shape_hash = def->shape;
+        crucible::test::set_input_slots(test.alloc, runs, *op, def->in);
+        crucible::test::set_output_slots(test.alloc, runs, *op, def->out);
+    }
 
-    RegionNode region{};
-    region.kind = TraceNodeKind::REGION;
-    region.ops = ops.view();
-    region.plan = make_plan_link(plan);
+    const DagRef<RegionNode> region = mint_dag_node<RegionNode>(test.alloc, runs);
+    region->kind = TraceNodeKind::REGION;
+    region->ops = ops_run;
+    region->plan = make_plan_link(plan_storage);
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(region));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
     auto cv = ctx.mint_compiled_view(kVigilForeground);

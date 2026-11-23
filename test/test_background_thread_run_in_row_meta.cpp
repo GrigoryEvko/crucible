@@ -453,7 +453,7 @@ void test_built_graph_owns_its_metadata() {
             owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
             owner.release_meta_log(stage, OPS);
         });
-    const ::fixy::Ref<const crucible::RegionNode> region =
+    const crucible::DagRef<const crucible::RegionNode> region =
         bt.active_region().expect("the publish gives the active region");
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(region->op_at(0))) == first_op_address);
     CRUCIBLE_TEST_ASSERT(kTest, metalog.tail.get() == OPS);

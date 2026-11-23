@@ -420,7 +420,7 @@ private:
     static void write_pool_windows_(const MemoryPlan& plan, ::fixy::View<uint8_t> pool,
                                     ::fixy::View<::fixy::Option<::fixy::RunAddress>> address_run,
                                     ::fixy::View<::fixy::View<uint8_t>> view_run) noexcept {
-        static_cast<void>(::fixy::mint_branded_scope(plan.slots, [&](auto const& slots) noexcept {
+        static_cast<void>(::fixy::mint_branded_scope(plan.slots.view(), [&](auto const& slots) noexcept {
             auto const addresses =
                 slots.parallel(address_run).expect("the column holds one entry for each slot of the plan");
             auto const views = slots.parallel(view_run).expect("the column holds one entry for each slot of the plan");

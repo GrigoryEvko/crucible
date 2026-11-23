@@ -1947,7 +1947,7 @@
       "header": "fixy/handle/Published.h"
     },
     {
-      "type": "fixy::handle::PublishedObject<const int>",
+      "type": "fixy::handle::PublishedObject<const int, forge::brand>",
       "header": "fixy/handle/Published.h"
     },
     {

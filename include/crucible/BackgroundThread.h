@@ -146,7 +146,7 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // publication.  The acquire load sees each write of the region before
     // its publication, and no code writes a published region.
     [[nodiscard]] ConstRegionLink active_region() const noexcept {
-        for (::fixy::Ref<RegionNode> const region : active_region_.load_acquire()) {
+        for (DagRef<RegionNode> const region : active_region_.load_acquire()) {
             return ConstRegionLink::some(region);
         }
         return ::fixy::none;
@@ -680,31 +680,31 @@ public:
         operator=(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
         ~BuiltRegion() = default;
 
-        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.view<kOps>(); }
-        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.view<kMetas>(); }
-        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.view<kScalars>(); }
-        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.view<kProducers>(); }
-        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.view<kSlotIds>(); }
-        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.view<kSlots>(); }
+        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.ops.view(); }
+        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.metas.view(); }
+        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.scalars.view(); }
+        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.producers.view(); }
+        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.slot_ids.view(); }
+        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.slots.view(); }
         [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
         [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
     private:
         friend struct BackgroundThread;
 
-        // The index and the slot of the count of each run.  The ops point into
-        // the other runs: the tensor metadata, the scalars, the producer of
-        // each input, and the slot ids of the inputs and the outputs.  The
-        // slots are the slots of the memory plan.
-        static constexpr size_t kOps = 0;
-        static constexpr size_t kMetas = 1;
-        static constexpr size_t kScalars = 2;
-        static constexpr size_t kProducers = 3;
-        static constexpr size_t kSlotIds = 4;
-        static constexpr size_t kSlots = 5;
-        using Runs = ::fixy::RunSet<uint32_t, ::fixy::RunOf<TraceEntry, kOps>, ::fixy::RunOf<TensorMeta, kMetas>,
-                                    ::fixy::RunOf<int64_t, kScalars>, ::fixy::RunOf<OpIndex, kProducers>,
-                                    ::fixy::RunOf<SlotId, kSlotIds>, ::fixy::RunOf<TensorSlot, kSlots>>;
+        // The runs of one region, each a run of the arena of the region.  The
+        // ops point into the other runs: the tensor metadata, the scalars,
+        // the producer of each input, and the slot ids of the inputs and the
+        // outputs.  The slots are the slots of the memory plan.  The node of
+        // the region and its plan take the runs of the ops and of the slots.
+        struct Runs {
+            ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
+            ::fixy::ArenaRun<TensorMeta, DagArena> metas{};
+            ::fixy::ArenaRun<int64_t, DagArena> scalars{};
+            ::fixy::ArenaRun<OpIndex, DagArena> producers{};
+            ::fixy::ArenaRun<SlotId, DagArena> slot_ids{};
+            ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
+        };
 
         // The parts of one build: the arena of the region, and the runs that
         // the arena gave.
@@ -776,20 +776,22 @@ private:
     // the handed region.
     static constexpr uint64_t NOT_LEFT = UINT64_MAX;
 
-    // The memory of one published region: its parts, its RegionNode and its
-    // MemoryPlan.  The publish stage makes the node, and the plan when the
-    // region has slots.  A slot of the store with no node is free.
+    // The memory of one published region: its parts, and the link of its
+    // RegionNode.  The publish stage makes the node in the arena of the
+    // parts, and the MemoryPlan there too when the region has slots.  A slot
+    // of the store with no node is free.
     //
-    // The node and the plan point into the buffers of the parts.  The type
-    // is private, and the publish stage is its one owner.  It fills a slot
-    // only when the slot is free, and the sweep empties a slot as a whole.
-    // The parts are one BuiltRegion, so no code assigns one buffer of them.
+    // The node and the plan live in the arena of the parts and point into
+    // its runs.  The type is private, and the publish stage is its one
+    // owner.  It fills a slot only when the slot is free, and the sweep
+    // empties a slot as a whole, so the link of the node ends with the
+    // arena.  The parts are one BuiltRegion, so no code assigns one buffer
+    // of them.
     struct RegionMemory {
         BuiltRegion parts;
-        // One RegionNode, and one MemoryPlan when the region has slots.  An
-        // empty node buffer marks a free slot of the store.
-        ::fixy::HeapArray<RegionNode> node;
-        ::fixy::HeapArray<MemoryPlan> plan;
+        // The node of the region, in the arena of the parts.  No node marks a
+        // free slot of the store.
+        RegionLink node{};
         // The record that the region callback gets, and that the owner can
         // publish to its foreground.
         PublishedRegion published{};
@@ -864,9 +866,7 @@ public:
             if (capacity != 0) {
                 slots_.with_element(
                     total_.peek_relaxed() % capacity,
-                    [&region](RegionLink& slot) noexcept {
-                        slot = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
-                    },
+                    [&region](RegionLink& slot) noexcept { slot = ::fixy::some(::fixy::to(region)); },
                     [] noexcept { ::fixy::fatal("a count modulo the capacity is below it"); });
             }
             (void)total_.bump();
@@ -1889,14 +1889,15 @@ public:
     // needs for coalesced access.  The birth_op of each internal slot is at
     // most its death_op, and the death_op is at most UINT32_MAX - 3.  The
     // function stops the process when a slot breaks this rule, because the
-    // sweep would index past its arrays.  The plan goes into plan_storage,
-    // the arrays of the sweep go into scratch, and the result is a Ref of
-    // plan_storage, or a PlanRefusal: a slot whose id is not its position,
-    // or a span or an end of the pool that does not fit in 64 bits.  The plan
-    // borrows the slots, and it copies the device of target.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static ::fixy::Result<::fixy::Ref<MemoryPlan>, PlanRefusal>
-    compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, MemoryPlan& plan_storage,
-                        PlanScratch::Epoch& scratch, ::fixy::View<TensorSlot> slots) noexcept;
+    // sweep would index past its arrays.  The plan goes into plan_storage, a
+    // plan of a DAG arena, the arrays of the sweep go into scratch, and the
+    // result is plan_storage, or a PlanRefusal: a slot whose id is not its
+    // position, or a span or an end of the pool that does not fit in 64
+    // bits.  The plan borrows the slots, a run of a DAG arena, and it copies
+    // the device of target.
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard]] static ::fixy::Result<DagRef<MemoryPlan>, PlanRefusal>
+    compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, DagRef<MemoryPlan> plan_storage,
+                        PlanScratch::Epoch& scratch, ::fixy::ArenaRun<TensorSlot, DagArena> slots) noexcept;
 
 private:
     // The stop hook of the pipeline thread (the thread of an owner of

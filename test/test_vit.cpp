@@ -47,9 +47,9 @@ int main() {
     feed_trigger(vigil, 2);
     flush_and_wait_region_published(kTest, vigil);
 
-    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    const DagRef<const RegionNode> region = vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
-    const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
+    const DagRef<MemoryPlan const> plan = PlanLink{region->plan}.expect("the published region has a memory plan");
 
     ::fixy::report(::fixy::Sink::Out, "── Region ──\n");
     ::fixy::report(::fixy::Sink::Out, "   {} ops | pool {} bytes\n", region->num_ops(),
@@ -59,7 +59,7 @@ int main() {
 
     ::fixy::report(::fixy::Sink::Out, "\n   Key lifetimes (saved for backward):\n");
     uint32_t s = 0;
-    for (const TensorSlot& sl : plan->slots) {
+    for (const TensorSlot& sl : plan->slots.view()) {
         // A span of more than ten ops separates an activation held for
         // the backward pass from an ordinary short-lived intermediate.
         if (!sl.is_external && sl.death_op.raw() - sl.birth_op.raw() > 10)

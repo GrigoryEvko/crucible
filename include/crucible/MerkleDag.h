@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/CKernelId.h>
+#include <crucible/DagArena.h>
 #include <crucible/DimHash.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/StorageNbytes.h>
@@ -26,6 +27,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 #include <utility>
 
 namespace crucible {
@@ -67,10 +69,10 @@ struct[[= ::fixy::derive_protocol{}]] TensorSlot {
 };
 
 // External slots keep the allocations they already have: they are counted in
-// num_external and are not placed in the pool.  The slots are in the memory of
-// the region, and the plan only borrows them.
+// num_external and are not placed in the pool.  The slots are in the arena of
+// the region, and the plan only borrows them as a run of the DAG arena.
 struct MemoryPlan {
-    ::fixy::View<TensorSlot const> slots{};
+    ::fixy::ArenaRun<TensorSlot const, DagArena> slots{};
     uint64_t pool_bytes = 0;
     uint32_t num_external = 0;
 
@@ -91,20 +93,20 @@ struct MemoryPlan {
     }
 };
 
-// A link to the memory plan of a region, or no plan.  The plan is in the
-// memory of the region, and the link only borrows it.  A region only reads
-// its plan, so the link refers to a const plan.  The empty link is the null
-// pointer, so a link takes eight bytes.
-using PlanLink = ::fixy::Option<::fixy::Ref<MemoryPlan const>>;
+// A link to the memory plan of a region, or no plan.  The plan is in a DAG
+// arena, and the link only borrows it with the brand of the arena.  A region
+// only reads its plan, so the link refers to a const plan.  The empty link is
+// the null pointer, so a link takes eight bytes.
+using PlanLink = ::fixy::Option<::fixy::Ref<MemoryPlan const, DagArena>>;
 
-// A full link to the plan.
-[[nodiscard]] inline PlanLink make_plan_link(MemoryPlan const& plan) noexcept {
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(plan)));
+// A full link to the plan that a DAG arena holds.
+[[nodiscard]] inline PlanLink make_plan_link(::fixy::Ref<MemoryPlan const, DagArena> plan) noexcept {
+    return ::fixy::some(plan);
 }
 
 // The link to the plan that a planner or a loader made, or no plan.
-[[nodiscard]] inline PlanLink make_plan_link(::fixy::Option<::fixy::Ref<MemoryPlan>> const& plan) noexcept {
-    return plan.match([](::fixy::Ref<MemoryPlan> const& made) noexcept { return make_plan_link(*made); },
+[[nodiscard]] inline PlanLink make_plan_link(::fixy::Option<::fixy::Ref<MemoryPlan, DagArena>> const& plan) noexcept {
+    return plan.match([](::fixy::Ref<MemoryPlan, DagArena> const& made) noexcept { return make_plan_link(made); },
                       []() noexcept { return PlanLink{}; });
 }
 
@@ -165,11 +167,12 @@ compute_storage_nbytes_det(ExternalTensorMeta meta) {
         compute_storage_nbytes(meta));
 }
 
-// The record of one op.  Its arrays are in the memory of the region or of
-// the trace, and the entry only borrows them.  Three counts give their
-// lengths: the inputs, the outputs and the scalar arguments.  One door sets
-// each count together with each array of that count, so each array holds
-// its count, and no array is absent at a count above zero.
+// The record of one op.  Its arrays are runs of a DAG arena, and the entry
+// only borrows them: each door takes a run of the DagArena brand.  Three
+// counts give their lengths: the inputs, the outputs and the scalar
+// arguments.  One door sets each count together with each array of that
+// count, so each array holds its count, and no array is absent at a count
+// above zero.
 struct TraceEntry {
     SchemaHash schema_hash;
     ShapeHash shape_hash;
@@ -236,29 +239,31 @@ public:
     [[nodiscard]] ::fixy::View<const SlotId> input_slot_ids() const noexcept { return arrays_.view<kInputSlotIds>(); }
     [[nodiscard]] ::fixy::View<const SlotId> output_slot_ids() const noexcept { return arrays_.view<kOutputSlotIds>(); }
 
-    // The inputs: the metadata, the producer op and the slot of each input.
-    // The three Views hold one count, or the process ends.  An op with no
-    // inputs passes three empty Views.
-    void set_inputs(::fixy::View<TensorMeta> metas, ::fixy::View<OpIndex> producers,
-                    ::fixy::View<SlotId> slot_ids) noexcept {
+    // The inputs: the metadata, the producer op and the slot of each input,
+    // each a run of a DAG arena.  The three runs hold one count, or the
+    // process ends.  An op with no inputs passes three empty runs.
+    void set_inputs(::fixy::ArenaRun<TensorMeta const, DagArena> metas,
+                    ::fixy::ArenaRun<OpIndex const, DagArena> producers,
+                    ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
         arrays_.set_count<kInputCount>(count_of_(metas.size()));
-        arrays_.set<kInputMetas>(metas);
-        arrays_.set<kInputTraceIndices>(producers);
-        arrays_.set<kInputSlotIds>(slot_ids);
+        arrays_.set<kInputMetas>(metas.view());
+        arrays_.set<kInputTraceIndices>(producers.view());
+        arrays_.set<kInputSlotIds>(slot_ids.view());
     }
 
-    // The outputs: the metadata and the slot of each output.  The two Views
-    // hold one count, or the process ends.
-    void set_outputs(::fixy::View<TensorMeta> metas, ::fixy::View<SlotId> slot_ids) noexcept {
+    // The outputs: the metadata and the slot of each output, each a run of a
+    // DAG arena.  The two runs hold one count, or the process ends.
+    void set_outputs(::fixy::ArenaRun<TensorMeta const, DagArena> metas,
+                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
         arrays_.set_count<kOutputCount>(count_of_(metas.size()));
-        arrays_.set<kOutputMetas>(metas);
-        arrays_.set<kOutputSlotIds>(slot_ids);
+        arrays_.set<kOutputMetas>(metas.view());
+        arrays_.set<kOutputSlotIds>(slot_ids.view());
     }
 
-    // The scalar arguments.
-    void set_scalar_args(::fixy::View<int64_t> scalars) noexcept {
+    // The scalar arguments, a run of a DAG arena.
+    void set_scalar_args(::fixy::ArenaRun<int64_t const, DagArena> scalars) noexcept {
         arrays_.set_count<kScalarCount>(count_of_(scalars.size()));
-        arrays_.set<kScalarArgs>(scalars);
+        arrays_.set<kScalarArgs>(scalars.view());
     }
 
 private:
@@ -317,25 +322,79 @@ struct RegionNode;
 struct BranchNode;
 struct LoopNode;
 
-// A link to one node of the DAG, or no node.  The node is in the arena of
-// the DAG, and the link only borrows it.  The empty link is the null
-// pointer, so a link takes eight bytes.
-using TraceLink = ::fixy::Option<::fixy::Ref<TraceNode>>;
+// A Ref of a node or a plan of the DAG, with the brand of the DAG arenas.
+template <class T>
+using DagRef = ::fixy::Ref<T, DagArena>;
+
+// A link to one node of the DAG, or no node.  The node is in a DAG arena, and
+// the link only borrows it with the brand of the arena.  The empty link is
+// the null pointer, so a link takes eight bytes.
+using TraceLink = ::fixy::Option<DagRef<TraceNode>>;
 
 // A link to one region of the DAG, or no region, as TraceLink is.  A table of
 // the pipeline that holds the regions of many sites, such as the region cache
 // or the slot of a publication, holds each region in this form.
-using RegionLink = ::fixy::Option<::fixy::Ref<RegionNode>>;
-using ConstRegionLink = ::fixy::Option<::fixy::Ref<RegionNode const>>;
+using RegionLink = ::fixy::Option<DagRef<RegionNode>>;
+using ConstRegionLink = ::fixy::Option<DagRef<RegionNode const>>;
 
 // A link of a node to the node that it continues to or runs.  A const node
 // gives the node of each such link only as const, so a reader of a const
 // region writes no node that the region reaches.  The link takes eight bytes
 // too.
-using NodeLink = ::fixy::Link<TraceNode>;
+using NodeLink = ::fixy::Link<TraceNode, DagArena>;
 
-// Nodes are arena-allocated and are never freed individually.
+// A kind of node of the DAG: TraceNode or a class that derives from it.
+template <class Node>
+concept DagNodeType = std::is_class_v<Node> && !std::is_const_v<Node>
+                   && (std::is_same_v<Node, TraceNode> || std::is_base_of_v<TraceNode, Node>);
+
+template <DagNodeType Node, class... Refused>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena) noexcept;
+
+template <DagNodeType Node, class... Refused>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
+                                         ::fixy::Box<::fixy::BumpArena<DagArena>>& arena) noexcept;
+
+// The key of the constructor of a node.  Its constructor is private, and only
+// mint_dag_node builds one, so each node lives in a DAG arena.
+class DagNodeKey final {
+    constexpr DagNodeKey() noexcept {}
+
+    template <DagNodeType Node, class... Refused>
+        requires(sizeof...(Refused) == 0)
+    friend DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena) noexcept;
+
+    template <DagNodeType Node, class... Refused>
+        requires(sizeof...(Refused) == 0)
+    friend DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
+                                      ::fixy::Box<::fixy::BumpArena<DagArena>>& arena) noexcept;
+
+public:
+    DagNodeKey(DagNodeKey const&) = delete("a key lives in the call of mint_dag_node");
+    DagNodeKey(DagNodeKey&&) = delete("a key lives in the call of mint_dag_node");
+    DagNodeKey& operator=(DagNodeKey const&) = delete("a key lives in the call of mint_dag_node");
+    DagNodeKey& operator=(DagNodeKey&&) = delete("a key lives in the call of mint_dag_node");
+    // User-provided, because GCC counts a class whose copy and move are all
+    // deleted as trivially copyable, and a bit_cast could then forge a key.
+    constexpr ~DagNodeKey() {}
+};
+
+// Nodes live in a DAG arena and are never freed individually.  The class
+// states the brand of the arena family, so to(node) gives a Ref with the
+// DagArena brand.  That is sound because only mint_dag_node builds a node, in
+// a BumpArena<DagArena>, and no node copies or moves out of its arena.
 struct TraceNode {
+    using brand_type = DagArena;
+
+    explicit constexpr TraceNode(DagNodeKey const& /*key*/) noexcept {}
+    TraceNode(TraceNode const&) = delete("a node lives in its DAG arena: link the node, do not copy it");
+    TraceNode(TraceNode&&) = delete("a node lives in its DAG arena: link the node, do not move it");
+    TraceNode& operator=(TraceNode const&) = delete("a node lives in its DAG arena: link the node, do not copy it");
+    TraceNode& operator=(TraceNode&&) = delete("a node lives in its DAG arena: link the node, do not move it");
+    ~TraceNode() = default;
+
     TraceNodeKind kind{};
     ::foundation::core::FixedArray<uint8_t, 7> pad{};
     // Identity of this node and every descendant.  The field stays a bare
@@ -356,45 +415,42 @@ struct TraceNode {
 
     // The node as a region, a branch or a loop, or no value when its kind is
     // a different kind.  The doors read the kind, so no walk downcasts a node
-    // by hand.  Each door of this class gives a Ref on the erased brand, the
-    // brand of each link of the DAG, because a walk stores the node in a link
-    // that holds nodes of many arenas.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode>> as_region() noexcept;
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<BranchNode>> as_branch() noexcept;
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<LoopNode>> as_loop() noexcept;
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode const>> as_region() const noexcept;
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<BranchNode const>> as_branch() const noexcept;
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<LoopNode const>> as_loop() const noexcept;
+    // by hand.  Each door gives a Ref with the DagArena brand, the brand of
+    // each link of the DAG.
+    [[nodiscard]] ::fixy::Option<DagRef<RegionNode>> as_region() noexcept;
+    [[nodiscard]] ::fixy::Option<DagRef<BranchNode>> as_branch() noexcept;
+    [[nodiscard]] ::fixy::Option<DagRef<LoopNode>> as_loop() noexcept;
+    [[nodiscard]] ::fixy::Option<DagRef<RegionNode const>> as_region() const noexcept;
+    [[nodiscard]] ::fixy::Option<DagRef<BranchNode const>> as_branch() const noexcept;
+    [[nodiscard]] ::fixy::Option<DagRef<LoopNode const>> as_loop() const noexcept;
 
     // The node as a region, a branch or a loop, for a walk that read the kind
     // before.  A node of a different kind ends the process in each build.
     // These doors give no Option, so a walk that knows the kind tests the
     // kind once.
-    [[nodiscard]] ::fixy::Ref<RegionNode> expect_region() noexcept;
-    [[nodiscard]] ::fixy::Ref<BranchNode> expect_branch() noexcept;
-    [[nodiscard]] ::fixy::Ref<LoopNode> expect_loop() noexcept;
-    [[nodiscard]] ::fixy::Ref<RegionNode const> expect_region() const noexcept;
-    [[nodiscard]] ::fixy::Ref<BranchNode const> expect_branch() const noexcept;
-    [[nodiscard]] ::fixy::Ref<LoopNode const> expect_loop() const noexcept;
+    [[nodiscard]] DagRef<RegionNode> expect_region() noexcept;
+    [[nodiscard]] DagRef<BranchNode> expect_branch() noexcept;
+    [[nodiscard]] DagRef<LoopNode> expect_loop() noexcept;
+    [[nodiscard]] DagRef<RegionNode const> expect_region() const noexcept;
+    [[nodiscard]] DagRef<BranchNode const> expect_branch() const noexcept;
+    [[nodiscard]] DagRef<LoopNode const> expect_loop() const noexcept;
 };
 
-// A full link to the node.
-[[nodiscard]] inline TraceLink make_link(TraceNode& node) noexcept {
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(node)));
-}
+// A full link to the node.  Each node lives in a DAG arena, so the Ref of
+// the node has the DagArena brand.
+[[nodiscard]] inline TraceLink make_link(TraceNode& node) noexcept { return ::fixy::some(::fixy::to(node)); }
 
 // True when the link reaches the node.  The test compares the addresses of
-// the two nodes, so a link to a copy of the node is not a link to the node.
+// the two nodes.
 [[nodiscard]] inline bool is_link_to(TraceLink const& link, TraceNode const& node) noexcept {
-    return link.is_some_and([&node](::fixy::Ref<TraceNode> const& linked) noexcept {
-        return ::fixy::same_object(linked, ::fixy::to(node));
-    });
+    return link.is_some_and(
+        [&node](DagRef<TraceNode> const& linked) noexcept { return ::fixy::same_object(linked, ::fixy::to(node)); });
 }
 
 // True when a link of const reaches the node, as is_link_to above.
-[[nodiscard]] inline bool is_link_to(::fixy::Option<::fixy::Ref<TraceNode const>> const& link,
+[[nodiscard]] inline bool is_link_to(::fixy::Option<DagRef<TraceNode const>> const& link,
                                      TraceNode const& node) noexcept {
-    return link.is_some_and([&node](::fixy::Ref<TraceNode const> const& linked) noexcept {
+    return link.is_some_and([&node](DagRef<TraceNode const> const& linked) noexcept {
         return ::fixy::same_object(linked, ::fixy::to(node));
     });
 }
@@ -423,6 +479,8 @@ using ValidContentHash = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 
 // A compilable sequence of ops.
 struct RegionNode : TraceNode {
+    explicit constexpr RegionNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+
     ContentHash content_hash;
     // The hash of the numerics policy and the eager word that the content
     // hash folds (compute_numerics_hash), or zero for a region that a caller
@@ -435,9 +493,9 @@ struct RegionNode : TraceNode {
     // so the 88-byte layout below holds.
     ::fixy::handle::PublishOnce<CompiledKernel const> compiled;
 
-    // The ops are in the memory of the region, and the node only borrows them.
-    // A region only reads its ops.
-    ::fixy::View<TraceEntry const> ops{};
+    // The ops are in a DAG arena, and the node only borrows them as a run of
+    // the arena.  A region only reads its ops.
+    ::fixy::ArenaRun<TraceEntry const, DagArena> ops{};
 
     SchemaHash first_op_schema;
 
@@ -479,7 +537,7 @@ struct RegionNode : TraceNode {
     // The op at index, which is below num_ops().  An index at or past the
     // count ends the process.
     [[nodiscard]] const TraceEntry& op_at(uint32_t index) const noexcept {
-        return *ops.get(index).expect("an op index of a region is below its count of ops");
+        return *ops.view().get(index).expect("an op index of a region is below its count of ops");
     }
 
     // The field itself stays bare because the layout is locked.  A region
@@ -502,6 +560,8 @@ struct RegionNode : TraceNode {
 
 // A guard point where execution can diverge.  Arms are kept sorted by value.
 struct BranchNode : TraceNode {
+    explicit constexpr BranchNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+
     Guard guard;
 
     // One arm: the guard value and the node that the arm runs.  A const arm
@@ -517,12 +577,10 @@ struct BranchNode : TraceNode {
         // The node that the arm runs.  An arm of a loaded branch has no
         // target until a caller resolves it.
         [[nodiscard]] TraceLink target() noexcept { return target_; }
-        [[nodiscard]] ::fixy::Option<::fixy::Ref<TraceNode const>> target() const noexcept {
+        [[nodiscard]] ::fixy::Option<DagRef<TraceNode const>> target() const noexcept {
             return target_.match(
-                [](::fixy::Ref<TraceNode> const& node) noexcept {
-                    return ::fixy::some(::fixy::Ref<TraceNode const>{node});
-                },
-                []() noexcept { return ::fixy::Option<::fixy::Ref<TraceNode const>>{}; });
+                [](DagRef<TraceNode> const& node) noexcept { return ::fixy::some(DagRef<TraceNode const>{node}); },
+                []() noexcept { return ::fixy::Option<DagRef<TraceNode const>>{}; });
         }
         void set_target(TraceLink arm_target) noexcept { target_ = arm_target; }
 
@@ -544,12 +602,12 @@ struct BranchNode : TraceNode {
     uint32_t pad1 = 0;  // the bytes between the guard and the arms
     // The inherited next points at the merge node where all arms reconverge.
 
-    // The arms, which are in the arena: the node only borrows them.  A const
-    // branch gives its arms only as const, so a reader of a const branch
-    // writes no node that an arm links.
-    [[nodiscard]] ::fixy::View<Arm> arms() noexcept { return arms_; }
-    [[nodiscard]] ::fixy::View<Arm const> arms() const noexcept { return arms_; }
-    void set_arms(::fixy::View<Arm> arms) noexcept { arms_ = arms; }
+    // The arms, which are in a DAG arena: the node only borrows them as a run
+    // of the arena.  A const branch gives its arms only as const, so a reader
+    // of a const branch writes no node that an arm links.
+    [[nodiscard]] ::fixy::View<Arm> arms() noexcept { return arms_.view(); }
+    [[nodiscard]] ::fixy::View<Arm const> arms() const noexcept { return arms_.view(); }
+    void set_arms(::fixy::ArenaRun<Arm, DagArena> arms) noexcept { arms_ = arms; }
 
     // The count of arms.  The loader takes at most CDAG_MAX_BRANCH_ARMS arms.
     [[nodiscard]] uint32_t num_arms() const noexcept {
@@ -564,13 +622,13 @@ struct BranchNode : TraceNode {
     // Adjacent-pair comparison admits duplicate values, because two guards
     // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
-        for (const ::fixy::View<Arm, 2> pair : arms_.windows<2>())
+        for (const ::fixy::View<Arm, 2> pair : arms_.view().windows<2>())
             if (pair.at(::fixy::index<1>()).value < pair.at(::fixy::index<0>()).value) return false;
         return true;
     }
 
 private:
-    ::fixy::View<Arm> arms_{};
+    ::fixy::ArenaRun<Arm, DagArena> arms_{};
 };
 
 // Carries one of the loop body's outputs back to one of its inputs for the
@@ -591,13 +649,16 @@ enum class LoopTermKind : uint8_t {
 };
 
 struct LoopNode : TraceNode {
+    explicit constexpr LoopNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+
     ContentHash body_content_hash;
     // The first node of the body: a chain that ends in TERMINAL.  make_loop
     // sets it, and replay refuses a loop with an empty body.  A const loop
     // gives the body only as const.
     NodeLink body{};
-    // The edges are in the arena, and the node only borrows them.
-    ::fixy::View<FeedbackEdge> feedback_edges{};
+    // The edges are in a DAG arena, and the node only borrows them as a run
+    // of the arena.  A loop only reads its edges.
+    ::fixy::ArenaRun<FeedbackEdge const, DagArena> feedback_edges{};
     LoopTermKind term_kind = LoopTermKind::REPEAT;
     uint8_t pad_l0 = 0;
     uint16_t pad_l1 = 0;
@@ -621,68 +682,70 @@ struct LoopNode : TraceNode {
     }
 };
 
-inline ::fixy::Option<::fixy::Ref<RegionNode>> TraceNode::as_region() noexcept {
+// Each node lives in a DAG arena, so to() gives the Ref of the node the
+// DagArena brand that each node class states.
+inline ::fixy::Option<DagRef<RegionNode>> TraceNode::as_region() noexcept {
     if (kind != TraceNodeKind::REGION) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<RegionNode&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<RegionNode&>(*this)));
 }
 
-inline ::fixy::Option<::fixy::Ref<BranchNode>> TraceNode::as_branch() noexcept {
+inline ::fixy::Option<DagRef<BranchNode>> TraceNode::as_branch() noexcept {
     if (kind != TraceNodeKind::BRANCH) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<BranchNode&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<BranchNode&>(*this)));
 }
 
-inline ::fixy::Option<::fixy::Ref<LoopNode>> TraceNode::as_loop() noexcept {
+inline ::fixy::Option<DagRef<LoopNode>> TraceNode::as_loop() noexcept {
     if (kind != TraceNodeKind::LOOP) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<LoopNode&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<LoopNode&>(*this)));
 }
 
-inline ::fixy::Option<::fixy::Ref<RegionNode const>> TraceNode::as_region() const noexcept {
+inline ::fixy::Option<DagRef<RegionNode const>> TraceNode::as_region() const noexcept {
     if (kind != TraceNodeKind::REGION) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<RegionNode const&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<RegionNode const&>(*this)));
 }
 
-inline ::fixy::Option<::fixy::Ref<BranchNode const>> TraceNode::as_branch() const noexcept {
+inline ::fixy::Option<DagRef<BranchNode const>> TraceNode::as_branch() const noexcept {
     if (kind != TraceNodeKind::BRANCH) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<BranchNode const&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<BranchNode const&>(*this)));
 }
 
-inline ::fixy::Option<::fixy::Ref<LoopNode const>> TraceNode::as_loop() const noexcept {
+inline ::fixy::Option<DagRef<LoopNode const>> TraceNode::as_loop() const noexcept {
     if (kind != TraceNodeKind::LOOP) return ::fixy::none;
-    return ::fixy::some(::fixy::erase_brand(::fixy::to(static_cast<LoopNode const&>(*this))));
+    return ::fixy::some(::fixy::to(static_cast<LoopNode const&>(*this)));
 }
 
 // The check of each door is a fatal invariant and not a precondition.  GCC
 // keeps the test of a contract check after a switch on the same kind, and
 // it folds the test of a fatal invariant there.  The invariant also tests
 // the kind in a unit on the ignore semantic.
-inline ::fixy::Ref<RegionNode> TraceNode::expect_region() noexcept {
+inline DagRef<RegionNode> TraceNode::expect_region() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::REGION);
-    return ::fixy::erase_brand(::fixy::to(static_cast<RegionNode&>(*this)));
+    return ::fixy::to(static_cast<RegionNode&>(*this));
 }
 
-inline ::fixy::Ref<BranchNode> TraceNode::expect_branch() noexcept {
+inline DagRef<BranchNode> TraceNode::expect_branch() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::BRANCH);
-    return ::fixy::erase_brand(::fixy::to(static_cast<BranchNode&>(*this)));
+    return ::fixy::to(static_cast<BranchNode&>(*this));
 }
 
-inline ::fixy::Ref<LoopNode> TraceNode::expect_loop() noexcept {
+inline DagRef<LoopNode> TraceNode::expect_loop() noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::LOOP);
-    return ::fixy::erase_brand(::fixy::to(static_cast<LoopNode&>(*this)));
+    return ::fixy::to(static_cast<LoopNode&>(*this));
 }
 
-inline ::fixy::Ref<RegionNode const> TraceNode::expect_region() const noexcept {
+inline DagRef<RegionNode const> TraceNode::expect_region() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::REGION);
-    return ::fixy::erase_brand(::fixy::to(static_cast<RegionNode const&>(*this)));
+    return ::fixy::to(static_cast<RegionNode const&>(*this));
 }
 
-inline ::fixy::Ref<BranchNode const> TraceNode::expect_branch() const noexcept {
+inline DagRef<BranchNode const> TraceNode::expect_branch() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::BRANCH);
-    return ::fixy::erase_brand(::fixy::to(static_cast<BranchNode const&>(*this)));
+    return ::fixy::to(static_cast<BranchNode const&>(*this));
 }
 
-inline ::fixy::Ref<LoopNode const> TraceNode::expect_loop() const noexcept {
+inline DagRef<LoopNode const> TraceNode::expect_loop() const noexcept {
     CRUCIBLE_FATAL_INVARIANT(kind == TraceNodeKind::LOOP);
-    return ::fixy::erase_brand(::fixy::to(static_cast<LoopNode const&>(*this)));
+    return ::fixy::to(static_cast<LoopNode const&>(*this));
 }
 
 // The hash of the Protocol family of the edges as one run: their images one
@@ -714,8 +777,8 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
     TraceLink walk = make_link(body);
     while (walk.is_some()) {
-        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
-        for (const ::fixy::Ref<RegionNode>& region : node->as_region())
+        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        for (const DagRef<RegionNode>& region : node->as_region())
             body_hash_state = ::foundation::reflect::combine_ids(body_hash_state, region->content_hash.raw());
         walk = node->next.option();
     }
@@ -1008,7 +1071,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             merkle_hash_state = node.expect_region()->content_hash.raw();
             break;
         case TraceNodeKind::BRANCH: {
-            const ::fixy::Ref<BranchNode> branch = node.expect_branch();
+            const DagRef<BranchNode> branch = node.expect_branch();
             merkle_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch->guard).raw());
             for (const BranchNode::Arm& arm : branch->arms()) {
                 merkle_hash_state ^= ::foundation::reflect::fmix64(arm.resolved_target().merkle_hash.raw());
@@ -1017,7 +1080,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             break;
         }
         case TraceNodeKind::LOOP: {
-            const ::fixy::Ref<LoopNode> loop = node.expect_loop();
+            const DagRef<LoopNode> loop = node.expect_loop();
             // The salts keep a loop from hashing the same as a region with
             // the same content.  Mixing is fmix64 and XOR, which survives a
             // zero feedback or termination component: fmix64 is a permutation
@@ -1025,7 +1088,8 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL;  // "LOOPNODE"
             constexpr uint64_t kFbSalt = 0x6665656462616B00ULL;  // "feedbak\0"
             merkle_hash_state = ::foundation::reflect::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
-            merkle_hash_state ^= ::foundation::reflect::fmix64(feedback_signature(loop->feedback_edges) ^ kFbSalt);
+            merkle_hash_state ^=
+                ::foundation::reflect::fmix64(feedback_signature(loop->feedback_edges.view()) ^ kFbSalt);
             merkle_hash_state ^= loopterm_hash(*loop);
             break;
         }
@@ -1035,7 +1099,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
             ::fixy::unreachable();
     }
 
-    for (const ::fixy::Ref<TraceNode>& continuation : node.next)
+    for (const DagRef<TraceNode>& continuation : node.next)
         merkle_hash_state = ::foundation::reflect::fmix64(merkle_hash_state ^ continuation->merkle_hash.raw());
 
     return MerkleHash{merkle_hash_state};
@@ -1046,7 +1110,7 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
 [[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode const& branch) noexcept {
     uint64_t branched_hash_state = ::foundation::reflect::fmix64(::fixy::hash(branch.guard).raw());
     for (const BranchNode::Arm& arm : branch.arms()) {
-        for (const ::fixy::Ref<RegionNode const>& region : arm.resolved_target().as_region()) {
+        for (const DagRef<RegionNode const>& region : arm.resolved_target().as_region()) {
             branched_hash_state ^= ::foundation::reflect::fmix64(region->content_hash.raw());
             branched_hash_state *= 0x9E3779B97F4A7C15ULL;
         }
@@ -1054,14 +1118,37 @@ using RecipeChoice = ::fixy::Option<::fixy::Ref<const NumericalRecipe>>;
     return ContentHash{::foundation::reflect::fmix64(branched_hash_state)};
 }
 
-// The family tag of each arena that holds nodes of the DAG.  Each DAG arena
-// is a BumpArena<DagArena>.  Two arenas of the family share the brand, so a
-// Ref of one fits a field that names the other.  That instance identity needs
-// a run-time id, or a graph type that takes the brand of its own arena.
-struct[[= ::foundation::brand::arena_family_brand{}]] DagArena final {};
+// The one door that builds a node of the DAG: a Node with each field at its
+// default, in the arena, with the brand of the arena.  Only this door builds
+// the key of the constructor of a node, so each node lives in a DAG arena.
+template <DagNodeType Node, class... Refused>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
+                                         ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return arena.make<Node>(a, DagNodeKey{});
+}
 
-// The ops array is stored, not copied: the caller keeps it alive for as long
-// as the node.
+// mint_dag_node in the arena of a Box, such as the arena that a published
+// region keeps beside its node.  The Box holds the arena on the heap, so a
+// move of the Box moves no node.
+template <DagNodeType Node, class... Refused>
+    requires(sizeof...(Refused) == 0)
+[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::Box<::fixy::BumpArena<DagArena>>& arena
+                                         CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return arena->make<Node>(a, DagNodeKey{});
+}
+
+// The twins of mint_dag_node.  A temporary arena releases the node at the end
+// of the statement.
+template <class Node, class... Rest>
+void mint_dag_node(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
+    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
+template <class Node, class... Rest>
+void mint_dag_node(::foundation::effects::Alloc, ::fixy::Box<::fixy::BumpArena<DagArena>>&&, Rest&&...) =
+    delete("a temporary Box releases its arena and the node at the end of the statement. Use a Box that has a name");
+
+// The ops are stored, not copied: they are a run of a DAG arena, which lives
+// as long as the node.
 //
 // This overload hashes under no numerical recipe, which the recipe-taking
 // overload further down is the counterpart to. The choice is visible in the
@@ -1069,14 +1156,14 @@ struct[[= ::foundation::brand::arena_family_brand{}]] DagArena final {};
 // out: a region hashed under the wrong numerics shares a kernel-cache slot
 // with one hashed under the right ones, and the runtime would serve either
 // kernel to either caller.
-[[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
-                                                         ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
-                                                         ::fixy::View<TraceEntry> ops) noexcept {
-    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
+[[nodiscard]] inline DagRef<RegionNode> make_region(::foundation::effects::Alloc a,
+                                                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
+                                                    ::fixy::ArenaRun<TraceEntry const, DagArena> ops) noexcept {
+    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
-    node->content_hash = compute_content_hash(ops);
-    node->first_op_schema = first_op_schema_of(ops);
+    node->content_hash = compute_content_hash(ops.view());
+    node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops.size() == ops.size());
     CRUCIBLE_POST(node, ::foundation::decide::implies(ops.size() > 0u, node->content_hash.raw() != 0));
@@ -1084,10 +1171,9 @@ struct[[= ::foundation::brand::arena_family_brand{}]] DagArena final {};
 }
 
 // For a caller that has already folded the hash while streaming the ops under
-// the numerics hash, and that owns the storage of the node.  The node must be
-// default-constructed.
-inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, ContentHash precomputed_hash,
-                             NumericsHash numerics) noexcept {
+// the numerics hash.  The node must come fresh from mint_dag_node.
+inline void init_region_node(RegionNode& node, ::fixy::ArenaRun<TraceEntry const, DagArena> ops,
+                             ContentHash precomputed_hash, NumericsHash numerics) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(precomputed_hash) || ops.size() == 0);
     // A non-zero hash here means a second construction over a live node.
     CRUCIBLE_PRE(node.content_hash.raw() == 0);
@@ -1095,7 +1181,7 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
     node.ops = ops;
     node.content_hash = precomputed_hash;
     node.numerics = numerics;
-    node.first_op_schema = first_op_schema_of(ops);
+    node.first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(0, node.kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(0, node.ops.size() == ops.size());
     CRUCIBLE_POST(0, node.content_hash == precomputed_hash);
@@ -1105,17 +1191,17 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
 // the content hash and is then dropped, so a caller that needs to recover the
 // recipe later must track it separately.  The overload above covers a region
 // with no recipe.
-[[nodiscard]] inline ::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc a,
-                                                         ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
-                                                         ::fixy::View<TraceEntry> ops,
-                                                         const NumericalRecipe& recipe) noexcept {
+[[nodiscard]] inline DagRef<RegionNode> make_region(::foundation::effects::Alloc a,
+                                                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
+                                                    ::fixy::ArenaRun<TraceEntry const, DagArena> ops,
+                                                    const NumericalRecipe& recipe) noexcept {
     CRUCIBLE_PRE(::foundation::decide::is_non_zero(recipe.hash));
     CRUCIBLE_PRE(!recipe.hash.is_sentinel());
-    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
+    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
     node->kind = TraceNodeKind::REGION;
     node->ops = ops;
-    node->content_hash = compute_content_hash(ops, recipe);
-    node->first_op_schema = first_op_schema_of(ops);
+    node->content_hash = compute_content_hash(ops.view(), recipe);
+    node->first_op_schema = first_op_schema_of(ops.view());
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
     CRUCIBLE_POST(node, node->ops.size() == ops.size());
     CRUCIBLE_POST(node, ::foundation::decide::implies(ops.size() > 0u, node->content_hash.raw() != 0));
@@ -1127,24 +1213,28 @@ inline void init_region_node(RegionNode& node, ::fixy::View<TraceEntry> ops, Con
 // pack holds the other arguments, and the twin declares no raw pointer
 // parameter.
 template <class... Rest>
-::fixy::Ref<RegionNode> make_region(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
+DagRef<RegionNode> make_region(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
-[[nodiscard]] inline ::fixy::Ref<TraceNode> make_terminal(::foundation::effects::Alloc a,
-                                                          ::fixy::BumpArena<DagArena>& arena) noexcept {
-    const ::fixy::Ref<TraceNode> node = ::fixy::erase_brand(arena.make<TraceNode>(a));
+[[nodiscard]] inline DagRef<TraceNode> make_terminal(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena
+                                                     CRUCIBLE_LIFETIMEBOUND) noexcept {
+    const DagRef<TraceNode> node = mint_dag_node<TraceNode>(a, arena);
     node->kind = TraceNodeKind::TERMINAL;
     CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
     return node;
 }
 
+// The twin of make_terminal.  A temporary arena releases the node at the end
+// of the statement.
+void make_terminal(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&) =
+    delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
+
 // The body must be a complete sub-DAG ending in TERMINAL, and
 // body_content_hash must already be folded from that body's region chain.
-[[nodiscard]] inline ::fixy::Ref<LoopNode> make_loop(::foundation::effects::Alloc a,
-                                                     ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND,
-                                                     TraceNode& body, ContentHash body_content_hash,
-                                                     ::fixy::View<FeedbackEdge> feedback, LoopTermKind term_kind,
-                                                     uint32_t repeat_count, float epsilon = 0.0f) noexcept {
+[[nodiscard]] inline DagRef<LoopNode>
+make_loop(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, TraceNode& body,
+          ContentHash body_content_hash, ::fixy::ArenaRun<FeedbackEdge const, DagArena> feedback,
+          LoopTermKind term_kind, uint32_t repeat_count, float epsilon = 0.0f) noexcept {
     CRUCIBLE_PRE(feedback.size() <= ::fixy::max_of<uint16_t>);
     // A convergence distance is a finite number that cannot be negative, and
     // every bit of epsilon reaches the termination hash through a bit_cast,
@@ -1182,7 +1272,7 @@ template <class... Rest>
     // REPEAT keeps zero, where it means what it says: run the body no times
     // and continue.
     CRUCIBLE_PRE(term_kind != LoopTermKind::UNTIL || repeat_count > 0u);
-    const ::fixy::Ref<LoopNode> node = ::fixy::erase_brand(arena.make<LoopNode>(a));
+    const DagRef<LoopNode> node = mint_dag_node<LoopNode>(a, arena);
     node->kind = TraceNodeKind::LOOP;
     node->body = make_link(body);
     node->body_content_hash = body_content_hash;
@@ -1202,22 +1292,22 @@ template <class... Rest>
 // arena releases it at the end of the statement.  The pack holds the other
 // arguments, and the twin declares no raw pointer parameter.
 template <class... Rest>
-::fixy::Ref<LoopNode> make_loop(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
+DagRef<LoopNode> make_loop(::foundation::effects::Alloc, ::fixy::BumpArena<DagArena>&&, Rest&&...) =
     delete("a temporary arena releases the node at the end of the statement. Use an arena that has a name");
 
 // Children are recomputed first, because a node's hash folds in the hashes of
 // its arms, its body and its continuation.
 inline void recompute_merkle(TraceNode& node) {
-    for (const ::fixy::Ref<BranchNode>& branch : node.as_branch()) {
+    for (const DagRef<BranchNode>& branch : node.as_branch()) {
         for (BranchNode::Arm& arm : branch->arms())
-            for (const ::fixy::Ref<TraceNode>& target : arm.target())
+            for (const DagRef<TraceNode>& target : arm.target())
                 recompute_merkle(*target);
     }
-    for (const ::fixy::Ref<LoopNode>& loop : node.as_loop()) {
-        for (const ::fixy::Ref<TraceNode>& body : loop->body)
+    for (const DagRef<LoopNode>& loop : node.as_loop()) {
+        for (const DagRef<TraceNode>& body : loop->body)
             recompute_merkle(*body);
     }
-    for (const ::fixy::Ref<TraceNode>& continuation : node.next)
+    for (const DagRef<TraceNode>& continuation : node.next)
         recompute_merkle(*continuation);
 
     node.merkle_hash = compute_merkle_hash(node);
@@ -1229,7 +1319,7 @@ inline void recompute_merkle(TraceNode& node) {
 [[nodiscard]] inline uint32_t collect_regions(TraceNode& first, ::fixy::View<RegionNode*> out, uint32_t count = 0) {
     TraceLink walk = make_link(first);
     while (walk.is_some() && count < out.size()) {
-        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION:
                 *out.get(count).expect("the count is below the size of out") = &*node->expect_region();
@@ -1237,12 +1327,12 @@ inline void recompute_merkle(TraceNode& node) {
                 break;
             case TraceNodeKind::BRANCH: {
                 for (BranchNode::Arm& arm : node->expect_branch()->arms())
-                    for (const ::fixy::Ref<TraceNode>& target : arm.target())
+                    for (const DagRef<TraceNode>& target : arm.target())
                         count = collect_regions(*target, out, count);
                 break;
             }
             case TraceNodeKind::LOOP:
-                for (const ::fixy::Ref<TraceNode>& body : node->expect_loop()->body)
+                for (const DagRef<TraceNode>& body : node->expect_loop()->body)
                     count = collect_regions(*body, out, count);
                 break;
             case TraceNodeKind::TERMINAL:
@@ -1271,11 +1361,11 @@ inline void recompute_merkle(TraceNode& node) {
     constexpr uint32_t MAX_REGIONS = 1024;
     // The regions at the start of the continuation, up to the first node of
     // a different kind, or up to MAX_REGIONS regions.
-    ::fixy::FixedList<::fixy::Ref<RegionNode>, MAX_REGIONS> existing_regions{};
+    ::fixy::FixedList<DagRef<RegionNode>, MAX_REGIONS> existing_regions{};
 
     TraceLink walk = existing_continuation;
     while (walk.is_some()) {
-        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         if (node->kind != TraceNodeKind::REGION) break;
         if (existing_regions.append(node->expect_region()).is_err()) break;
         walk = node->next.option();
@@ -1284,7 +1374,7 @@ inline void recompute_merkle(TraceNode& node) {
     TraceLink merge{};
     uint32_t new_pos = static_cast<uint32_t>(new_ops.size());
 
-    for (const ::fixy::Ref<RegionNode>& region : existing_regions.reverse()) {
+    for (const DagRef<RegionNode>& region : existing_regions.reverse()) {
         if (new_pos == 0) break;
         const uint32_t region_ops = region->num_ops();
         if (new_pos < region_ops) break;
@@ -1304,10 +1394,10 @@ inline void recompute_merkle(TraceNode& node) {
 }
 
 // The node of a link, as const.  A walk that only reads takes it.
-[[nodiscard]] inline ::fixy::Option<::fixy::Ref<TraceNode const>> read_link(TraceLink const& link) noexcept {
+[[nodiscard]] inline ::fixy::Option<DagRef<TraceNode const>> read_link(TraceLink const& link) noexcept {
     return link.match(
-        [](::fixy::Ref<TraceNode> const& node) noexcept { return ::fixy::some(::fixy::Ref<TraceNode const>{node}); },
-        []() noexcept { return ::fixy::Option<::fixy::Ref<TraceNode const>>{}; });
+        [](DagRef<TraceNode> const& node) noexcept { return ::fixy::some(DagRef<TraceNode const>{node}); },
+        []() noexcept { return ::fixy::Option<DagRef<TraceNode const>>{}; });
 }
 
 // GuardEval is int64_t(const Guard&) and RegionExec is void(RegionNode
@@ -1316,10 +1406,10 @@ inline void recompute_merkle(TraceNode& node) {
 template <typename GuardEval, typename RegionExec>
 [[nodiscard, gnu::flatten]] inline bool replay(TraceNode const& first, GuardEval&& eval_guard,
                                                RegionExec&& exec_region) {
-    ::fixy::Option<::fixy::Ref<TraceNode const>> walk = ::fixy::some(::fixy::erase_brand(::fixy::to(first)));
+    ::fixy::Option<DagRef<TraceNode const>> walk = ::fixy::some(::fixy::to(first));
     while (walk.is_some()) {
-        const ::fixy::Ref<TraceNode const> node =
-            ::fixy::Option<::fixy::Ref<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode const> node =
+            ::fixy::Option<DagRef<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION: {
                 exec_region(*node->expect_region());
@@ -1328,12 +1418,12 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::BRANCH: {
-                const ::fixy::Ref<BranchNode const> branch = node->expect_branch();
+                const DagRef<BranchNode const> branch = node->expect_branch();
                 int64_t val = eval_guard(branch->guard);
 
                 CRUCIBLE_FATAL_INVARIANT(branch->are_arms_sorted_by_value());
 
-                ::fixy::Option<::fixy::Ref<TraceNode const>> arm{};
+                ::fixy::Option<DagRef<TraceNode const>> arm{};
                 {
                     const ::fixy::View<const BranchNode::Arm> arms = branch->arms();
                     uint32_t lo = 0, hi = branch->num_arms();
@@ -1356,7 +1446,7 @@ template <typename GuardEval, typename RegionExec>
                 // falls back to recording.
                 if (arm.is_none()) return false;
 
-                for (const ::fixy::Ref<TraceNode const>& target : arm)
+                for (const DagRef<TraceNode const>& target : arm)
                     if (!replay(*target, eval_guard, exec_region)) return false;
 
                 walk = branch->next.option();
@@ -1364,7 +1454,7 @@ template <typename GuardEval, typename RegionExec>
             }
 
             case TraceNodeKind::LOOP: {
-                const ::fixy::Ref<LoopNode const> loop = node->expect_loop();
+                const DagRef<LoopNode const> loop = node->expect_loop();
                 // Armed in release. An empty body does not fault: the loop
                 // below makes no turn and reports a successful replay of a
                 // body that never ran. A wrong answer is worse than a trap,
@@ -1392,7 +1482,7 @@ template <typename GuardEval, typename RegionExec>
                 // because it would skip the body and report success.
                 CRUCIBLE_FATAL_INVARIANT(loop->term_kind != LoopTermKind::UNTIL || loop->repeat_count > 0u);
                 for (uint32_t i = 0; i < loop->repeat_count; i++) {
-                    for (const ::fixy::Ref<TraceNode const>& body : loop->body.option())
+                    for (const DagRef<TraceNode const>& body : loop->body.option())
                         if (!replay(*body, eval_guard, exec_region)) return false;
                 }
                 walk = node->next.option();
@@ -1431,8 +1521,8 @@ struct DagDiff {
 // Only arms and loop bodies recurse, and their depth is bounded.
 [[nodiscard]] inline DagDiff dag_diff(TraceLink a, TraceLink b, uint32_t depth = 0) {
     while (a.is_some() && b.is_some()) {
-        const ::fixy::Ref<TraceNode> node_a = TraceLink{a}.expect("the condition of the loop tests the link");
-        const ::fixy::Ref<TraceNode> node_b = TraceLink{b}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode> node_a = TraceLink{a}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode> node_b = TraceLink{b}.expect("the condition of the loop tests the link");
         // Equal hashes mean the whole subtree below is equal.
         if (node_a->merkle_hash == node_b->merkle_hash)
             return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
@@ -1443,8 +1533,8 @@ struct DagDiff {
             return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
 
         if (node_a->kind == TraceNodeKind::REGION) {
-            const ::fixy::Ref<RegionNode> ra = node_a->expect_region();
-            const ::fixy::Ref<RegionNode> rb = node_b->expect_region();
+            const DagRef<RegionNode> ra = node_a->expect_region();
+            const DagRef<RegionNode> rb = node_b->expect_region();
             if (ra->content_hash != rb->content_hash) return {a, b, depth, DagDiff::Kind::CONTENT_MISMATCH};
             a = node_a->next.option();
             b = node_b->next.option();
@@ -1453,8 +1543,8 @@ struct DagDiff {
         }
 
         if (node_a->kind == TraceNodeKind::BRANCH) {
-            const ::fixy::Ref<BranchNode> ba = node_a->expect_branch();
-            const ::fixy::Ref<BranchNode> bb = node_b->expect_branch();
+            const DagRef<BranchNode> ba = node_a->expect_branch();
+            const DagRef<BranchNode> bb = node_b->expect_branch();
             if (!::fixy::equal(ba->guard, bb->guard) || ba->arms().size() != bb->arms().size())
                 return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
             for (auto [arm_a, arm_b] :
@@ -1470,13 +1560,13 @@ struct DagDiff {
         }
 
         if (node_a->kind == TraceNodeKind::LOOP) {
-            const ::fixy::Ref<LoopNode> la = node_a->expect_loop();
-            const ::fixy::Ref<LoopNode> lb = node_b->expect_loop();
+            const DagRef<LoopNode> la = node_a->expect_loop();
+            const DagRef<LoopNode> lb = node_b->expect_loop();
             if (la->body_content_hash != lb->body_content_hash || la->term_kind != lb->term_kind
                 || la->repeat_count != lb->repeat_count
                 || ::fixy::bit_cast<uint32_t>(la->epsilon) != ::fixy::bit_cast<uint32_t>(lb->epsilon))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
-            if (!::fixy::equal(la->feedback_edges, lb->feedback_edges))
+            if (!::fixy::equal(la->feedback_edges.view(), lb->feedback_edges.view()))
                 return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
             // The bodies agree on content, so compare their structure.
             DagDiff body_diff = dag_diff(la->body.option(), lb->body.option(), depth + 1);
@@ -1501,7 +1591,7 @@ struct DagDiff {
     uint32_t count = 0;
     TraceLink walk = first;
     while (walk.is_some()) {
-        const ::fixy::Ref<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         ++count;
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {

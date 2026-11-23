@@ -43,7 +43,7 @@ using ExternalCdagVersion = ::fixy::Tagged<uint32_t, ::fixy::tags::source::Exter
 // which is the discharge of the Replayed to Loaded edge.  The node is in the
 // arena of the load, and a loaded value always holds a node, so the tag holds
 // a Ref and not an address that can be null.
-using LoadedRegionNode = ::fixy::Tagged<::fixy::Ref<RegionNode>, ::fixy::tags::source::Loaded>;
+using LoadedRegionNode = ::fixy::Tagged<DagRef<RegionNode>, ::fixy::tags::source::Loaded>;
 // 10 (2026-09-15): the content-hash fold changed mixer.  Every region on
 // disk carries a content hash the current code no longer computes, so a
 // version-9 file would deserialize into regions whose hashes disagree with
@@ -502,7 +502,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
     // keeps one test of the plan.
     const PlanLink plan_link = region.plan;
     w.w(plan_link.is_some());
-    for (const ::fixy::Ref<MemoryPlan const>& plan_ref : plan_link) {
+    for (const DagRef<MemoryPlan const>& plan_ref : plan_link) {
         const MemoryPlan& plan = *plan_ref;
         w.w(plan.pool_bytes);
         w.w(plan.num_slots());
@@ -513,12 +513,12 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
         w.w(plan.device_capability);
         w.w(plan.rank);
         w.w(plan.world_size);
-        for (const TensorSlot& slot : plan.slots) {
+        for (const TensorSlot& slot : plan.slots.view()) {
             w.write_image(slot);
         }
     }
 
-    for (const TraceEntry& te : region.ops) {
+    for (const TraceEntry& te : region.ops.view()) {
         w.w(te.schema_hash.raw());
         w.w(te.shape_hash.raw());
         w.w(te.scope_hash.raw());
@@ -582,7 +582,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
     // A branch node repurposes the header's content-hash field to hold the
     // merkle hash of the continuation, the suffix the arms merge back into.
     const MerkleHash cont_hash = branch.next.match(
-        [](::fixy::Ref<TraceNode const> const& continuation) noexcept { return continuation->merkle_hash; },
+        [](DagRef<TraceNode const> const& continuation) noexcept { return continuation->merkle_hash; },
         []() noexcept { return MerkleHash{}; });
     write_header(w, TraceNodeKind::BRANCH, branch.merkle_hash, ContentHash{cont_hash.raw()});
 
@@ -593,7 +593,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
         w.w(arm.value);
         // An arm with no target writes the hash zero.
         const uint64_t target_hash =
-            arm.target().match([](::fixy::Ref<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
+            arm.target().match([](DagRef<TraceNode const> target) noexcept { return target->merkle_hash.raw(); },
                                []() noexcept { return uint64_t{0}; });
         w.w(target_hash);
     }
@@ -644,12 +644,12 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 
     // The plan of the region, and the count of its slots.  A region with no
     // plan binds to no slot table, and its count stays zero.
-    ::fixy::Option<::fixy::Ref<MemoryPlan>> plan{};
+    ::fixy::Option<DagRef<MemoryPlan>> plan{};
     uint32_t num_slots = 0;
     const bool has_plan = r.read_bool();
     if (has_plan) {
-        const ::fixy::Ref<MemoryPlan> loaded_plan = ::fixy::erase_brand(arena.make<MemoryPlan>(a));
-        plan = ::fixy::Option<::fixy::Ref<MemoryPlan>>::some(loaded_plan);
+        const DagRef<MemoryPlan> loaded_plan = arena.make<MemoryPlan>(a);
+        plan = ::fixy::Option<DagRef<MemoryPlan>>::some(loaded_plan);
         loaded_plan->pool_bytes = r.r<uint64_t>();
         // The next three checks all guard the same thing: a loaded plan goes
         // on to initialise the replay pool, whose own preconditions are only
@@ -678,10 +678,9 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return ::fixy::err(r.reason_or(LoadError::truncated));
         }
-        const auto slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
+        const ::fixy::ArenaRun<TensorSlot, DagArena> slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
         const ::fixy::View<TensorSlot> slots = slots_run.view();
-        loaded_plan->slots = slots;
+        loaded_plan->slots = slots_run;
         uint32_t slot_position = 0;
         for (TensorSlot& slot : slots) {
             slot = r.read_image(TensorSlot{});
@@ -710,8 +709,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
-    const auto ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
-    // A plain View of an arena run: the View carries no brand of its arena.
+    const ::fixy::ArenaRun<TraceEntry, DagArena> ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
     const ::fixy::View<TraceEntry> ops = ops_run.view();
 
     for (TraceEntry& te : ops) {
@@ -767,39 +765,32 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
                 "the gate refuses a word past the data slots, and a refused word reads as zero");
         }
 
-        const auto input_metas_run = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorMeta> input_metas = input_metas_run.view();
-        for (TensorMeta& meta : input_metas) {
+        const ::fixy::ArenaRun<TensorMeta, DagArena> input_metas_run =
+            arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        for (TensorMeta& meta : input_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        const auto output_metas_run = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
-        for (TensorMeta& meta : output_metas) {
+        const ::fixy::ArenaRun<TensorMeta, DagArena> output_metas_run =
+            arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        for (TensorMeta& meta : output_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        const auto scalar_args_run = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<int64_t> scalar_args = scalar_args_run.view();
-        for (int64_t& value : scalar_args) {
+        const ::fixy::ArenaRun<int64_t, DagArena> scalar_args_run =
+            arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        for (int64_t& value : scalar_args_run.view()) {
             value = r.r<int64_t>();
         }
-        te.set_scalar_args(scalar_args);
+        te.set_scalar_args(scalar_args_run);
 
-        const auto producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex> producers = producers_run.view();
-        for (OpIndex& producer : producers) {
+        const ::fixy::ArenaRun<OpIndex, DagArena> producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        for (OpIndex& producer : producers_run.view()) {
             producer = OpIndex{r.r<uint32_t>()};
         }
 
-        const auto input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> input_slot_ids = input_slot_ids_run.view();
-        for (SlotId& slot_id : input_slot_ids) {
+        const ::fixy::ArenaRun<SlotId, DagArena> input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
+        for (SlotId& slot_id : input_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
             // that the id is not the none sentinel: the upper bound is a
@@ -814,12 +805,10 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
             slot_id = sid;
         }
-        te.set_inputs(input_metas, producers, input_slot_ids);
+        te.set_inputs(input_metas_run, producers_run, input_slot_ids_run);
 
-        const auto output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> output_slot_ids = output_slot_ids_run.view();
-        for (SlotId& slot_id : output_slot_ids) {
+        const ::fixy::ArenaRun<SlotId, DagArena> output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
+        for (SlotId& slot_id : output_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.
             if (has_plan && sid.is_valid() && sid.raw() >= num_slots) [[unlikely]] {
@@ -827,7 +816,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
             slot_id = sid;
         }
-        te.set_outputs(output_metas, output_slot_ids);
+        te.set_outputs(output_metas_run, output_slot_ids_run);
     }
 
     for (const LoadError refusal : r.refusal)
@@ -859,13 +848,13 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     for (const LoadError fault : checksum_fault(image, r.pos))
         return ::fixy::err(fault);
 
-    const ::fixy::Ref<RegionNode> node = ::fixy::erase_brand(arena.make<RegionNode>(a));
+    const DagRef<RegionNode> node = mint_dag_node<RegionNode>(a, arena);
     node->kind = TraceNodeKind::REGION;
     node->merkle_hash = hdr.merkle_hash;
     node->content_hash = hdr.content_hash;
     node->numerics = numerics;
     node->next = ::fixy::none;
-    node->ops = ops;
+    node->ops = ops_run;
     node->first_op_schema = first_op_schema;
     node->measured_ms = measured_ms;
     // A new node holds the counter at zero, and each value on disk is at
@@ -912,7 +901,7 @@ template <class Branch, ::foundation::brand::IsBrand Brand>
 // out of the order of their values.
 template <typename Resolve>
     requires std::is_invocable_r_v<TraceLink, Resolve&, MerkleHash>
-[[nodiscard]] inline ::fixy::Result<::fixy::Ref<BranchNode>, LoadError>
+[[nodiscard]] inline ::fixy::Result<DagRef<BranchNode>, LoadError>
 deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, Resolve&& resolve) {
     Resolve resolver = std::forward<Resolve>(resolve);
@@ -938,14 +927,12 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
 
-    const ::fixy::Ref<BranchNode> node = ::fixy::erase_brand(arena.make<BranchNode>(a));
+    const DagRef<BranchNode> node = mint_dag_node<BranchNode>(a, arena);
     node->kind = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
-    const auto arms_run = arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    node->set_arms(arms_run.view());
+    node->set_arms(arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{}));
     for (BranchNode::Arm& arm : node->arms()) {
         arm.value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};
@@ -962,7 +949,7 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
 
 // The branch with no resolver: the target of each arm stays empty, and the
 // caller resolves the targets later.
-[[nodiscard]] inline ::fixy::Result<::fixy::Ref<BranchNode>, LoadError>
+[[nodiscard]] inline ::fixy::Result<DagRef<BranchNode>, LoadError>
 deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte> image,
                    ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) {
     return deserialize_branch(a, image, arena, [](MerkleHash) noexcept { return TraceLink{}; });

@@ -52,11 +52,12 @@ constexpr std::uint32_t kWideSlots = 2 * kBitsetSlots;
 constexpr std::uint64_t kSlotBytes = 256;
 
 // Every slot is internal and kSlotBytes wide, so slot i sits at offset
-// i * kSlotBytes and no two slots overlap.
-MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
+// i * kSlotBytes and no two slots overlap.  The plan is in the arena.
+crucible::DagRef<MemoryPlan> make_plan(::foundation::effects::Alloc alloc, ::fixy::BumpArena<crucible::DagArena>& arena,
+                                       ::fixy::ArenaRun<TensorSlot, crucible::DagArena> slots) {
     const auto count = static_cast<std::uint32_t>(slots.size());
     std::uint32_t index = 0;
-    for (TensorSlot& slot : slots) {
+    for (TensorSlot& slot : slots.view()) {
         slot = {.offset_bytes = index * kSlotBytes,
                 .nbytes = kSlotBytes,
                 .birth_op = OpIndex{0},
@@ -71,12 +72,12 @@ MemoryPlan make_plan(::fixy::View<TensorSlot> slots) {
                 .pad2 = {}};
         ++index;
     }
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = 0;
-    plan.pool_bytes = count * kSlotBytes;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
+    const crucible::DagRef<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
+    plan->slots = slots;
+    plan->num_external = 0;
+    plan->pool_bytes = count * kSlotBytes;
+    plan->device_type = DeviceType::CPU;
+    plan->device_idx = 0;
     return plan;
 }
 
@@ -90,26 +91,30 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, std::size_t>;
 // The zero metadata of the outputs of the test ops.  The switch reads no
 // metadata, so the ops of each region share it.
 ::fixy::ArenaRun<TensorMeta, crucible::DagArena> const output_metas_run = g_runs.array(g_test.alloc, 2, TensorMeta{});
-// A plain View of an arena run: the View carries no brand of its arena.
-::fixy::View<TensorMeta> const output_metas = output_metas_run.view();
 
 // Two operations with the same hashes in each region, so the first one is
 // the shared prefix of a switch at position 1.
-void make_ops(::fixy::View<TraceEntry> ops, ::fixy::View<SlotId> outputs) {
+void make_ops(::fixy::View<TraceEntry> ops, ::fixy::ArenaRun<SlotId const, crucible::DagArena> outputs) {
     for (std::uint32_t index = 0; index < 2; index++) {
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
         op.shape_hash = ShapeHash{200 + index};
-        op.set_outputs(output_metas.window(index, 1).expect("a test region has one output for each op"),
+        op.set_outputs(output_metas_run.window(index, 1).expect("a test region has one output for each op"),
                        outputs.window(index, 1).expect("a test region has one output for each op"));
     }
 }
 
-void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::PlanLink plan) {
-    ::new(region) RegionNode{};
+// A region of the ops and the plan in the arena.  The other fields of the
+// region keep their defaults, so the hashes stay zero.
+crucible::DagRef<RegionNode> build_region(::foundation::effects::Alloc alloc,
+                                          ::fixy::BumpArena<crucible::DagArena>& arena,
+                                          ::fixy::ArenaRun<TraceEntry const, crucible::DagArena> ops,
+                                          crucible::PlanLink plan) {
+    const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(alloc, arena);
     region->kind = TraceNodeKind::REGION;
     region->ops = ops;
     region->plan = plan;
+    return region;
 }
 
 // The slots of the plans are runs of g_runs: the wide plan has 2048 slots of
@@ -117,10 +122,6 @@ void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::Pla
 ::fixy::ArenaRun<TensorSlot, crucible::DagArena> const old_slots_run = g_runs.array(g_test.alloc, 2, TensorSlot{});
 ::fixy::ArenaRun<TensorSlot, crucible::DagArena> const new_slots_run =
     g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
-// A plain View of an arena run: the View carries no brand of its arena.
-::fixy::View<TensorSlot> const old_slots = old_slots_run.view();
-// A plain View of an arena run: the View carries no brand of its arena.
-::fixy::View<TensorSlot> const new_slots = new_slots_run.view();
 
 // Activates a region of two slots, then switches at position 1 to a region
 // whose plan has new_count slots.  The first operation of the new region
@@ -128,30 +129,29 @@ void init_region(RegionNode* region, ::fixy::View<TraceEntry> ops, crucible::Pla
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
-    ::fixy::View<SlotId> const old_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
+    const auto old_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
     auto const old_ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const old_ops = old_ops_run.view();
     make_ops(old_ops, old_outputs);
-    MemoryPlan old_plan = make_plan(old_slots);
-    RegionNode old_region{};
-    init_region(&old_region, old_ops, crucible::make_plan_link(old_plan));
+    const crucible::DagRef<MemoryPlan> old_plan = make_plan(test.alloc, arena, old_slots_run);
+    const crucible::DagRef<RegionNode> old_region =
+        build_region(test.alloc, arena, old_ops_run, crucible::make_plan_link(old_plan));
 
-    ::fixy::View<SlotId> const new_outputs =
-        ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{new_slot}, SlotId{0});
+    const auto new_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{new_slot}, SlotId{0});
     auto const new_ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const new_ops = new_ops_run.view();
     make_ops(new_ops, new_outputs);
-    MemoryPlan new_plan =
-        make_plan(new_slots.window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
-    RegionNode new_region{};
-    init_region(&new_region, new_ops, crucible::make_plan_link(new_plan));
+    const crucible::DagRef<MemoryPlan> new_plan = make_plan(
+        test.alloc, arena, new_slots_run.window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
+    const crucible::DagRef<RegionNode> new_region =
+        build_region(test.alloc, arena, new_ops_run, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
-    const bool was_switched = context.switch_region(new_region, 1);
-    return was_switched && ::fixy::same_target(context.active_region(), ::fixy::some(::fixy::to(new_region)));
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(*old_region));
+    const bool was_switched = context.switch_region(*new_region, 1);
+    return was_switched && ::fixy::same_target(context.active_region(), ::fixy::some(new_region));
 }
 
 // The text of each refusal names the bound.
@@ -185,36 +185,34 @@ void test_slot_past_the_bitset_is_refused(::fixy::TestRunnerCtx const& test) {
 void test_smaller_new_slot_takes_its_own_size() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
-    ::fixy::View<SlotId> const outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{0});
+    const auto outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{0});
 
     auto const wide_slot_run = arena.array(test.alloc, 1, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot, 1> const wide_slot = wide_slot_run.view().window<1>(0).expect("the run holds one slot");
-    MemoryPlan old_plan = make_plan(wide_slot);
+    const crucible::DagRef<MemoryPlan> old_plan = make_plan(test.alloc, arena, wide_slot_run);
     wide_slot.at(::fixy::index<0>()).nbytes = 2 * kSlotBytes;
-    old_plan.pool_bytes = 2 * kSlotBytes;
+    old_plan->pool_bytes = 2 * kSlotBytes;
     auto const old_ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const old_ops = old_ops_run.view();
     make_ops(old_ops, outputs);
-    RegionNode old_region{};
-    init_region(&old_region, old_ops, crucible::make_plan_link(old_plan));
+    const crucible::DagRef<RegionNode> old_region =
+        build_region(test.alloc, arena, old_ops_run, crucible::make_plan_link(old_plan));
 
     auto const narrow_slot_run = arena.array(test.alloc, 1, TensorSlot{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    ::fixy::View<TensorSlot> const narrow_slot = narrow_slot_run.view();
-    MemoryPlan new_plan = make_plan(narrow_slot);
+    const crucible::DagRef<MemoryPlan> new_plan = make_plan(test.alloc, arena, narrow_slot_run);
     auto const new_ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const new_ops = new_ops_run.view();
     make_ops(new_ops, outputs);
-    RegionNode new_region{};
-    init_region(&new_region, new_ops, crucible::make_plan_link(new_plan));
+    const crucible::DagRef<RegionNode> new_region =
+        build_region(test.alloc, arena, new_ops_run, crucible::make_plan_link(new_plan));
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
-    CRUCIBLE_TEST_ASSERT(kTest, context.activate(old_region));
+    CRUCIBLE_TEST_ASSERT(kTest, context.activate(*old_region));
     ::fixy::fill(context.pool().bytes(), std::uint8_t{0x5A});
-    CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(new_region, 1));
+    CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(*new_region, 1));
     CRUCIBLE_TEST_ASSERT(kTest, context.pool().bytes().size() == kSlotBytes);
     for (const std::uint8_t byte : context.pool().bytes()) {
         CRUCIBLE_TEST_ASSERT(kTest, byte == 0x5A);

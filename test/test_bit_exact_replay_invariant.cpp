@@ -143,12 +143,10 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
         }
         const auto producers_run = arena.array<OpIndex>(ctx.alloc, num_inputs, OpIndex{});
         const auto input_slots_run = arena.array<SlotId>(ctx.alloc, num_inputs, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        entry.set_inputs(metas, producers_run.view(), input_slots_run.view());
+        entry.set_inputs(metas_run, producers_run, input_slots_run);
         const auto output_metas_run = arena.array<TensorMeta>(ctx.alloc, 1, TensorMeta{});
         const auto output_slots_run = arena.array<SlotId>(ctx.alloc, 1, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        entry.set_outputs(output_metas_run.view(), output_slots_run.view());
+        entry.set_outputs(output_metas_run, output_slots_run);
 
         const auto scalars_run = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
         // A plain View of an arena run: the View carries no brand of its arena.
@@ -157,7 +155,7 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
             *scalars.get(scalar_index).expect("a test reads an element at or past the count of its View") =
                 static_cast<int64_t>(mix(seed ^ (uint64_t{scalar_index} << 32)) % 4096);
         }
-        entry.set_scalar_args(scalars);
+        entry.set_scalar_args(scalars_run);
     }
 }
 
@@ -212,26 +210,26 @@ struct Built {
     build_ops(ctx, arena, ops, data_ptr_base);
 
     constexpr uint32_t kSplit = kNumOps / 2;
-    const ::fixy::Ref<crucible::RegionNode> head =
-        crucible::make_region(ctx.alloc, dag_arena, ops.window(0, kSplit).expect("the head is in the ops"));
-    const ::fixy::Ref<crucible::RegionNode> tail = crucible::make_region(
-        ctx.alloc, dag_arena, ops.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
+    const crucible::DagRef<crucible::RegionNode> head =
+        crucible::make_region(ctx.alloc, dag_arena, ops_run.window(0, kSplit).expect("the head is in the ops"));
+    const crucible::DagRef<crucible::RegionNode> tail = crucible::make_region(
+        ctx.alloc, dag_arena, ops_run.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
     const auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TensorSlot> slots = slots_run.view();
     build_slots(slots);
-    crucible::MemoryPlan plan_storage{};
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = dag_arena.make<crucible::MemoryPlan>(ctx.alloc);
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-    sweep_scratch.arena.with_epoch(
-        [target, alloc = ctx.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-            static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
-                                  .expect("the slots of the test fit in 64 bits"));
-        });
-    // The sweep writes the plan into the storage of the caller, and the head
-    // links that storage.
+    sweep_scratch.arena.with_epoch([target, alloc = ctx.alloc, plan_storage,
+                                    slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+                              .expect("the slots of the test fit in 64 bits"));
+    });
+    // The sweep writes the plan into the arena of the regions, and the head
+    // links that plan.
     head->plan = crucible::make_plan_link(plan_storage);
     crucible::recompute_merkle(*head);
 
@@ -239,12 +237,13 @@ struct Built {
     out.head_content_hash = head->content_hash.raw();
     out.tail_content_hash = tail->content_hash.raw();
     out.merkle_hash = head->merkle_hash.raw();
-    for (const ::fixy::Ref<MemoryPlan const>& plan : head->plan) {
+    for (const crucible::DagRef<MemoryPlan const>& plan : head->plan) {
         out.pool_bytes = plan->pool_bytes;
         out.num_slots = plan->num_slots();
         out.num_external = plan->num_external;
         for (uint32_t slot_index = 0; slot_index < out.num_slots && slot_index < kNumSlots; slot_index++) {
-            out.offsets[slot_index] = plan->slots.get(slot_index).expect("the plan holds this slot")->offset_bytes;
+            out.offsets[slot_index] =
+                plan->slots.view().get(slot_index).expect("the plan holds this slot")->offset_bytes;
         }
     }
     return out;

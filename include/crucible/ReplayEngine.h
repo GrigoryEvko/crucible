@@ -282,14 +282,15 @@ private:
         // the run of no region, and the engine then stays uninitialized.  The
         // door of the cyclic cursor refuses an empty run, and the test of the
         // count above it folds that check.
-        cursor_ = op_count == 0 ? no_region_cursor_()
-                                : ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(region.ops.begin());
+        cursor_ = op_count == 0
+                    ? no_region_cursor_()
+                    : ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(region.ops.view().begin());
         current_ = ::fixy::none;
         // The precondition above already established what minting this view
         // checks.  An initialized pool holds at least one slot.
         const auto pool_view = pool.initialized_view_();
         slot_table_ = pool.table(pool_view);
-        check_slot_ids_(region.ops, pool.num_slots());
+        check_slot_ids_(region.ops.view(), pool.num_slots());
         // Load the first operation's guard values, so the first advance finds
         // them here like every later one does.
         load_guard_();

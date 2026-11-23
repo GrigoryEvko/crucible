@@ -9,8 +9,11 @@
 #include <crucible/ReplayEngine.h>
 
 int main() {
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
+    const crucible::DagRef<crucible::RegionNode> region =
+        crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, arena);
     crucible::ReplayEngine engine{};
-    crucible::RegionNode region{};
-    engine.init(region, ::fixy::to(region));
+    engine.init(*region, region);
     return 0;
 }

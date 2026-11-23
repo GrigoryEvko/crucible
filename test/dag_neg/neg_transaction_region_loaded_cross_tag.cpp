@@ -30,10 +30,13 @@ int main() {
     crucible::TransactionLog<16, Owner> log{};
     // The log stamps with its own count, so no call takes a tag.
     auto draft = log.begin_tx(owner, 1);
-    crucible::RegionNode region{};
-    const auto loaded = ::fixy::mint_tagged<::fixy::tags::source::Replayed>(
-                            ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(region))})
-                            .retag<::fixy::tags::source::Loaded>();
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
+    const crucible::DagRef<crucible::RegionNode> region =
+        crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, arena);
+    const auto loaded =
+        ::fixy::mint_tagged<::fixy::tags::source::Replayed>(crucible::DagRef<crucible::RegionNode const>{region})
+            .retag<::fixy::tags::source::Loaded>();
     (void)log.commit(owner, std::move(draft), loaded, crucible::ContentHash{}, crucible::MerkleHash{1});
     return 0;
 }

@@ -125,7 +125,7 @@ void test_refused_ops_give_no_wrong_region() {
                                                BackgroundThread::PublishStage const& stage) noexcept {
         BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
         for (uint32_t age = 0; age < queue.size(); ++age) {
-            if (!is_one_iteration(queue.at(stage, age).expect("a queued slot holds a region")->ops)) {
+            if (!is_one_iteration(queue.at(stage, age).expect("a queued slot holds a region")->ops.view())) {
                 ++foreign_regions;
             }
         }

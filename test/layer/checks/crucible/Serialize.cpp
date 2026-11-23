@@ -4,11 +4,11 @@
 
 namespace crucible {
 
-// A loaded region holds a Ref, which is never null, and the tag adds no byte
-// to it.
-static_assert(std::is_same_v<std::remove_cvref_t<decltype(std::declval<LoadedRegionNode const&>().value())>,
-                             ::fixy::Ref<RegionNode>>);
-static_assert(sizeof(LoadedRegionNode) == sizeof(::fixy::Ref<RegionNode>));
+// A loaded region holds a Ref with the brand of the DAG arenas, which is
+// never null, and the tag adds no byte to it.
+static_assert(
+    std::is_same_v<std::remove_cvref_t<decltype(std::declval<LoadedRegionNode const&>().value())>, DagRef<RegionNode>>);
+static_assert(sizeof(LoadedRegionNode) == sizeof(DagRef<RegionNode>));
 static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 
 namespace detail_ser {

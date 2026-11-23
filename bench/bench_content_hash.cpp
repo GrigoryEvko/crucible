@@ -34,12 +34,10 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena<DagArena>& arena
             const auto input_metas_run = arena.array(A, num_inputs, meta);
             const auto producers_run = arena.array(A, num_inputs, OpIndex{});
             const auto input_slots_run = arena.array(A, num_inputs, SlotId{});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            te.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+            te.set_inputs(input_metas_run, producers_run, input_slots_run);
             const auto output_metas_run = arena.array(A, 1, meta);
             const auto output_slots_run = arena.array(A, 1, SlotId{});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            te.set_outputs(output_metas_run.view(), output_slots_run.view());
+            te.set_outputs(output_metas_run, output_slots_run);
         }
     });
     return ops;

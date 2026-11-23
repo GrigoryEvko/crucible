@@ -1,7 +1,7 @@
 // Negative compile test.  This file must fail to compile.
 //
 // TransactionLog::commit takes the region as Transaction::ArenaRegion,
-// which is fixy::Tagged<Ref<RegionNode>, source::Arena>.  A raw RegionNode*
+// which is fixy::Tagged<DagRef<RegionNode const>, source::Arena>.  A raw RegionNode*
 // does not convert to it, because the constructor from the value is
 // private and mint_tagged is the one door.
 //

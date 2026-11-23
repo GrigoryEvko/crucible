@@ -33,13 +33,13 @@ using crucible::SchemaHash;
     body_ops1.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x2222};
     // The nodes are held as references: a Ref local in this large function
     // costs the Debug compile far more than a reference.
-    crucible::RegionNode& body_r1 = *crucible::make_region(test.alloc, arena, body_ops1);
+    crucible::RegionNode& body_r1 = *crucible::make_region(test.alloc, arena, body_ops1_run);
 
     auto const body_ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const body_ops2 = body_ops2_run.view();
     body_ops2.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x3333};
-    crucible::RegionNode& body_r2 = *crucible::make_region(test.alloc, arena, body_ops2);
+    crucible::RegionNode& body_r2 = *crucible::make_region(test.alloc, arena, body_ops2_run);
 
     crucible::TraceNode& body_term = *crucible::make_terminal(test.alloc, arena);
     body_r1.next = crucible::make_link(body_r2);
@@ -57,13 +57,14 @@ using crucible::SchemaHash;
     fb_edges.get(0).expect("the run holds one edge")->input_idx = 0;
 
     crucible::LoopNode& loop =
-        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, crucible::LoopTermKind::REPEAT, 4);
+        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::REPEAT, 4);
 
     CRUCIBLE_TEST_ASSERT(kTest, loop.kind == crucible::TraceNodeKind::LOOP);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loop.body.option(), body_r1));
     CRUCIBLE_TEST_ASSERT(kTest, loop.body_content_hash == body_ch);
     CRUCIBLE_TEST_ASSERT(kTest, loop.num_feedback() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, loop.feedback_edges.get(0).expect("the loop holds one feedback edge")->output_idx == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         loop.feedback_edges.view().get(0).expect("the loop holds one feedback edge")->output_idx == 0);
     CRUCIBLE_TEST_ASSERT(kTest, loop.term_kind == crucible::LoopTermKind::REPEAT);
     CRUCIBLE_TEST_ASSERT(kTest, loop.repeat_count == 4);
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::bit_cast<uint32_t>(loop.epsilon) == 0);
@@ -74,7 +75,7 @@ using crucible::SchemaHash;
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const final_ops = final_ops_run.view();
     final_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x4444};
-    crucible::RegionNode& final_region = *crucible::make_region(test.alloc, arena, final_ops);
+    crucible::RegionNode& final_region = *crucible::make_region(test.alloc, arena, final_ops_run);
     crucible::TraceNode& dag_term = *crucible::make_terminal(test.alloc, arena);
     final_region.next = crucible::make_link(dag_term);
     loop.next = crucible::make_link(final_region);
@@ -85,13 +86,13 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(loop_merkle));
 
     crucible::LoopNode& loop2 =
-        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, crucible::LoopTermKind::REPEAT, 8);
+        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::REPEAT, 8);
     loop2.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop2);
     CRUCIBLE_TEST_ASSERT(kTest, loop2.merkle_hash != loop_merkle);
 
-    crucible::LoopNode& loop3 =
-        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, crucible::LoopTermKind::UNTIL, 4, 0.001f);
+    crucible::LoopNode& loop3 = *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges_run,
+                                                     crucible::LoopTermKind::UNTIL, 4, 0.001f);
     loop3.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop3);
     CRUCIBLE_TEST_ASSERT(kTest, loop3.merkle_hash != loop_merkle);
@@ -103,13 +104,13 @@ using crucible::SchemaHash;
     *fb_edges2.get(0).expect("the run holds two edges") = {.output_idx = 0, .input_idx = 0};
     *fb_edges2.get(1).expect("the run holds two edges") = {.output_idx = 1, .input_idx = 1};
     crucible::LoopNode& loop4 =
-        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2, crucible::LoopTermKind::REPEAT, 4);
+        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges2_run, crucible::LoopTermKind::REPEAT, 4);
     loop4.next = crucible::make_link(final_region);
     crucible::recompute_merkle(loop4);
     CRUCIBLE_TEST_ASSERT(kTest, loop4.merkle_hash != loop_merkle);
 
     CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature({}) == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(loop.feedback_edges) != 0);
+    CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(loop.feedback_edges.view()) != 0);
 
     ::foundation::core::FixedArray<crucible::RegionNode*, 16> collected{};
     uint32_t n_collected =
@@ -146,7 +147,7 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, logged(8) == final_region.content_hash);
 
     crucible::LoopNode& loop_zero =
-        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges, crucible::LoopTermKind::REPEAT, 0);
+        *crucible::make_loop(test.alloc, arena, body_r1, body_ch, fb_edges_run, crucible::LoopTermKind::REPEAT, 0);
     loop_zero.next = crucible::make_link(final_region);
     uint32_t zero_count = 0;
     bool zero_ok = crucible::replay(loop_zero, never_diverges, counter_of(zero_count));
@@ -157,7 +158,7 @@ using crucible::SchemaHash;
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const alt_body_ops = alt_body_ops_run.view();
     alt_body_ops.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0x9999};
-    crucible::RegionNode& alt_body = *crucible::make_region(test.alloc, arena, alt_body_ops);
+    crucible::RegionNode& alt_body = *crucible::make_region(test.alloc, arena, alt_body_ops_run);
     crucible::TraceNode& alt_body_term = *crucible::make_terminal(test.alloc, arena);
     alt_body.next = crucible::make_link(alt_body_term);
     ContentHash alt_ch = crucible::compute_body_content_hash(alt_body);
@@ -182,11 +183,11 @@ using crucible::SchemaHash;
         // walks, so a shared body would have one loop's pass overwrite the
         // other's.
         auto build_until_loop = [&](float epsilon) {
-            const auto body = crucible::make_region(test.alloc, arena, loop_body_ops);
+            const auto body = crucible::make_region(test.alloc, arena, loop_body_ops_run);
             body->next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
-            const auto node =
-                crucible::make_loop(test.alloc, arena, *body, crucible::compute_body_content_hash(*body),
-                                    ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::UNTIL, 3, epsilon);
+            const auto node = crucible::make_loop(test.alloc, arena, *body, crucible::compute_body_content_hash(*body),
+                                                  ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{},
+                                                  crucible::LoopTermKind::UNTIL, 3, epsilon);
             node->next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
             crucible::recompute_merkle(*node);
             return node;

@@ -9,6 +9,7 @@
 // proof of type Owner, and only the owning thread can hold one. A second
 // thread that wants a change sends it to the owner as a message.
 
+#include <crucible/DagArena.h>
 #include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <fixy/CyclicBuffer.h>
@@ -44,14 +45,16 @@ enum class TxStatus : uint8_t {
 };
 
 struct Transaction {
-    // The region of a commit: a Ref of a region in the arena, which is
-    // never null.  The log holds a region and gives it to its owner, and it
-    // writes no region, so it holds a region of const.
-    using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode const>, ::fixy::tags::source::Arena>;
+    // The region of a commit: a Ref of a region in a DAG arena, with the
+    // brand of the arena, which is never null.  The log holds a region and
+    // gives it to its owner, and it writes no region, so it holds a region of
+    // const.
+    using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode const, DagArena>, ::fixy::tags::source::Arena>;
     // The region of a transaction, or no region before its commit.
-    using ArenaRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const>>, ::fixy::tags::source::Arena>;
+    using ArenaRegionLink =
+        ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const, DagArena>>, ::fixy::tags::source::Arena>;
 
-    static_assert(sizeof(ArenaRegionLink) == sizeof(::fixy::Option<::fixy::Ref<RegionNode const>>),
+    static_assert(sizeof(ArenaRegionLink) == sizeof(::fixy::Option<::fixy::Ref<RegionNode const, DagArena>>),
                   "the tag adds no byte to the link, and the empty link is the null pointer");
 
     // Replay determinism rests on this, so the type rejects a write that goes
@@ -87,9 +90,10 @@ struct Transaction {
 // True when the transaction holds the region.  The test compares the
 // addresses of the two regions, so a copy of the region is not the region.
 // A transaction with no region holds no region.
-[[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode> region) noexcept {
-    return tx.region.value().is_some_and(
-        [region](::fixy::Ref<RegionNode const> const& held) noexcept { return ::fixy::same_object(held, region); });
+[[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode, DagArena> region) noexcept {
+    return tx.region.value().is_some_and([region](::fixy::Ref<RegionNode const, DagArena> const& held) noexcept {
+        return ::fixy::same_object(held, region);
+    });
 }
 
 // A proof that the caller is the one thread that owns some state. It is
@@ -462,7 +466,7 @@ public:
         for (Slot const back : ::fixy::IndexRange<N>{}) {
             if (back.raw() >= ring_.size()) break;
             read_slot_(ring_.slot_back(back), [&visit](Transaction const& entry) noexcept {
-                for (const ::fixy::Ref<RegionNode const>& region : entry.region.value())
+                for (const ::fixy::Ref<RegionNode const, DagArena>& region : entry.region.value())
                     visit(::fixy::some(region));
             });
         }
@@ -573,7 +577,7 @@ private:
         write_slot_(key, committed.slot_, [this, region, content_hash, merkle_root](Transaction& tx) noexcept {
             // The region came in under the Arena tag, so the link keeps it.
             tx.region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-                ::fixy::Option<::fixy::Ref<RegionNode const>>::some(region.value()));
+                ::fixy::Option<::fixy::Ref<RegionNode const, DagArena>>::some(region.value()));
             tx.content_hash = content_hash;
             tx.merkle_root = merkle_root;
             tx.status = TxStatus::COMMITTED;

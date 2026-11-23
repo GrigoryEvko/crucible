@@ -30,80 +30,67 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // op[i] writes to slot i, reads from slot (i-1) mod N. Plan gives each
 // slot 256 B of a dummy pool.
 struct BenchRegion {
-    // The slot ids of each output and input, the zero metadata of each
-    // output and input, and no producer for each input.  Each op keeps a View
-    // that writes them, so they are runs of the arena.  The replay reads only
-    // the slot ids.
+    // The arena holds the ops, the slot ids of each output and input, the
+    // zero metadata of each output and input, no producer for each input,
+    // the slots, the plan and the region.  The replay reads only the slot
+    // ids.
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
-    ::fixy::HeapArray<TraceEntry> ops{};
-    ::fixy::HeapArray<TensorSlot> slots{};
-    MemoryPlan plan{};
-    RegionNode region{};
+    DagRef<MemoryPlan> plan;
+    DagRef<RegionNode> region;
     uint32_t num_ops = 0;
 
-    explicit BenchRegion(uint32_t n) : num_ops{n} {
+    explicit BenchRegion(uint32_t n)
+        : plan{arena.make<MemoryPlan>(::foundation::effects::testing::test().alloc)},
+          region{mint_dag_node<RegionNode>(::foundation::effects::testing::test().alloc, arena)},
+          num_ops{n} {
         auto const alloc = ::foundation::effects::testing::test().alloc;
         const auto out_slots_run = arena.array(alloc, n, SlotId{});
         const auto in_slots_run = arena.array(alloc, n, SlotId{});
         const auto out_metas_run = arena.array(alloc, n, TensorMeta{});
         const auto in_metas_run = arena.array(alloc, n, TensorMeta{});
         const auto in_producers_run = arena.array(alloc, n, OpIndex{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> out_slots = out_slots_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> in_slots = in_slots_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorMeta> out_metas = out_metas_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TensorMeta> in_metas = in_metas_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex> in_producers = in_producers_run.view();
-        ops = ::fixy::mint_heap_array(alloc, n, TraceEntry{});
+        const auto ops_run = arena.array(alloc, n, TraceEntry{});
 
-        // One frame of the ops writes each op.
-        ops = ::fixy::with_mut(
-            std::move(ops), [out_slots, in_slots, out_metas, in_metas, in_producers, n](auto run) noexcept {
-                for (uint32_t i = 0; i < n; i++) {
-                    const ::fixy::View<SlotId> out_slot = out_slots.window(i, 1).expect("i is below n");
-                    const ::fixy::View<SlotId> in_slot = in_slots.window(i, 1).expect("i is below n");
-                    ::fixy::fill(out_slot, SlotId{i});
-                    ::fixy::fill(in_slot, SlotId{(i > 0) ? (i - 1) : (n - 1)});
+        for (uint32_t i = 0; i < n; i++) {
+            const auto out_slot = out_slots_run.window(i, 1).expect("i is below n");
+            const auto in_slot = in_slots_run.window(i, 1).expect("i is below n");
+            ::fixy::fill(out_slot.view(), SlotId{i});
+            ::fixy::fill(in_slot.view(), SlotId{(i > 0) ? (i - 1) : (n - 1)});
 
-                    TraceEntry& op = *run.get(i).expect("i is below n");
-                    op.schema_hash = SchemaHash{1000 + i};
-                    op.shape_hash = ShapeHash{2000 + i};
-                    op.set_outputs(out_metas.window(i, 1).expect("i is below n"), out_slot);
-                    op.set_inputs(in_metas.window(i, 1).expect("i is below n"),
-                                  in_producers.window(i, 1).expect("i is below n"), in_slot);
-                }
-            });
+            TraceEntry& op = *ops_run.view().get(i).expect("i is below n");
+            op.schema_hash = SchemaHash{1000 + i};
+            op.shape_hash = ShapeHash{2000 + i};
+            op.set_outputs(out_metas_run.window(i, 1).expect("i is below n"), out_slot);
+            op.set_inputs(in_metas_run.window(i, 1).expect("i is below n"),
+                          in_producers_run.window(i, 1).expect("i is below n"), in_slot);
+        }
 
-        slots = ::fixy::mint_heap_array_with<TensorSlot>(alloc, n, [n](std::size_t position) noexcept {
-            const auto i = static_cast<uint32_t>(position);
-            return TensorSlot{.offset_bytes = i * 256ULL,
-                              .nbytes = 256,
-                              .birth_op = OpIndex{0},
-                              .death_op = OpIndex{n},
-                              .dtype = ScalarType::Float,
-                              .device_type = DeviceType::CPU,
-                              .device_idx = 0,
-                              .layout = Layout::Strided,
-                              .is_external = false,
-                              .pad = {},
-                              .slot_id = SlotId{i},
-                              .pad2 = {}};
-        });
+        const auto slots_run = arena.array(alloc, n, TensorSlot{});
+        for (uint32_t i = 0; i < n; i++) {
+            *slots_run.view().get(i).expect("i is below n") = TensorSlot{.offset_bytes = i * 256ULL,
+                                                                         .nbytes = 256,
+                                                                         .birth_op = OpIndex{0},
+                                                                         .death_op = OpIndex{n},
+                                                                         .dtype = ScalarType::Float,
+                                                                         .device_type = DeviceType::CPU,
+                                                                         .device_idx = 0,
+                                                                         .layout = Layout::Strided,
+                                                                         .is_external = false,
+                                                                         .pad = {},
+                                                                         .slot_id = SlotId{i},
+                                                                         .pad2 = {}};
+        }
 
-        plan.slots = slots.view();
-        plan.num_external = 0;
-        plan.pool_bytes = static_cast<uint64_t>(n) * 256;
-        plan.device_type = DeviceType::CPU;
-        plan.device_idx = 0;
+        plan->slots = slots_run;
+        plan->num_external = 0;
+        plan->pool_bytes = static_cast<uint64_t>(n) * 256;
+        plan->device_type = DeviceType::CPU;
+        plan->device_idx = 0;
 
-        region.kind = TraceNodeKind::REGION;
-        region.ops = ops.view();
-        region.plan = make_plan_link(plan);
+        region->kind = TraceNodeKind::REGION;
+        region->ops = ops_run;
+        region->plan = make_plan_link(plan);
     }
 
     BenchRegion(const BenchRegion&) = delete;
@@ -181,13 +168,16 @@ int main() {
         // Runs for this N. IIFE-lambdas capture by reference.
         BenchRegion br{n};
         PoolAllocator pool;
-        pool.init(::foundation::effects::testing::test().alloc, br.plan);
+        pool.init(::foundation::effects::testing::test().alloc, *br.plan);
 
         ReplayEngine engine;
-        engine.init(br.region, ::fixy::to(pool));
+        engine.init(*br.region, ::fixy::to(pool));
 
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};
-        (void)ctx.activate(br.region);
+        (void)ctx.activate(*br.region);
+
+        // The ops of the region, which each walk reads.
+        const ::fixy::View<const TraceEntry> region_ops = br.region->ops.view();
 
         const bench::RunName label1 = bench::format_name("advance only           [{} ops]", ::fixy::Padded<4>{n});
         const bench::RunName label2 = bench::format_name("advance + output_ptr   [{} ops]", ::fixy::Padded<4>{n});
@@ -195,19 +185,19 @@ int main() {
         const bench::RunName label4 = bench::format_name("CrucibleContext        [{} ops]", ::fixy::Padded<4>{n});
 
         bench::add_report(reports, bench::run(label1, [&] {
-                              auto s = walk_advance_only(engine, br.region.ops);
+                              auto s = walk_advance_only(engine, region_ops);
                               bench::do_not_optimize(s);
                           }));
         bench::add_report(reports, bench::run(label2, [&] {
-                              auto p = walk_advance_output(engine, br.region.ops);
+                              auto p = walk_advance_output(engine, region_ops);
                               bench::do_not_optimize(p);
                           }));
         bench::add_report(reports, bench::run(label3, [&] {
-                              auto p = walk_advance_both(engine, br.region.ops);
+                              auto p = walk_advance_both(engine, region_ops);
                               bench::do_not_optimize(p);
                           }));
         bench::add_report(reports, bench::run(label4, [&] {
-                              auto p = walk_context(ctx, br.region.ops);
+                              auto p = walk_context(ctx, region_ops);
                               bench::do_not_optimize(p);
                           }));
 

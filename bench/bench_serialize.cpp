@@ -22,7 +22,7 @@ static constexpr auto A = BG.alloc;
 // Avoids collision with crucible::make_region — this one builds a region
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
 // op rows.  The ops, their arrays and the region are in dag_arena.
-static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
+static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
     const auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
@@ -53,15 +53,13 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_are
         const ::fixy::View<SlotId> input_slots = input_slots_run.view();
         *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};
         const auto input_metas_run = dag_arena.array(A, 2, meta);
-        // A plain View of an arena run: the View carries no brand of its arena.
-        te.set_inputs(input_metas_run.view(), producers, input_slots);
+        te.set_inputs(input_metas_run, producers_run, input_slots_run);
         const auto output_metas_run = dag_arena.array(A, 1, meta);
         const auto output_slots_run = dag_arena.array(A, 1, SlotId{200 + i});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        te.set_outputs(output_metas_run.view(), output_slots_run.view());
+        te.set_outputs(output_metas_run, output_slots_run);
     }
 
-    return make_region(A, dag_arena, ops);
+    return make_region(A, dag_arena, ops_run);
 }
 
 // The serialize of a region through a call that GCC cannot see into.  The
@@ -71,7 +69,7 @@ static ::fixy::Ref<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_are
 // body of only such a call is cold code too (the print doors of
 // bench/bench_harness.h).  The call of a noipa function can end its block,
 // so the rows and the timed body around it stay in hot code.
-[[gnu::noipa]] static size_t serialize_through_call(::fixy::Ref<RegionNode> region, ::fixy::View<std::byte> image) {
+[[gnu::noipa]] static size_t serialize_through_call(DagRef<RegionNode> region, ::fixy::View<std::byte> image) {
     return serialize_region(::fixy::to(*region), image);
 }
 
@@ -93,7 +91,7 @@ int main() {
         // (ser, deser) Runs.
         ::fixy::BumpArena<DagArena> dag_arena =
             ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
-        const ::fixy::Ref<RegionNode> region = synth_region(dag_arena, num_ops);
+        const DagRef<RegionNode> region = synth_region(dag_arena, num_ops);
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));

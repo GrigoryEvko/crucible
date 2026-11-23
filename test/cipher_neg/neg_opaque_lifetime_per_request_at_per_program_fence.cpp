@@ -22,10 +22,11 @@ int main() {
     const auto view = cipher.mint_open_view(store_ctx);
 
     // The band holds a Ref of a region, so the scope is the one fault.
-    using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
-    const ::crucible::RegionNode region{};
-    auto request_scoped = ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(
-        RegionRef{::fixy::erase_brand(::fixy::to(region))});
+    using RegionRef = ::crucible::DagRef<const ::crucible::RegionNode>;
+    ::fixy::BumpArena<::crucible::DagArena> arena = ::fixy::mint_bump_arena<::crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
+    const RegionRef region = ::crucible::mint_dag_node<::crucible::RegionNode>(store_ctx.cap().alloc, arena);
+    auto request_scoped = ::fixy::mint_band<::fixy::opaque_lifetime::PerRequest<RegionRef>>(region);
     auto result = cipher.commit_per_program(store_ctx, view, std::move(request_scoped));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

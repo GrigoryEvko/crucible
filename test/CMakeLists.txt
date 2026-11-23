@@ -2123,14 +2123,14 @@ crucible_neg_compile_test(neg_transaction_log_capacity_two
   "the comparison reduces to .\\(2 >= 4\\).")
 
 # TransactionLog::commit takes the region as
-# fixy::Tagged<Ref<RegionNode>, source::Arena>.  A raw RegionNode* and a Ref
-# under the Loaded tag, the tag of a loaded region, both fail at the commit
-# boundary.
+# fixy::Tagged<DagRef<RegionNode const>, source::Arena>.  A raw RegionNode*
+# and a Ref under the Loaded tag, the tag of a loaded region, both fail at the
+# commit boundary.
 crucible_neg_compile_test(neg_transaction_region_raw_pointer
   "neg_transaction_region_raw_pointer.cpp:34:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
-  "no known conversion for argument 3 from .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion. \\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode>, fixy::tags::source::Arena>.\\}")
+  "no known conversion for argument 3 from .crucible::RegionNode\\*. to .crucible::Transaction::ArenaRegion. \\{aka .fixy::Tagged<foundation::core::Ref<const crucible::RegionNode, crucible::DagArena>, fixy::tags::source::Arena>.\\}")
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
-  "neg_transaction_region_loaded_cross_tag.cpp:37:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
+  "neg_transaction_region_loaded_cross_tag.cpp:40:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
   "no known conversion for argument 3 from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
 # A draft does not move, so a move out of a reference gives no second draft
 # of one claim.
@@ -2213,6 +2213,21 @@ crucible_neg_compile_test(neg_trace_node_kind_uint8_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
 
+# Each node lives in a DAG arena: only mint_dag_node builds one, and no node
+# copies out of its arena.  So the DagArena brand of a node is sound.
+crucible_neg_compile_test(neg_dag_node_on_the_stack
+  "no matching function for call to .crucible::RegionNode::RegionNode\\(<brace-enclosed initializer list>\\)."
+  "neg_dag_node_on_the_stack.cpp:[0-9]+:[0-9]+: error")
+crucible_neg_compile_test(neg_dag_node_copied_out_of_its_arena
+  "use of deleted function .crucible::TraceNode::TraceNode\\(const crucible::TraceNode&\\)."
+  "a node lives in its DAG arena: link the node, do not copy it")
+crucible_neg_compile_test(neg_dag_node_mint_of_a_plan
+  "no matching function for call to .mint_dag_node<crucible::MemoryPlan>"
+  "required for the satisfaction of .DagNodeType<Node>. \\[with Node = crucible::MemoryPlan\\]")
+crucible_neg_compile_test(neg_dag_node_mint_in_another_family
+  "no matching function for call to .mint_dag_node<crucible::RegionNode>"
+  "foundation::core::BumpArena<.anonymous.::OtherFamily>")
+
 # The target of an arm is a link, and a link has no operator->.  A walk
 # reads the target through a match, a loop over the link, or
 # resolved_target().
@@ -2220,10 +2235,10 @@ crucible_neg_compile_test(neg_branch_arm_target_raw_read
   "error: base operand of .->. has non-pointer type"
   "non-pointer type .foundation::core::Option<foundation::core::Ref<const crucible::TraceNode")
 crucible_neg_compile_test(neg_published_region_writes_through_an_arm
-  "invalid initialization of reference of type .const foundation::core::Ref<crucible::TraceNode>&. from expression of type .const foundation::core::Ref<const crucible::TraceNode"
+  "invalid initialization of reference of type .crucible::DagRef<crucible::TraceNode>&. \\{aka .const foundation::core::Ref<crucible::TraceNode, crucible::DagArena>&.\\} from expression of type .const foundation::core::Ref<const crucible::TraceNode"
   "neg_published_region_writes_through_an_arm.cpp:[0-9]+:[0-9]+: error")
 crucible_neg_compile_test(neg_published_region_writes_through_a_loop_body
-  "invalid initialization of reference of type .const foundation::core::Ref<crucible::TraceNode>&. from expression of type .foundation::core::Ref<const crucible::TraceNode"
+  "invalid initialization of reference of type .crucible::DagRef<crucible::TraceNode>&. \\{aka .const foundation::core::Ref<crucible::TraceNode, crucible::DagArena>&.\\} from expression of type .foundation::core::Ref<const crucible::TraceNode"
   "neg_published_region_writes_through_a_loop_body.cpp:[0-9]+:[0-9]+: error")
 # The record of a published region names a const region, so a reader of the
 # record on another thread cannot write the region.
@@ -2258,7 +2273,7 @@ crucible_neg_compile_test(neg_cdag_version_external_cross_tag
 #   * neg_deserialize_region_cross_tag.cpp — Loaded provenance cannot
 #     pass as source::External.
 crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
-  "cannot convert .fixy::Tagged<foundation::core::Ref<crucible::RegionNode>, fixy::tags::source::Loaded>. to .crucible::RegionNode\\*. in initialization"
+  "cannot convert .fixy::Tagged<foundation::core::Ref<crucible::RegionNode, crucible::DagArena>, fixy::tags::source::Loaded>. to .crucible::RegionNode\\*. in initialization"
   "neg_deserialize_region_raw_region_ptr.cpp:24")
 crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
@@ -3518,7 +3533,7 @@ crucible_neg_compile_test(neg_philox_op_key_det_raw_uint64
 # cold storage).
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, crucible::DagArena> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 
 # The rest of the lifetime to tier refusals.  A request-scoped region
 # does not reach the warm tier, which survives a restart, and a
@@ -3527,16 +3542,16 @@ crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
 # commit entry point.
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
   "no matching function for call to .crucible::Cipher::commit_per_program."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_REQUEST>, foundation::core::Ref<const crucible::RegionNode, crucible::DagArena> >. Scope = foundation::algebra::lattices::Lifetime::PER_PROGRAM.. evaluated to .false.")
 crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
   "no matching function for call to .crucible::Cipher::commit_per_fleet."
-  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
+  "the expression .satisfies_v<W, Scope> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::LifetimeLattice::At<foundation::algebra::lattices::Lifetime::PER_PROGRAM>, foundation::core::Ref<const crucible::RegionNode, crucible::DagArena> >. Scope = foundation::algebra::lattices::Lifetime::PER_FLEET.. evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_request_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_request."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_request_wrong_band
   "no matching function for call to .crucible::Cipher::commit_per_request."
-  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, foundation::core::Ref<const crucible::RegionNode, foundation::brand::DefaultBrand> >.. evaluated to .false.")
+  "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = foundation::algebra::Graded<foundation::algebra::ModalityKind::Absolute, foundation::algebra::lattices::CipherTierLattice::At<foundation::algebra::lattices::CipherTierTag::Hot>, foundation::core::Ref<const crucible::RegionNode, crucible::DagArena> >.. evaluated to .false.")
 crucible_neg_compile_test(neg_cipher_commit_per_program_bare_pointer
   "no matching function for call to .crucible::Cipher::commit_per_program."
   "the expression .is_band_of_v<foundation::algebra::lattices::LifetimeLattice, W> .with W = const crucible::RegionNode... evaluated to .false.")
@@ -3544,8 +3559,8 @@ crucible_neg_compile_test(neg_cipher_commit_per_program_bare_pointer
 # Cipher::content_addressed takes a Ref of the region, so a null pointer
 # reaches no payload through it.  The empty payload has its own door.
 crucible_neg_compile_test(neg_cipher_content_addressed_null
-  "cannot convert .std::nullptr_t. to .foundation::core::Ref<const crucible::RegionNode>."
-  "initializing argument 1 of .static crucible::Cipher::ContentAddressedRegionPayload crucible::Cipher::content_addressed.foundation::core::Ref<const crucible::RegionNode>..")
+  "cannot convert .std::nullptr_t. to .foundation::core::Ref<const crucible::RegionNode, crucible::DagArena>."
+  "initializing argument 1 of .static crucible::Cipher::ContentAddressedRegionPayload crucible::Cipher::content_addressed.foundation::core::Ref<const crucible::RegionNode, crucible::DagArena>..")
 
 # A NumericalTier below BITEXACT must not reach a consumer that requires
 # BITEXACT.  The three fixtures refuse a gap of six tiers (RELAXED), one
@@ -3817,10 +3832,10 @@ crucible_neg_compile_test(neg_mimic_semaphore_default_construct
 # boundary.
 crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
   "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .const crucible::PoolAllocator\\*."
-  "neg_replay_engine_pool_raw_pointer.cpp:16")
+  "neg_replay_engine_pool_raw_pointer.cpp:19")
 crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
   "required for the satisfaction of .ReplayPool<Pool>. \\[with Pool = crucible::RegionNode\\]"
-  "neg_replay_engine_pool_wrong_borrow.cpp:14")
+  "neg_replay_engine_pool_wrong_borrow.cpp:17")
 
 # Production-call-site fence: a hot-path consumer that requires the
 # Pool allocation class refuses a Heap band.  This is the rejection that

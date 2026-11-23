@@ -690,86 +690,62 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
     log.advance_tail(meta_floor);
 }
 
-// The node and the plan go into buffers of the region, and the arrays of the
-// sweep into the scratch of the publish stage, whose epoch ends in this call.
-// The memory goes to a slot of the region store before the region becomes
-// visible, so each region that a holder can name has an owner.  A store with
-// no free slot discards the region, as a reset discards a stale region.
+// The node and the plan go into the arena of the parts of the region, and
+// the arrays of the sweep into the scratch of the publish stage, whose epoch
+// ends in this call.  The memory goes to a slot of the region store before
+// the region becomes visible, so each region that a holder can name has an
+// owner.  A store with no free slot discards the region, as a reset discards
+// a stale region.
 //
-// The node and the plan of the region are locals until the region memory
-// takes them.  Each takes its writes through its element door, and the link
-// of the node leaves the door through a local, as the erased Ref of the
-// protocol of the store.  A move of a HeapArray keeps its storage, so the
-// node keeps its address in the store.  Then one element door of the store
+// The arena moves out of the parts for the build of the node and the plan,
+// and back in before the parts move to the store.  The Box holds the arena on
+// the heap, so neither move moves a node.  Then one element door of the store
 // writes the region memory, and the region becomes visible after it.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
     ::fixy::Option<size_t> free_slot = ::fixy::find_if(
-        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.node.size() == 0; });
+        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.node.is_none(); });
     if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
     }
     const size_t free_position = std::move(free_slot).expect("the test above found a free slot");
 
-    ::fixy::HeapArray<RegionNode> node =
-        ::fixy::mint_heap_array_with<RegionNode>(bg.alloc, 1, [](size_t) noexcept { return RegionNode{}; });
-    ::fixy::HeapArray<MemoryPlan> plan{};
-    if (parts.slots().size() > 0) {
-        plan = ::fixy::mint_heap_array_with<MemoryPlan>(bg.alloc, 1, [](size_t) noexcept { return MemoryPlan{}; });
+    ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
+        std::move(parts.arena_).expect("a built region holds the arena of its runs");
+    const DagRef<RegionNode> region = mint_dag_node<RegionNode>(bg.alloc, arena);
+    init_region_node(*region, parts.runs_.ops, parts.content_hash(), parts.numerics());
+    // The plan lives in the arena of the region, outside the epoch.  The body
+    // of the epoch captures the device of the plan, the plan and the slots by
+    // value, and not the owner, so it reaches no arena of an epoch.  A refused
+    // plan leaves the region with no plan, so the region stays on eager.  A
+    // region with no slot has no plan.
+    if (parts.runs_.slots.size() > 0) {
+        const DagRef<MemoryPlan> plan = arena->make<MemoryPlan>(bg.alloc);
+        const bool is_planned =
+            publish_scratch_.arena.with_epoch([target = plan_target(), alloc = bg.alloc, plan,
+                                               slots = parts.runs_.slots](PlanScratch::Epoch& epoch) noexcept {
+                return BackgroundThread::compute_memory_plan(alloc, target, plan, epoch, slots).is_ok();
+            });
+        if (is_planned) region->plan = make_plan_link(plan);
     }
-    // RegionNode and MemoryPlan hold Views that can write, so the node and
-    // the plan read the writing runs of the parts, not the Views of const.
-    const ::fixy::View<TraceEntry> ops = parts.runs_.view<BuiltRegion::kOps>();
-    const ::fixy::View<TensorSlot> slots = parts.runs_.view<BuiltRegion::kSlots>();
-    const ContentHash content_hash = parts.content_hash();
-    const NumericsHash numerics = parts.numerics();
-    PlanScratch& scratch = publish_scratch_;
-    RegionLink published{};
-    ConstRegionLink const_published{};
-    node.with_element(
-        0,
-        [this, &bg, &plan, &scratch, &published, &const_published, ops, slots, content_hash,
-         numerics](RegionNode& region) noexcept {
-            init_region_node(region, ops, content_hash, numerics);
-            // The plan lives in the memory of the region, outside the epoch.
-            // The body of the epoch captures the device of the plan by value,
-            // and not the owner or the region, so it reaches no arena.  The
-            // body gives only whether the sweep wrote a plan into its storage,
-            // and then the region links that storage.  A refused plan leaves
-            // the region with no plan, so the region stays on eager.  A region
-            // with no slot has no plan.
-            plan.with_element(
-                0,
-                [target = plan_target(), &bg, &scratch, &region, slots](MemoryPlan& plan_storage) noexcept {
-                    const bool is_planned = scratch.arena.with_epoch([target, alloc = bg.alloc, &plan_storage,
-                                                                      slots](PlanScratch::Epoch& epoch) noexcept {
-                        return BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots).is_ok();
-                    });
-                    if (is_planned) region.plan = make_plan_link(plan_storage);
-                },
-                [] noexcept {});
-            recompute_merkle(region);
-            published = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
-            const_published = ConstRegionLink::some(::fixy::erase_brand(::fixy::to(region)));
-        },
-        [] noexcept { ::fixy::fatal("the node of a region holds one element"); });
+    recompute_merkle(*region);
+    parts.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(arena));
+    const ConstRegionLink const_published = ConstRegionLink::some(region);
 
     region_store_.with_element(
         free_position,
-        [&parts, &node, &plan, const_published, reset_point](RegionMemory& memory) noexcept {
+        [&parts, region, const_published, reset_point](RegionMemory& memory) noexcept {
             memory = RegionMemory{.parts = std::move(parts),
-                                  .node = std::move(node),
-                                  .plan = std::move(plan),
+                                  .node = RegionLink::some(region),
                                   .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
                                   .left_generation = NOT_LEFT};
         },
         [] noexcept { ::fixy::fatal("the search above found a free slot of the region store"); });
     last_published_ = const_published;
 
-    RegionNode& region = *RegionLink{published}.expect("the element door of the node wrote its link");
-    uncompiled_regions_.push(region);
-    active_region_.store_release(published);
+    uncompiled_regions_.push(*region);
+    active_region_.store_release(RegionLink::some(region));
     owner_marks_ = RegionMarks{};
     // The callback gets a proof of its own, which dies with the call, and
     // the record in the slot of the store, whose address it can keep.
@@ -805,9 +781,8 @@ void BackgroundThread::sweep_regions_(PublishStage const&) noexcept {
         const RegionMemory& memory =
             *region_store_.view().get(position).expect("the position is below the count of the store");
         SweepStep step = SweepStep::None;
-        if (memory.node.size() != 0) {
-            const ConstRegionLink region =
-                ConstRegionLink::some(::fixy::erase_brand(memory.node.get(0).expect("a used slot holds its node")));
+        for (DagRef<RegionNode> const node : memory.node) {
+            const ConstRegionLink region = ConstRegionLink::some(node);
             if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
                 step = SweepStep::Keep;
             } else if (owner_marks_.has_foreground && memory.left_generation == NOT_LEFT) {
@@ -853,8 +828,7 @@ bool BackgroundThread::is_held_(ConstRegionLink region) const noexcept {
 
 void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) noexcept {
     ::fixy::Option<size_t> kept = ::fixy::find_if(region_store_.view(), [region](RegionMemory const& memory) noexcept {
-        return memory.node.size() != 0
-            && ::fixy::same_target(::fixy::some(memory.node.get(0).expect("a used slot holds its node")), region);
+        return memory.node.is_some() && ::fixy::same_target(memory.node, region);
     });
     if (kept.is_none()) return;
     region_store_.with_element(
@@ -866,7 +840,7 @@ void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     uint32_t count = 0;
     for (const RegionMemory& memory : region_store_) {
-        if (memory.node.size() != 0) ++count;
+        if (memory.node.is_some()) ++count;
     }
     return count;
 }

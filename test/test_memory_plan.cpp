@@ -16,32 +16,30 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
-    ::fixy::with_bump_arena(test.alloc, Bytes{4096}, [&](auto& arena) noexcept {
-        auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorSlot, 2> const slots =
-            slots_run.view().template window<2>(0).expect("the run holds two slots");
-        crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
-        first_slot.nbytes = 1024;
-        first_slot.birth_op = crucible::OpIndex{0};
-        first_slot.death_op = crucible::OpIndex{2};
-        first_slot.slot_id = crucible::SlotId{0};
-        crucible::TensorSlot& second_slot = slots.at(::foundation::core::index<1>());
-        second_slot.nbytes = 1024;
-        second_slot.birth_op = crucible::OpIndex{birth_op};
-        second_slot.death_op = crucible::OpIndex{death_op};
-        second_slot.slot_id = crucible::SlotId{1};
-        crucible::MemoryPlan plan_storage{};
-        crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-        scratch.arena.with_epoch(
-            [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-                const crucible::MemoryPlan& plan =
-                    *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
-                         .expect("the slots of the test fit in 64 bits");
-                ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
-                               static_cast<unsigned long long>(plan.pool_bytes));
-            });
-    });
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
+    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
+    crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
+    first_slot.nbytes = 1024;
+    first_slot.birth_op = crucible::OpIndex{0};
+    first_slot.death_op = crucible::OpIndex{2};
+    first_slot.slot_id = crucible::SlotId{0};
+    crucible::TensorSlot& second_slot = slots.at(::foundation::core::index<1>());
+    second_slot.nbytes = 1024;
+    second_slot.birth_op = crucible::OpIndex{birth_op};
+    second_slot.death_op = crucible::OpIndex{death_op};
+    second_slot.slot_id = crucible::SlotId{1};
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
+    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    scratch.arena.with_epoch(
+        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+            const crucible::MemoryPlan& plan =
+                *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+                     .expect("the slots of the test fit in 64 bits");
+            ::fixy::report(::fixy::Sink::Out, "  the planner returned a plan of {} bytes\n",
+                           static_cast<unsigned long long>(plan.pool_bytes));
+        });
 }
 
 // The refusal of the planner for two internal slots of the given spans, which
@@ -51,28 +49,26 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
-    return ::fixy::with_bump_arena(test.alloc, Bytes{4096}, [&](auto& arena) noexcept {
-        auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorSlot, 2> const slots =
-            slots_run.view().template window<2>(0).expect("the run holds two slots");
-        crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
-        first_slot.nbytes = first_nbytes;
-        first_slot.birth_op = crucible::OpIndex{0};
-        first_slot.death_op = crucible::OpIndex{2};
-        first_slot.slot_id = crucible::SlotId{0};
-        crucible::TensorSlot& second_slot = slots.at(::foundation::core::index<1>());
-        second_slot.nbytes = second_nbytes;
-        second_slot.birth_op = crucible::OpIndex{1};
-        second_slot.death_op = crucible::OpIndex{2};
-        second_slot.slot_id = crucible::SlotId{1};
-        crucible::MemoryPlan plan_storage{};
-        crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-        return scratch.arena.with_epoch(
-            [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-                return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots).err();
-            });
-    });
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
+    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
+    crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
+    first_slot.nbytes = first_nbytes;
+    first_slot.birth_op = crucible::OpIndex{0};
+    first_slot.death_op = crucible::OpIndex{2};
+    first_slot.slot_id = crucible::SlotId{0};
+    crucible::TensorSlot& second_slot = slots.at(::foundation::core::index<1>());
+    second_slot.nbytes = second_nbytes;
+    second_slot.birth_op = crucible::OpIndex{1};
+    second_slot.death_op = crucible::OpIndex{2};
+    second_slot.slot_id = crucible::SlotId{1};
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
+    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    return scratch.arena.with_epoch(
+        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+            return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
+        });
 }
 
 // The refusal of the planner for an internal slot and an external slot with
@@ -82,26 +78,24 @@ refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     auto test = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
-    return ::fixy::with_bump_arena(test.alloc, Bytes{4096}, [&](auto& arena) noexcept {
-        auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorSlot, 2> const slots =
-            slots_run.view().template window<2>(0).expect("the run holds two slots");
-        crucible::TensorSlot& internal_slot = slots.at(::foundation::core::index<0>());
-        internal_slot.nbytes = 1024;
-        internal_slot.birth_op = crucible::OpIndex{0};
-        internal_slot.death_op = crucible::OpIndex{2};
-        internal_slot.slot_id = ids.at(::foundation::core::index<0>());
-        crucible::TensorSlot& external_slot = slots.at(::foundation::core::index<1>());
-        external_slot.is_external = true;
-        external_slot.slot_id = ids.at(::foundation::core::index<1>());
-        crucible::MemoryPlan plan_storage{};
-        crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-        return scratch.arena.with_epoch(
-            [target, alloc = test.alloc, &plan_storage, slots](crucible::PlanScratch::Epoch& epoch) noexcept {
-                return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots).err();
-            });
-    });
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
+    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
+    crucible::TensorSlot& internal_slot = slots.at(::foundation::core::index<0>());
+    internal_slot.nbytes = 1024;
+    internal_slot.birth_op = crucible::OpIndex{0};
+    internal_slot.death_op = crucible::OpIndex{2};
+    internal_slot.slot_id = ids.at(::foundation::core::index<0>());
+    crucible::TensorSlot& external_slot = slots.at(::foundation::core::index<1>());
+    external_slot.is_external = true;
+    external_slot.slot_id = ids.at(::foundation::core::index<1>());
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
+    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    return scratch.arena.with_epoch(
+        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+            return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
+        });
 }
 
 // True when the planner gave the expected refusal.
@@ -169,110 +163,108 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
     auto source = ::foundation::effects::testing::test();
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
-    ::fixy::with_bump_arena(source.alloc, Bytes{4096}, [&](auto& arena) noexcept {
-        // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
-        // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool
-        // space.
-        constexpr uint32_t N = 4;
-        auto const slots_run = arena.array(source.alloc, N, crucible::TensorSlot{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorSlot, N> const slots =
-            slots_run.view().template window<N>(0).expect("the run holds N slots");
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
+    // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
+    // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool
+    // space.
+    constexpr uint32_t N = 4;
+    auto const slots_run = arena.array(source.alloc, N, crucible::TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<crucible::TensorSlot, N> const slots = slots_run.view().window<N>(0).expect("the run holds N slots");
 
-        using crucible::SlotId;
-        using crucible::OpIndex;
-        using crucible::ScalarType;
-        using crucible::DeviceType;
-        using crucible::Layout;
-        slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
-                                                    .nbytes = 1024,
-                                                    .birth_op = OpIndex{0},
-                                                    .death_op = OpIndex{5},
-                                                    .dtype = ScalarType::Float,
-                                                    .device_type = DeviceType::CPU,
-                                                    .device_idx = 0,
-                                                    .layout = Layout::Strided,
-                                                    .is_external = false,
-                                                    .pad = {},
-                                                    .slot_id = SlotId{0},
-                                                    .pad2 = {}};
-        slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
-                                                    .nbytes = 2048,
-                                                    .birth_op = OpIndex{1},
-                                                    .death_op = OpIndex{3},
-                                                    .dtype = ScalarType::Float,
-                                                    .device_type = DeviceType::CPU,
-                                                    .device_idx = 0,
-                                                    .layout = Layout::Strided,
-                                                    .is_external = false,
-                                                    .pad = {},
-                                                    .slot_id = SlotId{1},
-                                                    .pad2 = {}};
-        slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
-                                                    .nbytes = 1024,
-                                                    .birth_op = OpIndex{4},
-                                                    .death_op = OpIndex{7},
-                                                    .dtype = ScalarType::Float,
-                                                    .device_type = DeviceType::CPU,
-                                                    .device_idx = 0,
-                                                    .layout = Layout::Strided,
-                                                    .is_external = false,
-                                                    .pad = {},
-                                                    .slot_id = SlotId{2},
-                                                    .pad2 = {}};
-        slots.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
-                                                    .nbytes = 512,
-                                                    .birth_op = OpIndex{0},
-                                                    .death_op = OpIndex{7},
-                                                    .dtype = ScalarType::Float,
-                                                    .device_type = DeviceType::CPU,
-                                                    .device_idx = 0,
-                                                    .layout = Layout::Strided,
-                                                    .is_external = true,
-                                                    .pad = {},
-                                                    .slot_id = SlotId{3},
-                                                    .pad2 = {}};
+    using crucible::SlotId;
+    using crucible::OpIndex;
+    using crucible::ScalarType;
+    using crucible::DeviceType;
+    using crucible::Layout;
+    slots.at(::foundation::core::index<0>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{5},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{0},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<1>()) = {.offset_bytes = 0,
+                                                .nbytes = 2048,
+                                                .birth_op = OpIndex{1},
+                                                .death_op = OpIndex{3},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{1},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<2>()) = {.offset_bytes = 0,
+                                                .nbytes = 1024,
+                                                .birth_op = OpIndex{4},
+                                                .death_op = OpIndex{7},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = false,
+                                                .pad = {},
+                                                .slot_id = SlotId{2},
+                                                .pad2 = {}};
+    slots.at(::foundation::core::index<3>()) = {.offset_bytes = 0,
+                                                .nbytes = 512,
+                                                .birth_op = OpIndex{0},
+                                                .death_op = OpIndex{7},
+                                                .dtype = ScalarType::Float,
+                                                .device_type = DeviceType::CPU,
+                                                .device_idx = 0,
+                                                .layout = Layout::Strided,
+                                                .is_external = true,
+                                                .pad = {},
+                                                .slot_id = SlotId{3},
+                                                .pad2 = {}};
 
-        crucible::MemoryPlan plan_storage{};
-        crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
-        scratch.arena.with_epoch(
-            [target, alloc = source.alloc, &plan_storage, slots, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
-                const crucible::MemoryPlan& plan =
-                    *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots)
-                         .expect("the slots of the test fit in 64 bits");
-                // The planner writes the plan into the storage of the caller, and the
-                // result reaches that storage.
-                CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(plan), ::fixy::to(plan_storage)));
-            });
-        const crucible::MemoryPlan& plan = plan_storage;
-        CRUCIBLE_TEST_ASSERT(test, plan.num_slots() == N);
-        CRUCIBLE_TEST_ASSERT(test, plan.num_external == 1);
-        CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes > 0);
+    const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(source.alloc);
+    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    scratch.arena.with_epoch(
+        [target, alloc = source.alloc, plan_storage, slots_run, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
+            const crucible::MemoryPlan& plan =
+                *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
+                     .expect("the slots of the test fit in 64 bits");
+            // The planner writes the plan into the storage of the caller, and the
+            // result reaches that storage.
+            CRUCIBLE_TEST_ASSERT(test, ::fixy::same_object(::fixy::to(plan), plan_storage));
+        });
+    const crucible::MemoryPlan& plan = *plan_storage;
+    CRUCIBLE_TEST_ASSERT(test, plan.num_slots() == N);
+    CRUCIBLE_TEST_ASSERT(test, plan.num_external == 1);
+    CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes > 0);
 
-        CRUCIBLE_TEST_ASSERT(test, slots.at(::foundation::core::index<2>()).offset_bytes
-                                       <= slots.at(::foundation::core::index<1>()).offset_bytes + 2048);
+    CRUCIBLE_TEST_ASSERT(test, slots.at(::foundation::core::index<2>()).offset_bytes
+                                   <= slots.at(::foundation::core::index<1>()).offset_bytes + 2048);
 
-        uint64_t total_internal = 1024 + 2048 + 1024;
-        CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes < total_internal);
+    uint64_t total_internal = 1024 + 2048 + 1024;
+    CRUCIBLE_TEST_ASSERT(test, plan.pool_bytes < total_internal);
 
-        // At every op boundary the simultaneously-live slots must hold pairwise
-        // disjoint byte intervals.  The loop runs to 7 because that is the largest
-        // death_op among the slots.  The helper excludes external slots, so only the
-        // internal live set is checked.
-        using crucible::live_intervals_disjoint_at;
-        for (uint32_t t = 0; t <= 7; ++t) {
-            bool disjoint = live_intervals_disjoint_at<4>(slots, OpIndex{t});
-            CRUCIBLE_TEST_ASSERT(test, disjoint);
-        }
+    // At every op boundary the simultaneously-live slots must hold pairwise
+    // disjoint byte intervals.  The loop runs to 7 because that is the largest
+    // death_op among the slots.  The helper excludes external slots, so only the
+    // internal live set is checked.
+    using crucible::live_intervals_disjoint_at;
+    for (uint32_t t = 0; t <= 7; ++t) {
+        bool disjoint = live_intervals_disjoint_at<4>(slots, OpIndex{t});
+        CRUCIBLE_TEST_ASSERT(test, disjoint);
+    }
 
-        ::fixy::check::pass(test, "test_memory_plan: all tests passed\n");
-        ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan.pool_bytes));
-        ::fixy::report(::fixy::Sink::Out, "  slot offsets: [{}, {}, {}, {}]\n",
-                       static_cast<unsigned long>(slots.at(::foundation::core::index<0>()).offset_bytes),
-                       static_cast<unsigned long>(slots.at(::foundation::core::index<1>()).offset_bytes),
-                       static_cast<unsigned long>(slots.at(::foundation::core::index<2>()).offset_bytes),
-                       static_cast<unsigned long>(slots.at(::foundation::core::index<3>()).offset_bytes));
-    });
+    ::fixy::check::pass(test, "test_memory_plan: all tests passed\n");
+    ::fixy::report(::fixy::Sink::Out, "  pool_bytes: {}\n", static_cast<unsigned long>(plan.pool_bytes));
+    ::fixy::report(::fixy::Sink::Out, "  slot offsets: [{}, {}, {}, {}]\n",
+                   static_cast<unsigned long>(slots.at(::foundation::core::index<0>()).offset_bytes),
+                   static_cast<unsigned long>(slots.at(::foundation::core::index<1>()).offset_bytes),
+                   static_cast<unsigned long>(slots.at(::foundation::core::index<2>()).offset_bytes),
+                   static_cast<unsigned long>(slots.at(::foundation::core::index<3>()).offset_bytes));
 }
 
 }  // namespace

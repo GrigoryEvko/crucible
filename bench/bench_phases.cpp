@@ -86,6 +86,16 @@ constexpr auto A = BG_CTX.alloc;
 
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
+// The block size of a scratch arena of a trace: 256 bytes for each op, and
+// at least 1 MiB.  The floor is a constant, and the bytes of the ops above
+// the floor are the part of run time.
+[[nodiscard]] ::fixy::ArenaBlockSize compute_trace_block(const LoadedTrace& trace) noexcept {
+    constexpr size_t kFloorBytes = size_t{1} << 20;
+    constexpr ::fixy::ArenaBlockSize kFloor{Bytes{kFloorBytes}};
+    const size_t op_bytes = static_cast<size_t>(trace.num_ops) * 256;
+    return kFloor.plus(Bytes{op_bytes - ::fixy::min(op_bytes, kFloorBytes)});
+}
+
 struct PhaseTiming {
     ::fixy::TextView name{};
     double total_ns = 0.0;  // sum across all iterations
@@ -172,8 +182,7 @@ BackgroundThread::TraceBuild build_recorded(BackgroundThread::TraceBuildState& s
 // runs the build, and ends the epoch. The build does not write the arrays
 // of the trace, so each sample measures the same work.
 bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
-    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
-    TraceScratch scratch{Bytes{arena_bytes}};
+    TraceScratch scratch{compute_trace_block(trace)};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = meta_log;
     NumericsHash const numerics = bg.numerics();
@@ -199,11 +208,11 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
 void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
     bench::print("\n=== Top-level phase breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
+    const ::fixy::ArenaBlockSize arena_block = compute_trace_block(trace);
     const double nspc = bench::Timer::ns_per_cycle();
-    TraceScratch scratch{Bytes{arena_bytes}};
+    TraceScratch scratch{arena_block};
     // The sweep of each plan takes its arrays from this scratch.
-    PlanScratch plan_scratch{Bytes{arena_bytes}};
+    PlanScratch plan_scratch{arena_block};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = meta_log;
     NumericsHash const numerics = bg.numerics();
@@ -251,7 +260,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // One full build to get realistic edge data.  The graph of the
         // reference build dies with its epoch, so the epoch copies the
         // counts and the edges, and the region leaves it.
-        TraceScratch ref_scratch{Bytes{arena_bytes}};
+        TraceScratch ref_scratch{arena_block};
         bench::refill_meta_log(meta_log, trace);
         uint32_t num_ops = 0;
         uint32_t num_slots = 0;
@@ -287,19 +296,20 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         // compute_memory_plan.  The planner writes the offsets into the
         // slots, so each run plans a copy of them in an arena of its own.
         for (uint32_t iter = 0; iter < iters; iter++) {
-            ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{arena_bytes});
+            ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(arena_block);
             const auto slots_run = slot_arena.array<TensorSlot>(A, num_slots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots = slots_run.view();
             ::fixy::copy(slots, saved_slots).expect("the copy holds one entry for each slot");
 
-            MemoryPlan plan_storage{};
+            // The plan is in the arena of the slots.
+            const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(A);
             BackgroundThread::PlanTarget const target = bg.plan_target();
-            ns_memplan +=
-                plan_scratch.arena.with_epoch([target, &plan_storage, slots, nspc](PlanScratch::Epoch& epoch) noexcept {
+            ns_memplan += plan_scratch.arena.with_epoch(
+                [target, plan_storage, slots_run, nspc](PlanScratch::Epoch& epoch) noexcept {
                     const uint64_t t0 = bench::rdtsc_start();
-                    const ::fixy::Ref<MemoryPlan> plan =
-                        BackgroundThread::compute_memory_plan(A, target, plan_storage, epoch, slots)
+                    const DagRef<MemoryPlan> plan =
+                        BackgroundThread::compute_memory_plan(A, target, plan_storage, epoch, slots_run)
                             .expect("the slots of the bench fit in 64 bits");
                     const uint64_t t1 = bench::rdtsc_end();
 
@@ -322,13 +332,12 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
     bench::print("\n=== Phase 2 sub-part breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
-    const size_t arena_bytes = ::fixy::max(size_t{1} << 20, static_cast<size_t>(trace.num_ops) * 256);
     const uint32_t count = trace.num_ops;
     const double nspc = bench::Timer::ns_per_cycle();
     // The phases that copy the loop of build_trace take their buffers from
     // the heap, as build_trace does.  build_trace takes its graph from
     // build_scratch.
-    TraceScratch build_scratch{Bytes{arena_bytes}};
+    TraceScratch build_scratch{compute_trace_block(trace)};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = meta_log;
     NumericsHash const numerics = bg.numerics();
@@ -403,13 +412,15 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
 
         // The runs of the ops come from an arena of the region, and the slots
         // of the build from an epoch of the build arena, as build_trace takes
-        // them.
-        const size_t region_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_scalars} * sizeof(int64_t)
-                                  + size_t{total_inputs} * sizeof(OpIndex)
-                                  + (size_t{total_inputs} + total_outputs) * sizeof(SlotId) + alignof(TraceEntry)
-                                  + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId);
+        // them.  The block holds the sum of the alignments, a constant, plus
+        // the bytes of the runs.
+        constexpr ::fixy::ArenaBlockSize kRunAlignments{
+            Bytes{alignof(TraceEntry) + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId)}};
+        const size_t run_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_scalars} * sizeof(int64_t)
+                               + size_t{total_inputs} * sizeof(OpIndex)
+                               + (size_t{total_inputs} + total_outputs) * sizeof(SlotId);
         ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
-            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, Bytes{region_bytes});
+            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, kRunAlignments.plus(Bytes{run_bytes}));
         const auto op_arena_run = region_arena->array(A, count, TraceEntry{});
         const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
         const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
@@ -502,15 +513,17 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
 
         // The runs of the ops come from an arena of the region, as
-        // build_trace takes them.
+        // build_trace takes them.  The block holds the sum of the alignments,
+        // a constant, plus the bytes of the runs.
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        const size_t region_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_metas} * sizeof(TensorMeta)
-                                  + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
-                                  + (size_t{total_inputs} + total_outputs) * sizeof(SlotId) + alignof(TraceEntry)
-                                  + alignof(TensorMeta) + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId);
+        constexpr ::fixy::ArenaBlockSize kRunAlignments{
+            Bytes{alignof(TraceEntry) + alignof(TensorMeta) + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId)}};
+        const size_t run_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_metas} * sizeof(TensorMeta)
+                               + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
+                               + (size_t{total_inputs} + total_outputs) * sizeof(SlotId);
         ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
-            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, Bytes{region_bytes});
+            ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, kRunAlignments.plus(Bytes{run_bytes}));
         const auto ops_arena_run = region_arena->array(A, count, TraceEntry{});
         const auto meta_arena_run = region_arena->array(A, total_metas, TensorMeta{});
         // A plain View of an arena run: the View carries no brand of its arena.
@@ -521,12 +534,6 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
         const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
         const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
         size_t scalar_cursor = 0;
         size_t producer_cursor = 0;
         size_t slot_cursor = 0;
@@ -567,10 +574,10 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
                 te.kernel_id = CKernelId::OPAQUE;
                 const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
-                const ::fixy::View<int64_t> scalars =
-                    scalar_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
+                const auto scalars =
+                    scalar_arena_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
                 scalar_cursor += n_scalars;
-                ::fixy::copy(scalars,
+                ::fixy::copy(scalars.view(),
                              re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
                     .expect("the two runs hold the scalars of the op");
                 te.set_scalar_args(scalars);
@@ -580,13 +587,13 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 const uint16_t n_in = re.num_inputs;
                 const uint16_t n_out = re.num_outputs;
                 const uint64_t meta_offset = ms.raw() - first_meta.raw();
-                te.set_inputs(meta_run.window(meta_offset, n_in).expect("the copied run holds each op"),
-                              producer_run.window(producer_cursor, n_in).expect("the scan counted the inputs"),
-                              slot_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
+                te.set_inputs(meta_arena_run.window(meta_offset, n_in).expect("the copied run holds each op"),
+                              producer_arena_run.window(producer_cursor, n_in).expect("the scan counted the inputs"),
+                              slot_arena_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
                 producer_cursor += n_in;
                 slot_cursor += n_in;
-                te.set_outputs(meta_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"),
-                               slot_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
+                te.set_outputs(meta_arena_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"),
+                               slot_arena_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
                 slot_cursor += n_out;
             }
             return copied_ops;
@@ -765,9 +772,11 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             const uint64_t t0 = bench::rdtsc_start();
 
             // The run of the slots comes from an arena of the region, as
-            // build_trace takes it.
+            // build_trace takes it.  The block holds the alignment of a slot,
+            // a constant, plus the bytes of the slots.
+            constexpr ::fixy::ArenaBlockSize kSlotAlignment{Bytes{alignof(TensorSlot)}};
             ::fixy::Box<::fixy::BumpArena<DagArena>> slot_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
-                A, Bytes{num_slots * sizeof(TensorSlot) + alignof(TensorSlot)});
+                A, kSlotAlignment.plus(Bytes{num_slots * sizeof(TensorSlot)}));
             const auto slots_run = slot_arena->array(A, num_slots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots = slots_run.view();

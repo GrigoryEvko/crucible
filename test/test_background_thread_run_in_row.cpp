@@ -30,7 +30,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/core/WindowStack.h>
 
 #include <bit>
 #include <cstdint>
@@ -153,8 +152,12 @@ void test_uncompiled_queue_is_bounded() {
     owner.run_on_publish_stage([](BackgroundThread::PublishStageView&,
                                   BackgroundThread::PublishStage const& stage) noexcept {
         constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
-        BackgroundThread::UncompiledRegionQueue queue{::foundation::effects::testing::test().alloc,
-                                                      ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
+        const auto alloc = ::foundation::effects::testing::test().alloc;
+        // The queue keeps the address of each node that it takes, so the nodes
+        // come from an arena that outlives the queue.
+        ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
+        BackgroundThread::UncompiledRegionQueue queue{alloc, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
 
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == 0u);
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == 0u);
@@ -162,18 +165,16 @@ void test_uncompiled_queue_is_bounded() {
         // The queue never reads a region, so default nodes stand in for the
         // published regions.  Each push names a node of its own.
         constexpr uint64_t OVERRUN = 4u * CAP + 3u;
-        // The queue keeps the address of each node that it takes, so the nodes
-        // come from the loan of a window stack, which lasts the whole body.
-        static ::foundation::core::WindowStack<crucible::RegionNode, OVERRUN> nodes{};
-        const ::foundation::core::WindowLoan loan{nodes, ::foundation::core::WindowCount{OVERRUN}};
-        const ::fixy::View<crucible::RegionNode> regions = loan.window().expect("the loan of each node fits");
+        const auto links = arena.array(alloc, OVERRUN, crucible::RegionLink{});
+        const ::fixy::View<crucible::RegionLink> regions = links.view();
+        for (crucible::RegionLink& link : regions)
+            link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
         auto region_at = [regions](uint64_t i) {
-            return ::fixy::some(::fixy::erase_brand(
-                regions.get(i).expect("a test reads an element at or past the count of its array")));
+            return *regions.get(i).expect("a test reads an element at or past the count of its array");
         };
 
         for (uint64_t i = 0; i < CAP; ++i) {
-            queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+            queue.push(*region_at(i).expect("each link holds a node"));
             CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(stage, 0), region_at(i)) && "age 0 is the newest");
@@ -181,7 +182,7 @@ void test_uncompiled_queue_is_bounded() {
 
         // One past the bound: the total keeps counting, the retention does not.
         for (uint64_t i = CAP; i < OVERRUN; ++i)
-            queue.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+            queue.push(*region_at(i).expect("each link holds a node"));
 
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
@@ -204,25 +205,32 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
     owner.run_on_publish_stage(
         [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
             using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+            const auto alloc = ::foundation::effects::testing::test().alloc;
             // The queues keep the address of each node, so the nodes come from
-            // the loan of a window stack, which lasts the whole body.
-            static ::foundation::core::WindowStack<crucible::RegionNode, 8> nodes{};
-            const ::foundation::core::WindowLoan loan{nodes, ::foundation::core::WindowCount{8}};
-            const ::fixy::View<crucible::RegionNode> regions = loan.window().expect("the loan of each node fits");
-            BackgroundThread::UncompiledRegionQueue three{::foundation::effects::testing::test().alloc, Count{3}};
-            BackgroundThread::UncompiledRegionQueue none{::foundation::effects::testing::test().alloc, Count{0}};
+            // an arena that outlives the queues.
+            ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+                ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
+            const auto links = arena.array(alloc, 8, crucible::RegionLink{});
+            const ::fixy::View<crucible::RegionLink> regions = links.view();
+            for (crucible::RegionLink& link : regions)
+                link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
+            BackgroundThread::UncompiledRegionQueue three{alloc, Count{3}};
+            BackgroundThread::UncompiledRegionQueue none{alloc, Count{0}};
             CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);
             for (uint64_t i = 0; i < 8; ++i) {
-                three.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
-                none.push(*regions.get(i).expect("a test reads an element at or past the count of its array"));
+                const crucible::DagRef<crucible::RegionNode> node =
+                    crucible::RegionLink{
+                        *regions.get(i).expect("a test reads an element at or past the count of its array")}
+                        .expect("each link holds a node");
+                three.push(*node);
+                none.push(*node);
             }
             CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
             for (uint32_t age = 0; age < 3; ++age) {
-                CRUCIBLE_TEST_ASSERT(kTest,
-                                     ::fixy::same_target(three.at(stage, age),
-                                                         ::fixy::some(regions.get(uint64_t{7} - age)
+                CRUCIBLE_TEST_ASSERT(
+                    kTest, ::fixy::same_target(three.at(stage, age), *regions.get(uint64_t{7} - age)
                                                                           .expect("a test reads an element at or past "
-                                                                                  "the count of its array"))));
+                                                                                  "the count of its array")));
             }
             CRUCIBLE_TEST_ASSERT(kTest, none.total() == 8 && none.size() == 0);
             ::fixy::check::pass(kTest, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");

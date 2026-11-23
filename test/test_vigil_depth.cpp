@@ -69,7 +69,8 @@ void test_region_keeps_the_depth_of_each_op() {
         dispatch_with_depth(vigil, 2, op);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
 
-    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    const crucible::DagRef<const crucible::RegionNode> region =
+        vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
         CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).schema_hash == divrig::SCHEMA[op]);
@@ -104,7 +105,8 @@ void test_region_keeps_the_depth_past_a_growth_of_the_held_ops() {
         dispatch(op);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
 
-    const ::fixy::Ref<const crucible::RegionNode> region = vigil.active_region().expect("the flush published a region");
+    const crucible::DagRef<const crucible::RegionNode> region =
+        vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == kLongPeriod);
     for (uint32_t op = 0; op < kLongPeriod; ++op) {
         CRUCIBLE_TEST_ASSERT(kTest, region->op_at(op).schema_hash == crucible::SchemaHash{0x10000 + op});
@@ -384,7 +386,7 @@ void test_replay_diverges_at_the_close_of_a_nest() {
 
     loop.give_iterations_until_replay();
     CRUCIBLE_TEST_ASSERT(kTest, loop.vigil.is_compiled() && "the loop replays again after the divergence");
-    const ::fixy::Ref<const crucible::RegionNode> region = loop.vigil.active_region().expect("a region replays");
+    const crucible::DagRef<const crucible::RegionNode> region = loop.vigil.active_region().expect("a region replays");
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS && "the region holds the ops of one iteration");
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
         CRUCIBLE_TEST_ASSERT(kTest,

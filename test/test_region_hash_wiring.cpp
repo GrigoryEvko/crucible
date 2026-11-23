@@ -58,17 +58,20 @@ auto g_test = ::foundation::effects::testing::test();
 struct Region {
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    ::fixy::View<TensorMeta> out_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
-    ::fixy::View<SlotId> slot_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0});
-    ::fixy::View<TensorMeta> out_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
-    ::fixy::View<SlotId> slot_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1});
-    ::fixy::View<TensorMeta> in_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4), vector_meta(4));
-    ::fixy::View<OpIndex> producers_c{};
-    ::fixy::View<SlotId> slots_c{};
+    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> out_a =
+        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
+    ::fixy::ArenaRun<SlotId, crucible::DagArena> slot_a = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0});
+    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> out_b =
+        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4));
+    ::fixy::ArenaRun<SlotId, crucible::DagArena> slot_b = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1});
+    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> in_c =
+        ::fixy::check::run_of(kTest, g_test.alloc, arena, vector_meta(4), vector_meta(4));
+    ::fixy::ArenaRun<OpIndex, crucible::DagArena> producers_c{};
+    ::fixy::ArenaRun<SlotId, crucible::DagArena> slots_c{};
     ::fixy::FixedArray<TraceEntry, 3> ops{};
 
     Region(uint32_t first_read, uint32_t second_read, int64_t extent_a, OpDepth depth_a) {
-        *out_a.get(0).expect("the run holds one output") = vector_meta(extent_a);
+        *out_a.view().get(0).expect("the run holds one output") = vector_meta(extent_a);
         producers_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, OpIndex{first_read}, OpIndex{second_read});
         slots_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{first_read}, SlotId{second_read});
         ops.with_element(::fixy::index<0>(),

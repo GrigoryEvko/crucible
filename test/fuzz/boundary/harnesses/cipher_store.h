@@ -196,7 +196,7 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
             cipher.load_content_addressed(kHarnessCtx, view, test_alloc(), ContentHash{object_hash}, arena);
         loaded.match(
             [object_hash](auto const& payload) {
-                const ::fixy::Ref<RegionNode> region = payload.get();
+                const DagRef<RegionNode> region = payload.get();
                 CRUCIBLE_FUZZ_CLAIM("cipher_store", region->content_hash == ContentHash{object_hash});
                 claim_region_trusted(as_harness("cipher_store"), *region);
             },
@@ -267,7 +267,7 @@ inline constexpr std::size_t kRecordLastPadOffset = 71;
 
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
     ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(kRegionArenaBlock);
-    const ::fixy::Ref<RegionNode> region = build_seed_region(arena, dag_arena, SeedPlan::two_slots);
+    const DagRef<RegionNode> region = build_seed_region(arena, dag_arena, SeedPlan::two_slots);
     const SeedBytes image = region_image(*region);
     const std::uint64_t hash = region->content_hash.raw();
     const detail::HexName hex = detail::hex16(hash);

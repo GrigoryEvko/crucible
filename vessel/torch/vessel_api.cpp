@@ -440,7 +440,7 @@ int crucible_observe_eager_numerics(CrucibleHandle h, uint32_t eager_numerics) n
 }
 
 uint64_t crucible_active_content_hash(CrucibleHandle h) noexcept {
-    for (const ::fixy::Ref<const crucible::RegionNode> region :
+    for (const crucible::DagRef<const crucible::RegionNode> region :
          crucible::vessel::as_vigil_typed(h).value()->active_region()) {
         return region->content_hash.raw();
     }
@@ -560,17 +560,17 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const auto vigil = ::fixy::to(*crucible::vessel::as_vigil_typed(h).value());
     if (vigil->flush(io).is_err()) return 0;
 
-    ::fixy::Option<::fixy::Ref<const crucible::RegionNode>> active = vigil->active_region();
+    ::fixy::Option<crucible::DagRef<const crucible::RegionNode>> active = vigil->active_region();
     if (active.is_none()) return 0;
-    const ::fixy::Ref<const crucible::RegionNode> region =
-        static_cast<::fixy::Option<::fixy::Ref<const crucible::RegionNode>>&&>(active).expect(
+    const crucible::DagRef<const crucible::RegionNode> region =
+        static_cast<::fixy::Option<crucible::DagRef<const crucible::RegionNode>>&&>(active).expect(
             "the test above found the region");
     if (region->num_ops() == 0) return 0;
     const uint32_t num_ops = region->num_ops();
 
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
-    for (const crucible::TraceEntry& te : region->ops) {
+    for (const crucible::TraceEntry& te : region->ops.view()) {
         total_metas += static_cast<uint32_t>(te.num_inputs() + te.num_outputs());
     }
 
@@ -620,7 +620,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         cursor.put(crucible::encode_trace_header(num_ops, total_metas));
 
         // Op records: 88B each (TraceOpRecord layout).
-        for (const crucible::TraceEntry& te : region->ops) {
+        for (const crucible::TraceEntry& te : region->ops.view()) {
             crucible::TraceOpRecord rec{};
             rec.schema_hash = te.schema_hash;
             rec.shape_hash = te.shape_hash;
@@ -654,7 +654,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
         }
 
         // Meta records: TRACE_META_BYTES each (TensorMeta layout).
-        for (const crucible::TraceEntry& te : region->ops) {
+        for (const crucible::TraceEntry& te : region->ops.view()) {
             for (const auto& m : te.input_metas())
                 cursor.put(crucible::encode_trace_meta(m));
             for (const auto& m : te.output_metas())
@@ -693,7 +693,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers o
 uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
         return region->num_ops();
     }
     return 0;
@@ -711,10 +711,10 @@ uint32_t crucible_active_region_slots(CrucibleHandle h, CrucibleSlot* out, uint3
     if (checked_out.is_none()) return 0;
     CrucibleSlot* const first = std::move(checked_out).expect("the test above found the out array").value();
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const ::fixy::Ref<crucible::MemoryPlan const> plan : region->plan) {
+    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+        for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
             uint32_t written = 0;
-            for (const crucible::TensorSlot& slot : plan->slots) {
+            for (const crucible::TensorSlot& slot : plan->slots.view()) {
                 if (written == capacity) break;
                 first[written] = encode_slot(slot);
                 ++written;
@@ -749,8 +749,8 @@ uint32_t crucible_bound_scalars(CrucibleHandle h, CrucibleBoundScalar* out, uint
 uint64_t crucible_active_pool_bytes(CrucibleHandle h) noexcept {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto vigil_typed = crucible::vessel::as_vigil_typed(h);
-    for (const ::fixy::Ref<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
-        for (const ::fixy::Ref<crucible::MemoryPlan const> plan : region->plan) {
+    for (const crucible::DagRef<const crucible::RegionNode> region : vigil_typed.value()->active_region()) {
+        for (const crucible::DagRef<crucible::MemoryPlan const> plan : region->plan) {
             return plan->pool_bytes;
         }
     }

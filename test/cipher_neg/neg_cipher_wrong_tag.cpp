@@ -19,7 +19,8 @@ int main() {
     // The store is never opened.  Overload resolution refuses the call
     // before the body of store could run.
     crucible::Cipher c{::foundation::effects::testing::test().alloc};
-    (void)c.store(store_ctx, st_view,
-                  ::crucible::cipher::content_addressed_payload<::crucible::RegionNode>(::fixy::none));
+    (void)c.store(
+        store_ctx, st_view,
+        ::crucible::cipher::content_addressed_payload<::crucible::RegionNode, ::crucible::DagArena>(::fixy::none));
     return 0;
 }

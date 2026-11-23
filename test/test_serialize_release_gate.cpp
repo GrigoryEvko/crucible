@@ -60,7 +60,7 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
                   ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::OpIndex{0}),
                   ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::SlotId{}));
 
-    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops);
+    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops_run);
     return crucible::serialize_region(::fixy::to(*region), out_buf);
 }
 

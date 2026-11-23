@@ -44,7 +44,7 @@ struct RegionCache {
         }
 
         const Slot slot = prove_slot_(head_.index());
-        const ConstRegionLink link = ::fixy::some(::fixy::erase_brand(::fixy::to(region)));
+        const ConstRegionLink link = ::fixy::some(::fixy::to(region));
         regions_.with_element(slot, [link](ConstRegionLink& held) noexcept { held = link; });
         content_hashes_.with_element(slot, [hash](ContentHash& held) noexcept { held = hash; });
         head_.advance();
@@ -73,7 +73,7 @@ struct RegionCache {
             const ConstRegionLink candidate = regions_.at(prove_slot_(head_.index_back(i)));
             if (::fixy::same_target(candidate, exclude)) continue;
             const bool is_match =
-                candidate.is_some_and([pos, schema, shape](::fixy::Ref<const RegionNode> const& region) noexcept {
+                candidate.is_some_and([pos, schema, shape](DagRef<const RegionNode> const& region) noexcept {
                     return region->plan.is_some() && pos < region->num_ops() && region->op_at(pos).schema_hash == schema
                         && region->op_at(pos).shape_hash == shape;
                 });

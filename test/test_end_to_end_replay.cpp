@@ -44,12 +44,12 @@ void test_pipeline_basic() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    const ::fixy::Ref<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
+    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CRUCIBLE_TEST_ASSERT(kTest, region->kind == TraceNodeKind::REGION);
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
-    for (const ::fixy::Ref<MemoryPlan const>& plan : region->plan) {
+    for (const DagRef<MemoryPlan const>& plan : region->plan) {
         CRUCIBLE_TEST_ASSERT(kTest, plan->pool_bytes > 0);
         CRUCIBLE_TEST_ASSERT(kTest, plan->num_slots() > 0);
     }
@@ -128,7 +128,7 @@ void test_pipeline_divergence() {
     bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
 
     wait_processed(bt, *ring);
-    const ::fixy::Ref<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
+    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));

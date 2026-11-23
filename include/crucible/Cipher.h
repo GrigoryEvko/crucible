@@ -73,22 +73,23 @@ namespace federation {
 class FederationKey;
 }  // namespace federation
 
-template <typename T>
+template <typename T, ::foundation::brand::IsBrand Brand>
 class ContentAddressedPayload;
 
-template <typename T>
-[[nodiscard]] constexpr ContentAddressedPayload<T>
-content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept;
+template <typename T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] constexpr ContentAddressedPayload<T, Brand>
+content_addressed_payload(::fixy::Option<::fixy::Ref<const T, Brand>> value) noexcept;
 
 // A Ref of a value that the store names by its content, or no value.  The
-// one door is content_addressed_payload, so every site that claims a value
-// is content-addressed is a call of that name.
-template <typename T>
+// brand is the brand of the store of the value, such as the DagArena of a
+// region.  The one door is content_addressed_payload, so every site that
+// claims a value is content-addressed is a call of that name.
+template <typename T, ::foundation::brand::IsBrand Brand>
 class [[nodiscard]] ContentAddressedPayload {
 public:
     using value_type = T;
     using payload_type = ::fixy::session::ContentAddressed<T>;
-    using Value = ::fixy::Option<::fixy::Ref<const T>>;
+    using Value = ::fixy::Option<::fixy::Ref<const T, Brand>>;
 
     [[nodiscard]] constexpr Value get() const noexcept { return value_; }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.is_some(); }
@@ -96,23 +97,23 @@ public:
 private:
     constexpr explicit ContentAddressedPayload(Value value) noexcept : value_(value) {}
 
-    template <typename U>
-    friend constexpr ContentAddressedPayload<U>
-    content_addressed_payload(::fixy::Option<::fixy::Ref<const U>> value) noexcept;
+    template <typename U, ::foundation::brand::IsBrand UBrand>
+    friend constexpr ContentAddressedPayload<U, UBrand>
+    content_addressed_payload(::fixy::Option<::fixy::Ref<const U, UBrand>> value) noexcept;
 
     Value value_{};
 };
 
-// A loaded value: a Ref of the value, and where its bytes came from.  Only
-// the store builds one, because the cache flag is a claim about where the
-// bytes came from.  A load that refuses its bytes gives a LoadError in place
-// of this value.
-template <typename T>
+// A loaded value: a Ref of the value with the brand of its store, and where
+// its bytes came from.  Only the store builds one, because the cache flag is
+// a claim about where the bytes came from.  A load that refuses its bytes
+// gives a LoadError in place of this value.
+template <typename T, ::foundation::brand::IsBrand Brand>
 class [[nodiscard]] LoadedContentAddressedPayload {
 public:
     using value_type = T;
     using payload_type = ::fixy::session::ContentAddressed<T>;
-    using Value = ::fixy::Ref<T>;
+    using Value = ::fixy::Ref<T, Brand>;
 
     [[nodiscard]] constexpr Value get() const noexcept { return value_; }
     [[nodiscard]] constexpr bool cache_hit() const noexcept { return cache_hit_; }
@@ -129,10 +130,10 @@ private:
     bool cache_hit_ = false;
 };
 
-template <typename T>
-[[nodiscard]] constexpr ContentAddressedPayload<T>
-content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept {
-    return ContentAddressedPayload<T>{value};
+template <typename T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] constexpr ContentAddressedPayload<T, Brand>
+content_addressed_payload(::fixy::Option<::fixy::Ref<const T, Brand>> value) noexcept {
+    return ContentAddressedPayload<T, Brand>{value};
 }
 
 // A region whose lifetime band is at least Scope.  A commit entry point
@@ -141,7 +142,7 @@ content_addressed_payload(::fixy::Option<::fixy::Ref<const T>> value) noexcept {
 // holds a Ref of the region, so a band holds a region in each case.
 template <typename W, ::fixy::Lifetime_v Scope>
 concept LifetimePinnedRegion = ::fixy::is_band_of_v<::fixy::LifetimeLattice, W> && ::fixy::satisfies_v<W, Scope>
-                            && std::convertible_to<::fixy::band_value_t<W>, ::fixy::Ref<const RegionNode>>;
+                            && std::convertible_to<::fixy::band_value_t<W>, ::fixy::Ref<const RegionNode, DagArena>>;
 
 // The gate of each operation of the store, the commit to the head log too,
 // is CtxFitsCipherPersistence of crucible/cipher/SessionPersistenceSurface.h,
@@ -163,8 +164,8 @@ public:
     // corrupt, so the open reads at most this many bytes of it.
     static constexpr std::size_t MAX_HEAD_BYTES = 32;
 
-    using ContentAddressedRegionPayload = cipher::ContentAddressedPayload<RegionNode>;
-    using LoadedContentAddressedRegionPayload = cipher::LoadedContentAddressedPayload<RegionNode>;
+    using ContentAddressedRegionPayload = cipher::ContentAddressedPayload<RegionNode, DagArena>;
+    using LoadedContentAddressedRegionPayload = cipher::LoadedContentAddressedPayload<RegionNode, DagArena>;
     using SessionEvent = ::fixy::session::SessionEvent;
 
     using persist_session_events_required_row = ::crucible::CipherSessionEventPersistenceRow;
@@ -176,8 +177,9 @@ public:
     // region.  The empty payload comes from cipher::content_addressed_payload
     // with no value.
     [[nodiscard]] static ContentAddressedRegionPayload
-    content_addressed(::fixy::Ref<const RegionNode> region) noexcept {
-        return cipher::content_addressed_payload<RegionNode>(ContentAddressedRegionPayload::Value::some(region));
+    content_addressed(::fixy::Ref<const RegionNode, DagArena> region) noexcept {
+        return cipher::content_addressed_payload<RegionNode, DagArena>(
+            ContentAddressedRegionPayload::Value::some(region));
     }
 
     // The text of a root.  The root comes from an operator, so it crosses a

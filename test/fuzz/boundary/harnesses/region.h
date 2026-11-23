@@ -21,11 +21,11 @@
 namespace crucible::fuzz::boundary {
 
 inline void claim_region_trusted(HarnessName harness, const RegionNode& region) noexcept {
-    for (const ::fixy::Ref<MemoryPlan const>& plan_ref : region.plan) {
+    for (const DagRef<MemoryPlan const>& plan_ref : region.plan) {
         const MemoryPlan& plan = *plan_ref;
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
         CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots());
-        for (const TensorSlot& slot : plan.slots) {
+        for (const TensorSlot& slot : plan.slots.view()) {
             CRUCIBLE_FUZZ_CLAIM(harness, valid_scalar_type(static_cast<std::int8_t>(slot.dtype)));
             CRUCIBLE_FUZZ_CLAIM(harness, valid_device_type(static_cast<std::int8_t>(slot.device_type)));
             CRUCIBLE_FUZZ_CLAIM(harness, valid_layout(static_cast<std::int8_t>(slot.layout)));
@@ -39,7 +39,7 @@ inline void claim_region_trusted(HarnessName harness, const RegionNode& region) 
             }
         }
     }
-    for (const TraceEntry& op : region.ops) {
+    for (const TraceEntry& op : region.ops.view()) {
         // The loader gives each op each array of its count.
         CRUCIBLE_FUZZ_CLAIM(harness, op.input_metas().size() == op.num_inputs());
         CRUCIBLE_FUZZ_CLAIM(harness, op.output_metas().size() == op.num_outputs());
@@ -48,7 +48,7 @@ inline void claim_region_trusted(HarnessName harness, const RegionNode& region) 
         for (const TensorMeta& meta : op.output_metas())
             claim_meta_in_range(harness, meta);
     }
-    CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash == compute_content_hash(region.ops));
+    CRUCIBLE_FUZZ_CLAIM(harness, region.content_hash == compute_content_hash(region.ops.view()));
 }
 
 // The plan of a seed region: no plan, or a plan of two slots.
@@ -72,10 +72,9 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
 
 // The ops, their arrays, the region and the slots of the plan are in
 // dag_arena.  The plan is in arena.
-[[nodiscard]] inline ::fixy::Ref<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& arena,
-                                                               ::fixy::BumpArena<DagArena>& dag_arena,
-                                                               SeedPlan seed_plan,
-                                                               SeedSlotFault fault = SeedSlotFault::none) noexcept {
+[[nodiscard]] inline DagRef<RegionNode> build_seed_region(::fixy::BumpArena<DagArena>& arena,
+                                                          ::fixy::BumpArena<DagArena>& dag_arena, SeedPlan seed_plan,
+                                                          SeedSlotFault fault = SeedSlotFault::none) noexcept {
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     const bool has_plan = seed_plan == SeedPlan::two_slots;
@@ -93,14 +92,12 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
         const auto input_metas_run = dag_arena.array(alloc, 1, meta);
         const auto producers_run = dag_arena.array(alloc, 1, OpIndex{});
         const auto input_slots_run = dag_arena.array(alloc, 1, has_plan ? SlotId{0} : SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        op.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+        op.set_inputs(input_metas_run, producers_run, input_slots_run);
         const auto output_metas_run = dag_arena.array(alloc, 1, meta);
         const auto output_slots_run = dag_arena.array(alloc, 1, SlotId{i});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        op.set_outputs(output_metas_run.view(), output_slots_run.view());
+        op.set_outputs(output_metas_run, output_slots_run);
     }
-    const ::fixy::Ref<RegionNode> region = make_region(alloc, dag_arena, ops);
+    const DagRef<RegionNode> region = make_region(alloc, dag_arena, ops_run);
     if (has_plan) {
         const auto plan = arena.make<MemoryPlan>(alloc);
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
@@ -120,8 +117,8 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
         TensorSlot& second = *slots.get(1).expect("the seed plan holds two slots");
         if (fault == SeedSlotFault::past_pool) second.nbytes = std::uint64_t{1} << 40;
         if (fault == SeedSlotFault::misaligned) second.offset_bytes += 8;
-        plan->slots = slots;
-        region->plan = make_plan_link(*plan);
+        plan->slots = slots_run;
+        region->plan = make_plan_link(plan);
     }
     return region;
 }

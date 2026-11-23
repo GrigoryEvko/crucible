@@ -161,7 +161,7 @@ struct CrucibleContext {
     [[nodiscard]] bool activate(const RegionNode& region) CRUCIBLE_NO_THREAD_SAFETY {
         if (region.plan.is_none()) [[unlikely]]
             return false;
-        const ::fixy::Ref<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
 
         if (mode_ == ContextMode::COMPILED) deactivate();
 
@@ -233,7 +233,7 @@ struct CrucibleContext {
         CRUCIBLE_PRE(mode_ == ContextMode::COMPILED);
         if (alt.plan.is_none()) [[unlikely]]
             return false;
-        const ::fixy::Ref<MemoryPlan const> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
+        const DagRef<MemoryPlan const> new_plan = PlanLink{alt.plan}.expect("the test above found the plan");
 
         if (div_pos == 0) return activate(alt);
 
@@ -242,9 +242,9 @@ struct CrucibleContext {
         // path runs once per shape change, so an always-on check costs
         // nothing worth counting.
         CRUCIBLE_FATAL_INVARIANT(active_region_.value().is_some_and(
-            [](::fixy::Ref<RegionNode const> const& active) noexcept { return active->plan.is_some(); }));
+            [](DagRef<RegionNode const> const& active) noexcept { return active->plan.is_some(); }));
         const RegionNode& old_region =
-            *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect("the check above found it");
+            *::fixy::Option<DagRef<RegionNode const>>{active_region_.value()}.expect("the check above found it");
 
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
@@ -352,7 +352,7 @@ struct CrucibleContext {
     register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes, CompiledView const&) {
         using Registered = ::fixy::Result<::fixy::Unit, ViewRefusal>;
         const TensorSlot& slot =
-            *active_plan_().slots.get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+            *active_plan_().slots.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
         if (!slot.is_external) [[unlikely]]
             return ::fixy::err(ViewRefusal::PooledSlot);
         return bytes.window(0, slot.nbytes)
@@ -424,7 +424,7 @@ struct CrucibleContext {
     // The Vigil owns the region, and this context only points at it.  The
     // reference does not point into this context, and it has no twin.  It
     // is empty while the context records.
-    [[nodiscard]] ::fixy::Option<::fixy::Ref<RegionNode const>> active_region() const { return active_region_.value(); }
+    [[nodiscard]] ::fixy::Option<DagRef<RegionNode const>> active_region() const { return active_region_.value(); }
 
     [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
     const ReplayEngine& engine() const&& =
@@ -448,8 +448,8 @@ private:
     // The plan of the active region.  A compiled context has a region, and
     // the region of an activation has a plan.
     [[nodiscard]] const MemoryPlan& active_plan_() const {
-        const RegionNode& region = *::fixy::Option<::fixy::Ref<RegionNode const>>{active_region_.value()}.expect(
-            "a compiled context has a region");
+        const RegionNode& region =
+            *::fixy::Option<DagRef<RegionNode const>>{active_region_.value()}.expect("a compiled context has a region");
         return *PlanLink{region.plan}.expect("an active region has a memory plan");
     }
 
@@ -495,7 +495,8 @@ private:
         for (const SlotId sid : engine_.current_entry().output_slot_ids()) {
             if (!sid.is_valid()) [[unlikely]]
                 return ::fixy::err(OutputRefusal::NoSlot);
-            const TensorSlot& slot = *plan.slots.get(sid.raw()).expect("init checked each slot id against the plan");
+            const TensorSlot& slot =
+                *plan.slots.view().get(sid.raw()).expect("init checked each slot id against the plan");
             if (slot.is_external) [[unlikely]]
                 return ::fixy::err(OutputRefusal::ExternalOutput);
             CRUCIBLE_FATAL_INVARIANT(pool_.is_pool_window_(sid, slot));
@@ -591,10 +592,12 @@ private:
                 CRUCIBLE_FATAL_INVARIANT(old_sid.raw() < old_num_slots);
                 CRUCIBLE_FATAL_INVARIANT(new_sid.raw() < new_num_slots);
 
-                const TensorSlot& old_slot =
-                    *old_plan.slots.get(old_sid.raw()).expect("the check above keeps the old slot id below its count");
-                const TensorSlot& new_slot =
-                    *new_plan.slots.get(new_sid.raw()).expect("the check above keeps the new slot id below its count");
+                const TensorSlot& old_slot = *old_plan.slots.view()
+                                                  .get(old_sid.raw())
+                                                  .expect("the check above keeps the old slot id below its count");
+                const TensorSlot& new_slot = *new_plan.slots.view()
+                                                  .get(new_sid.raw())
+                                                  .expect("the check above keeps the new slot id below its count");
                 if (old_slot.is_external || new_slot.is_external) continue;
 
                 const uint32_t ns = new_sid.raw();
@@ -639,12 +642,13 @@ private:
     // interchangeable here.  The default is the empty slot: no value under
     // the tag, which every reader tests before it reads the region.  The
     // empty Option is the null pointer, so the slot takes eight bytes.
-    using ActiveRegionLink = ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const>>, ::fixy::tags::source::Vigil>;
+    using ActiveRegionLink = ::fixy::Tagged<::fixy::Option<DagRef<RegionNode const>>, ::fixy::tags::source::Vigil>;
 
     // The slot of a region that the context replays.  The region outlives the
-    // replay, so the slot holds it on the erased brand.
+    // replay, and it lives in a DAG arena, so the slot holds it with the
+    // DagArena brand.
     [[nodiscard]] static ActiveRegionLink link_active_region_(const RegionNode& region) noexcept {
-        return ::fixy::mint_tagged<::fixy::tags::source::Vigil>(::fixy::some(::fixy::erase_brand(::fixy::to(region))));
+        return ::fixy::mint_tagged<::fixy::tags::source::Vigil>(::fixy::some(::fixy::to(region)));
     }
 
     ActiveRegionLink active_region_{};  // offset 88

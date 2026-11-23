@@ -18,12 +18,15 @@ struct PublishesRegions {
 }  // namespace
 
 int main() {
-    crucible::RegionNode region{};
+    ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
+    const crucible::DagRef<crucible::RegionNode> region =
+        crucible::mint_dag_node<crucible::RegionNode>(::foundation::effects::testing::test().alloc, arena);
     const auto published = ::fixy::handle::mint_published(PublishesRegions{}, region);
-    for (const ::fixy::Ref<crucible::TraceNode const> continuation : published.get().next) {
-        for (const ::fixy::Ref<crucible::BranchNode const> branch : continuation->as_branch()) {
+    for (const crucible::DagRef<crucible::TraceNode const> continuation : published.get().next) {
+        for (const crucible::DagRef<crucible::BranchNode const> branch : continuation->as_branch()) {
             for (crucible::BranchNode::Arm const& arm : branch->arms()) {
-                for (const ::fixy::Ref<crucible::TraceNode>& target : arm.target())
+                for (const crucible::DagRef<crucible::TraceNode>& target : arm.target())
                     target->merkle_hash = crucible::MerkleHash{};
             }
         }

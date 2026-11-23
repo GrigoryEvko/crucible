@@ -17,13 +17,15 @@
 
 namespace crucible {
 
-::fixy::Result<::fixy::Ref<MemoryPlan>, BackgroundThread::PlanRefusal>
-BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target, MemoryPlan& plan_storage,
-                                      PlanScratch::Epoch& scratch, ::fixy::View<TensorSlot> slots) noexcept {
+::fixy::Result<DagRef<MemoryPlan>, BackgroundThread::PlanRefusal>
+BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget target,
+                                      DagRef<MemoryPlan> plan_storage, PlanScratch::Epoch& scratch,
+                                      ::fixy::ArenaRun<TensorSlot, DagArena> slot_run) noexcept {
     static constexpr uint32_t ALIGNMENT = 256;
 
-    MemoryPlan& plan = plan_storage;
-    plan.slots = slots;
+    MemoryPlan& plan = *plan_storage;
+    plan.slots = slot_run;
+    const ::fixy::View<TensorSlot> slots = slot_run.view();
     const uint32_t num_slots = plan.num_slots();
     plan.num_external = 0;
     plan.pool_bytes = 0;
@@ -35,7 +37,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     plan.device_idx = -1;
     plan.pad0 = decltype(plan.pad0){};
 
-    if (num_slots == 0) return ::fixy::erase_brand(::fixy::to(plan));
+    if (num_slots == 0) return plan_storage;
 
     // The slot at an index of the sweep.  Each index of the sweep is a
     // position in the slots, so it is below their count.
@@ -85,7 +87,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     }
 
     uint32_t num_internal = num_slots - plan.num_external;
-    if (num_internal == 0) return ::fixy::erase_brand(::fixy::to(plan));
+    if (num_internal == 0) return plan_storage;
 
     // Bucket the slots by birth_op and by death_op + 1.  The sweep range
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
@@ -291,7 +293,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     }
 
     plan.pool_bytes = pool_end;
-    return ::fixy::erase_brand(::fixy::to(plan));
+    return plan_storage;
 }
 
 }  // namespace crucible

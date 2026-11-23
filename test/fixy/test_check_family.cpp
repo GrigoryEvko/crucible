@@ -230,14 +230,16 @@ void tally_move_carries_the_counts(::fixy::TestRunnerCtx const& test) {
 void run_of_holds_the_values(::fixy::TestRunnerCtx const& test) {
     ::fixy::with_bump_arena(test.cap().alloc, ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12},
                             [&test](auto& arena) noexcept {
-                                ::fixy::View<std::uint32_t> const run =
+                                const auto built =
                                     ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{7}, 9, 11);
+                                ::fixy::View<std::uint32_t> const run = built.view();
                                 CRUCIBLE_TEST_ASSERT(test, run.size() == 3);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(0).expect("the run holds three values") == 7);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(1).expect("the run holds three values") == 9);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(2).expect("the run holds three values") == 11);
-                                ::fixy::View<std::uint32_t> const single =
+                                const auto built_single =
                                     ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{5});
+                                ::fixy::View<std::uint32_t> const single = built_single.view();
                                 CRUCIBLE_TEST_ASSERT(test, single.size() == 1);
                                 CRUCIBLE_TEST_ASSERT(test, *single.get(0).expect("the run holds one value") == 5);
                             });

@@ -26,11 +26,10 @@ namespace {
                                                         ::fixy::BumpArena<crucible::DagArena>& arena,
                                                         crucible::TraceLink first,
                                                         crucible::TraceLink second) noexcept {
-    crucible::BranchNode& branch = *arena.make<crucible::BranchNode>(alloc);
+    crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(alloc, arena);
     branch.kind = crucible::TraceNodeKind::BRANCH;
     const auto arms_run = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    branch.set_arms(arms_run.view());
+    branch.set_arms(arms_run);
     *branch.arms().get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{1, first};
     *branch.arms().get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{2, second};
     return branch;
@@ -47,11 +46,11 @@ namespace {
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0x1111};
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops);
+    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops_run);
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
-    crucible::LoopNode& loop =
-        *crucible::make_loop(test.alloc, arena, region, crucible::ContentHash{0x5EED},
-                             ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::REPEAT, 2);
+    crucible::LoopNode& loop = *crucible::make_loop(
+        test.alloc, arena, region, crucible::ContentHash{0x5EED},
+        ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{}, crucible::LoopTermKind::REPEAT, 2);
 
     // A link takes one pointer, and a link with no value is the default.
     static_assert(sizeof(crucible::TraceLink) == sizeof(void*));
@@ -76,7 +75,7 @@ namespace {
     // The door of a loop gives the node itself for a loop, and no value for
     // each other kind.
     CRUCIBLE_TEST_ASSERT(kTest, loop.as_loop().is_some());
-    for (const ::fixy::Ref<crucible::LoopNode>& door_loop : loop.as_loop()) {
+    for (const crucible::DagRef<crucible::LoopNode>& door_loop : loop.as_loop()) {
         CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(door_loop, ::fixy::to(loop)));
     }
     CRUCIBLE_TEST_ASSERT(kTest, region.as_loop().is_none());
@@ -91,8 +90,8 @@ namespace {
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops_b = ops_b_run.view().window<1>(0).expect("the run holds one op");
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};
-    crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a);
-    crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b);
+    crucible::RegionNode& region_a = *crucible::make_region(test.alloc, arena, ops_a_run);
+    crucible::RegionNode& region_b = *crucible::make_region(test.alloc, arena, ops_b_run);
     region_a.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
     region_b.next = crucible::make_link(*crucible::make_terminal(test.alloc, arena));
     crucible::BranchNode& branch =
@@ -101,10 +100,10 @@ namespace {
 
     // The doors of a region and of a branch give the node itself, and no
     // value for each other kind.
-    for (const ::fixy::Ref<crucible::RegionNode>& door_region : region_a.as_region()) {
+    for (const crucible::DagRef<crucible::RegionNode>& door_region : region_a.as_region()) {
         CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(door_region, ::fixy::to(region_a)));
     }
-    for (const ::fixy::Ref<crucible::BranchNode>& door_branch : branch.as_branch()) {
+    for (const crucible::DagRef<crucible::BranchNode>& door_branch : branch.as_branch()) {
         CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_object(door_branch, ::fixy::to(branch)));
     }
     CRUCIBLE_TEST_ASSERT(kTest, region_a.as_region().is_some());

@@ -163,8 +163,8 @@ void rollback_reads_its_region_while_the_store_sweeps() {
         feed_one_region(vigil, round * 4);
         if (!vigil.rollback()) continue;
         ++restored;
-        for (const ::fixy::Ref<const crucible::RegionNode> region : vigil.active_region()) {
-            for (const crucible::TraceEntry& op : region->ops) {
+        for (const crucible::DagRef<const crucible::RegionNode> region : vigil.active_region()) {
+            for (const crucible::TraceEntry& op : region->ops.view()) {
                 const uint64_t schema = op.schema_hash.raw();
                 if (schema < 0x300 || schema >= 0x300 + kOps) fail("a region read after a rollback holds a foreign op");
             }

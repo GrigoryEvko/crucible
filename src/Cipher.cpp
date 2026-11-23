@@ -734,10 +734,10 @@ struct IndexLine {
     size_t sz = 64;  // header
     sz += 32;  // region fixed fields
     sz += detail_ser::kRegionChecksumBytes;
-    for (const ::fixy::Ref<MemoryPlan const>& plan : region.plan) {
+    for (const DagRef<MemoryPlan const>& plan : region.plan) {
         sz += 64 + plan->num_slots() * sizeof(TensorSlot);
     }
-    for (const TraceEntry& te : region.ops) {
+    for (const TraceEntry& te : region.ops.view()) {
         const size_t n_in = te.num_inputs();
         const size_t n_out = te.num_outputs();
         const size_t n_sca = te.num_scalar_args();

@@ -502,21 +502,20 @@ private:
 // So this is the one parameter on this signature that cannot be defaulted.
 // It has no caller today -- this whole function does not -- and a default
 // would hand the first one a wrong-kernel path it never had to think about.
-[[nodiscard]] inline ::fixy::Ref<BranchNode> add_branch(::foundation::effects::Alloc a,
-                                                        ::foundation::effects::cap::Nondet nondet,
-                                                        ::fixy::BumpArena<DagArena>& arena, KernelCache& kernel_cache,
-                                                        TraceNode& divergence_point, ::fixy::View<TraceEntry> new_ops,
-                                                        int64_t old_guard_value, int64_t new_guard_value, Guard guard,
-                                                        TraceLink existing_suffix, RecipeChoice const& recipe) {
+[[nodiscard]] inline DagRef<BranchNode>
+add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet nondet,
+           ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND, KernelCache& kernel_cache,
+           TraceNode& divergence_point, ::fixy::ArenaRun<TraceEntry const, DagArena> new_ops, int64_t old_guard_value,
+           int64_t new_guard_value, Guard guard, TraceLink existing_suffix, RecipeChoice const& recipe) {
     CRUCIBLE_PRE(old_guard_value != new_guard_value);
     CRUCIBLE_PRE(is_foldable_recipe(recipe));
-    const ::fixy::Ref<RegionNode> new_region = recipe.match(
+    const DagRef<RegionNode> new_region = recipe.match(
         [a, &arena, new_ops](::fixy::Ref<const NumericalRecipe> chosen) noexcept {
             return make_region(a, arena, new_ops, *chosen);
         },
         [a, &arena, new_ops]() noexcept { return make_region(a, arena, new_ops); });
 
-    const TraceLink merge = find_merge_point(new_ops, existing_suffix, recipe);
+    const TraceLink merge = find_merge_point(new_ops.view(), existing_suffix, recipe);
 
     new_region->next = merge;
 
@@ -532,16 +531,14 @@ private:
         .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
                []() noexcept {});
 
-    const ::fixy::Ref<BranchNode> branch = ::fixy::erase_brand(arena.make<BranchNode>(a));
+    const DagRef<BranchNode> branch = mint_dag_node<BranchNode>(a, arena);
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
     // Arms go in sorted by value: replay binary-searches them.
     const BranchNode::Arm old_arm{old_guard_value, make_link(divergence_point)};
     const BranchNode::Arm new_arm{new_guard_value, make_link(*new_region)};
     const bool is_old_first = old_guard_value <= new_guard_value;
-    const auto arms_run = arena.array<BranchNode::Arm>(a, 2, old_arm);
-    // A plain View of an arena run: the View carries no brand of its arena.
-    branch->set_arms(arms_run.view());
+    branch->set_arms(arena.array<BranchNode::Arm>(a, 2, old_arm));
     BranchNode::Arm& first_arm = *branch->arms().get(0).expect("a branch of two arms holds arm 0");
     BranchNode::Arm& second_arm = *branch->arms().get(1).expect("a branch of two arms holds arm 1");
     first_arm = is_old_first ? old_arm : new_arm;
@@ -554,5 +551,12 @@ private:
     CRUCIBLE_POST(branch, branch->num_arms() == 2u);
     return branch;
 }
+
+// The twin of add_branch.  A temporary arena releases the branch at the end
+// of the statement.  The pack holds the other arguments.
+template <class... Rest>
+void add_branch(::foundation::effects::Alloc, ::foundation::effects::cap::Nondet, ::fixy::BumpArena<DagArena>&&,
+                Rest&&...) = delete("a temporary arena releases the branch at the end of the statement. Use an arena "
+                                    "that has a name");
 
 }  // namespace crucible

@@ -255,11 +255,11 @@ struct BenchRegion {
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     ::fixy::BumpArena<DagArena> dag_arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
-    ::fixy::Ref<RegionNode> region;
-    ::fixy::Ref<MemoryPlan> plan;
+    DagRef<RegionNode> region;
+    DagRef<MemoryPlan> plan;
 
     BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
-        : region{make_ops_region_(schemas, shapes)}, plan{::fixy::erase_brand(arena.make<MemoryPlan>(test.alloc))} {
+        : region{make_ops_region_(schemas, shapes)}, plan{arena.make<MemoryPlan>(test.alloc)} {
         const auto n_ops = static_cast<uint32_t>(schemas.size());
         const auto slots_run = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.
@@ -277,18 +277,18 @@ struct BenchRegion {
             i++;
         }
 
-        plan->slots = slots;
+        plan->slots = slots_run;
         plan->num_external = 0;
         plan->pool_bytes = n_ops * 4096;
         check_single_cpu_plan(*plan);
-        region->plan = make_plan_link(*plan);
+        region->plan = make_plan_link(plan);
     }
 
 private:
     // The region of one op for each pair of hashes.  Op i reads the output
     // of op i - 1.
-    [[nodiscard]] ::fixy::Ref<RegionNode> make_ops_region_(::fixy::View<const SchemaHash> schemas,
-                                                           ::fixy::View<const ShapeHash> shapes) {
+    [[nodiscard]] DagRef<RegionNode> make_ops_region_(::fixy::View<const SchemaHash> schemas,
+                                                      ::fixy::View<const ShapeHash> shapes) {
         CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
         const auto n_ops = static_cast<uint32_t>(schemas.size());
         const auto ops_run = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
@@ -307,15 +307,13 @@ private:
                 const auto input_metas_run = dag_arena.array(test.alloc, 1, meta);
                 const auto producers_run = dag_arena.array(test.alloc, 1, OpIndex{});
                 const auto input_slots_run = dag_arena.array(test.alloc, 1, SlotId{i - 1});
-                // A plain View of an arena run: the View carries no brand of its arena.
-                op.set_inputs(input_metas_run.view(), producers_run.view(), input_slots_run.view());
+                op.set_inputs(input_metas_run, producers_run, input_slots_run);
             }
             const auto output_metas_run = dag_arena.array(test.alloc, 1, meta);
             const auto output_slots_run = dag_arena.array(test.alloc, 1, SlotId{i});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            op.set_outputs(output_metas_run.view(), output_slots_run.view());
+            op.set_outputs(output_metas_run, output_slots_run);
         }
-        return make_region(test.alloc, dag_arena, ops);
+        return make_region(test.alloc, dag_arena, ops_run);
     }
 };
 
@@ -398,7 +396,7 @@ int main() {
             i++;
         }
         const auto plan = arena.make<MemoryPlan>(test.alloc);
-        plan->slots = slots;
+        plan->slots = slots_run;
         plan->num_external = 0;
         plan->pool_bytes = NSLOTS * 256;
         check_single_cpu_plan(*plan);
@@ -707,7 +705,7 @@ int main() {
         ::fixy::BumpArena<DagArena> arena =
             ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
         constexpr uint32_t NR = 4;
-        ::fixy::FixedList<::fixy::Ref<RegionNode>, NR> regions{};
+        ::fixy::FixedList<DagRef<RegionNode>, NR> regions{};
         for (uint32_t r = 0; r < NR; r++) {
             const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
             // A plain View of an arena run: the View carries no brand of its arena.
@@ -717,23 +715,22 @@ int main() {
                 op.schema_hash = SCHEMA.at(i);
                 op.shape_hash = ShapeHash{SHAPE.at(i).raw() + r * 0x100};
             }
-            const ::fixy::Ref<RegionNode> region = make_region(test.alloc, arena, ops);
+            const DagRef<RegionNode> region = make_region(test.alloc, arena, ops_run);
             const auto plan = arena.make<MemoryPlan>(test.alloc);
-            plan->slots = ::fixy::View<TensorSlot>{};
+            plan->slots = ::fixy::ArenaRun<TensorSlot const, DagArena>{};
             plan->pool_bytes = 0;
             check_single_cpu_plan(*plan);
-            region->plan = make_plan_link(*plan);
+            region->plan = make_plan_link(plan);
             static_cast<void>(regions.append(region).expect("the list holds NR regions"));
         }
         RegionCache cache;
-        for (::fixy::Ref<RegionNode> const region : regions)
+        for (DagRef<RegionNode> const region : regions)
             cache.insert(*region);
 
         SchemaHash tgt_schema = SCHEMA.at(::fixy::index<3>());
         ShapeHash tgt_shape{SHAPE.at(::fixy::index<3>()).raw() + 2 * 0x100};
         RegionNode const& first_region = **regions.get(0).expect("the list holds the first region");
-        const crucible::ConstRegionLink excluded =
-            crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(first_region)));
+        const crucible::ConstRegionLink excluded = crucible::ConstRegionLink::some(::fixy::to(first_region));
         return bench::run("RegionCache::find_alternate (4 entries)", [&] {
             auto found = cache.find_alternate(3, tgt_schema, tgt_shape, excluded);
             bench::do_not_optimize(found);

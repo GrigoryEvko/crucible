@@ -61,7 +61,7 @@ using ::fixy::WaitStrategy_v;
 static auto g_test = ::foundation::effects::testing::test();
 
 // The ops, their arrays and the region are in dag_arena.
-static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena<crucible::DagArena>& dag_arena, uint32_t seed) {
+static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<crucible::DagArena>& dag_arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
     const auto ops_run = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -78,13 +78,13 @@ static ::fixy::Ref<RegionNode> make_test_region(::fixy::BumpArena<crucible::DagA
                   ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{}));
     op.set_outputs(::fixy::check::run_of(kTest, g_test.alloc, dag_arena, meta),
                    ::fixy::check::run_of(kTest, g_test.alloc, dag_arena, SlotId{seed}));
-    return crucible::make_region(g_test.alloc, dag_arena, ops);
+    return crucible::make_region(g_test.alloc, dag_arena, ops_run);
 }
 
 static void test_store_pinned_bit_equality(const char* dir) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-    const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 1);
+    const crucible::DagRef<RegionNode> region = make_test_region(dag_arena, 1);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -98,7 +98,7 @@ static void test_store_pinned_bit_equality(const char* dir) {
 static void test_store_pinned_type_identity(const char* dir) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-    const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 2);
+    const crucible::DagRef<RegionNode> region = make_test_region(dag_arena, 2);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);
@@ -116,7 +116,7 @@ static void test_store_pinned_type_identity(const char* dir) {
 static void test_store_pinned_payload_route(const char* dir) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-    const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 3);
+    const crucible::DagRef<RegionNode> region = make_test_region(dag_arena, 3);
     auto cipher = open_cipher(dir);
 
     auto view = cipher.mint_open_view(store_ctx());
@@ -155,7 +155,7 @@ static ContentHash block_fence_consumer(W wrapped) noexcept {
 static void test_e2e_block_fence_consumer(const char* dir) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-    const ::fixy::Ref<RegionNode> region = make_test_region(dag_arena, 4);
+    const crucible::DagRef<RegionNode> region = make_test_region(dag_arena, 4);
     auto cipher = open_cipher(dir);
     auto view = cipher.mint_open_view(store_ctx());
     auto payload = Cipher::content_addressed(region);

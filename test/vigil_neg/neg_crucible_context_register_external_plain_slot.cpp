@@ -10,7 +10,7 @@
 namespace {
 [[maybe_unused]] void register_plain(crucible::CrucibleContext& ctx, crucible::MemoryPlan const& plan,
                                      crucible::TensorData data, crucible::CrucibleContext::CompiledView const& view) {
-    static_cast<void>(crucible::mint_external_slot(plan.slots, crucible::SlotId{1}).is_some());
+    static_cast<void>(crucible::mint_external_slot(plan.slots.view(), crucible::SlotId{1}).is_some());
     ctx.register_external(crucible::SlotId{1}, data, view);
 }
 }  // namespace

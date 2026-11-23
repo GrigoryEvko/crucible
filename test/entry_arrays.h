@@ -6,39 +6,29 @@
 // their metadata, their producers and their slot ids together, and the
 // outputs take their metadata and their slot ids together.  A test of the
 // replay or of the pool reads only the slot ids.  These helpers give the
-// other arrays of the count as zero values in the arena of the test.  The
-// arena is a BumpArena of any brand, or the Epoch of an epoch arena.
+// other arrays of the count as zero values in the DAG arena of the test, as
+// runs of that arena, because each array of an entry is a run of a DAG arena.
 
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
 
-#include <cstddef>
-
 namespace crucible::test {
-
-// An arena that gives an array of op indexes: a BumpArena or an Epoch.
-template <class Arena, class Marker>
-concept OpArrayArena = requires(Arena& arena, Marker alloc) { arena.array(alloc, std::size_t{1}, OpIndex{}); };
 
 // The inputs of op: slot_ids, with the zero metadata and no producer for
 // each input.  Complexity: O(count).
-template <class Marker, class Arena>
-    requires OpArrayArena<Arena, Marker>
-void set_input_slots(Marker alloc, Arena& arena, TraceEntry& op, ::fixy::View<SlotId> slot_ids) noexcept {
-    auto const metas = arena.array(alloc, slot_ids.size(), TensorMeta{});
-    auto const producers = arena.array(alloc, slot_ids.size(), OpIndex{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    op.set_inputs(metas.view(), producers.view(), slot_ids);
+template <class Marker>
+void set_input_slots(Marker alloc, ::fixy::BumpArena<DagArena>& arena, TraceEntry& op,
+                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
+    op.set_inputs(arena.array(alloc, slot_ids.size(), TensorMeta{}), arena.array(alloc, slot_ids.size(), OpIndex{}),
+                  slot_ids);
 }
 
 // The outputs of op: slot_ids, with the zero metadata for each output.
 // Complexity: O(count).
-template <class Marker, class Arena>
-    requires OpArrayArena<Arena, Marker>
-void set_output_slots(Marker alloc, Arena& arena, TraceEntry& op, ::fixy::View<SlotId> slot_ids) noexcept {
-    auto const metas = arena.array(alloc, slot_ids.size(), TensorMeta{});
-    // A plain View of an arena run: the View carries no brand of its arena.
-    op.set_outputs(metas.view(), slot_ids);
+template <class Marker>
+void set_output_slots(Marker alloc, ::fixy::BumpArena<DagArena>& arena, TraceEntry& op,
+                      ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
+    op.set_outputs(arena.array(alloc, slot_ids.size(), TensorMeta{}), slot_ids);
 }
 
 }  // namespace crucible::test

@@ -73,7 +73,7 @@ struct Gate {
 
 void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
                            BackgroundThread::PublishedRegion const& ready) noexcept {
-    const ::fixy::Ref<crucible::RegionNode const> region =
+    const crucible::DagRef<crucible::RegionNode const> region =
         crucible::ConstRegionLink{ready.region}.expect("the publish stage gives a record of a region");
 
     // The hash the background thread folded while streaming the ops must
@@ -81,7 +81,7 @@ void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&
     // under the numerics hash of the region.  This is the assertion that
     // binds the production producer to the canonical one on a region that
     // really came off the pipeline.
-    const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops, region->numerics);
+    const crucible::ContentHash canonical = crucible::compute_content_hash(region->ops.view(), region->numerics);
     if (canonical != region->content_hash) (void)hash_mismatches.fetch_add_acq_rel(1u);
 
     const bool after_reset = reset_observed.load_acquire();

@@ -20,10 +20,11 @@ int main() {
     const auto view = cipher.mint_open_view(store_ctx);
 
     // The band holds a Ref of a region, so the lattice is the one fault.
-    using RegionRef = ::fixy::Ref<const ::crucible::RegionNode>;
-    const ::crucible::RegionNode region{};
-    auto hot_tier =
-        ::fixy::mint_band<::fixy::cipher_tier::Hot<RegionRef>>(RegionRef{::fixy::erase_brand(::fixy::to(region))});
+    using RegionRef = ::crucible::DagRef<const ::crucible::RegionNode>;
+    ::fixy::BumpArena<::crucible::DagArena> arena = ::fixy::mint_bump_arena<::crucible::DagArena>(
+        ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
+    const RegionRef region = ::crucible::mint_dag_node<::crucible::RegionNode>(store_ctx.cap().alloc, arena);
+    auto hot_tier = ::fixy::mint_band<::fixy::cipher_tier::Hot<RegionRef>>(region);
     auto result = cipher.commit_per_request(view, std::move(hot_tier));
     return static_cast<int>(static_cast<bool>(std::move(result).consume()));
 }

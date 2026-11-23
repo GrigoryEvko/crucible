@@ -6,9 +6,14 @@
 
 #include <fixy/handle/Published.h>
 
+#include <foundation/core/Ref.h>
+
 namespace {
 
+struct Store final {};
+
 struct Plain {
+    using brand_type = Store;
     int value = 0;
 };
 
@@ -18,6 +23,6 @@ struct NamesNothing {};
 
 int main() {
     Plain const object{};
-    const auto published = ::fixy::handle::mint_published(NamesNothing{}, object);
+    const auto published = ::fixy::handle::mint_published(NamesNothing{}, ::foundation::core::to(object));
     return published.get().value;
 }

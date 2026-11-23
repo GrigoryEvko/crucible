@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::handle::PublishedObject<const int> in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::handle::PublishedObject<const int, forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::handle::PublishedObject<const int> attests to a fact that it cannot see.  The expression below is
+// fixy::handle::PublishedObject<const int, forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "no matching function for call".
 //
@@ -28,6 +28,6 @@ struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::handle::PublishedObject<const int>{forge::lvalue<foundation::core::Ref<const int, forge::brand>>()};
+    [[maybe_unused]] auto forged = fixy::handle::PublishedObject<const int, forge::brand>{forge::lvalue<foundation::core::Ref<const int, forge::brand>>()};
     return 0;
 }

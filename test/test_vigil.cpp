@@ -188,9 +188,9 @@ static void test_region_hashes_under_the_numerics_of_the_config() {
     crucible::test::flush_and_wait_region_published(kTest, strict);
     crucible::test::flush_and_wait_region_published(kTest, ordered);
 
-    const ::fixy::Ref<const crucible::RegionNode> strict_region =
+    const crucible::DagRef<const crucible::RegionNode> strict_region =
         strict.active_region().expect("the flush published a region");
-    const ::fixy::Ref<const crucible::RegionNode> ordered_region =
+    const crucible::DagRef<const crucible::RegionNode> ordered_region =
         ordered.active_region().expect("the flush published a region");
     crucible::NumericsPolicy strict_policy{};
     strict_policy.determinism = crucible::ReductionDeterminism::BITEXACT_STRICT;
@@ -319,7 +319,7 @@ static void test_eager_word_change_is_a_divergence() {
 
     divrig::feed_one_region(vigil, 4);
     crucible::test::flush_and_wait_region_published(kTest, vigil);
-    const ::fixy::Ref<const crucible::RegionNode> flushed =
+    const crucible::DagRef<const crucible::RegionNode> flushed =
         vigil.active_region().expect("the pipeline published a region after the change");
     CRUCIBLE_TEST_ASSERT(kTest,
                          flushed->numerics == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)
@@ -415,7 +415,7 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, !vigil.context().is_compiled());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_some());
     CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() >= 1);
-    const ::fixy::Ref<const crucible::RegionNode> active_region =
+    const crucible::DagRef<const crucible::RegionNode> active_region =
         vigil.active_region().expect("the flush published a region");
     const auto object_path = object_path_for(dir, active_region->content_hash);
     CRUCIBLE_TEST_ASSERT(kTest, !std::filesystem::exists(object_path)

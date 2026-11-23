@@ -20,7 +20,7 @@ int main() {
     ::fixy::View<const std::byte> bytes{};
 
     // The payload is the payload of a loaded region, so only the tag differs.
-    using ExternalRegion = ::fixy::Tagged<::fixy::Ref<crucible::RegionNode>, ::fixy::tags::source::External>;
+    using ExternalRegion = ::fixy::Tagged<crucible::DagRef<crucible::RegionNode>, ::fixy::tags::source::External>;
 
     // Must fail: source::Loaded is not source::External.
     ExternalRegion wrong = crucible::deserialize_region(::foundation::effects::testing::test().alloc, bytes, arena)

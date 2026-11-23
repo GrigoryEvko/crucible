@@ -166,7 +166,7 @@ void test_alignment_bound_returns_to_replay() {
     CRUCIBLE_TEST_ASSERT(kTest, vigil.active_region().is_some());
     const RegionNode& region = *vigil.active_region().expect("the flush published a region");
     CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == NUM_OPS && "the region holds one iteration of the new trace");
-    for (const crucible::TraceEntry& op : region.ops) {
+    for (const crucible::TraceEntry& op : region.ops.view()) {
         const uint64_t schema = op.schema_hash.raw();
         CRUCIBLE_TEST_ASSERT(kTest, schema >= 0xA00 && schema < 0xA00 + NUM_OPS
                                         && "each op of the region is an op of the new trace");

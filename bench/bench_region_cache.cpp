@@ -30,13 +30,13 @@ namespace {
 constexpr uint32_t NUM_OPS = 128;
 constexpr uint32_t NUM_REGIONS = 10;
 
-using Regions = ::fixy::FixedArray<::fixy::Ref<RegionNode>, NUM_REGIONS>;
+using Regions = ::fixy::FixedArray<DagRef<RegionNode>, NUM_REGIONS>;
 using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 
 // Region r of the fixture: 128 ops with hashes of r, and an empty plan.
 // The arena builds each op and each plan with its member initializers.
-[[nodiscard]] ::fixy::Ref<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
-                                                          ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
+[[nodiscard]] DagRef<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
+                                                     ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
     const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
@@ -48,8 +48,8 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 
     auto const plan = arena.make<MemoryPlan>(test.alloc);
 
-    ::fixy::Ref<RegionNode> const region = make_region(test.alloc, arena, ops);
-    region->plan = make_plan_link(*plan);
+    DagRef<RegionNode> const region = make_region(test.alloc, arena, ops_run);
+    region->plan = make_plan_link(plan);
     return region;
 }
 
@@ -134,7 +134,7 @@ int main() {
             const auto schema = fix.region(::fixy::index<7>()).op_at(pos).schema_hash;
             const auto shape = fix.region(::fixy::index<7>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<6>()))));
+                crucible::ConstRegionLink::some(::fixy::to(fix.region(::fixy::index<6>())));
             return bench::run("find_alternate: hit MRU (i=0)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
@@ -149,7 +149,7 @@ int main() {
             const auto schema = fix.region(::fixy::index<0>()).op_at(pos).schema_hash;
             const auto shape = fix.region(::fixy::index<0>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<7>()))));
+                crucible::ConstRegionLink::some(::fixy::to(fix.region(::fixy::index<7>())));
             return bench::run("find_alternate: hit LRU (i=7)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);
@@ -187,7 +187,7 @@ int main() {
             const auto schema = fix.region(::fixy::index<0>()).op_at(pos).schema_hash;
             const auto shape = fix.region(::fixy::index<0>()).op_at(pos).shape_hash;
             const crucible::ConstRegionLink excl =
-                crucible::ConstRegionLink::some(::fixy::erase_brand(::fixy::to(fix.region(::fixy::index<1>()))));
+                crucible::ConstRegionLink::some(::fixy::to(fix.region(::fixy::index<1>())));
             return bench::run("find_alternate: hit (2 entries, excl MRU)", [&] {
                 auto r = cache.find_alternate(pos, schema, shape, excl);
                 bench::do_not_optimize(r);

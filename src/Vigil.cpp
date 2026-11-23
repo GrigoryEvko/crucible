@@ -96,10 +96,10 @@ bool Vigil::rollback() {
     // No op reaches the ring while this thread rolls back, so this is the
     // point of the rollback.
     const uint64_t ops_before = ring_total_produced();
-    const ::fixy::Option<::fixy::handle::Published<RegionNode>> restored =
+    const ::fixy::Option<::fixy::handle::Published<RegionNode, DagArena>> restored =
         bg_.run_on_publish_stage([&tx_log = tx_log_, ops_before](BackgroundThread::PublishStageView& bg,
                                                                  BackgroundThread::PublishStage const& stage) noexcept
-                                     -> ::fixy::Option<::fixy::handle::Published<RegionNode>> {
+                                     -> ::fixy::Option<::fixy::handle::Published<RegionNode, DagArena>> {
             if (!tx_log.rollback(stage)) return ::fixy::none;
             // The job runs between two publications, so each publication after
             // it reads the mark, and none gives the foreground a region cut
@@ -108,13 +108,13 @@ bool Vigil::rollback() {
             // The restored transaction was active before, and only a commit
             // with a region makes a transaction active.
             const auto active = tx_log.active(stage).expect("a rollback leaves the restored transaction active");
-            ::fixy::Option<::fixy::handle::Published<RegionNode>> region_of_rollback{};
+            ::fixy::Option<::fixy::handle::Published<RegionNode, DagArena>> region_of_rollback{};
             const bool has_region =
                 tx_log
                     .with_tx(stage, active,
                              [&bg, &stage, &region_of_rollback](Transaction const& tx) noexcept {
-                                 for (const ::fixy::Ref<RegionNode const>& region : tx.region.value()) {
-                                     region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, *region));
+                                 for (const DagRef<RegionNode const>& region : tx.region.value()) {
+                                     region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, region));
                                      // The foreground gets the region outside the publication slot,
                                      // so the store keeps it until the foreground writes its holders
                                      // again (the life of a region of BackgroundThread.h).
@@ -127,7 +127,7 @@ bool Vigil::rollback() {
             return region_of_rollback;
         });
     return restored.match(
-        [this, &fg](::fixy::handle::Published<RegionNode> const& region) {
+        [this, &fg](::fixy::handle::Published<RegionNode, DagArena> const& region) {
             adopt_region_(fg, region.get());
             return true;
         },
@@ -141,7 +141,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
     pending_activation_ = ::fixy::none;
     alignment_pos_ = alignment_pos_at(0);
     alignment_ops_ = 0;
-    taken_region_.store_release(::fixy::some(::fixy::erase_brand(::fixy::to(region))));
+    taken_region_.store_release(::fixy::some(::fixy::to(region)));
     if (replay_.activate(region)) {
         // A rollback or a load resumes the replay at the first op.
         register_inputs_from_region_(fg, region, 0);
@@ -162,8 +162,8 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // consumes it.  The merkle root goes through the checked accessor so the
     // non-zero invariant is witnessed at this call site: its precondition
     // fires here if the hash was never recomputed.
-    const Transaction::ArenaRegion committed_region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-        ::fixy::Ref<RegionNode const>{::fixy::erase_brand(::fixy::to(region))});
+    const Transaction::ArenaRegion committed_region =
+        ::fixy::mint_tagged<::fixy::tags::source::Arena>(DagRef<RegionNode const>{::fixy::to(region)});
     const MerkleHash merkle_root = ::crucible::make_merkle_root(region.computed_merkle_hash());
     const auto committed =
         tx_log_.commit(stage, tx_log_.begin_tx(stage, step), committed_region, region.content_hash, merkle_root)

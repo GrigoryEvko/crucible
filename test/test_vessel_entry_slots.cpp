@@ -216,10 +216,9 @@ void test_input_past_the_limit_reaches_the_digest() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    ::fixy::View<crucible::TensorMeta> const metas = ::fixy::check::run_of(kTest, test.alloc, arena, meta);
-    ::fixy::View<crucible::OpIndex> const producers =
-        ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
-    ::fixy::View<crucible::SlotId> const slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
+    const auto metas = ::fixy::check::run_of(kTest, test.alloc, arena, meta);
+    const auto producers = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
+    const auto slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
     ops.with_element(::fixy::index<0>(), [metas, producers, slot_ids](crucible::TraceEntry& op) noexcept {
         op.schema_hash = crucible::SchemaHash{42};
@@ -234,7 +233,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    ::fixy::View<int64_t> const scalars = ::fixy::check::run_of(kTest, test.alloc, arena, bits);
+    const auto scalars = ::fixy::check::run_of(kTest, test.alloc, arena, bits);
     const crucible::ScalarSlotKinds kinds =
         crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};

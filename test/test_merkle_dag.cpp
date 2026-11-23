@@ -133,7 +133,7 @@ template <class Fake>
     ops.get(2).expect("the run holds three ops")->schema_hash = SchemaHash{0xEEFF};
     // The nodes are held as references: a Ref local in this large function
     // costs the Debug compile far more than a reference.
-    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops);
+    crucible::RegionNode& region = *crucible::make_region(test.alloc, arena, ops_run);
     CRUCIBLE_TEST_ASSERT(kTest, region.kind == crucible::TraceNodeKind::REGION);
     CRUCIBLE_TEST_ASSERT(kTest, region.num_ops() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, region.op_at(0).schema_hash == SchemaHash{0xAABB});
@@ -142,7 +142,7 @@ template <class Fake>
     CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(region.content_hash));
 
     ContentHash h1 = region.content_hash;
-    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops);
+    const crucible::RegionNode& region2 = *crucible::make_region(test.alloc, arena, ops_run);
     CRUCIBLE_TEST_ASSERT(kTest, region2.content_hash == h1);
 
     crucible::TraceNode& terminal = *crucible::make_terminal(test.alloc, arena);
@@ -385,9 +385,9 @@ template <class Fake>
         rops_b.get(0).expect("the run holds two ops")->schema_hash = SchemaHash{0x0A0A};
         rops_b.get(1).expect("the run holds two ops")->schema_hash = SchemaHash{0x0B0B};
 
-        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a, recipe_tc);
-        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b, recipe_strict);
-        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a);
+        const crucible::RegionNode& r_tc = *crucible::make_region(test.alloc, arena, rops_a_run, recipe_tc);
+        const crucible::RegionNode& r_strict = *crucible::make_region(test.alloc, arena, rops_b_run, recipe_strict);
+        const crucible::RegionNode& r_none = *crucible::make_region(test.alloc, arena, rops_a_run);
 
         CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_strict.content_hash);
         CRUCIBLE_TEST_ASSERT(kTest, r_tc.content_hash != r_none.content_hash);
@@ -426,11 +426,10 @@ template <class Fake>
         e_six_diff.schema_hash = SchemaHash{0xAA};
         e_ten.schema_hash = SchemaHash{0xAA};
 
-        ::fixy::View<int64_t> const s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5);
-        ::fixy::View<int64_t> const s_six = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 99);
-        ::fixy::View<int64_t> const s_six_diff =
-            ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 7);
-        ::fixy::View<int64_t> const s_ten =
+        const auto s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5);
+        const auto s_six = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 99);
+        const auto s_six_diff = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 7);
+        const auto s_ten =
             ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{1}, 2, 3, 4, 5, 99, 100, 101, 102, 103);
 
         e_five.set_scalar_args(s_five);
@@ -476,38 +475,32 @@ template <class Fake>
         };
 
         auto const input_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorMeta> const input_meta = input_meta_run.view();
         // The fold reads no producer and no slot id of an input.
         auto const no_producer_run = arena.array(test.alloc, 1, crucible::OpIndex{});
         auto const no_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::OpIndex> const no_producer = no_producer_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::SlotId> const no_slot = no_slot_run.view();
 
         crucible::TraceEntry e_empty{};
         e_empty.schema_hash = SchemaHash{0x11};
 
-        ::fixy::View<int64_t> const s_three = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{7}, 8, 9);
+        const auto s_three = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{7}, 8, 9);
         crucible::TraceEntry e_three{};
         e_three.schema_hash = SchemaHash{0x22};
         e_three.set_scalar_args(s_three);
 
-        ::fixy::View<int64_t> const s_one = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{42});
+        const auto s_one = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{42});
         crucible::TraceEntry e_one{};
         e_one.schema_hash = SchemaHash{0x33};
         e_one.set_scalar_args(s_one);
 
         // Five values is the boundary a clamped fold stops at.
-        ::fixy::View<int64_t> const s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{9}, 8, 7, 6, 5);
+        const auto s_five = ::fixy::check::run_of(kTest, test.alloc, arena, int64_t{9}, 8, 7, 6, 5);
         crucible::TraceEntry e_five{};
         e_five.schema_hash = SchemaHash{0x44};
         e_five.set_scalar_args(s_five);
 
         crucible::TraceEntry e_tensor{};
         e_tensor.schema_hash = SchemaHash{0x55};
-        e_tensor.set_inputs(input_meta, no_producer, no_slot);
+        e_tensor.set_inputs(input_meta_run, no_producer_run, no_slot_run);
 
         for (const auto* op : {&e_empty, &e_three, &e_one, &e_five, &e_tensor}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 1> single{*op};
@@ -573,7 +566,7 @@ template <class Fake>
 
         crucible::TraceEntry e_real_tensor{};
         e_real_tensor.schema_hash = SchemaHash{0x66};
-        e_real_tensor.set_inputs(real_meta, no_producer, no_slot);
+        e_real_tensor.set_inputs(real_meta_run, no_producer_run, no_slot_run);
 
         const ::foundation::core::FixedArray<crucible::TraceEntry, 5> real_mix{e_empty, e_three, e_one, e_five,
                                                                                e_real_tensor};
@@ -632,7 +625,7 @@ template <class Fake>
         fact_input.storage_offset = 5;
         crucible::TraceEntry e_fact_tensor{};
         e_fact_tensor.schema_hash = SchemaHash{0x66};
-        e_fact_tensor.set_inputs(fact_meta, no_producer, no_slot);
+        e_fact_tensor.set_inputs(fact_meta_run, no_producer_run, no_slot_run);
         golden("one tensor with each fact", one_op(e_fact_tensor), 0x2FB41C5109940EECULL);
 
         CRUCIBLE_TEST_ASSERT(kTest, moved_vectors == 0
@@ -682,14 +675,11 @@ template <class Fake>
         // The fold reads no producer and no slot id of an input.
         auto const no_producer_run = arena.array(test.alloc, 1, crucible::OpIndex{});
         auto const no_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::OpIndex> const no_producer = no_producer_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::SlotId> const no_slot = no_slot_run.view();
-        auto with_meta = [&no_producer, &no_slot](uint64_t schema, ::fixy::View<crucible::TensorMeta> meta) {
+        auto with_meta = [&no_producer_run, &no_slot_run](
+                             uint64_t schema, ::fixy::ArenaRun<crucible::TensorMeta, crucible::DagArena> meta) {
             crucible::TraceEntry e{};
             e.schema_hash = SchemaHash{schema};
-            e.set_inputs(meta, no_producer, no_slot);
+            e.set_inputs(meta, no_producer_run, no_slot_run);
             return e;
         };
         auto no_tensor = [](uint64_t schema) {
@@ -702,15 +692,13 @@ template <class Fake>
         auto const undefined_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
         auto const zero_packed_meta_run = arena.array(test.alloc, 1, crucible::TensorMeta{});
         // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorMeta> const undefined_meta = undefined_meta_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<crucible::TensorMeta> const zero_packed_meta = zero_packed_meta_run.view();
         crucible::TensorMeta& zero_packed = *zero_packed_meta.get(0).expect("the run holds one meta");
         zero_packed.dtype = crucible::ScalarType::Byte;
         zero_packed.device_type = crucible::DeviceType::CPU;
         zero_packed.device_idx = 0;
 
-        for (const ::fixy::View<crucible::TensorMeta> meta : {undefined_meta, zero_packed_meta}) {
+        for (const auto& meta : {undefined_meta_run, zero_packed_meta_run}) {
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_a{no_tensor(0xAAAA),
                                                                                    with_meta(0x5555, meta)};
             const ::foundation::core::FixedArray<crucible::TraceEntry, 2> region_b{no_tensor(0xBBBB),
@@ -726,7 +714,7 @@ template <class Fake>
 
         // The zero-packed case used to produce the sentinel hash outright.
         CRUCIBLE_TEST_ASSERT(kTest,
-                             hash_one_op(with_meta(0x5555, zero_packed_meta)).raw() != 0
+                             hash_one_op(with_meta(0x5555, zero_packed_meta_run)).raw() != 0
                                  && "a uint8 tensor on CPU:0 hashes to the KernelCache empty-slot sentinel again");
 
         // A single mix is xor-symmetric, so a fold flattened into one xor
@@ -839,11 +827,11 @@ template <class Fake>
             return [&, kind, count, epsilon] {
                 ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                     ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops_run);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
-                crucible::LoopNode& node =
-                    *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
-                                         ::fixy::View<crucible::FeedbackEdge>{}, kind, count, epsilon);
+                crucible::LoopNode& node = *crucible::make_loop(
+                    test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
+                    ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{}, kind, count, epsilon);
                 // Keeps the optimizer from deciding the call had no effect
                 // and eliding the clause along with it.
                 asm volatile("" ::"r"(&node) : "memory");
@@ -885,12 +873,11 @@ template <class Fake>
         auto hash_unresolved_branch = [&] {
             ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                 ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-            crucible::BranchNode& branch = *child_arena.make<crucible::BranchNode>(test.alloc);
+            crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, child_arena);
             branch.kind = crucible::TraceNodeKind::BRANCH;
             const auto arms_run = child_arena.array<crucible::BranchNode::Arm>(
                 test.alloc, 1, crucible::BranchNode::Arm{1, crucible::TraceLink{}});
-            // A plain View of an arena run: the View carries no brand of its arena.
-            branch.set_arms(arms_run.view());
+            branch.set_arms(arms_run);
             crucible::recompute_merkle(branch);
             // The child prints the hash only when the hash returns.
             ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());
@@ -912,11 +899,12 @@ template <class Fake>
             return [&, node_kind, door] {
                 ::fixy::BumpArena<crucible::DagArena> child_arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                     ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops);
+                crucible::RegionNode& body = *crucible::make_region(test.alloc, child_arena, guard_body_ops_run);
                 body.next = crucible::make_link(*crucible::make_terminal(test.alloc, child_arena));
                 crucible::TraceNode& loop_node =
                     *crucible::make_loop(test.alloc, child_arena, body, crucible::compute_body_content_hash(body),
-                                         ::fixy::View<crucible::FeedbackEdge>{}, crucible::LoopTermKind::REPEAT, 1);
+                                         ::fixy::ArenaRun<crucible::FeedbackEdge const, crucible::DagArena>{},
+                                         crucible::LoopTermKind::REPEAT, 1);
                 crucible::TraceNode& node = node_kind == crucible::TraceNodeKind::LOOP ? loop_node : body;
                 uint32_t field = 0;
                 switch (door) {
@@ -958,34 +946,26 @@ template <class Fake>
         auto const two_producers_run = arena.array(test.alloc, 2, crucible::OpIndex{});
         auto const two_slots_run = arena.array(test.alloc, 2, crucible::SlotId{});
         auto const one_slot_run = arena.array(test.alloc, 1, crucible::SlotId{});
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::TensorMeta> const two_metas = two_metas_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::OpIndex> const two_producers = two_producers_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::SlotId> const two_slots = two_slots_run.view();
-        // A plain View of an arena run: the View carries no brand of its arena.
-        ::fixy::View<crucible::SlotId> const one_slot = one_slot_run.view();
         // The refusal is a call of fixy::fatal, which the optimizer keeps.
-        auto set_inputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
+        auto set_inputs = [&](::fixy::ArenaRun<crucible::SlotId, crucible::DagArena> slot_ids) {
             return [&, slot_ids] {
                 crucible::TraceEntry entry{};
-                entry.set_inputs(two_metas, two_producers, slot_ids);
+                entry.set_inputs(two_metas_run, two_producers_run, slot_ids);
             };
         };
-        auto set_outputs = [&](::fixy::View<crucible::SlotId> slot_ids) {
+        auto set_outputs = [&](::fixy::ArenaRun<crucible::SlotId, crucible::DagArena> slot_ids) {
             return [&, slot_ids] {
                 crucible::TraceEntry entry{};
-                entry.set_outputs(two_metas, slot_ids);
+                entry.set_outputs(two_metas_run, slot_ids);
             };
         };
         // Arrays of one count pass in the test process.
-        set_inputs(two_slots)();
-        set_outputs(two_slots)();
+        set_inputs(two_slots_run)();
+        set_outputs(two_slots_run)();
         constexpr ::fixy::TextView kOtherCount{
             "foundation: fatal: RunSet::set got a run of 1 elements for a slot of the count 2"};
-        ::fixy::check::expect_dies(runner, set_inputs(one_slot), kOtherCount);
-        ::fixy::check::expect_dies(runner, set_outputs(one_slot), kOtherCount);
+        ::fixy::check::expect_dies(runner, set_inputs(one_slot_run), kOtherCount);
+        ::fixy::check::expect_dies(runner, set_outputs(one_slot_run), kOtherCount);
 
         ::fixy::report(::fixy::Sink::Out, "  an entry refuses arrays of two counts for one kind\n");
     }

@@ -305,23 +305,38 @@ int main() {
     // own.  A fold that dropped a field, or that became commutative,
     // would still pass a test that varied them together.
     {
-        crucible::LoopNode base{};
-        base.term_kind = crucible::LoopTermKind::REPEAT;
-        base.repeat_count = 100;
-        base.epsilon = 0.001f;
-        const uint64_t h_base = crucible::loopterm_hash(base);
+        auto test = ::foundation::effects::testing::test();
+        ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
+        const crucible::DagRef<crucible::LoopNode> base =
+            crucible::mint_dag_node<crucible::LoopNode>(test.alloc, arena);
+        base->term_kind = crucible::LoopTermKind::REPEAT;
+        base->repeat_count = 100;
+        base->epsilon = 0.001f;
+        const uint64_t h_base = crucible::loopterm_hash(*base);
 
-        crucible::LoopNode alt_kind = base;
-        alt_kind.term_kind = crucible::LoopTermKind::UNTIL;
-        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_kind) != h_base);
+        // A loop of the arena with the three termination fields of base.  Each
+        // other field stays at its default, as in base.
+        auto copy_of_base = [&]() noexcept {
+            const crucible::DagRef<crucible::LoopNode> copy =
+                crucible::mint_dag_node<crucible::LoopNode>(test.alloc, arena);
+            copy->term_kind = base->term_kind;
+            copy->repeat_count = base->repeat_count;
+            copy->epsilon = base->epsilon;
+            return copy;
+        };
 
-        crucible::LoopNode alt_count = base;
-        alt_count.repeat_count = 101;
-        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_count) != h_base);
+        const crucible::DagRef<crucible::LoopNode> alt_kind = copy_of_base();
+        alt_kind->term_kind = crucible::LoopTermKind::UNTIL;
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(*alt_kind) != h_base);
 
-        crucible::LoopNode alt_eps = base;
-        alt_eps.epsilon = 0.002f;
-        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(alt_eps) != h_base);
+        const crucible::DagRef<crucible::LoopNode> alt_count = copy_of_base();
+        alt_count->repeat_count = 101;
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(*alt_count) != h_base);
+
+        const crucible::DagRef<crucible::LoopNode> alt_eps = copy_of_base();
+        alt_eps->epsilon = 0.002f;
+        CRUCIBLE_TEST_ASSERT(kTest, crucible::loopterm_hash(*alt_eps) != h_base);
     }
 
     ::fixy::check::pass(kTest, "test_reflect: all tests passed\n");

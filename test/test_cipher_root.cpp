@@ -331,7 +331,7 @@ using PathBuffer = foundation::os::PathText<fixy::kPathBytes>;
     const fixy::View<crucible::TraceEntry> ops = ops_run.view();
     ops.get(0).expect("the region holds one op")->schema_hash = crucible::SchemaHash{0xE5C};
     const crucible::ContentHash stored = cipher.store(
-        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops)));
+        ctx, view, crucible::Cipher::content_addressed(crucible::make_region(ctx.cap().alloc, arena, ops_run)));
     if (static_cast<bool>(stored)) {
         fixy::report(fixy::Sink::Err, "a store through a link at objects gave a hash\n");
         return 1;

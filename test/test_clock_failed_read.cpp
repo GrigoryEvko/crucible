@@ -305,8 +305,7 @@ private:
 [[nodiscard]] crucible::RegionNode*
 committed_region(eff::Test const& test, ::fixy::BumpArena<crucible::DagArena>& arena, crucible::TraceEntry& op) {
     const auto ops_run = arena.array<crucible::TraceEntry>(test.alloc, 1, op);
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(test.alloc, arena, ops_run.view());
+    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(test.alloc, arena, ops_run);
     crucible::recompute_merkle(*region);
     return &*region;
 }
@@ -341,7 +340,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
         return log
             .commit(owner, std::move(draft),
                     ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-                        ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(*region))}),
+                        crucible::DagRef<crucible::RegionNode const>{::fixy::to(*region)}),
                     region->content_hash, region->merkle_hash)
             .expect("no claim runs between the claim and its commit");
     };

@@ -97,7 +97,7 @@ static_assert(!std::is_constructible_v<Log::Committed, ::fixy::Index<16>, std::u
 
 [[nodiscard]] crucible::Transaction::ArenaRegion arena_region(crucible::RegionNode& region) {
     return ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-        ::fixy::Ref<crucible::RegionNode const>{::fixy::erase_brand(::fixy::to(region))});
+        crucible::DagRef<crucible::RegionNode const>{::fixy::to(region)});
 }
 
 // A commit takes a Ref, so it cannot take a null region.  A slot that no
@@ -132,7 +132,7 @@ template <class LogType>
 template <class LogType>
 [[nodiscard]] bool holds(LogType const& log, SoloOwner const& owner, typename LogType::Committed committed,
                          crucible::RegionNode& region) {
-    ::fixy::Ref<crucible::RegionNode const> const wanted = ::fixy::erase_brand(::fixy::to(region));
+    crucible::DagRef<crucible::RegionNode const> const wanted = ::fixy::to(region);
     return log
         .with_tx(owner, committed,
                  [wanted](crucible::Transaction const& tx) noexcept { return crucible::holds_region(tx, wanted); })
@@ -146,8 +146,7 @@ template <class LogType>
     crucible::TraceEntry entry{};
     entry.schema_hash = crucible::SchemaHash{0x5000u + step};
     const auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, entry);
-    // A plain View of an arena run: the View carries no brand of its arena.
-    const ::fixy::Ref<crucible::RegionNode> region = crucible::make_region(alloc, arena, ops_run.view());
+    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(alloc, arena, ops_run);
     crucible::recompute_merkle(*region);
     return &*region;
 }
@@ -459,7 +458,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
     ops.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xFEED};
-    const ::fixy::Ref<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops);
+    const crucible::DagRef<crucible::RegionNode> region1 = crucible::make_region(test.alloc, arena, ops_run);
     // A commit requires a non-zero merkle root, so the hash is recomputed
     // first. The production path does the same thing in the same order.
     // Synthesizing a hash instead would take the test off that path.
@@ -470,7 +469,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const ops2 = ops2_run.view();
     ops2.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xBEEF};
-    const ::fixy::Ref<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2);
+    const crucible::DagRef<crucible::RegionNode> region2 = crucible::make_region(test.alloc, arena, ops2_run);
     crucible::recompute_merkle(*region2);
     CRUCIBLE_TEST_ASSERT(kTest, region2->merkle_hash.raw() != 0);
 
@@ -543,8 +542,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         const auto entry_run = arena.array<crucible::TraceEntry>(test.alloc, 1, e);
-        // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::Ref<crucible::RegionNode> r = crucible::make_region(test.alloc, arena, entry_run.view());
+        const crucible::DagRef<crucible::RegionNode> r = crucible::make_region(test.alloc, arena, entry_run);
         // Recomputed before the commit, for the reason given above.
         crucible::recompute_merkle(*r);
         static_cast<void>(publish(log, owner, i, &*r));
