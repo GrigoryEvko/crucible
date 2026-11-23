@@ -46,7 +46,17 @@ Write
     reduce of assay.core.ledger).  The write reads the counts of each build
     (counts_of_builds()).  A build that the rule does not apply to, a build
     that cannot be read, and a build with a problem make the write write
-    nothing.
+    nothing.  Each build reads the targets that the request gives it, or
+    the target all (WriteRequest.targets_of()).
+
+Unread units
+    A unit that a configured build of the presets of the tree lists, and
+    that no compile database of the builds of a reduce lists, is an unread
+    unit (unread_units()), such as a unit of vessel/torch that only the
+    vessel build compiles.  A row of a path that holds an unread unit keeps
+    its value, as in a partial write (kept_test()), so a reduce never lowers
+    the counts of a build that it did not read.  A reduce with the vessel
+    build reads each such unit, and then it lowers those rows too.
 
 Rules
     Each finding line has a rule of the engine plugin of utils/registry.txt.
@@ -73,6 +83,7 @@ Status
 `guard selftest tests.guard.engines.plugin.test_runner` does a test of the module.
 """
 
+import os
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -176,6 +187,9 @@ class WriteRequest:
     `mode` is the mode of assay.core.ledger.  `more_builds` holds the other builds of a reduce, after `build_dir`
     (the reduce of assay.core.ledger).  A write with no other build reads one build, and it lowers no row.  `paths`
     holds the paths of the rows that the write writes, or none for each row (the paths of assay.core.ledger).
+    `build_targets` gives the targets of each build that made only some targets, such as the vessel build of the
+    landing gate, and each other build reads the target all (targets).  `known_builds` holds the configured builds
+    of the presets of the tree, whose units a reduce must read to lower a row (the unread units).
     """
 
     root: Path
@@ -184,6 +198,15 @@ class WriteRequest:
     reason: str | None = None
     more_builds: tuple[Path, ...] = ()
     paths: tuple[str, ...] = ()
+    build_targets: tuple[tuple[Path, tuple[str, ...]], ...] = ()
+    known_builds: tuple[Path, ...] = ()
+
+    def targets_of(self, build: Path) -> tuple[str, ...]:
+        """Return the targets whose objects the write reads in a build: its targets, or all."""
+        for named, targets in self.build_targets:
+            if named == build:
+                return targets
+        return ALL_TARGETS
 
     @property
     def builds(self) -> tuple[Path, ...]:
@@ -479,7 +502,9 @@ def counts_of_builds(
     found: list[Mapping[rule_ledger.Key, int]] = []
     for build in request.builds:
         try:
-            found.append(counts(context_of(request.root, build)))
+            context = context_of(request.root, build)
+            context.targets = request.targets_of(build)
+            found.append(counts(context))
         except NotApplicable as reason:
             check_report.write_line(
                 f"guard write: the rule {rule_id} does not apply to {build}: {reason}.  The write writes nothing",
@@ -492,6 +517,74 @@ def counts_of_builds(
             )
             return 1
     return found
+
+
+def listed_units(build: Path, root: Path) -> frozenset[str]:
+    """Return the source of each compile of the compile database of a build, as a message shows it (the unread units).
+
+    Complexity: linear in the rows of the compile database.
+
+    Raises:
+        BuildError: If the compile database cannot be read
+    """
+    try:
+        rows = compdb.entries(build)
+    except compdb.CompdbError as problem:
+        raise BuildError(f"the compile database of {build} cannot be read: {problem}") from None
+    return frozenset(build_census.shown(os.path.normpath(row.file), root) for row in rows)
+
+
+def unread_units(request: WriteRequest) -> frozenset[str]:
+    """Return each unit that a known build of the tree lists and that no build of a write lists (the unread units).
+
+    A reduce reads the units that its builds compile.  A unit of vessel/torch that only the vessel build compiles
+    gives findings that a reduce with no vessel build cannot see.  The known builds are the configured builds of the
+    presets of the tree (WriteRequest.known_builds), so a source that no build compiles, such as a program of BPF,
+    is no unread unit.  Complexity: linear in the rows of the compile database of each build.
+
+    Raises:
+        BuildError: If the compile database of a build cannot be read
+    """
+    read = set(request.builds)
+    unknown = [build for build in request.known_builds if build not in read]
+    if not unknown:
+        return frozenset()
+    listed: set[str] = set()
+    for build in request.builds:
+        listed |= listed_units(build, request.root)
+    found: set[str] = set()
+    for build in unknown:
+        found |= listed_units(build, request.root) - listed
+    return frozenset(found)
+
+
+def kept_test(request: WriteRequest) -> Callable[[str], bool] | None:
+    """Return the test of the path of a row that the write keeps as a partial write does, or None (the unread units).
+
+    The test holds for a directory row, whose path ends in '/', that holds an unread unit, and for a file row whose
+    directory holds an unread unit.  A header beside an unread unit, such as vessel/torch/record_kernel.h, gives the
+    findings of that unit.  Such a row keeps its value, so a reduce that did not read a build never lowers its rows.  A
+    partial write keeps each row, so it needs no test.  Complexity: linear in the unread units for each call of the
+    test.
+
+    Raises:
+        BuildError: If the compile database of a build cannot be read
+    """
+    if request.is_partial:
+        return None
+    unread = unread_units(request)
+    if not unread:
+        return None
+
+    directories = frozenset(unit.rsplit("/", 1)[0] for unit in unread)
+
+    def is_kept(path: str) -> bool:
+        """Tell if the row of a path can count the findings of an unread unit."""
+        if path.endswith("/"):
+            return any(unit.startswith(path) for unit in unread)
+        return path in unread or path.rsplit("/", 1)[0] in directories
+
+    return is_kept
 
 
 def finding_counts(rule: rule_registry.Rule, context: PluginContext) -> Counter[rule_ledger.Key]:
@@ -544,9 +637,10 @@ def write(rule: rule_registry.Rule, request: WriteRequest) -> int:
             mode=request.mode,
             reason=request.reason,
             is_partial=request.is_partial,
+            is_kept=kept_test(request),
         )
         written = rule_ledger.merged_paths(ledger, written, named, request.mode, request.reason)
-    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError) as problem:
+    except (rule_ledger.LedgerError, rows_grammar.RowsError, OSError, BuildError) as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1
     rule_ledger.store(written, request.root)

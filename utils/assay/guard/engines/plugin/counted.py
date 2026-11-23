@@ -240,6 +240,11 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
     increased = increases_permitted(spec, ledger, counts, request.mode)
     if increased is None:
         return 1
+    try:
+        is_kept = runner.kept_test(request)
+    except runner.BuildError as problem:
+        check_report.write_line(f"{spec.rule_id}: the ledger is not written: {problem}", is_error=True)
+        return 1
     written = rule_ledger.write_counts(
         rule,
         ledger,
@@ -247,9 +252,10 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
         rule_ledger.WriteMode.RAISE if increased else rule_ledger.WriteMode.LOWER,
         request.reason,
         is_partial=request.is_partial,
+        is_kept=is_kept,
     )
     if spec.is_gone is not None:
-        written = without_gone_rows(spec, written, counts, request.root)
+        written = without_gone_rows(spec, written, counts, request.root, is_kept)
     if spec.comment:
         written = dataclasses.replace(written, comment=spec.comment)
     rule_ledger.store(written, request.root)
@@ -261,17 +267,26 @@ def write[Inputs](spec: CountedRule[Inputs], rule: rule_registry.Rule, request: 
 
 
 def without_gone_rows[Inputs](
-    spec: CountedRule[Inputs], ledger: rule_ledger.Ledger, counts: Mapping[Key, int], root: Path
+    spec: CountedRule[Inputs],
+    ledger: rule_ledger.Ledger,
+    counts: Mapping[Key, int],
+    root: Path,
+    is_kept: Callable[[str], bool] | None = None,
 ) -> rule_ledger.Ledger:
     """Return the ledger with no row of a key that its builds do not count and that no build can give (the write).
 
-    Each removed row gives one line.  A reason row of a prefix that then holds no row goes too.  Complexity: linear in
-    the rows, and one call of `is_gone` for each row with no count.
+    Each removed row gives one line.  A reason row of a prefix that then holds no row goes too.  A row of a path
+    that `is_kept` keeps stays, because its builds did not read each unit of the path (the unread units of the
+    runner).  Complexity: linear in the rows, and one call of `is_gone` for each row with no count.
     """
     is_gone = spec.is_gone
     if is_gone is None:
         return ledger
-    gone = [key for key in sorted(ledger.base) if counts.get(key, 0) == 0 and is_gone(root, key)]
+    gone = [
+        key
+        for key in sorted(ledger.base)
+        if counts.get(key, 0) == 0 and not (is_kept is not None and is_kept(key.path)) and is_gone(root, key)
+    ]
     if not gone:
         return ledger
     for key in gone:

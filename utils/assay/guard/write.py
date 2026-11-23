@@ -1,6 +1,7 @@
 """guard write — write the ledger of one rule through assay.core.ledger, with the checks of its policy.
 
-usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR]... [--path PATH]...
+usage: guard write --rule ID [--raise | --admit] [--reason TEXT] [--root DIR] [--build-dir DIR [--target TARGET]...]...
+                   [--path PATH]...
        guard write --rule ID --row ITEM... [--kind KIND] --reason TEXT [--root DIR]
        guard write --rule ID --row ITEM... [--kind KIND] --lower --reason TEXT [--root DIR] --build-dir DIR...
        guard write --rule ID [ARG]...      a rule with a legacy module
@@ -72,15 +73,27 @@ Builds
     row (the write of assay.core.ledger).  More than one --build-dir is a
     reduce (the reduce of assay.core.ledger).  The builds must be one build
     of each configuration of the landing gate that checks the rule
-    (assay.loop.gate, the counted rules).  The write then lowers each row to
-    the largest count over the builds.  The landing gate makes this write.
+    (assay.loop.gate, the counted rules).  A rule of VESSEL_COUNTED_RULES of
+    the gate also takes the vessel build.  The write then lowers each row to
+    the largest count over the builds.  A row of a path with a unit that a
+    configured build of the presets lists and no build of the write lists
+    keeps its value, so a reduce with no vessel build keeps the rows of
+    vessel/torch (known_builds(), the unread units of
+    assay.guard.engines.plugin.runner).  The landing gate makes this write.
     The command exits 77 when the rule does not apply to a build.
+
+    --target names a target of the --build-dir before it, for a build that
+    made only some targets, such as the vessel build.  The write then reads
+    the objects of those targets in that build, and each other build reads
+    the target all (the targets of the runner).  Only a rule of the engine
+    plugin takes it.
 
 A rule with a legacy module: the command calls the module with the words of
 its mode, then --write, then each ARG, as `guard check --rule ID --write`
 does.
 """
 
+import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -104,6 +117,32 @@ OWN_WRITE_ENGINES = (rule_registry.Engine.PLUGIN, rule_registry.Engine.ELF)
 JUDGED_POLICIES = (rule_registry.Policy.MAX, rule_registry.Policy.BASELINE)
 
 
+class BuildTarget(argparse.Action):
+    """The action of --target: it binds the target to the --build-dir before it (the targets of a build).
+
+    The value of the option is a mapping from the position of a build in the --build-dir list to its targets.  Each
+    other build reads the target all.
+    """
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[object] | None,
+        option_string: str | None = None,
+    ) -> None:
+        """Add the target to the targets of the last --build-dir of the call, or refuse a target before each build."""
+        builds = getattr(namespace, "build_dirs", None) or []
+        if not builds:
+            parser.error("--target names a target of the --build-dir before it, and no --build-dir comes before it")
+        if not isinstance(values, str):
+            parser.error("--target takes one target name")
+        bound: dict[int, tuple[str, ...]] = dict(getattr(namespace, self.dest, None) or {})
+        position = len(builds) - 1
+        bound[position] = (*bound.get(position, ()), values)
+        setattr(namespace, self.dest, bound)
+
+
 def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
     """Return the reason that the builds of a reduce are not one build of each configuration of the gate, or "".
 
@@ -123,15 +162,40 @@ def reduce_refusal(rule_id: str, root: Path, builds: Sequence[Path]) -> str:
         required = sorted(
             item.configuration_name for item in gate.configurations(root) if gate.is_checked(item, rule_id)
         )
+        vessel = gate.vessel_configuration(root)
     except gate.GateError as problem:
         return str(problem)
-    if sorted(names) != required:
+    # The vessel build of a rule of VESSEL_COUNTED_RULES joins the reduce when the gate built the vessel.  A reduce
+    # with no vessel build keeps each row of a unit that only the vessel compiles (the unread units of the runner).
+    accepted = [required]
+    if vessel is not None and rule_id in gate.VESSEL_COUNTED_RULES:
+        accepted.append(sorted([*required, vessel.configuration_name]))
+    if sorted(names) not in accepted:
         return (
             f"a write with more than one --build-dir lowers the rows, and it takes one build of each configuration of "
-            f"the landing gate that checks the rule: {', '.join(required)}.  The builds have the configurations "
-            f"{', '.join(sorted(names))}"
+            f"the landing gate that checks the rule: {', '.join(required)}, with the vessel build or with none for a "
+            f"rule of the vessel.  The builds have the configurations {', '.join(sorted(names))}"
         )
     return ""
+
+
+def known_builds(root: Path) -> tuple[Path, ...]:
+    """Return each configured build of the presets of the landing gate and of the vessel preset of a tree.
+
+    A configured build holds a compile database.  A reduce must read each unit that these builds list to lower the
+    row of its path (the unread units of assay.guard.engines.plugin.runner).  A tree whose presets do not read gives
+    no build.  Complexity: one read of the presets file, and one test of a file for each preset.
+    """
+    from assay.loop import gate
+    from assay.readers import compdb
+
+    try:
+        vessel = gate.vessel_configuration(root)
+        presets = (*gate.configurations(root), *((vessel,) if vessel is not None else ()))
+    except gate.GateError:
+        return ()
+    builds = ((root / item.build).resolve() for item in presets)
+    return tuple(build for build in builds if compdb.database_file(build).is_file())
 
 
 def lower_refusal(root: Path, builds: Sequence[Path]) -> str:
@@ -248,6 +312,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--reason", default=None)
     parser.add_argument("--root", type=Path, default=REPO_ROOT)
     parser.add_argument("--build-dir", dest="build_dirs", type=Path, action="append", default=[], metavar="DIR")
+    parser.add_argument("--target", dest="build_targets", action=BuildTarget, default={}, metavar="TARGET")
     parser.add_argument("--path", dest="paths", action="append", default=[], metavar="PATH")
     parser.add_argument("--row", dest="rows", action="append", default=[], metavar="ITEM")
     parser.add_argument("--kind", default="", metavar="KIND")
@@ -314,6 +379,13 @@ def main(argv: list[str]) -> int:
         if refusal:
             check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {refusal}", is_error=True)
             return 2
+    if options.build_targets and rule.engine != rule_registry.Engine.PLUGIN:
+        check_report.write_line(
+            "guard write: --target applies only to a rule of the engine plugin, which reads the objects of the "
+            "targets of a build",
+            is_error=True,
+        )
+        return 2
     mode = options.mode or rule_ledger.WriteMode.LOWER
     if rule.engine == rule_registry.Engine.ELF:
         from assay.guard.engines.elf import runner as elf_runner
@@ -322,8 +394,10 @@ def main(argv: list[str]) -> int:
     if is_build_write:
         from assay.guard.engines.plugin import runner as plugin_runner
 
+        build_targets = tuple((builds[index], tuple(names)) for index, names in sorted(options.build_targets.items()))
+        known = known_builds(root) if len(builds) > 1 else ()
         request = plugin_runner.WriteRequest(
-            root, build_dir, mode, options.reason, tuple(builds[1:]), tuple(options.paths)
+            root, build_dir, mode, options.reason, tuple(builds[1:]), tuple(options.paths), build_targets, known
         )
         return plugin_runner.write(rule, request)
     context = check.rule_context(rule, root, build_dir, options.paths)

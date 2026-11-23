@@ -470,8 +470,9 @@ def write(rule: rule_registry.Rule, request: runner.WriteRequest) -> int:
             request.mode,
             request.reason,
             request.is_partial,
+            runner.kept_test(request),
         )
-    except rule_ledger.LedgerError as problem:
+    except (rule_ledger.LedgerError, runner.BuildError) as problem:
         check_report.write_line(f"guard write: the ledger of {rule.id} is not written: {problem}", is_error=True)
         return 1
     rule_ledger.store(written, request.root)

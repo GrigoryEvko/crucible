@@ -144,15 +144,18 @@ Vessel
          BUILT_FILES, so its tests on the commit give the result of its tests
          on the commit of the fold
       4. `guard check --rule RULE --build-dir BUILD --target TARGET...` of
-         each plugin rule with no ledger (vessel_rules()), over the objects
-         of VESSEL_TARGETS.  A family kind of the plugin, such as the kind
+         each plugin rule with no ledger and of each rule of
+         VESSEL_COUNTED_RULES (vessel_rules()), over the objects of
+         VESSEL_TARGETS.  A family kind of the plugin, such as the kind
          missing-mark of lifetime-twin, is no compile error in a mode, so no
          build of the vessel stops on it, and only this check reads it in
          crucible_fallback.cpp and in the shards of register.cpp.  A finding
-         is a problem, and so is the exit 77: the build made the targets, so
-         a rule that reads no object of them did not check the vessel.  The
-         plant plant-vessel of utils/plants/lifetime-twin/ holds a finding at
-         a path of vessel/torch
+         of a rule with no ledger is a problem.  A count of a rule of
+         VESSEL_COUNTED_RULES above its row is a problem, as in each other
+         build.  The exit 77 is a problem too: the build made the targets,
+         so a rule that reads no object of them did not check the vessel.
+         The plant plant-vessel of utils/plants/lifetime-twin/ holds a
+         finding at a path of vessel/torch
       5. `ctest --label-regex` of VESSEL_LABEL, with the jobs of the lease.
          Each red test runs one more time apart from the suite, as in step 3
          of the run of a configuration.  A disabled test, and a run in which
@@ -160,11 +163,15 @@ Vessel
          vessel_neg need no PyTorch, and each configuration of the gate runs
          them.
     The round after the reduce runs these steps again.  The vessel runs no
-    counted rule, no rule reconfigure-noop and no `guard warnings`, and the
-    reduce reads no build of it.  The ledgers then hold the counts of the
-    configurations of the gate only.  So a line of a counted rule in a unit
-    that only the vessel compiles counts in no ledger.  The run of the base runs the red tests
-    of the vessel, or each vessel test after a problem of a different kind.
+    counted rule other than those of VESSEL_COUNTED_RULES, no rule
+    reconfigure-noop and no `guard warnings`.  When the round built the
+    vessel with no problem, the reduce of each rule of VESSEL_COUNTED_RULES
+    reads the objects of VESSEL_TARGETS in its build too (reduce_words()).
+    A reduce with no vessel build keeps each row of a path with a unit that
+    only the vessel compiles, so no round lowers a count that it did not
+    read (the unread units of assay.guard.engines.plugin.runner).  The run
+    of the base runs the red tests of the vessel, or each vessel test after
+    a problem of a different kind.
     A lease reserves the memory of one job of its configuration for each
     slot: the largest kind of KIND_GB_PER_JOB of the step that holds it
     (gb_per_job_of(), the memory and the budget of assay.loop.heavy).  A
@@ -802,6 +809,12 @@ ALWAYS = "default"
 # source tree, which holds the patched PyTorch.
 VESSEL = "vessel"
 VESSEL_TARGETS = ("crucible_vessel", "crucible_dispatch")
+# The counted plugin rules that the vessel step checks over VESSEL_TARGETS, and whose reduce reads the vessel build
+# (the vessel).  Each one counts the findings of each unit, so the objects of two targets give a correct part of its
+# counts.  The counted rules definition-home, home, must-consume and syscalls are not here: each one judges the whole
+# target all (a header that no unit read, a row of the rule table with no site, a grant set that no unit compared),
+# so a build of two targets gives errors that are no findings of the vessel.
+VESSEL_COUNTED_RULES = ("process-wide-state", "proof-routes", "quarantine")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
@@ -1317,10 +1330,11 @@ def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_C
 
 
 def vessel_rules(tree: Path) -> tuple[str, ...]:
-    """Return each plugin rule of a tree with no ledger, sorted: the rules that the vessel step checks (the vessel).
+    """Return the rules that the vessel step checks, sorted: each plugin rule of a tree with no ledger, and each rule
+    of VESSEL_COUNTED_RULES that the registry holds (the vessel).
 
-    Each finding of such a rule is an error, so the vessel build needs no row of a ledger, and the reduce reads no
-    build of the vessel.
+    Each finding of a rule with no ledger is an error, so the vessel build needs no row for it.  A rule of
+    VESSEL_COUNTED_RULES judges the counts of the vessel build against its rows, and its reduce reads the vessel build.
 
     Raises:
         GateError: If the registry does not read
@@ -1334,7 +1348,8 @@ def vessel_rules(tree: Path) -> tuple[str, ...]:
     return tuple(
         rule_id
         for rule_id, rule in sorted(registry.rules.items())
-        if rule.engine == rule_registry.Engine.PLUGIN and rule.policy == rule_registry.Policy.NONE
+        if rule.engine == rule_registry.Engine.PLUGIN
+        and (rule.policy == rule_registry.Policy.NONE or rule_id in VESSEL_COUNTED_RULES)
     )
 
 
@@ -1498,15 +1513,33 @@ def is_each_built(outcomes: Sequence[Outcome]) -> bool:
     return all(item.name in built for item in CONFIGURATIONS)
 
 
-def reduce_words(tree: Path, rule_id: str) -> list[str]:
+def built_vessel(vessel: Configuration | None, outcomes: Sequence[Outcome]) -> Configuration | None:
+    """Return the vessel configuration when the outcomes hold a run of it with no problem and no stop, or None (the
+    reduce).
+
+    Complexity: linear in the outcomes.
+    """
+    if vessel is None:
+        return None
+    is_built = any(item.name == vessel.name and not item.problems and not item.is_stopped for item in outcomes)
+    return vessel if is_built else None
+
+
+def reduce_words(tree: Path, rule_id: str, vessel: Configuration | None = None) -> list[str]:
     """Return the words after `guard write` of the reduce of one counted rule in a tree (the reduce).
 
-    The words give the build of each configuration that checks the rule (is_checked()).
+    The words give the build of each configuration that checks the rule (is_checked()).  `vessel` is the vessel
+    configuration when the round built the vessel with no problem.  A rule of VESSEL_COUNTED_RULES then reads the
+    objects of VESSEL_TARGETS in its build too.  With no vessel build, the write keeps each row of a unit that only
+    the vessel compiles (the unread units of assay.guard.engines.plugin.runner).
     """
     words = ["write", "--rule", rule_id]
     for configuration in CONFIGURATIONS:
         if is_checked(configuration, rule_id):
             words += ["--build-dir", str(build_directory(tree, configuration))]
+    if vessel is not None and rule_id in VESSEL_COUNTED_RULES:
+        words += ["--build-dir", str(build_directory(tree, vessel))]
+        words += [word for target in VESSEL_TARGETS for word in ("--target", target)]
     return words
 
 
@@ -2069,7 +2102,7 @@ class Gate:
             lowered: tuple[str, ...] = ()
             if not candidate.focus and not any(item.problems for item in outcomes):
                 if is_each_built(outcomes):
-                    step.reduce(counted)
+                    step.reduce(counted, built_vessel(self.vessel, outcomes))
                     lowered = step.lower_budgets() if candidate.lowers else ()
                 else:
                     check_report.write_line(
@@ -2571,11 +2604,12 @@ class Step:
 
         return [problem for problem in self.concurrently(list(rules), check_one) if problem is not None]
 
-    def reduce(self, counted: Sequence[str]) -> None:
+    def reduce(self, counted: Sequence[str], vessel: Configuration | None = None) -> None:
         """Run the reduce of each counted rule over the builds of the configurations, at the same time (the reduce).
 
         Each rule has one write.  A write that refuses a count exits 1, and it writes no ledger.  The writes share one
-        lease (the jobserver).  Complexity: one write of each counted rule.
+        lease (the jobserver).  `vessel` is the vessel configuration when the round built the vessel with no problem
+        (reduce_words()).  Complexity: one write of each counted rule.
         """
         if not counted:
             return
@@ -2584,7 +2618,7 @@ class Step:
             def write_one(rule: str) -> None:
                 """Write the ledger of one rule over the build of each configuration that checks it."""
                 log = f"reduce-{rule}.log"
-                command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule)]
+                command = [*self.gate.master("guard"), *reduce_words(self.gate.tree, rule, vessel)]
                 status = self.run_logged(command, log, share, proc.TOOL_S)
                 self.say(f"loop land: the reduce of {rule} exits {status}")
 

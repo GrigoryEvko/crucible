@@ -192,7 +192,7 @@ tests.core.test_ledger` does a test of the module.
 
 import enum
 from collections import Counter
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -666,12 +666,15 @@ def write_counts(
     mode: WriteMode = WriteMode.LOWER,
     reason: str | None = None,
     is_partial: bool = False,
+    is_kept: Callable[[str], bool] | None = None,
 ) -> Ledger:
     """Return the ledger that admits the count of each key, as write() does for the error findings of a rule.
 
     A module that counts its findings itself, such as the rule quarantine,
     writes its ledger with this function.  A partial write keeps each row,
     and it raises a row only in the mode raise or admit (the write).
+    `is_kept` tells the path of a row that the write keeps as a partial write
+    does, because its builds did not read each unit of the path.
 
     Raises:
         LedgerError: If the mode refuses a count, the policy has no write here, or a necessary reason is missing
@@ -684,6 +687,11 @@ def write_counts(
         raise LedgerError("a write in the mode admit gives a reason with --reason TEXT")
     counts = {key: count for key, count in counts.items() if count > 0}
     base = ledger.base
+
+    def is_partial_row(key: Key) -> bool:
+        """Tell if the write keeps the row of a key as a partial write does."""
+        return is_partial or (is_kept is not None and is_kept(key.path))
+
     if rule.policy == Policy.ADMIT:
         new_keys = sorted(key for key in counts if key not in base)
         if new_keys and mode != WriteMode.ADMIT:
@@ -691,13 +699,13 @@ def write_counts(
                 f"{len(new_keys)} findings of {rule.id} have no row, such as {new_keys[0].path} "
                 f"({described(new_keys[0])}).  Fix them, or admit them with --admit --reason TEXT"
             )
-        kept = {key: entry for key, entry in base.items() if is_partial or key in counts}
+        kept = {key: entry for key, entry in base.items() if is_partial_row(key) or key in counts}
         kept.update({key: Entry(key, ADMIT_VALUE, reason or "") for key in new_keys})
         return needed_reasons(replace(ledger, base=kept))
     # The rows with the value admit have no count (an admit row of a count ledger).  A write adds no such row, and a
     # complete write keeps each one that admits a finding.
     admits = {key: entry for key, entry in base.items() if entry.value == ADMIT_VALUE}
-    kept_admits = {key: entry for key, entry in admits.items() if is_partial or counts.get(key, 0) > 0}
+    kept_admits = {key: entry for key, entry in admits.items() if is_partial_row(key) or counts.get(key, 0) > 0}
     counts = {key: count for key, count in counts.items() if key not in admits}
     expected = base_counts(base)
     rises = sorted(key for key, count in counts.items() if count > expected.get(key, 0))
@@ -714,12 +722,11 @@ def write_counts(
         key: Entry(key, count, reason if reason and key in raised_keys else base[key].reason if key in base else "")
         for key, count in counts.items()
     }
-    if is_partial:
-        for key, entry in base.items():
-            if key in admits:
-                continue
-            if key not in written or int(entry.value) > int(written[key].value):
-                written[key] = entry
+    for key, entry in base.items():
+        if key in admits or not is_partial_row(key):
+            continue
+        if key not in written or int(entry.value) > int(written[key].value):
+            written[key] = entry
     return needed_reasons(replace(ledger, base={**written, **kept_admits}))
 
 

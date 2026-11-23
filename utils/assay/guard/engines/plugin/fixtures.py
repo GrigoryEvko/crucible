@@ -266,7 +266,10 @@ class FixtureContext(runner.PluginContext):
         Raises:
             BuildError: If the test list, the compile database or the registry cannot be read
         """
-        if self.is_parse:
+        targets = self._base.targets if self._base is not None else self.targets
+        if self.is_parse or targets != runner.ALL_TARGETS:
+            # A read of named targets, such as the vessel build of the landing gate, reads the objects of those
+            # targets only.  The build registers each fixture and runs none, so it gives no census of fixtures.
             return FixturePart()
         if self._planted is not None:
             facts, source_root = self._planted, self.root

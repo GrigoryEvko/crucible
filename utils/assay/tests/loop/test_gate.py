@@ -320,6 +320,8 @@ if words[0] == "check":
         sys.exit(1)
     if mode == "vessel-finding" and words[2] == "lifetime-twin":
         sys.exit(1)
+    if mode == "vessel-row" and words[2] == "quarantine":
+        sys.exit(1)
     if mode == "vessel-skip" and words[2] == "lifetime-twin":
         sys.exit(77)
     if "--target" in words:
@@ -1275,6 +1277,31 @@ def counted_cases(expect: testing.Expect) -> None:
         == ["write", "--rule", "home", *(word for build in objects for word in ("--build-dir", build))]
         and len(objects) < len(every),
     )
+    vessel = gate.VESSEL_CONFIGURATION
+    if vessel is None:
+        expect("this tree gives the preset vessel", False)
+    else:
+        vessel_words = ["--build-dir", str(gate.build_directory(tree, vessel)), "--target", "crucible_vessel"]
+        vessel_words += ["--target", "crucible_dispatch"]
+        plain = gate.reduce_words(tree, "quarantine")
+        expect(
+            "the reduce of a rule of the vessel reads the objects of the vessel targets in the vessel build when the "
+            "round built the vessel, and a different rule and a round with no vessel build add no word",
+            gate.reduce_words(tree, "quarantine", vessel) == [*plain, *vessel_words]
+            and gate.reduce_words(tree, "home", vessel) == gate.reduce_words(tree, "home")
+            and not any(word == "--target" for word in plain),
+        )
+        clean = gate.Outcome(vessel.name, (), (), 1.0, False)
+        red = gate.Outcome(vessel.name, ("vessel: a red test",), (), 1.0, False)
+        stopped = gate.Outcome(vessel.name, (), (), 1.0, True)
+        expect(
+            "the reduce takes the vessel build only after a run of the vessel with no problem and no stop",
+            gate.built_vessel(vessel, [clean]) == vessel
+            and gate.built_vessel(vessel, [red]) is None
+            and gate.built_vessel(vessel, [stopped]) is None
+            and gate.built_vessel(vessel, []) is None
+            and gate.built_vessel(None, [clean]) is None,
+        )
     built = [gate.Outcome(item.name, (), (), 1.0, False) for item in gate.CONFIGURATIONS]
     first = built[0].name
     expect(
@@ -2635,6 +2662,12 @@ def vessel_run_cases(expect: testing.Expect) -> None:
 VESSEL_REGISTRY = REGISTRY + (
     "rule lifetime-twin engine=plugin scope=tracked ledger=none kinds=missing-mark doc=XVI | a borrow | mark it\n"
 )
+# The planted registry with a counted plugin rule of the vessel and a counted plugin rule that needs the target all.
+VESSEL_COUNTED_REGISTRY = VESSEL_REGISTRY + (
+    "rule process-wide-state engine=plugin scope=tracked ledger=admit kinds=unmarked-static doc=XVI | a static | "
+    "mark it\n"
+    "rule definition-home engine=plugin scope=base ledger=count kinds=elsewhere doc=XXII | a definition | move it\n"
+)
 
 
 def vessel_check_cases(expect: testing.Expect) -> None:
@@ -2659,8 +2692,15 @@ def vessel_check_cases(expect: testing.Expect) -> None:
         gate.move_tree(root, tree, head)
         build = tree / vessel.build
         expect(
-            "the vessel step checks each plugin rule with no ledger, and no counted rule",
-            gate.vessel_rules(root) == ("lifetime-twin",),
+            "the vessel step checks each plugin rule with no ledger, and no counted rule out of VESSEL_COUNTED_RULES",
+            gate.vessel_rules(root) == ("lifetime-twin", "quarantine"),
+        )
+        counted_root = work / "counted"
+        planted_repository(counted_root, {rule_registry.REGISTRY_PATH: VESSEL_COUNTED_REGISTRY})
+        expect(
+            "the vessel step also checks a counted rule of VESSEL_COUNTED_RULES, and not a counted rule that needs "
+            f"the target all: {gate.vessel_rules(counted_root)}",
+            gate.vessel_rules(counted_root) == ("lifetime-twin", "process-wide-state", "quarantine"),
         )
 
         def checked(mode: str) -> tuple[gate.Verdict, str]:
@@ -2674,10 +2714,12 @@ def vessel_check_cases(expect: testing.Expect) -> None:
 
         clean, printed = checked("clean")
         read = (build / "targets.txt").read_text(encoding="utf-8") if (build / "targets.txt").is_file() else ""
-        holds = clean.is_accepted and read == f"lifetime-twin {' '.join(gate.VESSEL_TARGETS)}\n"
+        targets = " ".join(gate.VESSEL_TARGETS)
+        checked_lines = sorted(read.splitlines())
+        holds = clean.is_accepted and checked_lines == [f"lifetime-twin {targets}", f"quarantine {targets}"]
         label = (
-            f"a clean vessel build passes the check of lifetime-twin over the vessel targets: {read!r}, "
-            f"{clean.problems}"
+            f"a clean vessel build passes the check of lifetime-twin and of the counted rule quarantine over the "
+            f"vessel targets: {read!r}, {clean.problems}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         found, printed = checked("vessel-finding")
@@ -2685,6 +2727,15 @@ def vessel_check_cases(expect: testing.Expect) -> None:
             problem.startswith("vessel: the rule lifetime-twin gives findings, see ") for problem in found.problems
         )
         label = f"a finding of lifetime-twin in the vessel build rejects the commit: {found.problems}"
+        expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        risen, printed = checked("vessel-row")
+        holds = not risen.is_accepted and any(
+            problem.startswith("vessel: the rule quarantine gives findings, see ") for problem in risen.problems
+        )
+        label = (
+            f"a count of the counted rule quarantine above its row in the vessel build rejects the commit: "
+            f"{risen.problems}"
+        )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         skipped, printed = checked("vessel-skip")
         holds = not skipped.is_accepted and any(

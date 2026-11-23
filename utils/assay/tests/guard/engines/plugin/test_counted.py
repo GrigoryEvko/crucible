@@ -19,7 +19,7 @@ from assay.core import report as check_report
 from assay.core import testing
 from assay.guard.engines.plugin import counted, detsafe_ledger, heavy_include, runner
 from assay.loop.derive import header_costs
-from assay.readers import sections
+from assay.readers import compdb, sections
 
 RULE = heavy_include.RULE
 KIND = heavy_include.HEAVY
@@ -223,6 +223,77 @@ def build_cases(expect: testing.Expect) -> None:
         )
 
 
+def unread_unit_cases(expect: testing.Expect) -> None:
+    """Check that a reduce keeps the row of a unit that no build of the reduce lists (the unread units of the runner).
+
+    The three planted builds are the known builds of the tree.  The default builds list src/unit.cpp only, and the
+    vessel build lists vessel/torch/fallback.cpp too, as the vessel build of the landing gate does.  On the old code a
+    reduce with no vessel build removed the row of the vessel unit, and the next check of the vessel build refused it.
+    """
+    with tempfile.TemporaryDirectory(prefix="counted-unread-") as work:
+        root = Path(work)
+        rows = (
+            "src/unit.cpp | heavy-include | 1 | <chrono> | -\nvessel/torch/fallback.cpp | heavy-include | 1 | <chrono> | -\n"
+            "vessel/torch/fallback.h | heavy-include | 1 | <chrono> | -\n"
+        )
+        plant_tree(root, rows)
+        for name in ("src/unit.cpp", "vessel/torch/fallback.cpp", "vessel/torch/fallback.h"):
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text("#include <chrono>\n", encoding="utf-8")
+        builds = {name: root / f"build-{name}" for name in ("default", "release", "vessel")}
+        for name, build in builds.items():
+            build.mkdir()
+            units = ("src/unit.cpp", "vessel/torch/fallback.cpp") if name == "vessel" else ("src/unit.cpp",)
+            compdb.plant(
+                build,
+                [
+                    {"directory": str(build), "file": str(root / unit), "command": f"c++ -c {unit}", "output": "u.o"}
+                    for unit in units
+                ],
+            )
+        found = [finding("src/unit.cpp", 1, KIND, "<chrono>")]
+
+        def planted_context(context_root: Path, build: Path | None) -> runner.PluginContext:
+            """Return the planted census of a build: the finding of the default unit, and none of the vessel unit."""
+            return context_of(context_root, found if build is not None else [])
+
+        spec = dataclasses.replace(heavy_include.SPEC, context_of=planted_context)
+        rule = rule_ledger.rule_of(RULE)
+        vessel_key = rule_ledger.Key("vessel/torch/fallback.cpp", KIND, "<chrono>")
+        header_key = rule_ledger.Key("vessel/torch/fallback.h", KIND, "<chrono>")
+        known = tuple(builds.values())
+        request = runner.WriteRequest(root, builds["default"], more_builds=(builds["release"],), known_builds=known)
+        status, text = testing.captured(lambda: counted.write(spec, rule, request))
+        kept = rule_ledger.read(rule, root).expected()
+        expect(
+            f"a reduce with no vessel build keeps the row of the unit that only the vessel build lists, and the row of "
+            f"a header beside it: {kept} {text}",
+            status == 0 and kept.get(vessel_key) == 1 and kept.get(header_key) == 1,
+        )
+        with_vessel = runner.WriteRequest(
+            root,
+            builds["default"],
+            more_builds=(builds["release"], builds["vessel"]),
+            build_targets=((builds["vessel"], ("crucible_vessel", "crucible_dispatch")),),
+            known_builds=known,
+        )
+        status, text = testing.captured(lambda: counted.write(spec, rule, with_vessel))
+        lowered = rule_ledger.read(rule, root).expected()
+        expect(
+            f"a reduce with the vessel build reads the vessel unit, and it lowers its row when the count falls: "
+            f"{lowered} {text}",
+            status == 0
+            and vessel_key not in lowered
+            and header_key not in lowered
+            and lowered.get(rule_ledger.Key("src/unit.cpp", KIND, "<chrono>")) == 1,
+        )
+        expect(
+            "a build of named targets reads those targets, and each other build reads the target all",
+            with_vessel.targets_of(builds["vessel"]) == ("crucible_vessel", "crucible_dispatch")
+            and with_vessel.targets_of(builds["default"]) == runner.ALL_TARGETS,
+        )
+
+
 def seal_cases(expect: testing.Expect) -> None:
     """Check the seal rows of the rule detsafe-ledger: a missing root, a ledger directory that a row does not seal."""
     with tempfile.TemporaryDirectory(prefix="counted-") as work:
@@ -262,5 +333,7 @@ def seal_cases(expect: testing.Expect) -> None:
 def main(argv: list[str]) -> int:
     """Run each case, and write one line for each."""
     return testing.run(
-        __name__.removeprefix("assay."), argv, (key_cases, verdict_cases, write_cases, build_cases, seal_cases)
+        __name__.removeprefix("assay."),
+        argv,
+        (key_cases, verdict_cases, write_cases, build_cases, unread_unit_cases, seal_cases),
     )
