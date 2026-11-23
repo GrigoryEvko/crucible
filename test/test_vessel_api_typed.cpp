@@ -861,11 +861,11 @@ void test_handle_distinct_pointers() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case gives two CrucibleHandle values of vessel_api.h to the typed door")
     crucible::Vigil* const vigil_a = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_a));
     crucible::Vigil* const vigil_b = static_cast<crucible::Vigil*>(static_cast<void*>(&storage_b));
+    auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_a));
+    auto tb = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_b));
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     EXPECT(vigil_a != vigil_b, "test setup: distinct storage must yield distinct pointers");
 
-    auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_a));
-    auto tb = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(vigil_b));
     EXPECT(ta.value() == vigil_a, "typed handle for a must alias a");
     EXPECT(tb.value() == vigil_b, "typed handle for b must alias b");
     EXPECT(ta.value() != tb.value(), "distinct inputs must yield distinct typed handle values");
