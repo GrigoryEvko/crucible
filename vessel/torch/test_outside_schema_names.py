@@ -22,6 +22,11 @@ checks:
                     table.  Then the unboxed kernel of aten::mm registers its
                     own name, the region holds its operations, and the name
                     table of the trace holds its name
+    collision       the C entry registers a different name with the hash of
+                    the full name of a fourth operator.  The fallback then
+                    finds that name on the hash of the operator, and the
+                    operator gives its value two times, and the trace holds
+                    no operation and no name of it
 
 The refused operators run before the loop of the region.  The operation
 inside a refused operator gives the closing entry of an unrecorded nest
@@ -32,8 +37,8 @@ Usage:
     python test_outside_schema_names.py
 
 Exit 0 when each check passes, 1 otherwise.  The process ends with an abort
-when a door ends the process on a long name, or when the unboxed kernel of
-aten::mm finds a different name on its hash.
+when a door ends the process on a long name or on a collision, or when the
+unboxed kernel of aten::mm finds a different name on its hash.
 """
 
 from __future__ import annotations
@@ -60,43 +65,47 @@ PREFIX = f"{NAMESPACE}::"
 # The most characters of a schema name (SCHEMA_NAME_MAX of crucible/SchemaTable.h).
 SCHEMA_NAME_MAX = 4096
 
-# The names of the three operators.  The full name of an operator with no
+# The names of the four operators.  The full name of an operator with no
 # overload is the namespace, two colons and the name.
 AT_LIMIT = "a" * (SCHEMA_NAME_MAX - len(PREFIX))
 PAST_LIMIT = "b" * (SCHEMA_NAME_MAX + 1 - len(PREFIX))
 OVERLOADED = "c"
 LONG_OVERLOAD = "o" * (SCHEMA_NAME_MAX + 1 - len(PREFIX) - len(OVERLOADED) - len("."))
+COLLIDED = "d"
 
 FULL_AT_LIMIT = f"{PREFIX}{AT_LIMIT}"
 FULL_PAST_LIMIT = f"{PREFIX}{PAST_LIMIT}"
 FULL_LONG_OVERLOAD = f"{PREFIX}{OVERLOADED}.{LONG_OVERLOAD}"
+FULL_COLLIDED = f"{PREFIX}{COLLIDED}"
 
 # An operator of the generated table (vessel/torch/aten_op_table.h) with an
 # unboxed kernel, and a different name for its hash.
 RESERVED_OPERATOR = "aten::mm"
 OTHER_NAME = f"{NAMESPACE}::mm"
+# A different name for the hash of the full name of the fourth operator.
+OTHER_COLLIDED_NAME = f"{NAMESPACE}::not_d"
 
 
 def add_one(source: torch.Tensor) -> torch.Tensor:
-    """Return the source plus one, the value of each of the three operators."""
+    """Return the source plus one, the value of each of the four operators."""
     return source + 1
 
 
 def define_operators() -> torch.library.Library:
-    """Define the three operators with a CPU implementation, and return their library."""
+    """Define the four operators with a CPU implementation, and return their library."""
     library = torch.library.Library(NAMESPACE, "FRAGMENT")
-    for name in (AT_LIMIT, PAST_LIMIT, f"{OVERLOADED}.{LONG_OVERLOAD}"):
+    for name in (AT_LIMIT, PAST_LIMIT, f"{OVERLOADED}.{LONG_OVERLOAD}", COLLIDED):
         library.define(f"{name}(Tensor source) -> Tensor")
         library.impl(name, add_one, "CPU")
     return library
 
 
-def register_other_name(ctx: CrucibleNative) -> int:
-    """Give the C entry the hash of RESERVED_OPERATOR with OTHER_NAME, and return its code."""
+def register_name(ctx: CrucibleNative, hash_of: str, name: str) -> int:
+    """Give the C entry the hash of the name HASH_OF with the name NAME, and return its code."""
     entry = ctx._vessel._lib.crucible_register_schema_name
     entry.restype = ctypes.c_int
     entry.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_char_p]
-    return entry(ctx._handle, schema_hash(RESERVED_OPERATOR), OTHER_NAME.encode("ascii"))
+    return entry(ctx._handle, schema_hash(hash_of), name.encode("ascii"))
 
 
 def record(directory: Path) -> tuple[Path, list[str]]:
@@ -108,7 +117,8 @@ def record(directory: Path) -> tuple[Path, list[str]]:
     namespace = getattr(torch.ops, NAMESPACE)
     at_limit = getattr(namespace, AT_LIMIT).default
     refused = (("past the limit", getattr(namespace, PAST_LIMIT).default),
-               ("long overload", getattr(getattr(namespace, OVERLOADED), LONG_OVERLOAD)))
+               ("long overload", getattr(getattr(namespace, OVERLOADED), LONG_OVERLOAD)),
+               ("collision", getattr(namespace, COLLIDED).default))
     source = torch.arange(6, dtype=torch.float32)
     wanted = source + 1
     left = torch.arange(6, dtype=torch.float32).reshape(2, 3)
@@ -116,10 +126,14 @@ def record(directory: Path) -> tuple[Path, list[str]]:
     product = torch.full((2, 2), 3.0) + torch.tensor([[0.0], [9.0]])
     problems = []
     with CrucibleNative() as ctx:
-        code = register_other_name(ctx)
+        code = register_name(ctx, RESERVED_OPERATOR, OTHER_NAME)
         if code != SchemaNameResult.COLLISION:
             problems.append(f"the C entry gives the code {code} for a different name with the hash of "
                             f"{RESERVED_OPERATOR}, not the collision code {int(SchemaNameResult.COLLISION)}")
+        code = register_name(ctx, FULL_COLLIDED, OTHER_COLLIDED_NAME)
+        if code != SchemaNameResult.REGISTERED:
+            problems.append(f"the C entry gives the code {code} for a new hash, not the code "
+                            f"{int(SchemaNameResult.REGISTERED)}")
         # The second call of each refused operator finds the refusal in the
         # schema cache of the fallback.
         for _ in range(2):
@@ -156,19 +170,20 @@ def main() -> int:
             problems.append(f"the region holds no operation of the name {label} ({len(name)} characters)")
         if names.get(wanted) != name:
             problems.append(f"the name table holds no name {label} ({len(name)} characters) for its hash")
-    for label, name in (("past the limit", FULL_PAST_LIMIT), ("long overload", FULL_LONG_OVERLOAD)):
+    for label, name in (("past the limit", FULL_PAST_LIMIT), ("long overload", FULL_LONG_OVERLOAD),
+                        ("collision", FULL_COLLIDED)):
         refused = schema_hash(name)
         count = hashes.count(refused)
         if count:
             problems.append(f"the region holds {count} operation(s) of the name {label} ({len(name)} characters)")
-        if refused in names:
+        if names.get(refused) == name:
             problems.append(f"the name table holds the name {label} ({len(name)} characters)")
     for line in problems:
         print(f"  FAIL: {line}")
     if problems:
         return 1
     print(f"test_outside_schema_names: {len(hashes)} operation(s) in the region, the names of {SCHEMA_NAME_MAX + 1} "
-          f"characters and the reserved hash refused")
+          f"characters, the reserved hash and the collision refused")
     return 0
 
 
