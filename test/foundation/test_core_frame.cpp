@@ -522,6 +522,52 @@ void test_fill_of_view_mut() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(fixed, [](std::size_t) noexcept { return 5; }));
 }
 
+// take_window gives the part of a run alone, with the brand of the run, and
+// no value for a part past the count.  The fixed form gives the fixed extent.
+// A body that writes two windows gives the run to the first one through
+// reborrow.
+void test_take_window() {
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        whole = ::foundation::core::reborrow(std::move(whole), [](auto lent) noexcept {
+            auto part = ::foundation::core::take_window(std::move(lent), 1, 2).expect("two elements fit");
+            static_assert(std::is_same_v<typename decltype(part)::brand_type, typename Whole::brand_type>);
+            static_assert(decltype(part)::extent == ::foundation::core::dynamic_extent);
+            CRUCIBLE_TEST_ASSERT(kTest, part.size() == 2);
+            ::foundation::core::fill(std::move(part), 4);
+        });
+        whole = ::foundation::core::reborrow(std::move(whole), [](auto lent) noexcept {
+            auto part = ::foundation::core::take_window<3>(std::move(lent), 3).expect("three elements fit");
+            static_assert(decltype(part)::extent == 3);
+            ::foundation::core::fill(std::move(part), 7);
+        });
+        whole = ::foundation::core::reborrow(std::move(whole), [](auto lent) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::take_window(std::move(lent), 5, 2).is_none());
+        });
+        CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::take_window<2>(std::move(whole), 5).is_none());
+    });
+    auto const expected = [](std::size_t position) noexcept { return position == 0 ? 0 : position < 3 ? 4 : 7; };
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, expected));
+}
+
+// The copy of a View into a ViewMut of the same fixed extent gives no
+// Result, because the type gives the two the same count.  The copy has no
+// result to discard, so the call needs no cast to void.
+void test_copy_of_fixed_extent() {
+    FixedArray<int, 3> source{};
+    source.with_mut([](auto whole) noexcept {
+        whole = ::foundation::core::reborrow(std::move(whole),
+                                             [](auto lent) noexcept { ::foundation::core::fill(std::move(lent), 2); });
+        auto last = std::move(whole.get_mut(2)).expect("three elements");
+        *last = 9;
+    });
+    FixedArray<int, 3> target{};
+    target.with_mut([&source](auto whole) noexcept { ::foundation::core::copy(std::move(whole), source.view()); });
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         holds_each(target, [](std::size_t position) noexcept { return position == 2 ? 9 : 2; }));
+}
+
 }  // namespace
 
 int main() {
@@ -541,5 +587,7 @@ int main() {
     test_get_mut();
     test_reborrow();
     test_fill_of_view_mut();
+    test_take_window();
+    test_copy_of_fixed_extent();
     return 0;
 }

@@ -4788,6 +4788,23 @@ foundation_neg_compile_test(neg_core_view_mut_reborrow_borrow_result
 foundation_neg_compile_test(neg_core_view_mut_fill_of_named
   "neg_core_view_mut_fill_of_named\\.cpp:9:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
   "a ViewMut is the one writer of its run: a copy would be a second writer")
+# A window takes its ViewMut by move, so the window is the one writer of its
+# elements.  A window of a named ViewMut and of a const one do not compile.
+foundation_neg_compile_test(neg_core_view_mut_take_window_of_named
+  "neg_core_view_mut_take_window_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(ViewMut<T, Brand, Extent>&, std::size_t, std::size_t\\)"
+  "a window takes the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_take_window_of_const
+  "neg_core_view_mut_take_window_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a window")
+# The copy of a View into a ViewMut of one fixed extent takes the ViewMut by
+# value, and only one fixed extent on the two sides gives the copy that
+# cannot fail.  Two other counts give a Result that the body must read.
+foundation_neg_compile_test(neg_core_view_mut_copy_fixed_of_named
+  "neg_core_view_mut_copy_fixed_of_named\\.cpp:10:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
+  "a ViewMut is the one writer of its run: a copy would be a second writer")
+foundation_neg_compile_test(neg_core_view_mut_copy_fixed_other_extent
+  "neg_core_view_mut_copy_fixed_other_extent\\.cpp:13:[0-9]+: error: ignoring return value of .foundation::core::Result<foundation::core::Unit, foundation::core::LengthMismatch> foundation::core::copy\\(ViewMut<T, Brand, Extent>, std::type_identity_t<View<const T> >\\)"
+  "declared with attribute .nodiscard.")
 foundation_neg_compile_test(neg_core_with_mut_named_owner
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = .*HeapArray<int>&"
   "with_mut takes the owner into its frame and gives it back: pass std::move\\(owner\\)")
