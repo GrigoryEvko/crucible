@@ -87,16 +87,17 @@ U64 = 0xFFFFFFFFFFFFFFFF
 
 
 def schema_hash(qualified_name: str, overload: str) -> int:
-    """FNV-1a over "aten::name" plus ".overload" when the overload is named.
+    """FNV-1a over "aten::name" plus ".overload" when the overload is named, with the fold zero mapped.
 
-    qualified_name is the struct's `name` member, already `aten::`-prefixed.
+    qualified_name is the struct's `name` member, already `aten::`-prefixed.  The fold zero is the sentinel of no
+    schema, so it maps to the fold of the empty text, as schema_hash_of_fold of vessel/torch/entry_slots.h does.
     """
     text = qualified_name + ("." + overload if overload else "")
     h = FNV_OFFSET
     for byte in text.encode("utf-8"):
         h ^= byte
         h = (h * FNV_PRIME) & U64
-    return h
+    return h if h != 0 else FNV_OFFSET
 
 
 # Values lifted from crucible_fallback.cpp's own comment block, so a

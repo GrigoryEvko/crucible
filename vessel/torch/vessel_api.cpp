@@ -177,10 +177,6 @@ private:
 // pointers in an opt-out region of the class ABI.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
 
-// ── FNV-1a 64-bit ────────────────────────────────────────────────────
-
-static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
-
 // ── FFI entry validation ─────────────────────────────────────────────
 //
 // The checks and the retag that carries an Entry from the first trust
@@ -230,12 +226,10 @@ void crucible_release_claim(CrucibleHandle h) noexcept {
 
 uint64_t crucible_hash_string(const char* s) noexcept {
     if (!s) return 0;
-    uint64_t h = FNV_OFFSET;
-    while (*s) {
-        h ^= static_cast<uint8_t>(*s++);
-        h *= 0x100000001b3ULL;
-    }
-    return h;
+    uint64_t fold = crucible::vessel::kFnvOffset;
+    while (*s)
+        fold = crucible::vessel::fnv1a_step(fold, static_cast<uint8_t>(*s++));
+    return crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{fold}).value().raw();
 }
 
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

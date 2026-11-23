@@ -158,7 +158,7 @@ def read_schema_names(path: Path) -> dict[int, str]:
 
 def schema_hash(name: str) -> int:
     """Return the schema hash of an operator name such as aten::add.Tensor."""
-    return crucible_mode._fnv1a(name.encode("ascii"))
+    return crucible_mode._schema_hash(name.encode("ascii"))
 
 
 def record(step, directory: Path, label: str) -> list[TraceOp]:

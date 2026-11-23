@@ -162,8 +162,6 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 using crucible::vessel::argument_position_at;
 using crucible::vessel::ArgumentPosition;
 using crucible::vessel::DataArguments;
-using crucible::vessel::fnv1a_step;
-using crucible::vessel::fnv1a_text;
 using crucible::vessel::InputOverflow;
 using crucible::vessel::is_structural_scalar;
 using crucible::vessel::kMaxSchemaArguments;
@@ -172,6 +170,7 @@ using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
 using crucible::vessel::ScalarArgs;
 using crucible::vessel::scalar_result_meta;
+using crucible::vessel::schema_hash_of_name;
 using crucible::vessel::backward_depth;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
@@ -327,19 +326,9 @@ struct SchemaInfo {
 CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fixy::TextView base_name,
                                                    ::fixy::TextView overload, bool mutable_op,
                                                    DataArguments data_by_type, ::fixy::AddressKey const& key) {
-    // FNV-1a over "namespace::name.overload".
-    uint64_t hash = fnv1a_text(base_name);
-    if (overload.size() != 0) hash = fnv1a_text(overload, fnv1a_step(hash, static_cast<uint8_t>('.')));
-    const auto schema_hash = crucible::SchemaHash{hash};
-    const DataArguments data_arguments = without_structural_scalars(schema_hash, data_by_type);
-
-    // Register name for visualization / diagnostics.
-    // "aten::mm.default" -> SchemaTable for op name lookup.
-    // PyTorch's operator schema is compiled into the libtorch binary this
-    // process links, so the name is internal: it crossed no trust boundary.
-    // The tables take names only from a thread that holds a Vigil's producer
-    // claim, which the caller checked.  The global table is sealed by now,
-    // so the name goes to the late table, which the vessel library reads.
+    // The name "namespace::name.overload", and its schema hash.  The door of
+    // the schema hash maps a fold of zero, so a name of libtorch never gives
+    // the sentinel of no schema (schema_hash_of_name of entry_slots.h).
     // The tables refuse a name longer than SCHEMA_NAME_MAX characters, and so
     // does the text below.
     ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
@@ -350,6 +339,16 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
         ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX in "
                       "crucible/SchemaTable.h");
     }
+    const crucible::SchemaHash schema_hash = schema_hash_of_name(full_name.view()).value();
+    const DataArguments data_arguments = without_structural_scalars(schema_hash, data_by_type);
+
+    // Register name for visualization / diagnostics.
+    // "aten::mm.default" -> SchemaTable for op name lookup.
+    // PyTorch's operator schema is compiled into the libtorch binary this
+    // process links, so the name is internal: it crossed no trust boundary.
+    // The tables take names only from a thread that holds a Vigil's producer
+    // claim, which the caller checked.  The global table is sealed by now,
+    // so the name goes to the late table, which the vessel library reads.
     vigil.register_schema_name(schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.view()));
 
     // Half of what the phase derivation reads to name an operation an

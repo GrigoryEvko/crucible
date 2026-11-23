@@ -82,6 +82,41 @@ inline constexpr uint64_t kFnvPrime = 0x100000001b3ULL;
 }
 
 // =====================================================================
+// The schema hash of a name
+//
+// The schema hash of an operator is the fold over its name, "namespace::name"
+// with ".overload" when the overload is named.  The value zero is the sentinel
+// of no schema: the content hash and the region cache key on it, and the
+// schema table refuses it.  A name comes from outside the program: the
+// libtorch that the process links gives the names of the fallback, and Python
+// gives the names of crucible_hash_string.  So a fold can be zero.  The door
+// maps the fold zero to kZeroFoldSchemaHash and keeps each other fold.  Its
+// type tells that the hash is not zero, so no later reader tests it, and no
+// name ends the process.  The fallback, crucible_hash_string, the list of the
+// structural scalars and the generator of aten_op_table.h
+// (utils/assay/loop/derive/aten_ops.py) give one schema hash for one name.
+// =====================================================================
+
+// A schema hash that is not zero.
+using NameSchemaHash = ::fixy::NonZero<crucible::SchemaHash>;
+
+// The schema hash of each name whose fold is zero: the fold of the empty
+// text, which no schema name has.
+inline constexpr uint64_t kZeroFoldSchemaHash = kFnvOffset;
+
+// The schema hash of a fold: kZeroFoldSchemaHash for the fold zero, and the
+// fold for each other fold.  Complexity: constant.
+[[nodiscard]] constexpr NameSchemaHash schema_hash_of_fold(crucible::SchemaHash fold) noexcept {
+    const crucible::SchemaHash hash = fold.raw() == 0 ? crucible::SchemaHash{kZeroFoldSchemaHash} : fold;
+    return ::fixy::mint_refined<::fixy::non_zero>(hash);
+}
+
+// The schema hash of a name.  Complexity: O(n) in the characters.
+[[nodiscard]] constexpr NameSchemaHash schema_hash_of_name(::fixy::TextView name) noexcept {
+    return schema_hash_of_fold(crucible::SchemaHash{fnv1a_text(name)});
+}
+
+// =====================================================================
 // The role of a scalar argument
 //
 // The type of an argument in the ATen schema gives the role of each slot that
@@ -167,7 +202,8 @@ inline constexpr ::fixy::FixedArray<StructuralScalar, 16> kStructuralScalars{
 [[nodiscard]] constexpr bool is_structural_scalar(crucible::SchemaHash schema_hash,
                                                   ArgumentPosition position) noexcept {
     for (const StructuralScalar& row : kStructuralScalars) {
-        if (fnv1a_text(row.schema) == schema_hash.raw() && row.position == position.value().raw()) return true;
+        if (schema_hash_of_name(row.schema).value() == schema_hash && row.position == position.value().raw())
+            return true;
     }
     return false;
 }

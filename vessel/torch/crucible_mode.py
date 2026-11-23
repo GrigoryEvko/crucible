@@ -212,13 +212,26 @@ def _layout_ordinal(layout: torch.layout) -> int:
 
 # ─── Scalar encoding ───────────────────────────────────────────────
 
+_FNV_OFFSET = 0xCBF29CE484222325
+
+
 def _fnv1a(s: bytes) -> int:
-    """FNV-1a 64-bit hash, matching vessel_api.cpp crucible_hash_string."""
-    h = 0xCBF29CE484222325
+    """FNV-1a 64-bit fold, the fnv1a_text of vessel/torch/entry_slots.h: the fold of the grad_fn hash."""
+    h = _FNV_OFFSET
     for b in s:
         h ^= b
         h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
     return h
+
+
+def _schema_hash(name: bytes) -> int:
+    """Return the schema hash of an op name, as schema_hash_of_name of vessel/torch/entry_slots.h gives it.
+
+    The fold zero is the sentinel of no schema, so it maps to the fold of the empty text.  crucible_hash_string of
+    vessel_api.cpp gives the same value.
+    """
+    fold = _fnv1a(name)
+    return fold if fold != 0 else _FNV_OFFSET
 
 
 def _scalar_tag(val):

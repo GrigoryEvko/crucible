@@ -310,7 +310,7 @@ def check_structural_rows() -> list[str]:
     named = 0
     for schema in torch._C._jit_get_all_schemas():
         name = schema.name + (f".{schema.overload_name}" if schema.overload_name else "")
-        schema_hash = crucible_mode._fnv1a(name.encode("ascii"))
+        schema_hash = crucible_mode._schema_hash(name.encode("ascii"))
         for position, argument in enumerate(schema.arguments):
             if not vessel.crucible_is_structural_scalar(schema_hash, position):
                 continue

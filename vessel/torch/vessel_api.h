@@ -199,8 +199,11 @@ CRUCIBLE_VESSEL_API void crucible_release_claim(CrucibleHandle h) CRUCIBLE_VESSE
 
 // ── Hashing ──────────────────────────────────────────────────────────
 
-// FNV-1a 64-bit hash of a null-terminated string.
-// Use for: op name → schema_hash.
+// The schema hash of the op name of a null-terminated string: the FNV-1a
+// 64-bit fold of its bytes, with the fold zero mapped to the fold of the
+// empty text (schema_hash_of_fold of entry_slots.h).  So a name never gives
+// zero, the sentinel of no schema.  A null pointer gives zero, which each C
+// entry refuses.
 CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Dispatch ─────────────────────────────────────────────────────────

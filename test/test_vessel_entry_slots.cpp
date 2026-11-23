@@ -22,6 +22,7 @@
 #include "../vessel/torch/entry_slots.h"
 
 #include <crucible/MerkleDag.h>
+#include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <fixy/Core.h>
@@ -614,19 +615,61 @@ void test_overflow_keeps_the_first_data_slots() {
 // of PyTorch.
 void test_is_structural_scalar_reads_each_row() {
     for (const crucible::vessel::StructuralScalar& row : crucible::vessel::kStructuralScalars) {
-        const crucible::SchemaHash schema_hash{crucible::vessel::fnv1a_text(row.schema)};
+        const crucible::SchemaHash schema_hash = crucible::vessel::schema_hash_of_name(row.schema).value();
         const crucible::vessel::ArgumentPosition position =
             crucible::vessel::argument_position_at(row.position).expect("a row names a position of the schema");
         CRUCIBLE_FATAL_INVARIANT(crucible::vessel::is_structural_scalar(schema_hash, position));
     }
 
-    const crucible::SchemaHash pow{crucible::vessel::fnv1a_text("aten::pow.Tensor_Scalar")};
-    const crucible::SchemaHash add{crucible::vessel::fnv1a_text("aten::add.Tensor")};
+    const crucible::SchemaHash pow = crucible::vessel::schema_hash_of_name("aten::pow.Tensor_Scalar").value();
+    const crucible::SchemaHash add = crucible::vessel::schema_hash_of_name("aten::add.Tensor").value();
     CRUCIBLE_FATAL_INVARIANT(
         !crucible::vessel::is_structural_scalar(pow, crucible::vessel::ArgumentPosition{::fixy::index<0>()}));
     CRUCIBLE_FATAL_INVARIANT(
         !crucible::vessel::is_structural_scalar(add, crucible::vessel::ArgumentPosition{::fixy::index<2>()})
         && "the alpha of add is data");
+}
+
+// The door of the schema hash maps the fold zero to kZeroFoldSchemaHash and
+// keeps each other fold, so the schema hash of a name is never zero, the
+// sentinel of no schema.  The fold of "aten::mm" is a witness of the fold of
+// the fallback, and the empty text folds to the mapped value.
+static_assert(crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{0}).value()
+              == crucible::SchemaHash{crucible::vessel::kZeroFoldSchemaHash});
+static_assert(crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{1}).value() == crucible::SchemaHash{1});
+static_assert(crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{UINT64_MAX}).value()
+              == crucible::SchemaHash{UINT64_MAX});
+static_assert(crucible::vessel::schema_hash_of_name("aten::mm").value() == crucible::SchemaHash{0x983B9200D566222DULL});
+static_assert(crucible::vessel::schema_hash_of_name("").value()
+              == crucible::SchemaHash{crucible::vessel::kZeroFoldSchemaHash});
+
+// The context of a Vigil's producer claim, which a registration of a name
+// takes.
+constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
+
+// A name whose fold is zero registers as an internal name, and the process
+// lives.  The test forces the fold zero through the door that the fallback
+// and crucible_hash_string take their hash from.  The door gives
+// kZeroFoldSchemaHash, so the table checks a hash that is not zero.  The
+// fallback once gave the fold itself, and the table ended the process on the
+// hash zero of a name of libtorch.
+void test_name_of_zero_fold_registers() {
+    crucible::SchemaTable table;
+    const auto view = table.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    const crucible::SchemaHash hash = crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{0}).value();
+    const bool is_registered =
+        table
+            .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
+                           ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(::fixy::TextView{"aten::zero_fold"}))
+            .is_ok();
+    CRUCIBLE_FATAL_INVARIANT(is_registered && "the table takes a name whose fold is zero");
+    const ::fixy::Option<crucible::SchemaTable::LookupName> stored = table.lookup(hash);
+    const bool is_found = stored.match(
+        [](crucible::SchemaTable::LookupName const& found) noexcept {
+            return found.value().view() == ::fixy::TextView{"aten::zero_fold"};
+        },
+        [] noexcept { return false; });
+    CRUCIBLE_FATAL_INVARIANT(is_found && "the table gives the name of the mapped hash");
 }
 
 // Each fact of a tensor that changes the elements that an op reads moves the
@@ -704,6 +747,7 @@ int main() {
     test_guard_word_reads_no_data_value();
     test_overflow_keeps_the_first_data_slots();
     test_is_structural_scalar_reads_each_row();
+    test_name_of_zero_fold_registers();
     ::fixy::check::pass(kTest, "test_vessel_entry_slots: PASS\n");
     return 0;
 }
