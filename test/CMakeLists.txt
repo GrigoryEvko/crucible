@@ -2143,6 +2143,12 @@ crucible_neg_compile_test(neg_transaction_committed_of_another_log
   "no matching function for call to .crucible::TransactionLog<4, Owner, fixy::<lambda\\(\\)> >::activate\\(foundation::core::LoanKey<fixy::<lambda\\(\\)> >&, const Owner&, crucible::CommittedTx<4, fixy::<lambda\\(\\)> >\\)."
   "no known conversion for argument 3 from .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>. to .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>.")
 
+# A keyed log lends a committed transaction only with its LoanKey, so the
+# keyless read door of a log of Unkeyed refuses it with its reason.
+crucible_neg_compile_test(neg_transaction_keyed_with_tx_without_key
+  "use of deleted function .void crucible::TransactionLog<N, Owner, KeyBrand>::with_tx\\(const Owner&, Committed, Body&&\\) const"
+  "a keyed TransactionLog lends a committed transaction only with its LoanKey: call with_tx\\(key, owner, committed, body\\)")
+
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
 #   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment
 #     from uint64_t, so a raw write does not compile.

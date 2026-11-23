@@ -455,6 +455,11 @@ public:
     ::fixy::Option<Committed> previous(Owner const& owner) const noexcept
         requires is_keyed_
     = delete("a keyed TransactionLog reads its rollback target only with its LoanKey: call previous(key, owner)");
+    template <class Body>
+        requires is_keyed_ && std::is_invocable_v<Body&&, Transaction const&>
+    void with_tx(Owner const& owner, Committed committed, Body&& body) const noexcept =
+        delete("a keyed TransactionLog lends a committed transaction only with its LoanKey: call with_tx(key, owner, "
+               "committed, body)");
 
     // ── The doors of each log ──────────────────────────────────────────────
 
