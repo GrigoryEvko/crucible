@@ -796,51 +796,6 @@ consteval bool admits_nested_class(std::meta::info nested, Side<side::HeldClass,
     return true;
 }
 
-// True when each door of the type that is not private vouches for what it
-// builds (1 of the check of the statement):
-//   - Each constructor other than copy and move takes a voucher.
-//   - Each static member function that gives a value that holds the type is
-//     judged as a constructor, so it takes a voucher.  Such a function is a
-//     door over a constructor that need not be public.
-//   - A door with no voucher is refused also when it takes no raw value: a
-//     door from nothing or from an empty tag carries nothing, so its body
-//     picks a constant, and the constant can be the empty value.
-//   - A static data member of each access that holds a value of the type is
-//     a door with no parameter, because a copy of it is a value that a
-//     private constructor built, and a friend or a nested class can copy a
-//     private one.  So it is refused.  A member variable template and a
-//     member class template are refused too, because the walk cannot read
-//     them before an instance.
-//   - Each nested class of each access passes the same arms, and the arms
-//     of the members (admits_nested_class).
-// A member function that is not static is no door: its object is a valid
-// value of the type, so it is a voucher, with the trust of a constructor
-// that takes a voucher.  A deleted function builds nothing.  One walk reads
-// the kinds, because each list of members costs a query.  Complexity: linear
-// in the members of the type and of its nested classes, and the parameters
-// of their doors, and the walks of their types.
-consteval bool vouches_each_door(std::meta::info type) {
-    Side<side::HeldClass, std::meta::info> const held = side_as<side::HeldClass>(type);
-    auto const members = std::meta::members_of(type, std::meta::access_context::unchecked());
-    for (std::size_t index = 0; index < members.size(); ++index) {
-        std::meta::info const member = members[index];
-        if (std::meta::is_variable_template(member) || std::meta::is_class_template(member)) return false;
-        if (is_nested_class(member, type)) {
-            if (!admits_nested_class(member, held)) return false;
-            continue;
-        }
-        if (std::meta::is_variable(member) && holds_class(std::meta::type_of(member), held)) return false;
-        if (std::meta::is_private(member) || !std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
-        if (std::meta::is_constructor(member)) {
-            bool const is_judged = !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
-            if (is_judged && !takes_voucher(member)) return false;
-        } else if (std::meta::is_static_member(member) && holds_class(std::meta::return_type_of(member), held)) {
-            if (!takes_voucher(member)) return false;
-        }
-    }
-    return true;
-}
-
 // True when a parameter of the function is a reference or a pointer to an
 // object that is not const, so a static member function can write a T
 // through it.  Complexity: linear in the parameters.
@@ -858,35 +813,119 @@ consteval bool has_writable_parameter(std::meta::info function) {
     return false;
 }
 
-// True when no member of the type that is not private writes a value of the
-// type in place (2 of the check of the statement).  A protected member
-// counts, because a class that derives from the type reaches it, and a copy
-// of the derived value gives its base part as a value of the type.  A
-// deleted function writes nothing.  The walk of the fields reads the private
-// fields too, because a const member function writes a mutable field of each
-// access.  The walk of the doors reads the writers of each nested class
-// (admits_nested_class).  Complexity: linear in the members of the type.
-consteval bool writes_no_payload(std::meta::info type) {
+// The answer of one walk of the check of the statement.
+enum class WalkVerdict : unsigned char {
+    refused,
+    admitted,
+};
+
+// The answers of the two walks of the statement of one type.  One walk of
+// the member list gives the two, because each list of members costs a query
+// of about one million instructions, once for each Ref brand.
+struct StatementWalks final {
+    WalkVerdict doors = WalkVerdict::refused;
+    WalkVerdict members = WalkVerdict::refused;
+};
+
+// The two walks of the statement of the type over one member list:
+//   doors (1 of the check of the statement): each door that is not private
+//   vouches for what it builds.
+//     - Each constructor other than copy and move takes a voucher.
+//     - Each static member function that gives a value that holds the type
+//       is judged as a constructor, so it takes a voucher.  Such a function
+//       is a door over a constructor that need not be public.
+//     - A door with no voucher is refused also when it takes no raw value: a
+//       door from nothing or from an empty tag carries nothing, so its body
+//       picks a constant, and the constant can be the empty value.
+//     - A static data member of each access that holds a value of the type
+//       is a door with no parameter, because a copy of it is a value that a
+//       private constructor built, and a friend or a nested class can copy a
+//       private one.  A member variable template and a member class template
+//       are refused too, because the walk cannot read them before an
+//       instance.
+//     - Each nested class of each access passes the same arms, and the arms
+//       of the members (admits_nested_class).
+//     A member function that is not static is no door: its object is a
+//     valid value of the type, so it is a voucher, with the trust of a
+//     constructor that takes a voucher.
+//   members (2 of the check of the statement): no member that is not private
+//   writes a value of the type in place.  The type has no base, no field
+//   that is not private and no mutable field, because a const member
+//   function writes a mutable field of each access.  A member function that
+//   is not const, and a static member function with a writable parameter,
+//   other than a constructor and a special member, are refused.  So is a
+//   member function template other than a constructor template.
+// A deleted function builds and writes nothing.  Complexity: linear in the
+// members of the type and of its nested classes, and the parameters of their
+// doors, and the walks of their types.
+consteval StatementWalks walk_statement(std::meta::info type) {
+    Side<side::HeldClass, std::meta::info> const held = side_as<side::HeldClass>(type);
     std::meta::access_context const each = std::meta::access_context::unchecked();
-    if (std::meta::bases_of(type, each).size() != 0) return false;
-    auto const fields = std::meta::nonstatic_data_members_of(type, each);
-    for (std::size_t index = 0; index < fields.size(); ++index) {
-        if (!std::meta::is_private(fields[index]) || std::meta::is_mutable_member(fields[index])) return false;
-    }
+    bool is_door_admitted = true;
+    bool is_member_admitted = std::meta::bases_of(type, each).size() == 0;
     auto const members = std::meta::members_of(type, each);
-    for (std::size_t index = 0; index < members.size(); ++index) {
+    for (std::size_t index = 0; index < members.size() && (is_door_admitted || is_member_admitted); ++index) {
         std::meta::info const member = members[index];
+        if (std::meta::is_nonstatic_data_member(member)) {
+            is_member_admitted =
+                is_member_admitted && std::meta::is_private(member) && !std::meta::is_mutable_member(member);
+            continue;
+        }
+        if (std::meta::is_variable_template(member) || std::meta::is_class_template(member)) {
+            is_door_admitted = false;
+            continue;
+        }
+        if (is_nested_class(member, type)) {
+            is_door_admitted = is_door_admitted && admits_nested_class(member, held);
+            continue;
+        }
+        if (std::meta::is_variable(member)) {
+            is_door_admitted = is_door_admitted && !holds_class(std::meta::type_of(member), held);
+            continue;
+        }
         if (std::meta::is_private(member)) continue;
-        if (std::meta::is_function_template(member) && !std::meta::is_constructor_template(member)) return false;
-        bool const is_judged = std::meta::is_function(member) && !std::meta::is_constructor(member)
-                            && !std::meta::is_special_member_function(member) && !std::meta::is_deleted(member);
-        if (!is_judged) continue;
-        bool const can_write =
-            std::meta::is_static_member(member) ? has_writable_parameter(member) : !std::meta::is_const(member);
-        if (can_write) return false;
+        if (std::meta::is_function_template(member)) {
+            is_member_admitted = is_member_admitted && std::meta::is_constructor_template(member);
+            continue;
+        }
+        if (!std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
+        if (std::meta::is_constructor(member)) {
+            bool const is_judged = !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
+            is_door_admitted = is_door_admitted && !(is_judged && !takes_voucher(member));
+            continue;
+        }
+        bool const is_special = std::meta::is_special_member_function(member);
+        if (std::meta::is_static_member(member)) {
+            bool const is_door = holds_class(std::meta::return_type_of(member), held);
+            is_door_admitted = is_door_admitted && !(is_door && !takes_voucher(member));
+            is_member_admitted = is_member_admitted && (is_special || !has_writable_parameter(member));
+        } else {
+            is_member_admitted = is_member_admitted && (is_special || std::meta::is_const(member));
+        }
     }
-    return true;
+    return StatementWalks{
+        .doors = is_door_admitted ? WalkVerdict::admitted : WalkVerdict::refused,
+        .members = is_member_admitted ? WalkVerdict::admitted : WalkVerdict::refused,
+    };
 }
+
+// The two walks of the statement of T, one time for each type.
+template <class T>
+inline constexpr StatementWalks statement_walks_v = walk_statement(^^T);
+
+// The answers of the two walks of the type, from the one instance of
+// statement_walks_v of the type.
+consteval StatementWalks walks_of(std::meta::info type) {
+    return std::meta::extract<StatementWalks>(std::meta::substitute(^^statement_walks_v, {type}));
+}
+
+// True when each door of the type that is not private vouches for what it
+// builds (1 of the check of the statement, walk_statement).
+consteval bool vouches_each_door(std::meta::info type) { return walks_of(type).doors == WalkVerdict::admitted; }
+
+// True when no member of the type that is not private writes a value of the
+// type in place (2 of the check of the statement, walk_statement).
+consteval bool writes_no_payload(std::meta::info type) { return walks_of(type).members == WalkVerdict::admitted; }
 
 // The constructor check of the statement of T (1 of the check of the
 // statement).
