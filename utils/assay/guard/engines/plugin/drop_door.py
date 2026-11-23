@@ -17,6 +17,11 @@ Rule
     A door, a destructor, a move, and a constructor or an assignment of a class
     with the annotation linear end or move their values by their contract, so
     the rule reads none of them (P10 of misc/12_10_2026_linear.md).
+    The entity of a line is FUNCTION: OBJECT (TYPE): TYPE is the type of the
+    object that ends, with its template arguments and with each fresh brand
+    written as the word brand.  So an instance of one template that ends a new
+    type at one line, such as a new handle in the payload of an Option, gives
+    its own line, and the ledger counts it.
 
 Ledger, write
     assay.guard.engines.plugin.linear_family.

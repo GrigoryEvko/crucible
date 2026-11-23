@@ -485,7 +485,10 @@
 //       drop-door          an assignment over a linear object that is no
 //                           tracked object of must-consume, and a destructor
 //                           call or a clobber of such an object.  A door, a
-//                           destructor and a transfer function read none
+//                           destructor and a transfer function read none.
+//                           The entity names the type of the object that
+//                           ends (linear_type_text), so a new instance that
+//                           ends a new type at one line gives its own line
 //       linear-forge        a union that holds a sealed type, a linear type or
 //                           a type that the checked lifetime start of
 //                           include/foundation/Lifetime.h refuses, and a class
@@ -5064,7 +5067,8 @@ void check_assignment_target(tree target, location_t location, const ShapeWalk& 
     } else if (stripped != NULL_TREE && DECL_P(stripped)) {
         object = simple_name(stripped);
     }
-    record_shape(Kind::linear_untracked_assignment, location, walk.name + ": " + object);
+    record_shape(Kind::linear_untracked_assignment, location,
+                 walk.name + ": " + object + " (" + linear_type_text(type) + ")");
 }
 
 // The rules at a call: drop-door, and the call graph of brand-reentry.
@@ -5100,7 +5104,8 @@ void check_call(tree call, ShapeWalk& walk) {
                && is_linear_type(DECL_CONTEXT(callee)) && !is_frame_object(first)) {
         // A delete-expression calls the destructor too, or clobbers the
         // object of a trivial destructor (walk_shapes).
-        record_shape(Kind::linear_destroy, location, walk.name + ": " + function_text(callee));
+        record_shape(Kind::linear_destroy, location,
+                     walk.name + ": " + function_text(callee) + " (" + linear_type_text(DECL_CONTEXT(callee)) + ")");
     }
 }
 
@@ -5253,7 +5258,8 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
                 tree target = TREE_OPERAND(node, 0);
                 if (!walk.is_exempt_from_drops && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target))
                     && !is_frame_object(target)) {
-                    record_shape(Kind::linear_destroy, walk.location_of(node), walk.name + ": the end of a lifetime");
+                    record_shape(Kind::linear_destroy, walk.location_of(node),
+                                 walk.name + ": the end of a lifetime (" + linear_type_text(TREE_TYPE(target)) + ")");
                 }
             } else {
                 check_assignment_target(TREE_OPERAND(node, 0), walk.location_of(node), walk);

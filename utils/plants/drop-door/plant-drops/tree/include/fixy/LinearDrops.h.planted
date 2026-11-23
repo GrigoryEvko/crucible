@@ -1,6 +1,6 @@
 // Base templates that end a linear value that no tracked local holds: an
 // assignment to a field, an assignment through a reference, an explicit
-// destructor call and a delete-expression.
+// destructor call through a pointer and on a member, and a delete-expression.
 #pragma once
 
 namespace planted {
@@ -28,6 +28,11 @@ void end_in_place(T* pointer) {
 template <class T>
 void free_one(T* pointer) {
     delete pointer;
+}
+
+template <class T>
+void end_member(Holder<T>& holder) {
+    holder.token.~T();
 }
 
 template <class T>
