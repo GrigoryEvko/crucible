@@ -236,13 +236,16 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 // The states of a slot, and the bits of its flags.  A retired slot held the
 // facts of a schema that the dispatcher removed.  A lookup passes it as it
-// passes a ready slot of a different key, and no writer claims it again.
+// passes a ready slot of a different key, and no writer claims it again.  A
+// slot with FLAG_REFUSED holds an operator whose name the door of an outside
+// name refused (record_schema_miss), and its other facts are zero.
 static constexpr uint64_t SLOT_EMPTY = 0;
 static constexpr uint64_t SLOT_CLAIMED = 1;
 static constexpr uint64_t SLOT_READY = 2;
 static constexpr uint64_t SLOT_RETIRED = 3;
 static constexpr uint64_t FLAG_MUTABLE = 1;
 static constexpr uint64_t FLAG_FOREACH = 2;
+static constexpr uint64_t FLAG_REFUSED = 4;
 // The data arguments of the schema (DataArguments of entry_slots.h) are in
 // the high 32 bits of the flags.
 static constexpr uint32_t FLAG_DATA_ARGUMENTS_SHIFT = 32;
@@ -317,53 +320,29 @@ struct SchemaInfo {
     return kept;
 }
 
-// The facts of an operator that the cache does not hold, from the two parts
-// of its name, the mutability of its schema and the data arguments that the
-// types of its schema give.  The helper registers the name for the trace
-// reader, and the first empty slot of the window of the key gets the facts.
-// A run misses each operator one time, so the helper is cold, and the text of
-// the name is on its stack only.  Complexity: the length of the name.
-CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fixy::TextView base_name,
-                                                   ::fixy::TextView overload, bool mutable_op,
-                                                   DataArguments data_by_type, ::fixy::AddressKey const& key) {
-    // The name "namespace::name.overload", and its schema hash.  The door of
-    // the schema hash maps a fold of zero, so a name of libtorch never gives
-    // the sentinel of no schema (schema_hash_of_name of entry_slots.h).
-    // The tables refuse a name longer than SCHEMA_NAME_MAX characters, and so
-    // does the text below.
-    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
-    const bool is_named =
-        full_name.append(base_name).is_ok()
-        && (overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(overload).is_ok()));
-    if (!is_named) [[unlikely]] {
-        ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX in "
-                      "crucible/SchemaTable.h");
-    }
-    const crucible::SchemaHash schema_hash = schema_hash_of_name(full_name.view()).value();
-    const DataArguments data_arguments = without_structural_scalars(schema_hash, data_by_type);
+// The word of the flags of a slot: the facts of an operator, or FLAG_REFUSED
+// for an operator with a refused name.
+[[nodiscard]] static uint64_t flags_of(::fixy::Option<SchemaInfo> const& facts) noexcept {
+    return facts.match(
+        [](SchemaInfo const& info) noexcept {
+            return (info.is_mutable ? FLAG_MUTABLE : 0) | (info.is_foreach ? FLAG_FOREACH : 0)
+                 | (uint64_t{info.data_arguments.bits()} << FLAG_DATA_ARGUMENTS_SHIFT);
+        },
+        [] noexcept { return FLAG_REFUSED; });
+}
 
-    // Register name for visualization / diagnostics.
-    // "aten::mm.default" -> SchemaTable for op name lookup.
-    // PyTorch's operator schema is compiled into the libtorch binary this
-    // process links, so the name is internal: it crossed no trust boundary.
-    // The tables take names only from a thread that holds a Vigil's producer
-    // claim, which the caller checked.  The global table is sealed by now,
-    // so the name goes to the late table, which the vessel library reads.
-    vigil.register_schema_name(schema_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(full_name.view()));
-
-    // Half of what the phase derivation reads to name an operation an
-    // optimizer operation. The overload never carries the infix, so the base
-    // name is the whole question.
-    const bool foreach_op = is_foreach_op_name(base_name);
-
-    // The first empty slot of the window gets the facts.  The thread whose
-    // claim succeeds is the one writer of the slot.  Two threads that miss the
-    // same operator at one time can fill two slots, and each slot holds the
-    // same facts.
+// Keeps the facts of an operator, or its refusal, in the first empty slot of
+// the window of its key.  The thread whose claim succeeds is the one writer of
+// the slot.  Two threads that miss the same operator at one time can fill two
+// slots, and each slot holds the same facts.  A window with no empty slot
+// keeps nothing, and the next call of the operator misses again.
+// O(SCHEMA_CACHE_PROBES).
+static void keep_schema_facts(::fixy::AddressKey const& key, ::fixy::Option<SchemaInfo> const& facts) noexcept {
+    const crucible::SchemaHash schema_hash = facts.match([](SchemaInfo const& info) noexcept { return info.hash; },
+                                                         [] noexcept { return crucible::SchemaHash{}; });
+    const uint64_t flags = flags_of(facts);
     const uint64_t idx = home_probe(key);
     for (uint32_t probe = 0; probe < SCHEMA_CACHE_PROBES; ++probe) {
-        const uint64_t flags = (mutable_op ? FLAG_MUTABLE : 0) | (foreach_op ? FLAG_FOREACH : 0)
-                             | (uint64_t{data_arguments.bits()} << FLAG_DATA_ARGUMENTS_SHIFT);
         const bool is_claimed =
             with_schema_slot(idx + probe, [&key, schema_hash, flags](SchemaHashSlot& slot) noexcept {
                 if (!slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) return false;
@@ -373,9 +352,110 @@ CRUCIBLE_COLD static SchemaInfo record_schema_miss(crucible::Vigil& vigil, ::fix
                 slot.state.store_release(SLOT_READY);
                 return true;
             });
-        if (is_claimed) break;
+        if (is_claimed) return;
     }
-    return {schema_hash, mutable_op, foreach_op, data_arguments};
+}
+
+// The two parts of the name of an operator of PyTorch, as the dispatcher
+// gives them: "namespace::name" and the overload, which can be empty.
+struct OperatorNameParts {
+    ::fixy::TextView base{};
+    ::fixy::TextView overload{};
+};
+
+// The reason of a refusal of the door of an outside name, for a report.
+[[nodiscard]] static ::fixy::TextView refusal_text(crucible::vessel::OutsideNameRefusal refused) noexcept {
+    switch (refused) {
+        case crucible::vessel::OutsideNameRefusal::zero_hash:
+            return "the schema hash of the name is zero";
+        case crucible::vessel::OutsideNameRefusal::empty:
+            return "the name has no character";
+        case crucible::vessel::OutsideNameRefusal::too_long:
+            return "the name is longer than SCHEMA_NAME_MAX characters";
+        case crucible::vessel::OutsideNameRefusal::holds_zero:
+            return "the name holds a zero byte";
+        case crucible::vessel::OutsideNameRefusal::reserved:
+            return "an operator of the generated table has the schema hash of the name";
+        case crucible::vessel::OutsideNameRefusal::collision:
+            return "the schema tables hold a different name of the schema hash";
+        case crucible::vessel::OutsideNameRefusal::full:
+            return "the schema table holds SCHEMA_TABLE_CAP names";
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+// The first characters of a part of a name, for a report.
+[[nodiscard]] static ::fixy::TextView shown_part(::fixy::TextView part) noexcept {
+    constexpr std::size_t kShownCharacters = 64;
+    return part.window(0, ::fixy::min(part.size(), kShownCharacters)).expect("the window is inside the part");
+}
+
+// Keeps the refusal of an operator in the schema cache, and reports it.  The
+// cache keeps the refusal, so the report comes one time for each operator,
+// and the fallback runs the door one time.  Cold: a refused name is rare.
+CRUCIBLE_COLD static void refuse_schema_name(::fixy::AddressKey const& key, OperatorNameParts const& name,
+                                             crucible::vessel::OutsideNameRefusal refused) noexcept {
+    keep_schema_facts(key, ::fixy::none);
+    const bool has_overload = name.overload.size() != 0;
+    const std::size_t characters = name.base.size() + (has_overload ? 1 + name.overload.size() : 0);
+    ::fixy::report(::fixy::Sink::Err,
+                   "crucible: the fallback records no operation of the operator {}{}{} ({} characters), and the "
+                   "operator runs eagerly: {}\n",
+                   shown_part(name.base), has_overload ? ::fixy::TextView{"."} : ::fixy::TextView{},
+                   shown_part(name.overload), characters, refusal_text(refused));
+}
+
+// The facts of an operator that the cache does not hold, from the two parts
+// of its name, the mutability of its schema and the data arguments that the
+// types of its schema give.  A library or a Python module can define an
+// operator with any name at run time, so the name is outside data.  The door
+// of an outside name (register_outside_schema_name of vessel_api_typed.h)
+// checks the name and registers it for the trace reader.  A refused name
+// gives no facts: the operator runs eagerly, and the fallback records no
+// operation of it.  The first empty slot of the window of the key keeps the
+// facts or the refusal, so the door runs one time for each operator.  The
+// helper is cold, and the text of the name is on its stack only.
+// Complexity: the length of the name, and linear in the rows of the
+// generated table.
+CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vigil& vigil,
+                                                                   OperatorNameParts const& name, bool mutable_op,
+                                                                   DataArguments data_by_type,
+                                                                   ::fixy::AddressKey const& key) {
+    // The name "namespace::name.overload", and its schema hash.  A name of
+    // more than SCHEMA_NAME_MAX characters does not fit the text, and the
+    // door refuses such a name too.  The door of the schema hash maps a fold
+    // of zero, so a name never gives the sentinel of no schema
+    // (schema_hash_of_name of entry_slots.h).
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
+    const bool is_joined =
+        full_name.append(name.base).is_ok()
+        && (name.overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(name.overload).is_ok()));
+    if (!is_joined) [[unlikely]] {
+        refuse_schema_name(key, name, crucible::vessel::OutsideNameRefusal::too_long);
+        return ::fixy::none;
+    }
+    const crucible::SchemaHash schema_hash = schema_hash_of_name(full_name.view()).value();
+
+    // The tables take names only from a thread that holds a Vigil's producer
+    // claim, which the caller checked.  The global table is sealed by now,
+    // so the name goes to the late table, which the vessel library reads.
+    return crucible::vessel::register_outside_schema_name(
+               vigil, schema_hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(full_name.view()))
+        .match(
+            [&name, &key, schema_hash, mutable_op, data_by_type](::fixy::Unit) noexcept {
+                // Half of what the phase derivation reads to name an
+                // operation an optimizer operation.  The overload never
+                // carries the infix, so the base name is the whole question.
+                const SchemaInfo info{schema_hash, mutable_op, is_foreach_op_name(name.base),
+                                      without_structural_scalars(schema_hash, data_by_type)};
+                keep_schema_facts(key, ::fixy::some(info));
+                return ::fixy::Option<SchemaInfo>::some(info);
+            },
+            [&name, &key](crucible::vessel::OutsideNameRefusal refused) noexcept {
+                refuse_schema_name(key, name, refused);
+                return ::fixy::Option<SchemaInfo>{::fixy::none};
+            });
 }
 
 // The arguments of a schema whose slots are data by their types: an argument
@@ -406,10 +486,11 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // for the slow path with the probe inline gave the fallback 156 instructions
 // more than this call.  The slow path is the cold record_schema_miss.  The
 // handle and the schema are of PyTorch, so the reads of them are in ABI
-// regions.
+// regions.  An operator whose name the door of an outside name refused gives
+// no facts (record_schema_miss).
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the schema of PyTorch")
-[[nodiscard, gnu::noinline]] static SchemaInfo get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op,
-                                                               const c10::FunctionSchema& schema) {
+[[nodiscard, gnu::noinline]] static ::fixy::Option<SchemaInfo>
+get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op, const c10::FunctionSchema& schema) {
     // The address of the operator name is the cache key.
     const c10::OperatorName& name = op.operator_name();
     const ::fixy::AddressKey key = operator_key_of(name);
@@ -422,9 +503,13 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
         // Two operators whose keys give one index take two slots of the
         // window, and neither one reads the facts of the other.  A retired
         // slot of this key is not ready, so the lookup passes it.
-        if (state == SLOT_READY && slot.key == key) [[likely]]
-            return {slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0,
-                    DataArguments::from_bits(static_cast<uint32_t>(slot.flags >> FLAG_DATA_ARGUMENTS_SHIFT))};
+        if (state == SLOT_READY && slot.key == key) [[likely]] {
+            if ((slot.flags & FLAG_REFUSED) != 0) [[unlikely]]
+                return ::fixy::none;
+            return ::fixy::some(
+                SchemaInfo{slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0,
+                           DataArguments::from_bits(static_cast<uint32_t>(slot.flags >> FLAG_DATA_ARGUMENTS_SHIFT))});
+        }
         if (state == SLOT_EMPTY) break;
     }
 
@@ -439,7 +524,8 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the lookup takes the operator handle and the
     const bool mutable_op = schema.is_mutable();
     const DataArguments data_by_type = data_arguments_of(schema);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    return record_schema_miss(vigil, base_name, overload, mutable_op, data_by_type, key);
+    return record_schema_miss(vigil, OperatorNameParts{.base = base_name, .overload = overload}, mutable_op,
+                              data_by_type, key);
 }
 
 // Retires each ready slot of the key, so no lookup reads its facts again.
@@ -698,19 +784,31 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
                             c10::CrucibleState& state, crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                             crucible::OpDepth depth, MetaSlots metas) {
     const auto& schema = op.schema();
+    // Runs the operation at the keys after the recorder, and records nothing.
+    const auto run_unrecorded = [&op, dispatch_keys, &stack] {
+        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);
+    };
 
     // -- Extract input tensor metadata + scalars ----------------------
     const auto num_args = schema.arguments().size();
     // Guard: schema.arguments().size() > stack.size() should never happen
     // with a well-formed dispatcher, but protect against underflow (UB).
     if (num_args > stack.size()) [[unlikely]] {
-        op.redispatchBoxed(dispatch_keys & kAfterCrucibleKeyset, &stack);
+        run_unrecorded();
         return;
     }
     const auto args_begin = stack.size() - num_args;
 
     // -- Compute hashes, mutability and the data arguments -------------
-    const auto [schema_hash, is_mutable, is_foreach, data_arguments] = get_schema_info(vigil, op, schema);
+    // An operator with a refused name runs eagerly, and the fallback records
+    // nothing, as for a tensor that fill_meta refuses below.
+    ::fixy::Option<SchemaInfo> facts = get_schema_info(vigil, op, schema);
+    if (facts.is_none()) [[unlikely]] {
+        run_unrecorded();
+        return;
+    }
+    const auto [schema_hash, is_mutable, is_foreach, data_arguments] =
+        static_cast<::fixy::Option<SchemaInfo>&&>(facts).expect("the test above");
 
     ExtractionResult extracted = extract_inputs(stack, args_begin, num_args, data_arguments, metas);
     MetaCount& counts = extracted.counts;
