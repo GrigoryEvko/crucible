@@ -4990,6 +4990,9 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_alignment_not_power
 foundation_neg_compile_test(neg_core_fixed_heap_array_moved
   "use of deleted function .foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::FixedHeapArray\\(foundation::core::FixedHeapArray<T, N, Align, KeyBrand>&&\\)"
   "a FixedHeapArray holds its storage from its mint to its end, so no door tests a null pointer")
+foundation_neg_compile_test(neg_core_fixed_heap_array_assigned
+  "use of deleted function .foundation::core::FixedHeapArray<T, N, Align, KeyBrand>& foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::operator=\\(foundation::core::FixedHeapArray<T, N, Align, KeyBrand>&&\\)"
+  "a FixedHeapArray holds its storage from its mint to its end, so no door tests a null pointer")
 foundation_neg_compile_test(neg_core_fixed_heap_array_two_mutable_views
   "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
   "neg_core_fixed_heap_array_two_mutable_views\\.cpp:12:")
