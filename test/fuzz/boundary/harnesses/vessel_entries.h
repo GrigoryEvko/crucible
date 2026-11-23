@@ -300,8 +300,9 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
         case CRUCIBLE_SCHEMA_NAME_COLLISION:
             // A different name of a held hash, or of the hash of an operator
             // of the generated table (the reserved hashes).
-            CRUCIBLE_FUZZ_CLAIM(kName, (held.is_some() && !is_held_name)
-                                           || vessel::is_reserved_for_other_name(SchemaHash{hash}, name));
+            CRUCIBLE_FUZZ_CLAIM(kName,
+                                (held.is_some() && !is_held_name)
+                                    || vessel::is_reserved_for_other_name(SchemaHash{hash}, SchemaNameParts{name}));
             CRUCIBLE_FUZZ_CLAIM(kName, names_held() == held_before);
             break;
         case CRUCIBLE_SCHEMA_NAME_FULL:

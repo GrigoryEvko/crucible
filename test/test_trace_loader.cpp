@@ -35,9 +35,9 @@ struct HeaderImage {
 constexpr ::fixy::FixedArray<std::byte, 4> kMagic{std::byte{'C'}, std::byte{'R'}, std::byte{'T'}, std::byte{'R'}};
 
 // The bytes of a trace file that a case puts one after the other: a header,
-// records and a name table.  The largest image of the cases, a table of
-// TRACE_NAMES_MAX names of one character, holds 11284 bytes.
-using TraceImage = ::fixy::FixedList<std::byte, 16384>;
+// records and a name table.  The largest image of the cases, a name of
+// SCHEMA_NAME_MAX characters, holds that name, its head and the header.
+using TraceImage = ::fixy::FixedList<std::byte, crucible::SCHEMA_NAME_MAX + 8192>;
 
 // The size of an empty name table: its count of zero names.
 constexpr std::size_t kEmptyNameTable = sizeof(uint32_t);
@@ -725,40 +725,16 @@ static void test_schema_name_table_corrupt_zero_len() {
     ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_zero_len: PASSED\n");
 }
 
+// The longest name is the largest 16-bit length, so no length of a file is
+// past the bound: the type of the field carries the upper bound, and the gate
+// refuses only the length zero.  The fixture neg_schema_name_len_above_max
+// keeps the refusal of a wider length.
+static_assert(SCHEMA_NAME_LEN_MAX == UINT16_MAX);
+
 static void test_schema_name_table_corrupt_oversize_len() {
-    // A length one past SCHEMA_NAME_LEN_MAX exceeds the longest name that
-    // the schema table holds.  Without the upper bound, the copy into the
-    // text of the name would run past its capacity.
-    //
-    // The file carries that many bytes of plausible name data, so that a
-    // dropped bound would let the read succeed and the overrun actually
-    // happen.  The bound refuses the file before the copy, and that is what
-    // the case checks.
-    global_schema_table().clear(::foundation::effects::testing::test());
-
-    constexpr uint16_t kOversize = SCHEMA_NAME_LEN_MAX + 1;
-    auto buf = make_zero_op_header();
-    append_le<uint32_t>(buf, 1);  // num_names
-    append_le<uint64_t>(buf, 0xFEEDFACEBAADF00DULL);  // schema_hash
-    append_le<uint16_t>(buf, kOversize);  // Corrupt name_len
-    // A recognizable byte, so it stands out in a buffer that should
-    // never hold it.
-    for (std::size_t filler = 0; filler < kOversize; ++filler) {
-        CRUCIBLE_TEST_ASSERT(kTest, buf.append(std::byte{0x5A}).is_ok());
-    }
-
-    constexpr ::fixy::CText kFileName{"crtrace-oversize-len.bin"};
-    const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(buf.view(), kFileName);
-    CRUCIBLE_TEST_ASSERT(
-        kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, path), TraceLoadError::NameLengthPastLimit));
-    remove_image(kFileName);
-
-    // The guard fired before the length was refined, which under
-    // enforced contracts would otherwise abort.
-    CRUCIBLE_TEST_ASSERT(kTest, missing(global_schema_table().lookup(SchemaHash{0xFEEDFACEBAADF00DULL})));
-    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);
-
-    global_schema_table().clear(::foundation::effects::testing::test());
+    // The longest length of a name of a file, 65535, is the longest name that
+    // the schema table holds, and the gate takes it.
+    static_assert(kSchemaNameLenRange(uint16_t{UINT16_MAX}));
     ::fixy::check::pass(kTest, "  test_schema_name_table_corrupt_oversize_len: PASSED\n");
 }
 

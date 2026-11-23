@@ -94,7 +94,8 @@ void append_word(NameTableImage& image, Word value) noexcept {
 [[nodiscard]] bool is_reserved_by_walk(SchemaHash hash, ::fixy::TextView name) noexcept {
     for (const ::fixy::View<crucible::vessel::OpEntry const> part : crucible::vessel::aten_op_parts) {
         for (const crucible::vessel::OpEntry& row : part) {
-            if (row.schema_hash == hash.raw()) return !crucible::vessel::is_full_name_of(row, name);
+            if (row.schema_hash == hash.raw())
+                return !crucible::SchemaNameParts{name}.is_same_full_name(crucible::vessel::name_parts_of(row));
         }
     }
     return false;
@@ -272,19 +273,22 @@ int main() {
         bench::run("search, first row",
                    [&] {
                        const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
-                           bench::make_opaque(first_hash), bench::make_opaque(first_name.view()));
+                           bench::make_opaque(first_hash),
+                           crucible::SchemaNameParts{bench::make_opaque(first_name.view())});
                        bench::do_not_optimize(is_reserved);
                    }),
         bench::run("search, last row",
                    [&] {
                        const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
-                           bench::make_opaque(last_hash), bench::make_opaque(last_name.view()));
+                           bench::make_opaque(last_hash),
+                           crucible::SchemaNameParts{bench::make_opaque(last_name.view())});
                        bench::do_not_optimize(is_reserved);
                    }),
         bench::run("search, no row",
                    [&] {
                        const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
-                           bench::make_opaque(outside_hash), bench::make_opaque(kOutsideName));
+                           bench::make_opaque(outside_hash),
+                           crucible::SchemaNameParts{bench::make_opaque(kOutsideName)});
                        bench::do_not_optimize(is_reserved);
                    }),
     };

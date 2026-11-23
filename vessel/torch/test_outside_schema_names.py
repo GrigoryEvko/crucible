@@ -9,14 +9,16 @@ fallback records no operation of it.  The C entry crucible_register_schema_name
 is the other door of an outside name, and its caller gives the hash.  The
 checks:
 
-    at the limit    an operator whose full name has 4096 characters
-                    (SCHEMA_NAME_MAX of crucible/SchemaTable.h) is in the
+    long name       an operator whose full name has 5000 characters is in the
                     region, and the name table of the trace holds its name
-    past the limit  an operator whose full name has 4097 characters gives its
+    at the limit    the same for a full name of 65535 characters
+                    (SCHEMA_NAME_MAX of crucible/SchemaTable.h, the most that
+                    the 16-bit length of a name of a trace holds)
+    past the limit  an operator whose full name has 65536 characters gives its
                     value two times, and the trace holds no operation and no
                     name of it
-    long overload   the same for a name of 4097 characters whose overload holds
-                    most of the characters
+    long overload   the same for a name of 65536 characters whose overload
+                    holds most of the characters
     reserved hash   the C entry gives the collision code for a different name
                     with the hash of aten::mm, an operator of the generated
                     table.  Then the unboxed kernel of aten::mm registers its
@@ -63,16 +65,18 @@ from test_record_coverage import MAX_ITERATIONS, read_schema_names, read_trace, 
 NAMESPACE = "crucible_outside_name"
 PREFIX = f"{NAMESPACE}::"
 # The most characters of a schema name (SCHEMA_NAME_MAX of crucible/SchemaTable.h).
-SCHEMA_NAME_MAX = 4096
+SCHEMA_NAME_MAX = 65535
 
-# The names of the four operators.  The full name of an operator with no
+# The names of the five operators.  The full name of an operator with no
 # overload is the namespace, two colons and the name.
+LONG_NAME = "e" * (5000 - len(PREFIX))
 AT_LIMIT = "a" * (SCHEMA_NAME_MAX - len(PREFIX))
 PAST_LIMIT = "b" * (SCHEMA_NAME_MAX + 1 - len(PREFIX))
 OVERLOADED = "c"
 LONG_OVERLOAD = "o" * (SCHEMA_NAME_MAX + 1 - len(PREFIX) - len(OVERLOADED) - len("."))
 COLLIDED = "d"
 
+FULL_LONG_NAME = f"{PREFIX}{LONG_NAME}"
 FULL_AT_LIMIT = f"{PREFIX}{AT_LIMIT}"
 FULL_PAST_LIMIT = f"{PREFIX}{PAST_LIMIT}"
 FULL_LONG_OVERLOAD = f"{PREFIX}{OVERLOADED}.{LONG_OVERLOAD}"
@@ -87,14 +91,14 @@ OTHER_COLLIDED_NAME = f"{NAMESPACE}::not_d"
 
 
 def add_one(source: torch.Tensor) -> torch.Tensor:
-    """Return the source plus one, the value of each of the four operators."""
+    """Return the source plus one, the value of each of the five operators."""
     return source + 1
 
 
 def define_operators() -> torch.library.Library:
-    """Define the four operators with a CPU implementation, and return their library."""
+    """Define the five operators with a CPU implementation, and return their library."""
     library = torch.library.Library(NAMESPACE, "FRAGMENT")
-    for name in (AT_LIMIT, PAST_LIMIT, f"{OVERLOADED}.{LONG_OVERLOAD}", COLLIDED):
+    for name in (LONG_NAME, AT_LIMIT, PAST_LIMIT, f"{OVERLOADED}.{LONG_OVERLOAD}", COLLIDED):
         library.define(f"{name}(Tensor source) -> Tensor")
         library.impl(name, add_one, "CPU")
     return library
@@ -115,6 +119,7 @@ def record(directory: Path) -> tuple[Path, list[str]]:
     """
     path = directory / "outside_schema_names.crtrace"
     namespace = getattr(torch.ops, NAMESPACE)
+    long_name = getattr(namespace, LONG_NAME).default
     at_limit = getattr(namespace, AT_LIMIT).default
     refused = (("past the limit", getattr(namespace, PAST_LIMIT).default),
                ("long overload", getattr(getattr(namespace, OVERLOADED), LONG_OVERLOAD)),
@@ -142,9 +147,10 @@ def record(directory: Path) -> tuple[Path, list[str]]:
                 if not torch.equal(value, wanted):
                     problems.append(f"the operator {label} gives {value.tolist()}, not {wanted.tolist()}")
         for _ in range(MAX_ITERATIONS):
-            value = at_limit(source)
-            if not torch.equal(value, wanted):
-                problems.append(f"the operator at the limit gives {value.tolist()}, not {wanted.tolist()}")
+            for label, operator in (("long name", long_name), ("at the limit", at_limit)):
+                value = operator(source)
+                if not torch.equal(value, wanted):
+                    problems.append(f"the operator {label} gives {value.tolist()}, not {wanted.tolist()}")
             value = torch.mm(left, right)
             if not torch.equal(value, product):
                 problems.append(f"{RESERVED_OPERATOR} gives {value.tolist()}, not {product.tolist()}")
@@ -164,7 +170,8 @@ def main() -> int:
         hashes = [op.schema_hash for op in read_trace(path)]
         names = read_schema_names(path)
     library._destroy()
-    for label, name in (("at the limit", FULL_AT_LIMIT), ("reserved", RESERVED_OPERATOR)):
+    for label, name in (("long name", FULL_LONG_NAME), ("at the limit", FULL_AT_LIMIT),
+                        ("reserved", RESERVED_OPERATOR)):
         wanted = schema_hash(name)
         if wanted not in hashes:
             problems.append(f"the region holds no operation of the name {label} ({len(name)} characters)")

@@ -33,7 +33,8 @@ class UncheckedSchemaNameDoor final {
 public:
     [[nodiscard]] static SchemaTable::SanitizedName plant(::fixy::TextView characters) noexcept {
         return SchemaTable::SanitizedName{
-            ::fixy::mint_tagged<::fixy::tags::source::External>(characters).retag<::fixy::tags::source::Sanitized>()};
+            ::fixy::mint_tagged<::fixy::tags::source::External>(SchemaNameParts{characters})
+                .retag<::fixy::tags::source::Sanitized>()};
     }
 };
 
@@ -265,16 +266,19 @@ constexpr uint64_t kEmptyStoredSchema = 0x10E6000000000003ULL;
 }
 
 // True when the file of the exports holds the bytes of record.  A file that
-// does not read holds nothing.
+// does not read holds nothing.  The text of the file holds four names of
+// SCHEMA_NAME_MAX characters, so the function keeps its own frame, and the
+// frame of its caller stays below the limit of the stack of one function.
 template <std::size_t Capacity>
-[[nodiscard]] bool export_file_holds(::fixy::FixedText<Capacity> const& record) noexcept {
+[[nodiscard, gnu::noinline]] bool export_file_holds(::fixy::FixedText<Capacity> const& record) noexcept {
     ::fixy::FixedText<4 * crucible::SCHEMA_NAME_MAX> file{};
     if (::foundation::os::read_file(kExportFile, file).is_err()) return false;
     return ::fixy::find(file.view(), record.view()).is_some();
 }
 
-// True when the file of the exports exists and reads.
-[[nodiscard]] bool export_file_exists() noexcept {
+// True when the file of the exports exists and reads.  The function keeps its
+// own frame, as export_file_holds does.
+[[nodiscard, gnu::noinline]] bool export_file_exists() noexcept {
     ::fixy::FixedText<4 * crucible::SCHEMA_NAME_MAX> file{};
     return ::foundation::os::read_file(kExportFile, file).is_ok();
 }

@@ -528,7 +528,7 @@ static void test_sanitize_schema_name_refuses_each_bad_name() {
     const SchemaTable::SanitizedName from_abi =
         sanitize_schema_name(H(0x7), ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::abi"}))
             .expect("a valid name of the C interface passes");
-    CRUCIBLE_TEST_ASSERT(kTest, from_abi.value() == ::fixy::TextView{"aten::abi"});
+    CRUCIBLE_TEST_ASSERT(kTest, from_abi.parts().name() == ::fixy::TextView{"aten::abi"});
     ::fixy::check::pass(kTest, "  test_sanitize_schema_name:      PASSED\n");
 }
 

@@ -170,7 +170,8 @@ using crucible::vessel::MAX_INLINE_METAS;
 using crucible::vessel::MetaCount;
 using crucible::vessel::ScalarArgs;
 using crucible::vessel::scalar_result_meta;
-using crucible::vessel::schema_hash_of_name;
+using crucible::vessel::fnv1a_text;
+using crucible::vessel::schema_hash_of_fold;
 using crucible::vessel::backward_depth;
 using crucible::vessel::compute_shape_hash;
 using crucible::vessel::fill_meta;
@@ -420,36 +421,30 @@ CRUCIBLE_COLD static void refuse_schema_name(::fixy::AddressKey const& key, Oper
 // gives no facts: the operator runs eagerly, and the fallback records no
 // operation of it.  The first empty slot of the window of the key keeps the
 // facts or the refusal, so the door runs one time for each operator.  The
-// helper is cold, and the text of the name is on its stack only.
-// Complexity: the length of the name, and O(log n) in the rows of the
-// generated table.
+// helper is cold, and it copies no character of the name: the table copies
+// the two parts.  Complexity: the length of the name, and O(log n) in the
+// rows of the generated table.
 CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vigil& vigil,
                                                                    OperatorNameParts const& name, bool mutable_op,
                                                                    DataArguments data_by_type,
                                                                    ::fixy::AddressKey const& key) {
-    // The name "namespace::name.overload", and its schema hash.  A name of
-    // more than SCHEMA_NAME_MAX characters does not fit the text, and the
-    // door refuses such a name too.  The door of the schema hash maps a fold
-    // of zero, so a name never gives the sentinel of no schema
-    // (schema_hash_of_name of entry_slots.h).
-    const ::fixy::TextView overload = name.overload.value();
-    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
-    const bool is_joined =
-        full_name.append(name.base.value()).is_ok()
-        && (overload.size() == 0 || (full_name.append('.').is_ok() && full_name.append(overload).is_ok()));
-    if (!is_joined) [[unlikely]] {
-        refuse_schema_name(key, name, crucible::vessel::OutsideNameRefusal::too_long);
-        return ::fixy::none;
-    }
-    const crucible::SchemaHash schema_hash = schema_hash_of_name(full_name.view()).value();
+    // The full name "namespace::name.overload" in its two parts, and its
+    // schema hash, the fold of the name, of the dot and of the overload.  The
+    // door of the schema hash maps a fold of zero, so a name never gives the
+    // sentinel of no schema (schema_hash_of_fold of entry_slots.h).
+    const crucible::SchemaNameParts parts{::fixy::side_as<crucible::side::SchemaBaseName>(name.base.value()),
+                                          ::fixy::side_as<crucible::side::SchemaOverload>(name.overload.value())};
+    const uint64_t name_fold = fnv1a_text(parts.name());
+    const uint64_t fold =
+        parts.overload().size() == 0 ? name_fold : fnv1a_text(parts.overload(), fnv1a_text(".", name_fold));
+    const crucible::SchemaHash schema_hash = schema_hash_of_fold(crucible::SchemaHash{fold}).value();
 
     // The tables take names only from a thread that holds a Vigil's producer
     // claim, which the caller checked.  The global table is sealed by now,
     // so the name goes to the late table, which the vessel library reads.
-    // The joined copy of the parts is outside data too, so it takes the tag
-    // of the boundary again.
-    return crucible::vessel::register_outside_schema_name(
-               vigil, schema_hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(full_name.view()))
+    // The parts keep the tag of their boundary.
+    return crucible::vessel::register_outside_schema_name(vigil, schema_hash,
+                                                          ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(parts))
         .match(
             [&name, &key, schema_hash, mutable_op, data_by_type](::fixy::Unit) noexcept {
                 // Half of what the phase derivation reads to name an

@@ -2291,20 +2291,21 @@ crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "neg_deserialize_region_cross_tag.cpp:27")
 
 # kSchemaNameLenRange is the typed gate of a .crtrace schema-name
-# length, in_range<1, 4096>.  load_trace takes each length only through
-# its mint.  The name goes into a text of 4096 characters, so a length
-# outside [1, 4096] is either an empty-name entry in the global schema
-# table (lower) or an overflow of that text (upper).  Two fixtures:
-#   * neg_schema_name_len_below_min.cpp — lower-bound edge (= 0).
-#     Catches a range that widens to in_range<0, 4096>.
-#   * neg_schema_name_len_above_max.cpp — wide miss (= UINT16_MAX).
-#     Catches a gate that no longer runs its predicate.
+# length, in_range<1, 65535>.  load_trace takes each length only through
+# its mint.  The name goes into a text of SCHEMA_NAME_MAX characters, the
+# most that the 16-bit length holds, so a length outside [1, 65535] is
+# either an empty-name entry in the global schema table (lower) or an
+# overflow of that text (upper).  Two fixtures:
+#   * neg_schema_name_len_below_min.cpp: the lower edge, 0.  It catches a
+#     range that widens to in_range<0, 65535>.
+#   * neg_schema_name_len_above_max.cpp: a length past 16 bits, 65536.  It
+#     catches a gate that no longer runs its predicate.
 crucible_neg_compile_test(neg_schema_name_len_below_min
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
+  "mint_refined<InRange<1, 65535>\\(\\), short unsigned int>\\(0\\)")
 crucible_neg_compile_test(neg_schema_name_len_above_max
   "__builtin_trap.*is not a constant expression"
-  "mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(65535\\)")
+  "mint_refined<InRange<1, 65535>\\(\\), unsigned int>\\(65536\\)")
 
 # The three counts of a .crtrace file each have a typed gate:
 # kTraceNumOpsBound (MAX_OPS = 1 << 22), kTraceNumMetasBound

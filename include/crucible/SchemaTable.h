@@ -21,9 +21,11 @@ namespace crucible {
 
 static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 
-// The longest name that the table holds, in characters.  A PyTorch operator
-// name with its overload is shorter than 256 characters.
-inline constexpr std::size_t SCHEMA_NAME_MAX = 4096;
+// The longest name that the tables hold, in characters: the most that the
+// 16-bit length of a name of a trace file holds, so each name of a table
+// exports and loads.  A PyTorch operator name with its overload is shorter
+// than 256 characters, and a library can define a longer one at run time.
+inline constexpr std::size_t SCHEMA_NAME_MAX = 65535;
 
 // The name holds its characters and one zero after them, so a C caller reads
 // the name through foreign_c_str.  The name is a HeapText, so no append
@@ -82,6 +84,65 @@ void internal_schema_name_is_longer_than_schema_name_max() noexcept;
 
 }  // namespace detail
 
+// The two parts of a schema name: the name, such as "aten::add", and the
+// overload, such as "Tensor", which is empty for a name of one text.  The
+// full name is the name, and a dot and the overload when the overload has
+// characters, as c10::OperatorName spells it.  The parts borrow their
+// characters.
+class SchemaNameParts final {
+public:
+    // The name of one text, such as "aten::mm" or "aten::add.Tensor".
+    constexpr explicit SchemaNameParts(::fixy::TextView name) noexcept : name_{name} {}
+
+    // The name and the overload of an operator.
+    constexpr SchemaNameParts(::fixy::Side<side::SchemaBaseName, ::fixy::TextView> name,
+                              ::fixy::Side<side::SchemaOverload, ::fixy::TextView> overload) noexcept
+        : name_{name.value()}, overload_{overload.value()} {}
+
+    [[nodiscard]] constexpr ::fixy::TextView name() const noexcept { return name_; }
+    [[nodiscard]] constexpr ::fixy::TextView overload() const noexcept { return overload_; }
+
+    // The count of the characters of the full name.  Each part holds at most
+    // __PTRDIFF_MAX__ characters, so the sum fits.
+    [[nodiscard]] constexpr std::size_t full_size() const noexcept {
+        return name_.size() + (overload_.size() == 0 ? 0 : 1 + overload_.size());
+    }
+
+    // True when a part holds a zero.  Complexity: the length of the name.
+    [[nodiscard]] constexpr bool holds_zero() const noexcept {
+        return ::fixy::find(name_, '\0').is_some() || ::fixy::find(overload_, '\0').is_some();
+    }
+
+    // The character at a position of the full name, which is below
+    // full_size().  Complexity: constant.
+    [[nodiscard]] constexpr char full_character_at(std::size_t position) const noexcept {
+        const auto first_of = [](::fixy::TextView one) noexcept {
+            for (const char character : one)
+                return character;
+            return '\0';
+        };
+        if (position < name_.size()) return first_of(name_.window(position, 1).expect("the position is in the name"));
+        if (position == name_.size()) return '.';
+        return first_of(overload_.window(position - name_.size() - 1, 1).expect("the position is in the overload"));
+    }
+
+    // True when the two full names hold the same characters, whatever the
+    // split of each into its parts.  Complexity: the length of the name.
+    [[nodiscard]] constexpr bool is_same_full_name(SchemaNameParts const& other) const noexcept {
+        const std::size_t size = full_size();
+        if (other.full_size() != size) return false;
+        if (overload_.size() == 0 && other.overload_.size() == 0) return name_ == other.name_;
+        for (std::size_t position = 0; position < size; ++position) {
+            if (full_character_at(position) != other.full_character_at(position)) return false;
+        }
+        return true;
+    }
+
+private:
+    ::fixy::TextView name_{};
+    ::fixy::TextView overload_{};
+};
+
 // The refusal of the registration of a schema name.
 enum class SchemaRefusal : std::uint8_t {
     // The table was sealed first, and it wrote nothing.
@@ -113,16 +174,16 @@ enum class SchemaNameError : std::uint8_t {
     holds_zero,
 };
 
-// The reason that the table refuses the characters of a name of hash, or no
-// value: a hash of zero, no character, or more than SCHEMA_NAME_MAX
-// characters.  sanitize_schema_name runs it on a name from outside.  The
-// consteval constructor of an internal name checks the same characters at
-// compile time.  Complexity: constant.
+// The reason that the table refuses the parts of a name of hash, or no value:
+// a hash of zero, a name with no character, or a full name of more than
+// SCHEMA_NAME_MAX characters.  sanitize_schema_name runs it on a name from
+// outside.  The consteval constructor of an internal name checks the same
+// parts at compile time.  Complexity: constant.
 [[nodiscard]] constexpr ::fixy::Option<SchemaNameError> schema_name_error(SchemaHash hash,
-                                                                          ::fixy::TextView characters) noexcept {
+                                                                          SchemaNameParts const& parts) noexcept {
     if (hash.raw() == 0) return ::fixy::some(SchemaNameError::zero_hash);
-    if (characters.size() == 0) return ::fixy::some(SchemaNameError::empty);
-    if (characters.size() > SCHEMA_NAME_MAX) return ::fixy::some(SchemaNameError::too_long);
+    if (parts.name().size() == 0) return ::fixy::some(SchemaNameError::empty);
+    if (parts.full_size() > SCHEMA_NAME_MAX) return ::fixy::some(SchemaNameError::too_long);
     return ::fixy::none;
 }
 
@@ -198,10 +259,12 @@ public:
     // the Sanitized tag that the door gives.
     class SanitizedName final {
     public:
-        [[nodiscard]] constexpr ::fixy::TextView value() const noexcept { return name_.value(); }
+        // The parts of the name: one text, or the name and the overload of
+        // an operator of PyTorch.
+        [[nodiscard]] constexpr SchemaNameParts parts() const noexcept { return name_.value(); }
 
     private:
-        using Checked = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::Sanitized>;
+        using Checked = ::fixy::Tagged<SchemaNameParts, ::fixy::tags::source::Sanitized>;
 
         constexpr explicit SanitizedName(Checked name) noexcept : name_{name} {}
 
@@ -210,7 +273,7 @@ public:
         // The friend gives a Result of this class.  The class is incomplete
         // here, and Result checks its payload, so the result type is deduced.
         template <SchemaNameBoundary Tag>
-        friend auto sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept;
+        friend auto sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<SchemaNameParts, Tag> const& name) noexcept;
         friend class ::crucible::testing::UncheckedSchemaNameDoor;
     };
 
@@ -229,31 +292,27 @@ public:
     class InternalName final {
     public:
         // The name of one text, such as "aten::mm".
-        consteval explicit InternalName(::fixy::TextView name) noexcept : name_{name} { check_parts_(); }
+        consteval explicit InternalName(::fixy::TextView name) noexcept : parts_{name} { check_parts_(); }
 
         // The name and the overload of an operator, such as the two parts of
         // a row of the generated table.
         consteval InternalName(::fixy::Side<side::SchemaBaseName, ::fixy::TextView> name,
                                ::fixy::Side<side::SchemaOverload, ::fixy::TextView> overload) noexcept
-            : name_{name.value()}, overload_{overload.value()} {
+            : parts_{static_cast<::fixy::Side<side::SchemaBaseName, ::fixy::TextView>&&>(name),
+                     static_cast<::fixy::Side<side::SchemaOverload, ::fixy::TextView>&&>(overload)} {
             check_parts_();
         }
 
-        [[nodiscard]] constexpr ::fixy::TextView name() const noexcept { return name_; }
-        [[nodiscard]] constexpr ::fixy::TextView overload() const noexcept { return overload_; }
+        [[nodiscard]] constexpr SchemaNameParts parts() const noexcept { return parts_; }
 
     private:
         consteval void check_parts_() const noexcept {
-            if (name_.size() == 0) detail::internal_schema_name_has_no_character();
-            if (::fixy::find(name_, '\0').is_some() || ::fixy::find(overload_, '\0').is_some())
-                detail::internal_schema_name_holds_a_zero_byte();
-            const std::size_t overload_size = overload_.size() == 0 ? 0 : 1 + overload_.size();
-            if (name_.size() > SCHEMA_NAME_MAX || overload_size > SCHEMA_NAME_MAX - name_.size())
-                detail::internal_schema_name_is_longer_than_schema_name_max();
+            if (parts_.name().size() == 0) detail::internal_schema_name_has_no_character();
+            if (parts_.holds_zero()) detail::internal_schema_name_holds_a_zero_byte();
+            if (parts_.full_size() > SCHEMA_NAME_MAX) detail::internal_schema_name_is_longer_than_schema_name_max();
         }
 
-        ::fixy::TextView name_{};
-        ::fixy::TextView overload_{};
+        SchemaNameParts parts_;
     };
 
     // A looked-up name is a C text in the storage of the table, and the
@@ -298,8 +357,8 @@ public:
     [[nodiscard]] SchemaRegistration register_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
                                                    MutableView const& view, SchemaHash hash, NameType const& name) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
-        const NameParts parts = parts_of_(name);
-        if (parts.name.size() == 0) return ::fixy::Unit{};
+        const SchemaNameParts parts = name.parts();
+        if (parts.name().size() == 0) return ::fixy::Unit{};
         constexpr NameSource source = std::same_as<NameType, InternalName> ? NameSource::internal : NameSource::outside;
         if constexpr (source == NameSource::internal) {
             if (hash.raw() == 0) [[unlikely]]
@@ -339,8 +398,8 @@ public:
             NameCheck check{};
             auto check_name = [this, &check](SchemaHash hash, SanitizedName const& name) noexcept {
                 if (check.refusal.is_some()) return;
-                const ::fixy::TextView characters = characters_of_(name.value());
-                if (characters.size() == 0) return;
+                const SchemaNameParts characters = cut_at_zero_(name.parts());
+                if (characters.name().size() == 0) return;
                 switch (judge_name_(check, hash, characters)) {
                     case NameVerdict::collision:
                         check.refusal = ::fixy::some(SchemaRefusal::collision);
@@ -369,13 +428,12 @@ public:
             std::size_t written = 0;
             auto write_name = [this, &checked, &written, allocation](SchemaHash hash,
                                                                      SanitizedName const& name) noexcept {
-                const ::fixy::TextView characters = characters_of_(name.value());
-                if (characters.size() == 0) return;
+                const SchemaNameParts characters = cut_at_zero_(name.parts());
+                if (characters.name().size() == 0) return;
                 const bool is_checked_name = checked.hashes.get(written).match(
                     [hash](auto held) noexcept { return *held == hash; }, [] noexcept { return false; });
                 CRUCIBLE_FATAL_INVARIANT(is_checked_name);
-                const bool is_written =
-                    write_name_(allocation, hash, NameParts{.name = characters}, NameSource::outside).is_none();
+                const bool is_written = write_name_(allocation, hash, characters, NameSource::outside).is_none();
                 CRUCIBLE_FATAL_INVARIANT(is_written);
                 ++written;
             };
@@ -456,40 +514,6 @@ private:
         internal,
     };
 
-    // The parts of a name that a registration writes: the name, and the
-    // overload of an internal name, which is empty for each other name.  The
-    // full name is the name, and a dot and the overload when the overload
-    // has characters.
-    struct NameParts {
-        ::fixy::TextView name{};
-        ::fixy::TextView overload{};
-
-        // The count of the characters of the full name.
-        [[nodiscard]] std::size_t full_size() const noexcept {
-            return name.size() + (overload.size() == 0 ? 0 : 1 + overload.size());
-        }
-
-        // True when stored holds the characters of the full name.
-        // Complexity: the length of the name.
-        [[nodiscard]] bool is_full_name(::fixy::TextView stored) const noexcept {
-            if (overload.size() == 0) return stored == name;
-            if (stored.size() != full_size()) return false;
-            const ::fixy::TextView stored_name = stored.window(0, name.size()).expect("the size test above");
-            const ::fixy::TextView dot = stored.window(name.size(), 1).expect("the size test above");
-            const ::fixy::TextView stored_overload =
-                stored.window(name.size() + 1, overload.size()).expect("the size test above");
-            return stored_name == name && dot == ::fixy::TextView{"."} && stored_overload == overload;
-        }
-    };
-
-    [[nodiscard]] static NameParts parts_of_(SanitizedName const& name) noexcept {
-        return NameParts{.name = name.value()};
-    }
-
-    [[nodiscard]] static NameParts parts_of_(InternalName const& name) noexcept {
-        return NameParts{.name = name.name(), .overload = name.overload()};
-    }
-
     // The state of the first walk of register_names: the hash of each name
     // that passed, the count of the hashes that the table does not hold, and
     // the first refusal.
@@ -515,14 +539,16 @@ private:
     // hash of check is a held hash or a new hash, so check holds at most
     // SCHEMA_TABLE_CAP hashes.  Complexity: O(log n) and linear in check.
     [[nodiscard]] NameVerdict judge_name_(NameCheck const& check, SchemaHash hash,
-                                          ::fixy::TextView characters) const noexcept {
+                                          SchemaNameParts const& characters) const noexcept {
         for (const SchemaHash earlier : check.hashes.view()) {
             if (earlier == hash) return NameVerdict::collision;
         }
         const ::fixy::Option<LookupName> held = lookup(hash);
         if (held.is_some()) {
             const bool is_same_name = held.match(
-                [characters](LookupName const& found) noexcept { return found.value().view() == characters; },
+                [&characters](LookupName const& found) noexcept {
+                    return characters.is_same_full_name(SchemaNameParts{found.value().view()});
+                },
                 [] noexcept { return false; });
             return is_same_name ? NameVerdict::held : NameVerdict::collision;
         }
@@ -545,12 +571,12 @@ private:
     // characters before its first zero.  Complexity: O(log n) for a held
     // hash, O(n) for a new one.
     [[nodiscard]] ::fixy::Option<SchemaRefusal> write_name_(::foundation::effects::Alloc allocation, SchemaHash hash,
-                                                            NameParts const& parts, NameSource source) {
-        const NameParts characters{.name = characters_of_(parts.name), .overload = parts.overload};
+                                                            SchemaNameParts const& parts, NameSource source) {
+        const SchemaNameParts characters = cut_at_zero_(parts);
         for (const auto& held : entries_.get(position_of_(hash))) {
             if (held->hash == hash) {
                 const ::fixy::TextView stored = stored_characters_of_(*held);
-                if (characters.is_full_name(stored)) return ::fixy::none;
+                if (characters.is_same_full_name(SchemaNameParts{stored})) return ::fixy::none;
                 if (source == NameSource::internal) report_collision_(hash, stored, characters);
                 return ::fixy::some(SchemaRefusal::collision);
             }
@@ -580,6 +606,14 @@ private:
             [name] noexcept { return name; });
     }
 
+    // The parts of a name with the characters of its name before the first
+    // zero.  Only a name that no check read, which the test door plants,
+    // holds a zero.  Complexity: the length of the name.
+    [[nodiscard]] static SchemaNameParts cut_at_zero_(SchemaNameParts const& parts) noexcept {
+        return SchemaNameParts{::fixy::side_as<side::SchemaBaseName>(characters_of_(parts.name())),
+                               ::fixy::side_as<side::SchemaOverload>(parts.overload())};
+    }
+
     // The characters of the name that held keeps.  The stored name ends with
     // its zero, which is no character of the name.
     [[nodiscard]] static ::fixy::TextView stored_characters_of_(SchemaEntry const& held) noexcept {
@@ -589,15 +623,15 @@ private:
 
     // The dot between the name and the overload of a full name, or no
     // character for a name with no overload, for a report.
-    [[nodiscard]] static ::fixy::TextView dot_of_(NameParts const& parts) noexcept {
-        return parts.overload.size() == 0 ? ::fixy::TextView{} : ::fixy::TextView{"."};
+    [[nodiscard]] static ::fixy::TextView dot_of_(SchemaNameParts const& parts) noexcept {
+        return parts.overload().size() == 0 ? ::fixy::TextView{} : ::fixy::TextView{"."};
     }
 
     [[noreturn, gnu::cold]] static void report_collision_(SchemaHash hash, ::fixy::TextView stored,
-                                                          NameParts const& other) noexcept {
+                                                          SchemaNameParts const& other) noexcept {
         ::fixy::fatal("crucible: the schema hash {} names two schemas, {} and {}{}{}.  A second name of one hash is a "
                       "collision of the schema hash",
-                      hash.raw(), stored, other.name, dot_of_(other), other.overload);
+                      hash.raw(), stored, other.name(), dot_of_(other), other.overload());
     }
 
     // An internal name of the hash zero is a defect of the program.  The
@@ -610,25 +644,26 @@ private:
     // A full table refuses an internal name.  A quiet return leaves each later
     // schema unregistered, and the fallback dispatch that results shows far
     // from the registration that was lost.
-    [[noreturn, gnu::cold]] static void report_full_(NameParts const& name) noexcept {
+    [[noreturn, gnu::cold]] static void report_full_(SchemaNameParts const& name) noexcept {
         ::fixy::fatal("crucible: the schema table holds {} names, so it has no place for the schema {}{}{}.  Raise "
                       "SCHEMA_TABLE_CAP in crucible/SchemaTable.h, or register fewer schemas",
-                      SCHEMA_TABLE_CAP, name.name, dot_of_(name), name.overload);
+                      SCHEMA_TABLE_CAP, name.name(), dot_of_(name), name.overload());
     }
 
     // The characters of the full name, and one zero after them, frozen into a
     // HeapText.  The copy allocates through the allocation capability of the
     // caller.  Complexity: the length of the name.
-    [[nodiscard]] static ::fixy::HeapText copy_name_(::foundation::effects::Alloc allocation, NameParts const& parts) {
+    [[nodiscard]] static ::fixy::HeapText copy_name_(::foundation::effects::Alloc allocation,
+                                                     SchemaNameParts const& parts) {
         if (parts.full_size() > SCHEMA_NAME_MAX) [[unlikely]] {
             ::fixy::fatal("crucible: a schema name is longer than SCHEMA_NAME_MAX characters.  Raise SCHEMA_NAME_MAX "
                           "in crucible/SchemaTable.h");
         }
         ::fixy::GrowText copy = ::fixy::mint_grow_text(SCHEMA_NAME_MAX + 1);
-        copy.append(allocation, parts.name).expect("the name fits below the maximum of its text");
-        if (parts.overload.size() != 0) {
+        copy.append(allocation, parts.name()).expect("the name fits below the maximum of its text");
+        if (parts.overload().size() != 0) {
             copy.append(allocation, '.').expect("the dot fits below the maximum of its text");
-            copy.append(allocation, parts.overload).expect("the overload fits below the maximum of its text");
+            copy.append(allocation, parts.overload()).expect("the overload fits below the maximum of its text");
         }
         copy.append(allocation, '\0').expect("the zero fits below the maximum of its text");
         return ::fixy::freeze(static_cast<::fixy::GrowText&&>(copy));
@@ -660,25 +695,31 @@ concept SchemaNameSource = SchemaNameOf<NameType, SchemaTable>;
 // from outside calls it: the C entry of the vessel, the trace loader, and
 // the export, which writes no name that the loader refuses.  So a Sanitized
 // name means the same at each door.  It refuses a hash of zero, an empty
-// name, a name of more than SCHEMA_NAME_MAX characters, and a name that holds
-// a zero.  The result is a Result<SchemaTable::SanitizedName,
-// SchemaNameError>, and the type is deduced, as in the friend declaration of
-// the name.  Complexity: the length of the name.
+// name, a full name of more than SCHEMA_NAME_MAX characters, and a name that
+// holds a zero.  The name is one text, or the name and the overload of an
+// operator of PyTorch, which no caller joins.  The result is a
+// Result<SchemaTable::SanitizedName, SchemaNameError>, and the type is
+// deduced, as in the friend declaration of the name.  Complexity: the length
+// of the name.
+template <SchemaNameBoundary Tag>
+[[nodiscard]] inline auto sanitize_schema_name(SchemaHash hash,
+                                               ::fixy::Tagged<SchemaNameParts, Tag> const& name) noexcept {
+    using Sanitized = ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>;
+    const SchemaNameParts parts = name.value();
+    const ::fixy::Option<SchemaNameError> refusal = schema_name_error(hash, parts);
+    return refusal.match([](SchemaNameError const& refused) noexcept { return Sanitized{::fixy::err(refused)}; },
+                         [parts] noexcept {
+                             if (parts.holds_zero()) return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
+                             return Sanitized{SchemaTable::SanitizedName{
+                                 ::fixy::mint_tagged<Tag>(parts).template retag<::fixy::tags::source::Sanitized>()}};
+                         });
+}
+
+// The same for a name of one text.
 template <SchemaNameBoundary Tag>
 [[nodiscard]] inline auto sanitize_schema_name(SchemaHash hash,
                                                ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept {
-    using Sanitized = ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>;
-    const ::fixy::TextView characters = name.value();
-    const ::fixy::Option<SchemaNameError> refusal = schema_name_error(hash, characters);
-    return refusal.match(
-        [](SchemaNameError const& refused) noexcept { return Sanitized{::fixy::err(refused)}; },
-        [characters] noexcept {
-            if (::fixy::find(characters, '\0').is_some()) {
-                return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
-            }
-            return Sanitized{SchemaTable::SanitizedName{
-                ::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()}};
-        });
+    return sanitize_schema_name(hash, ::fixy::mint_tagged<Tag>(SchemaNameParts{name.value()}));
 }
 
 // The global is sealed before any second thread starts, so a registration
