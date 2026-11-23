@@ -560,13 +560,14 @@ def select_cases(expect: testing.Expect) -> None:
     )
     every = names_of(gate.CONFIGURATIONS)
     expect(
-        "a change of the plugin or of the rule table, and --all-configurations, select each configuration other than "
-        "those of ON_REQUEST, and --v4 adds them",
+        "a change of the plugin or of the rule table selects each configuration, release too, so its round lowers the "
+        "counted ledgers.  --all-configurations selects each configuration other than those of ON_REQUEST, and --v4 "
+        "adds them",
         names_of(gate.select(["utils/tools/quarantine/unit.cpp"], [], False))
         == names_of(gate.select(["utils/rule-table.txt"], [], False))
-        == names_of(gate.select(["notes.txt"], [], True))
-        == [name for name in every if name not in gate.ON_REQUEST]
-        and names_of(gate.select(["notes.txt"], [], True, True)) == every,
+        == names_of(gate.select(["notes.txt"], [], True, True))
+        == every
+        and names_of(gate.select(["notes.txt"], [], True)) == [name for name in every if name not in gate.ON_REQUEST],
     )
     others = tuple(item for item in gate.CONFIGURATIONS if not item.is_parse and item.name != gate.ALWAYS)
     changed = gate.other_runs(others, True, ("guard_rule",))

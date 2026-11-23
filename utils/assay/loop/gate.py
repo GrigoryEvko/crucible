@@ -30,9 +30,13 @@ Selection
           - default for each change
           - release-v3 and tsan for a change of a C++ file or of a build
             file.  The configuration release compiles for the host level
-            (x86-64-v4 on luks-a), and it runs only with --v4
-            (ON_REQUEST).  --all-configurations does not add it.  The code
-            of v3 runs on v4, and release-v3 holds the Release flags.  ThreadSanitizer gives
+            (x86-64-v4 on luks-a), and it runs only with --v4, with a
+            lower, and for a change of EVERY_PREFIXES (ON_REQUEST).
+            --all-configurations does not add it.  The code of v3 runs on
+            v4, and release-v3 holds the Release flags.  A change of the
+            plugin or of the rule table can change the count of a finding
+            in a code arm of v4, and its round lowers the counted ledgers,
+            so it builds release too.  ThreadSanitizer gives
             incorrect errors of
             -Wmaybe-uninitialized that the other builds do not give, also
             for a change of a test.  release-v3 compiles for x86-64-v3, so
@@ -829,8 +833,8 @@ ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
 # selection).
 ALWAYS = "default"
-# The configurations of objects that run only with --v4, and not with --all-configurations: release compiles for the
-# level of the host, x86-64-v4 on luks-a (the selection).
+# The configurations of objects that run only with --v4, a lower or a change of EVERY_PREFIXES, and not with
+# --all-configurations: release compiles for the level of the host, x86-64-v4 on luks-a (the selection).
 ON_REQUEST = frozenset({"release"})
 # The preset of the vessel, the targets that the gate builds in its build, the label of the vessel tests, and the
 # prefix of the paths of the vessel (the vessel).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
@@ -1209,7 +1213,8 @@ def select(
         changed: The paths that the change touches
         parse_presets: The parse presets that run: those that `loop syntax --changed` names, and each parse preset
             when the change touches the inputs of a rule of COUNTED_RULES
-        is_every: Select each configuration other than those of ON_REQUEST
+        is_every: Select each configuration other than those of ON_REQUEST.  A change of EVERY_PREFIXES selects
+            each configuration, those of ON_REQUEST too
         is_v4: Select each configuration of ON_REQUEST too
 
     Complexity: linear in the paths and the names.
@@ -1225,6 +1230,7 @@ def select(
             names.add("bench-fuzz")
         if path.startswith(EVERY_PREFIXES):
             is_every = True
+            names.update(ON_REQUEST)
     names.update(preset for preset in parse_presets if preset in BY_NAME)
     if is_v4:
         names.update(ON_REQUEST)

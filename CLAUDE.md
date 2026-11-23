@@ -100,6 +100,7 @@ python3 utils/bin/loop land        # in your work tree: land each commit of your
 - The coordinator gives the options in the main work tree: `python3 utils/bin/loop land --series BRANCH [OPTIONS] --`.
 - `--all-configurations` builds each configuration other than `release`, for a change of a header that most units include.
 - `--v4` also builds and tests the preset `release` at the level of the host. No other option adds it.
+- A lower, and a change of the plugin or the rule table, also build `release`, so their round can lower the counted ledgers.
 - One request at a time holds main. Its run uses each slot of the host, and the next request waits.
 - Work in a git work tree under `.worktrees/`. Do not edit the main work tree.
 
@@ -110,7 +111,7 @@ The gate of `loop land` is the check that counts. It builds the configurations t
 | Preset | Build directory | Purpose |
 |---|---|---|
 | `default` | `build` | Debug, ASan, and UBSan on the tests |
-| `release` | `build-release` | Release, `-O3 -march=native`. Only with `--v4` |
+| `release` | `build-release` | Release, `-O3 -march=native`. Only with `--v4`, a lower, or a change of the plugin or the rule table |
 | `release-v3` | `build-release-v3` | Release, `-O3 -march=x86-64-v3`: the AVX2 arms at the width of 256 bits |
 | `tsan` | `build-tsan` | ThreadSanitizer |
 | `ubsan-strict` | `build-ubsan-strict` | Full UBSan on each target |
