@@ -1656,6 +1656,7 @@ public:
               typename Body>
         requires(detail::holds_loan_of(^^PS, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] static constexpr auto read(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&& handle,
                                              Body&& body) {
         core_(handle).require_live_();
@@ -1670,6 +1671,15 @@ public:
             return ::foundation::core::Record{std::move(value), std::move(held)};
         }
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <typename Tag, typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
+              typename Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>) && (detail::holds_loan_of(^^PS, ^^Tag))
+                 && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
+    static void read(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>&& handle,
+                     Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 };
 
 namespace detail {
@@ -1879,9 +1889,18 @@ public:
     template <typename Tag, typename Self, typename Body>
         requires(!std::is_reference_v<Self>) && (detail::holds_loan_of(^^PS, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] constexpr auto read(this Self&& self, Body&& body) {
         return HandleFactory::template read<Tag>(std::move(self), std::forward<Body>(body));
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <typename Tag, typename Self, typename Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>) && (!std::is_reference_v<Self>)
+                 && (detail::holds_loan_of(^^PS, ^^Tag))
+                 && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<PS, Tag>>
+    void read(this Self&& self, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 };
 
 }  // namespace detail

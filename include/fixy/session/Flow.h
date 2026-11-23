@@ -292,6 +292,7 @@ public:
     // value gives a Record of that value and the reader.
     template <class Body>
         requires ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
+              && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] auto
     read(Body&& body) && noexcept(::foundation::permissions::detail::read_view_door_nothrow_v<
                                   ::foundation::permissions::SharedPermissionGuard<Tag, Brand>, Body>) {
@@ -303,6 +304,13 @@ public:
             return ::foundation::core::Record{std::move(value), SharedReader{std::move(guard)}};
         }
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <class Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>)
+                 && ::foundation::permissions::ReadViewBody<Body, Tag, Brand>
+    void read(Body&& body) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     [[nodiscard]] bool holds_share() const noexcept { return guard_.holds_share(); }
 
@@ -1431,6 +1439,7 @@ public:
     template <class Tag, class Set, class Body>
         requires(detail::holds_loan_of(^^Set, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] static constexpr auto read_slot(HoldSlots<Set>& slots, Body&& body) noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
                                                                     Body>) {
@@ -1445,6 +1454,13 @@ public:
             return value;
         }
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <class Tag, class Set, class Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>) && (detail::holds_loan_of(^^Set, ^^Tag))
+                 && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
+    static void read_slot(HoldSlots<Set>& slots, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // Spends the slots of a set with no loan open, and gives every token
     // back, in a Record in the order of the set.
@@ -1660,6 +1676,7 @@ public:
     template <class Tag, class Body>
         requires(detail::holds_loan_of(^^Set, ^^Tag))
              && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
     [[nodiscard]] constexpr auto read(Body&& body) && noexcept(
         ::foundation::permissions::detail::read_view_door_nothrow_v<detail::hold_slot_t<detail::element_of_t<Set, Tag>>,
                                                                     Body>) {
@@ -1674,6 +1691,13 @@ public:
             return ::foundation::core::Record{std::move(value), std::move(held)};
         }
     }
+
+    // A body that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+    template <class Tag, class Body>
+        requires(!::foundation::linear::HoldsNoLinearValue<Body>) && (detail::holds_loan_of(^^Set, ^^Tag))
+                 && ::foundation::permissions::ReadViewBody<Body, Tag, detail::element_brand_t<Set, Tag>>
+    void read(Body&& body) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class Tag, class T>
         requires detail::HoldCanRelease<Set, Tag, T>

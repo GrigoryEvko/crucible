@@ -4583,11 +4583,16 @@ fixy_neg_compile_test(neg_session_hold_lend_without_token
 # object for the call and hands it back, so a body cannot end the share
 # or spend the hold through a capture while the view lives.
 fixy_neg_compile_test(neg_session_shared_reader_read_by_name
-  "passing .fixy::session::SharedReader<.anonymous.::Region"
-  "in call to .auto fixy::session::SharedReader<Tag, Brand>::read\\(Body&&\\) &&")
+  "passing .fixy::session::SharedReader<.anonymous.::Region.* as .this. argument discards qualifiers"
+  "candidate 1: .auto fixy::session::SharedReader<Tag, Brand>::read\\(Body&&\\) &&")
 fixy_neg_compile_test(neg_session_hold_read_by_name
   "as .this. argument discards qualifiers"
-  "in call to .constexpr auto fixy::session::PermHold<foundation::permissions::PermSet<Tags \\.\\.\\.> >::read\\(Body&&\\) &&")
+  "candidate 1: .constexpr auto fixy::session::PermHold<foundation::permissions::PermSet<Tags \\.\\.\\.> >::read\\(Body&&\\) &&")
+# A body of a read through a hold holds a linear value by value.  The read
+# calls the body, and a call is no consume, so the read refuses the body.
+fixy_neg_compile_test(neg_session_hold_read_linear_capture
+  "use of deleted function .void fixy::session::PermHold<foundation::permissions::PermSet<Tags \\.\\.\\.> >::read\\(Body&&\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
 
 # A read of a region the hold does not borrow.  read is gated by the set.
 fixy_neg_compile_test(neg_session_hold_read_without_borrow

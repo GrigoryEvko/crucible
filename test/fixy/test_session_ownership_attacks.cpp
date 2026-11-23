@@ -899,6 +899,21 @@ static_assert(!CanReadThrough<Hold<>, X>, "a borrower that released its loan rea
 static_assert(!CanReadThrough<Hold<TokenX>, X>, "an owner reads through its token, not through a loan");
 static_assert(!CanReadThrough<Hold<LentX>, X>, "a lender reads nothing while its loan is out");
 
+// A body that holds a linear value by value, and a body that holds none.  A
+// read calls its body, and a call is no consume, so the read of a hold and
+// the read of a share refuse the first body.
+template <class H, class Tag, class Body>
+concept CanReadThroughWith = requires(H hold, Body body) { std::move(hold).template read<Tag>(std::move(body)); };
+template <class Reader, class Body>
+concept CanShareReadWith = requires(Reader reader, Body body) { std::move(reader).read(std::move(body)); };
+using HoldsTokenBody = decltype([held = std::declval<TokenY>()](auto const&) noexcept { static_cast<void>(held); });
+using HoldsNoTokenBody = decltype([](auto const&) noexcept {});
+using BrandedShare = sess::SharedReader<X, TestBrand>;
+static_assert(!CanReadThroughWith<Hold<BorrowedX>, X, HoldsTokenBody>, "a read of a hold refuses a linear body");
+static_assert(CanReadThroughWith<Hold<BorrowedX>, X, HoldsNoTokenBody>);
+static_assert(!CanShareReadWith<BrandedShare, HoldsTokenBody>, "a read of a share refuses a linear body");
+static_assert(CanShareReadWith<BrandedShare, HoldsNoTokenBody>);
+
 namespace {
 
 // The loan ends when the release comes back.  The borrower reads through

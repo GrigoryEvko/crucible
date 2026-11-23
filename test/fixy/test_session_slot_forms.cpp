@@ -119,6 +119,13 @@ template <template <class, class, class> class Marker>
     return 0;
 }
 
+// A read of the region through a handle with the body Body.  A read calls its
+// body, and a call is no consume, so the read refuses a body that holds a
+// linear value by value.
+template <class Handle, class Body>
+concept CanReadRegionWith =
+    requires(Handle handle, Body body) { std::move(handle).template read<Region>(std::move(body)); };
+
 // ── A loan and its release ───────────────────────────────────────────
 //
 // The lender lends the region and waits for the release.  The borrower
@@ -155,6 +162,11 @@ struct LoanWire {
     static_assert(
         fp::perm_set_equal(^^typename decltype(borrowing)::perm_set, ^^fp::PermSet<s::BorrowedIn<Region, Brand>>));
     const int region_value = lender_waits.resource().region_value;
+    using HoldsTokenBody = decltype([held = std::declval<fp::Permission<Region, Brand>>()](
+                                        fp::ReadView<Region, Brand> const&) noexcept { static_cast<void>(held); });
+    using HoldsNoTokenBody = decltype([](fp::ReadView<Region, Brand> const&) noexcept {});
+    static_assert(!CanReadRegionWith<decltype(borrowing), HoldsTokenBody>, "a read of a handle refuses a linear body");
+    static_assert(CanReadRegionWith<decltype(borrowing), HoldsNoTokenBody>);
     auto [seen, reading] = std::move(borrowing).template read<Region>(
         [region_value](fp::ReadView<Region, Brand> const&) noexcept { return region_value; });
     auto borrower_done = std::move(reading).send(
