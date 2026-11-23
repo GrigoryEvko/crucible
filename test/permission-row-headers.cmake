@@ -7,9 +7,6 @@
 set(CRUCIBLE_PERMISSION_ROW_HEADERS
     crucible/KernelCache.h
     crucible/PermissionedMetaLog.h
-    crucible/cntp/BackpressureRuntime.h
-    crucible/cntp/ConnectionPoolRuntime.h
-    crucible/cntp/PathSwap.h
     crucible/observe/Metrics.h
     crucible/perf/detail/BpfHub.h
     crucible/warden/Quarantine.h

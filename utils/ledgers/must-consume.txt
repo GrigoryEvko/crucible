@@ -3,7 +3,6 @@
 format 1
 rule must-consume
 reason bench/ | the benches hold the endpoints of a channel and a token for the run of a bench, and drop them at the end
-reason include/crucible/ | the runtime mints a gate token that ends at the end of its scope, and it reads a linear handle in std::expected through an accessor
 reason include/fixy/ | the wrappers move a token out of a field of a marked class or out of a tuple through std::get, and consume an upgrade behind a test of its option
 reason include/fixy/concurrent/ | the fork consumes its parent token in a temporary that GCC folds, and the drained access consumes an upgrade behind a test of its option
 reason include/fixy/session/ | the session doors move each handle, value and token out of a field of a marked class or through a closure, which the rule does not follow
@@ -11,7 +10,6 @@ reason src/ | each stage of the background pipeline drops its endpoint of a chan
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 2 | - | -
-include/crucible/cntp/ | unconsumed | 54 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
 include/fixy/ | unconsumed | 3 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances.  The scope door test of test_shared_region shares a region of its own scope tag, so the constructor of SharedRegion has one more instance that takes the region into its members
 include/fixy/concurrent/ | unconsumed | 9 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
 include/fixy/session/ | borrow-move-out | 2 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines
