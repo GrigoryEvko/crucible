@@ -200,12 +200,28 @@ void slots_read_the_written_lane(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  slots_read_the_written_lane: PASSED\n");
 }
 
+// A write of one slot from another slot copies the lane, in one block, from
+// one block to the other, and from a const block.
+void slots_copy_a_lane(::fixy::TestRunnerCtx const& test) noexcept {
+    TensorMeta meta{};
+    meta.sizes[1] = ::crucible::tensor_dim(7);
+    meta.sizes[0] = meta.sizes[1];
+    meta.strides[3] = meta.sizes[1];
+    TensorMeta const source = meta;
+    meta.strides[4] = source.sizes[0];
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.sizes[0]) == 7);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[3]) == 7);
+    CRUCIBLE_TEST_ASSERT(test, ::crucible::raw_tensor_dim(meta.strides[4]) == 7);
+    pass(test, "  slots_copy_a_lane: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     routes_refuse_a_lane_past_the_bound(test);
     slots_read_the_written_lane(test);
+    slots_copy_a_lane(test);
     pass(test, "test_tensor_dim_bound: all tests passed\n");
     return 0;
 }

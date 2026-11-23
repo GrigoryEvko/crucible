@@ -2535,6 +2535,12 @@ crucible_neg_compile_test(neg_tensor_dim_array_protocol_decode
 crucible_neg_compile_test(neg_tensor_dim_array_bit_cast
   "no matching function for call to .bit_cast<crucible::TensorDimArray>\\(const foundation::core::FixedArray<long int, 8>&\\)."
   "the expression .is_plain_at\\(.*\\(\\^\\^ T, 0\\) \\[with T = crucible::TensorDimArray\\]. evaluated to .false.")
+# A write of one Slot from another copies the lane.  A ConstSlot names a lane
+# of a const block, so its copy assignment is deleted: the implicit one wrote
+# no lane and gave no error.
+crucible_neg_compile_test(neg_tensor_dim_const_slot_write
+  "error: use of deleted function .void crucible::TensorDimArray::ConstSlot::operator=\\(const crucible::TensorDimArray::ConstSlot&\\)."
+  "a ConstSlot reads a lane of a const block, and no write of a lane goes through it")
 
 # TensorMeta::data_ptr stores
 # ExternalDataPtr = Tagged<void*, source::External>.  Two HS14

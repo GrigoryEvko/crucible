@@ -70,6 +70,12 @@ public:
     // of a block, and the lane holds a TensorDim.
     class Slot {
     public:
+        constexpr Slot(Slot const&) noexcept = default;
+
+        // A write of one slot from another slot copies the lane.  The source
+        // lane holds a TensorDim, so the copy keeps the bound.
+        constexpr void operator=(Slot const& source) const noexcept { *this = static_cast<TensorDim>(source); }
+
         constexpr void operator=(TensorDim dim) const noexcept {
             int64_t const written = dim.value();
             array_->lanes_.with_element(lane_, [written](int64_t& held) noexcept { held = written; });
@@ -97,6 +103,10 @@ public:
     // Only that subscript makes one, so the lane holds a TensorDim.
     class ConstSlot {
     public:
+        constexpr ConstSlot(ConstSlot const&) noexcept = default;
+        void operator=(ConstSlot const&) = delete("a ConstSlot reads a lane of a const block, and no write of a "
+                                                  "lane goes through it");
+
         [[nodiscard]] constexpr int64_t value() const noexcept { return *lane_; }
 
         // The lane holds a TensorDim: the one write of a lane takes a
