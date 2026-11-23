@@ -661,11 +661,11 @@ constexpr SchemaHash kMulHash{0xBBBB444455556666ULL};
 
 // A reserve that holds the hash of aten::mul for another name, and a reserve
 // that holds it for aten::mul.
-static constexpr ::fixy::Option<SchemaNameParts> mul_hash_for_other_name(SchemaHash hash) noexcept {
+static constexpr ::fixy::Option<SchemaNameParts> find_other_name_on_mul_hash(SchemaHash hash) noexcept {
     if (hash != kMulHash) return ::fixy::Option<SchemaNameParts>{::fixy::none};
     return ::fixy::some(SchemaNameParts{::fixy::TextView{"aten::other"}});
 }
-static constexpr ::fixy::Option<SchemaNameParts> mul_hash_for_mul(SchemaHash hash) noexcept {
+static constexpr ::fixy::Option<SchemaNameParts> find_mul_name_on_mul_hash(SchemaHash hash) noexcept {
     if (hash != kMulHash) return ::fixy::Option<SchemaNameParts>{::fixy::none};
     return ::fixy::some(SchemaNameParts{::fixy::TextView{"aten::mul"}});
 }
@@ -680,8 +680,8 @@ static constexpr ::fixy::Option<SchemaNameParts> mul_hash_for_mul(SchemaHash has
 static void
 test_schema_name_reserved_for_other_name_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
     global_schema_table().clear(::foundation::effects::testing::test());
-    constexpr SchemaNameReserve kOtherName{SchemaNameSearchOf<&mul_hash_for_other_name>{}};
-    constexpr SchemaNameReserve kSameName{SchemaNameSearchOf<&mul_hash_for_mul>{}};
+    constexpr SchemaNameReserve kOtherName{SchemaNameSearchOf<&find_other_name_on_mul_hash>{}};
+    constexpr SchemaNameReserve kSameName{SchemaNameSearchOf<&find_mul_name_on_mul_hash>{}};
     CRUCIBLE_TEST_ASSERT(kTest, is_refused_as(load_trace(kTestIo, kVigilForeground, trace_path, kOtherName),
                                               TraceLoadError::NameReserved));
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == 0);

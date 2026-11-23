@@ -392,7 +392,7 @@ enum class OutsideNameRefusal : std::uint8_t {
 // result in its schema cache, and crucible_mode.py keeps the hash of each
 // name.
 [[nodiscard]] constexpr ::fixy::Option<crucible::SchemaNameParts>
-aten_reserved_name(crucible::SchemaHash hash) noexcept {
+find_aten_reserved_name(crucible::SchemaHash hash) noexcept {
     // The parts borrow the texts of the program image, so the match reads a
     // named Option.
     const ::fixy::Option<AtenOpIndex> found = aten_op_index_of(hash);
@@ -404,7 +404,7 @@ aten_reserved_name(crucible::SchemaHash hash) noexcept {
 // generated table, with the name of the operator.  The door of an outside
 // name refuses a different name of such a hash, and a load of a trace that
 // registers its names takes this reserve too.
-inline constexpr crucible::SchemaNameReserve kAtenNameReserve{crucible::SchemaNameSearchOf<&aten_reserved_name>{}};
+inline constexpr crucible::SchemaNameReserve kAtenNameReserve{crucible::SchemaNameSearchOf<&find_aten_reserved_name>{}};
 
 // The result of register_outside_schema_name.
 using OutsideNameRegistration = ::fixy::Result<::fixy::Unit, OutsideNameRefusal>;

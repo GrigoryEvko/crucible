@@ -385,7 +385,7 @@ public:
 
     // The reserve of a program that reserves no hash.
     [[nodiscard]] static constexpr SchemaNameReserve none() noexcept {
-        return SchemaNameReserve{SchemaNameSearchOf<&no_reserved_name_>{}};
+        return SchemaNameReserve{SchemaNameSearchOf<&find_no_reserved_name_>{}};
     }
 
     // True when the program reserves the hash for a full name other than the
@@ -399,7 +399,8 @@ public:
     }
 
 private:
-    [[nodiscard]] static constexpr ::fixy::Option<SchemaNameParts> no_reserved_name_(SchemaHash /*hash*/) noexcept {
+    [[nodiscard]] static constexpr ::fixy::Option<SchemaNameParts>
+    find_no_reserved_name_(SchemaHash /*hash*/) noexcept {
         return ::fixy::none;
     }
 
