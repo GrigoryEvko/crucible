@@ -292,8 +292,9 @@ enum {
     // name that is empty or longer than 4096 bytes (SCHEMA_NAME_MAX of
     // crucible/SchemaTable.h).  The table is as it was.
     CRUCIBLE_SCHEMA_NAME_REFUSED = 1,
-    // The table holds a different name for the hash.  It keeps that name, and
-    // it refuses this one.
+    // The table holds a different name for the hash, or an operator of the
+    // generated table of the vessel has the hash and a different name.  The
+    // tables keep each name that they hold, and they refuse this one.
     CRUCIBLE_SCHEMA_NAME_COLLISION = 2,
     // The table holds the most names that it can hold, and the hash is not
     // one of them.  It keeps each name, and it refuses this one.

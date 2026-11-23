@@ -65,6 +65,7 @@
 // for `as_vigil_typed`, `as_meta_typed` or `as_array_typed` finds every
 // ABI-crossing site in O(1).
 
+#include "aten_op_table.h"
 #include "vessel_api.h"
 
 #include <crucible/MerkleDag.h>
@@ -321,36 +322,148 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 
 // ── Schema-name registration ───────────────────────────────────────
 //
-// crucible_register_schema_name reads the C text of its name, and gives the
-// code of register_schema_name_typed.  The name passes
-// crucible::sanitize_schema_name, the one validator of a schema name, which
-// the trace loader calls too.  A hash of zero, or a name that is empty,
-// longer than SCHEMA_NAME_MAX or that holds a zero byte, gives
-// CRUCIBLE_SCHEMA_NAME_REFUSED, and the tables stay as they were.  The C
-// entry reads its name up to the first zero, and the validator refuses the
-// zero for each other caller.
-// Its registration gives CRUCIBLE_SCHEMA_NAME_REGISTERED,
-// CRUCIBLE_SCHEMA_NAME_COLLISION when the table holds a different name of
-// the hash, or CRUCIBLE_SCHEMA_NAME_FULL when the table holds
-// SCHEMA_TABLE_CAP names and the hash is not one of them.  The table then
-// keeps each name that it holds.
+// A schema name from outside the process comes to two doors of the vessel:
+// the C entry crucible_register_schema_name, and the boxed fallback, which
+// reads the name of an operator of PyTorch.  A library or a Python module can
+// define an operator with any name at run time, so the name of an operator is
+// outside data too.  register_outside_schema_name is the one door of such a
+// name, and no name from outside ends the process there.  It gives a refusal,
+// and the tables stay as they were, for these names:
+//   - A name that crucible::sanitize_schema_name refuses: a hash of zero, and
+//     a name that is empty, longer than SCHEMA_NAME_MAX or that holds a zero
+//     byte.
+//   - A name with a reserved hash (the reserved hashes below).
+//   - A name whose hash the tables hold with a different name.
+//   - A name with a new hash, when the table holds SCHEMA_TABLE_CAP names.
+//
+// The reserved hashes.  The unboxed kernel of an operator of the generated
+// table (aten_op_table.h) registers the name of the operator as an internal
+// name when the operator first records.  An internal name that collides with
+// a held name ends the process (SchemaTable::register_name).  So the door
+// refuses an outside name that has the hash of an operator of the table and a
+// different name, and no later internal registration finds an outside name on
+// its hash.  The same name with the same hash names the same operator, and
+// the door takes it.
 
-// The function is a template on the Vigil, because this header names the
-// Vigil only through a declaration.  Its caller includes crucible/Vigil.h.
+// The refusal of a schema name from outside the process.
+enum class OutsideNameRefusal : std::uint8_t {
+    // The four refusals of crucible::SchemaNameError.
+    zero_hash,
+    empty,
+    too_long,
+    holds_zero,
+    // An operator of the generated table has the hash and a different name.
+    reserved,
+    // The tables hold a different name of the hash.
+    collision,
+    // The table holds SCHEMA_TABLE_CAP names, and the hash is not one of them.
+    full,
+};
+
+// The refusal of the door for a refusal of the validator.
+[[nodiscard]] constexpr OutsideNameRefusal refusal_of(crucible::SchemaNameError refused) noexcept {
+    switch (refused) {
+        case crucible::SchemaNameError::zero_hash:
+            return OutsideNameRefusal::zero_hash;
+        case crucible::SchemaNameError::empty:
+            return OutsideNameRefusal::empty;
+        case crucible::SchemaNameError::too_long:
+            return OutsideNameRefusal::too_long;
+        case crucible::SchemaNameError::holds_zero:
+            return OutsideNameRefusal::holds_zero;
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+// True when name is the full name of the operator of row: its name, and a
+// dot and its overload when the overload has characters.  Complexity: the
+// length of the name.
+[[nodiscard]] constexpr bool is_full_name_of(OpEntry const& row, ::fixy::TextView name) noexcept {
+    const std::size_t base_size = row.name.size();
+    const std::size_t overload_size = row.overload.size();
+    if (overload_size == 0) return name == row.name;
+    if (name.size() != base_size + 1 + overload_size) return false;
+    const ::fixy::TextView base = name.window(0, base_size).expect("the size test above");
+    const ::fixy::TextView dot = name.window(base_size, 1).expect("the size test above");
+    const ::fixy::TextView overload = name.window(base_size + 1, overload_size).expect("the size test above");
+    return base == row.name && dot == ::fixy::TextView{"."} && overload == row.overload;
+}
+
+// True when an operator of the generated table has the hash and a name other
+// than name (the reserved hashes).  Complexity: linear in the rows of the
+// table, one time for each name from outside.  The fallback keeps the result
+// in its schema cache, and crucible_mode.py keeps the hash of each name.
+[[nodiscard]] constexpr bool is_reserved_for_other_name(crucible::SchemaHash hash, ::fixy::TextView name) noexcept {
+    for (const ::fixy::View<OpEntry const> part : aten_op_parts) {
+        for (const OpEntry& row : part) {
+            if (row.schema_hash == hash.raw()) return !is_full_name_of(row, name);
+        }
+    }
+    return false;
+}
+
+// The result of register_outside_schema_name.
+using OutsideNameRegistration = ::fixy::Result<::fixy::Unit, OutsideNameRefusal>;
+
+// Registers a schema name from outside the process, or gives its refusal (the
+// list above).  The name crossed a foreign ABI: the C text of a ctypes caller,
+// or a text of PyTorch.  The function is a template on the Vigil, because
+// this header names the Vigil only through a declaration.  Its caller
+// includes crucible/Vigil.h.  Complexity: the length of the name, and linear
+// in the rows of the generated table.
+template <class VigilType>
+    requires std::same_as<VigilType, crucible::Vigil>
+[[nodiscard, gnu::cold]] OutsideNameRegistration
+register_outside_schema_name(VigilType& vigil, crucible::SchemaHash hash,
+                             ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::ABIBoundary> const& name) noexcept {
+    return crucible::sanitize_schema_name(hash, name)
+        .match(
+            [&vigil, hash](crucible::SchemaTable::SanitizedName sanitized) noexcept -> OutsideNameRegistration {
+                if (is_reserved_for_other_name(hash, sanitized.value()))
+                    return ::fixy::err(OutsideNameRefusal::reserved);
+                const crucible::SchemaRegistration registration = vigil.register_schema_name(hash, sanitized);
+                if (crucible::is_collision(registration)) return ::fixy::err(OutsideNameRefusal::collision);
+                if (crucible::is_full(registration)) return ::fixy::err(OutsideNameRefusal::full);
+                return ::fixy::Unit{};
+            },
+            [](crucible::SchemaNameError refused) noexcept -> OutsideNameRegistration {
+                return ::fixy::err(refusal_of(refused));
+            });
+}
+
+// The code of crucible_register_schema_name for a refusal of the door: a
+// name that the validator refuses gives CRUCIBLE_SCHEMA_NAME_REFUSED, a
+// reserved hash and a collision give CRUCIBLE_SCHEMA_NAME_COLLISION, and a
+// full table gives CRUCIBLE_SCHEMA_NAME_FULL.
+[[nodiscard]] constexpr int schema_name_code_of(OutsideNameRefusal refused) noexcept {
+    switch (refused) {
+        case OutsideNameRefusal::zero_hash:
+        case OutsideNameRefusal::empty:
+        case OutsideNameRefusal::too_long:
+        case OutsideNameRefusal::holds_zero:
+            return CRUCIBLE_SCHEMA_NAME_REFUSED;
+        case OutsideNameRefusal::reserved:
+        case OutsideNameRefusal::collision:
+            return CRUCIBLE_SCHEMA_NAME_COLLISION;
+        case OutsideNameRefusal::full:
+            return CRUCIBLE_SCHEMA_NAME_FULL;
+        default:
+            ::fixy::unreachable();
+    }
+}
+
+// crucible_register_schema_name reads the C text of its name up to the first
+// zero, and gives the code of this function: CRUCIBLE_SCHEMA_NAME_REGISTERED,
+// or the code of the refusal of register_outside_schema_name.
 template <class VigilType>
     requires std::same_as<VigilType, crucible::Vigil>
 [[nodiscard, gnu::cold]] int register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
                                                         ::fixy::TextView name) noexcept {
-    const crucible::SchemaHash hash{schema_hash};
-    return crucible::sanitize_schema_name(hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name))
-        .match(
-            [&vigil, hash](crucible::SchemaTable::SanitizedName sanitized) noexcept -> int {
-                const crucible::SchemaRegistration registration = vigil.register_schema_name(hash, sanitized);
-                if (crucible::is_collision(registration)) return CRUCIBLE_SCHEMA_NAME_COLLISION;
-                if (crucible::is_full(registration)) return CRUCIBLE_SCHEMA_NAME_FULL;
-                return CRUCIBLE_SCHEMA_NAME_REGISTERED;
-            },
-            [](crucible::SchemaNameError) noexcept -> int { return CRUCIBLE_SCHEMA_NAME_REFUSED; });
+    return register_outside_schema_name(vigil, crucible::SchemaHash{schema_hash},
+                                        ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name))
+        .match([](::fixy::Unit) noexcept { return int{CRUCIBLE_SCHEMA_NAME_REGISTERED}; },
+               [](OutsideNameRefusal refused) noexcept { return schema_name_code_of(refused); });
 }
 
 // ── Recording trust ladder ─────────────────────────────────────────

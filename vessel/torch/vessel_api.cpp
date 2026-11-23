@@ -492,9 +492,10 @@ int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const 
     const size_t len = ::strnlen(name, crucible::SCHEMA_NAME_MAX + 1);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-    // register_schema_name_typed gives the name to sanitize_schema_name, the
-    // sanitizer of the boundary.  A sealed global table sends the name to
-    // the late table, so no seal drops it.
+    // register_schema_name_typed gives the name to the door of an outside
+    // name (register_outside_schema_name of vessel_api_typed.h), which runs
+    // sanitize_schema_name, the sanitizer of the boundary.  A sealed global
+    // table sends the name to the late table, so no seal drops it.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the C caller gives the name as a pointer, and strnlen gave its length")
     const ::fixy::TextView name_text = ::fixy::mint_foreign_text(name, len);
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -503,8 +504,10 @@ int crucible_register_schema_name(CrucibleHandle h, uint64_t schema_hash, const 
     // claim of this Vigil.  The Vigil mints that context for the write, and
     // the mint ends the process on any other thread.  A different name of a
     // held hash comes back as a collision, and the table keeps its first name.
-    // A new hash in a full table comes back as full, and the table keeps each
-    // name that it holds.
+    // A different name of the hash of an operator of the generated table
+    // comes back as a collision too, and the tables stay as they were.  A new
+    // hash in a full table comes back as full, and the table keeps each name
+    // that it holds.
     return crucible::vessel::register_schema_name_typed(*crucible::vessel::as_vigil_typed(h).value(), schema_hash,
                                                         name_text);
 }

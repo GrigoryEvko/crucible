@@ -703,6 +703,48 @@ void test_schema_name_full_code() {
     crucible::late_schema_table().clear(::foundation::effects::testing::test());
 }
 
+// An operator of the generated table reserves its schema hash.  The door of
+// an outside name refuses a different name of that hash with the collision
+// code, and it takes the full name of the operator.  So the internal
+// registration of the operator, which its unboxed kernel makes when the
+// operator first records, finds no outside name on its hash, and the process
+// lives.  A door with no reserved hashes registers the outside name, and the
+// internal registration then ends the process at the collision.
+void test_schema_name_reserved_hash() {
+    constexpr crucible::vessel::OpEntry plain = crucible::vessel::aten_op_row<0>();
+    constexpr crucible::vessel::OpEntry overloaded = crucible::vessel::aten_op_row<1>();
+    static_assert(plain.overload.size() == 0 && overloaded.overload.size() != 0,
+                  "the first row has no overload, and the second row has one");
+    const crucible::SchemaHash plain_hash{plain.schema_hash};
+    crucible::Vigil vigil;
+
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, plain.schema_hash, ::fixy::TextView{"crucible::other"})
+               == CRUCIBLE_SCHEMA_NAME_COLLISION,
+           "a different name of the hash of an operator of the table gives the collision code");
+    EXPECT(crucible::vessel::schema_name_typed(plain_hash).is_none(),
+           "a refused name of a reserved hash leaves the tables as they were");
+    vigil.register_schema_name(plain_hash, ::fixy::mint_tagged<::fixy::tags::source::FromInternal>(plain.name));
+    const auto held_name = crucible::vessel::schema_name_typed(plain_hash);
+    const bool holds_operator =
+        held_name.match([&plain](TypedSchemaName const& found) noexcept { return found.value().view() == plain.name; },
+                        [] noexcept { return false; });
+    EXPECT(holds_operator, "the internal registration of the operator lands, and the process lives");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, plain.schema_hash, plain.name)
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "the name of the operator registers from outside too");
+
+    ::fixy::FixedText<crucible::SCHEMA_NAME_MAX> full_name{};
+    EXPECT(full_name.append(overloaded.name).is_ok() && full_name.append('.').is_ok()
+               && full_name.append(overloaded.overload).is_ok(),
+           "the text holds the full name of the second row");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, overloaded.schema_hash, overloaded.name)
+               == CRUCIBLE_SCHEMA_NAME_COLLISION,
+           "the name of an operator with no overload is a different name of the hash of its overload");
+    EXPECT(crucible::vessel::register_schema_name_typed(vigil, overloaded.schema_hash, full_name.view())
+               == CRUCIBLE_SCHEMA_NAME_REGISTERED,
+           "the full name of an operator with an overload registers from outside");
+}
+
 void test_handle_distinct_pointers() {
     // Two storage blocks give two pointers, and the wrapper must keep
     // them apart rather than collapse or reuse a value.
@@ -870,6 +912,7 @@ int main() {
     test_schema_name_typed();
     test_schema_name_registration_codes();
     test_schema_name_full_code();
+    test_schema_name_reserved_hash();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();

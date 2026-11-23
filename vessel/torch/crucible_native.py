@@ -81,7 +81,8 @@ class SchemaNameResult(enum.IntEnum):
     REGISTERED = 0
     # The call gave no name to register.
     REFUSED = 1
-    # The table holds a different name for the hash, and it keeps that name.
+    # The table holds a different name for the hash, or an operator of the generated table has the hash and a
+    # different name.  The tables keep each name that they hold.
     COLLISION = 2
     # The table holds the most names that it can hold, and the hash is not one of them.
     FULL = 3
