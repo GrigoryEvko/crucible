@@ -9,15 +9,15 @@
 
 #include <cstdint>
 
-// The tag of the one door of the slot, which builds the first slot.
-struct FirstSlot {};
-
+// The one door of the slot builds the first slot with a key, so it passes
+// the walk of the doors.
 class MemberTemplateSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit MemberTemplateSlot(std::uint32_t raw) noexcept : raw_{raw} {}
 
 public:
-    [[nodiscard]] static constexpr MemberTemplateSlot first(FirstSlot /*tag*/) noexcept {
+    [[nodiscard]] static constexpr MemberTemplateSlot
+    first(::foundation::core::niche_key<MemberTemplateSlot> const&) noexcept {
         return MemberTemplateSlot{1u};
     }
     template <std::uint32_t Raw>
@@ -36,8 +36,4 @@ public:
     }
 };
 
-int main() {
-    MemberTemplateSlot local = MemberTemplateSlot::first(FirstSlot{});
-    local.set_word<0>();
-    return ::foundation::core::Option<MemberTemplateSlot>::some(local).is_some() ? 0 : 1;
-}
+int main() { return ::foundation::core::Option<MemberTemplateSlot>{}.is_some() ? 1 : 0; }

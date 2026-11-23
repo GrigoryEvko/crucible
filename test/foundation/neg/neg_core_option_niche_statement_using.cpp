@@ -11,16 +11,17 @@
 
 struct UsingBrand {};
 
-// The tag of the one door of the slot, which builds the first slot.
-struct FirstSlot {};
-
+// The one door of the slot builds the first slot with a key, so it passes
+// the walk of the doors.
 class UsingSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit UsingSlot(std::uint32_t raw) noexcept : raw_{raw} {}
     friend struct ::foundation::core::niche<UsingSlot>;
 
 public:
-    [[nodiscard]] static constexpr UsingSlot first(FirstSlot /*tag*/) noexcept { return UsingSlot{1u}; }
+    [[nodiscard]] static constexpr UsingSlot first(::foundation::core::niche_key<UsingSlot> const&) noexcept {
+        return UsingSlot{1u};
+    }
     [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
 };
 
@@ -33,4 +34,4 @@ struct foundation::core::niche<UsingSlot> : foundation::core::niche<foundation::
     }
 };
 
-int main() { return ::foundation::core::Option<UsingSlot>::some(UsingSlot::first(FirstSlot{})).is_some() ? 0 : 1; }
+int main() { return ::foundation::core::Option<UsingSlot>{}.is_some() ? 1 : 0; }

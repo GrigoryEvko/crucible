@@ -1361,11 +1361,11 @@ static_assert(WritesNoEmptyValue<TrustedSlot> && WritesNoEmptyValue<TrustedMembe
 static_assert(!StatedInBase<TrustedSlot> && !StatedInBase<TrustedMemberSlot>);
 static_assert(!ChoicePayload<TrustedSlot> && !ChoicePayload<TrustedMemberSlot>);
 
-// The walk of the constructors (1 of the check of the statement).  A raw
-// value is a scalar, or a class that holds one at some depth, also through a
-// reference member such as the one of HoldsReference above.  An empty tag and
-// a key carry none.  A key has no public constructor, so a public class that
-// only refuses its copy vouches for nothing.
+// The walk of the constructors (1 of the check of the statement).  Each
+// constructor other than copy and move takes a voucher.  A key has no
+// constructor that a class outside can call, so a public class that only
+// refuses its copy vouches for nothing, and so does a class with protected
+// constructors, which a class outside builds through a derived class.
 struct RawWord {
     std::uint32_t value = 0;
 };
@@ -1381,8 +1381,17 @@ struct OpenVoucher {
     constexpr OpenVoucher() noexcept = default;
     OpenVoucher(OpenVoucher const&) = delete("a voucher does not copy");
 };
-static_assert(carries_raw_value(^^RawWord) && carries_raw_value(^^HoldsReference) && carries_raw_value(^^RawWord[2]));
-static_assert(!carries_raw_value(^^EmptyTag) && !carries_raw_value(^^niche_key<KeyedPairSlot> const&));
+class ProtectedKey {
+protected:
+    constexpr ProtectedKey() noexcept {}
+    constexpr ProtectedKey(ProtectedKey const&) noexcept {}
+
+public:
+    ProtectedKey& operator=(ProtectedKey const&) = delete("a key lives for one construction");
+};
+struct OpenedKey : ProtectedKey {
+    constexpr OpenedKey() noexcept = default;
+};
 // A key vouches only in a namespace of the base, so OutsideKey of the global
 // namespace vouches for nothing.  LocalKey stands in a namespace of the base,
 // as each class of a check file of the base does.
@@ -1390,10 +1399,13 @@ static_assert(is_voucher_type(^^niche_key<KeyedPairSlot>) && is_voucher_type(^^L
 static_assert(!is_voucher_type(^^::OutsideKey) && !is_defined_in_base(^^::OutsideKey));
 static_assert(is_defined_in_base(^^niche_key<KeyedPairSlot>) && is_defined_in_base(^^LocalKey));
 static_assert(!is_voucher_type(^^OpenVoucher) && !is_voucher_type(^^RawWord));
+static_assert(!is_voucher_type(^^ProtectedKey) && is_defined_in_base(^^ProtectedKey));
+static_assert(!has_reachable_constructor(^^LocalKey) && has_reachable_constructor(^^ProtectedKey));
 
 // Constructors of the walk: a plain class around the raw word, a voucher that
-// each caller builds, two raw values, and a raw value beside a key.  An empty
-// tag alone is no raw value.
+// each caller builds, two raw values, a raw value beside a key, a raw value
+// beside a key with protected constructors, a door from an empty tag and a
+// protected door from a raw word.
 class WrappedRawSlot {
     std::uint32_t raw_ = 0;
 
@@ -1406,23 +1418,42 @@ class OpenVoucherSlot {
 public:
     constexpr OpenVoucherSlot(std::uint32_t raw, OpenVoucher const& /*voucher*/) noexcept : raw_{raw} {}
 };
+class ProtectedKeySlot {
+    std::uint32_t raw_ = 0;
+
+public:
+    constexpr ProtectedKeySlot(std::uint32_t raw, ProtectedKey const& /*key*/) noexcept : raw_{raw} {}
+};
 class TagSlot {
     std::uint32_t raw_ = 1;
 
 public:
     constexpr explicit TagSlot(EmptyTag /*tag*/) noexcept {}
 };
+class ProtectedDoorSlot {
+    std::uint32_t raw_ = 1;
+
+protected:
+    constexpr explicit ProtectedDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+};
 static_assert(!vouches_each_door(^^WrappedRawSlot) && !BuildsNoEmptyValue<WrappedRawSlot>);
 static_assert(!vouches_each_door(^^OpenVoucherSlot) && !BuildsNoEmptyValue<OpenVoucherSlot>);
 static_assert(!vouches_each_door(^^PairStatedSlot) && !BuildsNoEmptyValue<PairStatedSlot>);
 static_assert(vouches_each_door(^^KeyedPairSlot) && BuildsNoEmptyValue<KeyedPairSlot>);
-static_assert(vouches_each_door(^^TagSlot) && BuildsNoEmptyValue<TagSlot>);
+static_assert(!vouches_each_door(^^ProtectedKeySlot) && !BuildsNoEmptyValue<ProtectedKeySlot>);
+// A door from a tag carries nothing, so its body picks a constant, and the
+// constant can be the empty value, as for a door from nothing.
+static_assert(!vouches_each_door(^^TagSlot) && !BuildsNoEmptyValue<TagSlot>);
+// A class that derives from the slot calls the protected door, and a copy of
+// the derived value gives its base part as a slot.
+static_assert(!vouches_each_door(^^ProtectedDoorSlot) && !BuildsNoEmptyValue<ProtectedDoorSlot>);
 
 // Static doors of the walk, judged as constructors: a door from nothing, a
-// door that gives a wrapper of the slot from a raw word, a door from a raw
-// word beside a key of the base, and a door from an empty tag.  A member
-// door that is not static reads a slot that is not empty, so the walk of the
-// doors does not judge it.
+// door that gives a wrapper of the slot from a raw word, a door that gives a
+// plain class with a field of the slot, a door from a raw word beside a key
+// of the base, and a door from an empty tag.  A member door that is not
+// static reads a slot that is not empty, so the walk of the doors does not
+// judge it: its object is a voucher.
 class NothingDoorSlot {
     std::uint32_t raw_ = 1;
     constexpr NothingDoorSlot() noexcept = default;
@@ -1443,6 +1474,19 @@ public:
         return WrappedDoorValue<WrappedDoorSlot>{WrappedDoorSlot{raw}};
     }
 };
+struct HeldDoorValue;
+class HolderDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit HolderDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+    friend struct HeldDoorValue;
+
+public:
+    [[nodiscard]] static constexpr HeldDoorValue of(std::uint32_t raw) noexcept;
+};
+struct HeldDoorValue {
+    HolderDoorSlot held;
+};
+constexpr HeldDoorValue HolderDoorSlot::of(std::uint32_t raw) noexcept { return HeldDoorValue{HolderDoorSlot{raw}}; }
 class KeyedDoorSlot {
     std::uint32_t raw_ = 1;
     constexpr explicit KeyedDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
@@ -1452,20 +1496,45 @@ public:
                                                     niche_key<KeyedDoorSlot> const& /*key*/) noexcept {
         return KeyedDoorSlot{raw};
     }
-    [[nodiscard]] static constexpr KeyedDoorSlot of_tag(EmptyTag /*tag*/) noexcept { return KeyedDoorSlot{1u}; }
     [[nodiscard]] constexpr KeyedDoorSlot next(std::uint32_t step) const noexcept { return KeyedDoorSlot{raw_ + step}; }
 };
+class TagDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit TagDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    [[nodiscard]] static constexpr TagDoorSlot of_tag(EmptyTag /*tag*/) noexcept { return TagDoorSlot{1u}; }
+};
 static_assert(!vouches_each_door(^^NothingDoorSlot) && !vouches_each_door(^^WrappedDoorSlot));
-static_assert(vouches_each_door(^^KeyedDoorSlot));
+static_assert(!vouches_each_door(^^HolderDoorSlot) && vouches_each_door(^^KeyedDoorSlot));
+// A static door from a tag carries nothing, as a door from nothing does.
+static_assert(!vouches_each_door(^^TagDoorSlot));
 static_assert(names_class(^^WrappedDoorValue<WrappedDoorSlot>, ^^WrappedDoorSlot)
               && names_class(^^WrappedDoorSlot const&, ^^WrappedDoorSlot)
               && names_class(^^Option<KeyedDoorSlot>, ^^KeyedDoorSlot));
-static_assert(!names_class(^^int, ^^WrappedDoorSlot));
+static_assert(!names_class(^^int, ^^WrappedDoorSlot) && !names_class(^^HeldDoorValue, ^^HolderDoorSlot));
+// holds_class reads the bases and the fields of each access of a class, and
+// the target of a pointer or a reference.  A cycle of references reaches the
+// depth of the walk, and the walk fails closed there.
+struct PointsAtHeld {
+    HeldDoorValue const& at;
+};
+struct LinkedNode {
+    LinkedNode const& next;
+};
+constexpr auto held_door_slot = side_as<side::HeldClass>(^^HolderDoorSlot);
+constexpr auto held_keyed_slot = side_as<side::HeldClass>(^^KeyedDoorSlot);
+static_assert(holds_class(^^HeldDoorValue, held_door_slot) && holds_class(^^HeldDoorValue const[2], held_door_slot));
+static_assert(holds_class(^^PointsAtHeld, held_door_slot) && holds_class(^^HeldDoorValue const&, held_door_slot));
+static_assert(holds_class(^^Option<KeyedDoorSlot>, held_keyed_slot) && holds_class(^^LinkedNode, held_keyed_slot));
+static_assert(holds_class(^^OpenedKey, side_as<side::HeldClass>(^^ProtectedKey)));
+static_assert(!holds_class(^^int, held_door_slot) && !holds_class(^^HeldDoorValue, held_keyed_slot));
 
 // Static values of the walk, judged as doors with no parameter: a static
-// data member of the slot and a member variable template.  A static data
-// member of a different type, such as a statement, is no door.  An array of
-// the slot names the slot.
+// data member of the slot, also a private one, and a member variable
+// template.  A static data member of a different type, such as a statement,
+// is no door.  The door of StatementValueSlot takes a key, because a door
+// from a tag is refused (TagSlot).  An array of the slot names the slot.
 class StaticValueSlot {
     std::uint32_t raw_ = 1;
     constexpr explicit StaticValueSlot(std::uint32_t raw) noexcept : raw_{raw} {}
@@ -1473,14 +1542,21 @@ class StaticValueSlot {
 public:
     static StaticValueSlot const empty_value;
 };
+class PrivateValueSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit PrivateValueSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+    static PrivateValueSlot const empty_value_;
+};
 class StatementValueSlot {
     std::uint32_t raw_ = 1;
 
 public:
-    constexpr explicit StatementValueSlot(EmptyTag /*tag*/) noexcept {}
+    constexpr StatementValueSlot(std::uint32_t raw, niche_key<StatementValueSlot> const& /*key*/) noexcept
+        : raw_{raw} {}
     static constexpr niche_statement is_niche_empty_never_built{};
 };
 inline constexpr StaticValueSlot StaticValueSlot::empty_value{0xFFFFFFFFu};
+inline constexpr PrivateValueSlot PrivateValueSlot::empty_value_{0xFFFFFFFFu};
 class VariableTemplateSlot {
     std::uint32_t raw_ = 1;
 
@@ -1489,6 +1565,8 @@ public:
     static constexpr std::uint32_t word_of = Raw;
 };
 static_assert(!vouches_each_door(^^StaticValueSlot) && !BuildsNoEmptyValue<StaticValueSlot>);
+// A friend or a nested class copies a private static value of the slot.
+static_assert(!vouches_each_door(^^PrivateValueSlot) && !BuildsNoEmptyValue<PrivateValueSlot>);
 static_assert(!vouches_each_door(^^VariableTemplateSlot) && vouches_each_door(^^StatementValueSlot));
 static_assert(names_class(^^StaticValueSlot const[2], ^^StaticValueSlot));
 
@@ -1546,9 +1624,22 @@ public:
     [[nodiscard]] static constexpr std::uint32_t raw_of(ReaderSlot const& slot) noexcept { return slot.raw_; }
     void clear() = delete("a reader writes nothing");
 };
+// A class that derives from the slot reaches a protected member, and a copy
+// of the derived value gives its base part as a slot.
+class ProtectedWriterSlot {
+    std::uint32_t raw_ = 1;
+
+protected:
+    constexpr void set_word(std::uint32_t raw) noexcept { raw_ = raw; }
+};
+class ProtectedFieldSlot {
+protected:
+    std::uint32_t word_ = 1;
+};
 static_assert(!WritesNoEmptyValue<MutatorSlot> && !WritesNoEmptyValue<MemberTemplateSlot>);
 static_assert(!WritesNoEmptyValue<PublicFieldSlot> && !WritesNoEmptyValue<MutableSlot>);
 static_assert(!WritesNoEmptyValue<StaticWriterSlot> && !WritesNoEmptyValue<BasedSlot>);
+static_assert(!WritesNoEmptyValue<ProtectedWriterSlot> && !WritesNoEmptyValue<ProtectedFieldSlot>);
 static_assert(WritesNoEmptyValue<ReaderSlot>);
 
 // The place of the statement (3 of the check of the statement).  A header of

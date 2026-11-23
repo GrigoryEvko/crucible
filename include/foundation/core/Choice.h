@@ -131,6 +131,10 @@ namespace side {
 // test of the path of a header (the check of the statement).
 struct ChoiceHeader final {};
 
+// The class that a walk of holds_class looks for, beside the type that the
+// walk reads (the check of the statement).
+struct HeldClass final {};
+
 }  // namespace side
 
 class niche_statement;
@@ -460,39 +464,44 @@ public:
 // Check of the statement
 //   A payload that states that no door builds its empty value gets no test
 //   of its payload in the storage of a full Option.  So the payload gate
-//   holds three checks of the statement (CheckedStatement):
+//   holds three checks of the statement (CheckedStatement).  The two walks
+//   judge each member that is not private, because a class outside reaches
+//   a protected member through a class that derives from T.
 //
-//   1. The constructors build no empty value (BuildsNoEmptyValue).
+//   1. The doors build no empty value (BuildsNoEmptyValue).
 //      - T is no aggregate, and it has no public default constructor, so no
 //        code builds a T from its members or from nothing.
-//      - Each public constructor other than copy and move that takes a raw
-//        value also takes a voucher.  A raw value is a pointer,
-//        std::nullptr_t, an arithmetic type, an enumeration, a member
-//        pointer or a union, or a class or an array that holds one at some
-//        depth, so a plain class around a raw word carries the word.  A
-//        class with a part that is not public counts as raw, because the
-//        walk does not read its private state.  A voucher is a key, a class
-//        with no public constructor in a namespace of the base, such as
-//        RefKey, or a payload whose statement passes the three checks,
-//        such as the RunAddress of a DataAddress.  A raw value then comes in
-//        only through a door that checks it, or beside a value that is not
-//        empty.
-//      - Each public static member function that gives a T, also inside an
-//        Option or a Box, is judged as a constructor: it has a parameter,
-//        and when it takes a raw value it also takes a voucher.  Such a
-//        function is a door over a constructor that need not be public.
+//      - Each door takes a voucher.  A door is a constructor other than copy
+//        and move, and a static member function that gives a value that
+//        holds a T, such as a T, an Option of a T or a class with a field of
+//        T (holds_class).  A voucher is a key, which is a class in a
+//        namespace of the base with no constructor that a class outside can
+//        call, such as RefKey, or a payload whose statement passes the three
+//        checks, such as the RunAddress of a DataAddress.  A raw value then
+//        comes in only through a door that checks it, or beside a value that
+//        is not empty.  A door with no voucher is refused also when it takes
+//        no raw value, such as a door from an empty tag.  Such a door
+//        carries nothing, so its body picks a constant, and the constant can
+//        be the empty value, as for a door from nothing.
+//      - A static data member that holds a T is a door with no parameter, at
+//        each access, because a friend or a nested class can copy a private
+//        one.  A member variable template is refused too.
+//      - A member function that is not static is no door.  Its object is a
+//        valid T, so it is a voucher, and its body has the trust of the body
+//        of a constructor that takes a voucher.
 //      - A reflection reads no parameter of a constructor template, so T
 //        builds no value from std::nullptr_t, a pointer, an int or an
 //        unsigned long long at all.
-//   2. No public member writes the payload (WritesNoEmptyValue).  The frame
-//      door with_mut gives the payload in place, and a local can change
-//      before some(), so a member that writes a T could write the empty
-//      value.  T has no base class, no public non-static data member, no
-//      mutable member, no public member function that is not const other
-//      than a constructor and a special member, and no public static member
-//      function with a parameter that can write.  GCC 16 reflection gives no
-//      const qualifier of a member function template, so T has no public
-//      member function template other than a constructor template.
+//   2. No member that is not private writes the payload
+//      (WritesNoEmptyValue).  The frame door with_mut gives the payload in
+//      place, and a local can change before some(), so a member that writes
+//      a T could write the empty value.  T has no base class, no non-static
+//      data member that is not private, no mutable member, no member
+//      function that is not const other than a constructor and a special
+//      member, and no static member function with a parameter that can
+//      write.  GCC 16 reflection gives no const qualifier of a member
+//      function template, so T has no member function template other than a
+//      constructor template.
 //   3. The statement is of the base (StatedInBase).  The statement is a
 //      niche_statement, an own member of niche<T> or of T, and its mark
 //      stands in a header of include/foundation or include/fixy.  A
@@ -548,14 +557,17 @@ consteval bool is_stated_in_base(std::meta::info type) {
     return has_statement && is_class_statement_held && is_niche_statement_held;
 }
 
-// True when the class has a public constructor that is not deleted.  A
-// constructor template counts.  The walks of the check of the statement index
-// the lists of a query, as the walks of foundation/core/Owner.h do.
-// Complexity: linear in the members.
-consteval bool has_public_constructor(std::meta::info type) {
-    auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
+// True when a class outside can call a constructor of the class: a
+// constructor that is not private and not deleted, or a constructor template
+// that is not private.  A protected constructor counts, because a class
+// outside calls it through a class that derives from the class.  The walks
+// of the check of the statement index the lists of a query, as the walks of
+// foundation/core/Owner.h do.  Complexity: linear in the members.
+consteval bool has_reachable_constructor(std::meta::info type) {
+    auto const members = std::meta::members_of(type, std::meta::access_context::unchecked());
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
+        if (std::meta::is_private(member)) continue;
         if (std::meta::is_constructor_template(member)) return true;
         if (std::meta::is_function(member) && std::meta::is_constructor(member) && !std::meta::is_deleted(member)) {
             return true;
@@ -588,63 +600,29 @@ consteval bool is_defined_in_base(std::meta::info type) {
 }
 
 // True when the type, with no reference and no cv, vouches for the raw
-// values beside it: a key, which is a class with no public constructor in a
-// namespace of the base, or a payload whose statement passes the check.  A
-// class with no public constructor in a different namespace vouches for
-// nothing.  A key from a specialization of a different file, which
-// is_defined_in_base gives, vouches too.  No stated type takes a key from a
-// template argument, so no such key comes into a door of the base.  An
-// incomplete class, such as the target of a Ref, vouches for nothing.
+// values beside it: a key, which is a class in a namespace of the base with
+// no constructor that a class outside can call, or a payload whose statement
+// passes the check.  Such a class in a different namespace vouches for
+// nothing, and so does a class with a protected constructor, which a class
+// outside builds through a class that derives from it.  A key from a
+// specialization of a different file, which is_defined_in_base gives,
+// vouches too.  No stated type takes a key from a template argument, so no
+// such key comes into a door of the base.  An incomplete class, such as the
+// target of a Ref, vouches for nothing.
 consteval bool is_voucher_type(std::meta::info type) {
     std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
     if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
-    if (!has_public_constructor(bare)) return is_defined_in_base(bare);
+    if (!has_reachable_constructor(bare)) return is_defined_in_base(bare);
     return std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}))
         && is_statement_checked(bare);
 }
 
-// True when a value of the type can carry a raw value into a constructor:
-// the type is not a class, or it is a class or an array of classes with a
-// public base or a public member that carries one.  A reference member holds
-// an address, so it carries one too.  A voucher carries none.  An incomplete
-// class, and a class with a base or a member that is not public, carry one,
-// because the walk cannot read them.  The walk ends, because no class holds
-// itself.  Complexity: linear in the subobject declarations that the walk
-// reaches.
-consteval bool carries_raw_value(std::meta::info type) {
-    std::meta::info const bare = std::meta::remove_all_extents(std::meta::remove_cvref(std::meta::dealias(type)));
-    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return true;
-    if (is_voucher_type(bare)) return false;
-    std::meta::access_context const outside = std::meta::access_context::unprivileged();
-    if (std::meta::has_inaccessible_subobjects(bare, outside)) return true;
-    auto const bases = std::meta::bases_of(bare, outside);
-    for (std::size_t index = 0; index < bases.size(); ++index) {
-        if (carries_raw_value(std::meta::type_of(bases[index]))) return true;
-    }
-    auto const members = std::meta::nonstatic_data_members_of(bare, outside);
-    for (std::size_t index = 0; index < members.size(); ++index) {
-        std::meta::info const member_type = std::meta::type_of(members[index]);
-        if (std::meta::is_reference_type(member_type) || carries_raw_value(member_type)) return true;
-    }
-    return false;
-}
-
-// True when a parameter of the constructor is a voucher.  Complexity: linear
-// in the parameters, and the walks of their types.
-consteval bool takes_voucher(std::meta::info constructor) {
-    auto const parameters = std::meta::parameters_of(constructor);
+// True when a parameter of the door is a voucher.  Complexity: linear in the
+// parameters, and the walks of their types.
+consteval bool takes_voucher(std::meta::info door) {
+    auto const parameters = std::meta::parameters_of(door);
     for (std::size_t index = 0; index < parameters.size(); ++index) {
         if (is_voucher_type(std::meta::type_of(parameters[index]))) return true;
-    }
-    return false;
-}
-
-// True when a parameter of the constructor carries a raw value.  Complexity:
-// linear in the parameters, and the walks of their types.
-consteval bool takes_raw_value(std::meta::info constructor) {
-    auto const parameters = std::meta::parameters_of(constructor);
-    for (std::size_t index = 0; index < parameters.size(); ++index) {
-        if (carries_raw_value(std::meta::type_of(parameters[index]))) return true;
     }
     return false;
 }
@@ -667,36 +645,105 @@ consteval bool names_class(std::meta::info type, std::meta::info target) {
     return false;
 }
 
-// True when each public door of the type vouches for what it builds (1 of
-// the check of the statement):
-//   - Each constructor other than copy and move that takes a raw value also
-//     takes a voucher.  A constructor with a voucher needs no walk of its raw
-//     values, so the walk of the target of a Ref runs for no Ref.
-//   - Each static member function that gives a value of the type is judged
-//     as a constructor.  Such a function is a door over a constructor that
-//     need not be public.  So a door with no parameter is refused, as a
-//     public default constructor is, and a door that takes a raw value also
-//     takes a voucher.
-//   - A static data member that holds a value of the type is a door with no
-//     parameter, because a copy of it is a value that a private constructor
-//     built.  So it is refused.  A member variable template is refused too,
-//     because the walk cannot read its type before an instance.
-// A deleted function builds nothing.  One walk reads the three kinds, because
-// each list of members costs a query.  Complexity: linear in the members of
-// the type and the parameters of its doors, and the walks of their types.
+// A class that the check of a statement must read, and that is incomplete
+// where the payload gate reads the stated type, such as a class that a door
+// gives.  The walk cannot read its members, so it fails closed: the instance
+// of this class stops the compile, and the diagnostic names the class in its
+// template argument.
+template <class Checked>
+struct IncompleteCheckedClass final {
+    static_assert(false,
+                  "the check of the statement of a type that states its niche meets an incomplete class, so it "
+                  "cannot read the members of the class: define the class before the payload gate reads the type");
+    static constexpr bool is_checked = true;
+};
+
+template <class Checked>
+inline constexpr bool is_incomplete_class_checked = IncompleteCheckedClass<Checked>::is_checked;
+
+// The stop of a walk at the incomplete class: the instance of
+// IncompleteCheckedClass ends the compile.  The compile ends before the
+// answer is read, so the answer true only types the call.
+consteval bool stop_at_incomplete_class(std::meta::info checked) {
+    return std::meta::extract<bool>(std::meta::substitute(^^is_incomplete_class_checked, {checked}));
+}
+
+// The depth of the walk of holds_class.  Each step goes into a base, a field,
+// or the target of a pointer or a reference.  A cycle of pointers, such as a
+// node that points at the next node, reaches the depth, and the walk fails
+// closed there for each class and each pointer.
+inline constexpr std::size_t held_class_depth = 8;
+
+// The walk of holds_class at one depth.  Complexity: linear in the subobject
+// declarations that the walk reaches, which the depth bounds.
+template <std::size_t Depth>
+consteval bool holds_class_at(std::meta::info type, Side<side::HeldClass, std::meta::info> const& target) {
+    if (names_class(type, target.value())) return true;
+    std::meta::info const bare = std::meta::remove_all_extents(std::meta::remove_cvref(std::meta::dealias(type)));
+    bool const is_record = std::meta::is_class_type(bare) || std::meta::is_union_type(bare);
+    if constexpr (Depth == held_class_depth) {
+        return is_record || std::meta::is_pointer_type(bare);
+    } else {
+        if (std::meta::is_pointer_type(bare)) return holds_class_at<Depth + 1>(std::meta::remove_pointer(bare), target);
+        if (!is_record) return false;
+        if (!std::meta::is_complete_type(bare)) return stop_at_incomplete_class(bare);
+        std::meta::access_context const each = std::meta::access_context::unchecked();
+        auto const bases = std::meta::bases_of(bare, each);
+        for (std::size_t index = 0; index < bases.size(); ++index) {
+            if (holds_class_at<Depth + 1>(std::meta::type_of(bases[index]), target)) return true;
+        }
+        auto const fields = std::meta::nonstatic_data_members_of(bare, each);
+        for (std::size_t index = 0; index < fields.size(); ++index) {
+            if (holds_class_at<Depth + 1>(std::meta::type_of(fields[index]), target)) return true;
+        }
+        return false;
+    }
+}
+
+// True when a value of the type holds or reaches a value of the class:
+// names_class gives it, or the type is a class or a union with a base or a
+// field of each access that holds it, or a pointer or a reference to such a
+// type, also inside an array.  So a door that gives a plain class with a
+// field of the class, or a pointer to one, gives the class.  An incomplete
+// class fails closed (IncompleteCheckedClass), and so does a walk that reaches
+// held_class_depth.
+consteval bool holds_class(std::meta::info type, Side<side::HeldClass, std::meta::info> const& target) {
+    return holds_class_at<0>(type, target);
+}
+
+// True when each door of the type that is not private vouches for what it
+// builds (1 of the check of the statement):
+//   - Each constructor other than copy and move takes a voucher.
+//   - Each static member function that gives a value that holds the type is
+//     judged as a constructor, so it takes a voucher.  Such a function is a
+//     door over a constructor that need not be public.
+//   - A door with no voucher is refused also when it takes no raw value: a
+//     door from nothing or from an empty tag carries nothing, so its body
+//     picks a constant, and the constant can be the empty value.
+//   - A static data member of each access that holds a value of the type is
+//     a door with no parameter, because a copy of it is a value that a
+//     private constructor built, and a friend or a nested class can copy a
+//     private one.  So it is refused.  A member variable template is refused
+//     too, because the walk cannot read its type before an instance.
+// A member function that is not static is no door: its object is a valid
+// value of the type, so it is a voucher, with the trust of a constructor
+// that takes a voucher.  A deleted function builds nothing.  One walk reads
+// the kinds, because each list of members costs a query.  Complexity: linear
+// in the members of the type and the parameters of its doors, and the walks
+// of their types.
 consteval bool vouches_each_door(std::meta::info type) {
-    auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
+    Side<side::HeldClass, std::meta::info> const held = side_as<side::HeldClass>(type);
+    auto const members = std::meta::members_of(type, std::meta::access_context::unchecked());
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
         if (std::meta::is_variable_template(member)) return false;
-        if (std::meta::is_variable(member) && names_class(std::meta::type_of(member), type)) return false;
-        if (!std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
+        if (std::meta::is_variable(member) && holds_class(std::meta::type_of(member), held)) return false;
+        if (std::meta::is_private(member) || !std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
         if (std::meta::is_constructor(member)) {
             bool const is_judged = !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
-            if (is_judged && !takes_voucher(member) && takes_raw_value(member)) return false;
-        } else if (std::meta::is_static_member(member) && names_class(std::meta::return_type_of(member), type)) {
-            if (std::meta::parameters_of(member).size() == 0) return false;
-            if (!takes_voucher(member) && takes_raw_value(member)) return false;
+            if (is_judged && !takes_voucher(member)) return false;
+        } else if (std::meta::is_static_member(member) && holds_class(std::meta::return_type_of(member), held)) {
+            if (!takes_voucher(member)) return false;
         }
     }
     return true;
@@ -719,23 +766,24 @@ consteval bool has_writable_parameter(std::meta::info function) {
     return false;
 }
 
-// True when no public member of the type writes a value of the type in
-// place (2 of the check of the statement).  A deleted function writes
-// nothing.  The walk of the fields reads the private fields too, because a
-// const member function writes a mutable field of each access.  Complexity:
-// linear in the members of the type.
+// True when no member of the type that is not private writes a value of the
+// type in place (2 of the check of the statement).  A protected member
+// counts, because a class that derives from the type reaches it, and a copy
+// of the derived value gives its base part as a value of the type.  A
+// deleted function writes nothing.  The walk of the fields reads the private
+// fields too, because a const member function writes a mutable field of each
+// access.  Complexity: linear in the members of the type.
 consteval bool writes_no_payload(std::meta::info type) {
-    std::meta::access_context const outside = std::meta::access_context::unprivileged();
-    if (std::meta::bases_of(type, outside).size() != 0 || std::meta::has_inaccessible_bases(type, outside)) {
-        return false;
-    }
-    auto const fields = std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
+    std::meta::access_context const each = std::meta::access_context::unchecked();
+    if (std::meta::bases_of(type, each).size() != 0) return false;
+    auto const fields = std::meta::nonstatic_data_members_of(type, each);
     for (std::size_t index = 0; index < fields.size(); ++index) {
-        if (std::meta::is_public(fields[index]) || std::meta::is_mutable_member(fields[index])) return false;
+        if (!std::meta::is_private(fields[index]) || std::meta::is_mutable_member(fields[index])) return false;
     }
-    auto const members = std::meta::members_of(type, outside);
+    auto const members = std::meta::members_of(type, each);
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
+        if (std::meta::is_private(member)) continue;
         if (std::meta::is_function_template(member) && !std::meta::is_constructor_template(member)) return false;
         bool const is_judged = std::meta::is_function(member) && !std::meta::is_constructor(member)
                             && !std::meta::is_special_member_function(member) && !std::meta::is_deleted(member);
