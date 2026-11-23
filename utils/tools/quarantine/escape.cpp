@@ -10,8 +10,11 @@
 //   its bases and its members.  A class that states by_arguments{},
 //   payload_cell{} or one of the three refers marks holds the object of its
 //   first type argument in its own bytes or behind a pointer, as an Option, a
-//   Box and a Ref do, so the walk reads that argument too.  The rule reads
-//   each function whose return type holds a borrow.
+//   Box and a Ref do, so the walk reads that argument too.  A class of the
+//   base that states owns_its_storage{} holds no borrow: its pointers name its
+//   own storage.  So a Box of an arena holds no borrow, and the object of a
+//   door of the Box is the Box (the marked owners).  The rule reads each
+//   function whose return type holds a borrow.
 //
 // Origins
 //   The origins of an expression are the objects that its borrow can name.
@@ -43,7 +46,11 @@
 //   or a class that states owns_its_storage{} of
 //   include/foundation/core/Owner.h, whose pointers name its own storage.  The
 //   result of a door that takes a View or a Ref borrows the target of that
-//   borrow, which the origins above follow.
+//   borrow, which the origins above follow.  An arena that a Box holds is the
+//   object of the door operator-> of the Box, so a Ref of such an arena has
+//   the Box as its origin.  Only a class of the namespace foundation or fixy
+//   drops its pointers from the borrow this way, and the rule base-namespace
+//   keeps each such class in the base.
 //
 // Finding
 //   escaped-borrow   a return whose value has an origin that ends with the
@@ -130,6 +137,26 @@ bool is_owner_core_class(tree type) {
     return false;
 }
 
+// True for a class that states owns_its_storage{} of
+// include/foundation/core/Owner.h: its pointers name its own storage, and no
+// door of it stores a borrow that a caller gives (the marked owners).
+bool owns_its_storage(tree type) {
+    static tree const mark = get_identifier("owns_its_storage");
+    static tree const core = get_identifier("core");
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) && carries_base_annotation(TYPE_ATTRIBUTES(type), mark, core);
+}
+
+// True for a class of the namespace foundation or fixy that states
+// owns_its_storage{} (the borrow).  The rule base-namespace refuses a class of
+// these namespaces in a file outside the base, so only the base states the
+// mark in this form.
+bool is_base_storage_owner(tree type) {
+    tree top = top_namespace(type);
+    return owns_its_storage(type) && top != NULL_TREE && top != global_namespace
+        && (DECL_NAME(top) == escape_names.foundation || DECL_NAME(top) == escape_names.fixy);
+}
+
 // True when TYPE holds a borrow (the borrow).  Complexity: linear in the
 // distinct classes that the type reaches, one time for each class in a unit.
 bool holds_borrow(tree type, int depth) {
@@ -151,6 +178,12 @@ bool holds_borrow(tree type, int depth) {
         return found->second;
     }
     borrow_classes.emplace(TYPE_UID(type), false);
+    // The pointers of an owner of its storage in the base, such as an arena,
+    // name its own blocks, so the class holds no borrow, and the entry above
+    // keeps that answer.
+    if (is_base_storage_owner(type)) {
+        return false;
+    }
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
     bool is_held = is_borrow;
@@ -183,16 +216,6 @@ bool holds_borrow(tree type, int depth) {
     }
     borrow_classes[TYPE_UID(type)] = is_held;
     return is_held;
-}
-
-// True for a class that states owns_its_storage{} of
-// include/foundation/core/Owner.h: its pointers name its own storage, and no
-// door of it stores a borrow that a caller gives (the marked owners).
-bool owns_its_storage(tree type) {
-    static tree const mark = get_identifier("owns_its_storage");
-    static tree const core = get_identifier("core");
-    type = TYPE_MAIN_VARIANT(type);
-    return CLASS_TYPE_P(type) && carries_base_annotation(TYPE_ATTRIBUTES(type), mark, core);
 }
 
 // True for a function of the base, whose borrow the origins follow.

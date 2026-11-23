@@ -1,12 +1,18 @@
 # Each return of a borrow that a door of an owner of its storage gives through
 # a parameter that CRUCIBLE_LIFETIMEBOUND marks is an error in each mode when
-# the owner ends with the frame: a Ref (19) and a run (24) of a local arena.
+# the owner ends with the frame: a Ref (20) and a run (25) of a local arena,
+# and a Ref (29) and a run (33) of the arena of a Box that a parameter by value
+# holds.
 
 compile marked src/marked.cpp
 flag marked -freflection
 exit marked fail
-finding marked view-escape escaped-borrow src/marked.cpp:19:36 | borrow of the local arena
-finding marked view-escape escaped-borrow src/marked.cpp:24:35 | borrow of the local arena
-error marked src/marked.cpp:19 | this function gives back a borrow of the local arena, and that object ends with the frame of the function
-error marked src/marked.cpp:24 | this function gives back a borrow of the local arena, and that object ends with the frame of the function
+finding marked view-escape escaped-borrow src/marked.cpp:20:36 | borrow of the local arena
+finding marked view-escape escaped-borrow src/marked.cpp:25:35 | borrow of the local arena
+finding marked view-escape escaped-borrow src/marked.cpp:29:37 | borrow of the parameter arena
+finding marked view-escape escaped-borrow src/marked.cpp:33:36 | borrow of the parameter arena
+error marked src/marked.cpp:20 | this function gives back a borrow of the local arena, and that object ends with the frame of the function
+error marked src/marked.cpp:25 | this function gives back a borrow of the local arena, and that object ends with the frame of the function
+error marked src/marked.cpp:29 | this function gives back a borrow of the parameter arena, and that object ends with the frame of the function
+error marked src/marked.cpp:33 | this function gives back a borrow of the parameter arena, and that object ends with the frame of the function
 text marked | a read of the result reads the dead stack frame of the call

@@ -1,6 +1,7 @@
 // Each return of a borrow that a door of an owner of its storage gives through
 // a parameter that CRUCIBLE_LIFETIMEBOUND marks is a finding when the owner
-// ends with the frame: a Ref and a run of a local arena.  The arena holds no
+// ends with the frame: a Ref and a run of a local arena, and a Ref and a run
+// of the arena of a Box that a parameter by value holds.  The arena holds no
 // int, so only the mark ties the result to the arena.
 #include <foundation/Brand.h>
 #include <foundation/core/AllocTag.h>
@@ -22,6 +23,14 @@ fc::Ref<int, PlantArena> ref_of_local_arena(fc::Alloc alloc) {
 fc::ArenaRun<int, PlantArena> run_of_local_arena(fc::Alloc alloc) {
     fc::BumpArena<PlantArena> arena = fc::mint_bump_arena<PlantArena>(fc::ByteCount{4096});
     return arena.array(alloc, 4, 2);
+}
+
+fc::Ref<int, PlantArena> ref_of_boxed_parameter(fc::Alloc alloc, fc::Box<fc::BumpArena<PlantArena>> arena) {
+    return arena->make<int>(alloc, 3);
+}
+
+fc::ArenaRun<int, PlantArena> run_of_boxed_parameter(fc::Alloc alloc, fc::Box<fc::BumpArena<PlantArena>> arena) {
+    return arena->array(alloc, 4, 4);
 }
 
 }  // namespace planted
