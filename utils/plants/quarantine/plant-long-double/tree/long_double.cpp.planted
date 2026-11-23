@@ -1,0 +1,23 @@
+// A long double outside the base: a data member, a return type, a parameter
+// through a pointer, a variable of an array, and the expressions of a cast, a
+// literal and a call of the base.  A double gives no finding.
+#include <fixy/Wide.h>
+
+namespace wide_plant {
+
+struct Holder {
+    long double value = 0;
+};
+
+long double wide_result();
+inline double through_pointer(long double* pointer) { return pointer == nullptr ? 0.0 : 1.0; }
+inline long double cells[2]{};
+inline double plain = 1.0;
+
+inline double cast_value(double value) { return static_cast<double>(static_cast<long double>(value) * 3.0L); }
+
+inline double base_call(double value) { return static_cast<double>(fixy::wide_plant::half_of(value)); }
+
+inline double plain_value(double value) { return value * 3.0; }
+
+}  // namespace wide_plant

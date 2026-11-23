@@ -347,8 +347,8 @@ void walk_namespace(tree ns);
 void record_raw_object(Kind kind, tree decl) { record(kind, DECL_SOURCE_LOCATION(decl), simple_name(decl)); }
 
 // The raw pointer, the pointer to a member and the C array that TYPE, the
-// declared type of DECL in ROLE, holds at its outer level, in a quarantined
-// file.  A return type counts as each other declared type.  A reference to a
+// declared type of DECL in ROLE, holds at its outer level, and a long double
+// through each of them, in a quarantined file.  A return type counts as each other declared type.  A reference to a
 // C array refers to a C array object, also as a parameter or a return type.
 // A parameter of an array type is a pointer, so the rule of the pointer finds
 // it.  An allocation function returns a pointer by the rules of the language,
@@ -366,6 +366,9 @@ void record_raw_type(tree type, tree decl, Role role) {
     tree target = TREE_CODE(type) == REFERENCE_TYPE ? TREE_TYPE(type) : type;
     if (target != NULL_TREE && TREE_CODE(target) == ARRAY_TYPE && (role != Role::parameter || target != type)) {
         record_raw_object(Kind::c_array_object, decl);
+    }
+    if (holds_long_double(type)) {
+        record_raw_object(Kind::long_double, decl);
     }
 }
 

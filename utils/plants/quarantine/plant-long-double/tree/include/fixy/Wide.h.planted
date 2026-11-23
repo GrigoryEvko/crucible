@@ -1,0 +1,12 @@
+// A base header: the base holds its own long double, so its variable, its
+// function and its expressions give no finding.
+
+#pragma once
+
+namespace fixy::wide_plant {
+
+inline long double base_wide = 1.0L;
+
+inline long double half_of(long double value) { return value / 2.0L; }
+
+}  // namespace fixy::wide_plant

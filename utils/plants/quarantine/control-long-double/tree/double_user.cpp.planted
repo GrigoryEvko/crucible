@@ -1,0 +1,22 @@
+// A quarantined file with float and double only: a variable, a member, a
+// parameter through a reference, a return type, a cast and a literal.  The
+// size of a long double in an unevaluated operand makes no value, and an
+// alias of long double declares no object.
+namespace double_plant {
+
+using Wide = long double;
+
+struct Holder {
+    double value = 0.0;
+    float narrow = 0.0F;
+};
+
+inline double scaled(double const& value, double& out) {
+    double const result = static_cast<double>(static_cast<float>(value)) * 3.0;
+    out = result;
+    return result;
+}
+
+inline constexpr unsigned long kWideBytes = sizeof(long double) + sizeof(Wide);
+
+}  // namespace double_plant

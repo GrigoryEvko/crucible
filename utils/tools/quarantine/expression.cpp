@@ -1713,6 +1713,12 @@ tree visit_body_node(tree* node_pointer, int* walk_subtrees, void* data) {
     if (EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) {
         check_closure(TREE_TYPE(node));
     }
+    // An expression of type long double: a literal with the suffix L, a cast
+    // and each operation on such a value.  A constant has no location, so the
+    // place is the last place of the walk.
+    if ((EXPR_P(node) || CONSTANT_CLASS_P(node)) && is_long_double(TREE_TYPE(node))) {
+        record(Kind::long_double, walk.last, "long double");
+    }
     switch (TREE_CODE(node)) {
         // An unevaluated operand makes no object and calls nothing, but each
         // library name in it is a use of that name.  cp_walk_tree walks the

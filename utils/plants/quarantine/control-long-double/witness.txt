@@ -1,0 +1,8 @@
+# A quarantined file with float and double only gives no finding: a
+# variable, a member, a parameter through a reference, a return type, a
+# cast, a literal, the size of a long double in an unevaluated operand and
+# an alias of long double.
+
+compile report double_user.cpp stage=c
+exit report pass
+judge report

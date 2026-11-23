@@ -1,0 +1,20 @@
+# A long double of a quarantined file is a finding: a data member, a return
+# type, a parameter through a pointer, a variable of an array, and each
+# expression of type long double, such as a cast, a literal and a call of a
+# base function.  The variable of the array is a c-array-object too.  The
+# long double of the base header and each double give no finding.
+
+compile report long_double.cpp stage=c
+exit report pass
+judge report
+finding report quarantine long-double long_double.cpp:9:17 | value
+finding report quarantine long-double long_double.cpp:12:13 | wide_result
+finding report quarantine raw-pointer-object long_double.cpp:13:44 | pointer
+finding report quarantine long-double long_double.cpp:13:44 | pointer
+finding report quarantine c-array-object long_double.cpp:14:20 | cells
+finding report quarantine long-double long_double.cpp:14:20 | cells
+finding report quarantine long-double long_double.cpp:17:69 | long double
+finding report quarantine long-double long_double.cpp:17:94 | long double
+finding report quarantine long-double long_double.cpp:17:101 | long double
+finding report quarantine long-double long_double.cpp:19:93 | long double
+finding report quarantine long-double long_double.cpp:19:94 | long double

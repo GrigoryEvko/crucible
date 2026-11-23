@@ -122,6 +122,16 @@
 //     c-array-object        a variable or data member of type T[N], and a
 //                           variable, data member, parameter or return type of
 //                           a reference to T[N]
+//     long-double           a variable, data member, parameter or return type
+//                           of long double, also through a pointer, a
+//                           reference or an array, and an expression of type
+//                           long double, such as a literal with the suffix L
+//                           or a cast.  The entity of an expression is "long
+//                           double".  A long double has 64 bits of significand
+//                           on x86_64 and 113 on aarch64, so one computation
+//                           gives two results on the two targets.  The base
+//                           refuses it in Float, in Formattable and in the
+//                           Protocol family
 //     raw-new-delete        a new-expression or a delete-expression, and a
 //                           declaration of an allocation function that is not
 //                           deleted, such as a replacement of operator new
@@ -1043,6 +1053,7 @@ enum class Kind : std::uint8_t {
     raw_pointer_object,
     raw_function_pointer,
     c_array_object,
+    long_double,
     raw_new_delete,
     c_library_call,
     foreign_symbol,
@@ -1337,6 +1348,8 @@ inline const char* kind_name(Kind kind) {
             return "raw-function-pointer";
         case Kind::c_array_object:
             return "c-array-object";
+        case Kind::long_double:
+            return "long-double";
         case Kind::raw_new_delete:
             return "raw-new-delete";
         case Kind::c_library_call:
@@ -1969,6 +1982,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "raw-pointer-object"},
     {"quarantine", "raw-function-pointer"},
     {"quarantine", "c-array-object"},
+    {"quarantine", "long-double"},
     {"quarantine", "raw-new-delete"},
     {"quarantine", "c-library-call"},
     {"quarantine", "foreign-symbol"},
@@ -2807,6 +2821,28 @@ inline Place expansion_place_of(location_t location, const Place& place) {
         return Place{};
     }
     return expansion;
+}
+
+// True when TYPE is long double or a complex long double, with each
+// cv-qualifier (the kind long-double).
+inline bool is_long_double(tree type) {
+    if (type != NULL_TREE && TREE_CODE(type) == COMPLEX_TYPE) {
+        type = TREE_TYPE(type);
+    }
+    return type != NULL_TREE && TREE_CODE(type) == REAL_TYPE && TYPE_MAIN_VARIANT(type) == long_double_type_node;
+}
+
+// True when TYPE is long double, also through a pointer, a reference and an
+// array (the kind long-double).  Complexity: one step for each level of the
+// type, at most kTypeDepth.
+inline bool holds_long_double(tree type) {
+    for (int depth = 0; depth < kTypeDepth && type != NULL_TREE; ++depth) {
+        if (TREE_CODE(type) != POINTER_TYPE && TREE_CODE(type) != REFERENCE_TYPE && TREE_CODE(type) != ARRAY_TYPE) {
+            return is_long_double(type);
+        }
+        type = TREE_TYPE(type);
+    }
+    return false;
 }
 
 // A finding of the quarantine rule, at a place in a quarantined file, and at
