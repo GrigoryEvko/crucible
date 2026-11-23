@@ -225,6 +225,39 @@ template <class W>
 constexpr bool folds_named_walk = requires(W& walk) { walk.fold(0, Sum{}); };
 static_assert(!maps_named_walk<IntWalk> && !folds_named_walk<IntWalk>);
 
+// The function of each adapter and each terminal holds no linear value by
+// value (LinearWalkFunction): the walk ends it with no consume.  A function
+// that holds a token is refused, and a function that holds none is taken.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] WalkToken {
+    int handle = 0;
+    constexpr explicit WalkToken(int value) noexcept : handle{value} {}
+    constexpr WalkToken(WalkToken&&) noexcept = default;
+    constexpr WalkToken& operator=(WalkToken&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    WalkToken(WalkToken const&) = delete("a linear token of the check does not copy");
+};
+using MapsWithToken = decltype([held = WalkToken{1}](int const& value) noexcept { return value + held.handle; });
+using KeepsWithToken = decltype([held = WalkToken{1}](int const& value) noexcept { return value > held.handle; });
+using FoldsWithToken =
+    decltype([held = WalkToken{1}](int sum, int const& value) noexcept { return sum + value + held.handle; });
+template <class W, class Fn>
+constexpr bool maps_with = requires { std::declval<W>().map(std::declval<Fn>()); };
+template <class W, class Fn>
+constexpr bool filters_with = requires { std::declval<W>().filter(std::declval<Fn>()); };
+template <class W, class Fn>
+constexpr bool folds_with = requires { std::declval<W>().fold(0, std::declval<Fn>()); };
+template <class W, class Fn>
+constexpr bool tests_any_with = requires { std::declval<W>().any_of(std::declval<Fn>()); };
+template <class W, class Fn>
+constexpr bool tests_all_with = requires { std::declval<W>().all_of(std::declval<Fn>()); };
+static_assert(!maps_with<IntWalk, MapsWithToken> && maps_with<IntWalk, Twice>);
+static_assert(!filters_with<IntWalk, KeepsWithToken> && filters_with<IntWalk, IsEven>);
+static_assert(!folds_with<IntWalk, FoldsWithToken> && folds_with<IntWalk, Sum>);
+static_assert(!tests_any_with<IntWalk, KeepsWithToken> && tests_any_with<IntWalk, IsEven>);
+static_assert(!tests_all_with<IntWalk, KeepsWithToken> && tests_all_with<IntWalk, IsEven>);
+
 // An exact walk gives size() and no count().  A walk with a filter gives
 // count() and no size(), and it has no skip, zip or try_zip.
 using FilterWalk = Walk<FilterStage<ViewStage<int const, dynamic_extent>, IsEven>>;

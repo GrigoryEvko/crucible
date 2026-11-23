@@ -404,11 +404,12 @@ template <class Walk, RowRead OutRead, RowRead... InReads, std::size_t... Is, cl
 }  // namespace detail
 
 // The arguments of mint_strided_rows: inputs of the rank parameter of the
-// output, and a body that takes a row and a view of each class with no throw
-// and gives no value.
+// output, and a body that takes a row and a view of each class with no throw,
+// gives no value, and holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).  The walk calls the body, and a call is no consume.
 template <class Body, class Walk, class T, std::size_t Rank, class... Inputs>
 concept CanWalkRows =
-    (PointwiseInput<Inputs, Rank> && ...)
+    (PointwiseInput<Inputs, Rank> && ...) && ::foundation::linear::HoldsNoLinearValue<Body>
     && std::is_nothrow_invocable_v<Body&, StridedRow<Walk, 1 + sizeof...(Inputs)> const&,
                                    RowView<T, Walk, 0, RowRead::Strided>,
                                    RowView<typename Inputs::element_type const, Walk, 1, RowRead::Strided>...>
@@ -484,5 +485,13 @@ template <class... Refused, class T, std::size_t Rank, class Brand, class Body, 
     return detail::walk_rows_<Fresh>(body, std::index_sequence_for<Inputs...>{}, apart, detail::plain_view_of_(out),
                                      detail::plain_view_of_(inputs)...);
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (HoldsNoLinearValue of foundation/Linear.h).
+template <class... Refused, class T, std::size_t Rank, class Brand, class Body, class... Inputs>
+    requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
+             && (PointwiseInput<Inputs, Rank> && ...)
+void mint_strided_rows(StridedViewMut<T, Rank, Brand>& out, Body body,
+                       Inputs const&... inputs) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

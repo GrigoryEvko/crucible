@@ -4599,6 +4599,14 @@ foundation_neg_compile_test(neg_strided_scope_static_local
 foundation_neg_compile_test(neg_strided_scope_returns_closure
   "a scope mint gives a result that holds its own scope brand"
   "foundation::core::mint_strided_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
+# The function of a walk and the body of a strided walk hold no linear value
+# by value: the walk calls them, and a call is no consume.
+foundation_neg_compile_test(neg_core_walk_map_linear_capture
+  "use of deleted function .void foundation::core::Walk<Stage>::map\\(Fn\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_strided_walk_linear_capture
+  "use of deleted function .void foundation::core::walk\\(Body&&, StridedView<First, Rank>, StridedView<Rest, Rank>\\.\\.\\.\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
 
 # The types of a strided view refuse each misuse that they can see: an axis
 # past a static rank, a write through a broadcast, a broadcast to fewer axes,

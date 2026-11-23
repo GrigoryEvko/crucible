@@ -1266,9 +1266,15 @@ constexpr void run_walk_(Body& body, std::index_sequence<Is...> rest_views,
 }  // namespace detail
 
 // The arguments of a walk: a body that takes the element of each view with
-// no throw.
+// no throw, and holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).  The walk calls the body, and a call is no consume.
 template <class Body, class... Ts>
-concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...>;
+concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a walk that holds a linear value by value: the deleted twin of
+// each walk binds to it.
+template <class Body, class... Ts>
+concept LinearWalkBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&, Ts&...>;
 
 namespace detail {
 
@@ -1303,6 +1309,13 @@ template <class Body, class First, class... Rest, std::size_t Rank>
     detail::walk_equal_views_(body, first, rest...);
     return Unit{};
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (LinearWalkBody).
+template <class Body, class First, class... Rest, std::size_t Rank>
+    requires LinearWalkBody<Body, First, Rest...>
+void walk(Body&& body, StridedView<First, Rank> first,
+          StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The scope ───────────────────────────────────────────────────────────
 
@@ -1567,5 +1580,12 @@ constexpr void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& f
                     BrandedStridedView<Rest, Rank, Brand> const&... rest) noexcept {
     detail::walk_equal_views_(body, first.view(), rest.view()...);
 }
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (LinearWalkBody).
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires LinearWalkBody<Body, First, Rest...>
+void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& first,
+          BrandedStridedView<Rest, Rank, Brand> const&... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

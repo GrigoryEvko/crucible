@@ -64,7 +64,8 @@
 //   through a const reference, and the function does not throw.  So a
 //   function holds no state that changes along the walk: such a state goes
 //   into the accumulator of fold.  filter, any_of and all_of read each
-//   element through a const reference.
+//   element through a const reference.  A function holds no linear value by
+//   value, because the walk ends it with no consume (LinearWalkFunction).
 //
 // Cursor loop
 //   `for (x : walk)` gives the cursor of the root stage, wrapped by each
@@ -146,24 +147,33 @@ template <class Stage>
 using walk_value_t = std::remove_cvref_t<typename Stage::element_reference>;
 
 // A function of map: it takes an element and gives a value, with no throw.
+// Each function of a walk holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h): the walk calls it and ends it
+// with the walk, and a call is no consume.
 template <class Fn, class Element>
 concept WalkMapping =
     std::is_nothrow_invocable_v<Fn const&, Element> && !std::is_void_v<std::invoke_result_t<Fn const&, Element>>
-    && std::is_nothrow_move_constructible_v<Fn>;
+    && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
 
 // A test of filter, any_of and all_of: it reads an element through a const
 // reference and gives a bool, with no throw.
 template <class Fn, class Value>
-concept WalkPredicate =
-    std::is_nothrow_invocable_v<Fn const&, Value const&>
-    && std::same_as<std::invoke_result_t<Fn const&, Value const&>, bool> && std::is_nothrow_move_constructible_v<Fn>;
+concept WalkPredicate = std::is_nothrow_invocable_v<Fn const&, Value const&>
+                     && std::same_as<std::invoke_result_t<Fn const&, Value const&>, bool>
+                     && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
 
 // A function of flat_map: it takes an element and gives a walk, with no
 // throw.
 template <class Fn, class Element>
 concept WalkExpansion = std::is_nothrow_invocable_v<Fn const&, Element>
                      && ::foundation::reflect::IsInstanceOf<std::invoke_result_t<Fn const&, Element>, ^^Walk>
-                     && std::is_nothrow_move_constructible_v<Fn>;
+                     && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
+
+// A function of a walk that holds a linear value by value: the deleted twin
+// of each adapter and each terminal binds to it.
+template <class Fn, class... Arguments>
+concept LinearWalkFunction =
+    (!::foundation::linear::HoldsNoLinearValue<Fn>) && std::is_invocable_v<Fn const&, Arguments...>;
 
 // A stage that gives the cursor of `for (x : walk)`.
 template <class Stage>
@@ -683,6 +693,13 @@ public:
             detail::MapStage<Stage, Fn>{static_cast<Stage&&>(stage_), static_cast<Fn&&>(fn)}};
     }
 
+    // A function that holds a linear value by value binds to this overload,
+    // and to the same twin of each other adapter and terminal, so the refusal
+    // gives its reason (LinearWalkFunction).
+    template <class Fn>
+        requires detail::LinearWalkFunction<Fn, Element>
+    void map(Fn fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // The elements that keep accepts.
     template <class Keep>
         requires detail::WalkPredicate<Keep, Value>
@@ -690,6 +707,10 @@ public:
         return Walk<detail::FilterStage<Stage, Keep>>{
             detail::FilterStage<Stage, Keep>{static_cast<Stage&&>(stage_), static_cast<Keep&&>(keep)}};
     }
+
+    template <class Keep>
+        requires detail::LinearWalkFunction<Keep, Value const&>
+    void filter(Keep keep) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // At most the first count elements.  An exact walk gets a smaller run, so
     // the loop keeps its counted form.  Each other walk stops after count
@@ -780,6 +801,10 @@ public:
             detail::FlatMapStage<Stage, Fn>{static_cast<Stage&&>(stage_), static_cast<Fn&&>(fn)}};
     }
 
+    template <class Fn>
+        requires detail::LinearWalkFunction<Fn, Element>
+    void flat_map(Fn fn) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // ── The terminals ──
 
     // step(... step(step(init, x0), x1) ..., xn-1), left to right (the order).
@@ -790,6 +815,7 @@ public:
     template <class Accumulator, class Step>
         requires std::is_nothrow_invocable_r_v<Accumulator, Step const&, Accumulator&&, Element>
               && std::is_nothrow_move_constructible_v<Accumulator> && std::is_nothrow_move_assignable_v<Accumulator>
+              && ::foundation::linear::HoldsNoLinearValue<Step>
     [[nodiscard]] constexpr Accumulator fold(Accumulator init, Step step) && noexcept {
         Accumulator acc = static_cast<Accumulator&&>(init);
         auto folded = [&acc, &step] [[gnu::always_inline]] (Element element) noexcept {
@@ -798,6 +824,10 @@ public:
         stage_.for_each_(folded);
         return acc;
     }
+
+    template <class Accumulator, class Step>
+        requires detail::LinearWalkFunction<Step, Accumulator&&, Element>
+    void fold(Accumulator init, Step step) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The count of an exact walk, with no walk of the elements.  O(1).
     [[nodiscard]] constexpr std::size_t size() const noexcept
@@ -843,6 +873,10 @@ public:
         return stage_.try_each_(probe) == detail::Flow::stop;
     }
 
+    template <class Holds>
+        requires detail::LinearWalkFunction<Holds, Value const&>
+    void any_of(Holds holds) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // True when holds accepts each element.  The walk stops at the first
     // element that holds refuses, and an empty walk gives true.  O(n) calls of
     // holds.
@@ -854,6 +888,10 @@ public:
         };
         return stage_.try_each_(probe) == detail::Flow::go;
     }
+
+    template <class Holds>
+        requires detail::LinearWalkFunction<Holds, Value const&>
+    void all_of(Holds holds) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The loop `for (x : walk)` (the cursor loop).
     [[nodiscard]] constexpr auto begin() const& noexcept
