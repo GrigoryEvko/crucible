@@ -25,6 +25,6 @@ int main() {
     static_cast<void>(full_name.append(foreign_name().characters()).is_ok());
     (void)table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
                               ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{0x42},
-                              crucible::SchemaTable::InternalName{full_name.view()});
+                              crucible::InternalSchemaName{full_name.view()});
     return 0;
 }

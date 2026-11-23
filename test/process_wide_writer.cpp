@@ -41,7 +41,7 @@ void process_wide_write() noexcept {
     const bool was_name_registered =
         crucible::register_schema_name(kVigilForeground, ::foundation::effects::testing::test().alloc, view,
                                        crucible::SchemaHash{kNamedHash},
-                                       crucible::SchemaTable::InternalName{::fixy::TextView{kSchemaName}})
+                                       crucible::InternalSchemaName{::fixy::TextView{kSchemaName}})
             .is_ok();
     CRUCIBLE_FATAL_INVARIANT(was_name_registered);
 }

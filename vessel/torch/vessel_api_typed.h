@@ -25,7 +25,7 @@
 //   decode_ffi_meta(record)   : const CrucibleMeta&      -> Option<TensorMeta>
 //   decode_ffi_records(...)   : TypedMeta, slots         -> Option<View<TensorMeta const>>
 //
-//   TypedSchemaName           := SchemaTable::LookupName
+//   TypedSchemaName           := InternedSchemaName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
 //
 //   decode_c10_scalar_type(o) : int8_t                   -> Option<ScalarType>
@@ -313,7 +313,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // An unknown hash gives no value.  The text borrows the storage of the table,
 // which keeps the first name of each hash for the life of the table.
 
-using TypedSchemaName = crucible::SchemaTable::LookupName;
+using TypedSchemaName = crucible::InternedSchemaName;
 
 [[nodiscard]] CRUCIBLE_HOT ::fixy::Option<TypedSchemaName>
 schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
@@ -334,12 +334,14 @@ schema_name_typed(crucible::SchemaHash schema_hash) noexcept {
 //     byte.
 //   - A name with a reserved hash (the reserved hashes below).
 //   - A name whose hash the tables hold with a different name.
-//   - A name with a new hash, when the table holds SCHEMA_TABLE_CAP names.
+//   - A name with a new hash, when the table has no room for it: it holds
+//     its capacity of names, or the name would take its names past
+//     SCHEMA_NAME_BYTES_MAX bytes.
 //
 // The reserved hashes.  The unboxed kernel of an operator of the generated
 // table (aten_op_table.h) registers the name of the operator as an internal
 // name when the operator first records.  An internal name that collides with
-// a held name ends the process (SchemaTable::register_name).  So the door
+// a held name ends the process (SchemaTableOf::register_name).  So the door
 // refuses an outside name that has the hash of an operator of the table and a
 // different name, and no later internal registration finds an outside name on
 // its hash.  The same name with the same hash names the same operator, and
@@ -356,7 +358,7 @@ enum class OutsideNameRefusal : std::uint8_t {
     reserved,
     // The tables hold a different name of the hash.
     collision,
-    // The table holds SCHEMA_TABLE_CAP names, and the hash is not one of them.
+    // The table has no room for the new hash.
     full,
 };
 
@@ -412,7 +414,7 @@ template <class VigilType>
     ::fixy::Tagged<crucible::SchemaNameParts, ::fixy::tags::source::ABIBoundary> const& name) noexcept {
     return crucible::sanitize_schema_name(hash, name)
         .match(
-            [&vigil, hash](crucible::SchemaTable::SanitizedName sanitized) noexcept -> OutsideNameRegistration {
+            [&vigil, hash](crucible::SanitizedSchemaName sanitized) noexcept -> OutsideNameRegistration {
                 if (is_reserved_for_other_name(hash, sanitized.parts()))
                     return ::fixy::err(OutsideNameRefusal::reserved);
                 const crucible::SchemaRegistration registration = vigil.register_schema_name(hash, sanitized);

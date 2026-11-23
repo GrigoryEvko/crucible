@@ -383,7 +383,7 @@ struct OperatorNameParts {
         case crucible::vessel::OutsideNameRefusal::collision:
             return "the schema tables hold a different name of the schema hash";
         case crucible::vessel::OutsideNameRefusal::full:
-            return "the schema table holds SCHEMA_TABLE_CAP names";
+            return "the schema table has no room for a new name";
         default:
             ::fixy::unreachable();
     }

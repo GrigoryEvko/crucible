@@ -165,7 +165,7 @@ struct SchemaRace {
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
         return table
             .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
-                           crucible::SchemaTable::InternalName{::fixy::TextView{"aten::race"}})
+                           crucible::InternalSchemaName{::fixy::TextView{"aten::race"}})
             .is_ok();
     }
 

@@ -6,14 +6,14 @@
 //
 // Repeated hash of a name table
 //   The check of a trace file refuses a table with two names of one hash
-//   (crucible/TraceLoader.h).  The rows time the test on TRACE_NAMES_MAX
-//   distinct hashes in no order, the worst case, because no pair stops the
-//   test early:
+//   (crucible/TraceLoader.h).  The rows time the test on 1024 distinct
+//   hashes in no order, the worst case, because no pair stops the test
+//   early:
 //     quadratic        the test of each hash against each hash before it,
 //                      the old form: n * (n - 1) / 2 compares
 //     sort and scan    has_repeated_hash_: the radix sort of the base and a
 //                      scan of the neighbors, with the copy of the hashes
-//                      into the frames of the sort
+//                      and the room of the sort on the heap
 //     check of table   CheckedTraceImage::check of an image that holds the
 //                      table of one-character names: the test of each name
 //                      by sanitize_schema_name and the test of a repeated
@@ -55,9 +55,13 @@ using crucible::SchemaTable;
 namespace {
 
 // The spread of the hashes of the rows of a name table: an odd constant, so
-// the products of the first TRACE_NAMES_MAX counts are distinct and in no
-// order.
+// the products of the first kTimedNames counts are distinct and in no order.
 constexpr uint64_t kSpread = 0x9E3779B97F4A7C15ULL;
+
+// The names of the timed name table: the names of two tables of
+// SCHEMA_TABLE_CAP names.  The quadratic row of a table of TRACE_NAMES_MAX
+// names would take seconds for each run.
+constexpr uint32_t kTimedNames = 2 * crucible::SCHEMA_TABLE_CAP;
 
 // True when two of the hashes are equal, by the test of each hash against
 // each hash before it.  Complexity: n * (n - 1) / 2 compares.
@@ -75,8 +79,8 @@ constexpr uint64_t kSpread = 0x9E3779B97F4A7C15ULL;
     return false;
 }
 
-// The bytes of a trace with no op and a name table of TRACE_NAMES_MAX names
-// of one character, on the hashes of the rows.
+// The bytes of a trace with no op and a name table of kTimedNames names of
+// one character, on the hashes of the rows.
 using NameTableImage = ::fixy::FixedList<std::byte, 16384>;
 
 // Appends the bytes of value to image, the low byte first.
@@ -121,8 +125,8 @@ using FullName = ::fixy::FixedText<crucible::SCHEMA_NAME_MAX>;
         const bool is_put = image.append(header_byte).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_put);
     }
-    append_word<uint32_t>(image, crucible::TRACE_NAMES_MAX);
-    for (uint64_t index = 1; index <= crucible::TRACE_NAMES_MAX; ++index) {
+    append_word<uint32_t>(image, kTimedNames);
+    for (uint64_t index = 1; index <= kTimedNames; ++index) {
         append_word<uint64_t>(image, kSpread * index);
         append_word<uint16_t>(image, 1);
         const bool is_put = image.append(std::byte{'n'}).is_ok();
@@ -156,7 +160,7 @@ int main() {
         ::fixy::FixedText<16> name{};
         const ::fixy::TextView name_view =
             ::fixy::format(name, "aten::op{}", i.raw()).expect("aten::op and a number below 250 fit in 16 characters");
-        const SchemaTable::SanitizedName sanitized =
+        const crucible::SanitizedSchemaName sanitized =
             crucible::sanitize_schema_name(hashes.at(i), ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
                 .expect("each name of the bench passes the validator");
         const bool was_registered = table
@@ -203,15 +207,16 @@ int main() {
 
     bench::emit_reports(reports.view(), json);
 
-    crucible::detail::TraceNameHashes table_hashes{};
-    for (uint64_t index = 1; index <= crucible::TRACE_NAMES_MAX; ++index) {
+    ::fixy::FixedList<uint64_t, kTimedNames> table_hashes{};
+    for (uint64_t index = 1; index <= kTimedNames; ++index) {
         const bool is_held = table_hashes.append(kSpread * index).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_held);
     }
     const NameTableImage image = make_name_table_image();
+    const ::foundation::effects::Alloc allocation = ::foundation::effects::testing::test().alloc;
 
     bench::print("\n=== repeated hash of a name table ===\n");
-    bench::print("  names: {}, each hash distinct\n\n", crucible::TRACE_NAMES_MAX);
+    bench::print("  names: {}, each hash distinct\n\n", kTimedNames);
 
     ::fixy::FixedArray<bench::Report, 3> table_reports{
         bench::run("quadratic (old)",
@@ -221,15 +226,17 @@ int main() {
                    }),
         bench::run("sort and scan (has_repeated_hash_)",
                    [&] {
-                       const bool is_repeated = crucible::detail::has_repeated_hash_(table_hashes);
+                       const bool is_repeated = crucible::detail::has_repeated_hash_(
+                           allocation, ::fixy::mint_heap_array_copy<uint64_t>(allocation, table_hashes.view()));
                        bench::do_not_optimize(is_repeated);
                    }),
-        bench::run("check of table (CheckedTraceImage::check)",
-                   [&] {
-                       const bool is_checked =
-                           crucible::CheckedTraceImage::check(::fixy::View<std::byte const>{image.view()}).is_ok();
-                       bench::do_not_optimize(is_checked);
-                   }),
+        bench::run(
+            "check of table (CheckedTraceImage::check)",
+            [&] {
+                const bool is_checked =
+                    crucible::CheckedTraceImage::check(::fixy::View<std::byte const>{image.view()}, allocation).is_ok();
+                bench::do_not_optimize(is_checked);
+            }),
     };
 
     bench::emit_reports(table_reports.view(), json);

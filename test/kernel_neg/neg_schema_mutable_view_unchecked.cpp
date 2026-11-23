@@ -12,6 +12,6 @@ int main() {
     table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
                         ::foundation::effects::testing::test().alloc,
                         table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>()),
-                        crucible::SchemaHash{0x42}, crucible::SchemaTable::InternalName{::fixy::TextView{"aten::mm"}});
+                        crucible::SchemaHash{0x42}, crucible::InternalSchemaName{::fixy::TextView{"aten::mm"}});
     return 0;
 }

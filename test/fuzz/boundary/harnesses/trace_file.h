@@ -66,7 +66,7 @@ namespace crucible::fuzz::boundary {
 // gives each hash one time, and the table started empty, so the table holds
 // as many names as the image.
 inline void claim_names_registered(::fixy::View<std::byte const> image) noexcept {
-    const auto checked = CheckedTraceImage::check(image);
+    const auto checked = CheckedTraceImage::check(image, kHarnessCtx.cap().alloc);
     CRUCIBLE_FUZZ_CLAIM("trace_file", checked.is_ok());
     checked.match(
         [](CheckedTraceImage const& trace_image) noexcept {
@@ -80,11 +80,9 @@ inline void claim_names_registered(::fixy::View<std::byte const> image) noexcept
                     "trace_file",
                     sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
                         .is_ok());
-                const ::fixy::Option<SchemaTable::LookupName> held = global_schema_table().lookup(name.hash);
+                const ::fixy::Option<InternedSchemaName> held = global_schema_table().lookup(name.hash);
                 const bool is_held_name = held.match(
-                    [&text](SchemaTable::LookupName const& found) noexcept {
-                        return found.value().view() == text.view();
-                    },
+                    [&text](InternedSchemaName const& found) noexcept { return found.value().view() == text.view(); },
                     [] noexcept { return false; });
                 CRUCIBLE_FUZZ_CLAIM("trace_file", is_held_name);
             }

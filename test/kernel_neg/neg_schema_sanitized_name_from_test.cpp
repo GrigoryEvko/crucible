@@ -7,15 +7,15 @@
 // test outside the friends that builds a Sanitized name from a retag.  On the
 // old table the name was the Tagged of the retag, so it compiled.
 //
-// Expected diagnostic: the constructor of SchemaTable::SanitizedName is
-// private.
+// Expected diagnostic: the constructor of SanitizedSchemaName is private.
+//
 
 #include <crucible/SchemaTable.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 
 int main() {
-    const crucible::SchemaTable::SanitizedName planted{
+    const crucible::SanitizedSchemaName planted{
         ::fixy::mint_tagged<::fixy::tags::source::External>(crucible::SchemaNameParts{::fixy::TextView{"aten::mm"}})
             .retag<::fixy::tags::source::Sanitized>()};
     return planted.parts().full_size() == 8 ? 0 : 1;

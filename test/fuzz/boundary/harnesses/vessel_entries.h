@@ -288,9 +288,9 @@ inline void check_name(InputCursor& cursor, NameForm form) noexcept {
     const bool is_refused =
         hash == 0 || name.size() == 0 || name.size() > SCHEMA_NAME_MAX || ::fixy::find(name, '\0').is_some();
     CRUCIBLE_FUZZ_CLAIM(kName, (code == CRUCIBLE_SCHEMA_NAME_REFUSED) == is_refused);
-    const ::fixy::Option<SchemaTable::LookupName> held = schema_name(SchemaHash{hash});
+    const ::fixy::Option<InternedSchemaName> held = schema_name(SchemaHash{hash});
     const bool is_held_name =
-        held.match([name](SchemaTable::LookupName const& found) noexcept { return found.value().view() == name; },
+        held.match([name](InternedSchemaName const& found) noexcept { return found.value().view() == name; },
                    [] noexcept { return false; });
     switch (code) {
         case CRUCIBLE_SCHEMA_NAME_REGISTERED:

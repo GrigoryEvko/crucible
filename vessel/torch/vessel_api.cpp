@@ -151,7 +151,7 @@ private:
 [[nodiscard]] bool is_exportable_name(const crucible::SchemaEntry& entry) noexcept {
     const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
     return crucible::sanitize_schema_name(entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name))
-        .match([](crucible::SchemaTable::SanitizedName) noexcept { return true; },
+        .match([](crucible::SanitizedSchemaName) noexcept { return true; },
                [&entry](crucible::SchemaNameError error) noexcept {
                    ::fixy::report(::fixy::Sink::Err,
                                   "crucible_export_crtrace: the schema table holds a name of the schema hash {} that "
@@ -518,7 +518,7 @@ const char* crucible_schema_name(uint64_t schema_hash) noexcept {
     // crucible::schema_name reads through both tables.  A caller cannot tell
     // which one accepted the registration, and should not have to.  An
     // unknown hash gives NULL.
-    for (const crucible::SchemaTable::LookupName& name : crucible::schema_name(crucible::SchemaHash{schema_hash})) {
+    for (const crucible::InternedSchemaName& name : crucible::schema_name(crucible::SchemaHash{schema_hash})) {
         CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: ctypes reads the name as a C text up to its zero")
         return ::foundation::core::foreign_c_str(name.value());
         CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

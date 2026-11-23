@@ -81,7 +81,7 @@ static_assert(sizeof(ExternalDataPtr) == sizeof(void*));
 static_assert(alignof(ExternalDataPtr) == alignof(void*));
 static_assert(std::is_trivially_copy_constructible_v<ExternalDataPtr>);
 
-static_assert(std::is_same_v<TypedSchemaName, crucible::SchemaTable::LookupName>);
+static_assert(std::is_same_v<TypedSchemaName, crucible::InternedSchemaName>);
 static_assert(sizeof(TypedSchemaName) == sizeof(::fixy::CText));
 static_assert(alignof(TypedSchemaName) == alignof(::fixy::CText));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
@@ -566,13 +566,13 @@ void test_schema_name_typed() {
             const bool was_a_registered =
                 crucible::register_schema_name(fg, ::foundation::effects::testing::test().alloc, view,
                                                crucible::SchemaHash{hash_a},
-                                               crucible::SchemaTable::InternalName{::fixy::TextView{"aten::test_op_a"}})
+                                               crucible::InternalSchemaName{::fixy::TextView{"aten::test_op_a"}})
                     .is_ok();
             EXPECT(was_a_registered, "an open schema table must take the first registration");
             const bool was_b_registered =
                 crucible::register_schema_name(fg, ::foundation::effects::testing::test().alloc, view,
                                                crucible::SchemaHash{hash_b},
-                                               crucible::SchemaTable::InternalName{::fixy::TextView{"aten::test_op_b"}})
+                                               crucible::InternalSchemaName{::fixy::TextView{"aten::test_op_b"}})
                     .is_ok();
             EXPECT(was_b_registered, "an open schema table must take the second registration");
         },
@@ -675,27 +675,30 @@ void test_schema_name_registration_codes() {
            "a refused long name leaves the tables as they were");
 }
 
-// A table that holds SCHEMA_TABLE_CAP names gives the code of a full table
-// for each new hash, and the process lives.  A Vigil seals the global table,
-// so the names go to the late table, and other cases of this test hold some of
-// its places.  So the case registers new hashes until the code changes, and
-// that takes at most SCHEMA_TABLE_CAP of them.  A held hash of the full table
-// still gives its own codes.  A full late table would refuse each later name
-// of this process, so the case clears it after the end of its Vigil.
+// A table that holds LATE_SCHEMA_TABLE_CAP names gives the code of a full
+// table for each new hash, and the process lives.  A Vigil seals the global
+// table, so the names go to the late table, and other cases of this test hold
+// some of its places.  So the case registers new hashes until the code
+// changes, and that takes more than the 512 places of the global table and at
+// most LATE_SCHEMA_TABLE_CAP of them.  The hashes are above the hashes of the
+// other cases, so each new name goes to the end of the table.  A held hash of
+// the full table still gives its own codes.  A full late table would refuse
+// each later name of this process, so the case clears it after the end of its
+// Vigil.
 void test_schema_name_full_code() {
-    constexpr uint64_t first_hash = 0xF0F0000000000000ULL;
+    constexpr uint64_t first_hash = 0xFFFF000000000000ULL;
     {
         crucible::Vigil vigil;
         uint32_t registered = 0;
         int code = CRUCIBLE_SCHEMA_NAME_REGISTERED;
-        while (code == CRUCIBLE_SCHEMA_NAME_REGISTERED && registered <= crucible::SCHEMA_TABLE_CAP) {
+        while (code == CRUCIBLE_SCHEMA_NAME_REGISTERED && registered <= crucible::LATE_SCHEMA_TABLE_CAP) {
             code =
                 crucible::vessel::register_schema_name_typed(vigil, first_hash + registered, abi_name("aten::filler"));
             if (code == CRUCIBLE_SCHEMA_NAME_REGISTERED) ++registered;
         }
         EXPECT(code == CRUCIBLE_SCHEMA_NAME_FULL, "a new hash at a full table gives the code of a full table");
-        EXPECT(registered >= 1 && registered <= crucible::SCHEMA_TABLE_CAP,
-               "the table took each name until it was full");
+        EXPECT(registered > crucible::SCHEMA_TABLE_CAP && registered <= crucible::LATE_SCHEMA_TABLE_CAP,
+               "the late table took each name until it was full");
         EXPECT(crucible::vessel::register_schema_name_typed(vigil, first_hash, abi_name("aten::filler"))
                    == CRUCIBLE_SCHEMA_NAME_REGISTERED,
                "the same name of a held hash registers at a full table");
@@ -730,9 +733,9 @@ void test_schema_name_reserved_hash() {
            "a different name of the hash of an operator of the table gives the collision code");
     EXPECT(crucible::vessel::schema_name_typed(plain_hash).is_none(),
            "a refused name of a reserved hash leaves the tables as they were");
-    vigil.register_schema_name(plain_hash, crucible::SchemaTable::InternalName{
-                                               ::fixy::side_as<crucible::side::SchemaBaseName>(plain.name),
-                                               ::fixy::side_as<crucible::side::SchemaOverload>(plain.overload)});
+    vigil.register_schema_name(
+        plain_hash, crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(plain.name),
+                                                 ::fixy::side_as<crucible::side::SchemaOverload>(plain.overload)});
     const auto held_name = crucible::vessel::schema_name_typed(plain_hash);
     const bool holds_operator =
         held_name.match([&plain](TypedSchemaName const& found) noexcept { return found.value().view() == plain.name; },
@@ -754,8 +757,8 @@ void test_schema_name_reserved_hash() {
            "the full name of an operator with an overload registers from outside");
     vigil.register_schema_name(
         crucible::SchemaHash{overloaded.schema_hash},
-        crucible::SchemaTable::InternalName{::fixy::side_as<crucible::side::SchemaBaseName>(overloaded.name),
-                                            ::fixy::side_as<crucible::side::SchemaOverload>(overloaded.overload)});
+        crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(overloaded.name),
+                                     ::fixy::side_as<crucible::side::SchemaOverload>(overloaded.overload)});
     const auto held_full_name = crucible::vessel::schema_name_typed(crucible::SchemaHash{overloaded.schema_hash});
     const bool holds_full_name = held_full_name.match(
         [&full_name](TypedSchemaName const& found) noexcept { return found.value().view() == full_name.view(); },

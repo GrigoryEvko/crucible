@@ -1426,11 +1426,11 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // fills it the first time it sees an operator; this is that first sighting
     // for the unboxed path.
     //
-    // It is a first-record event rather than a load-time one because the table
-    // holds SCHEMA_TABLE_CAP entries and aborts past it, and the fork exposes
-    // 3110 operators. Registering them all at load would abort; registering
-    // them as they are recorded also keeps the table's contents equal to the
-    // set of operators the run actually used, which is what it meant before.
+    // It is a first-record event and not a load-time one.  The global table
+    // holds SCHEMA_TABLE_CAP names, and the fork exposes 3110 operators, so a
+    // registration of each operator at load would end the process.  A
+    // registration at the first record also keeps the names of the tables
+    // equal to the operators that the run used.
     //
     // A producer thread of a Vigil writes the flag, and the store comes after
     // the registration.  A second store of true writes the same value, so two
@@ -1453,9 +1453,9 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // generated headers this table was built from, so crucible produced
         // the name.  The two parts of the row are texts of the program image,
         // and the constructor of the internal name checks them at compile time.
-        vigil.register_schema_name(kSchemaHash, crucible::SchemaTable::InternalName{
-                                                    ::fixy::side_as<crucible::side::SchemaBaseName>(kRow.name),
-                                                    ::fixy::side_as<crucible::side::SchemaOverload>(kRow.overload)});
+        vigil.register_schema_name(
+            kSchemaHash, crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(kRow.name),
+                                                      ::fixy::side_as<crucible::side::SchemaOverload>(kRow.overload)});
         schema_name_registered.store_release(true);
     }
 

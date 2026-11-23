@@ -10,7 +10,7 @@
 // The companion fixture neg_schema_register_abi_boundary_name refuses a
 // name from the C ABI at register_schema_name.
 //
-// Expected diagnostic: the SchemaNameOf constraint of register_name is not
+// Expected diagnostic: the SchemaNameSource constraint of register_name is not
 // satisfied for a Tagged of source::External.
 
 #include <crucible/SchemaTable.h>

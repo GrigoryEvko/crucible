@@ -54,13 +54,12 @@ using namespace crucible;
 using crucible::detail::write_record_field_;
 
 // True when the table gives the expected characters.
-static bool is_named(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::TextView expected) {
-    return name.match(
-        [expected](SchemaTable::LookupName const& found) noexcept { return found.value().view() == expected; },
-        [] noexcept { return false; });
+static bool is_named(::fixy::Option<InternedSchemaName> const& name, ::fixy::TextView expected) {
+    return name.match([expected](InternedSchemaName const& found) noexcept { return found.value().view() == expected; },
+                      [] noexcept { return false; });
 }
 
-static bool missing(::fixy::Option<SchemaTable::LookupName> const& name) { return name.is_none(); }
+static bool missing(::fixy::Option<InternedSchemaName> const& name) { return name.is_none(); }
 
 // A load that registers schema names takes the context of a Vigil's producer
 // claim.  These tests load without a Vigil, so they take that context from
@@ -541,10 +540,9 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
         .mint_mutable_view(kVigilForeground)
         .match(
             [&kHeldHash](SchemaTable::MutableView view) noexcept {
-                const bool was_registered =
-                    register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
-                                         SchemaTable::InternalName{::fixy::TextView{"aten::held"}})
-                        .is_ok();
+                const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
+                                                                 InternalSchemaName{::fixy::TextView{"aten::held"}})
+                                                .is_ok();
                 CRUCIBLE_TEST_ASSERT(kTest, was_registered);
             },
             []() noexcept {});
@@ -599,7 +597,7 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
                 for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
                     const bool was_registered =
                         register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                                             SchemaTable::InternalName{::fixy::TextView{"aten::filler"}})
+                                             InternalSchemaName{::fixy::TextView{"aten::filler"}})
                             .is_ok();
                     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
                 }
@@ -641,7 +639,7 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
                 for (uint64_t filler = 1; filler <= SCHEMA_TABLE_CAP - 3; ++filler) {
                     const bool was_registered =
                         register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                                             SchemaTable::InternalName{::fixy::TextView{"aten::filler"}})
+                                             InternalSchemaName{::fixy::TextView{"aten::filler"}})
                             .is_ok();
                     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
                 }
@@ -747,7 +745,7 @@ static bool is_refused_whole(TraceImage const& image, TraceLoadError error) {
     const ::fixy::Path<::fixy::tags::source::Sanitized> path = write_image(image.view(), kFileName);
     const bool is_load_refused = is_refused_as(load_trace(kTestIo, kVigilForeground, path), error);
     remove_image(kFileName);
-    return CheckedTraceImage::check(image.view()).err() == ::fixy::some(error) && is_load_refused
+    return CheckedTraceImage::check(image.view(), kTest.cap().alloc).err() == ::fixy::some(error) && is_load_refused
         && global_schema_table().count() == 0;
 }
 
@@ -798,7 +796,38 @@ static void append_short_name(TraceImage& image, uint64_t hash) {
 
 // The refusal of the check of image, or no value.
 static ::fixy::Option<TraceLoadError> check_error(TraceImage const& image) {
-    return CheckedTraceImage::check(image.view()).err();
+    return CheckedTraceImage::check(image.view(), kTest.cap().alloc).err();
+}
+
+// The spread of the hashes of a table in no order: an odd constant, so the
+// products of the first TRACE_NAMES_MAX counts are distinct and not zero.
+constexpr uint64_t kSpread = 0x9E3779B97F4A7C15ULL;
+
+// The bytes of a trace with no op and a name table of TRACE_NAMES_MAX names
+// of one character.  The name at position index takes the hash
+// hash_at(index).  The table holds more bytes than a TraceImage, so the image
+// lives on the heap.
+template <class HashAt>
+static ::fixy::HeapArray<std::byte> make_widest_name_table(HashAt hash_at) {
+    constexpr std::size_t kNameBytes = sizeof(uint64_t) + sizeof(uint16_t) + 1;
+    constexpr std::size_t kImageBytes =
+        TRACE_HEADER_BYTES + sizeof(uint32_t) + std::size_t{TRACE_NAMES_MAX} * kNameBytes;
+    return ::fixy::mint_heap_array_written<std::byte>(
+        kTest.cap().alloc, kImageBytes, [&hash_at](::fixy::WriteLease<std::byte>& lease) noexcept {
+            const auto put_le = [&lease](auto value) noexcept {
+                for (std::size_t shift = 0; shift < sizeof(value) * 8; shift += 8)
+                    lease.put(static_cast<std::byte>(static_cast<uint8_t>(value >> shift)));
+            };
+            const auto header = encode_trace_header(0, 0);
+            for (const std::byte header_byte : header.view())
+                lease.put(header_byte);
+            put_le(uint32_t{TRACE_NAMES_MAX});
+            for (uint32_t index = 0; index < TRACE_NAMES_MAX; ++index) {
+                put_le(hash_at(index));
+                put_le(uint16_t{1});
+                lease.put(std::byte{'n'});
+            }
+        });
 }
 
 // The check of a repeated hash reads the whole table, and the first refusal
@@ -821,14 +850,11 @@ static void test_first_refusal_of_the_table_decides() {
     append_short_name(corrupt_first, 0x3E9ULL);
     CRUCIBLE_TEST_ASSERT(kTest, check_error(corrupt_first) == ::fixy::some(TraceLoadError::NameCorrupt));
 
-    auto repeat_last = make_zero_op_header();
-    append_le<uint32_t>(repeat_last, TRACE_NAMES_MAX);
-    constexpr uint64_t kSpread = 0x9E3779B97F4A7C15ULL;
-    for (uint64_t index = 1; index < TRACE_NAMES_MAX; ++index) {
-        append_short_name(repeat_last, kSpread * index);
-    }
-    append_short_name(repeat_last, kSpread);
-    CRUCIBLE_TEST_ASSERT(kTest, check_error(repeat_last) == ::fixy::some(TraceLoadError::NameRepeated));
+    const ::fixy::HeapArray<std::byte> repeat_last = make_widest_name_table([](uint32_t index) noexcept {
+        return index + 1 == TRACE_NAMES_MAX ? kSpread : kSpread * (uint64_t{index} + 1);
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(repeat_last.view(), kTest.cap().alloc).err()
+                                    == ::fixy::some(TraceLoadError::NameRepeated));
     ::fixy::check::pass(kTest, "  test_first_refusal_decides:     PASSED\n");
 }
 
@@ -886,7 +912,7 @@ struct CutSections {
 // value when the check accepts it.
 static ::fixy::Option<TraceLoadError> cut_error(TraceImage const& image, std::size_t length) {
     const ::fixy::View<std::byte const> cut = image.view().window(0, length).expect("a cut is a prefix of the image");
-    return CheckedTraceImage::check(cut).err();
+    return CheckedTraceImage::check(cut, kTest.cap().alloc).err();
 }
 
 // Each cut of a file that the writer wrote is refused, at each byte, with
@@ -898,7 +924,7 @@ static void test_each_cut_of_a_written_file_is_refused() {
     const TraceImage image = make_written_image();
     const CutSections sections{};
     CRUCIBLE_TEST_ASSERT(kTest, image.size() == sections.first_name + sizeof(uint64_t) + sizeof(uint16_t) + 9);
-    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(image.view()).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(image.view(), kTest.cap().alloc).is_ok());
     for (std::size_t length = 0; length < image.size(); ++length) {
         TraceLoadError expected = TraceLoadError::NameTableTruncated;
         if (length < sections.header) {
@@ -946,14 +972,14 @@ static void test_cut_files_at_the_section_boundaries_are_refused() {
 static void test_trailing_byte_and_count_past_the_bound_are_refused() {
     TraceImage trailing = make_written_image();
     CRUCIBLE_TEST_ASSERT(kTest, trailing.append(std::byte{0}).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(trailing.view()).err()
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(trailing.view(), kTest.cap().alloc).err()
                                     == ::fixy::some(TraceLoadError::TrailingBytes));
     CRUCIBLE_TEST_ASSERT(
         kTest, is_refused_as(load_image(trailing.view(), "crtrace-trailing.bin"), TraceLoadError::TrailingBytes));
 
     auto counted = make_zero_op_header();
     append_le<uint32_t>(counted, TRACE_NAMES_MAX + 1);
-    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(counted.view()).err()
+    CRUCIBLE_TEST_ASSERT(kTest, CheckedTraceImage::check(counted.view(), kTest.cap().alloc).err()
                                     == ::fixy::some(TraceLoadError::CountPastLimit));
     ::fixy::check::pass(kTest, "  test_trailing_and_count:        PASSED\n");
 }
@@ -961,7 +987,8 @@ static void test_trailing_byte_and_count_past_the_bound_are_refused() {
 // The format holds what the writer can write: a name of SCHEMA_NAME_LEN_MAX
 // characters, and a table of TRACE_NAMES_MAX names, the union of the two
 // schema tables.  The old gates refused the first after 256 characters and
-// skipped a table of more than SCHEMA_TABLE_CAP names.
+// refused a table of more than 1024 names, though the late table holds
+// LATE_SCHEMA_TABLE_CAP names.
 static void test_the_writer_maxima_pass_the_check() {
     global_schema_table().clear(::foundation::effects::testing::test());
     auto longest = make_zero_op_header();
@@ -988,14 +1015,9 @@ static void test_the_writer_maxima_pass_the_check() {
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(SchemaHash{0x10E6ULL}), longest_name.view()));
     global_schema_table().clear(::foundation::effects::testing::test());
 
-    auto widest = make_zero_op_header();
-    append_le<uint32_t>(widest, TRACE_NAMES_MAX);
-    for (uint64_t hash = 1; hash <= TRACE_NAMES_MAX; ++hash) {
-        append_le<uint64_t>(widest, hash);
-        append_le<uint16_t>(widest, 1);
-        append_text(widest, "n");
-    }
-    const auto checked = CheckedTraceImage::check(widest.view());
+    const ::fixy::HeapArray<std::byte> widest =
+        make_widest_name_table([](uint32_t index) noexcept { return uint64_t{index} + 1; });
+    const auto checked = CheckedTraceImage::check(widest.view(), kTest.cap().alloc);
     const bool holds_each_name =
         checked.match([](CheckedTraceImage const& image) noexcept { return image.num_names() == TRACE_NAMES_MAX; },
                       [](TraceLoadError) noexcept { return false; });

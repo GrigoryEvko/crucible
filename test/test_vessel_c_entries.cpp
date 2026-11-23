@@ -31,10 +31,9 @@ namespace crucible::testing {
 // reaches the refusal of the export.  Only this test defines the door.
 class UncheckedSchemaNameDoor final {
 public:
-    [[nodiscard]] static SchemaTable::SanitizedName plant(::fixy::TextView characters) noexcept {
-        return SchemaTable::SanitizedName{
-            ::fixy::mint_tagged<::fixy::tags::source::External>(SchemaNameParts{characters})
-                .retag<::fixy::tags::source::Sanitized>()};
+    [[nodiscard]] static SanitizedSchemaName plant(::fixy::TextView characters) noexcept {
+        return SanitizedSchemaName{::fixy::mint_tagged<::fixy::tags::source::External>(SchemaNameParts{characters})
+                                       .retag<::fixy::tags::source::Sanitized>()};
     }
 };
 
@@ -332,7 +331,7 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
     EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok() && leading_zero.append('b').is_ok(),
            "the text holds a zero and two letters");
     EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
-    const crucible::SchemaTable::SanitizedName unchecked =
+    const crucible::SanitizedSchemaName unchecked =
         crucible::testing::UncheckedSchemaNameDoor::plant(leading_zero.view());
     constexpr crucible::VigilFgCtx kForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
     EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc,
@@ -341,7 +340,7 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
            "the table takes the Sanitized name");
     const auto stored = crucible::schema_name(crucible::SchemaHash{kEmptyStoredSchema});
     const bool is_stored_empty = stored.match(
-        [](crucible::SchemaTable::LookupName const& found) noexcept { return found.value().view().size() == 0; },
+        [](crucible::InternedSchemaName const& found) noexcept { return found.value().view().size() == 0; },
         [] noexcept { return false; });
     EXPECT(is_stored_empty, "the table keeps the Sanitized name as an empty name");
 
@@ -349,11 +348,34 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
            "the export refuses an empty name");
     EXPECT(!export_file_exists(), "a refused export writes no file");
 
-    // A table with no such name exports again.
+    // A table with no such name exports again.  The late table takes more
+    // names than the 1024 of two tables of SCHEMA_TABLE_CAP names, the export
+    // writes each of them, and the loader reads the file.  The old late table
+    // gave the full refusal to the 513th name, and the old loader refused a
+    // name table of more than 1024 names.
     crucible::late_schema_table().clear(::foundation::effects::testing::test());
+    constexpr uint32_t kLateNames = 2 * crucible::SCHEMA_TABLE_CAP + 76;
+    constexpr uint64_t kFirstLateHash = 0x1A7E000000000000ULL;
+    for (uint32_t index = 0; index < kLateNames; ++index) {
+        ::fixy::FixedText<32> name{};
+        static_cast<void>(::fixy::format(name, "aten::late_{}", index).expect("the name fits in its text"));
+        const crucible::SchemaHash hash{kFirstLateHash + index};
+        const crucible::SanitizedSchemaName late_name =
+            crucible::sanitize_schema_name(hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name.view()))
+                .expect("each name of the case passes the validator");
+        EXPECT(
+            crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc, hash, late_name)
+                .is_ok(),
+            "the late table takes each name");
+    }
     EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
            "the export writes a table of valid names");
+    const auto many_path =
+        ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(kExportFile.view()))
+            .expect("the file name passes the path check");
+    EXPECT(crucible::load_trace(kTest, many_path).is_ok(), "the loader reads a table of more than 1024 names");
     remove_export_file();
+    crucible::late_schema_table().clear(::foundation::effects::testing::test());
 }
 
 // The pairs of a handle with no region, from create to destroy.

@@ -78,11 +78,12 @@ inline constexpr uint32_t MAX_OPS = 1u << 22;
 inline constexpr uint32_t MAX_METAS = 1u << 24;
 
 // The most names of a name table.  The writer writes the union of the global
-// schema table and the late schema table (crucible/SchemaTable.h), each of
-// SCHEMA_TABLE_CAP names.  A load that registers the names registers each
+// schema table, of SCHEMA_TABLE_CAP names, and the late schema table, of
+// LATE_SCHEMA_TABLE_CAP names (crucible/SchemaTable.h).  So each file that
+// the writer writes loads.  A load that registers the names registers each
 // name of the trace or none, so the global table refuses a trace of more new
 // names than it has places for.
-inline constexpr uint32_t TRACE_NAMES_MAX = 2 * SCHEMA_TABLE_CAP;
+inline constexpr uint32_t TRACE_NAMES_MAX = SCHEMA_TABLE_CAP + LATE_SCHEMA_TABLE_CAP;
 
 // The typed gates of the three counts of a file.  The loader takes each count
 // from its field only through the mint of its gate.  Zero is admitted: an
@@ -503,10 +504,13 @@ decode_meta_record_(::fixy::View<std::byte const, MetaBytes> raw) noexcept {
 inline constexpr std::size_t kTraceNameCountBytes = sizeof(uint32_t);
 inline constexpr std::size_t kTraceNameHeadBytes = sizeof(uint64_t) + sizeof(uint16_t);
 
-// The most bytes of a name table: the count, and TRACE_NAMES_MAX names of the
-// longest length.
+// The most bytes of a name table: the count, the hash and the length of
+// TRACE_NAMES_MAX names, and the characters of the names of the two schema
+// tables.  Each table holds at most SCHEMA_NAME_BYTES_MAX bytes of names, each
+// name with a zero that the file does not hold.  So each table that the
+// writer writes fits, and the load sizes no buffer for a longer file.
 inline constexpr uint64_t kTraceNameTableMaxBytes =
-    kTraceNameCountBytes + uint64_t{TRACE_NAMES_MAX} * (kTraceNameHeadBytes + SCHEMA_NAME_LEN_MAX);
+    kTraceNameCountBytes + uint64_t{TRACE_NAMES_MAX} * kTraceNameHeadBytes + 2 * uint64_t{SCHEMA_NAME_BYTES_MAX.raw()};
 
 // One name of a name table: its schema hash and its characters.
 struct TraceName {
@@ -568,26 +572,39 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
 [[nodiscard]] inline ::fixy::Option<TraceLoadError> check_trace_name_(TraceName const& name) noexcept {
     const ::fixy::FixedText<SCHEMA_NAME_MAX> text = trace_name_text_(name);
     return sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
-        .match([](SchemaTable::SanitizedName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
+        .match([](SanitizedSchemaName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
                [](SchemaNameError error) noexcept { return ::fixy::some(trace_name_error_(error)); });
 }
 
 // The hashes of the names of a table, as the keys of the radix sort of the
-// base.
-using TraceNameHashes = ::fixy::FixedList<uint64_t, TRACE_NAMES_MAX>;
+// base.  A table holds up to TRACE_NAMES_MAX names, more hashes than a frame
+// of the stack holds, so the hashes live on the heap.
+using TraceNameHashes = ::fixy::HeapArray<uint64_t>;
+
+// The hashes of the first count names of names, which the check of the image
+// read before.  Complexity: O(count).
+[[nodiscard]] inline TraceNameHashes trace_name_hashes_(::foundation::effects::Alloc allocation,
+                                                        ::fixy::View<std::byte const> names,
+                                                        ::fixy::ElementCount count) noexcept {
+    return ::fixy::mint_heap_array_written<uint64_t>(
+        allocation, count.raw(), [names, count](::fixy::WriteLease<uint64_t>& lease) noexcept {
+            ::fixy::View<std::byte const> rest = names;
+            for (std::size_t index = 0; index < count.raw(); ++index) {
+                lease.put(take_trace_name_(rest).expect("the check read each name of the count").hash.raw());
+            }
+        });
+}
 
 // True when two of the hashes are equal.  The stable sort of the base orders
 // the hashes by the radix sort of their eight bytes, and a scan compares each
-// hash with the next one.  The order of the result of the sort is a function
-// of the hashes alone, so the answer has no freedom.  Complexity: O(n) for n
-// hashes, with at most eight passes of the sort, where the old test of each
-// name against each name before it made n * (n - 1) / 2 compares.
-[[nodiscard]] inline bool has_repeated_hash_(TraceNameHashes hashes) noexcept {
-    TraceNameHashes scratch{};
-    for (std::size_t index = 0; index < hashes.size(); ++index) {
-        const bool is_held = scratch.append(uint64_t{0}).is_ok();
-        CRUCIBLE_FATAL_INVARIANT(is_held);
-    }
+// hash with the next one.  The room of the sort comes from the allocation
+// capability, as the hashes do.  The order of the result of the sort is a
+// function of the hashes alone, so the answer has no freedom.  Complexity:
+// O(n) for n hashes, with at most eight passes of the sort, where the old
+// test of each name against each name before it made n * (n - 1) / 2
+// compares.
+[[nodiscard]] inline bool has_repeated_hash_(::foundation::effects::Alloc allocation, TraceNameHashes hashes) noexcept {
+    TraceNameHashes scratch = ::fixy::mint_heap_array(allocation, hashes.size(), uint64_t{0});
     hashes = ::fixy::with_mut(std::move(hashes), [&scratch](auto run) noexcept {
         scratch = ::fixy::with_mut(std::move(scratch), [&run](auto room) noexcept {
             const bool is_sorted = ::foundation::core::sort_stably(std::move(run), std::move(room)).is_ok();
@@ -733,14 +750,18 @@ public:
     // kTraceNumNamesBound gives CountPastLimit.  The errors of the names are
     // those of the table (TraceLoadError).  It gives a Result of a
     // CheckedTraceImage or of the TraceLoadError, with a deduced return type,
-    // as CheckedTraceHeader::check.  Complexity: linear in the bytes of the
-    // names, and linear in the count of the names for the test of a repeated
-    // hash (has_repeated_hash_).  The count is at most TRACE_NAMES_MAX.
-    [[nodiscard]] static auto check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept;
+    // as CheckedTraceHeader::check.  The test of a repeated hash keeps the
+    // hashes of the names on the heap, through the allocation capability.
+    // Complexity: linear in the bytes of the names, and linear in the count of
+    // the names for the test of a repeated hash (has_repeated_hash_).  The
+    // count is at most TRACE_NAMES_MAX.
+    [[nodiscard]] static auto check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image,
+                                    ::foundation::effects::Alloc allocation) noexcept;
 
     // Checks a whole image: its header, then the rest.  An image shorter than
     // a header gives HeaderTruncated.
-    [[nodiscard]] static auto check(::fixy::View<std::byte const> image) noexcept;
+    [[nodiscard]] static auto check(::fixy::View<std::byte const> image,
+                                    ::foundation::effects::Alloc allocation) noexcept;
 
     [[nodiscard]] CheckedTraceHeader const& header() const noexcept { return header_; }
 
@@ -764,7 +785,8 @@ private:
     uint32_t num_names_ = 0;
 };
 
-inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image) noexcept {
+inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::View<std::byte const> image,
+                                     ::foundation::effects::Alloc allocation) noexcept {
     using Checked = ::fixy::Result<CheckedTraceImage, TraceLoadError>;
     const uint64_t table_at = header.table_at();
     if (table_at > image.size()) {
@@ -795,24 +817,22 @@ inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::V
     checked.num_names_ = ::fixy::mint_refined<kTraceNumNamesBound>(raw_num_names).value();
     checked.names_ = table.window(detail::kTraceNameCountBytes, table.size() - detail::kTraceNameCountBytes)
                          .expect("the count is the start of the table");
-    // The hashes of the names that passed, up to the first refusal of a name.
-    // Each of them comes before that refusal in the file, so a repeated hash
-    // among them is the first refusal in the order of the file.
-    detail::TraceNameHashes hashes{};
+    // The first refusal of a name, and the count of the names before it.
     ::fixy::View<std::byte const> rest = checked.names_;
     ::fixy::Option<TraceLoadError> refusal = ::fixy::none;
+    std::size_t passed = 0;
     for (uint32_t index = 0; index < checked.num_names_ && refusal.is_none(); ++index) {
         refusal = detail::take_trace_name_(rest).match(
-            [&hashes](detail::TraceName name) noexcept {
-                ::fixy::Option<TraceLoadError> refused = detail::check_trace_name_(name);
-                if (refused.is_some()) return refused;
-                const bool is_held = hashes.append(name.hash.raw()).is_ok();
-                CRUCIBLE_FATAL_INVARIANT(is_held);
-                return refused;
-            },
+            [](detail::TraceName name) noexcept { return detail::check_trace_name_(name); },
             [](TraceLoadError error) noexcept { return ::fixy::some(error); });
+        if (refusal.is_none()) ++passed;
     }
-    if (detail::has_repeated_hash_(std::move(hashes))) refusal = ::fixy::some(TraceLoadError::NameRepeated);
+    // The hashes of the names that passed.  Each of them comes before the
+    // first refusal of a name in the file, so a repeated hash among them is
+    // the first refusal in the order of the file.
+    if (detail::has_repeated_hash_(
+            allocation, detail::trace_name_hashes_(allocation, checked.names_, ::fixy::ElementCount{passed})))
+        refusal = ::fixy::some(TraceLoadError::NameRepeated);
     if (refusal.is_some()) {
         const TraceLoadError error = std::move(refusal).value_or(TraceLoadError::NameTableTruncated);
         detail::report_name_table_(error, table_at);
@@ -825,7 +845,8 @@ inline auto CheckedTraceImage::check(CheckedTraceHeader const& header, ::fixy::V
     return Checked{checked};
 }
 
-inline auto CheckedTraceImage::check(::fixy::View<std::byte const> image) noexcept {
+inline auto CheckedTraceImage::check(::fixy::View<std::byte const> image,
+                                     ::foundation::effects::Alloc allocation) noexcept {
     using Checked = ::fixy::Result<CheckedTraceImage, TraceLoadError>;
     if (image.size() < TRACE_HEADER_BYTES) {
         ::fixy::report(::fixy::Sink::Err, "load_trace: the header of the trace file is truncated\n");
@@ -834,7 +855,9 @@ inline auto CheckedTraceImage::check(::fixy::View<std::byte const> image) noexce
     const ::fixy::Result<CheckedTraceHeader, TraceLoadError> header = CheckedTraceHeader::check(
         image.template window<TRACE_HEADER_BYTES>(0).expect("the test above keeps the header in the image"));
     return header.match(
-        [image](CheckedTraceHeader const& checked_header) noexcept { return check(checked_header, image); },
+        [image, allocation](CheckedTraceHeader const& checked_header) noexcept {
+            return check(checked_header, image, allocation);
+        },
         [](TraceLoadError error) noexcept { return Checked{::fixy::err(error)}; });
 }
 
@@ -1086,7 +1109,8 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     });
     image = std::move(filled);
     CRUCIBLE_TRY(_, std::move(read));
-    CRUCIBLE_TRY(checked, CheckedTraceImage::check(checked_header, ::fixy::View<std::byte const>{image.view()}));
+    CRUCIBLE_TRY(checked,
+                 CheckedTraceImage::check(checked_header, ::fixy::View<std::byte const>{image.view()}, io.cap().alloc));
 
     LoadedTrace trace{};
     trace.num_ops = checked_header.num_ops();
@@ -1113,7 +1137,7 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
     // so a sealed table refuses each trace that has names.  A load with no
     // name, or a load that skips the names, needs no table.
     if (name_use == TraceNameUse::skip || checked.num_names() == 0) return trace;
-    const auto walk_names = [&checked](SchemaTable::AddName const& add_name) noexcept {
+    const auto walk_names = [&checked](AddSchemaName const& add_name) noexcept {
         ::fixy::View<std::byte const> rest = checked.names();
         for (uint32_t index = 0; index < checked.num_names(); ++index) {
             const detail::TraceName entry =

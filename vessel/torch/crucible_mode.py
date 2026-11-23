@@ -467,8 +467,8 @@ class CrucibleMode(TorchDispatchMode):
                     f"crucible: the schema hash {h} of the op {op_name} names a different op in the schema table")
             if result == SchemaNameResult.FULL:
                 raise RuntimeError(
-                    f"crucible: the schema table is full, so it has no place for the op {op_name}.  Raise "
-                    f"SCHEMA_TABLE_CAP in crucible/SchemaTable.h")
+                    f"crucible: the schema table has no room for the op {op_name}.  Raise "
+                    f"LATE_SCHEMA_TABLE_CAP or SCHEMA_NAME_BYTES_MAX in crucible/SchemaTable.h")
         return h
 
     @staticmethod

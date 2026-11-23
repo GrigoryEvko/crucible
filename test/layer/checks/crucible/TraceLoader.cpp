@@ -34,6 +34,7 @@ static_assert(detail::kFirstMetaGradFnHashAt + sizeof(uint64_t) == TRACE_FIRST_M
 // no name that a load refuses.  The writer writes the union of the global and
 // the late tables.
 static_assert(SCHEMA_NAME_LEN_MAX == SCHEMA_NAME_MAX, "a name of the file is as long as a name of the schema table");
-static_assert(TRACE_NAMES_MAX == 2 * SCHEMA_TABLE_CAP, "a name table holds the names of the two schema tables");
+static_assert(TRACE_NAMES_MAX == SCHEMA_TABLE_CAP + LATE_SCHEMA_TABLE_CAP,
+              "a name table holds the names of the two schema tables");
 
 }  // namespace crucible

@@ -40,7 +40,7 @@
 //                               — provenance threads into
 //                               TensorMeta-consuming code without
 //                               changing the wire-struct layout.
-//   * schema name lookup      → SchemaTable::LookupName
+//   * schema name lookup      → InternedSchemaName
 //                               via `schema_name_typed(schema_hash)`
 //                               — distinguishes the
 //                               post-validation pointer from raw FFI

@@ -21,6 +21,6 @@ constexpr ::fixy::FixedText<16> kNameWithZero = [] {
 }();
 
 int main() {
-    constexpr crucible::SchemaTable::InternalName name{kNameWithZero.view()};
+    constexpr crucible::InternalSchemaName name{kNameWithZero.view()};
     return static_cast<int>(name.parts().name().size());
 }

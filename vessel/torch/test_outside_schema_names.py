@@ -89,6 +89,11 @@ OTHER_NAME = f"{NAMESPACE}::mm"
 # A different name for the hash of the full name of the fourth operator.
 OTHER_COLLIDED_NAME = f"{NAMESPACE}::not_d"
 
+# The names that the C entry registers before the operators run.  They are
+# more than the 512 places of the global table, so the name of each operator
+# is a later name of the late table.
+FILLER_NAMES = [f"{NAMESPACE}::filler_{index}" for index in range(600)]
+
 
 def add_one(source: torch.Tensor) -> torch.Tensor:
     """Return the source plus one, the value of each of the five operators."""
@@ -139,6 +144,12 @@ def record(directory: Path) -> tuple[Path, list[str]]:
         if code != SchemaNameResult.REGISTERED:
             problems.append(f"the C entry gives the code {code} for a new hash, not the code "
                             f"{int(SchemaNameResult.REGISTERED)}")
+        for filler in FILLER_NAMES:
+            code = register_name(ctx, filler, filler)
+            if code != SchemaNameResult.REGISTERED:
+                problems.append(f"the C entry gives the code {code} for the name {filler}, not the code "
+                                f"{int(SchemaNameResult.REGISTERED)}")
+                break
         # The second call of each refused operator finds the refusal in the
         # schema cache of the fallback.
         for _ in range(2):
@@ -177,6 +188,8 @@ def main() -> int:
             problems.append(f"the region holds no operation of the name {label} ({len(name)} characters)")
         if names.get(wanted) != name:
             problems.append(f"the name table holds no name {label} ({len(name)} characters) for its hash")
+    if names.get(schema_hash(FILLER_NAMES[-1])) != FILLER_NAMES[-1]:
+        problems.append(f"the name table holds no name {FILLER_NAMES[-1]} for its hash")
     for label, name in (("past the limit", FULL_PAST_LIMIT), ("long overload", FULL_LONG_OVERLOAD),
                         ("collision", FULL_COLLIDED)):
         refused = schema_hash(name)

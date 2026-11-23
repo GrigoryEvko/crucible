@@ -15,7 +15,7 @@ std::uint8_t process_wide_classify(std::uint64_t schema_hash) noexcept {
 
 ::fixy::TextView process_wide_schema_name(std::uint64_t schema_hash) noexcept {
     const auto name = crucible::schema_name(crucible::SchemaHash{schema_hash});
-    return name.match([](crucible::SchemaTable::LookupName const& found) noexcept { return found.value().view(); },
+    return name.match([](crucible::InternedSchemaName const& found) noexcept { return found.value().view(); },
                       [] noexcept { return ::fixy::TextView{}; });
 }
 

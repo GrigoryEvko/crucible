@@ -668,15 +668,14 @@ void test_name_of_zero_fold_registers() {
     crucible::SchemaTable table;
     const auto view = table.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     const crucible::SchemaHash hash = crucible::vessel::schema_hash_of_fold(crucible::SchemaHash{0}).value();
-    const bool is_registered =
-        table
-            .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
-                           crucible::SchemaTable::InternalName{::fixy::TextView{"aten::zero_fold"}})
-            .is_ok();
+    const bool is_registered = table
+                                   .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
+                                                  crucible::InternalSchemaName{::fixy::TextView{"aten::zero_fold"}})
+                                   .is_ok();
     CRUCIBLE_FATAL_INVARIANT(is_registered && "the table takes a name whose fold is zero");
-    const ::fixy::Option<crucible::SchemaTable::LookupName> stored = table.lookup(hash);
+    const ::fixy::Option<crucible::InternedSchemaName> stored = table.lookup(hash);
     const bool is_found = stored.match(
-        [](crucible::SchemaTable::LookupName const& found) noexcept {
+        [](crucible::InternedSchemaName const& found) noexcept {
             return found.value().view() == ::fixy::TextView{"aten::zero_fold"};
         },
         [] noexcept { return false; });
