@@ -2,6 +2,7 @@
 
 #include <fixy/concurrent/SpscEnds.h>
 
+#include <foundation/Transfer.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/RootKeys.h>
 #include <foundation/effects/Effect.h>
@@ -41,6 +42,13 @@ static_assert(!::foundation::core::BorrowsNoKeyOwner<BorrowsTheSplit, ConsumerBr
 static_assert(!::foundation::core::BorrowsNoKeyOwner<BorrowsTheSplit, ProducerBrand>);
 static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ConsumerBrand>);
 static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ProducerBrand>);
+
+// A split stays on one thread: two threads cannot write it at the same time,
+// also when its owner holds no state that two threads cannot write.  The
+// Box of the owner and the state of each end are plain, and a loan key
+// proves no thread.
+static_assert(::foundation::transfer::Synchronized<CheckOwner>);
+static_assert(!::foundation::transfer::Synchronized<SpscSplit<CheckOwner, CheckBrand>>);
 
 // The held split.  A proof is an empty class that no code builds with no
 // argument and that does not copy.  A held brand names one proof for each
@@ -90,7 +98,11 @@ static_assert(!opens_producer<SpscSplit<CheckOwner, CheckBrand>, SpscNoSideProof
 // member alias of a specialization whose argument is a fresh brand, so the
 // statement of the side brand is a base (states_owner_brand of
 // foundation/core/Frame.h), and this check reads the split of a real mint.
-// No code calls the function: its checks hold where it stands.
+// No code calls the function: its checks hold where it stands.  The class has
+// internal linkage, because its closure holds a reference to a split of a
+// fresh brand, and a walk unit that includes this file would otherwise give
+// a class of external linkage a member of internal linkage.
+namespace {
 struct FreshSplitCheck {
     static void check(::foundation::effects::Alloc allocation) noexcept {
         [[maybe_unused]] auto [split, producer_key, consumer_key] = mint_spsc_split<CheckOwner>(allocation);
@@ -103,5 +115,6 @@ struct FreshSplitCheck {
                                                              SpscSideBrand<Brand, SpscSide::producer>>);
     }
 };
+}  // namespace
 
 }  // namespace fixy::concurrent::detail::spsc_ends_checks

@@ -4758,6 +4758,11 @@ fixy_neg_compile_test(neg_spsc_ends_helper_has_no_key
 fixy_neg_compile_test(neg_spsc_ends_called_closure
   "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(fixy::concurrent::ProducerKey<Brand>&&, Body&&\\) &"
   "a body of a frame door of a split reaches the key of its side")
+# A split stays on one thread, so two bodies of run_joined that borrow one
+# split are refused, also when each holds the key of a different side.
+fixy_neg_compile_test(neg_spsc_ends_split_on_two_threads
+  "static assertion failed: run_joined: the body captures .split. .field [_a-z]*, type fixy::concurrent::SpscSplit<"
+  "a write through this reference that is not const races")
 fixy_neg_compile_test(neg_spsc_ends_ref_alias
   "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(Body&&\\) &"
   "a split lends its producer end only with the producer key, or with the producer proof of a held brand: call with_producer")

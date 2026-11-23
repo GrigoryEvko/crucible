@@ -36,8 +36,14 @@
 //                                    body gets the two ends
 //     with_owner(body)               body gets the owner as const, with no key
 //   The result of a body holds no borrow, so no reference to an end leaves its
-//   frame.  Two threads can each hold the key of one side, and each opens only
-//   its own side.
+//   frame.  The key of one side opens only that side.
+//
+// Thread
+//   A split stays on one thread.  Its doors take loan keys, and a loan key
+//   proves no thread (foundation/Transfer.h), so the split states no transfer
+//   fact, and two threads cannot write it at the same time.  A door that
+//   starts threads thus refuses two bodies that borrow one split, also when
+//   each body holds the key of a different side.
 //
 //   The owner is a friend of its two ends.  The side operations are static
 //   members of the owner that take the end, and they read the Ref and the
