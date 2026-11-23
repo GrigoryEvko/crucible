@@ -16,7 +16,9 @@ Ledger
     a prefix of assay.core.ledger).  A count row with no reason is the kind
     no-reason, which no ledger row admits (REFUSED_KINDS).  A count can only
     fall.  `guard list --build-dir DIR --path DIRECTORY/` prints the lines of a
-    directory.
+    directory.  A kind of FILE_KEYED_KINDS counts the lines of each file in
+    place of each directory, such as ungated-body, which counts the doors of
+    each header (is_file_keyed_kind of utils/tools/quarantine/plugin.h).
 
 Write
     A write counts the lines of the rule in each build.  A count row with no
@@ -40,6 +42,14 @@ from assay.guard.engines.plugin.quarantine import directory_of
 # The kind of a count row with no reason.  No ledger row admits it.
 NO_REASON_KIND = "no-reason"
 REFUSED_KINDS = frozenset({NO_REASON_KIND})
+
+# The kinds whose count rows name a file and not a directory.
+FILE_KEYED_KINDS = frozenset({"ungated-body"})
+
+
+def key_path(file: str, kind: str) -> str:
+    """Return the path of the ledger key of a line of KIND in FILE: the file for a file-keyed kind, else its directory."""
+    return file if kind in FILE_KEYED_KINDS else directory_of(file)
 
 
 def message(item_text: str, kind: str, actions: Mapping[str, str]) -> str:
@@ -85,7 +95,8 @@ def line_findings(
 ) -> list[check_report.Finding]:
     """Give an error for each line of RULE_ID other than a record, each count row with no reason and each problem.
 
-    The path of the error of a line is the directory of its file, the key of the ledger (the ledger).
+    The path of the error of a line is the key of the ledger: the directory of its file, or the file for a kind of
+    FILE_KEYED_KINDS (the ledger).
 
     Raises:
         NotApplicable: If the rule does not apply to the build
@@ -96,7 +107,12 @@ def line_findings(
     found = census.errors(rule_id)
     found += [
         check_report.Finding(
-            "error", directory_of(item.file), item.line, rule_id, message(item.text(), item.kind, actions), item.kind
+            "error",
+            key_path(item.file, item.kind),
+            item.line,
+            rule_id,
+            message(item.text(), item.kind, actions),
+            item.kind,
         )
         for item in census.of_rule(rule_id)
         if item.kind not in skipped

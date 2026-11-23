@@ -1,0 +1,21 @@
+# A door of a base header gives no line of the kind ungated-body (the family
+# door gate of gate.cpp) when it states the gate, also through a concept and a
+# fold, when no caller outside the base can name it (a namespace detail, a
+# private member, a private nested class, a key of a namespace detail), when it
+# is consteval or the once door, when it takes the body by an lvalue reference
+# that is not const, which binds only a named object of the caller, or when it
+# uses no body of its caller (a temporary of a type, a pass to an overload set
+# that reads the value in two ways, the result argument of a test of the form
+# invocable_r).
+compile gates src/gates.cpp must-consume=on sentinel=include/fixy/Gates.h
+flag gates -freflection
+exit gates pass
+
+# The ledger keys the kind on the header: the row of include/fixy/Counted.h
+# counts its one door, so the line stays a line of the report in the enforce
+# mode error, and the module of the rule judges the count, which holds.
+compile counted src/counted.cpp must-consume=on sentinel=include/fixy/Counted.h
+flag counted -freflection
+exit counted pass
+judge counted
+finding counted must-consume ungated-body include/fixy/Counted.h:9:6 | plant::run_counted: body

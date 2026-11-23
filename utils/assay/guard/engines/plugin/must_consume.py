@@ -37,6 +37,24 @@ Rule
                             a path, so the end of the closure drops it.  The
                             line is at the lambda (linear.cpp, the closures
                             that a call owns)
+      ungated-body          a public function template of the base that calls
+                            a body of its caller, gives it to a function of
+                            the base that calls it, or tests its invocation,
+                            and states no gate HoldsNoLinearValue of
+                            include/foundation/Linear.h for it.  The line is
+                            at the name of the door, and the plugin reads the
+                            door only in the sentinel unit of its header
+                            (gate.cpp).  A private member, a member of a
+                            private class, a declaration of a namespace detail
+                            or of an anonymous namespace, a function with a
+                            parameter of a class of a namespace detail, a
+                            consteval function and the once door give no
+                            line.  The ledger counts the lines of each header
+                            and not of each directory, so a header with no
+                            row refuses a new door with no gate at the
+                            compile.  Retire a line: state the gate on the
+                            type of each body, with a deleted twin whose
+                            reason is CRUCIBLE_LINEAR_BODY_REFUSAL
     A linear sum gives the kinds of the sums in place of unconsumed,
     unconsumed-on-path and discarded-temporary.
     The plugin reads a body of a base file in the sentinel unit of the file,

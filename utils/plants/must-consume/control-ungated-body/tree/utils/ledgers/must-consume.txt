@@ -1,0 +1,4 @@
+# The ledger of the rule must-consume of this control.
+format 1
+rule must-consume
+include/fixy/Counted.h | ungated-body | 1 | - | the one door of the header that the control counts

@@ -1,0 +1,67 @@
+// The public doors of a base header that use a body of the caller and state
+// no gate HoldsNoLinearValue (the family door gate of gate.cpp).  A linear
+// capture of such a body ends with the body, after the call, where no path of
+// the rule must-consume reads it.
+#pragma once
+
+#include <foundation/Linear.h>
+
+namespace plant {
+
+// A call of a body that the door takes by a forwarding reference.
+template <class Body>
+void run(Body&& body) noexcept {
+    static_cast<Body&&>(body)();
+}
+
+namespace detail {
+template <class Body>
+void call_body(Body& body) noexcept {
+    body();
+}
+}  // namespace detail
+
+// A pass of a body to a function of the base that calls it.
+template <class Body>
+void pass(Body body) noexcept {
+    detail::call_body(body);
+}
+
+// A body that a lambda of the door captures and calls.
+template <class Body>
+void later(Body const& body) noexcept {
+    auto const call = [&body]() noexcept { body(); };
+    call();
+}
+
+// The arms of a pack, which the door calls through an index of the pack.
+template <class... Arms>
+void first_arm(Arms&&... arms) noexcept {
+    arms...[0]();
+}
+
+// A body that the door keeps, and that a requires-expression of its
+// constraint calls.
+template <class Body>
+struct Kept {
+    Body body;
+};
+
+template <class Body>
+    requires requires(Body const& body) { body(); }
+Kept<Body> keep(Body body) noexcept {
+    return Kept<Body>{static_cast<Body&&>(body)};
+}
+
+// A member template of a class template.
+template <class Value>
+struct Cell {
+    Value value;
+
+    template <class Visitor>
+    void visit(Visitor&& visitor) const noexcept {
+        visitor(value);
+    }
+};
+
+}  // namespace plant

@@ -1,0 +1,5 @@
+// The unit of the doors that give no line: the argument sentinel makes it the
+// sentinel unit of the header.
+#include <fixy/Gates.h>
+
+int main() { return 0; }

@@ -28,7 +28,10 @@ files under the directory OUT:
                   of a file of the mode error then gives the word RULE:KIND of
                   each count row above zero of its directory in the ledger of
                   each rule of COUNTED_LINE_RULES, sorted (the counted lines
-                  of utils/tools/quarantine/plugin.cpp).  The plugin
+                  of utils/tools/quarantine/plugin.cpp), and then the word of
+                  each count row above zero of the file itself, which a kind
+                  that the ledger keys on its file writes, such as
+                  ungated-body (is_file_keyed_kind of plugin.h).  The plugin
                   names the mode stamp of each file with a finding in the
                   dependencies of the unit.  So a change
                   of the mode of a file, or of the count rows of its
@@ -194,7 +197,8 @@ def source_files(
 
     The walk reads each directory of a row one time.  It skips the build
     directory and each directory that a symbolic link names.  A file of the
-    mode error also gets the counted kinds of its directory from COUNTED.
+    mode error also gets the counted kinds of its directory, and then those of
+    the file itself, from COUNTED.
     Complexity: O(files under the rows) times O(rows) for the class and the
     mode.
 
@@ -227,6 +231,7 @@ def source_files(
         words = [mode, table.include_mode_of(relative)]
         if mode == "error":
             words += counted.get(directory_of(relative), ())
+            words += counted.get(relative, ())
         modes[relative] = " ".join(words)
     return modes
 

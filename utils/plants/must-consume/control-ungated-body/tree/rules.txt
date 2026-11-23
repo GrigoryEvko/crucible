@@ -1,0 +1,9 @@
+# The rule table of this control.  include/fixy/ is base code of the enforce
+# mode error, the units of src/ are quarantined, and the base headers can
+# include the linear marker of the repository and name its vocabulary.
+
+layer low 0 include/fixy/
+allow low <foundation/Linear.h>
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+quarantine src/
+enforce include/fixy/ error

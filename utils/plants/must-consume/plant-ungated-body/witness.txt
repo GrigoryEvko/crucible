@@ -1,0 +1,25 @@
+# Each public door of a base header that uses a body of its caller and states
+# no gate HoldsNoLinearValue is a line of the kind ungated-body (the family door
+# gate of gate.cpp): a call through a forwarding reference (13), a pass to a
+# function of the base that calls the body (26), a call in a lambda of the door
+# (32), a call of an arm through an index of a pack (39), a body that the door
+# keeps and that its constraint calls (52), and a member template of a class
+# template (62).  The ledger keys the kind on the header, and this tree holds
+# no ledger, so the header counts no line and each line is a compile error in
+# the enforce mode error.
+
+compile doors src/use.cpp must-consume=on sentinel=include/fixy/Doors.h
+flag doors -freflection
+exit doors fail
+finding doors must-consume ungated-body include/fixy/Doors.h:13:6 | plant::run: body
+finding doors must-consume ungated-body include/fixy/Doors.h:26:6 | plant::pass: body
+finding doors must-consume ungated-body include/fixy/Doors.h:32:6 | plant::later: body
+finding doors must-consume ungated-body include/fixy/Doors.h:39:6 | plant::first_arm: arms
+finding doors must-consume ungated-body include/fixy/Doors.h:52:12 | plant::keep: body
+finding doors must-consume ungated-body include/fixy/Doors.h:62:10 | plant::Cell::visit: visitor
+error doors include/fixy/Doors.h:13 | quarantine: ungated-body plant::run: body; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error
+error doors include/fixy/Doors.h:26 | quarantine: ungated-body plant::pass: body; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error
+error doors include/fixy/Doors.h:32 | quarantine: ungated-body plant::later: body; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error
+error doors include/fixy/Doors.h:39 | quarantine: ungated-body plant::first_arm: arms; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error
+error doors include/fixy/Doors.h:52 | quarantine: ungated-body plant::keep: body; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error
+error doors include/fixy/Doors.h:62 | quarantine: ungated-body plant::Cell::visit: visitor; the ledger of the rule must-consume counts no line of this kind in include/fixy/Doors.h, whose enforce mode is error

@@ -159,7 +159,10 @@
 //     rule_table.cpp).  So a new kind of line in such a directory, such as a
 //     new drop in src/ where the ledger counts none, stops the compile of the
 //     developer, and a count row comes only from a deliberate write of the
-//     ledger.  A count row above zero keeps each line of its directory and kind
+//     ledger.  A kind that the ledger keys on its file, such as ungated-body,
+//     reads the row of its file in place of its directory
+//     (is_file_keyed_kind of plugin.h).
+//     A count row above zero keeps each line of its directory and kind
 //     a line of the report, and the module of the rule judges its count.  No
 //     region covers a counted line.  The mode stamp of a file of the enforce
 //     mode error holds the count rows of its directory (utils/assay/loop/
@@ -301,15 +304,22 @@ std::string directory_of(const std::string& relative) {
     return slash == std::string::npos ? std::string("./") : relative.substr(0, slash + 1);
 }
 
+// The key of the ledger row of the counted line FINDING: its file for a kind
+// that the ledger keys on the file (is_file_keyed_kind of plugin.h), and its
+// directory for each other kind.
+std::string counted_key_of(const Finding& finding) {
+    return is_file_keyed_kind(finding.kind) ? finding.file->relative : directory_of(finding.file->relative);
+}
+
 // True when the counted line FINDING is an error: its file has the enforce
-// mode error, and the ledger of its rule has no count row of its directory
-// and kind (the counted lines).
+// mode error, and the ledger of its rule has no count row of its key and kind
+// (the counted lines).
 bool is_refused_counted_line(const Finding& finding) {
     if (!is_counted_line(finding) || finding.file == nullptr || !finding.file->is_error_mode) {
         return false;
     }
-    std::string key = std::string(rule_name(rule_of(finding.kind))) + " " + kind_text(finding) + " "
-                    + directory_of(finding.file->relative);
+    std::string key =
+        std::string(rule_name(rule_of(finding.kind))) + " " + kind_text(finding) + " " + counted_key_of(finding);
     return state.counted_rows.count(key) == 0;
 }
 
@@ -382,7 +392,7 @@ void report_family(const Finding& finding, std::vector<std::string>& lines, bool
                  "quarantine: %s %s; the ledger of the rule %s counts no line of this kind in %s, whose enforce mode "
                  "is error, so the rule refuses this code, and %<python3 utils/bin/guard explain %s%> gives the rule "
                  "and its action",
-                 kind.c_str(), finding.entity.c_str(), rule, directory_of(finding.file->relative).c_str(), rule);
+                 kind.c_str(), finding.entity.c_str(), rule, counted_key_of(finding).c_str(), rule);
     } else if (state.out_dir.empty() && !has_section) {
         inform(finding.spelling, "quarantine: %s %s", kind.c_str(), finding.entity.c_str());
     }
@@ -485,6 +495,7 @@ void walk_unit() {
     finish_borrow_matches();
     finish_base_namespace();
     walk_fresh_brands();
+    finish_door_gates();
     finish_definition_home();
     judge_folded_names();
 }
@@ -929,6 +940,9 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     }
     if (checks_must_consume || checks_linear_shapes) {
         register_linear(plugin_info->base_name, checks_must_consume, checks_linear_shapes);
+    }
+    if (checks_must_consume) {
+        register_door_gate(plugin_info->base_name);
     }
     if (checks_specialization_home) {
         register_specialization_home(plugin_info->base_name);

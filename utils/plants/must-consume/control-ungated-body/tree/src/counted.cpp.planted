@@ -1,0 +1,5 @@
+// The unit of the counted door: the argument sentinel makes it the sentinel
+// unit of the header.
+#include <fixy/Counted.h>
+
+int main() { return 0; }

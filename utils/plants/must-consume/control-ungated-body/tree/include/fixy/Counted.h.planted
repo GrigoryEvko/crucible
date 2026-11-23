@@ -1,0 +1,13 @@
+// A base header with one public door that states no gate.  The ledger of this
+// control counts one line of the kind ungated-body for the header, so the line
+// stays a line of the report.
+#pragma once
+
+namespace plant {
+
+template <class Body>
+void run_counted(Body&& body) noexcept {
+    static_cast<Body&&>(body)();
+}
+
+}  // namespace plant

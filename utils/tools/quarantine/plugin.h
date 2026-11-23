@@ -36,6 +36,10 @@
 //                          linear values on them, for the rule must-consume,
 //                          and the shapes of the linear and the branded
 //                          types, for the six rules of the shapes
+//         gate.cpp         the family door gate: each public function
+//                          template of the base that calls a body of its
+//                          caller, for the kind ungated-body of the rule
+//                          must-consume
 //         contract.cpp     the contract rule
 //         fresh_brand.cpp  the family fresh brand: the template parameters of a
 //                          mint whose default is a closure, for the rule
@@ -429,6 +433,13 @@
 //                           capture by value live on a path, so the end of
 //                           the closure drops it (the closures that a call
 //                           owns of linear.cpp)
+//     ungated-body          a public function template of the base that calls
+//                           a body of its caller, gives it to a function that
+//                           calls it, or tests its invocation, and whose
+//                           constraints state no gate HoldsNoLinearValue of
+//                           include/foundation/Linear.h for it (gate.cpp).
+//                           The count ledger counts its lines for each file
+//                           (is_file_keyed_kind)
 //     The other rules of the family linear (linear.cpp, the shapes):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
@@ -1139,6 +1150,7 @@ enum class Kind : std::uint8_t {
     linear_borrow_move_out,
     linear_closure_move_out,
     linear_capture_unconsumed,
+    linear_ungated_body,
     linear_pinned_holder,
     linear_copyable_holder,
     linear_library_holder,
@@ -1286,6 +1298,13 @@ inline bool is_counted_line_rule(Rule rule) {
     }
     return false;
 }
+
+// True when the count ledger keys a counted line of KIND on its file, and not
+// on its directory: the kind ungated-body (gate.cpp), whose ledger counts the
+// doors of each header.  So a header whose count is zero refuses a new line
+// at the compile.  FILE_KEYED_KINDS of utils/assay/loop/stamps.py and of
+// assay.guard.engines.plugin.linear_family names the same kinds.
+inline bool is_file_keyed_kind(Kind kind) { return kind == Kind::linear_ungated_body; }
 
 // True when an owner row of the kind KIND reads the names that the source
 // spells, from the events of the parser (owner.cpp, the names of the source).
@@ -1530,6 +1549,8 @@ inline const char* kind_name(Kind kind) {
             return "closure-move-out";
         case Kind::linear_capture_unconsumed:
             return "capture-unconsumed";
+        case Kind::linear_ungated_body:
+            return "ungated-body";
         case Kind::linear_pinned_holder:
             return "pinned-holder";
         case Kind::linear_copyable_holder:
@@ -1737,6 +1758,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::linear_borrow_move_out:
         case Kind::linear_closure_move_out:
         case Kind::linear_capture_unconsumed:
+        case Kind::linear_ungated_body:
             return Rule::must_consume;
         case Kind::linear_pinned_holder:
         case Kind::linear_copyable_holder:
@@ -2047,6 +2069,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"must-consume", "borrow-move-out"},
     {"must-consume", "closure-move-out"},
     {"must-consume", "capture-unconsumed"},
+    {"must-consume", "ungated-body"},
     {"linear-containment", "pinned-holder"},
     {"linear-containment", "copyable-holder"},
     {"linear-containment", "library-holder"},
@@ -3126,6 +3149,12 @@ void report_specialization(const Finding& finding);
 void register_fresh_brand(const char* plugin_name);
 void walk_fresh_brands();
 void report_fresh_brand(const Finding& finding);
+
+// gate.cpp: the family door gate, the kind ungated-body of the rule
+// must-consume.  finish_door_gates() reads each door that the sentinel unit
+// parsed, at the end of the unit.
+void register_door_gate(const char* plugin_name);
+void finish_door_gates();
 
 // namespace.cpp: the family base namespace, the rule base-namespace.
 // finish_base_namespace() walks the namespaces of the base after the parse,

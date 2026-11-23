@@ -1,0 +1,5 @@
+// The unit of the plant: it includes the base header of the doors, and the
+// argument sentinel makes it the sentinel unit of that header.
+#include <fixy/Doors.h>
+
+int main() { return 0; }

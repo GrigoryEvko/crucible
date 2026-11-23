@@ -1,0 +1,136 @@
+// The doors of a base header that give no line of the kind ungated-body (the
+// family door gate of gate.cpp): each one states the gate, no caller outside
+// the base can name it, or it uses no body of its caller.
+#pragma once
+
+#include <foundation/Linear.h>
+
+namespace plant {
+
+// A door that states the gate.
+template <class Body>
+    requires ::foundation::linear::HoldsNoLinearValue<Body>
+void run_gated(Body&& body) noexcept {
+    static_cast<Body&&>(body)();
+}
+
+// A concept that reaches the gate.
+template <class Body>
+concept GatedBody = ::foundation::linear::HoldsNoLinearValue<Body> && requires(Body& body) { body(); };
+
+template <GatedBody Body>
+void run_through_concept(Body&& body) noexcept {
+    body();
+}
+
+// A fold of the gate over a pack of arms.
+template <class... Arms>
+    requires(::foundation::linear::HoldsNoLinearValue<Arms> && ...)
+void each_arm(Arms&&... arms) noexcept {
+    (arms(), ...);
+}
+
+namespace detail {
+
+// A class of a namespace detail, which a door takes as its key.
+struct DoorTicket {
+    int tag = 0;
+};
+
+// A door of a namespace detail.
+template <class Body>
+void run_detail(Body&& body) noexcept {
+    body();
+}
+
+// Two overloads of one name, and only the first calls its third parameter.
+template <class Value, class Write>
+void put(int slot, Value value, Write write) noexcept {
+    write(slot, value);
+}
+
+template <class Context, class Value>
+void put(int slot, Context const& context, Value value) noexcept {
+    static_cast<void>(slot);
+    static_cast<void>(context);
+    static_cast<void>(value);
+}
+
+}  // namespace detail
+
+// A private door, and a door of a private nested class.
+class Holder {
+public:
+    template <class Body>
+        requires ::foundation::linear::HoldsNoLinearValue<Body>
+    static void run_public(Body& body) noexcept {
+        run_private(body);
+        Inner::run_inner(body);
+    }
+
+private:
+    template <class Body>
+    static void run_private(Body&& body) noexcept {
+        body();
+    }
+
+    struct Inner {
+        template <class Body>
+        static void run_inner(Body&& body) noexcept {
+            body();
+        }
+    };
+};
+
+// A door with a key that only the base makes.
+template <class Body>
+void run_keyed(detail::DoorTicket /*ticket*/, Body&& body) noexcept {
+    body();
+}
+
+// A body by an lvalue reference that is not const: the caller names it, and
+// the rule must-consume tracks it in the caller.
+template <class Body>
+void run_borrowed(Body& body) noexcept {
+    body();
+}
+
+// A consteval door, which ends no resource at run time.
+template <class Body>
+consteval int run_consteval(Body const& body) {
+    return body();
+}
+
+// The once door, which owns its closure and calls it one time.
+template <class Closure>
+[[= ::foundation::linear::once_door{}]] void run_once(Closure&& closure) noexcept {
+    Closure owned(static_cast<Closure&&>(closure));
+    static_cast<Closure&&>(owned)();
+}
+
+// A temporary that the door makes from a type, which is no parameter.
+template <class Less>
+bool compare_with(int left, int right) noexcept {
+    return Less{}(left, right);
+}
+
+// A pass of a value to an overload set whose candidates read the value in
+// two ways: one calls it and one does not, so the pass gives no line.
+template <class Value>
+void send(int slot, Value value) noexcept {
+    detail::put(slot, 0, value);
+}
+
+// The result argument of a test of an invocation of the form invocable_r,
+// which is no body.  The step states the gate.
+template <class Result, class Step>
+concept is_plant_invocable_r = requires(Step const& step) { step(); };
+
+template <class Accumulator, class Step>
+    requires is_plant_invocable_r<Accumulator, Step> && ::foundation::linear::HoldsNoLinearValue<Step>
+Accumulator fold_once(Accumulator initial, Step step) noexcept {
+    step();
+    return initial;
+}
+
+}  // namespace plant
