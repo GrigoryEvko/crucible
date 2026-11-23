@@ -1,0 +1,13 @@
+// The one test that defines the test door.  The owner row admits it.
+#include <crucible/SchemaTable.h>
+
+namespace crucible::testing {
+
+class UncheckedSchemaNameDoor final {
+public:
+    [[nodiscard]] static SanitizedName plant(int value) noexcept { return SanitizedName{value}; }
+};
+
+}  // namespace crucible::testing
+
+int main() { return crucible::testing::UncheckedSchemaNameDoor::plant(0).value(); }

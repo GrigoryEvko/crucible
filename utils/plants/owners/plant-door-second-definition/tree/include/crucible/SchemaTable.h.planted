@@ -1,0 +1,25 @@
+// A product header with a name whose constructor is private.  Its friend is
+// a test door that the header only declares.
+#pragma once
+
+namespace crucible {
+
+namespace testing {
+
+class UncheckedSchemaNameDoor;
+
+}  // namespace testing
+
+class SanitizedName final {
+public:
+    [[nodiscard]] constexpr int value() const noexcept { return value_; }
+
+private:
+    constexpr explicit SanitizedName(int value) noexcept : value_{value} {}
+
+    int value_ = 0;
+
+    friend class ::crucible::testing::UncheckedSchemaNameDoor;
+};
+
+}  // namespace crucible

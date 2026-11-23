@@ -1,0 +1,18 @@
+// A product unit that defines the test door a second time, so it can build a
+// Sanitized name that no check read.
+#include <crucible/SchemaTable.h>
+
+namespace crucible::testing {
+
+class UncheckedSchemaNameDoor final {
+public:
+    [[nodiscard]] static SanitizedName plant(int value) noexcept { return SanitizedName{value}; }
+};
+
+}  // namespace crucible::testing
+
+namespace crucible {
+
+int forge_name() { return testing::UncheckedSchemaNameDoor::plant(7).value(); }
+
+}  // namespace crucible
