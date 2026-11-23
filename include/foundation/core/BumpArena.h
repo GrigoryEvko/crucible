@@ -842,16 +842,19 @@ template <class Given, class Brand>
 concept BumpScopeResult = std::is_void_v<Given> || (HoldsNoBorrow<Given> && !detail::names_brand(^^Given, ^^Brand));
 
 // The body of with_bump_arena: it takes the arena of the scope by reference
-// with no throw, and its result leaves the scope.
+// with no throw, it holds no linear value by value, because the door calls it
+// and a call is no consume, and its result leaves the scope.
 template <class Body, class Brand>
-concept BumpScopeBody = std::is_nothrow_invocable_v<Body&&, BumpArena<Brand>&>
-                     && BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand>;
+concept BumpScopeBody =
+    std::is_nothrow_invocable_v<Body&&, BumpArena<Brand>&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand>;
 
 // A body whose result does not leave the scope: the refused twin of the door
 // binds to it.
 template <class Body, class Brand>
-concept RefusedBumpScopeBody = std::is_nothrow_invocable_v<Body&&, BumpArena<Brand>&>
-                            && (!BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand>);
+concept RefusedBumpScopeBody =
+    std::is_nothrow_invocable_v<Body&&, BumpArena<Brand>&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && (!BumpScopeResult<detail::bump_scope_result_t<Body, Brand>, Brand>);
 
 // Calls body with an arena of the scope brand of this call site, and gives
 // the result of body.  The arena lives in the frame of the door and ends
@@ -873,5 +876,12 @@ template <class... Refused, class Marker, class Body, ::foundation::brand::IsBra
 void with_bump_arena(Marker allocation, ArenaBlockSize block_size, Body&& body) =
     delete("the end of the scope of with_bump_arena ends the arena, so the result of the body holds no reference "
            "and no address, and it names no brand of the arena: give a plain value");
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason.
+template <class... Refused, class Marker, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && AllocationCapability<Marker> && std::is_invocable_v<Body&&, BumpArena<Fresh>&>
+             && (!::foundation::linear::HoldsNoLinearValue<Body>)
+void with_bump_arena(Marker allocation, ArenaBlockSize block_size, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core

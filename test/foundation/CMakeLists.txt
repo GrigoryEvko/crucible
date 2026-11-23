@@ -3453,6 +3453,9 @@ foundation_neg_compile_test(neg_core_bump_arena_scope_erase
 foundation_neg_compile_test(neg_core_bump_arena_family_erase
   "no matching function for call to .erase_brand\\(foundation::core::Ref<int, .anonymous.::Family>\\)."
   "required for the satisfaction of .ErasableBrand<Brand>.")
+foundation_neg_compile_test(neg_core_bump_arena_scope_linear_body
+  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, ArenaBlockSize, Body&&\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
 # The field walk refuses a class that hides an address: a Ref, a View, a Box
 # and a class with a private View.
 foundation_neg_compile_test(neg_core_for_each_field_ref
