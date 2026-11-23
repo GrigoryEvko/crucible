@@ -15,6 +15,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/TraceRing.h>
+#include <crucible/ValidatedOp.h>
 #include <foundation/core/KeyedHash.h>
 #include <fixy/Core.h>
 #include <fixy/Protocol.h>
@@ -99,9 +100,11 @@ static constexpr uint32_t CDAG_MAX_OPS = 1u << 22;
 // "it deserialised" imply "it is safe to initialise" by construction, where a
 // looser wire ceiling would admit counts the allocator cannot serve.
 static constexpr uint32_t CDAG_MAX_SLOTS = ::crucible::PoolAllocator::kMaxNumSlots;
-static constexpr uint16_t CDAG_MAX_INPUTS = 1024;
-static constexpr uint16_t CDAG_MAX_OUTPUTS = 1024;
-static constexpr uint16_t CDAG_MAX_SCALAR_ARGS = 256;
+// The counts of an op are the counts of the entry of the ring that it came
+// from: a region holds only ops that the ring recorded, and the build of a
+// region copies each count of its entry.  So an op of an image holds at most
+// kMaxOpInputs inputs, kMaxOpOutputs outputs and kScalarSlots scalars, the
+// limits of the one validator of an entry (crucible/ValidatedOp.h).
 static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;
 
 namespace detail_ser {
@@ -721,7 +724,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         const uint16_t num_outputs = r.r<uint16_t>();
         const uint16_t num_scalar_args = r.r<uint16_t>();
         const bool is_count_above_limit =
-            num_inputs > CDAG_MAX_INPUTS || num_outputs > CDAG_MAX_OUTPUTS || num_scalar_args > CDAG_MAX_SCALAR_ARGS;
+            num_inputs > kMaxOpInputs || num_outputs > kMaxOpOutputs || num_scalar_args > kScalarSlots;
         if (is_count_above_limit) return ::fixy::err(r.reason_or(LoadError::count_above_limit));
         te.grad_enabled = r.read_bool();
         {
@@ -754,8 +757,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         // the writer produced.
         {
             const ScalarCount tagged =
-                ScalarCount::check(::fixy::min(std::size_t{num_scalar_args}, std::size_t{kScalarSlots}))
-                    .expect("the minimum is a count of the slots");
+                ScalarCount::check(num_scalar_args).expect("the count test above keeps the scalars in the slots");
             const uint16_t kinds = r.read_gated<uint16_t>([tagged](uint16_t word) noexcept {
                 for (const ScalarSlotKinds read : ScalarSlotKinds::from_bits(word))
                     return read.first(tagged).bits() == word;
@@ -763,6 +765,22 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             });
             te.scalar_kinds = ScalarSlotKinds::from_bits(kinds).expect(
                 "the gate refuses a word past the data slots, and a refused word reads as zero");
+        }
+        // The op passes the one validator of an entry, as the entry of the
+        // ring that it came from did, before the arrays of its counts take
+        // arena memory.  The counts and the data slots passed their tests
+        // above, so the validator refuses a schema hash of zero, the sentinel
+        // of no schema, on which the content hash and the region cache key.
+        {
+            TraceRing::Entry probe{};
+            probe.schema_hash = te.schema_hash;
+            probe.num_inputs = num_inputs;
+            probe.num_outputs = num_outputs;
+            probe.num_scalar_args = static_cast<uint8_t>(num_scalar_args);
+            probe.set_data_slots(te.scalar_kinds.data_slots());
+            if (!entry_is_well_formed(probe)) [[unlikely]] {
+                return ::fixy::err(r.reason_or(LoadError::field_out_of_range));
+            }
         }
 
         const ::fixy::ArenaRun<TensorMeta, DagArena> input_metas_run =

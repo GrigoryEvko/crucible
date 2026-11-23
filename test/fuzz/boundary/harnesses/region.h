@@ -43,6 +43,12 @@ inline void claim_region_trusted(HarnessName harness, const RegionNode& region) 
         // The loader gives each op each array of its count.
         CRUCIBLE_FUZZ_CLAIM(harness, op.input_metas().size() == op.num_inputs());
         CRUCIBLE_FUZZ_CLAIM(harness, op.output_metas().size() == op.num_outputs());
+        // Each op passed the validator of an entry of the ring: a schema hash
+        // other than zero, and the counts of the ring.
+        CRUCIBLE_FUZZ_CLAIM(harness, op.schema_hash.raw() != 0);
+        CRUCIBLE_FUZZ_CLAIM(harness, op.num_inputs() <= kMaxOpInputs);
+        CRUCIBLE_FUZZ_CLAIM(harness, op.num_outputs() <= kMaxOpOutputs);
+        CRUCIBLE_FUZZ_CLAIM(harness, op.num_scalar_args() <= kScalarSlots);
         for (const TensorMeta& meta : op.input_metas())
             claim_meta_in_range(harness, meta);
         for (const TensorMeta& meta : op.output_metas())

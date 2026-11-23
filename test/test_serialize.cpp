@@ -78,6 +78,51 @@ make_slots_in_place(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagAre
     return slots_run;
 }
 
+// The load of the image of a region of one op with schema on its inputs
+// inputs.  The writer writes each hash and each count as the op holds it, so
+// the image can hold an op that no entry of the ring gives.  The load gives
+// the region, or the reason of its refusal.
+[[nodiscard]] static ::fixy::Result<::fixy::Unit, crucible::LoadError>
+load_one_op(::foundation::effects::Alloc alloc, crucible::SchemaHash schema, ::fixy::ElementCount inputs) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+    const auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+    crucible::TraceEntry& op = *ops_run.view().get(0).expect("the run holds one op");
+    op.schema_hash = schema;
+    op.set_inputs(arena.array<crucible::TensorMeta>(alloc, inputs.raw(), make_meta(4, 8)),
+                  arena.array<crucible::OpIndex>(alloc, inputs.raw(), crucible::OpIndex{}),
+                  arena.array<crucible::SlotId>(alloc, inputs.raw(), crucible::SlotId{}));
+    op.set_outputs(::fixy::check::run_of(kTest, alloc, arena, make_meta(4, 8)),
+                   ::fixy::check::run_of(kTest, alloc, arena, crucible::SlotId{}));
+    const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(alloc, arena, ops_run);
+    auto [n, buf] =
+        ::fixy::with_mut(::fixy::mint_heap_array(alloc, size_t{1} << 20, std::byte{0}), [&region](auto run) noexcept {
+            return crucible::serialize_region(::fixy::to(*region), run.view());
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, n > 0 && "the writer writes the image of one op");
+    ::fixy::BumpArena<DagArena> load_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
+    using Loaded = ::fixy::Result<::fixy::Unit, crucible::LoadError>;
+    return crucible::deserialize_region(alloc, buf.view().window(0, n).expect("the writer writes inside its image"),
+                                        load_arena)
+        .match([](auto /*region*/) noexcept { return Loaded{::fixy::Unit{}}; },
+               [](crucible::LoadError reason) noexcept { return Loaded{::fixy::err(reason)}; });
+}
+
+// A region holds only ops that the ring recorded, so the load of a region
+// refuses an op that the one validator of an entry refuses: a schema hash of
+// zero, and more inputs than kMaxOpInputs.  The old load took each of the two
+// images, with a schema hash of zero and with 65 inputs, because its limits
+// were 1024 inputs and no test of the hash.  An op of kMaxOpInputs inputs and
+// a schema hash other than zero loads.
+static void check_op_past_the_ring_is_refused() {
+    const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
+    constexpr crucible::SchemaHash kSchema{0x5C4E3A};
+    CRUCIBLE_TEST_ASSERT(kTest, load_one_op(alloc, kSchema, ::fixy::ElementCount{crucible::kMaxOpInputs}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, load_one_op(alloc, crucible::SchemaHash{0}, ::fixy::ElementCount{1}).err()
+                                    == ::fixy::some(crucible::LoadError::field_out_of_range));
+    CRUCIBLE_TEST_ASSERT(kTest, load_one_op(alloc, kSchema, ::fixy::ElementCount{crucible::kMaxOpInputs + 1u}).err()
+                                    == ::fixy::some(crucible::LoadError::count_above_limit));
+}
+
 // A copy of image in new storage, with the byte at at set to value.
 [[nodiscard]] static ::fixy::HeapArray<std::byte>
 with_byte(::foundation::effects::Alloc alloc, ::fixy::View<const std::byte> image, size_t at, std::byte value) {
@@ -154,6 +199,7 @@ static void check_descriptor_images_agree() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     check_descriptor_images_agree();
+    check_op_past_the_ring_is_refused();
 
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
