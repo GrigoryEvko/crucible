@@ -1,0 +1,12 @@
+// A named caller of the root entry: the row of the entry names this file.
+#pragma once
+
+#include <foundation/core/RootKeys.h>
+
+namespace fixy::planted {
+
+inline int call_stage() noexcept {
+    return ::foundation::core::detail::run_root_body_<0>([] noexcept { return 1; });
+}
+
+}  // namespace fixy::planted

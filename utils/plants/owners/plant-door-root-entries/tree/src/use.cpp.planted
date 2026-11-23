@@ -1,0 +1,3 @@
+// A quarantined unit that includes the two base headers and names no entry.
+#include <fixy/Rogue.h>
+#include <fixy/Stage.h>

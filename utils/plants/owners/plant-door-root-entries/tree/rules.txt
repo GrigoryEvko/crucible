@@ -1,0 +1,12 @@
+# The rule table of this plant.  The headers of include/foundation/ and of
+# include/fixy/ are base files, and each other file is quarantined.  The owner
+# rows name the files that may name the two entries of the root doors, as the
+# rows of utils/rule-table.txt do.
+
+layer floor 0 include/foundation/
+layer high 1 include/fixy/
+
+quarantine src/
+
+owner owners door-use foundation::core::detail::run_root_body_ include/foundation/core/RootKeys.h include/fixy/Stage.h | the entry of the root doors of the plant
+owner owners door-use foundation::core::detail::run_dispatch_body_ include/foundation/core/RootKeys.h include/fixy/Dispatch.h | the entry of the dispatch door of the plant

@@ -1,0 +1,17 @@
+// A base header that no row of the two entries names.  It calls each entry,
+// so it can mint a key of each brand of a body with no door of a thread.
+#pragma once
+
+#include <foundation/core/RootKeys.h>
+
+namespace fixy::planted {
+
+inline int call_root() noexcept {
+    return ::foundation::core::detail::run_root_body_<0>([] noexcept { return 2; });
+}
+
+inline int call_dispatch() noexcept {
+    return ::foundation::core::detail::run_dispatch_body_<0>([] noexcept { return 3; });
+}
+
+}  // namespace fixy::planted

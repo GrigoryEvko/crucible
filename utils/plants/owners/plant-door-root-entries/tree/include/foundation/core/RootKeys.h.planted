@@ -1,0 +1,17 @@
+// A base header with the two entries of the root doors, as
+// foundation/core/RootKeys.h names them.
+#pragma once
+
+namespace foundation::core::detail {
+
+template <int Leading, class Body>
+constexpr int run_root_body_(Body body) noexcept {
+    return body() + Leading;
+}
+
+template <int Leading, class Body>
+constexpr int run_dispatch_body_(Body body) noexcept {
+    return body() + Leading;
+}
+
+}  // namespace foundation::core::detail

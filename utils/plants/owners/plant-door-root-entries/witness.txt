@@ -1,0 +1,15 @@
+# The two entries of the root doors stand only in the files that their owner
+# rows name: the header that defines them and the door that calls each one.
+# A base header that no row names calls each entry, and each call is a use
+# of the kind door-use in its sentinel unit.  The named caller gives no use.
+# With no row, each base file could call an entry and mint the keys of a body
+# with no door of a thread, after only the checks of the entry.
+
+compile rogue src/use.cpp sentinel=include/fixy/Rogue.h stage=c
+exit rogue pass
+judge rogue
+finding rogue owners door-use include/fixy/Rogue.h:10:40 | fixy::planted::call_root(): foundation::core::detail::run_root_body_
+finding rogue owners door-use include/fixy/Rogue.h:14:40 | fixy::planted::call_dispatch(): foundation::core::detail::run_dispatch_body_
+
+compile stage src/use.cpp sentinel=include/fixy/Stage.h stage=c
+exit stage pass
