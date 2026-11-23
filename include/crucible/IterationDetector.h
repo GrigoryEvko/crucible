@@ -480,7 +480,7 @@ private:
         // The ring keeps its slots, and the empty history makes each one
         // dead.  The table keeps its slots, and each slot becomes empty.
         table_ = ::fixy::with_mut(std::move(table_), [](auto slots) noexcept {
-            for (TableSlot& slot : slots.view())
+            for (TableSlot& slot : slots)
                 slot = TableSlot{};
         });
         table_used_ = 0;

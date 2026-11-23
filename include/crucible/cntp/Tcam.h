@@ -407,14 +407,14 @@ public:
         return slots_.with_mut([this, &rule](auto run) noexcept -> ::fixy::Result<OwnedTcamRule, TcamError> {
             auto const slots = run.view();
             for (SlotIndex index : slots.indices()) {
-                Slot& slot = slots.at(index);
-                if (!slot.occupied && !slot.retired) {
-                    slot.rule = rule.value();
-                    slot.counter = 0;
-                    slot.occupied = true;
+                auto slot = run.get_mut(index.raw()).expect("an index of the run is below its count");
+                if (!slot->occupied && !slot->retired) {
+                    slot->rule = rule.value();
+                    slot->counter = 0;
+                    slot->occupied = true;
                     ++installed_;
-                    TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot.rule.rule_id, index.raw(),
-                                          ::fixy::widen<std::uint64_t>(slot.generation)};
+                    TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot->rule.rule_id, index.raw(),
+                                          ::fixy::widen<std::uint64_t>(slot->generation)};
                     return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
                 }
             }

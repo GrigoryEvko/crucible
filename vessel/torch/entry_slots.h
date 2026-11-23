@@ -392,7 +392,8 @@ struct input_overflow_of<false> {
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = static_cast<uint8_t>(scalars.stored);
     entry.set_data_slots(scalars.data);
-    entry.scalar_values.with_mut([&scalars](auto run) noexcept { ::fixy::copy(run.view(), scalars.values.view()); });
+    entry.scalar_values.with_mut(
+        [&scalars](auto run) noexcept { ::fixy::copy(std::move(run), scalars.values.view()); });
     entry.set_packed_scalar_types(scalars.tags);
 }
 

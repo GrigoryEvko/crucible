@@ -273,10 +273,19 @@ template <class Ctx, ::fixy::os::RightSet Rights>
         while (end > 0) {
             const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});
             const std::size_t count = static_cast<std::size_t>(end - start);
-            const ::fixy::View<std::byte> part = run.view().window(0, count).expect("a read takes at most one chunk");
-            if (::fixy::fs::read_full_at(ctx, file, part, ::fixy::fs::FileOffset{start}).value_or(0) != count) {
+            auto [read, chunk_run] = ::fixy::reborrow(std::move(run), [&ctx, file, start, count](auto lent) noexcept {
+                return ::fixy::fs::read_full_at(
+                           ctx, file,
+                           ::fixy::take_window(std::move(lent), 0, count).expect("a read takes at most one chunk"),
+                           ::fixy::fs::FileOffset{start})
+                    .value_or(0);
+            });
+            run = std::move(chunk_run);
+            if (read != count) {
                 return ::fixy::none;
             }
+            const ::fixy::View<std::byte const> part =
+                run.view().window(0, count).expect("a read takes at most one chunk");
             for (std::size_t back = count; back > 0; --back) {
                 if (*part.get(back - 1).expect("the position is inside the chunk") == std::byte{'\n'}) {
                     return ::fixy::some(::fixy::fs::FileOffset{start + static_cast<std::int64_t>(back)});
@@ -563,7 +572,7 @@ read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::
                     ::fixy::HeapArray<std::byte> bytes =
                         ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
                     auto [count_read, filled] = ::fixy::with_mut(std::move(bytes), [&ctx, &file](auto run) noexcept {
-                        return ::fixy::fs::read_full(ctx, file.ref(), run.view()).value_or(0);
+                        return ::fixy::fs::read_full(ctx, file.ref(), std::move(run)).value_or(0);
                     });
                     if (count_read != filled.size()) {
                         return ::fixy::some(LoadError::file_size);
@@ -912,10 +921,12 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
             std::size_t position = 0;
             for (const SessionEvent& event : events) {
                 const auto record = event.encode();
-                ::fixy::copy(run.view()
-                                 .template window<sizeof(SessionEvent)>(position * sizeof(SessionEvent))
-                                 .expect("the payload holds a record for each event"),
-                             ::fixy::bytes(record));
+                run = ::fixy::reborrow(std::move(run), [&record, position](auto lent) noexcept {
+                    ::fixy::copy(
+                        ::fixy::take_window<sizeof(SessionEvent)>(std::move(lent), position * sizeof(SessionEvent))
+                            .expect("the payload holds a record for each event"),
+                        ::fixy::bytes(record));
+                });
                 ++position;
             }
         });

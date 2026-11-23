@@ -495,8 +495,7 @@ private:
         }
 
         decoded_.with_mut([symbol, source_bytes = payload.view()](auto run) noexcept {
-            ::fixy::copy(run.view()
-                             .template window<SymbolBytes>(symbol.raw() * SymbolBytes)
+            ::fixy::copy(::fixy::take_window<SymbolBytes>(std::move(run), symbol.raw() * SymbolBytes)
                              .expect("each source symbol lies inside the decoded bytes"),
                          source_bytes);
         });

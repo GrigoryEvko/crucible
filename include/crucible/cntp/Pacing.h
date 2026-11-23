@@ -280,7 +280,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     ::fixy::FixedArray<std::byte, detail::qdisc_reply_bytes> reply{};
     for (;;) {
         std::size_t const received = reply.with_mut(
-            [&ctx, nl](auto run) noexcept { return ::fixy::net::receive_bytes(ctx, nl, run.view()).value_or(0); });
+            [&ctx, nl](auto run) noexcept { return ::fixy::net::receive_bytes(ctx, nl, std::move(run)).value_or(0); });
         if (received == 0) {
             return ::fixy::err(PacingError::NetlinkReceiveFailed);
         }

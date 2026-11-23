@@ -260,7 +260,7 @@ template <class Field, std::size_t Offset, std::size_t RecordBytes>
 [[nodiscard]] inline Field read_record_field_(::fixy::View<std::byte const, RecordBytes> record) noexcept {
     ::fixy::FixedArray<std::byte, sizeof(Field)> image{};
     image.with_mut(
-        [record](auto run) noexcept { ::fixy::copy(run.view(), record_block_<Offset, sizeof(Field)>(record)); });
+        [record](auto run) noexcept { ::fixy::copy(std::move(run), record_block_<Offset, sizeof(Field)>(record)); });
     return ::fixy::bit_cast<Field>(image);
 }
 
@@ -947,7 +947,7 @@ inline void write_record_field_(::fixy::View<std::byte, RecordBytes> record, Fie
 // The lanes of a block of sizes or strides, as the array that a record holds.
 [[nodiscard]] inline ::fixy::FixedArray<int64_t, kMaxTensorNDim> record_lanes_(TensorDimArray const& block) noexcept {
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes{};
-    lanes.with_mut([&block](auto run) noexcept { ::fixy::copy(run.view(), block.lanes()); });
+    lanes.with_mut([&block](auto run) noexcept { ::fixy::copy(std::move(run), block.lanes()); });
     return lanes;
 }
 

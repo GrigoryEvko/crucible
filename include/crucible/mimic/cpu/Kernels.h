@@ -118,8 +118,8 @@ template <std::size_t Rank, class Out>
                                                             Out const& out) noexcept {
     ::fixy::FixedArray<std::size_t, Rank> sizes{};
     ::fixy::FixedArray<std::size_t, Rank> const strides{};
-    bool const is_copied = sizes.with_mut(
-        [&out](auto run) noexcept { return ::fixy::copy(::fixy::View<std::size_t>{run.view()}, out.sizes()).is_ok(); });
+    bool const is_copied =
+        sizes.with_mut([&out](auto run) noexcept { return ::fixy::copy(std::move(run), out.sizes()).is_ok(); });
     CRUCIBLE_FATAL_INVARIANT(is_copied);
     return ::fixy::mint_strided_view(value, sizes.view(), strides.view(), 0)
         .expect("each stride is zero, so the one element holds each index");

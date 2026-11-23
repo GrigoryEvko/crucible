@@ -192,7 +192,7 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     if (state.map_gen_ == 0) [[unlikely]] {
         // Generation wrapped, so stale slots would read as current.
         state.scratch_map_ = ::fixy::with_mut(std::move(state.scratch_map_), [](auto map) noexcept {
-            for (PtrSlot& slot : map.view()) {
+            for (PtrSlot& slot : map) {
                 slot = PtrSlot{};
             }
         });

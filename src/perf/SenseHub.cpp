@@ -57,7 +57,8 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
              mapped.template shared_words_at<uint64_t, NUM_COUNTERS>(::fixy::mmap::MappingOffset{0})) {
             snapshot.counters.with_mut([&counters](auto run) noexcept {
                 for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
-                    run.view().at(i) = counters.load_acquire(i);
+                    auto counter = run.get_mut(i.raw()).expect("an index of the counters is inside the snapshot");
+                    *counter = counters.load_acquire(i);
                 }
             });
         }

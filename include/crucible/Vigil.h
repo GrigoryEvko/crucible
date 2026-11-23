@@ -1498,7 +1498,8 @@ private:
         next_bound_scalar_ = count;
         listed = ::fixy::with_mut(std::move(listed), [&](auto scalars) noexcept {
             each_slot([&](const BoundScalar& bound) noexcept {
-                *scalars.get(filled).expect("the first pass counted each slot") = bound;
+                auto slot = scalars.get_mut(filled).expect("the first pass counted each slot");
+                *slot = bound;
                 if (next_bound_scalar_ == count && bound.op.raw() >= resume_op) next_bound_scalar_ = filled;
                 ++filled;
             });

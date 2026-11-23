@@ -199,7 +199,7 @@ private:
 template <::fixy::Encodable T>
 [[nodiscard]] constexpr FederationKey federation_key_of(FederationHashKey const& hash_key, T const& value) noexcept {
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<T>> image{};
-    image.with_mut([&value](auto run) noexcept { ::fixy::encode(value, run.view()); });
+    image.with_mut([&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
     return federation_key_of_bytes(hash_key, ::fixy::View<std::byte const>{image.view()});
 }
 

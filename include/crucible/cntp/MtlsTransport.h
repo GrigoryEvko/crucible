@@ -327,7 +327,7 @@ admit_private_key_pem(::fixy::View<std::byte const> pem) noexcept {
 
     MtlsPrivateKeyBytes out{};
     out.bytes.with_mut([pem](auto run) noexcept {
-        ::fixy::copy(run.view().window(0, pem.size()).expect("the key is at most max_bytes"), pem)
+        ::fixy::copy(::fixy::take_window(std::move(run), 0, pem.size()).expect("the key is at most max_bytes"), pem)
             .expect("a window of the size of the key has that size");
     });
     out.nbytes = static_cast<std::uint16_t>(pem.size());
