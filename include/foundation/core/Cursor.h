@@ -11,13 +11,13 @@
 // replay of a region, asks the cursor itself: is_at_end() and remaining()
 // read its end, and they need no end cursor of the run.
 //
-// The constructor of a cursor takes the key detail::ViewCursorKey, and only
-// detail::ViewCursorDoor builds the key.  The key is no template, so no
-// explicit specialization of a template reaches it, and this header names
-// no friend that a different header defines.  The seal refuses std::bit_cast
-// and a lifetime start over bytes.  The owners of a run in the base layer,
-// View and TextView, give out cursors through the door.  The rule owners
-// keeps each use of namespace detail outside the base out.
+// The constructor of a cursor takes the key detail::ViewCursorKey.  Only the
+// two doors of the owners of a run build the key, and each door is private to
+// its owners: View and ViewMut give out cursors through
+// detail::ViewCursorDoor, and TextView through detail::TextCursorDoor.  So no
+// other code of the base builds a cursor over a run that it names.  The key
+// is no template, so no explicit specialization of a template reaches it.
+// The seal refuses std::bit_cast and a lifetime start over bytes.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/core/Fatal.h>
@@ -28,20 +28,26 @@ namespace foundation::core {
 
 namespace detail {
 
-struct ViewCursorDoor;
+// The doors of the key of a cursor.  This header declares them, and the key
+// names them as its friends.  The header of each owner of a run defines its
+// door, and the owners of that header are the friends of the door:
+// ViewCursorDoor of foundation/core/Region.h for View and ViewMut, and
+// TextCursorDoor of foundation/core/Text.h for TextView.  A home owner row of
+// utils/rule-table.txt keeps the one definition of each door in its header.
+// So a unit that includes this header and not the header of a door cannot
+// define a door of its own.
+class ViewCursorDoor;
+class TextCursorDoor;
 
 class [[nodiscard]] ViewCursorKey final {
-    friend struct ViewCursorDoor;
+    friend class ViewCursorDoor;
+    friend class TextCursorDoor;
 
     constexpr ViewCursorKey() noexcept {}
     constexpr ViewCursorKey(ViewCursorKey const&) noexcept {}
 
 public:
     ViewCursorKey& operator=(ViewCursorKey const&) = delete("a key of a cursor lives for one construction");
-};
-
-struct ViewCursorDoor {
-    [[nodiscard]] static constexpr ViewCursorKey key() noexcept { return ViewCursorKey{}; }
 };
 
 }  // namespace detail

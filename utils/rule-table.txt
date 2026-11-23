@@ -486,6 +486,8 @@ home owner foundation::core::TestedWindowDoor include/foundation/AlignedBytes.h 
 home owner foundation::core::ArenaArrayDoor include/foundation/core/BumpArena.h | the door of an arena to the raw constructors of a View and of an ArenaRun: View befriends it, and its one definition gives the elements that array() built in new bytes of the arena only to the core of the arenas
 home owner foundation::core::CommittedRangeDoor include/foundation/os/PageSource.h | the door of a Reservation to the raw constructors of a View: View befriends it, and its one definition gives the bytes of a committed range only to Reservation
 home owner foundation::core::SortRunDoor include/foundation/core/Sort.h | the door of the stable sort to the raw constructors of a View: View befriends it, and its one definition gives the runs of the elements and of the scratch only to StableSort and radix_sort_
+home owner foundation::core::detail::ViewCursorDoor include/foundation/core/Region.h | the door of View and ViewMut to the key of a cursor: the key befriends it, and its one definition builds the key only for View and ViewMut, so a unit that includes Cursor.h or Text.h alone cannot define a door that builds a cursor over any run
+home owner foundation::core::detail::TextCursorDoor include/foundation/core/Text.h | the door of TextView to the key of a cursor: the key befriends it, and its one definition builds the key only for TextView, so a unit that includes Cursor.h alone cannot define a door that builds a cursor over any characters
 
 home combine foundation::reflect::combine_ids include/foundation/reflect/Mix.h | row_hash folds through one body of combine_ids, and a copy of the salt, of the shift mix or of fmix64 can drift from it with no failed check
 

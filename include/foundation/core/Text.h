@@ -68,6 +68,7 @@
 //   no Option over E, for a foreign enum.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Full.h>
@@ -108,6 +109,17 @@ template <std::size_t Capacity>
 
 template <std::size_t Capacity>
 constexpr void text_resize_(FixedText<Capacity>& text, std::size_t count) noexcept;
+
+// The door of TextView to the key of a cursor (the doors of the key of
+// foundation/core/Cursor.h).  Its one member is private, and TextView is its
+// one friend, so no other code of the base builds a cursor over characters
+// that it names.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class TextCursorDoor final : ::foundation::NoObject<TextCursorDoor> {
+    friend class ::foundation::core::TextView;
+
+    [[nodiscard]] static constexpr ViewCursorKey key() noexcept { return ViewCursorKey{}; }
+};
 
 }  // namespace detail
 
@@ -158,11 +170,11 @@ public:
     // order.  The cursor holds the place and the end of the text, as the
     // cursor of a View does, so it never leaves the text.
     [[nodiscard]] constexpr ViewCursor<char const> begin() const noexcept {
-        return ViewCursor<char const>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+        return ViewCursor<char const>{detail::TextCursorDoor::key(), first_, first_ + size()};
     }
     [[nodiscard]] constexpr ViewCursor<char const> end() const noexcept {
         char const* const last = first_ + size();
-        return ViewCursor<char const>{detail::ViewCursorDoor::key(), last, last};
+        return ViewCursor<char const>{detail::TextCursorDoor::key(), last, last};
     }
 
     // The count characters from offset, as an Option<TextView>, or no value

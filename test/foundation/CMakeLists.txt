@@ -4352,6 +4352,23 @@ foundation_neg_compile_test(neg_core_cyclic_cursor_default
 foundation_neg_compile_test(neg_core_text_view_cursor_member_forged
   "redefinition of .constexpr foundation::core::ViewCursor<const char> foundation::core::TextView::begin\\(\\) const."
   "foundation::core::TextView::begin\\(\\) const. previously defined here")
+# The doors of the key of a cursor are private to the owners of a run: View
+# and ViewMut for the door of Region.h, TextView for the door of Text.h.
+foundation_neg_compile_test(neg_core_view_cursor_door_private
+  "static constexpr foundation::core::detail::ViewCursorKey foundation::core::detail::ViewCursorDoor::key\\(\\). is private within this context"
+  "Region\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_view_cursor_door_lookalike
+  "static constexpr foundation::core::detail::ViewCursorKey foundation::core::detail::ViewCursorDoor::key\\(\\). is private within this context"
+  "Region\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_view_cursor_door_from_text
+  "incomplete type .foundation::core::detail::ViewCursorDoor. used in nested name specifier"
+  "neg_core_view_cursor_door_from_text\\.cpp:9:[0-9]+: error")
+foundation_neg_compile_test(neg_core_text_cursor_door_private
+  "static constexpr foundation::core::detail::ViewCursorKey foundation::core::detail::TextCursorDoor::key\\(\\). is private within this context"
+  "Text\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_text_cursor_door_lookalike
+  "static constexpr foundation::core::detail::ViewCursorKey foundation::core::detail::TextCursorDoor::key\\(\\). is private within this context"
+  "Text\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_view_enumerate_range_forged
   "redefinition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>."
   "previous definition of .class foundation::core::detail::EnumerateStage<Element, Count, Brand, Extent>.")

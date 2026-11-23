@@ -8,7 +8,7 @@
 namespace foundation::core {
 
 constexpr ViewCursor<char const> TextView::begin() const noexcept {
-    return ViewCursor<char const>{detail::ViewCursorDoor::key(), first_ + size_, first_ + size_};
+    return ViewCursor<char const>{detail::TextCursorDoor::key(), first_ + size_, first_ + size_};
 }
 
 }  // namespace foundation::core

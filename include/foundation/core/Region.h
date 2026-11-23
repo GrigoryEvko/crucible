@@ -134,6 +134,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
@@ -332,6 +333,22 @@ namespace detail {
 // header that hold the ViewMut by move.  This header defines it.
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
+
+// The door of View and ViewMut to the key of a cursor (the doors of the key
+// of foundation/core/Cursor.h).  Its one member is private, and View and
+// ViewMut are its friends, so no other code of the base builds a cursor over
+// a run that it names.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class ViewCursorDoor final : ::foundation::NoObject<ViewCursorDoor> {
+    template <class T, std::size_t Extent>
+        requires ViewElement<T> && ViewExtent<T, Extent>
+    friend class ::foundation::core::View;
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
+    friend class ::foundation::core::ViewMut;
+
+    [[nodiscard]] static constexpr ViewCursorKey key() noexcept { return ViewCursorKey{}; }
+};
 
 }  // namespace detail
 
