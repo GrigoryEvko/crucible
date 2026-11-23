@@ -163,6 +163,24 @@ Tests that read the build
     selection).  The script skips such a test with no change to its record,
     also with --all.
 
+The one run of a test
+    Configuration default of the gate is the one run of each test whose
+    result does not depend on the configuration, so `--build-only` skips it
+    in each other configuration (runs_in_default()):
+      * each negative fixture.  A compile refusal does not depend on the
+        flags of a configuration.  On 2026-11-23, default compiled the 3550
+        fixtures in 724 test-seconds, and release took 995.  The census of
+        the rule quarantine and the rule instruction-total read the fixture
+        records of default
+      * each self-test of a tool, `guard selftest`.  Such a test checks a
+        Python tool, not the build
+      * the test guard_parse_builds, which judges the parse builds of the
+        tree.  Default parses them one time (the parse builds).
+    With `--build-only`, the script also parses no parse build, and it
+    removes the records of the fixtures of its build.  The build then has no
+    fixture run, and the census of the rule quarantine counts its objects
+    only (assay.guard.engines.plugin.fixtures, no fixture run).
+
 Environment
     The test launcher gives each test a clean environment
     (assay.loop.teststep, the environment).  The fingerprint of a test
@@ -189,7 +207,9 @@ Tests that always run
 
 Parse builds
     After the build, the script runs `loop syntax` on each configured parse
-    build of PARSE_PRESETS of assay.loop.syntax.  The parse keeps the report
+    build of PARSE_PRESETS of assay.loop.syntax, unless `--build-only` gives
+    the parse to configuration default (the one run of a test).  The parse
+    keeps the report
     of each unit that the tree did not change (the kept reports of
     assay.loop.syntax), so it parses only what changed.  The parse of a
     parse build is a build, and its time goes into the build time of the
@@ -407,7 +427,9 @@ Usage:
 --no-build  Do not build first.  Then a stale executable can look unchanged.
 --all       Run each executable test, and record each pass.
 --only      Select only the tests that FILE names (the tests that read the build).
---build-only  Skip each test of the master guard that reads no build (the tests that read the build).
+--build-only  Skip each test of the master guard that reads no build (the tests that read the build), and each
+              test that configuration default of the gate runs: a negative fixture, a self-test of a tool and the
+              test of the parse builds.  Parse no parse build, and remove the records of the fixtures of the build.
 --plan      Print what the script would run, and run nothing.
 --ctest     The ctest of the fake build tree of the self-test.  The default
             is the ctest of PATH, when it gives the pinned version.
@@ -472,6 +494,10 @@ FIXTURE_SUBCOMMAND = "fixture"
 LAUNCHER_SUBCOMMAND = "test-step"
 # The master of the checks.  A test that runs it can get its inputs from assay.loop.inputs.
 GUARD_MASTER = "guard"
+# The subcommand of the master guard that runs the self-test of a tool, and the test that judges the parse builds.
+# Configuration default of the gate runs each of them, and --build-only skips them (the one run of a test).
+SELFTEST_SUBCOMMAND = "selftest"
+PARSE_BUILDS_TEST = "guard_parse_builds"
 # The module of the test launcher.  Then the module of the fixture driver, and the holding command of the rules that
 # the driver judges with the rules of the launcher (assay.core.registry, the meters of a test of assay.loop.inputs).
 LAUNCHER_MODULE = "assay.loop.teststep"
@@ -531,6 +557,10 @@ REASON_FAILED = "the test failed in this build directory with the same inputs"
 REASON_UNNAMED = "--only does not name the test"
 REASON_UNSETTLED = "the census check of the rule quarantine refuses the record of the fixture"
 REASON_BUILD_FREE = "the test reads no build, and the configuration default of the gate runs it (--build-only)"
+REASON_DEFAULT = (
+    "the configuration default of the gate runs each negative fixture, each self-test of a tool and the test of the "
+    "parse builds (--build-only)"
+)
 REASON_READS = "the read set of the last traced run is not usable, and the launcher traces the test again"
 
 
@@ -698,6 +728,22 @@ def starts_subcommand(command: tuple[str, ...], index: int, subcommand: str) -> 
 def is_fixture(command: tuple[str, ...]) -> bool:
     """Return True when the command starts the driver of a negative fixture, `loop fixture`.  O(length of command)."""
     return any(starts_subcommand(command, index, FIXTURE_SUBCOMMAND) for index in range(len(command)))
+
+
+def is_selftest(command: tuple[str, ...]) -> bool:
+    """Return True when the command runs the self-test of a tool, `guard selftest`.  O(length of command)."""
+    return any(
+        os.path.basename(word) == GUARD_MASTER and command[index + 1 : index + 2] == (SELFTEST_SUBCOMMAND,)
+        for index, word in enumerate(command)
+    )
+
+
+def runs_in_default(test: ctest_reader.TestEntry) -> bool:
+    """Tell if configuration default of the gate is the one run of a test that reads the build (the one run of a test).
+
+    Such a test is a negative fixture, the self-test of a tool, or the test of the parse builds.
+    """
+    return is_fixture(test.command) or is_selftest(test.command) or test.name == PARSE_BUILDS_TEST
 
 
 def launcher_options(command: tuple[str, ...]) -> tuple[int, str, test_launcher.Options]:
@@ -1315,6 +1361,9 @@ class Planner:
             if is_build_only and (decision.kind == KIND_GUARD or decision.is_build_free):
                 decision.reason = REASON_BUILD_FREE
                 decision.is_skipped = True
+            elif is_build_only and runs_in_default(test):
+                decision.reason = REASON_DEFAULT
+                decision.is_skipped = True
             elif decision.kind in FINGERPRINTED:
                 recorded = passed.get(test.name)
                 if run_all:
@@ -1852,7 +1901,9 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
     """Build, decide, run and record.  Return the exit code of the script.
 
     With `only`, the script selects only the tests that it names.  With `is_build_only`, it skips each test of the
-    kind KIND_GUARD (the tests that read the build).
+    kind KIND_GUARD (the tests that read the build) and each test that configuration default runs (the one run of a
+    test).  It then parses no parse build, and it removes the records of the fixtures of the build, so the build has no
+    fixture run (assay.guard.engines.plugin.fixtures).
     """
     if not build_dir.is_dir():
         raise RunnerError(f"{build_dir} is not a directory.  Give the path of a configured build directory.")
@@ -1870,7 +1921,8 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
         if should_build and not plan_only:
             with recorder.start_build():
                 status = build(build_dir, jobs)
-                parse_status = parse_configured(Path(trees.source_root), jobs) if status == 0 else 0
+                is_parsed = status == 0 and not is_build_only
+                parse_status = parse_configured(Path(trees.source_root), jobs) if is_parsed else 0
             recorder.finish_build(status or parse_status)
             if status != 0:
                 print(f"loop test: the build failed with exit code {status}.  No test ran.")
@@ -1888,6 +1940,8 @@ def run(build_dir: Path, jobs: int, should_build: bool, run_all: bool, plan_only
             print(f"loop test: {note}")
         tests = list_tests(build_dir)
         warmer.join()
+        if is_build_only:
+            shutil.rmtree(build_dir / cost_record.FIXTURE_DIRECTORY, ignore_errors=True)
         unsettled = unsettled_fixtures(build_dir, Path(trees.source_root), tests) if only is not None else frozenset()
         decisions = planner.decide(tests, run_all, only, is_build_only, unsettled)
         unnamed = sum(decision.kind == KIND_UNNAMED for decision in decisions)
@@ -2601,6 +2655,19 @@ def unit_cases(expect: DetailedExpect) -> None:
     expect("--only also runs each fixture whose record the census check refuses, and skips each other fixture",
            [(item.test.name, item.is_skipped, item.reason) for item in decided]
            == [("neg_stale", False, REASON_UNSETTLED), ("neg_settled", True, REASON_UNNAMED)])
+    selftest = ctest_reader.TestEntry("assay_tool", ("/usr/bin/python3", f"/s/utils/bin/{GUARD_MASTER}",
+                                                     SELFTEST_SUBCOMMAND, "tests.tool"))
+    parse_builds = ctest_reader.TestEntry(PARSE_BUILDS_TEST, ("/usr/bin/python3", f"/s/utils/bin/{GUARD_MASTER}",
+                                                              "check", "--rule", "parse-builds"))
+    expect("a self-test of a tool runs `guard selftest`, and a check of a rule is no self-test",
+           is_selftest(selftest.command) and not is_selftest(parse_builds.command))
+    default_only = (settled, selftest, parse_builds)
+    skipped = planner.decide(default_only, True, None, True, frozenset())
+    kept = planner.decide(default_only, True, None, False, frozenset())
+    expect("--build-only skips each negative fixture, each self-test of a tool and the test of the parse builds, "
+           "and configuration default runs each of them",
+           all(item.is_skipped and item.reason == REASON_DEFAULT for item in skipped)
+           and not any(item.reason == REASON_DEFAULT for item in kept))
     layer_cases(expect)
     shard_cases(expect)
     run_shard_cases(expect)

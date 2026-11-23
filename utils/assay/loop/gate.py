@@ -28,8 +28,12 @@ Selection
       * The full suite, `loop test BUILD --all`.  select() gives these
         configurations:
           - default for each change
-          - release, release-v3 and tsan for a change of a C++ file or of a
-            build file.  ThreadSanitizer gives incorrect errors of
+          - release-v3 and tsan for a change of a C++ file or of a build
+            file.  The configuration release compiles for the host level
+            (x86-64-v4 on luks-a), and it runs only with
+            --all-configurations (ON_REQUEST).  The code of v3 runs on v4,
+            and release-v3 holds the Release flags.  ThreadSanitizer gives
+            incorrect errors of
             -Wmaybe-uninitialized that the other builds do not give, also
             for a change of a test.  release-v3 compiles for x86-64-v3, so
             each test runs the AVX2 arms at the width of 256 bits.  A
@@ -804,6 +808,9 @@ ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
 # selection).
 ALWAYS = "default"
+# The configurations of objects that run only with --all-configurations: release compiles for the level of the host
+# (the selection).
+ON_REQUEST = frozenset({"release"})
 # The preset of the vessel, the targets that the gate builds in its build, the label of the vessel tests, and the
 # prefix of the paths of the vessel (the vessel).  TORCH_DIR of the preset names a directory in TORCH_VENV of the
 # source tree, which holds the patched PyTorch.
@@ -1176,7 +1183,7 @@ def select(changed: Sequence[str], parse_presets: Sequence[str], is_every: bool)
     names = {ALWAYS}
     for path in changed:
         if is_compiled_change(path):
-            names.update(("release", "release-v3", "tsan"))
+            names.update(("release-v3", "tsan"))
         is_top_build_file = is_build_file(path) and "/" not in path
         if path.startswith(SANITIZED_PREFIXES) or is_top_build_file:
             names.update(("tsan", "ubsan-strict"))
@@ -1297,7 +1304,7 @@ def other_runs(others: Sequence[Configuration], is_each: bool, names: Sequence[s
     """
     if is_each:
         return tuple(Run(item, Mode.CHANGED, is_build_only=True) for item in others)
-    return tuple(Run(item, Mode.TOUCHED, tuple(names)) for item in others) if names else ()
+    return tuple(Run(item, Mode.TOUCHED, tuple(names), is_build_only=True) for item in others) if names else ()
 
 
 def focused_runs(focus: Sequence[Focus], vessel: Configuration | None = VESSEL_CONFIGURATION) -> tuple[Run, ...]:
@@ -1930,7 +1937,7 @@ class Gate:
             self.logs.mkdir(parents=True, exist_ok=True)
             only = self.logs / log_name(run.configuration, "only.txt", is_again)
             only.write_text("".join(f"{name}\n" for name in run.names), encoding="utf-8")
-            return ["--only", str(only)]
+            return ["--only", str(only), "--build-only"] if run.is_build_only else ["--only", str(only)]
         words = ["--all"] if run.mode is Mode.FULL and not is_plain else []
         return [*words, "--build-only"] if run.is_build_only else words
 
@@ -2048,7 +2055,11 @@ class Gate:
                 Run(item, Mode.PARSE) if item.is_parse else Run(item, Mode.FULL, is_build_only=item.name != ALWAYS)
                 for item in selected
             )
-            others = tuple(item for item in CONFIGURATIONS if not item.is_parse and item not in selected)
+            others = tuple(
+                item
+                for item in CONFIGURATIONS
+                if not item.is_parse and item not in selected and item.name not in ON_REQUEST
+            )
             is_each = (
                 careful(
                     lambda: self.changes_each(candidate),

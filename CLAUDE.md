@@ -95,17 +95,16 @@ python3 utils/bin/loop land -m "SUBJECT" --patch change.patch --
 
 - Main moves only through `loop land`. It applies the patch to the main of that time, runs the gate, and then moves main.
 - Add `--check` to run the gate with no landing.
-- Add `--all-configurations` for a change of a header that most units include, such as a header of `include/foundation/core/`.
-- Work in a git work tree under `.worktrees/`. Do not edit the main work tree.
+- Add `--all-configurations` for a change of a header that most units include, such as a header of `include/foundation/core/`. It also runs the preset `release` at the level of the host.- Work in a git work tree under `.worktrees/`. Do not edit the main work tree.
 
 ### The gate
 
-The gate of `loop land` is the check that counts. It builds the configurations that the change can change, and it runs each test and each guard rule there.
+The gate of `loop land` is the check that counts. It builds the configurations that the change can change, and it runs each test one time. The preset `default` runs each negative fixture, each self-test of a tool and each guard rule that reads no build. Each other preset runs only the tests whose result depends on its flags.
 
 | Preset | Build directory | Purpose |
 |---|---|---|
 | `default` | `build` | Debug, ASan, and UBSan on the tests |
-| `release` | `build-release` | Release, `-O3 -march=native` |
+| `release` | `build-release` | Release, `-O3 -march=native`. Only with `--all-configurations` |
 | `release-v3` | `build-release-v3` | Release, `-O3 -march=x86-64-v3`: the AVX2 arms at the width of 256 bits |
 | `tsan` | `build-tsan` | ThreadSanitizer |
 | `ubsan-strict` | `build-ubsan-strict` | Full UBSan on each target |

@@ -89,6 +89,9 @@ OTHER_BUILDS = {
     "build-ubsan-strict": "clean",
     "build-bench-fuzz": "clean",
 }
+# The other builds that a change of a test runs with no --all-configurations.  The build of release, for the level of
+# the host, runs only on request.
+SELECTED_BUILDS = {name: mode for name, mode in OTHER_BUILDS.items() if name != "build-release"}
 # The ledger of the rule door-unit with no row, and with a row of the count 2.
 DOOR_LEDGER = "format 1\nrule door-unit\n"
 DOOR_PATH = "utils/ledgers/door-unit.txt"
@@ -245,7 +248,7 @@ if mode == "count":
             break
     (build / "tokens.txt").write_text(str(len(held)) if is_after else "late")
 if mode == "greedy":
-    is_after = is_written(build.parent / "build-release" / "ready.txt")
+    is_after = is_written(build.parent / "build-release-v3" / "ready.txt")
     end = time.monotonic() + 1.5
     while time.monotonic() < end:
         try:
@@ -254,7 +257,7 @@ if mode == "greedy":
             time.sleep(0.01)
     (build / "tokens.txt").write_text(str(len(held)) if is_after else "late")
     (build / "greedy.held").write_text("1")
-    is_written(build.parent / "build-release" / "tokens.txt")
+    is_written(build.parent / "build-release-v3" / "tokens.txt")
 if mode in ("greedy", "count"):
     os.write(descriptor, held)
     os.close(descriptor)
@@ -512,14 +515,19 @@ def select_cases(expect: testing.Expect) -> None:
         names_of(gate.select(["CLAUDE.md", "utils/assay/loop/land.py"], [], False)) == ["default"],
     )
     expect(
-        "a change of a C++ test selects the default build, the two release builds and ThreadSanitizer",
-        names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release", "release-v3", "tsan"],
+        "a change of a C++ test selects the default build, the release build at x86-64-v3 and ThreadSanitizer",
+        names_of(gate.select(["test/test_arena.cpp"], [], False)) == ["default", "release-v3", "tsan"],
+    )
+    expect(
+        "the release build at the level of the host runs only with --all-configurations",
+        "release" not in names_of(gate.select(["include/foundation/Platform.h"], [], False))
+        and "release" in names_of(gate.select(["include/foundation/Platform.h"], [], True)),
     )
     expect(
         "a change of include/ or of a top build file adds ThreadSanitizer and UBSan-strict",
         names_of(gate.select(["include/foundation/Platform.h"], [], False))
         == names_of(gate.select(["CMakeLists.txt"], [], False))
-        == ["default", "release", "release-v3", "tsan", "ubsan-strict"],
+        == ["default", "release-v3", "tsan", "ubsan-strict"],
     )
     expect(
         "a change of a header of the Simd family or of a body in the inline namespace CRUCIBLE_SIMD_TARGET selects "
@@ -532,7 +540,7 @@ def select_cases(expect: testing.Expect) -> None:
     expect(
         "a change of bench/ or test/fuzz/ adds the bench and fuzz build",
         names_of(gate.select(["test/fuzz/CMakeLists.txt"], [], False))
-        == ["default", "release", "release-v3", "tsan", "bench-fuzz"],
+        == ["default", "release-v3", "tsan", "bench-fuzz"],
     )
     expect(
         "a change of the probe of loop fuzz, of the install of AFL++ or of the pins adds the bench and fuzz build, "
@@ -1510,8 +1518,8 @@ def built_fixture_cases(expect: testing.Expect) -> None:
         candidate = gate.Candidate(head, commit, (fixture,))
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        planted = planted_gate(work, root, tree, "overlap", OTHER_BUILDS)
-        objects = ["build", *OTHER_BUILDS]
+        planted = planted_gate(work, root, tree, "overlap", SELECTED_BUILDS)
+        objects = ["build", *SELECTED_BUILDS]
         for name in objects:
             (tree / name / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
         verdict, printed = testing.captured(lambda: planted.check(candidate, False))
@@ -1525,7 +1533,7 @@ def built_fixture_cases(expect: testing.Expect) -> None:
             and git.show(root, verdict.final, INVENTORY) == BUILT_INVENTORY.encode()
             and git.parent(root, verdict.final) == head
             and calls["build"] == ["derive mint-inventory --write", "test"]
-            and all(calls[name] == ["test"] for name in OTHER_BUILDS)
+            and all(calls[name] == ["test"] for name in SELECTED_BUILDS)
             and all(builds[name] == [""] for name in objects)
         )
         label = (
@@ -1603,12 +1611,12 @@ def built_touch_cases(expect: testing.Expect) -> None:
         planted = planted_gate(work, root, tree, "clean", OTHER_BUILDS)
         (tree / "build" / "inventory.txt").write_text(BUILT_INVENTORY, encoding="utf-8")
         verdict, printed = testing.captured(lambda: planted.check(gate.Candidate(head, commit, (ledger,)), False))
-        only = planted.logs / gate.log_name(gate.BY_NAME["release"], "only.txt")
+        only = planted.logs / gate.log_name(gate.BY_NAME["release-v3"], "only.txt")
         named = only.read_text(encoding="utf-8").split() if only.is_file() else []
         holds = verdict.is_accepted and verdict.built == (INVENTORY,) and named == [BUILD_RULE_TEST]
         label = (
             f"a change of the ledger of the rule mint writes the inventory, and each other configuration runs the "
-            f"tests that read the written inventory: the gate writes {verdict.built}, and release runs {named}"
+            f"tests that read the written inventory: the gate writes {verdict.built}, and release-v3 runs {named}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
@@ -1931,8 +1939,7 @@ def changed_tests_cases(expect: testing.Expect) -> None:
             "a change of a C++ test runs the suite of its configurations with --all, and the tests of the changed "
             "inputs in UBSan-strict and in the bench and fuzz build with no --all",
             verdicts["clean"].is_accepted
-            and verdicts["clean"].configurations
-            == ("default", "release", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
+            and verdicts["clean"].configurations == ("default", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
             and words["build"][0].endswith("--all")
             and not any("--all" in line.split() for line in words["build-bench-fuzz"]),
         )
@@ -1963,7 +1970,7 @@ def touched_cases(expect: testing.Expect) -> None:
         previous = planted_repository(root)
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, previous)
-        objects = ("default", "release", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
+        objects = ("default", "release-v3", "tsan", "ubsan-strict", "bench-fuzz")
         cases = (
             ("the module of a rule that reads the build", BUILD_RULE_MODULE, objects, f"--only {BUILD_RULE_TEST}"),
             ("a self-test module that reads no build", "utils/assay/tests/sample/test_one.py", ("default",), ""),
@@ -2034,7 +2041,7 @@ def thread_cases(expect: testing.Expect) -> None:
         commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        builds = ("build", "build-release", "build-release-v3", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
+        builds = ("build", "build-release-v3", "build-tsan", "build-ubsan-strict", "build-bench-fuzz")
         planted = planted_gate(work, root, tree, "meet", dict.fromkeys(builds[1:], "meet"))
         wide = replace(planted, jobs=8)
         verdict, printed = testing.captured(lambda: wide.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
@@ -2059,13 +2066,13 @@ def thread_cases(expect: testing.Expect) -> None:
             and seen == [str(len(builds))] * len(builds)
             and printed.count("memory: ") == len(builds),
         )
-        modes = {"build-release": "count", **dict.fromkeys(builds[2:], "clean")}
+        modes = {"build-release-v3": "count", **dict.fromkeys(builds[2:], "clean")}
         with mock.patch.object(heavy, "IDLE_TICKS", NO_IDLE_RETURN_TICKS):
             greedy = replace(planted_gate(work, root, tree, "greedy", modes), jobs=8)
             verdict, printed = testing.captured(
                 lambda: greedy.check(gate.Candidate(head, commit, ("test/a.cpp",)), False)
             )
-        taken = [(tree / name / "tokens.txt").read_text(encoding="utf-8") for name in ("build", "build-release")]
+        taken = [(tree / name / "tokens.txt").read_text(encoding="utf-8") for name in ("build", "build-release-v3")]
         holds = (
             verdict.is_accepted
             and all(text.isdigit() for text in taken)
@@ -2338,7 +2345,7 @@ def base_run_cases(expect: testing.Expect) -> None:
         commit = commit_change(root, "test/a.cpp", "int a;\n", "Change a test")
         tree = work / "land" / gate.TREE
         gate.move_tree(root, tree, head)
-        others = {**OTHER_BUILDS, "build-release": "broken"}
+        others = {**OTHER_BUILDS, "build-release-v3": "broken"}
         batch = planted_gate(work, root, tree, "clean", others)
         batch_verdict, _ = testing.captured(lambda: batch.check(gate.Candidate(head, commit, ("test/a.cpp",)), False))
         for name in ("build", *OTHER_BUILDS):
@@ -2354,11 +2361,11 @@ def base_run_cases(expect: testing.Expect) -> None:
             if (tree / name / "words.txt").is_file()
         }
         holds = (
-            batch_verdict.focus == (gate.Focus("release", ("test_broken",)),)
-            and set(ran) == {"build-release", "build-bench-fuzz"}
-            and ran["build-release"][-1].startswith(f"-j {POOL_SLOTS} --only ")
+            batch_verdict.focus == (gate.Focus("release-v3", ("test_broken",)),)
+            and set(ran) == {"build-release-v3", "build-bench-fuzz"}
+            and ran["build-release-v3"][-1].startswith(f"-j {POOL_SLOTS} --only ")
             and ran["build-bench-fuzz"] == [f"-j {POOL_SLOTS}"]
-            and base_verdict.configurations == ("release", "bench-fuzz")
+            and base_verdict.configurations == ("release-v3", "bench-fuzz")
             and base_verdict.problems == batch_verdict.problems
             and base_verdict.final == head
             and not base_verdict.ledgers
