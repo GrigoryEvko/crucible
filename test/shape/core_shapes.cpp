@@ -780,9 +780,11 @@ using BrandedColumn = fixy::BrandedView<std::uint32_t const, BrandedProbeBrand>;
 
 // ── The bit sets and the slot map ──────────────────────────────────────────
 
-// The domains of the ids of a heap set and of the keys of a slot map.
+// The domains of the ids of a heap set and of the keys of a slot map, and the
+// brand of the slot map of the probe.
 struct ShapeSlotTag final {};
 struct ShapeHandleTag final {};
+struct ShapeMapBrand final {};
 
 // test and set of a BitSet with an Index: the load of the word and the test
 // or the write of the bit, with no bounds test.
@@ -834,8 +836,8 @@ using ShapeKinds =
 // get of a SlotMap: the compare of the index with the used slots, the test of
 // the low bit of the generation of the key, the load of the generation of the
 // slot, its compare with the key, and the load of the value.
-[[gnu::used]] std::uint32_t slot_map_get(fixy::SlotMap<std::uint32_t, ShapeHandleTag> const& map,
-                                         fixy::SlotKey<ShapeHandleTag> key) noexcept {
+[[gnu::used]] std::uint32_t slot_map_get(fixy::SlotMap<std::uint32_t, ShapeHandleTag, ShapeMapBrand> const& map,
+                                         fixy::SlotKey<ShapeHandleTag, ShapeMapBrand> key) noexcept {
     std::uint32_t value = 0;
     for (auto const found : map.get(key)) {
         value = *found;

@@ -152,8 +152,9 @@ struct ListReports final {
 }
 
 [[gnu::noinline]] SlotReports measure_slot_map(Positions const& positions) noexcept {
-    fixy::SlotMap<std::uint32_t, BenchHandleTag> map = fixy::mint_slot_map<std::uint32_t, BenchHandleTag>(
+    auto map = fixy::mint_slot_map<std::uint32_t, BenchHandleTag>(
         kAlloc, fixy::Quantity<fixy::unit::Element, std::uint32_t>{static_cast<std::uint32_t>(kOperations)});
+    using Key = decltype(map)::key_type;
     fixy::FixedArray<std::uint64_t, kOperations> keys{};
     for (fixy::Index<kOperations> const index : keys.indices()) {
         std::uint64_t const key =
@@ -165,7 +166,7 @@ struct ListReports final {
                           [&] {
                               std::uint32_t sum = 0;
                               for (fixy::Index<kOperations> const position : positions) {
-                                  for (auto const found : map.get(fixy::SlotKey<BenchHandleTag>{keys.at(position)})) {
+                                  for (auto const found : map.get(Key{keys.at(position)})) {
                                       sum += *found;
                                   }
                               }
@@ -175,7 +176,7 @@ struct ListReports final {
                                     [&] {
                                         for (fixy::Index<kOperations> const position : positions) {
                                             keys.with_element(position, [&map](std::uint64_t& element) noexcept {
-                                                fixy::SlotKey<BenchHandleTag> const key{element};
+                                                Key const key{element};
                                                 for (std::uint32_t const value : map.remove(key)) {
                                                     element = map.insert(value).expect("the remove freed a slot").raw();
                                                 }

@@ -29,27 +29,29 @@ using ::foundation::core::FixedList;
 using ::foundation::core::Index;
 using ::foundation::core::mint_slot_map;
 using ::foundation::core::Quantity;
-using ::foundation::core::SlotKey;
-using ::foundation::core::SlotMap;
 namespace unit = ::foundation::core::unit;
 
 struct HandleTag final {};
 
-using Key = SlotKey<HandleTag>;
 using Capacity = Quantity<unit::Element, std::uint32_t>;
 
-// The map of count slots of the value T and the word Generation.
-template <class T, class Generation = std::uint32_t>
-[[nodiscard]] SlotMap<T, HandleTag, Generation> map_of(std::uint32_t count) noexcept {
-    return mint_slot_map<T, HandleTag, Generation>(::foundation::effects::testing::test().alloc, Capacity{count});
-}
+// The allocation capability of each mint of the test.  Each test mints its
+// map in its own body, so the fresh brand of the map stays in that body.
+constexpr ::foundation::effects::Alloc kAlloc = ::foundation::effects::testing::test().alloc;
 
 // The index and the generation of a key.
-[[nodiscard]] std::uint32_t index_of(Key key) noexcept { return static_cast<std::uint32_t>(key.raw()); }
-[[nodiscard]] std::uint64_t generation_of(Key key) noexcept { return key.raw() >> 32; }
+template <class Key>
+[[nodiscard]] std::uint32_t index_of(Key key) noexcept {
+    return static_cast<std::uint32_t>(key.raw());
+}
+template <class Key>
+[[nodiscard]] std::uint64_t generation_of(Key key) noexcept {
+    return key.raw() >> 32;
+}
 
 void test_insert_get_remove() {
-    SlotMap<int, HandleTag> map = map_of<int>(4);
+    auto map = mint_slot_map<int, HandleTag>(kAlloc, Capacity{4});
+    using Key = decltype(map)::key_type;
     CRUCIBLE_FATAL_INVARIANT(map.is_empty() && map.size() == 0 && map.capacity().raw() == 4);
     Key const first = map.insert(10).expect("the map has a free slot");
     Key const second = map.insert(20).expect("the map has a free slot");
@@ -65,19 +67,19 @@ void test_insert_get_remove() {
     Key const reused = map.insert(40).expect("the map has a free slot");
     CRUCIBLE_FATAL_INVARIANT(index_of(reused) == 1 && generation_of(reused) == 3);
     CRUCIBLE_FATAL_INVARIANT(map.get(second).is_none() && *map.get(reused).expect("the key is live") == 40);
-    SlotMap<int, HandleTag> const& view = map;
+    decltype(map) const& view = map;
     CRUCIBLE_FATAL_INVARIANT(*view.get(third).expect("the key is live") == 30);
 }
 
 // An insert into a full map gives Full, and a linear value comes back in it.
 void test_full_map() {
-    SlotMap<int, HandleTag> map = map_of<int>(2);
+    auto map = mint_slot_map<int, HandleTag>(kAlloc, Capacity{2});
     static_cast<void>(map.insert(1).expect("the map has a free slot"));
     static_cast<void>(map.insert(2).expect("the map has a free slot"));
     CRUCIBLE_FATAL_INVARIANT(map.insert(3).is_err() && map.size() == 2);
-    SlotMap<int, HandleTag> empty{};
+    decltype(map) empty{};
     CRUCIBLE_FATAL_INVARIANT(empty.insert(1).is_err() && empty.capacity().raw() == 0);
-    SlotMap<int, HandleTag> none = map_of<int>(0);
+    auto none = mint_slot_map<int, HandleTag>(kAlloc, Capacity{0});
     CRUCIBLE_FATAL_INVARIANT(none.insert(1).is_err() && none.is_empty());
 }
 
@@ -96,8 +98,8 @@ struct[[= ::foundation::linear::linear{}]] Token final {
 };
 
 void test_linear_values() {
-    SlotMap<Token, HandleTag> map = map_of<Token>(1);
-    Key const key = map.insert(Token{1}).expect("the map has a free slot");
+    auto map = mint_slot_map<Token, HandleTag>(kAlloc, Capacity{1});
+    auto const key = map.insert(Token{1}).expect("the map has a free slot");
     auto refused = map.insert(Token{2});
     CRUCIBLE_FATAL_INVARIANT(refused.is_err());
     Token back = std::move(refused).err().expect("the map is full").take();
@@ -114,7 +116,8 @@ void test_linear_values() {
 // of an Option are each refused.  A key that goes out as a word and comes back
 // finds its value.
 void test_forged_keys() {
-    SlotMap<int, HandleTag, std::uint8_t> map = map_of<int, std::uint8_t>(8);
+    auto map = mint_slot_map<int, HandleTag, std::uint8_t>(kAlloc, Capacity{8});
+    using Key = decltype(map)::key_type;
     Key const live = map.insert(7).expect("the map has a free slot");
     Key const removed = map.insert(8).expect("the map has a free slot");
     static_cast<void>(map.remove(removed).expect("the key is live"));
@@ -131,7 +134,8 @@ void test_forged_keys() {
 // last one retires the slot: no later insert takes it, and no key of it finds
 // a value again.
 void test_generation_wrap_retires_the_slot() {
-    SlotMap<int, HandleTag, std::uint8_t> map = map_of<int, std::uint8_t>(2);
+    auto map = mint_slot_map<int, HandleTag, std::uint8_t>(kAlloc, Capacity{2});
+    using Key = decltype(map)::key_type;
     FixedList<Key, 128> keys;
     for (int turn = 0; turn < 128; ++turn) {
         Key const key = map.insert(turn).expect("the map has a free slot");
@@ -154,7 +158,8 @@ void test_generation_wrap_retires_the_slot() {
 // The walk gives each value, and keys() each key, in the order of the slots,
 // and both pass the free slots.
 void test_walk_in_slot_order() {
-    SlotMap<int, HandleTag> map = map_of<int>(8);
+    auto map = mint_slot_map<int, HandleTag>(kAlloc, Capacity{8});
+    using Key = decltype(map)::key_type;
     FixedArray<Key, 6> keys{Key{0}, Key{0}, Key{0}, Key{0}, Key{0}, Key{0}};
     for (Index<6> const position : keys.indices()) {
         Key const inserted = map.insert(static_cast<int>(position.raw()) * 10).expect("the map has a free slot");
@@ -183,7 +188,7 @@ void test_walk_in_slot_order() {
         value += 1;
     }
     CRUCIBLE_FATAL_INVARIANT(*map.get(keys.at(::foundation::core::index<5>())).expect("the key is live") == 51);
-    SlotMap<int, HandleTag> const empty{};
+    decltype(map) const empty{};
     for (int const value : empty) {
         static_cast<void>(value);
         ::foundation::core::fatal("an empty map gives no value to a walk");
@@ -193,8 +198,8 @@ void test_walk_in_slot_order() {
 // The slots never move, so a Ref of get names its value across each later
 // insert.  The ASan run finds a read of freed storage if an insert moved them.
 void test_ref_survives_inserts() {
-    SlotMap<std::uint64_t, HandleTag> map = map_of<std::uint64_t>(512);
-    Key const first = map.insert(77u).expect("the map has a free slot");
+    auto map = mint_slot_map<std::uint64_t, HandleTag>(kAlloc, Capacity{512});
+    auto const first = map.insert(77u).expect("the map has a free slot");
     auto const held = map.get(first).expect("the key is live");
     for (std::uint64_t value = 0; value < 511; ++value) {
         static_cast<void>(map.insert(value).expect("the map has a free slot"));
@@ -212,7 +217,8 @@ struct alignas(64) Line final {
 // Each slot of a map of an over-aligned value lies at the alignment of the
 // value, and the values keep their contents.
 void test_over_aligned_values() {
-    SlotMap<Line, HandleTag> map = map_of<Line>(3);
+    auto map = mint_slot_map<Line, HandleTag>(kAlloc, Capacity{3});
+    using Key = decltype(map)::key_type;
     Key const first = map.insert(Line{11}).expect("the map has a free slot");
     Key const second = map.insert(Line{22}).expect("the map has a free slot");
     Key const third = map.insert(Line{33}).expect("the map has a free slot");
@@ -248,7 +254,8 @@ void test_each_value_ends_once_in_slot_order() {
     auto const log_ref = ::foundation::core::to(log);
     using Value = Logged<std::remove_const_t<decltype(log_ref)>>;
     {
-        SlotMap<Value, HandleTag> map = map_of<Value>(8);
+        auto map = mint_slot_map<Value, HandleTag>(kAlloc, Capacity{8});
+        using Key = decltype(map)::key_type;
         FixedArray<Key, 4> keys{Key{0}, Key{0}, Key{0}, Key{0}};
         for (Index<4> const position : keys.indices()) {
             Key const inserted =
@@ -268,11 +275,11 @@ void test_each_value_ends_once_in_slot_order() {
 
 // A move gives the slots to the target and leaves the source empty.
 void test_moves() {
-    SlotMap<int, HandleTag> source = map_of<int>(4);
-    Key const key = source.insert(5).expect("the map has a free slot");
-    SlotMap<int, HandleTag> target{std::move(source)};
+    auto source = mint_slot_map<int, HandleTag>(kAlloc, Capacity{4});
+    auto const key = source.insert(5).expect("the map has a free slot");
+    decltype(source) target{std::move(source)};
     CRUCIBLE_FATAL_INVARIANT(*target.get(key).expect("the key is live") == 5 && target.capacity().raw() == 4);
-    SlotMap<int, HandleTag> other = map_of<int>(2);
+    decltype(source) other{};
     other = std::move(target);
     CRUCIBLE_FATAL_INVARIANT(*other.get(key).expect("the key is live") == 5 && other.size() == 1);
 }
@@ -281,7 +288,7 @@ void test_refusals(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            SlotMap<int, HandleTag> map = map_of<int>(2);
+            auto map = mint_slot_map<int, HandleTag>(kAlloc, Capacity{2});
             static_cast<void>(map.insert(1).expect("the map has a free slot"));
             static_cast<void>(*map.end());
         },
@@ -290,7 +297,7 @@ void test_refusals(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            SlotMap<int, HandleTag> map = map_of<int>(2);
+            auto map = mint_slot_map<int, HandleTag>(kAlloc, Capacity{2});
             static_cast<void>(map.insert(1).expect("the map has a free slot"));
             std::move(map).expect_empty("the map still holds one value");
         },
@@ -322,7 +329,9 @@ struct SlotModel {
 template <class Generation, std::uint32_t Capacity>
 [[nodiscard]] std::size_t expect_property(std::uint64_t seed, int steps) {
     ::crucible::test::PhiloxStream stream{seed};
-    SlotMap<std::uint64_t, HandleTag, Generation> map = map_of<std::uint64_t, Generation>(Capacity);
+    auto map = mint_slot_map<std::uint64_t, HandleTag, Generation>(
+        kAlloc, ::foundation::core::Quantity<unit::Element, std::uint32_t>{Capacity});
+    using Key = typename decltype(map)::key_type;
     FixedArray<SlotModel, Capacity> model{};
     // The words of some recent keys, and at the start some forged words.
     FixedArray<std::uint64_t, 64> recent{};

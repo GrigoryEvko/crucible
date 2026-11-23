@@ -348,7 +348,7 @@ that the axis does not apply to the row.
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_run_address` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_seat` | `include/foundation/core/Seat.h` | Y | Y | Y | Y | token | · | HS14: 5 |
-| `mint_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 6 |
+| `mint_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 8 |
 | `mint_small_list` | `include/foundation/core/SmallList.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_static_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 2 |

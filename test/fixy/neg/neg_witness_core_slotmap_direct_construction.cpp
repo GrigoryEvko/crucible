@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// foundation::core::SlotMap<int, forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
+// foundation::core::SlotMap<int, forge::brand, forge::brand> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// foundation::core::SlotMap<int, forge::brand> attests to a fact that it cannot see.  The expression below is
+// foundation::core::SlotMap<int, forge::brand, forge::brand> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "no matching function for call".
 //
@@ -28,6 +28,6 @@ struct brand {};
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::SlotMap<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()};
+    [[maybe_unused]] auto forged = foundation::core::SlotMap<int, forge::brand, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()};
     return 0;
 }

@@ -2172,7 +2172,7 @@
       "header": "foundation/core/BitSet.h"
     },
     {
-      "type": "foundation::core::SlotMap<int, forge::brand>",
+      "type": "foundation::core::SlotMap<int, forge::brand, forge::brand>",
       "header": "foundation/core/SlotMap.h"
     },
     {

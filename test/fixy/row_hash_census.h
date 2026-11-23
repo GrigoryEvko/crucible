@@ -1187,6 +1187,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::SlotMap,
      "a table of values behind generational keys on the heap: it holds storage and makes no claim about what the "
      "values hold"},
+    {^^::foundation::core::SlotDomain,
+     "the domain of the keys of a slot map: an empty tag that names a tag and a brand, and no value of it exists"},
     {^^::foundation::core::SlotWalk,
      "a walk over the values of a slot map: it borrows the map, lives inside the loop, and is never a value in a "
      "signature"},

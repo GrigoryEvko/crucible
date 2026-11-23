@@ -988,7 +988,7 @@ witness <foundation/core/BitSet.h> private | foundation::core::BitKeys<foundatio
 # The one constructor of each is private, and its mint is its friend, so each
 # one comes through its mint.
 witness <foundation/core/BitSet.h> no-match | foundation::core::HeapBitSet<forge::brand> | foundation::core::HeapBitSet<forge::brand>{forge::rvalue<unsigned long*>(), forge::rvalue<unsigned int>()}
-witness <foundation/core/SlotMap.h> no-match | foundation::core::SlotMap<int, forge::brand> | foundation::core::SlotMap<int, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()}
+witness <foundation/core/SlotMap.h> no-match | foundation::core::SlotMap<int, forge::brand, forge::brand> | foundation::core::SlotMap<int, forge::brand, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()}
 witness <foundation/core/SmallList.h> no-match | foundation::core::SmallList<int, 4> | foundation::core::SmallList<int, 4>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
 # A walk of a SlotMap and its cursor come only from the map, so no state that
 # a caller holds becomes a walk over slots that it did not fill.

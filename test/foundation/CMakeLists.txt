@@ -4314,13 +4314,22 @@ foundation_test(test_core_slot_map)
 # its mint takes the allocation capability, a value that moves with no throw
 # and a word of a generation of at most 32 bits.
 foundation_neg_compile_test(neg_core_slot_map_key_of_other_domain
-  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, unsigned int>::get\\(foundation::core::SlotKey<OtherTag>&\\)."
-  "cannot convert .key. \\(type .foundation::core::SlotKey<OtherTag>. \\{aka .const foundation::core::Id<OtherTag, long unsigned int>.\\}\\) to type .foundation::core::SlotKey<HandleTag>.")
+  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, foundation::core::<lambda\\(\\)>, unsigned int>::get\\(const foundation::core::Id<foundation::core::SlotDomain<OtherTag, "
+  "SlotDomain<OtherTag, foundation::core::<lambda\\(\\)> >")
+# Two maps of one domain from two calls of the mint: each call gives its own
+# brand, so the key of one does not compile against the other.  A caller that
+# names a brand of its own is refused by the pack of the mint.
+foundation_neg_compile_test(neg_core_slot_map_key_of_other_map
+  "cannot convert .Id<SlotDomain<"
+  "remove\\(foundation::core::SlotKey<Tag, Brand>\\)")
+foundation_neg_compile_test(neg_core_slot_map_named_brand
+  "no matching function for call to .mint_slot_map<int, HandleTag, uint32_t, HeldBrand>\\(foundation::core::Alloc,"
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{HeldBrand\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_slot_map_raw_key
-  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, unsigned int>::get\\(uint64_t\\)."
-  "cannot convert .1. \\(type .uint64_t. \\{aka .long unsigned int.\\}\\) to type .foundation::core::SlotKey<HandleTag>.")
+  "no matching function for call to .foundation::core::SlotMap<int, HandleTag, foundation::core::<lambda\\(\\)>, unsigned int>::get\\(uint64_t\\)."
+  "cannot convert .1. \\(type .uint64_t. \\{aka .long unsigned int.\\}\\) to type .foundation::core::SlotKey<HandleTag, ")
 foundation_neg_compile_test(neg_core_slot_map_copied
-  "use of deleted function .foundation::core::SlotMap<T, Tag, Generation>::SlotMap\\(const foundation::core::SlotMap<T, Tag, Generation>&\\)"
+  "use of deleted function .foundation::core::SlotMap<T, Tag, Brand, Generation>::SlotMap\\(const foundation::core::SlotMap<T, Tag, Brand, Generation>&\\)"
   "a copy of a SlotMap allocates, and no allocation capability shows at a copy")
 foundation_neg_compile_test(neg_core_slot_map_mint_without_allocation_marker
   "no matching function for call to .mint_slot_map<int, HandleTag>\\(foundation::effects::cap::IO,"

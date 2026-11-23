@@ -17,6 +17,6 @@ int main() {
     auto others = ::foundation::core::mint_slot_map<int, OtherTag>(
         ::foundation::effects::testing::test().alloc,
         ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>{4});
-    ::foundation::core::SlotKey<OtherTag> const key = others.insert(1).expect("the map has a free slot");
+    auto const key = others.insert(1).expect("the map has a free slot");
     return handles.get(key).is_some() ? 1 : 0;
 }

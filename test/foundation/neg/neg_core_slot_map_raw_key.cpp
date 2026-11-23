@@ -1,5 +1,5 @@
 // A SlotMap takes a key and no number.  A caller states a word from outside as
-// a key with SlotKey<Tag>{word}, so the claim shows at the call.
+// a key with the key_type of the map, so the claim shows at the call.
 
 #include <foundation/core/SlotMap.h>
 #include <foundation/effects/Effect.h>

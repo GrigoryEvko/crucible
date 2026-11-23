@@ -3,23 +3,36 @@
 // The slot map of the Region family: a table of values, each behind a key
 // that holds the index of its slot and a generation.
 //
-//   SlotMap<T, Tag, Generation>   at most a capacity of values of T in slots
-//                       on the heap.  The tag names the domain of the keys,
-//                       such as the shadow handles of one Vigil, so a key of a
-//                       different domain does not compile
-//   SlotKey<Tag>        the key of a value: Id<Tag, std::uint64_t>, with the
-//                       index of the slot in the low 32 bits and the
+//   SlotMap<T, Tag, Brand, Generation>
+//                       at most a capacity of values of T in slots on the
+//                       heap.  The tag names the domain of the keys, such as
+//                       the shadow handles of one Vigil, and the brand names
+//                       the mint of the map.  So a key of a different domain,
+//                       or of a different map of the same domain, does not
+//                       compile
+//   SlotKey<Tag, Brand> the key of a value: an Id of the domain and the brand,
+//                       with the index of the slot in the low 32 bits and the
 //                       generation of the slot in the high 32 bits.  The key is
 //                       one word, so a foreign caller, such as Python, holds
 //                       it as one integer
 //
 // Mint
 //   mint_slot_map<T, Tag>(alloc, capacity)
-//                       the empty map of capacity slots, in one allocation.  A
-//                       capacity of zero allocates nothing.  The third template
-//                       argument is the word of a generation: std::uint8_t,
-//                       std::uint16_t or std::uint32_t, and std::uint32_t when
-//                       the call names none
+//                       the empty map of capacity slots, in one allocation, with
+//                       the fresh brand of the call.  A capacity of zero
+//                       allocates nothing.  The third template argument is the
+//                       word of a generation: std::uint8_t, std::uint16_t or
+//                       std::uint32_t, and std::uint32_t when the call names
+//                       none.  A pack refuses each further template argument,
+//                       so no caller names the brand
+//
+// Brands
+//   Each call site of the mint gives its own brand, so the maps of two call
+//   sites with one tag take no key of each other.  The maps that one call
+//   site gives, such as the maps of a loop or of each call of one helper,
+//   share the brand, and a key of one of them names a slot of the others
+//   (the residual of a brand of a call site).  A holder that must name the
+//   type of its map names it through decltype of its own mint.
 //
 // Operations
 //   insert(value)       puts value in a free slot, and gives its key, or
@@ -41,7 +54,10 @@
 //
 // Keys
 //   A key is a number, and a caller can build one from a word, so get and
-//   remove read each key as a claim.  The index of a key must be below the
+//   remove read each key as a claim.  A key that comes back from outside the
+//   program, such as from Python, is outside data: a door of that boundary
+//   checks it once (the range of the index, the generation and the owner)
+//   before it becomes a SlotKey.  That door waits for its first caller.  The index of a key must be below the
 //   count of the slots that a value took at least one time, and the
 //   generation of the key must be the generation of its slot.  A slot holds a
 //   value when its generation is odd.  An insert adds one to the generation,
@@ -101,9 +117,13 @@
 
 namespace foundation::core {
 
-// The key of a value of a SlotMap of the domain Tag.
-template <class Tag>
-using SlotKey = Id<Tag, std::uint64_t>;
+// The domain of the keys of the maps of one tag and one brand.
+template <class Tag, ::foundation::brand::IsBrand Brand>
+struct SlotDomain final {};
+
+// The key of a value of a SlotMap of the domain Tag and the brand Brand.
+template <class Tag, ::foundation::brand::IsBrand Brand>
+using SlotKey = Id<SlotDomain<Tag, Brand>, std::uint64_t>;
 
 // The word of the generation of a slot.
 template <class Generation>
@@ -115,7 +135,7 @@ concept SlotGeneration = std::same_as<Generation, std::uint8_t> || std::same_as<
 template <class T>
 concept SlotMapElement = OwnedElement<T> && std::is_nothrow_move_constructible_v<T>;
 
-template <class T, class Tag, class Generation>
+template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generation>
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class SlotMap;
 
@@ -303,7 +323,7 @@ class SlotWalk final {
     State const* state_ = nullptr;
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-    template <class T, class Tag, class OtherGeneration>
+    template <class T, class Tag, ::foundation::brand::IsBrand Brand, class OtherGeneration>
         requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<OtherGeneration>
     friend class SlotMap;
 
@@ -327,12 +347,13 @@ template <class T, class Tag, class Generation, class Marker>
 concept CanMintSlotMap =
     SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation> && AllocationCapability<Marker>;
 
-template <class T, class Tag, class Generation = std::uint32_t, class Marker>
-    requires CanMintSlotMap<T, Tag, Generation, Marker>
-[[nodiscard]] SlotMap<T, Tag, Generation> mint_slot_map(Marker allocation,
-                                                        Quantity<unit::Element, std::uint32_t> capacity) noexcept;
+template <class T, class Tag, class Generation = std::uint32_t, class... Refused,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND, class Marker>
+    requires(sizeof...(Refused) == 0) && CanMintSlotMap<T, Tag, Generation, Marker>
+[[nodiscard]] SlotMap<T, Tag, ::foundation::brand::undeducible_brand_t<Fresh>, Generation>
+mint_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
 
-template <class T, class Tag, class Generation = std::uint32_t>
+template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generation = std::uint32_t>
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] SlotMap final
@@ -343,9 +364,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     // The slots of a mint.  Only the mint calls it.
     constexpr explicit SlotMap(State const& state) noexcept : Core{state} {}
 
-    template <class OtherT, class OtherTag, class OtherGeneration, class Marker>
-        requires CanMintSlotMap<OtherT, OtherTag, OtherGeneration, Marker>
-    friend SlotMap<OtherT, OtherTag, OtherGeneration>
+    template <class OtherT, class OtherTag, class OtherGeneration, class... Refused, ::foundation::brand::IsBrand Fresh,
+              class Marker>
+        requires(sizeof...(Refused) == 0) && CanMintSlotMap<OtherT, OtherTag, OtherGeneration, Marker>
+    friend SlotMap<OtherT, OtherTag, ::foundation::brand::undeducible_brand_t<Fresh>, OtherGeneration>
     mint_slot_map(Marker allocation, Quantity<unit::Element, std::uint32_t> capacity) noexcept;
 
     // True when the slot of key holds the value of key: the index is below
@@ -380,7 +402,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
 
 public:
     using element_type = T;
-    using key_type = SlotKey<Tag>;
+    using key_type = SlotKey<Tag, Brand>;
 
     // The empty map of no slot.  It holds no storage, and each insert gives
     // Full.
@@ -423,7 +445,7 @@ public:
     // Puts value in a free slot (the free slots), and gives its key, or
     // Full<T> when no slot is free.  For a linear T the Full holds the value.
     // No allocation and no search.
-    [[nodiscard]] constexpr Result<SlotKey<Tag>, Full<T>> insert(T value) & noexcept {
+    [[nodiscard]] constexpr Result<SlotKey<Tag, Brand>, Full<T>> insert(T value) & noexcept {
         State& state = this->state_;
         std::uint32_t index = 0;
         if (state.free_count != 0) {
@@ -445,7 +467,7 @@ public:
         detail::unpoison_slots_(state.values + index, 1);
         ::new(static_cast<void*>(state.values + index)) T(static_cast<T&&>(value));
         ++state.live;
-        return SlotKey<Tag>{std::uint64_t{index} | (std::uint64_t{generation} << detail::slot_index_bits_)};
+        return SlotKey<Tag, Brand>{std::uint64_t{index} | (std::uint64_t{generation} << detail::slot_index_bits_)};
     }
     void insert(T) && = delete("an insert into a temporary SlotMap gives a key of a map that the full expression ends");
 
@@ -456,7 +478,7 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(SlotKey<Tag> key) & noexcept {
+    get(SlotKey<Tag, Brand> key) & noexcept {
         if (!holds_(key.raw())) {
             return Option<Ref<T, Fresh>>{none};
         }
@@ -465,22 +487,24 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
-    get(SlotKey<Tag> key) const& noexcept {
+    get(SlotKey<Tag, Brand> key) const& noexcept {
         if (!holds_(key.raw())) {
             return Option<Ref<T const, Fresh>>{none};
         }
         T const& value = *slot_of_(key.raw());
         return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(value));
     }
-    void get(SlotKey<Tag>) && = delete("a value of a temporary SlotMap dangles at the end of the full expression");
-    void get(SlotKey<Tag>) const&& = delete("a value of a temporary SlotMap dangles at the end of the full expression");
+    void
+    get(SlotKey<Tag, Brand>) && = delete("a value of a temporary SlotMap dangles at the end of the full expression");
+    void get(SlotKey<Tag, Brand>) const&& =
+        delete("a value of a temporary SlotMap dangles at the end of the full expression");
 
     // Moves the value of key out, and frees its slot: the generation of the
     // slot takes one more, and its index goes onto the stack of the free
     // slots.  The slot is then poisoned (the spare storage of Heap.h).  At
     // the largest generation the slot retires (the wrap of a generation).  No
     // value for a key that the slot does not hold.
-    [[nodiscard]] constexpr Option<T> remove(SlotKey<Tag> key) & noexcept {
+    [[nodiscard]] constexpr Option<T> remove(SlotKey<Tag, Brand> key) & noexcept {
         if (!holds_(key.raw())) {
             return Option<T>{none};
         }
@@ -520,9 +544,9 @@ public:
     void end() const&& = delete("a cursor of a temporary SlotMap points into storage that the full expression frees");
 
     // The key of each value, in the order of the slots:
-    // `for (SlotKey<Tag> key : map.keys())`.
-    [[nodiscard]] constexpr SlotWalk<T const, Generation, SlotKey<Tag>> keys() const& noexcept {
-        return SlotWalk<T const, Generation, SlotKey<Tag>>{this->state_};
+    // `for (SlotKey<Tag, Brand> key : map.keys())`.
+    [[nodiscard]] constexpr SlotWalk<T const, Generation, SlotKey<Tag, Brand>> keys() const& noexcept {
+        return SlotWalk<T const, Generation, SlotKey<Tag, Brand>>{this->state_};
     }
     void keys() const&& = delete("a walk of a temporary SlotMap points into storage that the full expression frees");
 };
@@ -531,15 +555,17 @@ public:
 // the free indexes and the generations.  No slot holds a value, and no byte
 // of a slot is read before an insert writes it, so each slot of the values is
 // poisoned (the spare storage of Heap.h).  A capacity of zero allocates
-// nothing.  Complexity: one allocation.
-template <class T, class Tag, class Generation, class Marker>
-    requires CanMintSlotMap<T, Tag, Generation, Marker>
-[[nodiscard]] SlotMap<T, Tag, Generation> mint_slot_map(Marker /*allocation*/,
-                                                        Quantity<unit::Element, std::uint32_t> capacity) noexcept {
+// nothing.  The map has the fresh brand of the call (the brands).
+// Complexity: one allocation.
+template <class T, class Tag, class Generation, class... Refused, ::foundation::brand::IsBrand Fresh, class Marker>
+    requires(sizeof...(Refused) == 0) && CanMintSlotMap<T, Tag, Generation, Marker>
+[[nodiscard]] SlotMap<T, Tag, ::foundation::brand::undeducible_brand_t<Fresh>, Generation>
+mint_slot_map(Marker /*allocation*/, Quantity<unit::Element, std::uint32_t> capacity) noexcept {
     using State = detail::owner::SlotMapState<T, Generation>;
+    using Map = SlotMap<T, Tag, Fresh, Generation>;
     std::uint32_t const slots = capacity.raw();
     if (slots == 0) {
-        return SlotMap<T, Tag, Generation>{};
+        return Map{};
     }
     detail::SlotMapLayout const layout = detail::slot_map_layout_<T, Generation>(slots);
     unsigned char* const storage =
@@ -551,7 +577,7 @@ template <class T, class Tag, class Generation, class Marker>
         .capacity = slots,
     };
     detail::poison_slots_(state.values, slots);
-    return SlotMap<T, Tag, Generation>{state};
+    return Map{state};
 }
 
 }  // namespace foundation::core

@@ -294,10 +294,13 @@ struct Inner<GrowListTag> {
     GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
 };
 
+// The Inner of the probe of a SlotMap holds no child map.  The mint gives each
+// map the fresh brand of its call, and a member of a minted map would carry
+// that brand out of the scope that made it (the rule brand-escape).  SlotMap
+// comes back into the child move with the member brand of 977 series 1.
 template <>
 struct Inner<SlotMapTag> {
     using brand_type = InnerBrand<SlotMapTag>;
-    ::foundation::core::SlotMap<Elem<SlotMapTag>, ProbeHandleTag> child{};
 };
 
 // The Inner that an element holds.  The frame door of the Option lends the
@@ -542,40 +545,77 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
     }
 };
 
-struct SlotMapProbe : ElementArms<SlotMapProbe> {
+// The brand of the map type that the roster reads.  No mint gives it, so no
+// map of it holds a slot.
+struct SlotMapRosterBrand final {};
+
+// The values of a probe map: count elements in a map of eight slots.
+void fill_probe_map(auto& map, unsigned count) {
+    for (unsigned inserted = 0; inserted < count; ++inserted) {
+        static_cast<void>(map.insert(Elem<SlotMapTag>{}).expect("the map of the probe has a free slot"));
+    }
+}
+
+// Each arm of the probe of a SlotMap mints its map in its own body, so the
+// fresh brand of the map stays in that body (the rule brand-escape).  The
+// roster reads the state of Owner, a map of a brand that no mint gives.  The
+// child move and the assignment over a map that holds values need a holder
+// that names the type of its map, as the Inner of the other probes does.
+// SlotMap comes back into those arms with the member brand of 977 series 1.
+struct SlotMapProbe {
     using Tag = SlotMapTag;
-    using Owner = ::foundation::core::SlotMap<Elem<Tag>, ProbeHandleTag>;
-    using Key = ::foundation::core::SlotKey<ProbeHandleTag>;
+    using Owner = ::foundation::core::SlotMap<Elem<Tag>, ProbeHandleTag, SlotMapRosterBrand>;
+    using Capacity = ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>;
 
-    static Owner make(unsigned count) {
-        Owner map = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(
-            kAlloc, ::foundation::core::Quantity<::foundation::core::unit::Element, std::uint32_t>{8});
-        for (unsigned inserted = 0; inserted < count; ++inserted) {
-            static_cast<void>(map.insert(Elem<Tag>{}).expect("the map of the probe has a free slot"));
+    // Self-move: a move of a map into itself keeps its values.
+    static void self_move() {
+        {
+            auto held = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
+            fill_probe_map(held, 2);
+            move_into(held, held);
+            CRUCIBLE_FATAL_INVARIANT(held.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
         }
-        return map;
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    // The first value in the order of the slots.  The values live in their
-    // slots, which never move, so the Inner stays where it is.
-    static Inner<Tag>& give_first_an_inner(Owner& owner) {
-        for (Elem<Tag>& element : owner) {
-            return give_an_inner(element);
+    // Moved-from: a new value in the source ends no value of the target.  The
+    // target of the first move holds no slot, because a second map of one
+    // brand needs a holder.
+    static void moved_from() {
+        {
+            auto source = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
+            fill_probe_map(source, 2);
+            decltype(source) target{};
+            target = static_cast<decltype(source)&&>(source);
+            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
+            source = decltype(source){};
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
+            decltype(source) taken{static_cast<decltype(source)&&>(target)};
+            CRUCIBLE_FATAL_INVARIANT(taken.size() == 2);
+            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
         }
-        ::foundation::core::fatal("the SlotMap of the probe holds no value");
+        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    using LinearOwner = ::foundation::core::SlotMap<LinearElement, ProbeHandleTag>;
+    static void child_move() {}
 
-    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<LinearOwner>()); }
+    static void linear() {
+        using LinearOwner =
+            decltype(::foundation::core::mint_slot_map<LinearElement, ProbeHandleTag>(kAlloc, Capacity{8}));
+        CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<LinearOwner>());
+    }
 
     // Empty: a moved-from SlotMap holds no slot: a read of a key finds no
     // value, its walk gives nothing, and an insert gives Full.
     static void empty() {
         {
-            Owner source = make(2);
-            Key const first{std::uint64_t{1} << 32};
-            Owner const target{static_cast<Owner&&>(through(source))};
+            auto source = ::foundation::core::mint_slot_map<Elem<Tag>, ProbeHandleTag>(kAlloc, Capacity{8});
+            fill_probe_map(source, 2);
+            using Map = decltype(source);
+            Map::key_type const first{std::uint64_t{1} << 32};
+            Map const target{static_cast<Map&&>(through(source))};
             CRUCIBLE_FATAL_INVARIANT(target.size() == 2 && target.get(first).is_some());
             CRUCIBLE_FATAL_INVARIANT(through(source).size() == 0 && through(source).capacity().raw() == 0);
             CRUCIBLE_FATAL_INVARIANT(through(source).get(first).is_none());
