@@ -845,6 +845,14 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
     return count;
 }
 
+::fixy::Quantity<::fixy::unit::Byte, size_t> BackgroundThread::region_bytes(PublishStage const&) const noexcept {
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> bytes{size_t{0}};
+    for (RegionMemory const& memory : region_store_.view()) {
+        bytes = ::fixy::saturating_add(bytes, memory.parts.arena_bytes());
+    }
+    return bytes;
+}
+
 void BackgroundThread::Pipeline::DrainTraceRingFn(StartInput&& in, typename TraceBatchChannel::ProducerHandle&& out) {
     BackgroundThread& owner = in.owner();
     detail::bg_pipeline::ChannelWaits& next = in.parks().trace_batches;

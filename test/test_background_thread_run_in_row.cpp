@@ -272,7 +272,8 @@ int main() {
     test_built_graph_owns_its_metadata();
     test_build_and_release_pass_two_to_the_32();
     test_scalars_of_an_op_with_no_tensors();
+    test_publish_adds_no_block_to_the_region_arena();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 21 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 29 groups, all passed\n");
     return 0;
 }

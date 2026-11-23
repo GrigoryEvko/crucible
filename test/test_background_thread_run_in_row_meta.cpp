@@ -165,6 +165,40 @@ void seal_global_tables() {
     crucible::global_ckernel_table().value()->seal(kTest);
 }
 
+// The bytes of the arena of a built region, and the bytes of the region store
+// after the publish of that region.
+struct PublishedBytes {
+    Bytes built{size_t{0}};
+    Bytes stored{size_t{0}};
+};
+
+// Builds the region of the work, and publishes it into the store of a new
+// pipeline that runs no thread.  The store holds no other region, so its
+// bytes are the bytes of the arena of the region after the publish.
+[[nodiscard]] PublishedBytes publish_one_region(Work const& work, MetaLog const& log) {
+    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    const auto test = ::foundation::effects::testing::test();
+    const auto bg = ::foundation::effects::testing::bg();
+    crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
+    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
+    crucible::NumericsHash const numerics = bt.numerics();
+    ::fixy::Option<BackgroundThread::BuiltRegion> built{};
+    scratch.arena.with_epoch(
+        [&work, &state, &log, numerics, alloc = test.alloc, &built](crucible::TraceScratch::Epoch& epoch) noexcept {
+            built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
+        });
+    BackgroundThread::BuiltRegion region = std::move(built).expect("the epoch built the region");
+    PublishedBytes bytes{.built = region.arena_bytes()};
+    bt.run_on_publish_stage(
+        [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
+            owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
+            CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == 1u && "the store holds the published region");
+            bytes.stored = owner.region_bytes(stage);
+        });
+    return bytes;
+}
+
 }  // namespace
 }  // namespace meta_rig
 
@@ -558,6 +592,41 @@ void test_scalars_of_an_op_with_no_tensors() {
                                     && "two ops that differ only in a scalar must give two content hashes");
 
     ::fixy::check::pass(kTest, "  scalars_of_an_op_with_no_tensors:          PASSED\n");
+}
+
+// The publish of a region builds its RegionNode in the arena of the region,
+// and its MemoryPlan there too when the region has slots.  The build sizes
+// the first block of that arena for the runs, the node and the plan, so the
+// publish takes no block: the bytes of the arena after the publish are its
+// bytes after the build.  A second block holds at least twice the bytes of
+// the first, so a publish that takes one at least triples the bytes.
+//
+// Each output of the first work has a data pointer of its own, so each one is
+// a slot of its own, and the run of the slots holds no spare slot.  The
+// second work has no tensor, thus no slot, and its region has a node and no
+// plan.
+void test_publish_adds_no_block_to_the_region_arena() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    MetaLog metalog{::foundation::effects::testing::test().alloc};
+    constexpr uint32_t OPS = 4;
+    Work slotted;
+    for (uint32_t op = 0; op < OPS; ++op)
+        (void)slotted.push_op_with_meta(metalog, op);
+    Work unslotted;
+    unslotted.push_op_with_scalars(0, 5, 6);
+
+    MetaLog const& log = metalog;
+    const PublishedBytes with_plan = publish_one_region(slotted, log);
+    const PublishedBytes with_no_plan = publish_one_region(unslotted, log);
+    CRUCIBLE_TEST_ASSERT(kTest, with_plan.built > Bytes{size_t{0}} && with_no_plan.built > Bytes{size_t{0}});
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         with_plan.stored == with_plan.built && "the publish of a region with slots took a block");
+    CRUCIBLE_TEST_ASSERT(kTest, with_no_plan.stored == with_no_plan.built
+                                    && "the publish of a region with no slot took a block");
+
+    ::fixy::check::pass(kTest, "  publish_adds_no_block_to_the_region_arena: PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

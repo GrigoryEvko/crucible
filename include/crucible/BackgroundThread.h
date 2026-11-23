@@ -689,6 +689,16 @@ public:
         [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
         [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
 
+        // The bytes of each block of the arena of the region, or zero bytes
+        // for a region with no arena.
+        [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> arena_bytes() const noexcept {
+            return arena_.match(
+                [](::fixy::Box<::fixy::BumpArena<DagArena>> const& arena) noexcept {
+                    return ::fixy::Quantity<::fixy::unit::Byte, size_t>{arena->retained_bytes()};
+                },
+                []() noexcept { return ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{0}}; });
+        }
+
     private:
         friend struct BackgroundThread;
 
@@ -1449,6 +1459,11 @@ public:
     [[nodiscard]] uint32_t region_count(PublishStage const& stage) const noexcept;
     [[nodiscard]] uint64_t regions_dropped_full(PublishStage const&) const noexcept { return regions_dropped_full_; }
 
+    // The bytes of the blocks of the arenas of the regions in the store: the
+    // runs, the node and the plan of each region.  The publish stage owns the
+    // store.  Complexity: O(S) for S slots of the store.
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> region_bytes(PublishStage const& stage) const noexcept;
+
     // The doors of the publish stage, which a job of run_on_publish_stage
     // gets in place of the BackgroundThread.  Only that door builds a view,
     // on the thread that owns the state of the publish stage, and the view
@@ -1473,6 +1488,10 @@ public:
         }
         [[nodiscard]] uint64_t regions_dropped_full(PublishStage const& stage) const noexcept {
             return owner_.regions_dropped_full(stage);
+        }
+        [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
+        region_bytes(PublishStage const& stage) const noexcept {
+            return owner_.region_bytes(stage);
         }
 
         void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
