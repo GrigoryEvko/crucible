@@ -1923,16 +1923,17 @@ def host_use_cases(expect: testing.Expect) -> None:
     """Hold the use of the host: the reads of the CPU times, the busy share between two reads, and the verdict."""
     with tempfile.TemporaryDirectory(prefix="gate-host-") as work_text:
         stat = Path(work_text) / "stat"
-        stat.write_text("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 50 0 50 350 50 0 0 0 0 0\n", encoding="ascii")
+        stat.write_text("cpu  100 0 100 700 100 0 0 0 40 0\ncpu0 50 0 50 350 50 0 0 0 20 0\n", encoding="ascii")
         before = gate.host_jiffies(stat)
-        stat.write_text("cpu  300 0 300 900 100 0 0 0 0 0\n", encoding="ascii")
+        stat.write_text("cpu  300 0 300 900 100 0 0 0 240 0\n", encoding="ascii")
         after = gate.host_jiffies(stat)
         stat.write_text("intr 1 2 3\n", encoding="ascii")
         other = gate.host_jiffies(stat)
         missing = gate.host_jiffies(Path(work_text) / "absent")
     expect(
-        f"the read of the CPU times gives the total and the idle and iowait jiffies, and a line that is not the CPU "
-        f"line or a missing file gives no read: {before}, {after}, {other}, {missing}",
+        f"the read of the CPU times gives the total through steal, with no guest time that user holds already, and the "
+        f"idle and iowait jiffies.  A line that is not the CPU line or a missing file gives no read: {before}, "
+        f"{after}, {other}, {missing}",
         before == (1000, 800) and after == (1600, 1000) and other is None and missing is None,
     )
     expect(

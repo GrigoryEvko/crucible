@@ -318,8 +318,9 @@ Compiler heal
 
 Use of the host
     The verdict of each check gives the busy share of all CPUs of the host
-    over the run, from two reads of STAT_FILE (host_busy_pct), and the CPU
-    time of each process that the run started and waited for (cpu_seconds).
+    over the run, from two reads of STAT_FILE (host_busy_pct), the CPU
+    time of each process that the run started and waited for (cpu_seconds),
+    and the count of the CPUs of the host (host_cpus).
     The record of each run then holds them (assay.loop.land, the record).
     The busy share counts each process of the host, so a run with idle CPUs
     shows a slot or a step that waits.
@@ -876,9 +877,11 @@ TEST_KINDS = ("test",)
 GB_STEP = 0.1
 # The file of the work directory with one JSON line for each kill for lack of memory (the kill for memory).
 KILL_LOG = "oom-kills.jsonl"
-# The file whose first line gives the CPU times of all CPUs of the host, in jiffies, and the fields of the idle time in
-# that line: idle and iowait (the use of the host).
+# The file whose first line gives the CPU times of all CPUs of the host, in jiffies, the count of its fields that hold
+# the total (user through steal, because the times of a guest are in user and nice too), and the fields of the idle
+# time in that line: idle and iowait (the use of the host).
 STAT_FILE = Path("/proc/stat")
+TOTAL_FIELDS = 8
 IDLE_FIELDS = (3, 4)
 # The forms of a file HEAD that names a commit: a hash of SHA-1 or of SHA-256 in lowercase hexadecimal digits, and the
 # branch with no commit that repair_head() writes when the reflog names no commit (the warm tree).
@@ -1088,7 +1091,8 @@ class Verdict:
     each row of a budget that the gate raised, with the old and the new value (the raise of a budget).  `lowered`
     holds a line for each row that the gate lowered, or the line of a lower that wrote nothing (the lower of a budget).
     `host_busy_pct` is the busy share of all CPUs of the host over the run, for each process of the host, or 0.0 when
-    STAT_FILE does not read.  `cpu_seconds` is the CPU time of the processes that the run started and waited for (the
+    STAT_FILE does not read.  `cpu_seconds` is the CPU time of the processes that the run started and waited for, and
+    `host_cpus` the count of the CPUs of the host, so cpu_seconds / (seconds * host_cpus) is the share of the run (the
     use of the host).
     """
 
@@ -1110,6 +1114,7 @@ class Verdict:
     lowered: tuple[str, ...] = ()
     host_busy_pct: float = 0.0
     cpu_seconds: float = 0.0
+    host_cpus: int = 0
 
     def __post_init__(self) -> None:
         """Give each problem as its own item when the verdict has no items, so a problem always has an item."""
@@ -1673,9 +1678,9 @@ def host_jiffies(path: Path = STAT_FILE) -> tuple[int, int] | None:
             words = handle.readline().split()
     except OSError, UnicodeDecodeError:
         return None
-    if len(words) <= max(IDLE_FIELDS) + 1 or words[0] != "cpu" or not all(word.isdigit() for word in words[1:]):
+    if len(words) <= TOTAL_FIELDS or words[0] != "cpu" or not all(word.isdigit() for word in words[1:]):
         return None
-    values = [int(word) for word in words[1:]]
+    values = [int(word) for word in words[1 : TOTAL_FIELDS + 1]]
     return sum(values), sum(values[index] for index in IDLE_FIELDS)
 
 
@@ -2252,6 +2257,7 @@ class Gate:
             lowered,
             busy_percent(host_before, host_jiffies()),
             round(children_cpu_seconds() - cpu_before, 1),
+            os.cpu_count() or 0,
         )
 
     def ratchet(
