@@ -7,7 +7,6 @@
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
-#include <foundation/permissions/Permission.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -54,17 +53,16 @@ class CreditFlowControl : public ::foundation::Pinned<CreditFlowControl<MaxFlows
 
     using FlowIndex = ::fixy::Index<MaxFlows>;
 
-    // Each start_flow mints a token of this tag, so the token witnesses that
-    // the acquisition comes from inside this class.
-    struct StartGateTag {
-        using permission_row = ::foundation::effects::Row<>;
-    };
+    // The tag of the lock of start_flow.  It is private, so only this class
+    // names the lock.
+    struct StartGateTag {};
 
     ::fixy::FixedArray<FlowSlot, MaxFlows> flows_{};
     // start_flow searches the table and then reserves a slot, and those two
-    // steps are not atomic together.  The gate serializes them so one socket
-    // cannot be published into two slots at once.
-    ::fixy::spin::BlockingLock<StartGateTag> start_gate_{};
+    // steps are not atomic together.  The lock serializes them so one socket
+    // cannot be published into two slots at once.  The lock owns no data:
+    // each slot holds only atomics, which each thread reads with no lock.
+    ::fixy::spin::BlockingLocked<::fixy::Unit, StartGateTag> start_gate_{};
 
     // The key of a flow is the number of the descriptor of its socket, at
     // most max_of<int>, so it never meets kEmptyFd or kReservedFd.
@@ -84,27 +82,10 @@ class CreditFlowControl : public ::foundation::Pinned<CreditFlowControl<MaxFlows
         return ::fixy::none;
     }
 
-    // One compare-and-swap of the credit of a flow.  True when it stored
-    // desired.  Else observed takes the credit that the cell held.
-    [[nodiscard]] static bool swap_credit(FlowSlot& flow, std::uint32_t& observed, std::uint32_t desired) noexcept {
-        return flow.credit_bytes.cas_acq_rel(observed, desired)
-            .match([](::fixy::Unit) noexcept { return true; },
-                   [&observed](::fixy::CasRefusal<std::uint32_t> refusal) noexcept {
-                       observed = refusal.observed;
-                       return false;
-                   });
-    }
-
-public:
-    constexpr CreditFlowControl() noexcept = default;
-
-    template <class Ctx>
-        requires CtxFitsBackpressureStart<Ctx>
+    // The search and the reserve of start_flow.  The caller holds the lock of
+    // start_flow, so no other start runs between the two steps.
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
-    start_flow(Ctx const& ctx, SocketIdentity fd, PositiveBackpressureBytes initial_credit) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<StartGateTag>();
-        ::fixy::spin::GateGuard guard{ctx, start_gate_, proof};
-
+    start_flow_locked_(SocketIdentity fd, PositiveBackpressureBytes initial_credit) noexcept {
         const std::uint32_t credit = initial_credit.value();
         for (FlowIndex index : find(fd)) {
             // A FlowSlot holds only atomics, so a write races with no read or write of another thread.
@@ -128,6 +109,28 @@ public:
             }
         }
         return ::fixy::err(BackpressureError::TooManyCreditFlows);
+    }
+
+    // One compare-and-swap of the credit of a flow.  True when it stored
+    // desired.  Else observed takes the credit that the cell held.
+    [[nodiscard]] static bool swap_credit(FlowSlot& flow, std::uint32_t& observed, std::uint32_t desired) noexcept {
+        return flow.credit_bytes.cas_acq_rel(observed, desired)
+            .match([](::fixy::Unit) noexcept { return true; },
+                   [&observed](::fixy::CasRefusal<std::uint32_t> refusal) noexcept {
+                       observed = refusal.observed;
+                       return false;
+                   });
+    }
+
+public:
+    constexpr CreditFlowControl() noexcept = default;
+
+    template <class Ctx>
+        requires CtxFitsBackpressureStart<Ctx>
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
+    start_flow(Ctx const& ctx, SocketIdentity fd, PositiveBackpressureBytes initial_credit) noexcept {
+        return start_gate_.with(
+            ctx, [this, fd, initial_credit](::fixy::Unit&) noexcept { return start_flow_locked_(fd, initial_credit); });
     }
 
     template <class Ctx>

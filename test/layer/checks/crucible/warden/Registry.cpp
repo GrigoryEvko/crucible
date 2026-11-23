@@ -19,8 +19,12 @@ static_assert(!std::is_default_constructible_v<HotRegionRegistryHandle>,
 
 // The registry is a static of the process with no end at exit.  A withdrawal
 // from a destructor that runs after the end of main then finds a live list.
+// The tag of the lock of the registry is private, so a probe tag stands in
+// for it: the tag adds no member.
+struct RegistryLockProbeTag final {};
 static_assert(std::is_trivially_destructible_v<HotRegionRegistry::Snapshot>
-                  && std::is_trivially_destructible_v<::fixy::spin::UnwitnessedBlockingLock>,
+                  && std::is_trivially_destructible_v<
+                      ::fixy::spin::BlockingLocked<HotRegionRegistry::Snapshot, RegistryLockProbeTag>>,
               "The list and the lock of the registry must end with no code, so the static of the registry has no end "
               "at exit.");
 

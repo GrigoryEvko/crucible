@@ -117,6 +117,31 @@ static_assert(CtxMayAcquire<AllocDivShape, WaitStrategy::BoundedSpin>,
 static_assert(!CtxMayAcquire<TestRunnerShape, WaitStrategy::BoundedSpin>
               && CtxMayAcquire<TestRunnerShape, WaitStrategy::AcquireWait>);
 
+// A Locked (design note 7) holds the bare lock of its strategy on its own
+// line, and then its data.  It does not copy or move, and neither does its
+// guard.  A body that gives a plain value passes, and a body that gives the
+// lent reference does not.
+struct LockedData {
+    std::uint64_t count = 0;
+};
+static_assert(alignof(SpinLocked<LockedData, ProbeTag>) == 64 && alignof(BlockingLocked<LockedData, ProbeTag>) == 64);
+static_assert(sizeof(BlockingLocked<LockedData, ProbeTag>) == 128,
+              "the lock word fills one line, and the data starts the next line");
+static_assert(!std::is_copy_constructible_v<BlockingLocked<LockedData, ProbeTag>>
+              && !std::is_move_constructible_v<BlockingLocked<LockedData, ProbeTag>>);
+static_assert(!std::is_copy_constructible_v<LockedGuard<LockedData, UnwitnessedBlockingLock>>
+              && !std::is_move_constructible_v<LockedGuard<LockedData, UnwitnessedBlockingLock>>);
+static_assert(SpinLocked<LockedData, ProbeTag>::cache_tier == cache_tier_t::Hot
+              && BlockingLocked<LockedData, ProbeTag>::cache_tier == cache_tier_t::Cold);
+struct GivesCount {
+    std::uint64_t operator()(LockedData const& data) const noexcept { return data.count; }
+};
+struct GivesData {
+    LockedData& operator()(LockedData& data) const noexcept { return data; }
+};
+static_assert(LockedBody<GivesCount, LockedData const> && LockedBody<GivesCount, LockedData>);
+static_assert(!LockedBody<GivesData, LockedData> && LockedBorrowGivingBody<GivesData, LockedData>);
+
 // Seven claims about this header cannot be written here.  An access
 // failure inside a requires-expression is a hard error in GCC 16 rather
 // than a substitution failure, so `!requires { gate.lock(); }` does not
@@ -134,5 +159,14 @@ static_assert(!CtxMayAcquire<TestRunnerShape, WaitStrategy::BoundedSpin>
 //                                         blocking guard
 //   neg_blocking_guard_without_permission — a blocking guard with no
 //                                         Permission at all
+//   neg_locked_read_with_no_guard       — a read of the data of a Locked
+//                                         with no guard
+//   neg_locked_body_gives_the_data_out  — a body that gives the lent
+//                                         reference out
+//   neg_locked_start_or_end_door_of_another_class
+//                                       — the door with no context from a
+//                                         class that the tag does not name
+//   neg_locked_bare_lock_door_is_private
+//                                       — a bare lock taken by hand
 
 }  // namespace fixy::spin::detail::gate_self_test

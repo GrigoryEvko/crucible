@@ -6783,6 +6783,15 @@ fixy_neg_compile_test(neg_fp_log_poly_of_subnormal
 # fixtures below: a refused door is a compile error, not a runtime result.
 fixy_test(test_os_spinlock)
 
+# test_os_locked lends the data of a lock that owns it through each door, and
+# four threads add to one count under the lock.  The fixtures neg_locked_*
+# below prove the closed doors.
+fixy_test(test_os_locked)
+
+# test_shared_locked lends the data of a shared lock to read bodies and write
+# bodies, and shows that a write does not start while a read body runs.
+fixy_test(test_shared_locked)
+
 # test_concurrent_spawn runs both mints for real: that every child body
 # ran, that the parent Permission comes back, that the budget chooses the
 # arm, and that a recombined region still describes the storage it started
@@ -7199,6 +7208,26 @@ fixy_neg_compile_test(neg_spin_lock_without_permission
 fixy_neg_compile_test(neg_blocking_guard_without_block
   "no operand of the disjunction is satisfied"
   "required for the satisfaction of .CtxMayAcquire<Ctx, Strategy>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >; Strategy = foundation::algebra::lattices::WaitStrategy::AcquireWait\\]")
+
+# Design note 7 of fixy/os/SpinLock.h: a Locked owns its data.  No code reads
+# the data with no guard, no body gives the lent reference out, only the
+# owner that the tag names calls the door with no context, and no code takes
+# a bare lock by hand.
+fixy_neg_compile_test(neg_locked_read_with_no_guard
+  "is private within this context"
+  "data_")
+fixy_neg_compile_test(neg_locked_body_gives_the_data_out
+  "use of deleted function"
+  "the result of a body of a lock leaves the lock, so it holds no reference and no address")
+fixy_neg_compile_test(neg_locked_start_or_end_door_of_another_class
+  "is private within this context"
+  "with_at_owner_start_or_end")
+fixy_neg_compile_test(neg_locked_bare_lock_door_is_private
+  "is private within this context"
+  "fixy::spin::UnwitnessedBlockingLock::lock\\(\\)")
+fixy_neg_compile_test(neg_shared_locked_read_body_gives_the_data_out
+  "use of deleted function"
+  "the result of a body of a lock leaves the lock, so it holds no reference and no address")
 
 fixy_neg_compile_test(neg_blocking_guard_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait, \\{anonymous\\}::GateBrand>::GateGuard\\("

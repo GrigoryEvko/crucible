@@ -879,6 +879,7 @@ inline constexpr CarrierWitness kCarriers[] = {
 
     {^^::fixy::sched::SchedPriority, ^^::fixy::sched::SchedPriority<0>},
     {^^::fixy::spin::Gate, ^^::fixy::spin::SpinLock<PureRegionTag>},
+    {^^::fixy::spin::Locked, ^^::fixy::spin::BlockingLocked<int, PureRegionTag>},
     {^^::fixy::spin::GateGuard, ^^::fixy::spin::SpinGuard<PureRegionTag>},
 };
 
@@ -1716,6 +1717,11 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::spin::UnwitnessedBlockingLock, kDescriptor},
     {^^::fixy::spin::try_acquire_t, "the tag that selects the guard that tries a gate one time: it holds no value and "
                                     "makes no claim"},
+    {^^::fixy::spin::LockedGuard, "the guard of a lock that owns its data: it lives in one scope, lends the data to a "
+                                  "body, and is never a value in a signature"},
+    {^^::fixy::spin::LockedGuardKey, kPasskey},
+    {^^::fixy::SharedLocked, "a shared lock that owns its data: it lends the data only to a body, and it is never a "
+                             "value in a signature"},
     {^^::fixy::time::ClockReader, kFactory},
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},

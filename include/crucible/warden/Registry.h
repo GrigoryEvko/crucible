@@ -81,9 +81,8 @@ public:
     CRUCIBLE_NOINLINE void register_region(::fixy::View<std::byte const> bytes, bool huge_hint) noexcept {
         if (bytes.size() == 0) return;
         HotRegion const region{.bytes = bytes, .huge_hint = huge_hint};
-        lock_.lock();
-        bool const is_stored = store_(region);
-        lock_.unlock();
+        bool const is_stored = regions_.with_at_owner_start_or_end(
+            [&region](Snapshot& regions) noexcept { return store_(regions, region); });
         if (!is_stored) {
             ::fixy::fatal("HotRegionRegistry: the registry holds 256 regions, so the registration has no room");
         }
@@ -94,27 +93,24 @@ public:
     // component's destruction against a policy being undone.
     CRUCIBLE_NOINLINE void unregister_region(::fixy::View<std::byte const> bytes) noexcept {
         if (bytes.size() == 0) return;
-        lock_.lock();
-        remove_(bytes);
-        lock_.unlock();
+        regions_.with_at_owner_start_or_end([bytes](Snapshot& regions) noexcept { remove_(regions, bytes); });
     }
 
     // Returned by value so that a caller can work through the entries
     // without holding the table while it issues system calls. A region
     // registered during that work is picked up the next time a policy
-    // is applied.  Complexity: a copy of at most 256 regions.
+    // is applied.  The body copies the regions into the list of the call:
+    // each View of a region borrows the memory of its component, not the
+    // table, so the copy outlives the lock.  Complexity: a copy of at most
+    // 256 regions.
     [[nodiscard]] Snapshot snapshot() const noexcept {
-        lock_.lock();
-        Snapshot regions = regions_;
-        lock_.unlock();
-        return regions;
+        Snapshot copy{};
+        regions_.with_at_owner_start_or_end([&copy](Snapshot const& regions) noexcept { copy = regions; });
+        return copy;
     }
 
     [[nodiscard]] size_t size() const noexcept {
-        lock_.lock();
-        size_t const count = regions_.size();
-        lock_.unlock();
-        return count;
+        return regions_.with_at_owner_start_or_end([](Snapshot const& regions) noexcept { return regions.size(); });
     }
 
     HotRegionRegistry(const HotRegionRegistry&) = delete("singleton — use instance()");
@@ -141,10 +137,12 @@ private:
     }
 
     // The position of the region that starts at the first byte of bytes.
-    // The caller holds the lock.  Complexity: O(regions).
-    [[nodiscard]] ::fixy::Option<size_t> position_of_(::fixy::View<std::byte const> bytes) const noexcept {
+    // The caller holds the lock: it gives the list of the lock.
+    // Complexity: O(regions).
+    [[nodiscard]] static ::fixy::Option<size_t> position_of_(Snapshot const& regions,
+                                                             ::fixy::View<std::byte const> bytes) noexcept {
         size_t position = 0;
-        for (HotRegion const& region : regions_) {
+        for (HotRegion const& region : regions) {
             if (is_same_start_(region.bytes, bytes)) return ::fixy::some(position);
             ++position;
         }
@@ -153,30 +151,39 @@ private:
 
     // Replaces the region with the first byte of region, or adds region.
     // False when the list is full.  The caller holds the lock.
-    [[nodiscard]] bool store_(HotRegion const& region) noexcept {
-        for (size_t const position : position_of_(region.bytes)) {
-            *regions_.get(position).expect("the search found the region at the position") = region;
+    [[nodiscard]] static bool store_(Snapshot& regions, HotRegion const& region) noexcept {
+        for (size_t const position : position_of_(regions, region.bytes)) {
+            *regions.get(position).expect("the search found the region at the position") = region;
             return true;
         }
-        return regions_.append(region).is_ok();
+        return regions.append(region).is_ok();
     }
 
     // Moves the last region into the place of the withdrawn region.  The
     // caller holds the lock.
-    void remove_(::fixy::View<std::byte const> bytes) noexcept {
-        for (size_t const position : position_of_(bytes)) {
-            HotRegion const last = regions_.take_last().expect("the list holds the region that the search found");
-            if (position < regions_.size()) {
-                *regions_.get(position).expect("the position is below the size of the list") = last;
+    static void remove_(Snapshot& regions, ::fixy::View<std::byte const> bytes) noexcept {
+        for (size_t const position : position_of_(regions, bytes)) {
+            HotRegion const last = regions.take_last().expect("the list holds the region that the search found");
+            if (position < regions.size()) {
+                *regions.get(position).expect("the position is below the size of the list") = last;
             }
         }
     }
 
-    // The lock of the list.  A waiter sleeps in the kernel, because a holder
-    // can lose its core during a registration.  An uncontended lock and
-    // unlock make no system call.
-    mutable ::fixy::spin::UnwitnessedBlockingLock lock_{};
-    ::fixy::FixedList<HotRegion, max_regions> regions_{};
+    // The tag of the list.  It names this class as the one owner of the door
+    // of the lock with no context (with_at_owner_start_or_end of
+    // fixy/os/SpinLock.h): a registration runs in the constructor of a
+    // component and a withdrawal in its destructor, and neither holds a
+    // context.  The residual: a registration and a withdrawal block on the
+    // lock with no Block row in the type of their caller.
+    struct RegionsTag final {
+        using start_or_end_owner = HotRegionRegistry;
+    };
+
+    // The list of the regions, which only a body inside the lock reaches.  A
+    // waiter sleeps in the kernel, because a holder can lose its core during
+    // a registration.  An uncontended lock and unlock make no system call.
+    ::fixy::spin::BlockingLocked<Snapshot, RegionsTag> regions_{};
 };
 
 inline void register_hot_region(::fixy::View<std::byte const> bytes, bool huge_hint = false) noexcept {

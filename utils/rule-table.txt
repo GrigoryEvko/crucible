@@ -635,6 +635,10 @@ witness <fixy/os/TimingSink.h> private | fixy::observe::TimingSink<2>::Span | fi
 # A spin deadline comes only from a read of the counter through after, with
 # a context that holds Nondet, or from passed.
 witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::SpinDeadline{std::uint64_t{1}}
+# The key of a guard of a lock that owns its data comes only from a Locked,
+# so only a Locked builds a guard that lends its data.
+witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuardKey | fixy::spin::LockedGuardKey{}
+witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock> | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock>{forge::lvalue<fixy::spin::LockedGuardKey>(), forge::lvalue<fixy::spin::UnwitnessedBlockingLock>(), forge::lvalue<int>()}
 # The shared words of a mapping come only from shared_words_at of a shared
 # mapping, which checks the fit and the alignment and starts their lifetime.
 witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedWords<std::uint64_t, 4> | fixy::mmap::SharedWords<std::uint64_t, 4>{forge::lvalue<std::uint64_t const*>()}

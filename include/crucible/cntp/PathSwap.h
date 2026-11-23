@@ -16,7 +16,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/permissions/Permission.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -191,32 +190,32 @@ public:
     static constexpr bool data_migration_implemented = false;
 
 private:
-    // Each acquisition of the gate mints a token of this tag.  The tag is
-    // private and nested in the class template, so only this instantiation
-    // can mint one: the token witnesses that the acquisition comes from
-    // inside the swapper.
-    struct GateTag {
-        using permission_row = ::foundation::effects::Row<>;
+    // The tag of the lock of the guarded fields.  It is private and nested in
+    // the class template, so only this instantiation names the lock.
+    struct GateTag {};
+
+    // The fields that only a body inside the lock reaches.
+    struct Guarded {
+        // Empty until the first begin_swap.  Every transition that records
+        // an event comes after that call, because Draining is the only state
+        // that Stable leads to and only begin_swap enters it.
+        ::fixy::Option<PathSwapPlan> plan{};
+        ::fixy::FixedArray<PathSwapEvent, MaxEvents> events{};
+        EventIndex next_event = ::fixy::index<0>();
+        std::size_t event_count = 0;
+        std::uint64_t deadline_ns = 0;
+        std::uint64_t sequence = 0;
     };
 
-    // The gate serializes each transition and each read of the fields below
-    // state_.  So one thread at a time writes the plan, the deadline and the
+    // The lock serializes each transition and each read of the guarded
+    // fields.  So one thread at a time writes the plan, the deadline and the
     // audit log, and a reader copies a whole plan or a whole event.  Without
-    // the gate, two threads that start a swap at the same time can each write
+    // the lock, two threads that start a swap at the same time can each write
     // the plan, and the loser can replace the plan of the swap that won.
-    mutable ::fixy::spin::BlockingLock<GateTag> gate_{};
-    // Only the holder of the gate writes the state, and state() reads it
-    // without the gate, so an observer never waits on a transition.
+    ::fixy::spin::BlockingLocked<Guarded, GateTag> guarded_{};
+    // Only a body inside the lock writes the state, and state() reads it
+    // without the lock, so an observer never waits on a transition.
     ::fixy::Atomic<SwapState> state_{SwapState::Stable};
-    // Empty until the first begin_swap.  Every transition that records an
-    // event comes after that call, because Draining is the only state that
-    // Stable leads to and only begin_swap enters it.
-    ::fixy::Option<PathSwapPlan> plan_{};
-    ::fixy::FixedArray<PathSwapEvent, MaxEvents> events_{};
-    EventIndex next_event_ = ::fixy::index<0>();
-    std::size_t event_count_ = 0;
-    std::uint64_t deadline_ns_ = 0;
-    std::uint64_t sequence_ = 0;
 
     // The mint is the only door, so a swapper exists only where a context
     // that owns Init built it.
@@ -226,29 +225,31 @@ private:
         requires CtxFitsPathSwapMint<Ctx>
     friend constexpr PathSwapper<N> mint_path_swapper(Ctx const& ctx) noexcept;
 
-    // The caller holds the gate, and begin_swap set the plan.  The ring
-    // gives each event the slot after the slot of the event before it.
-    void append_event(SwapState from, SwapState to, std::uint64_t at_ns) noexcept {
-        ++sequence_;
-        PathSwapEvent event{.from = from, .to = to, .at_ns = at_ns, .sequence = sequence_};
-        plan_.match(
+    // The caller holds the lock and gives the guarded fields, and begin_swap
+    // set the plan.  The ring gives each event the slot after the slot of
+    // the event before it.
+    static void append_event(Guarded& guarded, SwapState from, SwapState to, std::uint64_t at_ns) noexcept {
+        ++guarded.sequence;
+        PathSwapEvent event{.from = from, .to = to, .at_ns = at_ns, .sequence = guarded.sequence};
+        guarded.plan.match(
             [&event](PathSwapPlan const& plan) noexcept {
                 event.flow_id = plan.flow_id().value();
                 event.old_path = plan.old_path().value();
                 event.new_path = plan.new_path().value();
             },
             []() noexcept { ::fixy::fatal("an event of a swap comes after begin_swap, which sets the plan"); });
-        events_.with_element(next_event_, [&event](PathSwapEvent& slot) noexcept { slot = event; });
-        next_event_ = EventIndex::check((next_event_.raw() + 1u) % MaxEvents)
-                          .expect("a remainder of a division by MaxEvents is below MaxEvents");
-        if (event_count_ < MaxEvents) {
-            ++event_count_;
+        guarded.events.with_element(guarded.next_event, [&event](PathSwapEvent& slot) noexcept { slot = event; });
+        guarded.next_event = EventIndex::check((guarded.next_event.raw() + 1u) % MaxEvents)
+                                 .expect("a remainder of a division by MaxEvents is below MaxEvents");
+        if (guarded.event_count < MaxEvents) {
+            ++guarded.event_count;
         }
     }
 
-    // The caller holds the gate, so no other transition runs until the
-    // state is stored.  The event lands before the state, so a reader that
-    // sees a state and then takes the gate finds the event of that state.
+    // The caller holds the lock and gives the guarded fields, so no other
+    // transition runs until the state is stored.  The event lands before the
+    // state, so a reader that sees a state and then takes the lock finds the
+    // event of that state.
     //
     // Returns false when next is not a valid successor of the current
     // state.  The public methods turn that into SwapError::InvalidTransition.
@@ -256,42 +257,52 @@ private:
     // A consumed-by-value typestate token would put this DAG in the type
     // system, but state() reads the state concurrently with transitions, and
     // a token consumed on transition cannot be shared with readers.
-    [[nodiscard]] bool transition_to(SwapState next, std::uint64_t at_ns) noexcept {
+    [[nodiscard]] bool transition_to(Guarded& guarded, SwapState next, std::uint64_t at_ns) noexcept {
         const SwapState prev = state_.load_acquire();
         if (!is_valid_path_swap_transition(prev, next)) {
             return false;
         }
-        append_event(prev, next, at_ns);
+        append_event(guarded, prev, next, at_ns);
         state_.store_release(next);
         return true;
     }
 
-    // The caller holds the gate.
-    [[nodiscard]] bool expired(std::uint64_t now_ns) const noexcept {
+    // The caller holds the lock and gives the guarded fields.
+    [[nodiscard]] bool expired(Guarded const& guarded, std::uint64_t now_ns) const noexcept {
         const SwapState cur = state_.load_acquire();
         return cur != SwapState::Stable && cur != SwapState::Complete && cur != SwapState::Failed
-            && now_ns > deadline_ns_;
+            && now_ns > guarded.deadline_ns;
     }
 
-    // The caller holds the gate.  A live swap past its deadline fails, and
-    // the call that saw the deadline pass returns Timeout.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> check_live(std::uint64_t now_ns) noexcept {
-        if (expired(now_ns)) {
+    // The caller holds the lock and gives the guarded fields.  A live swap
+    // past its deadline fails, and the call that saw the deadline pass
+    // returns Timeout.
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> check_live(Guarded& guarded, std::uint64_t now_ns) noexcept {
+        if (expired(guarded, now_ns)) {
             // Each live state leads to Failed, so the transition holds.
-            (void)transition_to(SwapState::Failed, now_ns);
+            (void)transition_to(guarded, SwapState::Failed, now_ns);
             return ::fixy::err(SwapError::Timeout);
         }
         return ::fixy::Unit{};
     }
 
-    // The caller holds the gate.  Moves a live swap from `from` to `to`.
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance(SwapState from, SwapState to,
+    // The caller holds the lock and gives the guarded fields.  Moves a live
+    // swap from `from` to `to`.
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance(Guarded& guarded, SwapState from, SwapState to,
                                                                   std::uint64_t now_ns) noexcept {
-        CRUCIBLE_TRY(_, check_live(now_ns));
-        if (state_.load_acquire() != from || !transition_to(to, now_ns)) {
+        CRUCIBLE_TRY(_, check_live(guarded, now_ns));
+        if (state_.load_acquire() != from || !transition_to(guarded, to, now_ns)) {
             return ::fixy::err(SwapError::InvalidTransition);
         }
         return ::fixy::Unit{};
+    }
+
+    // Takes the lock and moves a live swap from `from` to `to`.
+    template <class Ctx>
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> advance_locked(Ctx const& ctx, SwapState from, SwapState to,
+                                                                         std::uint64_t now_ns) noexcept {
+        return guarded_.with(
+            ctx, [this, from, to, now_ns](Guarded& guarded) noexcept { return advance(guarded, from, to, now_ns); });
     }
 
 public:
@@ -302,34 +313,28 @@ public:
     // A copy of the plan.  An Option of a plan is move-only, so the copy
     // comes from a copy of the plan itself.
     [[nodiscard]] ::fixy::Option<PathSwapPlan> plan(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return plan_.match([](PathSwapPlan const& plan) noexcept { return ::fixy::some(plan); },
-                           []() noexcept { return ::fixy::Option<PathSwapPlan>{::fixy::none}; });
+        return guarded_.with(ctx, [](Guarded const& guarded) noexcept {
+            return guarded.plan.match([](PathSwapPlan const& plan) noexcept { return ::fixy::some(plan); },
+                                      []() noexcept { return ::fixy::Option<PathSwapPlan>{::fixy::none}; });
+        });
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapRead<Ctx>
     [[nodiscard]] std::uint64_t deadline_ns(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return deadline_ns_;
+        return guarded_.with(ctx, [](Guarded const& guarded) noexcept { return guarded.deadline_ns; });
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapRead<Ctx>
     [[nodiscard]] std::uint64_t sequence(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return sequence_;
+        return guarded_.with(ctx, [](Guarded const& guarded) noexcept { return guarded.sequence; });
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapRead<Ctx>
     [[nodiscard]] std::size_t event_count(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return event_count_;
+        return guarded_.with(ctx, [](Guarded const& guarded) noexcept { return guarded.event_count; });
     }
 
     // The ring holds the event with sequence number s at index s - 1,
@@ -337,49 +342,44 @@ public:
     template <class Ctx>
         requires CtxFitsPathSwapRead<Ctx>
     [[nodiscard]] PathSwapEvent event_at(Ctx const& ctx, std::size_t index) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return events_.at(
-            EventIndex::check(index % MaxEvents).expect("a remainder of a division by MaxEvents is below MaxEvents"));
+        const EventIndex slot =
+            EventIndex::check(index % MaxEvents).expect("a remainder of a division by MaxEvents is below MaxEvents");
+        return guarded_.with(ctx, [slot](Guarded const& guarded) noexcept { return guarded.events.at(slot); });
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> begin_swap(Ctx const& ctx, DeclaredPathSwapPlan const& plan,
                                                                      std::uint64_t now_ns) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        const SwapState cur = state_.load_acquire();
-        if (cur != SwapState::Stable && cur != SwapState::Complete) {
-            return ::fixy::err(SwapError::InvalidTransition);
-        }
         PathSwapPlan const& raw = plan.value();
-        CRUCIBLE_TRY(
-            deadline,
-            ::foundation::core::checked_add(now_ns, raw.timeout_ns().value()).ok_or(SwapError::DeadlineOverflow));
-        plan_ = ::fixy::some(raw);
-        deadline_ns_ = deadline;
-        // Stable and Complete each lead to Draining, so the transition holds.
-        (void)transition_to(SwapState::Draining, now_ns);
-        return ::fixy::Unit{};
+        return guarded_.with(
+            ctx, [this, &raw, now_ns](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
+                const SwapState cur = state_.load_acquire();
+                if (cur != SwapState::Stable && cur != SwapState::Complete) {
+                    return ::fixy::err(SwapError::InvalidTransition);
+                }
+                CRUCIBLE_TRY(deadline, ::foundation::core::checked_add(now_ns, raw.timeout_ns().value())
+                                           .ok_or(SwapError::DeadlineOverflow));
+                guarded.plan = ::fixy::some(raw);
+                guarded.deadline_ns = deadline;
+                // Stable and Complete each lead to Draining, so the transition holds.
+                (void)transition_to(guarded, SwapState::Draining, now_ns);
+                return ::fixy::Unit{};
+            });
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> receiver_accepts_bidir(Ctx const& ctx,
                                                                                  std::uint64_t now_ns) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return advance(SwapState::Draining, SwapState::BidirReceive, now_ns);
+        return advance_locked(ctx, SwapState::Draining, SwapState::BidirReceive, now_ns);
     }
 
     template <class Ctx>
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> sender_observed_drain_ack(Ctx const& ctx,
                                                                                     std::uint64_t now_ns) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return advance(SwapState::BidirReceive, SwapState::NewPathFlushing, now_ns);
+        return advance_locked(ctx, SwapState::BidirReceive, SwapState::NewPathFlushing, now_ns);
     }
 
     // Detaching `current` drops whatever is still buffered on the old path:
@@ -407,12 +407,8 @@ public:
         // The transition has to land before the detach.  A call that is
         // refused must not consume `current`, or the resource leaks and the
         // audit log gains an event for a transition that never happened.
-        // The detach and the new mint run after the gate is released.
-        {
-            auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-            ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-            CRUCIBLE_TRY(_, advance(SwapState::NewPathFlushing, SwapState::Complete, now_ns));
-        }
+        // The detach and the new mint run after the lock is given back.
+        CRUCIBLE_TRY(_, advance_locked(ctx, SwapState::NewPathFlushing, SwapState::Complete, now_ns));
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
         return ::fixy::session::mint_session<Proto, Policy, Ctx, NewResource>(ctx,
                                                                               std::forward<NewResource>(new_resource));
@@ -422,16 +418,16 @@ public:
         requires CtxFitsPathSwapTransition<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, SwapError> complete_receiver(Ctx const& ctx,
                                                                             std::uint64_t now_ns) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        CRUCIBLE_TRY(_, check_live(now_ns));
-        // No check of the current state comes first.  Complete is not a
-        // valid successor of Complete, so the second of two callers is
-        // refused.
-        if (!transition_to(SwapState::Complete, now_ns)) {
-            return ::fixy::err(SwapError::InvalidTransition);
-        }
-        return ::fixy::Unit{};
+        return guarded_.with(ctx, [this, now_ns](Guarded& guarded) noexcept -> ::fixy::Result<::fixy::Unit, SwapError> {
+            CRUCIBLE_TRY(_, check_live(guarded, now_ns));
+            // No check of the current state comes first.  Complete is not a
+            // valid successor of Complete, so the second of two callers is
+            // refused.
+            if (!transition_to(guarded, SwapState::Complete, now_ns)) {
+                return ::fixy::err(SwapError::InvalidTransition);
+            }
+            return ::fixy::Unit{};
+        });
     }
 };
 

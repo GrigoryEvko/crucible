@@ -9,7 +9,6 @@
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
-#include <foundation/permissions/Permission.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -62,25 +61,35 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         std::uint64_t last_used_ns = 0;
     };
 
-    // Each acquisition mints a token of this tag.  The tag is private and
-    // nested in the class template, so only this instantiation can mint one:
-    // the token witnesses that the acquisition comes from inside the pool.
-    struct GateTag {
-        using permission_row = ::foundation::effects::Row<>;
+    // The tag of the lock of the state.  It is private and nested in the
+    // class template, so only this instantiation names the lock.
+    struct GateTag {};
+
+    // The state of the pool, which only a body inside the lock reaches.  The
+    // const readers take the lock too, to serialize against writers.
+    struct State {
+        ::fixy::FixedArray<Slot, kSlots> slots{};
+        ::fixy::FixedArray<PoolEvent, MaxEvents> events{};
+        EventIndex next_event{::fixy::index<0>()};
+        std::size_t event_count = 0;
+        std::uint64_t sequence = 0;
+        // Cached rather than recomputed.  add_connection increments it on
+        // the first slot for a remote and every drain path decrements it on
+        // the last.
+        std::uint16_t distinct_remotes = 0;
     };
 
-    ::fixy::FixedArray<Slot, kSlots> slots_{};
-    ::fixy::FixedArray<PoolEvent, MaxEvents> events_{};
-    // The const readers take the gate too, to serialize against writers.
-    mutable ::fixy::spin::BlockingLock<GateTag> gate_{};
-    // A fresh cache line, so a counter store does not invalidate the line
-    // that the gate waiters poll.
-    alignas(64) EventIndex next_event_{::fixy::index<0>()};
-    std::size_t event_count_ = 0;
-    std::uint64_t sequence_ = 0;
-    // Cached rather than recomputed.  add_connection increments it on the
-    // first slot for a remote and every drain path decrements it on the last.
-    std::uint16_t distinct_remotes_ = 0;
+    // The slot that a lease took, and a copy of its connection.  The lease
+    // reads the copy, so it reads no slot with no lock.  The connection of a
+    // leased slot does not change until the lease gives the slot back.
+    struct LeasedSlot {
+        SlotIndex index;
+        Connection<T> connection;
+    };
+
+    // The lock word fills its own cache line, so a store to the state does
+    // not invalidate the line that the waiters poll.
+    ::fixy::spin::BlockingLocked<State, GateTag> state_{};
     PoolConfig config_{};
 
     // The mint is the only door, so a pool exists only where a context that
@@ -117,10 +126,10 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
     }
 
     // The two scans below are O(MaxRemotes * MaxPerRemote).  Each caller
-    // holds the gate.
-    [[nodiscard]] std::uint16_t remote_occupied_count(cog::Uuid remote) const noexcept {
+    // holds the lock and gives its state.
+    [[nodiscard]] static std::uint16_t remote_occupied_count(State const& state, cog::Uuid remote) noexcept {
         std::uint16_t count = 0;
-        for (Slot const& slot : slots_) {
+        for (Slot const& slot : state.slots) {
             if (holds_remote(slot, remote)) {
                 ++count;
             }
@@ -128,8 +137,8 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         return count;
     }
 
-    [[nodiscard]] bool has_remote(cog::Uuid remote) const noexcept {
-        for (Slot const& slot : slots_) {
+    [[nodiscard]] static bool has_remote(State const& state, cog::Uuid remote) noexcept {
+        for (Slot const& slot : state.slots) {
             if (holds_remote(slot, remote)) {
                 return true;
             }
@@ -146,73 +155,80 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         return EventIndex::check((index.raw() + 1u) % MaxEvents).expect("a position modulo the ring size is in it");
     }
 
-    void append_event(PoolEventKind kind, Connection<T> const& connection) noexcept {
+    // The caller holds the lock and gives its state.
+    static void append_event(State& state, PoolEventKind kind, Connection<T> const& connection) noexcept {
         const PoolEvent event{
             .kind = kind,
             .transport = T,
             .remote_uuid = connection.remote_uuid(),
             .socket = connection.socket(),
             .connection_id = connection.connection_id().value(),
-            .sequence = ++sequence_,
+            .sequence = ++state.sequence,
         };
-        events_.with_element(next_event_, [&event](PoolEvent& held) noexcept { held = event; });
-        next_event_ = next_event_index(next_event_);
-        if (event_count_ < MaxEvents) {
-            ++event_count_;
+        state.events.with_element(state.next_event, [&event](PoolEvent& held) noexcept { held = event; });
+        state.next_event = next_event_index(state.next_event);
+        if (state.event_count < MaxEvents) {
+            ++state.event_count;
         }
     }
 
     // Records the event and empties the slot at index.  The caller holds the
-    // gate.
-    void drain_slot(SlotIndex index, PoolEventKind kind) noexcept {
-        append_event(kind, connection_of(slots_.at(index)));
-        slots_.with_element(index, [](Slot& held) noexcept { held = Slot{}; });
+    // lock and gives its state.
+    static void drain_slot(State& state, SlotIndex index, PoolEventKind kind) noexcept {
+        append_event(state, kind, connection_of(state.slots.at(index)));
+        state.slots.with_element(index, [](Slot& held) noexcept { held = Slot{}; });
     }
 
     template <class Ctx>
     void return_index(Ctx const& ctx, SlotIndex index) noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        Slot const& slot = slots_.at(index);
-        if (slot.connection.is_none() || !slot.leased) {
-            return;
-        }
-        slots_.with_element(index, [](Slot& held) noexcept { held.leased = false; });
-        if (slot.quarantined || !slot.healthy) {
-            const cog::Uuid drained_uuid = connection_of(slot).remote_uuid();
-            drain_slot(index, slot.quarantined ? PoolEventKind::DrainedQuarantined : PoolEventKind::EvictedUnhealthy);
-            if (!has_remote(drained_uuid)) {
-                --distinct_remotes_;
+        state_.with(ctx, [index](State& state) noexcept {
+            Slot const& slot = state.slots.at(index);
+            if (slot.connection.is_none() || !slot.leased) {
+                return;
             }
-            return;
-        }
-        append_event(PoolEventKind::Returned, connection_of(slot));
+            state.slots.with_element(index, [](Slot& held) noexcept { held.leased = false; });
+            if (slot.quarantined || !slot.healthy) {
+                const cog::Uuid drained_uuid = connection_of(slot).remote_uuid();
+                drain_slot(state, index,
+                           slot.quarantined ? PoolEventKind::DrainedQuarantined : PoolEventKind::EvictedUnhealthy);
+                if (!has_remote(state, drained_uuid)) {
+                    --state.distinct_remotes;
+                }
+                return;
+            }
+            append_event(state, PoolEventKind::Returned, connection_of(slot));
+        });
     }
 
 public:
     // A lease holds one slot until reset() or the destructor gives the slot
     // back.  It carries the context of the lease call, because the return
-    // takes the gate again and a destructor has no context of its own.  The
+    // takes the lock again and a destructor has no context of its own.  The
     // access is read-only: the identity of a leased connection is pool
     // bookkeeping, and a holder that could rewrite it would break the remote
-    // count.
+    // count.  The lease keeps a copy of the connection of its slot, which the
+    // lease call took under the lock, so a read takes no lock.
     template <class Ctx>
     class [[nodiscard]] LeaseGuard {
         ::fixy::Option<::fixy::Ref<ConnectionPool>> pool_{};
         SlotIndex slot_index_{::fixy::index<0>()};
+        Connection<T> connection_;
         [[no_unique_address]] Ctx ctx_;
 
         friend class ConnectionPool;
 
-        constexpr LeaseGuard(ConnectionPool& pool, SlotIndex slot_index, Ctx const& ctx) noexcept
-            : pool_{::fixy::some(::fixy::erase_brand(::fixy::to(pool)))}, slot_index_{slot_index}, ctx_{ctx} {}
+        constexpr LeaseGuard(ConnectionPool& pool, LeasedSlot const& leased, Ctx const& ctx) noexcept
+            : pool_{::fixy::some(::fixy::erase_brand(::fixy::to(pool)))},
+              slot_index_{leased.index},
+              connection_{leased.connection},
+              ctx_{ctx} {}
 
-        // The pool of a live lease.  Each caller tested the lease first.
-        [[nodiscard]] ConnectionPool const& pool() const noexcept {
-            for (::fixy::Ref<ConnectionPool> const& held : pool_) {
-                return *held;
+        // The connection of a live lease.  Each caller tested the lease first.
+        [[nodiscard]] Connection<T> const& live_connection() const noexcept {
+            if (pool_.is_none()) [[unlikely]] {
+                ::fixy::fatal("a read through a lease that gave its slot back");
             }
-            ::fixy::fatal("a read through a lease that gave its slot back");
+            return connection_;
         }
 
     public:
@@ -221,13 +237,17 @@ public:
         operator=(LeaseGuard const&) = delete("a lease names one holder of a slot; a copy would return it twice");
 
         constexpr LeaseGuard(LeaseGuard&& other) noexcept
-            : pool_{::fixy::exchange(other.pool_, ::fixy::none)}, slot_index_{other.slot_index_}, ctx_{other.ctx_} {}
+            : pool_{::fixy::exchange(other.pool_, ::fixy::none)},
+              slot_index_{other.slot_index_},
+              connection_{other.connection_},
+              ctx_{other.ctx_} {}
 
         LeaseGuard& operator=(LeaseGuard&& other) noexcept {
             if (!::fixy::same_object(::fixy::to(*this), ::fixy::to(other))) {
                 reset();
                 pool_ = ::fixy::exchange(other.pool_, ::fixy::none);
                 slot_index_ = other.slot_index_;
+                connection_ = other.connection_;
                 ctx_ = other.ctx_;
             }
             return *this;
@@ -241,12 +261,10 @@ public:
             }
         }
 
-        [[nodiscard]] Connection<T> const& operator*() const noexcept {
-            return connection_of(pool().slots_.at(slot_index_));
-        }
+        [[nodiscard]] Connection<T> const& operator*() const noexcept { return live_connection(); }
 
         [[nodiscard]] ::fixy::Ref<Connection<T> const> operator->() const noexcept {
-            return ::fixy::erase_brand(::fixy::to(connection_of(pool().slots_.at(slot_index_))));
+            return ::fixy::erase_brand(::fixy::to(live_connection()));
         }
 
         [[nodiscard]] explicit constexpr operator bool() const noexcept { return pool_.is_some(); }
@@ -256,34 +274,35 @@ public:
         requires CtxFitsConnectionPoolRuntime<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, PoolError>
     add_connection(Ctx const& ctx, LinearConnection<T>&& connection, std::uint64_t now_ns = 0) noexcept {
-        Connection<T> raw = std::move(connection).consume();
-
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        const bool is_new_remote = !has_remote(raw.remote_uuid());
-        if (is_new_remote && distinct_remotes_ >= static_cast<std::uint16_t>(MaxRemotes)) {
-            return ::fixy::err(PoolError::PoolFull);
-        }
-        if (remote_occupied_count(raw.remote_uuid()) >= per_remote_limit()) {
-            return ::fixy::err(PoolError::PoolFull);
-        }
-        for (SlotIndex index : slots_.indices()) {
-            if (slots_.at(index).connection.is_none()) {
-                slots_.with_element(index, [&raw, now_ns](Slot& slot) noexcept {
-                    slot.connection = ::fixy::some(raw);
-                    slot.leased = false;
-                    slot.quarantined = false;
-                    slot.healthy = true;
-                    slot.last_used_ns = now_ns;
-                });
-                if (is_new_remote) {
-                    ++distinct_remotes_;
-                }
-                append_event(PoolEventKind::Added, raw);
-                return ::fixy::Unit{};
-            }
-        }
-        return ::fixy::err(PoolError::PoolFull);
+        Connection<T> const raw = std::move(connection).consume();
+        const std::uint16_t limit = per_remote_limit();
+        return state_.with(ctx,
+                           [&raw, limit, now_ns](State& state) noexcept -> ::fixy::Result<::fixy::Unit, PoolError> {
+                               const bool is_new_remote = !has_remote(state, raw.remote_uuid());
+                               if (is_new_remote && state.distinct_remotes >= static_cast<std::uint16_t>(MaxRemotes)) {
+                                   return ::fixy::err(PoolError::PoolFull);
+                               }
+                               if (remote_occupied_count(state, raw.remote_uuid()) >= limit) {
+                                   return ::fixy::err(PoolError::PoolFull);
+                               }
+                               for (SlotIndex index : state.slots.indices()) {
+                                   if (state.slots.at(index).connection.is_none()) {
+                                       state.slots.with_element(index, [&raw, now_ns](Slot& slot) noexcept {
+                                           slot.connection = ::fixy::some(raw);
+                                           slot.leased = false;
+                                           slot.quarantined = false;
+                                           slot.healthy = true;
+                                           slot.last_used_ns = now_ns;
+                                       });
+                                       if (is_new_remote) {
+                                           ++state.distinct_remotes;
+                                       }
+                                       append_event(state, PoolEventKind::Added, raw);
+                                       return ::fixy::Unit{};
+                                   }
+                               }
+                               return ::fixy::err(PoolError::PoolFull);
+                           });
     }
 
     template <class Ctx>
@@ -294,29 +313,31 @@ public:
             return ::fixy::err(PoolError::InvalidRemoteCog);
         }
 
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        for (SlotIndex index : slots_.indices()) {
-            Slot const& slot = slots_.at(index);
-            if (!holds_remote(slot, remote.uuid)) {
-                continue;
-            }
-            if (slot.quarantined) {
-                return ::fixy::err(PoolError::RemoteQuarantined);
-            }
-            if (!slot.healthy) {
-                continue;
-            }
-            if (!slot.leased) {
-                slots_.with_element(index, [now_ns](Slot& held) noexcept {
-                    held.leased = true;
-                    held.last_used_ns = now_ns;
-                });
-                append_event(PoolEventKind::Leased, connection_of(slot));
-                return LeaseGuard<Ctx>{*this, index, ctx};
-            }
-        }
-        return ::fixy::err(PoolError::PoolEmpty);
+        CRUCIBLE_TRY(
+            leased, state_.with(ctx, [&remote, now_ns](State& state) noexcept -> ::fixy::Result<LeasedSlot, PoolError> {
+                for (SlotIndex index : state.slots.indices()) {
+                    Slot const& slot = state.slots.at(index);
+                    if (!holds_remote(slot, remote.uuid)) {
+                        continue;
+                    }
+                    if (slot.quarantined) {
+                        return ::fixy::err(PoolError::RemoteQuarantined);
+                    }
+                    if (!slot.healthy) {
+                        continue;
+                    }
+                    if (!slot.leased) {
+                        state.slots.with_element(index, [now_ns](Slot& held) noexcept {
+                            held.leased = true;
+                            held.last_used_ns = now_ns;
+                        });
+                        append_event(state, PoolEventKind::Leased, connection_of(slot));
+                        return LeasedSlot{.index = index, .connection = connection_of(slot)};
+                    }
+                }
+                return ::fixy::err(PoolError::PoolEmpty);
+            }));
+        return LeaseGuard<Ctx>{*this, leased, ctx};
     }
 
     template <class Ctx, class LeaseCtx>
@@ -331,15 +352,15 @@ public:
         if (!is_valid_remote(remote)) {
             return 0;
         }
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        std::uint16_t count = 0;
-        for (Slot const& slot : slots_) {
-            if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.quarantined && slot.healthy) {
-                ++count;
+        return state_.with(ctx, [&remote](State const& state) noexcept {
+            std::uint16_t count = 0;
+            for (Slot const& slot : state.slots) {
+                if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.quarantined && slot.healthy) {
+                    ++count;
+                }
             }
-        }
-        return count;
+            return count;
+        });
     }
 
     template <class Ctx>
@@ -348,18 +369,18 @@ public:
         if (!is_valid_remote(remote)) {
             return;
         }
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        const bool was_present = has_remote(remote.uuid);
-        for (SlotIndex index : slots_.indices()) {
-            Slot const& slot = slots_.at(index);
-            if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.healthy) {
-                drain_slot(index, PoolEventKind::EvictedUnhealthy);
+        state_.with(ctx, [&remote](State& state) noexcept {
+            const bool was_present = has_remote(state, remote.uuid);
+            for (SlotIndex index : state.slots.indices()) {
+                Slot const& slot = state.slots.at(index);
+                if (holds_remote(slot, remote.uuid) && !slot.leased && !slot.healthy) {
+                    drain_slot(state, index, PoolEventKind::EvictedUnhealthy);
+                }
             }
-        }
-        if (was_present && !has_remote(remote.uuid)) {
-            --distinct_remotes_;
-        }
+            if (was_present && !has_remote(state, remote.uuid)) {
+                --state.distinct_remotes;
+            }
+        });
     }
 
     template <class Ctx>
@@ -368,14 +389,14 @@ public:
         if (!is_valid_remote(remote)) {
             return;
         }
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        slots_.with_mut([&remote, socket](auto run) noexcept {
-            for (Slot& slot : run) {
-                if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
-                    slot.healthy = false;
+        state_.with(ctx, [&remote, socket](State& state) noexcept {
+            state.slots.with_mut([&remote, socket](auto run) noexcept {
+                for (Slot& slot : run) {
+                    if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
+                        slot.healthy = false;
+                    }
                 }
-            }
+            });
         });
     }
 
@@ -385,21 +406,22 @@ public:
         if (!is_valid_remote(remote)) {
             return;
         }
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        const bool was_present = has_remote(remote.uuid);
-        for (SlotIndex index : slots_.indices()) {
-            Slot const& slot = slots_.at(index);
-            if (slot.leased || !holds_remote(slot, remote.uuid)) {
-                continue;
+        const std::uint64_t max_idle_ns = config_.max_idle_ns.value();
+        state_.with(ctx, [&remote, now_ns, max_idle_ns](State& state) noexcept {
+            const bool was_present = has_remote(state, remote.uuid);
+            for (SlotIndex index : state.slots.indices()) {
+                Slot const& slot = state.slots.at(index);
+                if (slot.leased || !holds_remote(slot, remote.uuid)) {
+                    continue;
+                }
+                if (now_ns >= slot.last_used_ns && now_ns - slot.last_used_ns >= max_idle_ns) {
+                    drain_slot(state, index, PoolEventKind::EvictedIdle);
+                }
             }
-            if (now_ns >= slot.last_used_ns && now_ns - slot.last_used_ns >= config_.max_idle_ns.value()) {
-                drain_slot(index, PoolEventKind::EvictedIdle);
+            if (was_present && !has_remote(state, remote.uuid)) {
+                --state.distinct_remotes;
             }
-        }
-        if (was_present && !has_remote(remote.uuid)) {
-            --distinct_remotes_;
-        }
+        });
     }
 
     template <class Ctx>
@@ -408,60 +430,58 @@ public:
         if (!is_valid_remote(remote)) {
             return;
         }
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        // A quarantined slot that is still leased keeps its slot, so the
-        // remote can survive this call and distinct_remotes_ must not drop.
-        const bool was_present = has_remote(remote.uuid);
-        for (SlotIndex index : slots_.indices()) {
-            Slot const& slot = slots_.at(index);
-            if (!holds_remote(slot, remote.uuid)) {
-                continue;
+        state_.with(ctx, [&remote](State& state) noexcept {
+            // A quarantined slot that is still leased keeps its slot, so the
+            // remote can survive this call and the count of the remotes must
+            // not drop.
+            const bool was_present = has_remote(state, remote.uuid);
+            for (SlotIndex index : state.slots.indices()) {
+                Slot const& slot = state.slots.at(index);
+                if (!holds_remote(slot, remote.uuid)) {
+                    continue;
+                }
+                state.slots.with_element(index, [](Slot& held) noexcept { held.quarantined = true; });
+                if (!slot.leased) {
+                    drain_slot(state, index, PoolEventKind::DrainedQuarantined);
+                }
             }
-            slots_.with_element(index, [](Slot& held) noexcept { held.quarantined = true; });
-            if (!slot.leased) {
-                drain_slot(index, PoolEventKind::DrainedQuarantined);
+            if (was_present && !has_remote(state, remote.uuid)) {
+                --state.distinct_remotes;
             }
-        }
-        if (was_present && !has_remote(remote.uuid)) {
-            --distinct_remotes_;
-        }
+        });
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
     [[nodiscard]] std::size_t event_count(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return event_count_;
+        return state_.with(ctx, [](State const& state) noexcept { return state.event_count; });
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
     [[nodiscard]] std::uint16_t distinct_remote_count(Ctx const& ctx) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        return distinct_remotes_;
+        return state_.with(ctx, [](State const& state) noexcept { return state.distinct_remotes; });
     }
 
     template <class Ctx>
         requires CtxFitsConnectionPoolRuntime<Ctx>
     [[nodiscard]] ::fixy::Result<DeclaredPoolEvent, PoolError> event_at(Ctx const& ctx,
                                                                         std::size_t index) const noexcept {
-        auto proof = ::foundation::permissions::mint_permission_root<GateTag>();
-        ::fixy::spin::GateGuard guard{ctx, gate_, proof};
-        if (index >= event_count_) {
-            return ::fixy::err(PoolError::InvalidConnectionId);
-        }
-        // index is chronological, events_ is physical.  After a wrap the
-        // oldest event lives at events_[next_event_], the slot about to be
-        // overwritten, and physical slot 0 holds a much newer one.  Before a
-        // wrap next_event_ equals event_count_, so the subtraction is zero
-        // modulo size and base lands on slot 0.  One formula covers both.
-        const std::size_t base = (next_event_.raw() + MaxEvents - event_count_) % MaxEvents;
-        const EventIndex physical =
-            EventIndex::check((base + index) % MaxEvents).expect("a position modulo the ring size is in it");
-        return ::fixy::mint_tagged<::fixy::tags::source::ConnectionPool>(events_.at(physical));
+        return state_.with(ctx, [index](State const& state) noexcept -> ::fixy::Result<DeclaredPoolEvent, PoolError> {
+            if (index >= state.event_count) {
+                return ::fixy::err(PoolError::InvalidConnectionId);
+            }
+            // index is chronological, the ring is physical.  After a wrap the
+            // oldest event lives at the slot of next_event, the slot about to
+            // be overwritten, and physical slot 0 holds a much newer one.
+            // Before a wrap next_event equals event_count, so the subtraction
+            // is zero modulo size and base lands on slot 0.  One formula covers
+            // both.
+            const std::size_t base = (state.next_event.raw() + MaxEvents - state.event_count) % MaxEvents;
+            const EventIndex physical =
+                EventIndex::check((base + index) % MaxEvents).expect("a position modulo the ring size is in it");
+            return ::fixy::mint_tagged<::fixy::tags::source::ConnectionPool>(state.events.at(physical));
+        });
     }
 };
 
