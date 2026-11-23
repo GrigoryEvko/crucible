@@ -17,6 +17,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/core/Algorithms.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/effects/Effect.h>
@@ -56,14 +57,22 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
     return lifetime::start_as_array<std::uint32_t>(storage).at(core::index<0>());
 }
 
+// The family of the arena of the probe.
+struct[[= ::foundation::brand::arena_family_brand{}]] ProbeArena final {};
+
 // The bits of the read after the two stores, with the two Views at the first
-// byte of the storage.
-[[nodiscard]] std::uint32_t read_through_two_types(StoreBytes& storage) {
-    return storage.with_mut([](auto cells) noexcept {
-        const WordBytes word =
-            cells.view().template window<sizeof(std::uint32_t)>(0).expect("the storage holds one integer");
-        return read_after_a_store_of_another_type(word, word);
-    });
+// byte of an arena run.  The probe needs two Views that write the same bytes.
+// A frame gives one writer of its run, and the run of an arena is a plain
+// View, so the bytes come from an arena.  The first run of an arena starts at
+// the alignment of its block, and start_as_array ends the process if the
+// bytes are not aligned for an integer.
+[[nodiscard]] std::uint32_t read_through_two_types() {
+    using Bytes = core::Quantity<core::unit::Byte, std::size_t>;
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    core::BumpArena<ProbeArena> arena = core::mint_bump_arena<ProbeArena>(Bytes{4096});
+    auto const storage = arena.array<unsigned char>(alloc, sizeof(std::uint32_t), 0);
+    const WordBytes word = storage.view().template window<sizeof(std::uint32_t)>(0).expect("the run holds one integer");
+    return read_after_a_store_of_another_type(word, word);
 }
 
 // Starts two pairs over the const storage.  Returns 0 when the two pairs hold
@@ -98,8 +107,7 @@ using WordBytes = core::View<unsigned char, sizeof(std::uint32_t)>;
 
 // The read sees the last store, which is the float.
 [[nodiscard]] int read_sees_the_last_store() {
-    alignas(8) StoreBytes storage{};
-    return read_through_two_types(storage) == core::bit_cast<std::uint32_t>(1.0F) ? 0 : 1;
+    return read_through_two_types() == core::bit_cast<std::uint32_t>(1.0F) ? 0 : 1;
 }
 
 // Const storage gives const elements, and each element holds the bytes that

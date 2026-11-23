@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -63,22 +64,33 @@ void test_float_fold_runs_left_to_right() {
     CRUCIBLE_TEST_ASSERT(kTest, bit_cast<std::uint32_t>(folded) == bit_cast<std::uint32_t>(1.0f));
 }
 
-// The cursor loop over a walk of a View of mutable elements writes each one.
-void test_cursor_loop_writes_through_the_walk() {
+// The writer of a frame writes the elements that the walks of the View then
+// read.  get_mut writes each element of a window, and write_each writes each
+// element from the element of a source at the same position.
+void test_writer_writes_what_the_walk_reads() {
     FixedArray<int, 5> values{1, 2, 3, 4, 5};
     values.with_mut([](auto run) noexcept {
-        for (int& value : run.view().walk().skip(ElementCount{1}).limit(ElementCount{3})) {
-            value *= 10;
+        auto middle = ::foundation::core::take_window(std::move(run), 1, 3).expect("three elements fit");
+        for (std::size_t position = 0; position < middle.size(); ++position) {
+            auto value = middle.get_mut(position).expect("the position is inside the window");
+            *value *= 10;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 5>{1, 20, 30, 40, 5}));
+    int const middle_sum = values.view()
+                               .walk()
+                               .skip(ElementCount{1})
+                               .limit(ElementCount{3})
+                               .fold(0, [](int sum, int const& value) noexcept { return sum + value; });
+    CRUCIBLE_TEST_ASSERT(kTest, middle_sum == 90);
     FixedArray<int, 3> target{};
     FixedArray<int, 3> const source{7, 8, 9};
-    target.with_mut([&source](auto run) noexcept {
-        for (auto const [destination, origin] : run.view().walk().zip(source.view().walk())) {
-            *destination = *origin + 1;
-        }
+    bool const is_written = target.with_mut([&source](auto run) noexcept {
+        return ::foundation::core::write_each(
+                   std::move(run), [](int const origin) noexcept { return origin + 1; }, source.view())
+            .is_ok();
     });
+    CRUCIBLE_TEST_ASSERT(kTest, is_written);
     CRUCIBLE_TEST_ASSERT(kTest, target == (FixedArray<int, 3>{8, 9, 10}));
 }
 
@@ -262,7 +274,7 @@ void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_float_fold_runs_left_to_right();
-    test_cursor_loop_writes_through_the_walk();
+    test_writer_writes_what_the_walk_reads();
     test_try_zip_compares_the_counts();
     test_chains_agree_with_the_index_model();
     test_cursors_at_the_end_abort(test);

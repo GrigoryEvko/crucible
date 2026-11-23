@@ -71,28 +71,26 @@ static_assert(!ViewsFourth<Mixed> && !CountsThird<Mixed>);
 
 // The three states of a run: no elements at a count above zero, a count of
 // zero, and the elements of the count.  A new count drops the runs of its
-// slot only.
+// slot only.  The runs hold const elements, so the View of each array gives
+// them.
 [[nodiscard]] consteval bool states_of_a_run() noexcept {
-    FixedArray<std::uint32_t, 3> numbers{1, 2, 3};
-    FixedArray<std::uint64_t, 2> wide_numbers{7, 8};
-    return numbers.with_mut([&wide_numbers](auto number_cells) noexcept {
-        View<std::uint32_t, 3> const number_run = number_cells.view();
-        return wide_numbers.with_mut([number_run](auto wide_cells) noexcept {
-            Mixed set{};
-            bool const starts_empty = set.has_run<0>() && set.view<0>().size() == 0 && set.count<0>() == 0;
-            set.set_count<0>(3);
-            set.set_count<1>(2);
-            bool const absent = !set.has_run<0>() && set.view<0>().size() == 0 && set.count<0>() == 3;
-            set.set<0>(number_run);
-            set.set<2>(wide_cells.view());
-            bool const full = set.has_run<0>() && set.view<0>().size() == 3 && !set.has_run<1>() && set.has_run<2>();
-            set.set_count<0>(2);
-            bool const dropped = !set.has_run<0>() && set.view<0>().size() == 0 && set.view<2>().size() == 2;
-            set.set_count<0>(0);
-            bool const zero = set.has_run<0>() && set.has_run<1>() && set.view<1>().size() == 0;
-            return starts_empty && absent && full && dropped && zero;
-        });
-    });
+    using ReadMixed =
+        RunSet<std::uint16_t, RunOf<std::uint32_t const, 0>, RunOf<Wide const, 0>, RunOf<std::uint64_t const, 1>>;
+    FixedArray<std::uint32_t, 3> const numbers{1, 2, 3};
+    FixedArray<std::uint64_t, 2> const wide_numbers{7, 8};
+    ReadMixed set{};
+    bool const starts_empty = set.has_run<0>() && set.view<0>().size() == 0 && set.count<0>() == 0;
+    set.set_count<0>(3);
+    set.set_count<1>(2);
+    bool const absent = !set.has_run<0>() && set.view<0>().size() == 0 && set.count<0>() == 3;
+    set.set<0>(numbers.view());
+    set.set<2>(wide_numbers.view());
+    bool const full = set.has_run<0>() && set.view<0>().size() == 3 && !set.has_run<1>() && set.has_run<2>();
+    set.set_count<0>(2);
+    bool const dropped = !set.has_run<0>() && set.view<0>().size() == 0 && set.view<2>().size() == 2;
+    set.set_count<0>(0);
+    bool const zero = set.has_run<0>() && set.has_run<1>() && set.view<1>().size() == 0;
+    return starts_empty && absent && full && dropped && zero;
 }
 static_assert(states_of_a_run());
 
