@@ -432,7 +432,10 @@ struct ForgedWords {
 // (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag compares it with the
 // count, so each read of the state of a forged sum ends the process: is_some
 // or is_ok, and == in each order of the operands.  A Release build reads the
-// tag with no compare, so the cases run only in a test build.
+// tag with no compare, so a forged tag is undefined there.  Each case reads
+// checks_read_tags_ of Choice.h, the switch of the oracle, and it forges a
+// tag only when the switch is on.  A Release build reads the tag of a real
+// sum.
 template <class Sum>
 void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundation::core::TextView refusal) {
     expect_dies(test_context(), [&forged, &real] noexcept { static_cast<void>(forged == real); }, refusal);
@@ -444,9 +447,12 @@ void expect_forged_compares_abort(Sum const& forged, Sum const& real, ::foundati
     "foundation: fatal: a sum of the Choice family: the tag names no alternative, so a copy of bytes made this sum"};
 
 void test_forged_tag_by_memcpy() {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     static_assert(sizeof(Option<std::uint64_t>) == sizeof(ForgedWords));
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
+    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+        CRUCIBLE_FATAL_INVARIANT(real.is_some() && real == Option<std::uint64_t>::some(std::uint64_t{7}));
+        return;
+    }
     Option<std::uint64_t> forged{};
     ForgedWords const words{};
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of an Option")
@@ -454,12 +460,14 @@ void test_forged_tag_by_memcpy() {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedTag);
     expect_forged_compares_abort(forged, real, kForgedTag);
-#endif
 }
 
 void test_forged_tag_by_union_member() {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     Option<std::uint64_t> const real = Option<std::uint64_t>::some(std::uint64_t{7});
+    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+        CRUCIBLE_FATAL_INVARIANT(real.is_some());
+        return;
+    }
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a union member reads the bytes of a different member as an Option")
     union Punned {
         ForgedWords words;
@@ -470,7 +478,6 @@ void test_forged_tag_by_union_member() {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_some()); }, kForgedTag);
     expect_forged_compares_abort(forged, real, kForgedTag);
-#endif
 }
 
 // The error of the Result tests.
@@ -480,10 +487,13 @@ enum class Refusal : std::uint8_t {
 };
 
 void test_forged_result_tag_by_memcpy() {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
     using Word = ::foundation::core::Result<std::uint64_t, Refusal>;
     static_assert(sizeof(Word) == sizeof(ForgedWords));
     Word const real{std::uint64_t{7}};
+    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+        CRUCIBLE_FATAL_INVARIANT(real.is_ok());
+        return;
+    }
     Word forged{std::uint64_t{1}};
     ForgedWords const words{};
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a copy of bytes writes a tag that names no alternative of a Result")
@@ -491,7 +501,6 @@ void test_forged_result_tag_by_memcpy() {
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     expect_dies(test_context(), [&forged] noexcept { static_cast<void>(forged.is_ok()); }, kForgedTag);
     expect_forged_compares_abort(forged, real, kForgedTag);
-#endif
 }
 
 // A sum whose payload is a sum: an Option of a Result and a Result of an
@@ -1407,15 +1416,21 @@ void test_full_linear_end_aborts() {
 // The end of a Result whose active alternative is linear and that no consumer
 // took ends the process in a test build.  A consumer, and the move of the
 // Result for its source, leave nothing owed, and a Result whose active
-// alternative is droppable owes nothing.  A Release build keeps no mark, so
-// the cells that end the process run only in a test build.
+// alternative is droppable owes nothing.  A Release build keeps no mark: the
+// end destroys the alternative and does not end the process.  The case reads
+// tracks_alternative_ends_ of Choice.h, the switch of the mark.
 void test_owed_alternative_end_aborts() {
-    [[maybe_unused]] constexpr ::foundation::core::TextView kOwedEnd{
+    constexpr ::foundation::core::TextView kOwedEnd{
         "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"};
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-    expect_dies(test_context(), [] noexcept { end_owed_linear_value(); }, kOwedEnd);
-    expect_dies(test_context(), [] noexcept { end_owed_linear_error(); }, kOwedEnd);
-#endif
+    if constexpr (::foundation::core::detail::tracks_alternative_ends_) {
+        expect_dies(test_context(), [] noexcept { end_owed_linear_value(); }, kOwedEnd);
+        expect_dies(test_context(), [] noexcept { end_owed_linear_error(); }, kOwedEnd);
+    } else {
+        int const live_before = live_tokens;
+        end_owed_linear_value();
+        end_owed_linear_error();
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == live_before);
+    }
     {
         Result<CountedToken, Refusal> first{CountedToken{93}};
         Result<CountedToken, Refusal> second = static_cast<Result<CountedToken, Refusal>&&>(first);

@@ -93,9 +93,10 @@ void test_each_alternative() {
 // The oracle of the tag of Choice.h.  In a test build
 // (CRUCIBLE_QTT_TRACK_CONSUME), the read of the tag of a OneOf compares it
 // with the count, and a tag that names no alternative ends the process.  A
-// Release build reads the tag with no compare, so the cases run only in a
-// test build.
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+// Release build reads the tag with no compare, so a forged tag is undefined
+// there.  Each case reads checks_read_tags_ of Choice.h, the switch of the
+// oracle, and it forges a tag only when the switch is on.  A Release build
+// reads the tag of a real OneOf.
 
 // The bytes of a Reading whose tag names no alternative: the storage word,
 // and a tag word whose low byte is the tag.
@@ -121,16 +122,16 @@ constexpr ::foundation::core::TextView kForgedTag{
     return forged;
 }
 
-#endif
-
 // which() of a forged OneOf ends the process in a test build, so no Index
 // leaves its range.  Each read of a forged tag below runs in a child through
 // expect_dies of the Check family.
 void test_which_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-    Reading const forged = forge_reading();
-    expect_dies(test, [&forged] noexcept { static_cast<void>(forged.which()); }, kForgedTag);
-#endif
+    if constexpr (::foundation::core::detail::checks_read_tags_) {
+        Reading const forged = forge_reading();
+        expect_dies(test, [&forged] noexcept { static_cast<void>(forged.which()); }, kForgedTag);
+    } else {
+        CRUCIBLE_FATAL_INVARIANT(read_word(9u).which().raw() == 2);
+    }
 }
 
 // Each read of the tag of a forged OneOf ends the process in a test build:
@@ -138,10 +139,13 @@ void test_which_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test)
 // get<T>().  So no arm reads the storage as an alternative that is not
 // active.
 void test_match_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test) {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+    Reading const real = read_word(9u);
+    if constexpr (!::foundation::core::detail::checks_read_tags_) {
+        CRUCIBLE_FATAL_INVARIANT(real.is<std::uint16_t>() && real == read_word(9u));
+        return;
+    }
     Reading const forged = forge_reading();
     Reading const same_forged = forged;
-    Reading const real = read_word(9u);
     expect_dies(
         test,
         [&forged] noexcept {
@@ -162,7 +166,6 @@ void test_match_refuses_a_forged_tag([[maybe_unused]] TestRunnerCtx const& test)
     expect_dies(test, [&forged, &real] noexcept { static_cast<void>(real == forged); }, kForgedTag);
     expect_dies(test, [&forged] noexcept { static_cast<void>(forged.is<std::uint32_t>()); }, kForgedTag);
     expect_dies(test, [&forged] noexcept { static_cast<void>(forged.get<std::uint16_t>().is_none()); }, kForgedTag);
-#endif
 }
 
 void test_expect(TestRunnerCtx const& test) {
@@ -318,15 +321,20 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // The end of a OneOf whose active alternative is linear and that no consumer
 // took ends the process in a test build.  expect and the move of the OneOf
 // for its source leave nothing owed, and a droppable active alternative owes
-// nothing.  A Release build keeps no mark, so the cell that ends the process
-// runs only in a test build.
+// nothing.  A Release build keeps no mark: the end destroys the alternative
+// and does not end the process.  The case reads tracks_alternative_ends_ of
+// Choice.h, the switch of the mark.
 void test_owed_linear_alternative_end_aborts([[maybe_unused]] TestRunnerCtx const& test) {
-#ifdef CRUCIBLE_QTT_TRACK_CONSUME
-    expect_dies(
-        test, [] noexcept { end_owed_linear_alternative(); },
-        ::foundation::core::TextView{
-            "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"});
-#endif
+    if constexpr (::foundation::core::detail::tracks_alternative_ends_) {
+        expect_dies(
+            test, [] noexcept { end_owed_linear_alternative(); },
+            ::foundation::core::TextView{
+                "foundation: fatal: a Result or a OneOf ended with a linear alternative that no consumer took"});
+    } else {
+        int const live_before = live_tokens;
+        end_owed_linear_alternative();
+        CRUCIBLE_FATAL_INVARIANT(live_tokens == live_before);
+    }
     {
         OneOf<CountedToken, Refusal> first{CountedToken{53}};
         OneOf<CountedToken, Refusal> second = static_cast<OneOf<CountedToken, Refusal>&&>(first);
