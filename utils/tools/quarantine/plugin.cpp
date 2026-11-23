@@ -478,6 +478,7 @@ void walk_unit() {
     was_unit_walked = true;
     walk_declarations();
     finish_expression_rules();
+    finish_niche_access();
     walk_home();
     walk_owner();
     finish_linear_rules();
@@ -919,6 +920,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_view_escape(plugin_info->base_name);
     register_unit_facts(plugin_info->base_name);
     register_expressions(plugin_info->base_name);
+    register_niche_access(plugin_info->base_name);
     register_declarations(plugin_info->base_name);
     register_home(plugin_info->base_name);
     register_owner(plugin_info->base_name);

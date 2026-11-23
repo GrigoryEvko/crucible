@@ -505,10 +505,12 @@ public:
 //   3. The statement is of the base (StatedInBase).  The statement is a
 //      niche_statement, an own member of niche<T> or of T, and its mark
 //      stands in a header of include/foundation or include/fixy.  A
-//      reflection reads the members of a class, but it does not see a
-//      friend.  So only a type whose doors a review of the base reads states
-//      the fact, and the author of such a type keeps each friend to values
-//      that are not empty.  The file of a mark is the file that
+//      reflection reads the members of a class and of its nested classes,
+//      but it does not see a friend or a body.  So the kind niche-access of
+//      the rule proof-routes of the quarantine plugin reads each body outside
+//      the class that has its access: a body that writes a field, or calls a
+//      constructor or a writing member that is not public, is an error,
+//      unless it takes a niche key.  The file of a mark is the file that
 //      holds it, because the tree holds no #line directive and no line
 //      marker (the quarantine plugin and the rule banned refuse each one).
 //   A private constructor, such as the constructor of the empty value, is a

@@ -1,0 +1,117 @@
+// Classes that state their niche, and bodies outside them that build or
+// write them through a member that is not public: friend functions, a member
+// of a friend class, a member of a nested class with no slot in its
+// signature, a closure in a member, a pointer to a member, a friend of a
+// class whose explicit niche specialization follows the class, and a friend
+// of a class template whose partial niche specialization states it.  The
+// controls give no finding: a const friend that only reads, a friend that
+// reads a copy, a friend that calls a const member of a private field, a
+// niche door that takes a niche key, the members of the class, and a friend
+// of a class that states nothing.
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+class Slot;
+void keep(Slot const& slot) noexcept;
+void use_held() noexcept;
+
+struct Reader {
+    unsigned word = 1;
+    [[nodiscard]] constexpr bool is_set() const noexcept { return word != 0; }
+};
+
+class Slot {
+    unsigned raw_ = 1;
+    Reader reader_{};
+    constexpr explicit Slot(unsigned raw) noexcept : raw_{raw} {}
+    constexpr void set_raw(unsigned raw) noexcept { raw_ = raw; }
+
+    friend class Filler;
+
+    friend void clear(Slot& slot) noexcept { slot.raw_ = 0xFFFFFFFFu; }
+    friend Slot make_empty() noexcept { return Slot{0xFFFFFFFFu}; }
+    friend void poke(Slot& slot) noexcept { slot.*(&Slot::raw_) = 0xFFFFFFFFu; }
+    friend void reset(Slot& slot) noexcept { slot.set_raw(0xFFFFFFFFu); }
+    friend unsigned folded_raw() noexcept {
+        constexpr Slot folded{0xFFFFFFFFu};
+        return folded.raw_;
+    }
+
+    friend bool is_first(Slot const& slot) noexcept { return slot.raw_ == 1u; }
+    friend unsigned raw_of(Slot slot) noexcept { return slot.raw_; }
+    friend bool has_reader(Slot slot) noexcept { return slot.reader_.is_set(); }
+    friend Slot niche_null(foundation::core::niche_key<Slot> const&) noexcept { return Slot{0xFFFFFFFFu}; }
+
+public:
+    static constexpr foundation::core::niche_statement is_niche_empty_never_built{};
+    constexpr Slot(Slot const&) noexcept = default;
+
+    [[nodiscard]] auto writer() const noexcept {
+        return [](Slot& slot) noexcept { slot.raw_ = 0xFFFFFFFFu; };
+    }
+
+    struct Door {
+        static void spill() noexcept { keep(Slot{0xFFFFFFFFu}); }
+    };
+
+    [[nodiscard]] unsigned raw() const noexcept { return raw_; }
+};
+
+class Filler {
+public:
+    static void fill(Slot& slot) noexcept { slot.raw_ = 0xFFFFFFFFu; }
+};
+
+class Pinned {
+    unsigned raw_ = 1;
+
+    friend void unpin(Pinned& pinned) noexcept { pinned.raw_ = 0u; }
+
+public:
+    [[nodiscard]] unsigned raw() const noexcept { return raw_; }
+};
+
+template <class Tag>
+class Held {
+    unsigned raw_ = 1;
+
+    friend void drop(Held& held) noexcept { held.raw_ = 0u; }
+
+public:
+    [[nodiscard]] unsigned raw() const noexcept { return raw_; }
+};
+
+struct FirstTag {};
+
+class Plain {
+    unsigned raw_ = 1;
+
+    friend void zero(Plain& plain) noexcept { plain.raw_ = 0u; }
+
+public:
+    [[nodiscard]] unsigned raw() const noexcept { return raw_; }
+};
+
+}  // namespace planted
+
+template <>
+struct foundation::core::niche<planted::Pinned> {
+    static constexpr foundation::core::niche_statement is_empty_never_built{};
+};
+
+template <class Tag>
+struct foundation::core::niche<planted::Held<Tag>> {
+    static constexpr foundation::core::niche_statement is_empty_never_built{};
+};
+
+namespace planted {
+
+void keep([[maybe_unused]] Slot const& slot) noexcept {}
+
+void use_held() noexcept {
+    Held<FirstTag> held{};
+    drop(held);
+}
+
+}  // namespace planted

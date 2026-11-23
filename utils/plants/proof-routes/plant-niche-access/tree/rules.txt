@@ -1,0 +1,5 @@
+# The rule table of the plant of the niche access.  The unit of src/ is
+# quarantined, and it names the niche statement and the niche key.
+
+admit foundation::core | the niche statement, the niche key and the niche, which the planted code names
+quarantine src/

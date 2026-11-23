@@ -36,6 +36,18 @@ Rule
                                       friends to reflection, or when no class
                                       that states synchronized{} has such a
                                       friend
+      niche-access                    a body outside a class that states its
+                                      niche (foundation/core/Choice.h), with
+                                      no niche key, that writes a field of the
+                                      class, calls a constructor or a writing
+                                      member of it that is not public, takes a
+                                      pointer to such a member, or holds a
+                                      folded constant of it.  The check of the
+                                      statement reads the members and the
+                                      nested classes through reflection, but
+                                      GCC 16 gives no friend and no body to
+                                      reflection.  The kind retires when it
+                                      does
     A witness row of utils/rule-table.txt names a proof type.  A class of
     foundation or fixy with the shape of a proof is a proof type too.  The
     entity of a finding is `KIND: KEY`.  The plugin reads the last two shapes
@@ -77,10 +89,22 @@ DANGER = {
 # The message of the kind synchronized-friend, which builds no proof type but
 # skips the door check of a class that states synchronized{}.
 SYNCHRONIZED_FRIEND = "synchronized-friend"
+# The message of the kind niche-access, which builds no proof type but skips
+# the check of the statement of a class that states its niche.
+NICHE_ACCESS = "niche-access"
 
 
 def message_of(kind: str, entity: str) -> str:
     """Give the message of one finding of the kind KIND with the entity ENTITY."""
+    if kind == NICHE_ACCESS:
+        return (
+            f"a body outside a class that states its niche builds or writes the class through a member that is not "
+            f"public ({entity}): the check of the statement of foundation/core/Choice.h reads the members and the "
+            "nested classes of the class, and GCC 16 gives no friend and no body to reflection, so the body could "
+            "write the empty word and a full Option would read as empty.  Make the body a member door of the class "
+            "that takes a voucher, which the check reads, or give it a niche_key parameter when it is a niche door.  "
+            "The kind retires when GCC gives the friends of a class and the bodies of functions to reflection"
+        )
     if kind == SYNCHRONIZED_FRIEND:
         return (
             f"a friend of a class that states synchronized{{}} ({entity}): the door check of "

@@ -293,6 +293,11 @@
 //                           class that states synchronized{}, or a friend class
 //                           of it that can reach it, which the door check of
 //                           foundation/Transfer.h cannot read
+//     niche-access          a body outside a class that states its niche, with
+//                           no niche key, that writes a field of the class or
+//                           calls a constructor or a writing member of it that
+//                           is not public (niche.cpp), which the check of the
+//                           statement of foundation/core/Choice.h cannot read
 //     The rule witness-roster:
 //     unrostered-witness    a class of a base file with a door shape and no
 //                           witness row of the rule table
@@ -1081,6 +1086,7 @@ enum class Kind : std::uint8_t {
     route_explicit_instantiation,
     route_raw_allocation,
     route_synchronized_friend,
+    route_niche_access,
     padded_alias,
     padded_member,
     padded_return,
@@ -1426,6 +1432,8 @@ inline const char* kind_name(Kind kind) {
             return "raw-allocation";
         case Kind::route_synchronized_friend:
             return "synchronized-friend";
+        case Kind::route_niche_access:
+            return "niche-access";
         case Kind::padded_alias:
             return "padded-alias";
         case Kind::padded_member:
@@ -1674,6 +1682,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::route_explicit_instantiation:
         case Kind::route_raw_allocation:
         case Kind::route_synchronized_friend:
+        case Kind::route_niche_access:
             return Rule::proof_routes;
         case Kind::padded_alias:
         case Kind::padded_member:
@@ -1989,6 +1998,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"proof-routes", "explicit-instantiation"},
     {"proof-routes", "raw-allocation"},
     {"proof-routes", "synchronized-friend"},
+    {"proof-routes", "niche-access"},
     {"padded-list", "padded-alias"},
     {"padded-list", "padded-member"},
     {"padded-list", "padded-return"},
@@ -3027,6 +3037,12 @@ void walk_body(tree function, bool is_pattern);
 void check_route_alias(tree decl);
 void register_expressions(const char* plugin_name);
 void finish_expression_rules();
+
+// niche.cpp: the kind niche-access of the rule proof-routes, the bodies
+// outside a class that states its niche that build or write the class
+// through a member that is not public.
+void register_niche_access(const char* plugin_name);
+void finish_niche_access();
 
 // include.cpp: the family include closure, the include rules, the door units,
 // the seals, the heavy headers, the names of a higher root and the provenance.

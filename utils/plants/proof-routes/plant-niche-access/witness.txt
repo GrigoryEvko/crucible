@@ -1,0 +1,28 @@
+# Each body outside a class that states its niche, with no niche key, that
+# writes a field of the class or calls a constructor or a writing member of
+# it that is not public, is the kind niche-access (niche.cpp).  The routes: a
+# friend that writes the empty word, a friend that builds it, a pointer to a
+# member, a call of a private writer, a folded constant in a friend, a
+# closure in a member, a nested class with no slot in its signature, a member
+# of a friend class, a friend of a class whose explicit niche specialization
+# follows the class, and a friend of a class template whose partial niche
+# specialization states it.  The controls give no finding: a const friend
+# that only reads, a friend that reads a copy, a friend that calls a const
+# member of a private field, a niche door with a niche key, the members of
+# the class, a value of a public constructor, and a friend of a class that
+# states nothing.
+
+compile niche src/niche.cpp stage=c
+flag niche -freflection
+exit niche pass
+judge niche
+finding niche proof-routes niche-access src/niche.cpp:32:56 | niche-access: planted::Slot writes the field raw_ in planted::clear
+finding niche proof-routes niche-access src/niche.cpp:33:64 | niche-access: planted::Slot calls a constructor that is not public in planted::make_empty
+finding niche proof-routes niche-access src/niche.cpp:34:17 | niche-access: planted::Slot takes a pointer to the member raw_ in planted::poke
+finding niche proof-routes niche-access src/niche.cpp:35:58 | niche-access: planted::Slot calls the member set_raw, which is not public in planted::reset
+finding niche proof-routes niche-access src/niche.cpp:37:24 | niche-access: planted::Slot holds a constant that the compiler folded in planted::folded_raw
+finding niche proof-routes niche-access src/niche.cpp:51:52 | niche-access: planted::Slot writes the field raw_ in planted::Slot::writer::(lambda)::operator()
+finding niche proof-routes niche-access src/niche.cpp:55:61 | niche-access: planted::Slot calls a constructor that is not public in planted::Slot::Door::spill
+finding niche proof-routes niche-access src/niche.cpp:63:55 | niche-access: planted::Slot writes the field raw_ in planted::Filler::fill
+finding niche proof-routes niche-access src/niche.cpp:69:62 | niche-access: planted::Pinned writes the field raw_ in planted::unpin
+finding niche proof-routes niche-access src/niche.cpp:79:55 | niche-access: planted::Held writes the field raw_ in planted::drop
