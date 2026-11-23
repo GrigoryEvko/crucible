@@ -391,6 +391,82 @@ class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
     }
 };
 
+// A callable that takes the ViewMut of the brand of the frame with no throw,
+// and whose result leaves the frame (FrameResult of Choice.h).
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept FrameCallable = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
+                     && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
+
+// The body of a frame door of an owner whose elements are T: a frame
+// callable that holds no linear value by value (HoldsNoLinearValue of
+// foundation/Linear.h).  Extent is the extent of the run of the owner.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body whose result does not leave the frame: the refused twin of each
+// door binds to it.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
+                        && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
+                        && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// A body of a frame door that holds a linear value by value: the linear
+// twin of each door binds to it.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept LinearFrameBody =
+    (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, ViewMut<T, Brand, Extent>>;
+
+// The splits and the reborrow of a ViewMut (the definitions below).
+// RegionFrameKeyDoor names them as friends, so these declarations stand
+// before the door.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr Option<Record<ViewMut<T, Brand, dynamic_extent>, ViewMut<T, Brand, dynamic_extent>>>
+split_at(ViewMut<T, Brand, Extent>&& whole, std::size_t offset) noexcept;
+template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
+[[nodiscard]] constexpr Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>
+split_at(ViewMut<T, Brand, Extent>&& whole) noexcept;
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ViewMutChunks<T, Brand> split_chunks(ViewMut<T, Brand, Extent>&& whole,
+                                                             std::size_t width) noexcept;
+template <class T, class Brand, std::size_t Extent, class Body>
+    requires FrameBody<Body, T, Brand, Extent>
+[[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>,
+                                               ViewMut<T, Brand, Extent>>
+reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept;
+
+// The door of the Region family to the key of the frame doors (the doors of
+// the owners above foundation/core/Frame.h).  Its one member is private.  The
+// invariant: each friend holds a ViewMut by move or by a reference, and it
+// builds a ViewMut or a RefMut only over a part of the run of that ViewMut,
+// with its brand.  ViewMut, ViewMutChunks, the two forms of split_at,
+// split_chunks and reborrow are its friends.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
+    friend class ::foundation::core::ViewMut;
+    template <class T, ::foundation::brand::IsBrand Brand>
+    friend class ::foundation::core::ViewMutChunks;
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    friend constexpr auto ::foundation::core::split_at(ViewMut<T, Brand, Extent>&& whole, std::size_t offset) noexcept
+        -> Option<Record<ViewMut<T, Brand, dynamic_extent>, ViewMut<T, Brand, dynamic_extent>>>;
+    template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires(Extent != dynamic_extent && Offset > 0 && Offset < Extent)
+    friend constexpr auto ::foundation::core::split_at(ViewMut<T, Brand, Extent>&& whole) noexcept
+        -> Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>;
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    friend constexpr auto ::foundation::core::split_chunks(ViewMut<T, Brand, Extent>&& whole,
+                                                           std::size_t width) noexcept -> ViewMutChunks<T, Brand>;
+    template <class T, class Brand, std::size_t Extent, class Body>
+        requires FrameBody<Body, T, Brand, Extent>
+    friend constexpr auto ::foundation::core::reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept
+        -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, ViewMut<T, Brand, Extent>>;
+
+    // The key of the frame doors, for a part of the run of a ViewMut.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // Doors of the owners above this header
 // An owner in a header above this one can hold an invariant that no type
 // proves and that OwnerCore of foundation/core/Owner.h does not fit.  Such an
@@ -1111,7 +1187,7 @@ public:
         if (position >= size()) [[unlikely]] {
             return Option<RefMut<T, Brand>>{none};
         }
-        return Option<RefMut<T, Brand>>::some(RefMut<T, Brand>{detail::FrameDoor::key(), first_[position]});
+        return Option<RefMut<T, Brand>>::some(RefMut<T, Brand>{RegionFrameKeyDoor::key_(), first_[position]});
     }
     template <class... Refused>
     void get_mut(std::size_t) const& = delete("a const ViewMut writes nothing, so it gives no writer of an element");
@@ -1170,7 +1246,7 @@ public:
         T* const first = next_;
         next_ += count;
         rest_ -= count;
-        return Option<ViewMut<T, Brand>>::some(ViewMut<T, Brand>{detail::FrameDoor::key(), View<T>{first, count}});
+        return Option<ViewMut<T, Brand>>::some(ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{first, count}});
     }
 };
 
@@ -1189,8 +1265,8 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     // The test above puts each part inside the run, so the optimizer removes
     // the test of each window.
     return Option<Parts>::some(
-        Parts{ViewMut<T, Brand>{detail::FrameDoor::key(), run.window(0, offset).expect("the offset is in the run")},
-              ViewMut<T, Brand>{detail::FrameDoor::key(),
+        Parts{ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), run.window(0, offset).expect("the offset is in the run")},
+              ViewMut<T, Brand>{RegionFrameKeyDoor::key_(),
                                 run.window(offset, count - offset).expect("the offset is in the run")}});
 }
 
@@ -1204,8 +1280,8 @@ template <std::size_t Offset, class T, ::foundation::brand::IsBrand Brand, std::
 split_at(ViewMut<T, Brand, Extent>&& whole) noexcept {
     View<T, Extent> const run = whole.view();
     return Record<ViewMut<T, Brand, Offset>, ViewMut<T, Brand, Extent - Offset>>{
-        ViewMut<T, Brand, Offset>{detail::FrameDoor::key(), run.template prefix<Offset>()},
-        ViewMut<T, Brand, Extent - Offset>{detail::FrameDoor::key(), run.template suffix<Extent - Offset>()}};
+        ViewMut<T, Brand, Offset>{RegionFrameKeyDoor::key_(), run.template prefix<Offset>()},
+        ViewMut<T, Brand, Extent - Offset>{RegionFrameKeyDoor::key_(), run.template suffix<Extent - Offset>()}};
 }
 
 // The range of the parts of width elements of the run of whole, from the
@@ -1219,7 +1295,7 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     if (width == 0) [[unlikely]] {
         fatal("a split of a ViewMut into chunks of zero elements");
     }
-    return ViewMutChunks<T, Brand>{detail::FrameDoor::key(), View<T>{whole.view()}, width};
+    return ViewMutChunks<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{whole.view()}, width};
 }
 
 // A named ViewMut stays with the caller, so the parts of its split would be
@@ -1251,46 +1327,23 @@ namespace detail {
 // result in a Record for each other body.  held lives in the frame of the
 // door, and run is the run of held.  The body runs before the Record moves
 // held, because a braced list runs its parts in order.  The door gives up
-// held here, so the helper takes it as an rvalue.
+// held here, so the helper takes it as an rvalue.  The door gives the key of
+// the frame doors from the door class of its header, so only a frame door
+// calls the helper.
 template <class Brand, class Owner, class T, std::size_t Extent, class Body>
 [[nodiscard]] constexpr frame_return_t<body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Owner>
-give_run_back_(Owner&& held, View<T, Extent> run, Body&& body) noexcept {
+give_run_back_(FrameKey const& key, Owner&& held, View<T, Extent> run, Body&& body) noexcept {
     using Given = body_result_t<Body&&, ViewMut<T, Brand, Extent>>;
     if constexpr (std::is_void_v<Given>) {
-        static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run});
+        static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{key, run});
         return static_cast<Owner&&>(held);
     } else {
-        return frame_return_t<Given, Owner>{static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{FrameDoor::key(), run}),
+        return frame_return_t<Given, Owner>{static_cast<Body&&>(body)(ViewMut<T, Brand, Extent>{key, run}),
                                             static_cast<Owner&&>(held)};
     }
 }
 
 }  // namespace detail
-
-// A callable that takes the ViewMut of the brand of the frame with no throw,
-// and whose result leaves the frame (FrameResult of Choice.h).
-template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept FrameCallable = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                     && FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>;
-
-// The body of a frame door of an owner whose elements are T: a frame
-// callable that holds no linear value by value (HoldsNoLinearValue of
-// foundation/Linear.h).  Extent is the extent of the run of the owner.
-template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>;
-
-// A body whose result does not leave the frame: the refused twin of each
-// door binds to it.
-template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
-                        && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
-                        && ::foundation::linear::HoldsNoLinearValue<Body>;
-
-// A body of a frame door that holds a linear value by value: the linear
-// twin of each door binds to it.
-template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept LinearFrameBody =
-    (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, ViewMut<T, Brand, Extent>>;
 
 // ── The reborrow ───────────────────────────────────────────────────────
 //
@@ -1332,7 +1385,7 @@ template <class T, class Brand, std::size_t Extent, class Body>
                                                ViewMut<T, Brand, Extent>>
 reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept {
     View<T, Extent> const run = detail::run_of_(view);
-    return detail::give_run_back_<Brand>(std::move(view), run, static_cast<Body&&>(body));
+    return detail::give_run_back_<Brand>(RegionFrameKeyDoor::key_(), std::move(view), run, static_cast<Body&&>(body));
 }
 
 template <class T, class Brand, std::size_t Extent, class Body>

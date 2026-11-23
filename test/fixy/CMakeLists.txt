@@ -2212,6 +2212,18 @@ fixy_test(test_cyclic_buffer)
 fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
   "template constraint failure for .template<class T, long unsigned int N, class KeyBrand> +requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
   "== 0\\) class fixy::CyclicBuffer.")
+# The member of the door class of each fixy header above foundation/core/Frame.h
+# gives the key of the frame doors only to the owners of that header, so a unit
+# that is no owner builds no ViewMut of a brand that it names.
+foreach(_frame_key_door owned_region:OwnedRegion cyclic_buffer:CyclicBuffer thread_tasks:ThreadTasks
+        spsc_split:SpscSplit parallel_for:ParallelFor lane_ring:LaneRing)
+  string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
+  list(GET _frame_key_parts 0 _frame_key_file)
+  list(GET _frame_key_parts 1 _frame_key_class)
+  fixy_neg_compile_test(neg_${_frame_key_file}_frame_key_door_private
+    "static constexpr foundation::core::detail::FrameKey foundation::core::${_frame_key_class}FrameKeyDoor::key_\\(\\). is private within this context"
+    "neg_${_frame_key_file}_frame_key_door_private\\.cpp:[0-9]+:[0-9]+: error")
+endforeach()
 # The doors of a CyclicBuffer lend one slot to a body, and a keyed ring opens
 # a door that writes only with its key.  A body that reaches the key, a helper
 # with no key and a body that gives its slot out do not compile, and the mint

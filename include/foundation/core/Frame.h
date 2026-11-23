@@ -157,9 +157,10 @@
 //     array.with_mut(key, body);                     the door borrows the key
 //                       for the call
 //   A key is a linear class with no state.  Only a mint or a root door makes
-//   one, with the key of detail::FrameDoor, so no body makes a key.  A spelling with no
-//   key brand, such as FixedArray<T, N>, has the brand Unkeyed and the doors
-//   with no key.
+//   one, with the key of the frame doors that the door class of its header
+//   gives (the doors of the owners above this header), so no body makes a
+//   key.  A spelling with no key brand, such as FixedArray<T, N>, has the
+//   brand Unkeyed and the doors with no key.
 //
 // Gate
 //   A keyed door refuses a body that reaches a key of the brand of its owner
@@ -217,6 +218,8 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/LoanKeyTrait.h>
 #include <foundation/reflect/TypeComponents.h>
@@ -227,17 +230,50 @@
 
 namespace foundation::core {
 
+// Doors of the owners above this header
+// An owner in a header above this one builds a ViewMut, a RefMut or a
+// LoanKey of what it holds, or reads the run of an owner that it holds with
+// the key of a frame, such as frame_run_ of a FixedArray.  An invariant of
+// the owner proves the run and the brand: the frame of a door holds its
+// owner, a mint gives the fresh brand of its call, or the owner reads only an
+// array of its own.  Such an owner reaches the key through one plain door
+// class.  This header declares the class, and detail::FrameDoor names it as
+// a friend.  The header of the owner defines it, and the owner is its friend.
+// The comment of each door states the invariant of its owners.  A home owner
+// row of utils/rule-table.txt keeps the one definition of each door in that
+// header, so no other file defines a second door of the same name.
+class RegionFrameKeyDoor;
+class ArrayFrameKeyDoor;
+class ListFrameKeyDoor;
+class GrowFrameKeyDoor;
+class SmallListFrameKeyDoor;
+class FixedHeapArrayFrameKeyDoor;
+class BoxFrameKeyDoor;
+class ChoiceFrameKeyDoor;
+class OneOfFrameKeyDoor;
+class RootKeysFrameKeyDoor;
+class WindowLoanFrameKeyDoor;
+class SortFrameKeyDoor;
+class ReduceFrameKeyDoor;
+class ProtocolFrameKeyDoor;
+class AlignedBytesFrameKeyDoor;
+class OwnedRegionFrameKeyDoor;
+class CyclicBufferFrameKeyDoor;
+class ThreadTasksFrameKeyDoor;
+class SpscSplitFrameKeyDoor;
+class ParallelForFrameKeyDoor;
+class LaneRingFrameKeyDoor;
+
 namespace detail {
 
-// The key of the constructors of ViewMut and RefMut.  FrameDoor is its one
-// friend, and only the frame doors call the door.  The door and the key hold
-// no template, so no explicit specialization of a template reaches the key.
-// The door is in namespace detail, and a use of that namespace outside the
-// base is a finding.
-struct FrameDoor;
+// The key of the constructors of ViewMut and RefMut, of a LoanKey, and of the
+// frame reads of an owner, such as frame_run_.  FrameDoor is its one friend.
+// The door and the key hold no template, so no explicit specialization of a
+// template reaches the key.
+class FrameDoor;
 
 class [[nodiscard]] FrameKey final {
-    friend struct FrameDoor;
+    friend class FrameDoor;
 
     constexpr FrameKey() noexcept {}
     constexpr FrameKey(FrameKey const&) noexcept {}
@@ -246,8 +282,37 @@ public:
     FrameKey& operator=(FrameKey const&) = delete("a key of a frame door lives for one construction");
 };
 
-struct FrameDoor {
-    [[nodiscard]] static constexpr FrameKey key() noexcept { return FrameKey{}; }
+// The door of the key of the frame doors.  Its one member is private, and
+// its friends are the door classes that this header declares (the doors of
+// the owners above this header).  So no other code of the base
+// builds a ViewMut or a RefMut of a brand that it names over a run or an
+// object that it names, and no other code mints a LoanKey.  A helper that
+// builds a unique borrow for an owner, such as give_run_back_ of
+// foundation/core/Region.h, takes the key from its caller as its proof.
+class FrameDoor final : ::foundation::NoObject<FrameDoor> {
+    friend class ::foundation::core::RegionFrameKeyDoor;
+    friend class ::foundation::core::ArrayFrameKeyDoor;
+    friend class ::foundation::core::ListFrameKeyDoor;
+    friend class ::foundation::core::GrowFrameKeyDoor;
+    friend class ::foundation::core::SmallListFrameKeyDoor;
+    friend class ::foundation::core::FixedHeapArrayFrameKeyDoor;
+    friend class ::foundation::core::BoxFrameKeyDoor;
+    friend class ::foundation::core::ChoiceFrameKeyDoor;
+    friend class ::foundation::core::OneOfFrameKeyDoor;
+    friend class ::foundation::core::RootKeysFrameKeyDoor;
+    friend class ::foundation::core::WindowLoanFrameKeyDoor;
+    friend class ::foundation::core::SortFrameKeyDoor;
+    friend class ::foundation::core::ReduceFrameKeyDoor;
+    friend class ::foundation::core::ProtocolFrameKeyDoor;
+    friend class ::foundation::core::AlignedBytesFrameKeyDoor;
+    friend class ::foundation::core::OwnedRegionFrameKeyDoor;
+    friend class ::foundation::core::CyclicBufferFrameKeyDoor;
+    friend class ::foundation::core::ThreadTasksFrameKeyDoor;
+    friend class ::foundation::core::SpscSplitFrameKeyDoor;
+    friend class ::foundation::core::ParallelForFrameKeyDoor;
+    friend class ::foundation::core::LaneRingFrameKeyDoor;
+
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr FrameKey key() noexcept { return FrameKey{}; }
 };
 
 // The type that the call static_cast<Body&&>(body)(argument) of a door gives

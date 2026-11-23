@@ -41,6 +41,7 @@
 #include <fixy/Cyclic.h>
 #include <fixy/Mutation.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Frame.h>
 
@@ -84,6 +85,58 @@ template <class Body, class Element, class KeyBrand>
 concept CyclicFreshBody =
     std::is_nothrow_default_constructible_v<Element> && ::foundation::core::KeyedElementBody<Body, Element, KeyBrand>;
 
+// The ring and its mint (the definitions below).  CyclicBufferFrameKeyDoor
+// names them as friends, so these declarations stand before the door.  The
+// definition of the ring gives the default argument of its key brand, and
+// this declaration of the mint gives the default argument of its brand.
+template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
+    requires(N > 0 && (N & (N - 1)) == 0)
+class CyclicBuffer;
+
+// The gate of mint_cyclic_buffer: a ring of N elements of T that start with
+// no argument and no throw, and no explicit argument after T and N.
+template <class T, std::size_t N, class... Refused>
+concept CanMintCyclicBuffer =
+    (sizeof...(Refused) == 0) && N > 0 && (N & (N - 1)) == 0 && std::is_nothrow_default_constructible_v<T>;
+
+template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CanMintCyclicBuffer<T, N, Refused...>
+[[nodiscard]] constexpr ::foundation::core::Record<
+    CyclicBuffer<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
+    ::foundation::core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
+mint_cyclic_buffer() noexcept;
+
+}  // namespace fixy
+
+namespace foundation::core {
+
+// The door of a CyclicBuffer and its mint to the key of the frame doors (the
+// doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and CyclicBuffer and mint_cyclic_buffer of fixy/CyclicBuffer.h are
+// its friends.  The invariant: a ring reads the run of the FixedArray of its
+// own storage only to write the slot of a door of the ring, and the mint
+// gives the one key of the fresh brand of its call, with the new ring of that
+// brand.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class CyclicBufferFrameKeyDoor final : ::foundation::NoObject<CyclicBufferFrameKeyDoor> {
+    template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
+        requires(N > 0 && (N & (N - 1)) == 0)
+    friend class ::fixy::CyclicBuffer;
+    template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
+        requires ::fixy::CanMintCyclicBuffer<T, N, Refused...>
+    friend constexpr auto ::fixy::mint_cyclic_buffer() noexcept
+        -> ::foundation::core::Record<::fixy::CyclicBuffer<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
+                                      ::foundation::core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
+
+    // The key of the frame doors, for the storage of a ring and the key of a
+    // mint.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy {
+
 template <typename T, std::size_t N, ::foundation::brand::IsBrand KeyBrand = ::foundation::core::Unkeyed>
     requires(N > 0 && (N & (N - 1)) == 0)
 class [[nodiscard]][[= ::foundation::core::loan_key_mark_when<::foundation::core::IsKeyBrand<KeyBrand>>]] CyclicBuffer {
@@ -113,7 +166,7 @@ private:
     // storage through the keyed run of a frame, because a FixedArray gives a
     // View that writes only through a frame.
     [[nodiscard]] constexpr T& slot_at_(Index<N> slot) noexcept {
-        return frame_run_(::foundation::core::detail::FrameDoor::key(), storage_).at(slot);
+        return frame_run_(::foundation::core::CyclicBufferFrameKeyDoor::key_(), storage_).at(slot);
     }
 
     // Claims the slot of the next claim and gives it.  The order is bind at
@@ -390,24 +443,18 @@ public:
         delete("a door of a temporary CyclicBuffer lends an element that the full expression ends");
 };
 
-// The gate of mint_cyclic_buffer: a ring of N elements of T that start with
-// no argument and no throw, and no explicit argument after T and N.
-template <class T, std::size_t N, class... Refused>
-concept CanMintCyclicBuffer =
-    (sizeof...(Refused) == 0) && N > 0 && (N & (N - 1)) == 0 && std::is_nothrow_default_constructible_v<T>;
-
 // A keyed CyclicBuffer of N value-initialized elements and its LoanKey (the
 // key): auto [ring, key] = mint_cyclic_buffer<T, N>().  The brand is the fresh
 // brand of the call site, in undeducible_brand_t, so no caller names it.
 // Complexity: O(N) for the value-initialization.
-template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
     requires CanMintCyclicBuffer<T, N, Refused...>
 [[nodiscard]] constexpr ::foundation::core::Record<
     CyclicBuffer<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
     ::foundation::core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_cyclic_buffer() noexcept {
     return {CyclicBuffer<T, N, Fresh>{},
-            ::foundation::core::LoanKey<Fresh>{::foundation::core::detail::FrameDoor::key()}};
+            ::foundation::core::LoanKey<Fresh>{::foundation::core::CyclicBufferFrameKeyDoor::key_()}};
 }
 
 }  // namespace fixy

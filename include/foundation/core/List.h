@@ -453,6 +453,35 @@ public:
 
 // ── The frame door ─────────────────────────────────────────────────────────
 
+// The frame door of a FixedList (the definition below).  ListFrameKeyDoor
+// names it as a friend, so this declaration stands before the door, and the
+// default argument of the brand belongs to it.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+         && FrameBody<Body, typename Owner::element_type, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept;
+
+// The door of the frame door of a FixedList to the key of the frame doors
+// (the doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and the frame door is its one friend.  The invariant: the frame
+// door holds the list by move in its frame, and lends the run of its live
+// elements with the scope brand of its call.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ListFrameKeyDoor final : ::foundation::NoObject<ListFrameKeyDoor> {
+    template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
+             && FrameBody<Body, typename Owner::element_type, Fresh>
+    friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept
+        -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>;
+
+    // The key of the frame doors, for the run of the list in the frame.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The frame door of a FixedList (foundation/core/Frame.h).  The list moves
 // into the frame, body gets the ViewMut of its elements, and the door gives
 // the list back: alone for a body that gives void, and after the result in a
@@ -460,7 +489,7 @@ public:
 // caller names the brand of the frame.  The list holds its elements inline,
 // so the door moves size() elements in and out.  Complexity: O(size()), and
 // the cost of the body.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
          && ::foundation::reflect::IsInstanceOf<Owner, ^^FixedList>
          && FrameBody<Body, typename Owner::element_type, Fresh>
@@ -469,7 +498,8 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type> const run = held.view();
-    return detail::give_run_back_<Fresh>(static_cast<Owner&&>(held), run, static_cast<Body&&>(body));
+    return detail::give_run_back_<Fresh>(ListFrameKeyDoor::key_(), static_cast<Owner&&>(held), run,
+                                         static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds

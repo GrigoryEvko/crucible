@@ -496,14 +496,138 @@ using window_frame_value_t = std::conditional_t<std::is_void_v<Given>, core::Uni
 template <class Body, class T, class Fresh, std::size_t N>
 using listed_body_result_t = std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>;
 
+// The type of the argument of a body of the static form at a position: one
+// ViewMut for each window.
+template <class View, std::size_t Position>
+using window_argument_t = View;
+
+// True when body takes one View for each of N positions, with no exception.
+// The gates of the door read only a concept and an alias, so no unit can
+// specialize a template that changes what they admit.
+template <class Body, class View, std::size_t N>
+concept WindowBody = []<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
+    return std::is_nothrow_invocable_v<Body, window_argument_t<View, Positions>...>;
+}(std::make_index_sequence<N>{});
+
+// The result of a body that takes one View for each of N positions.
+template <class Body, class View, std::size_t N>
+using window_body_result_t =
+    typename decltype([]<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
+        return std::type_identity<std::invoke_result_t<Body, window_argument_t<View, Positions>...>>{};
+    }(std::make_index_sequence<N>{}))::type;
+
 template <class T>
 class TestedWindow;
 
 template <class T, class Fresh, std::size_t N, class Body>
 [[nodiscard]] core::Result<window_frame_value_t<listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>
-lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
+lend_listed_windows_(core::detail::FrameKey const& key, AlignedBytes& block,
+                     core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
 
 }  // namespace detail
+
+// A block that opens the frames of its windows only with its LoanKey (the
+// definition below).
+template <class Brand>
+    requires core::IsKeyBrand<Brand>
+class KeyedBytes;
+
+// The gate of mint_keyed_bytes: an AlignedBytes that the caller gives up, and
+// no explicit argument.
+template <class Block, class... Refused>
+concept CanMintKeyedBytes = (sizeof...(Refused) == 0) && std::is_same_v<Block, AlignedBytes>;
+
+namespace detail {
+
+// The body of a keyed frame of the windows of the form of a list: the body
+// of the door of a block, which reaches no key of the brand (the gate).
+template <class Body, class T, class Brand, class Fresh, std::size_t N>
+concept KeyedListedWindowBody = std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+                             && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh>
+                             && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// The body of a keyed frame of a static count of windows.
+template <class Body, class T, class Brand, class Fresh, std::size_t N>
+concept KeyedFixedWindowBody = WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
+                            && core::FrameResult<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
+                            && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+// The element of the windows of a keyed frame.
+template <class T, std::size_t N>
+concept KeyedWindowElement =
+    (N <= max_block_windows) && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>;
+
+}  // namespace detail
+
+// The frame doors of the windows of a block and of a keyed block, and the
+// mint of a keyed block (the definitions below).  AlignedBytesFrameKeyDoor
+// names them as friends, so these declarations stand before the door, and the
+// default argument of the brand belongs to them.
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
+         && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
+         && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+         && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
+         && ::foundation::linear::HoldsNoLinearValue<Body>
+[[nodiscard]] core::Result<
+    detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
+    WindowRefusal>
+with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
+
+template <class T, class... Refused, std::size_t N, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
+         && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
+         && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
+         && ::foundation::linear::HoldsNoLinearValue<Body>
+[[nodiscard]] core::Result<
+    detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
+with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept;
+
+template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CanMintKeyedBytes<Block, Refused...>
+[[nodiscard]] core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
+                           core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
+mint_keyed_bytes(Block&& block) noexcept;
+
+template <class T, class... Refused, std::size_t N, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+         && detail::KeyedWindowElement<T, N> && detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
+[[nodiscard]] core::Record<
+    core::Result<detail::window_frame_value_t<detail::listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>,
+    core::LoanKey<Brand>>
+with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::FixedList<ByteWindow, N> const& windows,
+                 Body&& body) noexcept;
+
+template <class T, class... Refused, std::size_t N, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+         && detail::KeyedWindowElement<T, N> && detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
+[[nodiscard]] core::Result<detail::window_frame_value_t<detail::listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>
+with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& key, core::FixedList<ByteWindow, N> const& windows,
+                 Body&& body) noexcept;
+
+template <class T, class... Refused, std::size_t N, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+         && detail::KeyedWindowElement<T, N> && detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
+[[nodiscard]] core::Record<
+    core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
+                 WindowRefusal>,
+    core::LoanKey<Brand>>
+with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::FixedArray<ByteWindow, N> const& windows,
+                 Body&& body) noexcept;
+
+template <class T, class... Refused, std::size_t N, class Brand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+         && detail::KeyedWindowElement<T, N> && detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
+[[nodiscard]] core::Result<
+    detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
+with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& key, core::FixedArray<ByteWindow, N> const& windows,
+                 Body&& body) noexcept;
 
 namespace core {
 
@@ -523,8 +647,8 @@ class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
     friend core::Result<
         ::foundation::detail::window_frame_value_t<::foundation::detail::listed_body_result_t<Body, T, Fresh, N>>,
         WindowRefusal>
-    foundation::detail::lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows,
-                                             Body&& body) noexcept;
+    foundation::detail::lend_listed_windows_(core::detail::FrameKey const& key, AlignedBytes& block,
+                                             core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
 
     // The count elements of a tested window from its first byte, after the
     // start of their lifetime, with no check.
@@ -541,17 +665,92 @@ class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
     }
 };
 
+// The door of the frame doors of the windows of a block to the key of the
+// frame doors (the doors of the owners above foundation/core/Frame.h).  Its
+// one member is private.  The invariant: a frame door of a named block lends
+// the windows of the block that its caller names, with the scope brand of its
+// call.  A keyed frame door takes the LoanKey of the brand of its keyed block
+// first, so no second frame of the windows of the block is open.  The mint of
+// a keyed block gives the one key of the fresh brand of its call, with the new
+// block of that brand.  The six frame doors of the windows and
+// mint_keyed_bytes are its friends.  Each door passes the key to the lend of
+// its windows, which builds each ViewMut.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameKeyDoor> {
+    template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
+             && UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
+             && std::is_nothrow_invocable_v<Body&&, FixedList<ViewMut<T, Fresh>, N>&>
+             && FrameResult<std::invoke_result_t<Body&&, FixedList<ViewMut<T, Fresh>, N>&>, Fresh>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
+    friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows,
+                                               Body&& body) noexcept
+        -> core::Result<
+            detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
+            WindowRefusal>;
+    template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
+             && UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
+             && ::foundation::detail::WindowBody<Body&&, ViewMut<T, Fresh>, N>
+             && FrameResult<::foundation::detail::window_body_result_t<Body&&, ViewMut<T, Fresh>, N>, Fresh>
+             && ::foundation::linear::HoldsNoLinearValue<Body>
+    friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows,
+                                               Body&& body) noexcept
+        -> core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
+                        WindowRefusal>;
+    template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh>
+        requires CanMintKeyedBytes<Block, Refused...>
+    friend auto ::foundation::mint_keyed_bytes(Block&& block) noexcept
+        -> core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
+                        core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
+    template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
+             && ::foundation::detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
+    friend auto ::foundation::with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key,
+                                               core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept
+        -> core::Record<
+            core::Result<detail::window_frame_value_t<detail::listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>,
+            core::LoanKey<Brand>>;
+    template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
+             && ::foundation::detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
+    friend auto ::foundation::with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& key,
+                                               core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept
+        -> core::Result<detail::window_frame_value_t<detail::listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>;
+    template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
+             && ::foundation::detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
+    friend auto ::foundation::with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key,
+                                               core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept
+        -> core::Record<
+            core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
+                         WindowRefusal>,
+            core::LoanKey<Brand>>;
+    template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
+             && ::foundation::detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
+    friend auto ::foundation::with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& key,
+                                               core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept
+        -> core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
+                        WindowRefusal>;
+
+    // The key of the frame doors, for the windows of a block in a frame.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 }  // namespace core
 
 namespace detail {
 
 // The windows of the form of a list, each tested, then each pair, and the
 // views lent to body (the windows).  The doors of a block and of a keyed block
-// call it with the brand of their frame.  Complexity: O(W) for the windows and
-// O(W^2) for the check of overlap, and the cost of the body.
+// call it with the brand of their frame and the key of the frame doors, which
+// only they hold.  Complexity: O(W) for the windows and O(W^2) for the check
+// of overlap, and the cost of the body.
 template <class T, class Fresh, std::size_t N, class Body>
 [[nodiscard]] core::Result<window_frame_value_t<listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>
-lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
+lend_listed_windows_(core::detail::FrameKey const& key, AlignedBytes& block,
+                     core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
     using Views = core::FixedList<core::ViewMut<T, Fresh>, N>;
     using Given = listed_body_result_t<Body, T, Fresh, N>;
     core::View<std::uint8_t> const bytes = block.view();
@@ -594,7 +793,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
         std::size_t const count = window.length().raw() / sizeof(T);
         T* const first = static_cast<T*>(static_cast<void*>(block_first + window.start().raw()));
         core::View<T> const elements = core::TestedWindowDoor::laundered_run_(first, count);
-        static_cast<void>(views.append(core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(), elements})
+        static_cast<void>(views.append(core::ViewMut<T, Fresh>{key, elements})
                               .expect("the list of views holds one view for each window"));
     }
     if constexpr (std::is_void_v<Given>) {
@@ -619,8 +818,7 @@ lend_listed_windows_(AlignedBytes& block, core::FixedList<ByteWindow, N> const& 
 // caller names the brand of the frame.  Complexity: O(W) for the windows and
 // O(W^2) for the check of overlap, with W at most max_block_windows, and the
 // cost of the body.
-template <class T, class... Refused, std::size_t N, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
          && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
@@ -630,7 +828,8 @@ template <class T, class... Refused, std::size_t N, class Body,
     detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
     WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_listed_windows_<T, Fresh>(block, windows, static_cast<Body&&>(body));
+    return detail::lend_listed_windows_<T, Fresh>(core::AlignedBytesFrameKeyDoor::key_(), block, windows,
+                                                  static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds
@@ -741,11 +940,11 @@ public:
     // The ViewMut of the elements of the window, with the brand of the frame.
     // The start of their lifetime gives their View, with their values.  A
     // window of no element starts no lifetime, so its View holds no object.
-    // Complexity: O(1).
+    // The key of the frame doors comes from the frame door of the windows,
+    // so only that door lends a tested window.  Complexity: O(1).
     template <::foundation::brand::IsBrand Fresh>
-    [[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> lend() const noexcept {
-        return core::ViewMut<T, Fresh>{core::detail::FrameDoor::key(),
-                                       core::TestedWindowDoor::started_run_<T>(first_, count_)};
+    [[nodiscard]] CRUCIBLE_INLINE core::ViewMut<T, Fresh> lend(core::detail::FrameKey const& key) const noexcept {
+        return core::ViewMut<T, Fresh>{key, core::TestedWindowDoor::started_run_<T>(first_, count_)};
     }
 
 private:
@@ -755,36 +954,18 @@ private:
     std::size_t count_ = 0;
 };
 
-// The type of the argument of a body of the static form at a position: one
-// ViewMut for each window.
-template <class View, std::size_t Position>
-using window_argument_t = View;
-
-// True when body takes one View for each of N positions, with no exception.
-// The gates of the door read only a concept and an alias, so no unit can
-// specialize a template that changes what they admit.
-template <class Body, class View, std::size_t N>
-concept WindowBody = []<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
-    return std::is_nothrow_invocable_v<Body, window_argument_t<View, Positions>...>;
-}(std::make_index_sequence<N>{});
-
-// The result of a body that takes one View for each of N positions.
-template <class Body, class View, std::size_t N>
-using window_body_result_t =
-    typename decltype([]<std::size_t... Positions>(std::index_sequence<Positions...> /*positions*/) consteval {
-        return std::type_identity<std::invoke_result_t<Body, window_argument_t<View, Positions>...>>{};
-    }(std::make_index_sequence<N>{}))::type;
-
 // The windows from Position on, each tested in order, then each pair, and
 // the tested windows lent to body (the door below).  tested holds the
 // windows before Position, which passed their tests.  A tested window goes
 // by value, so the door reads each of its two words one time, before the
 // start of the lifetime of a window hides the memory of the window from the
-// optimizer.  Complexity: N - Position tests, and the compares of the pairs.
+// optimizer.  The door gives the key of the frame doors, which only the
+// frame doors of the windows hold.  Complexity: N - Position tests, and the
+// compares of the pairs.
 template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std::size_t N, class Body, class... Tested>
-[[nodiscard]] CRUCIBLE_INLINE auto lend_tested_windows_(core::View<std::uint8_t> bytes,
-                                                        core::FixedArray<ByteWindow, N> const& windows, Body&& body,
-                                                        Tested... tested) noexcept
+[[nodiscard]] CRUCIBLE_INLINE auto
+lend_tested_windows_(core::detail::FrameKey const& key, core::View<std::uint8_t> bytes,
+                     core::FixedArray<ByteWindow, N> const& windows, Body&& body, Tested... tested) noexcept
     -> core::Result<window_frame_value_t<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal> {
     if constexpr (Position < N) {
         TestedWindow<T> next{};
@@ -792,7 +973,8 @@ template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std
         if (TestedWindow<T>::is_refused(bytes, windows.at(core::index<Position>()), next, refusal)) [[unlikely]] {
             return core::err(refusal);
         }
-        return lend_tested_windows_<T, Fresh, Position + 1>(bytes, windows, static_cast<Body&&>(body), tested..., next);
+        return lend_tested_windows_<T, Fresh, Position + 1>(key, bytes, windows, static_cast<Body&&>(body), tested...,
+                                                            next);
     } else {
         if (has_window_overlap_(windows, std::make_index_sequence<N>{})) [[unlikely]] {
             return core::err(WindowRefusal::overlap);
@@ -802,10 +984,10 @@ template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std
         // of the starts of their lifetimes does not change a byte.
         using Given = window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>;
         if constexpr (std::is_void_v<Given>) {
-            static_cast<Body&&>(body)(tested.template lend<Fresh>()...);
+            static_cast<Body&&>(body)(tested.template lend<Fresh>(key)...);
             return core::Unit{};
         } else {
-            return static_cast<Body&&>(body)(tested.template lend<Fresh>()...);
+            return static_cast<Body&&>(body)(tested.template lend<Fresh>(key)...);
         }
     }
 }
@@ -823,8 +1005,7 @@ template <class T, ::foundation::brand::IsBrand Fresh, std::size_t Position, std
 // list, in the same order: the tests of each window in order, then the
 // pairs.  Complexity: N tests and N(N-1)/2 compares, with N at most
 // max_block_windows, and the cost of the body.
-template <class T, class... Refused, std::size_t N, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
@@ -832,7 +1013,8 @@ template <class T, class... Refused, std::size_t N, class Body,
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_tested_windows_<T, Fresh, 0>(block.view(), windows, static_cast<Body&&>(body));
+    return detail::lend_tested_windows_<T, Fresh, 0>(core::AlignedBytesFrameKeyDoor::key_(), block.view(), windows,
+                                                     static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds
@@ -903,21 +1085,16 @@ public:
     }
 };
 
-// The gate of mint_keyed_bytes: an AlignedBytes that the caller gives up, and
-// no explicit argument.
-template <class Block, class... Refused>
-concept CanMintKeyedBytes = (sizeof...(Refused) == 0) && std::is_same_v<Block, AlignedBytes>;
-
 // A keyed block of the bytes of block, and its LoanKey: auto [keyed, key] =
 // mint_keyed_bytes(std::move(block)).  The brand is the fresh brand of the
 // call site, in undeducible_brand_t.  Complexity: O(1), a move of three words.
-template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh>
     requires CanMintKeyedBytes<Block, Refused...>
 [[nodiscard]] core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
                            core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_keyed_bytes(Block&& block) noexcept {
     return {KeyedBytes<Fresh>{detail::AlignedBytesDoor::key(), static_cast<Block&&>(block)},
-            core::LoanKey<Fresh>{core::detail::FrameDoor::key()}};
+            core::LoanKey<Fresh>{core::AlignedBytesFrameKeyDoor::key_()}};
 }
 
 // A named block stays with the caller, so the keyed block would share its
@@ -928,28 +1105,6 @@ template <class... Refused, class Block>
 void mint_keyed_bytes(Block&& block) =
     delete("mint_keyed_bytes takes the block into the keyed block: pass std::move(block)");
 
-namespace detail {
-
-// The body of a keyed frame of the windows of the form of a list: the body
-// of the door of a block, which reaches no key of the brand (the gate).
-template <class Body, class T, class Brand, class Fresh, std::size_t N>
-concept KeyedListedWindowBody = std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
-                             && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh>
-                             && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
-
-// The body of a keyed frame of a static count of windows.
-template <class Body, class T, class Brand, class Fresh, std::size_t N>
-concept KeyedFixedWindowBody = WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
-                            && core::FrameResult<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
-                            && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
-
-// The element of the windows of a keyed frame.
-template <class T, std::size_t N>
-concept KeyedWindowElement =
-    (N <= max_block_windows) && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>;
-
-}  // namespace detail
-
 // The keyed frame door of some windows of a keyed block (the windows, the
 // loan key).  It gives the views as with_mut_windows of an AlignedBytes does,
 // and its tests and refusals are those of that door.  The key moves into the
@@ -957,8 +1112,7 @@ concept KeyedWindowElement =
 // window.  The body reaches no key of the brand of the block (the gate), so
 // no code inside the frame opens a second frame of the windows of the block.
 // Complexity: as with_mut_windows of an AlignedBytes.
-template <class T, class... Refused, std::size_t N, class Brand, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
          && detail::KeyedWindowElement<T, N> && detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
 [[nodiscard]] core::Record<
@@ -966,29 +1120,29 @@ template <class T, class... Refused, std::size_t N, class Brand, class Body,
     core::LoanKey<Brand>>
 with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::FixedList<ByteWindow, N> const& windows,
                  Body&& body) noexcept {
-    return {detail::lend_listed_windows_<T, Fresh>(keyed_block_of_(core::detail::FrameDoor::key(), block), windows,
-                                                   static_cast<Body&&>(body)),
+    return {detail::lend_listed_windows_<T, Fresh>(core::AlignedBytesFrameKeyDoor::key_(),
+                                                   keyed_block_of_(core::AlignedBytesFrameKeyDoor::key_(), block),
+                                                   windows, static_cast<Body&&>(body)),
             std::move(key)};
 }
 
 // The same door with a borrow of the key for the call: the key stays with the
 // caller, and the door gives the Result.
-template <class T, class... Refused, std::size_t N, class Brand, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
          && detail::KeyedWindowElement<T, N> && detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
 [[nodiscard]] core::Result<detail::window_frame_value_t<detail::listed_body_result_t<Body, T, Fresh, N>>, WindowRefusal>
 with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& /*key*/, core::FixedList<ByteWindow, N> const& windows,
                  Body&& body) noexcept {
-    return detail::lend_listed_windows_<T, Fresh>(keyed_block_of_(core::detail::FrameDoor::key(), block), windows,
-                                                  static_cast<Body&&>(body));
+    return detail::lend_listed_windows_<T, Fresh>(core::AlignedBytesFrameKeyDoor::key_(),
+                                                  keyed_block_of_(core::AlignedBytesFrameKeyDoor::key_(), block),
+                                                  windows, static_cast<Body&&>(body));
 }
 
 // The keyed frame door of a static count of windows (the windows, the loan
 // key): the door of the static count of an AlignedBytes, with the key moved in
 // and given back.
-template <class T, class... Refused, std::size_t N, class Brand, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
          && detail::KeyedWindowElement<T, N> && detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
 [[nodiscard]] core::Record<
@@ -997,22 +1151,24 @@ template <class T, class... Refused, std::size_t N, class Brand, class Body,
     core::LoanKey<Brand>>
 with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>&& key, core::FixedArray<ByteWindow, N> const& windows,
                  Body&& body) noexcept {
-    return {detail::lend_tested_windows_<T, Fresh, 0>(keyed_block_of_(core::detail::FrameDoor::key(), block).view(),
-                                                      windows, static_cast<Body&&>(body)),
-            std::move(key)};
+    return {
+        detail::lend_tested_windows_<T, Fresh, 0>(core::AlignedBytesFrameKeyDoor::key_(),
+                                                  keyed_block_of_(core::AlignedBytesFrameKeyDoor::key_(), block).view(),
+                                                  windows, static_cast<Body&&>(body)),
+        std::move(key)};
 }
 
 // The same door with a borrow of the key for the call.
-template <class T, class... Refused, std::size_t N, class Brand, class Body,
-          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
          && detail::KeyedWindowElement<T, N> && detail::KeyedFixedWindowBody<Body, T, Brand, Fresh, N>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(KeyedBytes<Brand>& block, core::LoanKey<Brand>& /*key*/,
                  core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_tested_windows_<T, Fresh, 0>(keyed_block_of_(core::detail::FrameDoor::key(), block).view(),
-                                                     windows, static_cast<Body&&>(body));
+    return detail::lend_tested_windows_<T, Fresh, 0>(
+        core::AlignedBytesFrameKeyDoor::key_(), keyed_block_of_(core::AlignedBytesFrameKeyDoor::key_(), block).view(),
+        windows, static_cast<Body&&>(body));
 }
 
 // A body of a keyed frame of windows that reaches a key of the brand of the

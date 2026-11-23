@@ -245,6 +245,23 @@ class SpscSplitRefDoor final : ::foundation::NoObject<SpscSplitRefDoor> {
     }
 };
 
+// The door of the mint of a split to the key of the frame doors (the doors
+// of the owners above foundation/core/Frame.h).  Its one member is private,
+// and mint_spsc_split of fixy/concurrent/SpscEnds.h is its one friend.  The
+// invariant: the mint gives the one key of each side of the fresh brand of
+// its call, with the new split of that brand.  The door of the split takes
+// the key from the mint and builds the two keys.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class SpscSplitFrameKeyDoor final : ::foundation::NoObject<SpscSplitFrameKeyDoor> {
+    template <class Owner, class Marker, class... Args, ::foundation::brand::IsBrand Fresh>
+        requires ::fixy::concurrent::CanMintSpscSplit<Owner, Marker, Args...>
+    friend auto ::fixy::concurrent::mint_spsc_split(Marker allocation, Args&&... args) noexcept
+        -> ::fixy::concurrent::SpscSplitParts<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>;
+
+    // The key of the frame doors, for the keys of the two sides of a split.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 }  // namespace foundation::core
 
 namespace fixy::concurrent {
@@ -663,14 +680,15 @@ namespace detail {
 
 // The one door that builds a split, for mint_spsc_split.  The split names it
 // as a friend, and no other code builds a split.  The door is in namespace
-// detail, and a use of that namespace outside the base is a finding.
+// detail, and a use of that namespace outside the base is a finding.  build
+// takes the key of the frame doors from the mint, which alone holds it, and
+// builds the key of each side with it.
 template <class Owner, class Brand>
 struct SpscSplitDoor final {
     [[nodiscard]] static SpscSplitParts<Owner, Brand>
-    build(::foundation::core::Box<Owner>&& owner, ::foundation::core::Ref<Owner, SpscSplitBrand<Owner>> ref) noexcept {
-        return {SpscSplit<Owner, Brand>{std::move(owner), ref},
-                ProducerKey<Brand>{::foundation::core::detail::FrameDoor::key()},
-                ConsumerKey<Brand>{::foundation::core::detail::FrameDoor::key()}};
+    build(::foundation::core::detail::FrameKey const& key, ::foundation::core::Box<Owner>&& owner,
+          ::foundation::core::Ref<Owner, SpscSplitBrand<Owner>> ref) noexcept {
+        return {SpscSplit<Owner, Brand>{std::move(owner), ref}, ProducerKey<Brand>{key}, ConsumerKey<Brand>{key}};
     }
 
     // The split of a held brand, with no key (the held split).
@@ -698,7 +716,8 @@ mint_spsc_split(Marker allocation, Args&&... args) noexcept {
     ::foundation::core::Box<Owner> owner =
         ::foundation::core::mint_box<Owner>(allocation, static_cast<Args&&>(args)...);
     auto const ref = ::foundation::core::SpscSplitRefDoor::lend_<SpscSplitBrand<Owner>>(*owner);
-    return detail::SpscSplitDoor<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>::build(std::move(owner), ref);
+    return detail::SpscSplitDoor<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>::build(
+        ::foundation::core::SpscSplitFrameKeyDoor::key_(), std::move(owner), ref);
 }
 
 // Builds the owner in a Box of the allocation capability and the split of the

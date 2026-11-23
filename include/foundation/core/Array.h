@@ -223,6 +223,86 @@ class ArrayRefDoor final : ::foundation::NoObject<ArrayRefDoor> {
     }
 };
 
+// The array of a mask of this header.  ArrayFrameOwner names it, so this
+// declaration stands before the concept, and the definition below gives the
+// default argument.
+template <class T, std::size_t Align>
+    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+class MaskedArray;
+
+// The gate of mint_fixed_array: an element that a FixedArray of N holds and
+// that has a default constructor with no throw, and no explicit argument
+// after T and N.
+template <class T, std::size_t N, class... Refused>
+concept CanMintFixedArray = (sizeof...(Refused) == 0) && OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+                         && std::is_nothrow_default_constructible_v<T>;
+
+// The arrays that the free frame door takes (foundation/core/Frame.h).  Each
+// owns its elements on the heap alone, and a move gives the storage to the
+// target with no copy of an element.  A FixedArray holds its elements inline,
+// so a move would copy them: its frame door is the member with_mut, which
+// lends the elements in place.
+template <class Owner>
+concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^HeapArray, ^^MaskedArray>;
+
+namespace detail {
+
+// The extent of the run of an array in a frame door: the extent of its
+// view(), the dynamic extent for each array of the free door.
+template <class Owner>
+inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner const&>().view())::extent;
+
+}  // namespace detail
+
+// The mint of a keyed FixedArray and the free frame door of a heap array (the
+// definitions below).  ArrayFrameKeyDoor names them as friends, so these
+// declarations stand before the door, and the default argument of the brand
+// belongs to them.
+template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CanMintFixedArray<T, N, Refused...>
+[[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
+                               LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
+mint_fixed_array() noexcept;
+
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ArrayFrameOwner<Owner>
+         && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+[[nodiscard]] constexpr detail::frame_return_t<
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept;
+
+// The door of the arrays of this header to the key of the frame doors (the
+// doors of the owners above foundation/core/Frame.h).  Its one member is
+// private.  The invariant: a FixedArray lends its own elements in place, in
+// the frame of a door of the array, with the scope brand of the call of the
+// door.  mint_fixed_array gives the one key of the fresh brand of its call,
+// with the new array of that brand.  The free frame door holds a HeapArray or
+// a MaskedArray by move in its frame, and lends its run with the scope brand
+// of its call.  FixedArray, mint_fixed_array and the free frame door are its
+// friends.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class ArrayFrameKeyDoor final : ::foundation::NoObject<ArrayFrameKeyDoor> {
+    template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+    friend class FixedArray;
+    template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
+        requires CanMintFixedArray<T, N, Refused...>
+    friend constexpr auto ::foundation::core::mint_fixed_array() noexcept
+        -> Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
+                  LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
+    template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ArrayFrameOwner<Owner>
+             && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
+    friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept -> detail::frame_return_t<
+        detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>,
+        Owner>;
+
+    // The key of the frame doors, for the run of an array that a friend holds.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 namespace detail {
 
 // The type of the parameter at position Position of the list constructor of
@@ -428,7 +508,7 @@ public:
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_<T, N>(elements_)});
+            ViewMut<T, Fresh, N>{ArrayFrameKeyDoor::key_(), detail::view_of_array_<T, N>(elements_)});
     }
 
     // A body whose result holds a borrow or names the brand of the frame
@@ -464,8 +544,8 @@ public:
     [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(std::move(key), detail::view_of_array_<T, N>(elements_),
-                                             static_cast<Body&&>(body));
+        return detail::give_run_back_<Fresh>(ArrayFrameKeyDoor::key_(), std::move(key),
+                                             detail::view_of_array_<T, N>(elements_), static_cast<Body&&>(body));
     }
 
     // The same door with a borrow of the key for the call: body gets the
@@ -475,7 +555,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), detail::view_of_array_<T, N>(elements_)});
+            ViewMut<T, Fresh, N>{ArrayFrameKeyDoor::key_(), detail::view_of_array_<T, N>(elements_)});
     }
 
     // A body that reaches a key of the brand of the array binds to these
@@ -625,25 +705,18 @@ public:
     }
 };
 
-// The gate of mint_fixed_array: an element that a FixedArray of N holds and
-// that has a default constructor with no throw, and no explicit argument
-// after T and N.
-template <class T, std::size_t N, class... Refused>
-concept CanMintFixedArray = (sizeof...(Refused) == 0) && OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
-                         && std::is_nothrow_default_constructible_v<T>;
-
 // A keyed FixedArray of N value-initialized elements and its LoanKey (the
 // loan key of foundation/core/Frame.h): auto [array, key] =
 // mint_fixed_array<T, N>().  The brand is the fresh brand of the call site, in
 // undeducible_brand_t, so no caller names it, and no target type sets it.
 // The array comes back as a prvalue part of the Record, so no element moves.
 // Complexity: O(N) for the value-initialization.
-template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
     requires CanMintFixedArray<T, N, Refused...>
 [[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
                                LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
 mint_fixed_array() noexcept {
-    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{detail::FrameDoor::key()}};
+    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{ArrayFrameKeyDoor::key_()}};
 }
 
 // ── HeapArray ──────────────────────────────────────────────────────────────
@@ -1391,30 +1464,13 @@ template <class T, std::size_t Align = alignof(T), class Marker>
 
 // ── The frame doors ────────────────────────────────────────────────────────
 
-// The arrays that the free frame door takes (foundation/core/Frame.h).  Each
-// owns its elements on the heap alone, and a move gives the storage to the
-// target with no copy of an element.  A FixedArray holds its elements inline,
-// so a move would copy them: its frame door is the member with_mut, which
-// lends the elements in place.
-template <class Owner>
-concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^HeapArray, ^^MaskedArray>;
-
-namespace detail {
-
-// The extent of the run of an array in a frame door: the extent of its
-// view(), the dynamic extent for each array of the free door.
-template <class Owner>
-inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner const&>().view())::extent;
-
-}  // namespace detail
-
 // The frame door of a heap array.  The array moves into the frame, body gets
 // the ViewMut of its elements, and the door gives the array back: alone for a
 // body that gives void, and after the result in a Record for each other body.
 // The pack refuses each explicit argument, so no caller names the brand of
 // the frame.  A HeapArray and a MaskedArray move a pointer and a count in and
 // out.  Complexity: O(1), and the cost of the body.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
          && ArrayFrameOwner<Owner>
          && FrameBody<Body, typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>
@@ -1423,8 +1479,9 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
 with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     View<typename Owner::element_type, detail::frame_extent_v<Owner>> const run =
-        frame_run_(detail::FrameDoor::key(), held);
-    return detail::give_run_back_<Fresh>(static_cast<Owner&&>(held), run, static_cast<Body&&>(body));
+        frame_run_(ArrayFrameKeyDoor::key_(), held);
+    return detail::give_run_back_<Fresh>(ArrayFrameKeyDoor::key_(), static_cast<Owner&&>(held), run,
+                                         static_cast<Body&&>(body));
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds

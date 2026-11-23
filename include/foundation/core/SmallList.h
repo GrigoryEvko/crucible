@@ -62,6 +62,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -362,6 +363,36 @@ template <class T, std::size_t Inline>
     return SmallList<T, Inline>{Quantity<unit::Element, std::size_t>{wanted < largest ? wanted : largest}};
 }
 
+// The frame door of a SmallList (the definition below).  SmallListFrameKeyDoor
+// names it as a friend, so this declaration stands before the door, and the
+// default argument of the brand belongs to it.
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+         && ::foundation::reflect::IsInstanceOf<Owner, ^^SmallList>
+         && FrameBody<Body, typename Owner::element_type, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<
+    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
+with_mut(Owner&& owner, Body&& body) noexcept;
+
+// The door of the frame door of a SmallList to the key of the frame doors
+// (the doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and the frame door is its one friend.  The invariant: the frame
+// door holds the list by move in its frame, the list lends its elements for
+// the time of the body, and the door lends the run of its live elements with
+// the scope brand of its call.  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
+class SmallListFrameKeyDoor final : ::foundation::NoObject<SmallListFrameKeyDoor> {
+    template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
+             && ::foundation::reflect::IsInstanceOf<Owner, ^^SmallList>
+             && FrameBody<Body, typename Owner::element_type, Fresh>
+    friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept
+        -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>;
+
+    // The key of the frame doors, for the run of the list in the frame.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The frame door of a SmallList (foundation/core/Frame.h).  The list moves
 // into the frame, body gets the ViewMut of its elements, and the door gives
 // the list back: alone for a body that gives void, and after the result in a
@@ -370,7 +401,7 @@ template <class T, std::size_t Inline>
 // reach the list in that time.  The pack refuses each explicit argument, so no
 // caller names the brand of the frame.  Complexity: two moves of the state,
 // two plain steps of the lend count, and the cost of the body.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
          && ::foundation::reflect::IsInstanceOf<Owner, ^^SmallList>
          && FrameBody<Body, typename Owner::element_type, Fresh>
@@ -382,12 +413,12 @@ with_mut(Owner&& owner, Body&& body) noexcept {
     Owner held{static_cast<Owner&&>(owner)};
     if constexpr (std::is_void_v<Given>) {
         held.with_view([&body](View<T> run) noexcept {
-            static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
+            static_cast<Body&&>(body)(ViewMut<T, Fresh>{SmallListFrameKeyDoor::key_(), run});
         });
         return held;
     } else {
         std::remove_cv_t<Given> result = held.with_view([&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
-            return static_cast<Body&&>(body)(ViewMut<T, Fresh>{detail::FrameDoor::key(), run});
+            return static_cast<Body&&>(body)(ViewMut<T, Fresh>{SmallListFrameKeyDoor::key_(), run});
         });
         return detail::frame_return_t<Given, Owner>{static_cast<std::remove_cv_t<Given>&&>(result),
                                                     static_cast<Owner&&>(held)};

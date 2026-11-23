@@ -77,6 +77,21 @@ class WindowLoanRefDoor final : ::foundation::NoObject<WindowLoanRefDoor> {
     }
 };
 
+// The door of a WindowLoan to the key of the frame doors (the doors of the
+// owners above foundation/core/Frame.h).  Its one member is private, and
+// WindowLoan is its one friend.  The invariant: a loan reads the run of the
+// FixedArray of its stack only to take the window above the top, which no
+// other open loan holds.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class WindowLoanFrameKeyDoor final : ::foundation::NoObject<WindowLoanFrameKeyDoor> {
+    template <class T, std::size_t N>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_default_constructible_v<T>
+    friend class WindowLoan;
+
+    // The key of the frame doors, for the run of the slots of a stack.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The count of the elements of a window.
 using WindowCount = Quantity<unit::Element, std::uint32_t>;
 
@@ -129,7 +144,7 @@ class [[nodiscard]] WindowLoan final {
         std::size_t const top = stack.top_;
         // Only a loan moves the top, and only to the end of a window that fits.
         [[assume(top <= N)]];
-        Option<View<T>> window = View<T>{frame_run_(detail::FrameDoor::key(), stack.slots_)}.window(top, count);
+        Option<View<T>> window = View<T>{frame_run_(WindowLoanFrameKeyDoor::key_(), stack.slots_)}.window(top, count);
         if (window.is_some()) stack.top_ = top + count;
         return window;
     }

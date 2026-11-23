@@ -271,6 +271,53 @@ template <std::size_t N>
     requires NetworkCount<N>
 inline constexpr std::size_t sort_network_size = detail::write_network_(N, nullptr);
 
+namespace side {
+
+// The scratch of a stable sort: a run of the count of the elements, which the
+// sort writes between its passes.
+struct SortScratch final {};
+
+}  // namespace side
+
+// The plan of a network, the stable sort and the radix sort (the definitions
+// below).  SortFrameKeyDoor and SortRunDoor name them as friends, so these
+// declarations stand before the doors.
+template <std::size_t N>
+    requires NetworkCount<N>
+[[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> plan_sort_network() noexcept;
+
+namespace detail {
+
+template <class T, class Less>
+class StableSort;
+
+template <std::size_t Bytes, std::size_t DigitBits, class Tally, class T, class KeyOf>
+constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch, KeyOf const& key_of) noexcept;
+
+}  // namespace detail
+
+// The door of the sorts of this header to the key of the frame doors (the
+// doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and plan_sort_network, StableSort and radix_sort_ are its
+// friends.  The invariant: each friend reads the run of a FixedArray that it
+// builds in its own frame, as the stack of its merge tree, the flags of a
+// partition or the counts of a digit.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class SortFrameKeyDoor final : ::foundation::NoObject<SortFrameKeyDoor> {
+    template <std::size_t N>
+        requires NetworkCount<N>
+    friend consteval auto ::foundation::core::plan_sort_network() noexcept
+        -> FixedArray<Comparator, sort_network_size<N>>;
+    template <class T, class Less>
+    friend class detail::StableSort;
+    template <std::size_t Bytes, std::size_t DigitBits, class Tally, class T, class KeyOf>
+    friend constexpr void detail::radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch,
+                                              KeyOf const& key_of) noexcept;
+
+    // The key of the frame doors, for the run of an array of a friend.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The comparators of the network of N elements, in the order of the order.
 // A step reads the elements after each earlier step that shares a position
 // with it.
@@ -279,7 +326,7 @@ template <std::size_t N>
 [[nodiscard]] consteval FixedArray<Comparator, sort_network_size<N>> plan_sort_network() noexcept {
     FixedArray<Comparator, sort_network_size<N>> steps{};
     static_cast<void>(
-        detail::write_network_(N, first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), steps))));
+        detail::write_network_(N, first_of_(detail::BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), steps))));
     return steps;
 }
 
@@ -353,14 +400,6 @@ constexpr void sort_by_network(ViewMut<T, Brand, N> elements, Less less = Less{}
 // quicksort stops at it, and the merge tree in its eager mode sorts runs of
 // it.
 inline constexpr std::size_t stable_sort_run = 32;
-
-namespace side {
-
-// The scratch of a stable sort: a run of the count of the elements, which the
-// sort writes between its passes.
-struct SortScratch final {};
-
-}  // namespace side
 
 namespace detail {
 
@@ -559,12 +598,6 @@ constexpr void merge_halves_(View<T const> source, View<T> target, Less& less) n
     CRUCIBLE_FATAL_INVARIANT(left == left_end && right == right_end);
 }
 
-template <class T, class Less>
-class StableSort;
-
-template <std::size_t Bytes, std::size_t DigitBits, class Tally, class T, class KeyOf>
-constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& scratch, KeyOf const& key_of) noexcept;
-
 }  // namespace detail
 
 // The door of the stable sort to the raw constructors of a View, one of the
@@ -727,8 +760,8 @@ private:
         }
         FixedArray<TreeRun, merge_tree_height> runs{};
         FixedArray<std::uint8_t, merge_tree_height> depths{};
-        TreeRun* const run_stack = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), runs));
-        std::uint8_t* const depth_stack = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), depths));
+        TreeRun* const run_stack = first_of_(BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), runs));
+        std::uint8_t* const depth_stack = first_of_(BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), depths));
         std::size_t height = 0;
         std::size_t scan = 0;
         TreeRun previous{};
@@ -822,7 +855,7 @@ private:
         if (length < scalar_end) return length;
         while (length + run_scan_block <= count) {
             FixedArray<std::uint8_t, run_scan_block> breaks{};
-            std::uint8_t* const is_broken = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), breaks));
+            std::uint8_t* const is_broken = first_of_(BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), breaks));
             std::uint8_t is_any_broken = 0;
             for (std::size_t offset = 0; offset < run_scan_block; ++offset) {
                 is_broken[offset] = static_cast<std::uint8_t>(is_break(SortCount{length + offset}));
@@ -1009,7 +1042,7 @@ private:
         // lanes when less allows it.  The writes then read the bits.
         while (index + partition_block <= count) {
             FixedArray<std::uint8_t, partition_block> lefts{};
-            std::uint8_t* const is_left = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), lefts));
+            std::uint8_t* const is_left = first_of_(BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), lefts));
             T const* const block = first + index;
             for (std::size_t offset = 0; offset < partition_block; ++offset) {
                 if constexpr (Pivot == PivotSide::right) {
@@ -1191,7 +1224,7 @@ constexpr void radix_sort_(View<T> run, Side<side::SortScratch, View<T>> const& 
     std::size_t const count = run.size();
     T* const elements = first_of_(BaseLayerRead{}, run);
     FixedArray<Tally, buckets * passes> counts{};
-    Tally* const tally = first_of_(BaseLayerRead{}, frame_run_(FrameDoor::key(), counts));
+    Tally* const tally = first_of_(BaseLayerRead{}, frame_run_(SortFrameKeyDoor::key_(), counts));
     for (std::size_t index = 0; index < count; ++index) {
         auto const key = key_of(elements[index]);
         for (std::size_t pass = 0; pass < passes; ++pass) {

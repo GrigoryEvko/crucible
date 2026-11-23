@@ -371,6 +371,29 @@ mint_spawn_on_host(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::Host
 
 class ParallelForRunner;
 
+}  // namespace fixy::spawn
+
+namespace foundation::core {
+
+// The door of the runner of a parallel loop to the key of the frame doors
+// (the doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and ParallelForRunner of fixy/concurrent/Spawn.h is its one friend.
+// The invariant: the runner reads the run of each shard that the split of its
+// region cut, and it lends the run of a shard to one body at a time, with the
+// tag of the shard as its brand.  The split cut the shards out of one run, so
+// no two shards overlap.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class ParallelForFrameKeyDoor final : ::foundation::NoObject<ParallelForFrameKeyDoor> {
+    friend class ::fixy::spawn::ParallelForRunner;
+
+    // The key of the frame doors, for the runs of the shards.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::spawn {
+
 namespace detail {
 
 // The run that the frame of a shard lends to its body: the ViewMut of the
@@ -510,7 +533,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     template <typename Shards>
     [[nodiscard]] static auto first_of_whole_(Shards& shards) noexcept {
         return first_of_(::foundation::core::detail::BaseLayerRead{},
-                         frame_run_(::foundation::core::detail::FrameDoor::key(), std::get<0>(shards)));
+                         frame_run_(::foundation::core::ParallelForFrameKeyDoor::key_(), std::get<0>(shards)));
     }
 
     // The frame of shard I (design note 3): body gets the ViewMut of the
@@ -526,7 +549,8 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         auto& shard = std::get<I>(shards);
         using Shard = std::remove_reference_t<decltype(shard)>;
         static_assert(std::is_same_v<Element, typename Shard::value_type>);
-        ::foundation::core::View<Element> const run = frame_run_(::foundation::core::detail::FrameDoor::key(), shard);
+        ::foundation::core::View<Element> const run =
+            frame_run_(::foundation::core::ParallelForFrameKeyDoor::key_(), shard);
         ShardPlace<N> const place{
             ::foundation::core::index<I>(),
             static_cast<std::size_t>(first_of_(::foundation::core::detail::BaseLayerRead{}, run) - whole_first)};
@@ -535,7 +559,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         } else {
             static_cast<void>(body(
                 ::foundation::core::ViewMut<Element, typename Shard::tag_type>{
-                    ::foundation::core::detail::FrameDoor::key(), run},
+                    ::foundation::core::ParallelForFrameKeyDoor::key_(), run},
                 place));
         }
     }

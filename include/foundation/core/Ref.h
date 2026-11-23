@@ -1268,6 +1268,27 @@ concept LinearBoxBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std
 template <class Body, class T>
 using box_frame_return_t = detail::frame_return_t<detail::body_result_t<Body&&, T&>, Box<T>>;
 
+// The frame door of a Box (the definition below).  BoxFrameKeyDoor names it
+// as a friend, so this declaration stands before the door.
+template <BoxPayload T, class Body>
+    requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
+[[nodiscard]] box_frame_return_t<Body, T> with_mut(Box<T>&& box, Body&& body) noexcept;
+
+// The door of the frame door of a Box to the key of the frame doors (the
+// doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and the frame door is its one friend.  The invariant: the frame
+// door reads the object of the Box that moves into its frame, and the Box
+// owns that object alone.  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
+class BoxFrameKeyDoor final : ::foundation::NoObject<BoxFrameKeyDoor> {
+    template <BoxPayload T, class Body>
+        requires DroppableBoxPayload<T> && BoxFrameBody<Body, T>
+    friend auto ::foundation::core::with_mut(Box<T>&& box, Body&& body) noexcept -> box_frame_return_t<Body, T>;
+
+    // The key of the frame doors, for the object of a Box in the frame.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The frame door of a Box (the frame of a Box).  Complexity: O(1), and the
 // cost of the body.
 template <BoxPayload T, class Body>
@@ -1278,7 +1299,7 @@ template <BoxPayload T, class Body>
     // The test of the object comes before the move, so no fatal path stands
     // between the move in and the move out, and the optimizer can drop the
     // store of the moved-from Box when the body does not read it.
-    T& object = frame_object_(detail::FrameDoor::key(), box);
+    T& object = frame_object_(BoxFrameKeyDoor::key_(), box);
     Box<T> held{std::move(box)};
     if constexpr (std::is_void_v<Given>) {
         static_cast<Body&&>(body)(object);

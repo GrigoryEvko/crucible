@@ -154,6 +154,8 @@
 //   not written.  format is no part of a hot path.
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -1131,8 +1133,55 @@ constexpr void put_byte_(HashState& state, std::size_t& position, std::byte byte
     }
 }
 
+// The writers of the images of parts (the definitions below).
+// ProtocolFrameKeyDoor names them as friends, so these declarations stand
+// before the door.
+template <std::size_t Offset, class Element, std::size_t Count>
+constexpr void hash_array_(HashState& state, Element const* first) noexcept;
+
 template <std::size_t Offset, class T>
 constexpr void hash_part_(HashState& state, T const& part) noexcept;
+
+template <class T>
+constexpr void hash_run_(HashState& state, T const* first, std::size_t count) noexcept;
+
+struct HeapCursor;
+struct HeapFold;
+
+template <class T, class Marker>
+[[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept;
+
+template <class T>
+constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept;
+
+}  // namespace detail
+
+// The door of the writers of the images of parts to the key of the frame
+// doors (the doors of the owners above foundation/core/Frame.h).  Its one
+// member is private, and hash_array_, hash_part_, hash_run_,
+// decode_heap_part_ and fold_fixed_part_ are its friends.  The invariant: a
+// writer reads the run of an array that it builds in its own frame, the
+// image of one part or the new HeapArray of a heap part, and no other name
+// reaches that array while the writer runs.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ProtocolFrameKeyDoor final : ::foundation::NoObject<ProtocolFrameKeyDoor> {
+    template <std::size_t Offset, class Element, std::size_t Count>
+    friend constexpr void detail::hash_array_(detail::HashState& state, Element const* first) noexcept;
+    template <std::size_t Offset, class T>
+    friend constexpr void detail::hash_part_(detail::HashState& state, T const& part) noexcept;
+    template <class T>
+    friend constexpr void detail::hash_run_(detail::HashState& state, T const* first, std::size_t count) noexcept;
+    template <class T, class Marker>
+    friend auto detail::decode_heap_part_(T& part, Marker allocation, detail::HeapCursor& cursor,
+                                          DecodeFault& fault) noexcept -> bool;
+    template <class T>
+    friend constexpr void detail::fold_fixed_part_(detail::HeapFold& fold, T const& part) noexcept;
+
+    // The key of the frame doors, for the run of an array of a writer.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+namespace detail {
 
 // The fold of a class: each base and each member of its image, at its offset
 // in the image.
@@ -1195,7 +1244,7 @@ constexpr void hash_array_(HashState& state, Element const* first) noexcept {
         for (std::size_t index = 0; index < Count; ++index) {
             FixedArray<std::byte, step> image{};
             detail::encode_part_(first[index],
-                                 first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
+                                 first_of_(detail::BaseLayerRead{}, frame_run_(ProtocolFrameKeyDoor::key_(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1218,7 +1267,7 @@ constexpr void hash_part_(HashState& state, T const& part) noexcept {
         // stack and folds it as an array of bytes at the same offset.
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        std::byte* const first = first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image));
+        std::byte* const first = first_of_(detail::BaseLayerRead{}, frame_run_(ProtocolFrameKeyDoor::key_(), image));
         detail::encode_part_(part, first);
         detail::hash_array_<Offset, std::byte, bytes>(state, first);
     } else if constexpr (derives_protocol_at(^^Bare)) {
@@ -1256,7 +1305,7 @@ constexpr void hash_run_(HashState& state, T const* first, std::size_t count) no
         for (; index < count; ++index) {
             FixedArray<std::byte, step> image{};
             detail::encode_part_(first[index],
-                                 first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
+                                 first_of_(detail::BaseLayerRead{}, frame_run_(ProtocolFrameKeyDoor::key_(), image)));
             for (std::byte const byte : image.view()) {
                 detail::put_byte_(state, position, byte);
             }
@@ -1368,9 +1417,6 @@ struct HeapCursor final {
     std::size_t const largest = max_view_count(1);
     return budget.raw() < largest ? budget.raw() : largest;
 }
-
-template <class T, class Marker>
-[[nodiscard]] bool decode_heap_part_(T& part, Marker allocation, HeapCursor& cursor, DecodeFault& fault) noexcept;
 
 // Takes the storage of count elements from the budget of the cursor: the
 // bytes that the mint of a HeapArray allocates for count elements of
@@ -1485,7 +1531,7 @@ template <class T, class Marker>
         Bare array = mint_heap_array_with<Element, align>(allocation, count, build);
         // The decode writes each element in turn and returns at the first
         // fault, so it takes the keyed run of the new array.
-        for (Element& element : frame_run_(detail::FrameDoor::key(), array)) {
+        for (Element& element : frame_run_(ProtocolFrameKeyDoor::key_(), array)) {
             if (!detail::decode_part_(element, cursor.first, cursor.offset, fault)) return false;
             cursor.advance(step);
         }
@@ -1562,7 +1608,7 @@ constexpr void fold_fixed_part_(HeapFold& fold, T const& part) noexcept {
     } else {
         constexpr std::size_t bytes = image_bytes_at(^^Bare);
         FixedArray<std::byte, bytes> image{};
-        detail::encode_part_(part, first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), image)));
+        detail::encode_part_(part, first_of_(detail::BaseLayerRead{}, frame_run_(ProtocolFrameKeyDoor::key_(), image)));
         for (std::byte const byte : image.view()) {
             fold.put_byte(byte);
         }

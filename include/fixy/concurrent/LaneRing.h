@@ -88,6 +88,7 @@
 #include <fixy/concurrent/SpscRing.h>
 
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -146,6 +147,35 @@ struct LaneOf {
 };
 
 }  // namespace detail
+
+// The ring of lanes (the definition below).  LaneRingFrameKeyDoor names it as
+// a friend, so this declaration stands before the door.
+template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
+class LaneRing;
+
+}  // namespace fixy::concurrent
+
+namespace foundation::core {
+
+// The door of a ring of lanes to the key of the frame doors (the doors of the
+// owners above foundation/core/Frame.h).  Its one member is private, and
+// LaneRing of fixy/concurrent/LaneRing.h is its one friend.  The invariant:
+// only the one consumer of the ring reads the run of the FixedArray of its
+// lanes, and the producers write only the SPSC ring and the end word of their
+// lanes, which are atomic.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class LaneRingFrameKeyDoor final : ::foundation::NoObject<LaneRingFrameKeyDoor> {
+    template <::fixy::concurrent::RingValue T, std::size_t LaneCapacity, ::fixy::concurrent::LaneCount Lanes,
+              class Owner>
+    friend class ::fixy::concurrent::LaneRing;
+
+    // The key of the frame doors, for the run of the lanes of a ring.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::concurrent {
 
 template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
 class[[= ::foundation::transfer::synchronized{}]] LaneRing
@@ -335,7 +365,7 @@ private:
     // frame, because a FixedArray gives no other reference that writes an
     // element.
     [[nodiscard, gnu::always_inline]] lane_type& lane_at_(lane_index position) noexcept {
-        return frame_run_(::foundation::core::detail::FrameDoor::key(), lanes_).at(live_.at(position).lane);
+        return frame_run_(::foundation::core::LaneRingFrameKeyDoor::key_(), lanes_).at(live_.at(position).lane);
     }
 
     // The Index of a position of the turn.  Each caller compares the position

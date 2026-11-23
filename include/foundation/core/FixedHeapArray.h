@@ -109,6 +109,23 @@ class FixedHeapArrayCountDoor final : ::foundation::NoObject<FixedHeapArrayCount
     }
 };
 
+// The door of a FixedHeapArray to the key of the frame doors (the doors of
+// the owners above foundation/core/Frame.h).  Its one member is private, and
+// FixedHeapArray is its one friend.  The invariant: the array reads the run
+// of the HeapArray that it holds, and it lends its own elements in place, in
+// the frame of a door of the array, with the scope brand of the call of the
+// door.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class FixedHeapArrayFrameKeyDoor final : ::foundation::NoObject<FixedHeapArrayFrameKeyDoor> {
+    template <class T, std::size_t N, std::size_t Align, ::foundation::brand::IsBrand KeyBrand>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
+              && DroppablePayload<T>
+    friend class FixedHeapArray;
+
+    // The key of the frame doors, for the run of the array.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 template <class T, std::size_t N, std::size_t Align = alignof(T), ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
           && DroppablePayload<T>
@@ -123,7 +140,7 @@ class [[nodiscard]][[= ::foundation::transfer::by_arguments{}]][[= loan_key_mark
     // The first element.  The mint gives storage of N elements, and the array
     // does not move, so the storage lives until the end of the array.
     [[nodiscard]] constexpr T* first_() noexcept {
-        return first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), storage_));
+        return first_of_(detail::BaseLayerRead{}, frame_run_(FixedHeapArrayFrameKeyDoor::key_(), storage_));
     }
     [[nodiscard]] constexpr T const* first_() const noexcept {
         return first_of_(detail::BaseLayerRead{}, storage_.view());
@@ -232,7 +249,7 @@ public:
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
     [[= ::foundation::linear::borrow_match{}]] CRUCIBLE_INLINE constexpr auto with_mut(Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
+            ViewMut<T, Fresh, N>{FixedHeapArrayFrameKeyDoor::key_(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
     }
 
     // A body whose result holds a borrow or names the brand of the frame
@@ -266,7 +283,8 @@ public:
     [[nodiscard]] CRUCIBLE_INLINE constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
-        return detail::give_run_back_<Fresh>(std::move(key), FixedHeapArrayCountDoor::held_run_<N>(first_()),
+        return detail::give_run_back_<Fresh>(FixedHeapArrayFrameKeyDoor::key_(), std::move(key),
+                                             FixedHeapArrayCountDoor::held_run_<N>(first_()),
                                              static_cast<Body&&>(body));
     }
 
@@ -277,7 +295,7 @@ public:
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     CRUCIBLE_INLINE constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{detail::FrameDoor::key(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
+            ViewMut<T, Fresh, N>{FixedHeapArrayFrameKeyDoor::key_(), FixedHeapArrayCountDoor::held_run_<N>(first_())});
     }
 
     // A body that reaches a key of the brand of the array binds to these

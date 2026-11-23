@@ -119,6 +119,8 @@
 //   namespace of foundation/Platform.h).  The forms with the combine of a
 //   caller, the types and the plans read no target, and they stay outside it.
 
+#include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/Simd.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
@@ -788,6 +790,26 @@ template <class Brand, std::size_t Extent>
     return Unit{};
 }
 
+// The plan of the tree (the definition below).  ReduceFrameKeyDoor names it as
+// a friend, so this declaration stands before the door.
+template <std::size_t Leaves>
+    requires(Leaves >= 2 && Leaves <= 4096)
+[[nodiscard]] consteval FixedArray<TreeStep, Leaves - 1> plan_tree() noexcept;
+
+// The door of the plan of the tree to the key of the frame doors (the doors
+// of the owners above foundation/core/Frame.h).  Its one member is private,
+// and plan_tree is its one friend.  The invariant: the plan reads the run of
+// the FixedArray that it builds in its own frame and gives by value.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class ReduceFrameKeyDoor final : ::foundation::NoObject<ReduceFrameKeyDoor> {
+    template <std::size_t Leaves>
+        requires(Leaves >= 2 && Leaves <= 4096)
+    friend consteval auto ::foundation::core::plan_tree() noexcept -> FixedArray<TreeStep, Leaves - 1>;
+
+    // The key of the frame doors, for the run of the array of the plan.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 // The plan of the tree of Leaves leaves, as a constant.  The plan writes its
 // own array, so it calls the writer of write_tree_plan with no frame door.
 template <std::size_t Leaves>
@@ -796,7 +818,7 @@ template <std::size_t Leaves>
     FixedArray<TreeStep, Leaves - 1> steps{};
     std::uint32_t next = 0;
     static_cast<void>(detail::write_tree_plan_(
-        first_of_(detail::BaseLayerRead{}, frame_run_(detail::FrameDoor::key(), steps)), Leaves, 0, Leaves, next));
+        first_of_(detail::BaseLayerRead{}, frame_run_(ReduceFrameKeyDoor::key_(), steps)), Leaves, 0, Leaves, next));
     return steps;
 }
 

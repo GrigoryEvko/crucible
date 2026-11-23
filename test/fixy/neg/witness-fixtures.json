@@ -272,6 +272,11 @@
       "constructor": "(?<!~)\\bAddressKey\\("
     },
     {
+      "name": "neg_witness_core_alignedbytesframekeydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bAlignedBytesFrameKeyDoor\\("
+    },
+    {
       "name": "neg_witness_core_alloc_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bAlloc\\("
@@ -285,6 +290,11 @@
       "name": "neg_witness_core_arenarun_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bArenaRun\\("
+    },
+    {
+      "name": "neg_witness_core_arrayframekeydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bArrayFrameKeyDoor\\("
     },
     {
       "name": "neg_witness_core_atomic_word_key_direct_construction",
@@ -350,6 +360,11 @@
       "name": "neg_witness_core_ctext_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bCText\\("
+    },
+    {
+      "name": "neg_witness_core_cyclicbufferframekeydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bCyclicBufferFrameKeyDoor\\("
     },
     {
       "name": "neg_witness_core_dataaddress_direct_construction",
@@ -705,6 +720,16 @@
       "name": "neg_witness_core_sortrundoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bSortRunDoor\\("
+    },
+    {
+      "name": "neg_witness_core_spscsplitframekeydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bSpscSplitFrameKeyDoor\\("
+    },
+    {
+      "name": "neg_witness_core_spscsplitrefdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bSpscSplitRefDoor\\("
     },
     {
       "name": "neg_witness_core_statictext_direct_construction",
@@ -2119,6 +2144,26 @@
     {
       "type": "foundation::core::detail::TextPartsDoor",
       "header": "foundation/core/Text.h"
+    },
+    {
+      "type": "foundation::core::SpscSplitRefDoor",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "foundation::core::SpscSplitFrameKeyDoor",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "foundation::core::CyclicBufferFrameKeyDoor",
+      "header": "fixy/CyclicBuffer.h"
+    },
+    {
+      "type": "foundation::core::AlignedBytesFrameKeyDoor",
+      "header": "foundation/AlignedBytes.h"
+    },
+    {
+      "type": "foundation::core::ArrayFrameKeyDoor",
+      "header": "foundation/core/Array.h"
     },
     {
       "type": "foundation::core::ViewMut<int, forge::brand>",

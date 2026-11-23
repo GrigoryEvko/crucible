@@ -91,6 +91,21 @@ class OneOfRefDoor final : ::foundation::NoObject<OneOfRefDoor> {
     }
 };
 
+// The door of a OneOf to the key of the frame doors (the doors of the owners
+// above foundation/core/Frame.h).  Its one member is private, and OneOf is
+// its one friend.  The invariant: the frame door of a OneOf lends the active
+// alternative in place, after the compare of the tag, with the scope brand of
+// the call of the door.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class OneOfFrameKeyDoor final : ::foundation::NoObject<OneOfFrameKeyDoor> {
+    template <class... Ts>
+        requires OneOfAlternatives<Ts...>
+    friend class OneOf;
+
+    // The key of the frame doors, for the active alternative.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
 class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<Ts...>>]]
@@ -167,7 +182,7 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<
     constexpr Result written_from_(Arms&&... arms) {
         if (index_() == Index) {
             return static_cast<Arms...[Index]&&>(arms...[Index])(
-                RefMut<Ts... [Index], Brand> { detail::FrameDoor::key(), alternative_<Index>() });
+                RefMut<Ts... [Index], Brand> { OneOfFrameKeyDoor::key_(), alternative_<Index>() });
         }
         if constexpr (Index + 1 == sizeof...(Ts)) {
             detail::report_forged_one_of_tag_();

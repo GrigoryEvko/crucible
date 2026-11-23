@@ -226,6 +226,8 @@
 
 #include <foundation/algebra/lattices/AffinityLattice.h>
 #include <foundation/Closure.h>
+#include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -885,6 +887,44 @@ void run_beside_each_body_(void* frame) noexcept {
 
 }  // namespace detail
 
+// The counted door beside the caller (the definition below).
+// ThreadTasksFrameKeyDoor names it as a friend, so this declaration stands
+// before the door.
+template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
+    requires CtxStartsThreads<Ctx> && BesideEachBody<Body> && BesideContinuation<Continuation>
+[[nodiscard]] ::foundation::core::Result<detail::beside_result_t_<Continuation>, start_error_t<Continuation>>
+run_beside_each(Ctx const& ctx, ThreadOptions const& options, ::foundation::core::Index<Bound> count, Body body,
+                Continuation continuation) noexcept;
+
+}  // namespace fixy::thread
+
+namespace foundation::core {
+
+// The door of the counted door beside the caller to the key of the frame
+// doors (the doors of the owners above foundation/core/Frame.h).  Its one
+// member is private, and run_beside_each of fixy/os/ThreadTasks.h is its one
+// friend.  The invariant: the door reads the runs of the two FixedArrays of
+// the frames and the tasks that it builds in its own frame, and it joins each
+// thread that reads them before it returns.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ThreadTasksFrameKeyDoor final : ::foundation::NoObject<ThreadTasksFrameKeyDoor> {
+    template <typename Ctx, std::size_t Bound, typename Body, typename Continuation>
+        requires ::fixy::thread::CtxStartsThreads<Ctx> && ::fixy::thread::BesideEachBody<Body>
+              && ::fixy::thread::BesideContinuation<Continuation>
+    friend auto ::fixy::thread::run_beside_each(Ctx const& ctx, ::fixy::thread::ThreadOptions const& options,
+                                                ::foundation::core::Index<Bound> count, Body body,
+                                                Continuation continuation) noexcept
+        -> ::foundation::core::Result<::fixy::thread::detail::beside_result_t_<Continuation>,
+                                      ::fixy::thread::start_error_t<Continuation>>;
+
+    // The key of the frame doors, for the runs of the arrays of the door.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::thread {
+
 // Starts count threads with the options, and each calls the body with its
 // index.  The continuation runs on the calling thread at the same time, and
 // the door joins each thread when the continuation returns (the thread beside
@@ -907,9 +947,9 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     // A task holds the address of its frame for the start door of a thread,
     // so the two arrays give their runs through the keyed run of a frame.
     ::foundation::core::View<detail::beside_each_frame_<Body>, Bound> const frame_run =
-        frame_run_(::foundation::core::detail::FrameDoor::key(), frames);
+        frame_run_(::foundation::core::ThreadTasksFrameKeyDoor::key_(), frames);
     ::foundation::core::View<detail::thread_task, Bound> const task_run =
-        frame_run_(::foundation::core::detail::FrameDoor::key(), tasks);
+        frame_run_(::foundation::core::ThreadTasksFrameKeyDoor::key_(), tasks);
     for (Slot const slot : ::foundation::core::IndexRange<Bound>{}) {
         if (slot.raw() >= count.raw()) break;
         BesideIndex const index{::foundation::core::narrow<std::uint32_t>(slot.raw())

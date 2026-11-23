@@ -2888,6 +2888,27 @@ foundation_neg_compile_test(neg_core_slot_map_ref_door_private
 foundation_neg_compile_test(neg_core_ref_of_static_local
   "the address of .local. is not a valid template argument because it does not have static storage duration"
   "no matching function for call to .ref_of_static_<local>\\(\\).")
+# The door of the key of the frame doors is private to the door classes of the
+# owners above Frame.h: a unit that is no friend and a class with the name of a
+# friend in another namespace do not reach it.  The member of the door class
+# of each header is private to the owners of that header, so a unit that is no
+# owner builds no ViewMut of a brand that it names.
+foundation_neg_compile_test(neg_core_frame_door_private
+  "static constexpr foundation::core::detail::FrameKey foundation::core::detail::FrameDoor::key\\(\\). is private within this context"
+  "Frame\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_frame_door_lookalike
+  "static constexpr foundation::core::detail::FrameKey foundation::core::detail::FrameDoor::key\\(\\). is private within this context"
+  "Frame\\.h:[0-9]+:[0-9]+: note: declared private here")
+foreach(_frame_key_door region:Region array:Array list:List grow:Grow small_list:SmallList
+        fixed_heap_array:FixedHeapArray box:Box choice:Choice one_of:OneOf root_keys:RootKeys
+        window_loan:WindowLoan sort:Sort reduce:Reduce protocol:Protocol aligned_bytes:AlignedBytes)
+  string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
+  list(GET _frame_key_parts 0 _frame_key_file)
+  list(GET _frame_key_parts 1 _frame_key_class)
+  foundation_neg_compile_test(neg_core_${_frame_key_file}_frame_key_door_private
+    "static constexpr foundation::core::detail::FrameKey foundation::core::${_frame_key_class}FrameKeyDoor::key_\\(\\). is private within this context"
+    "neg_core_${_frame_key_file}_frame_key_door_private\\.cpp:[0-9]+:[0-9]+: error")
+endforeach()
 foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
   "no matching function for call to .foundation::core::Ref<Forged, ForgeBrand>::Ref\\(<brace-enclosed initializer list>\\)."
   "no known conversion for argument 1 from .Forged\\*. to .foundation::core::detail::RefNullTag.")

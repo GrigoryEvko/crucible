@@ -567,28 +567,15 @@ constexpr ::foundation::core::View<T const> mint_borrowed(OwnedRegion<T, Tag, Br
 // the proof that no other door reaches the run.  A region has no move
 // assignment, so the caller binds the region that the door gives to a new
 // name.  The pack refuses each explicit argument.  Complexity: O(1), and the
-// cost of body.
+// cost of body.  The definition follows the door of the key of the frame
+// doors (OwnedRegionFrameKeyDoor below), which names it as a friend.
 template <class... Refused, class T, class Tag, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && ::foundation::core::FrameBody<Body, T, Fresh>
 [[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<
     ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
     OwnedRegion<T, Tag, Brand>>
-with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept {
-    using Run = ::foundation::core::ViewMut<T, Fresh>;
-    using Given = ::foundation::core::detail::body_result_t<Body&&, Run>;
-    OwnedRegion<T, Tag, Brand> held{std::move(region)};
-    ::foundation::core::View<T> const run = frame_run_(::foundation::core::detail::FrameDoor::key(), held);
-    // The body runs before the region leaves the frame: a braced list runs
-    // its parts in order.
-    if constexpr (std::is_void_v<Given>) {
-        static_cast<Body&&>(body)(Run{::foundation::core::detail::FrameDoor::key(), run});
-        return held;
-    } else {
-        return ::foundation::core::detail::frame_return_t<Given, OwnedRegion<T, Tag, Brand>>{
-            static_cast<Body&&>(body)(Run{::foundation::core::detail::FrameDoor::key(), run}), std::move(held)};
-    }
-}
+with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept;
 
 // A body whose result holds a borrow or names the brand of the frame binds
 // to this overload, so the refusal gives its reason.
@@ -727,6 +714,59 @@ class RegionScopeDoor final : ::foundation::NoObject<RegionScopeDoor> {
     }
 };
 
+}  // namespace fixy
+
+namespace foundation::core {
+
+// The door of the frame door of a region and of the region scope door over a
+// HeapArray to the key of the frame doors (the doors of the owners above
+// foundation/core/Frame.h).  Its one member is private, and the two doors of
+// fixy/OwnedRegion.h are its friends.  The invariant: each door holds its
+// region or its HeapArray by move in its frame, and reads the run of what it
+// holds.  The frame door lends that run with the scope brand of its call.  A
+// home owner row of utils/rule-table.txt keeps this definition in this
+// header.
+class OwnedRegionFrameKeyDoor final : ::foundation::NoObject<OwnedRegionFrameKeyDoor> {
+    template <class... Refused, class T, class Tag, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && FrameBody<Body, T, Fresh>
+    friend constexpr auto ::fixy::with_mut(::fixy::OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept
+        -> ::foundation::core::detail::frame_return_t<
+            ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
+            ::fixy::OwnedRegion<T, Tag, Brand>>;
+    template <typename Tag, class... Refused, typename T, std::size_t Align, typename Body,
+              ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && ::fixy::RegionScopeTag<Tag> && ::fixy::RegionScopeBody<Body, T, Tag, Fresh>
+    friend auto ::fixy::with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body) noexcept;
+
+    // The key of the frame doors, for the run of what a door holds.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+}  // namespace foundation::core
+
+namespace fixy {
+
+template <class... Refused, class T, class Tag, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0) && ::foundation::core::FrameBody<Body, T, Fresh>
+[[nodiscard]] constexpr ::foundation::core::detail::frame_return_t<
+    ::foundation::core::detail::body_result_t<Body&&, ::foundation::core::ViewMut<T, Fresh>>,
+    OwnedRegion<T, Tag, Brand>>
+with_mut(OwnedRegion<T, Tag, Brand>&& region, Body&& body) noexcept {
+    using Run = ::foundation::core::ViewMut<T, Fresh>;
+    using Given = ::foundation::core::detail::body_result_t<Body&&, Run>;
+    OwnedRegion<T, Tag, Brand> held{std::move(region)};
+    ::foundation::core::View<T> const run = frame_run_(::foundation::core::OwnedRegionFrameKeyDoor::key_(), held);
+    // The body runs before the region leaves the frame: a braced list runs
+    // its parts in order.
+    if constexpr (std::is_void_v<Given>) {
+        static_cast<Body&&>(body)(Run{::foundation::core::OwnedRegionFrameKeyDoor::key_(), run});
+        return held;
+    } else {
+        return ::foundation::core::detail::frame_return_t<Given, OwnedRegion<T, Tag, Brand>>{
+            static_cast<Body&&>(body)(Run{::foundation::core::OwnedRegionFrameKeyDoor::key_(), run}), std::move(held)};
+    }
+}
+
 // The region scope door over a HeapArray.  The storage moves into the frame,
 // and the door gives it back.
 template <typename Tag, class... Refused, typename T, std::size_t Align, typename Body,
@@ -736,10 +776,10 @@ auto with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body)
     ::foundation::core::HeapArray<T, Align> held{std::move(storage)};
     using Value = typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Fresh>&&>,
                                                       OwnedRegion<T, Tag, Fresh>>::type;
-    auto region =
-        RegionScopeDoor::open<T, Tag, Fresh>(first_of_(::foundation::core::detail::BaseLayerRead{},
-                                                       frame_run_(::foundation::core::detail::FrameDoor::key(), held)),
-                                             held.size());
+    auto region = RegionScopeDoor::open<T, Tag, Fresh>(
+        first_of_(::foundation::core::detail::BaseLayerRead{},
+                  frame_run_(::foundation::core::OwnedRegionFrameKeyDoor::key_(), held)),
+        held.size());
     if constexpr (std::is_void_v<Value>) {
         RegionScopeDoor::run(std::move(region), static_cast<Body&&>(body));
         return held;

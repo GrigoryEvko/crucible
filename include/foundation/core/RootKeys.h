@@ -36,6 +36,8 @@
 //   gets the arguments of the door only, so a body that names a key does not
 //   compile there.
 
+#include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/core/Frame.h>
 
 #include <cstddef>
@@ -193,15 +195,55 @@ template <class... Brands>
     requires(are_distinct_key_brands_<Brands...>())
 struct root_key_cell_ final : root_key_slot_<Brands>... {};
 
+// The two entries of the root doors (the definitions below).
+// RootKeysFrameKeyDoor names them as friends, so these declarations stand
+// before the door.
+template <std::size_t Leading, class Body, class... Args>
+    requires(sizeof...(Args) == Leading)
+constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept;
+template <std::size_t Leading, class Body, class... Args>
+    requires(sizeof...(Args) == Leading)
+constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexcept;
+
+}  // namespace detail
+
+// The door of the entries of the root doors to the key of the frame doors
+// (the doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and run_root_body_ and run_dispatch_body_ are its friends.  The
+// invariant: an entry checks the brands that the body names and the walk of
+// each brand first, and then mints one key of each brand for one call of the
+// body.  Each entry passes the key to call_with_root_keys_, so no code mints a
+// key with no check.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class RootKeysFrameKeyDoor final : ::foundation::NoObject<RootKeysFrameKeyDoor> {
+    template <std::size_t Leading, class Body, class... Args>
+        requires(sizeof...(Args) == Leading)
+    friend constexpr auto ::foundation::core::detail::run_root_body_(Body body, Args&&... leading) noexcept
+        -> decltype(auto);
+    template <std::size_t Leading, class Body, class... Args>
+        requires(sizeof...(Args) == Leading)
+    friend constexpr auto ::foundation::core::detail::run_dispatch_body_(Body body, Args&&... leading) noexcept
+        -> decltype(auto);
+
+    // The key of the frame doors, for the keys of one call of a body.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
+
+namespace detail {
+
 // Calls the body with the leading arguments and one fresh key of each brand,
 // in the order of the brands.  The keys are a local of this frame, so they live
 // for the call.  A closure goes through the once door call_once of
 // foundation/Linear.h, which owns it, calls it one time and ends it.  A
-// function pointer holds no capture, so the entry calls it with no door.
+// function pointer holds no capture, so the entry calls it with no door.  The
+// entry gives the key of the frame doors, so only an entry mints the keys.
+// Each key initializes the one member of its slot through brace elision, so
+// each key starts in place: no key moves, and a key of a dispatch brand has
+// no move.
 template <class... Brands, class Body, class... Args>
-constexpr decltype(auto) call_with_root_keys_(KeyBrands<Brands...> /*brands*/, Body&& body,
+constexpr decltype(auto) call_with_root_keys_(FrameKey const& key, KeyBrands<Brands...> /*brands*/, Body&& body,
                                               Args&&... leading) noexcept {
-    root_key_cell_<Brands...> cell{root_key_slot_<Brands>{LoanKey<Brands>{FrameDoor::key()}}...};
+    root_key_cell_<Brands...> cell{LoanKey<Brands>{key}...};
     if constexpr (std::is_class_v<std::remove_cvref_t<Body>>) {
         return ::foundation::linear::call_once(static_cast<Body&&>(body), static_cast<Args&&>(leading)...,
                                                static_cast<root_key_slot_<Brands>&>(cell).key...);
@@ -242,7 +284,8 @@ constexpr decltype(auto) run_root_body_(Body body, Args&&... leading) noexcept {
                       "the result of a body of a root door reaches a key of a brand of its keys, or an owner of such a "
                       "brand through a borrow");
     }
-    return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
+    return call_with_root_keys_(RootKeysFrameKeyDoor::key_(), Brands{}, static_cast<Body&&>(body),
+                                static_cast<Args&&>(leading)...);
 }
 
 // The entry of the dispatch door of fixy/concurrent/Dispatch.h (the dispatch
@@ -267,7 +310,8 @@ constexpr decltype(auto) run_dispatch_body_(Body body, Args&&... leading) noexce
                   "starts a thread can mint such a key, so the window of the dispatch would not hold it alone");
     static_assert(!std::is_reference_v<Result>,
                   "a body of the dispatch door gives a reference, which outlives its keys");
-    return call_with_root_keys_(Brands{}, static_cast<Body&&>(body), static_cast<Args&&>(leading)...);
+    return call_with_root_keys_(RootKeysFrameKeyDoor::key_(), Brands{}, static_cast<Body&&>(body),
+                                static_cast<Args&&>(leading)...);
 }
 
 }  // namespace detail

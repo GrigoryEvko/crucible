@@ -67,6 +67,28 @@ static_assert(std::is_same_v<decltype(*std::declval<RefMut<int, CheckBrand> cons
 static_assert(!std::is_default_constructible_v<FrameKey>);
 static_assert(!std::is_copy_assignable_v<FrameKey>);
 
+// The door of the key is private to the door classes of the owners above
+// Frame.h, and the member of each door class is private to its owners.  So
+// this unit reaches no key.  A class with a public member of the same shape
+// passes, so each requires-expression reads the access and not its shape.  No
+// door is an object.
+template <class Door>
+concept ReachesFrameKey = requires { Door::key(); };
+template <class Door>
+concept ReachesDoorKey = requires { Door::key_(); };
+struct OpenKeyDoor final {
+    static constexpr int key() noexcept { return 0; }
+    static constexpr int key_() noexcept { return 0; }
+};
+static_assert(ReachesFrameKey<OpenKeyDoor> && ReachesDoorKey<OpenKeyDoor>);
+static_assert(!ReachesFrameKey<FrameDoor>);
+static_assert(!ReachesDoorKey<RegionFrameKeyDoor> && !ReachesDoorKey<ArrayFrameKeyDoor>);
+static_assert(!ReachesDoorKey<ListFrameKeyDoor> && !ReachesDoorKey<GrowFrameKeyDoor>);
+static_assert(!ReachesDoorKey<BoxFrameKeyDoor> && !ReachesDoorKey<ChoiceFrameKeyDoor>);
+static_assert(!std::is_default_constructible_v<FrameDoor> && !std::is_trivially_copyable_v<FrameDoor>);
+static_assert(!std::is_default_constructible_v<RegionFrameKeyDoor>);
+static_assert(!std::is_trivially_copyable_v<RegionFrameKeyDoor>);
+
 // ── The result of a frame ─────────────────────────────────────────────
 
 // The result of a body leaves the frame: void and a plain value pass, and a

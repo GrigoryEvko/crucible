@@ -99,6 +99,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/OpenExtension.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Fatal.h>
@@ -1099,6 +1100,23 @@ class Option;
 
 template <ChoicePayload T, ErrorValue E>
 class Result;
+
+// The door of the sums of this header to the key of the frame doors (the
+// doors of the owners above foundation/core/Frame.h).  Its one member is
+// private, and Option and Result are its friends.  The invariant: the frame
+// door of a sum lends the payload of its active alternative in place, with
+// the scope brand of the call of the door, and the sum counts the lend.  A
+// home owner row of utils/rule-table.txt keeps this definition in this
+// header.
+class ChoiceFrameKeyDoor final : ::foundation::NoObject<ChoiceFrameKeyDoor> {
+    template <ChoicePayload T>
+    friend class Option;
+    template <ChoicePayload T, ErrorValue E>
+    friend class Result;
+
+    // The key of the frame doors, for the payload of a sum.
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
+};
 
 namespace detail {
 
@@ -2142,7 +2160,7 @@ public:
                       "of the payload, or match the Option and build a new one");
         if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
         [[maybe_unused]] auto const lend = slot_.lend_();
-        return static_cast<OnSome&&>(on_some)(RefMut<T, Fresh>{detail::FrameDoor::key(), slot_.payload_()});
+        return static_cast<OnSome&&>(on_some)(RefMut<T, Fresh>{ChoiceFrameKeyDoor::key_(), slot_.payload_()});
     }
 
     // Arms whose result holds a borrow or names the brand of the frame bind
@@ -3361,8 +3379,8 @@ public:
         with_mut(OnOk&& on_ok, OnErr&& on_err) & noexcept {
         [[maybe_unused]] auto const lend = slot_.lend_();
         if (!slot_.holds_())
-            return static_cast<OnErr&&>(on_err)(RefMut<E, Fresh>{detail::FrameDoor::key(), slot_.error_()});
-        return static_cast<OnOk&&>(on_ok)(RefMut<T, Fresh>{detail::FrameDoor::key(), slot_.value_()});
+            return static_cast<OnErr&&>(on_err)(RefMut<E, Fresh>{ChoiceFrameKeyDoor::key_(), slot_.error_()});
+        return static_cast<OnOk&&>(on_ok)(RefMut<T, Fresh>{ChoiceFrameKeyDoor::key_(), slot_.value_()});
     }
 
     // Arms whose result holds a borrow or names the brand of the frame bind
