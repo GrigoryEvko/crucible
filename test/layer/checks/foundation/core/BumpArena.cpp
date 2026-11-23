@@ -87,9 +87,23 @@ static_assert(std::is_convertible_v<ArenaRun<int, Family>, ArenaRun<int const, F
 static_assert(!std::is_convertible_v<ArenaRun<int const, Family>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int, Owner::Member>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int const, Owner::Member>, ArenaRun<int, Family>>);
-static_assert(
-    std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(0, 0)), Option<ArenaRun<int, Family>>>);
+static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(RunStart{ElementCount{0}},
+                                                                                          ElementCount{0})),
+                             Option<ArenaRun<int, Family>>>);
 static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
+
+// A window takes its start and its count in two types, so no call swaps the
+// two, and a plain number is neither.  The start is a Side of the count, and
+// both have the size of one size_t.
+template <class Start, class Count>
+constexpr bool window_takes =
+    requires(ArenaRun<int, Family> const& run, Start start, Count count) { run.window(start, count); };
+static_assert(window_takes<RunStart, ElementCount>);
+static_assert(!window_takes<ElementCount, RunStart>);
+static_assert(!window_takes<ElementCount, ElementCount>);
+static_assert(!window_takes<std::size_t, std::size_t>);
+static_assert(!window_takes<RunStart, std::size_t>);
+static_assert(sizeof(RunStart) == sizeof(std::size_t) && std::is_trivially_copyable_v<RunStart>);
 
 // make takes a type with a trivial destructor that the arguments build with
 // no throw, and the allocation tag only.

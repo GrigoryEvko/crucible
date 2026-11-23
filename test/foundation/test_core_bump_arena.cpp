@@ -26,8 +26,10 @@ using ::foundation::core::ArenaRun;
 using ::foundation::core::BumpArena;
 using ::foundation::core::Epoch;
 using ::foundation::core::EpochArena;
+using ::foundation::core::ElementCount;
 using ::foundation::core::EpochOf;
 using ::foundation::core::Ref;
+using ::foundation::core::RunStart;
 using ::foundation::core::View;
 using Bytes = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
 
@@ -123,12 +125,13 @@ void test_window_keeps_the_run() {
     for (std::uint32_t& element : numbers.view()) {
         element = next++;
     }
-    ArenaRun<std::uint32_t, TestFamily> const part = numbers.window(2, 3).expect("the window fits in the run");
+    ArenaRun<std::uint32_t, TestFamily> const part =
+        numbers.window(RunStart{ElementCount{2}}, ElementCount{3}).expect("the window fits in the run");
     CRUCIBLE_FATAL_INVARIANT(part.size() == 3);
     CRUCIBLE_FATAL_INVARIANT(*part.view().get(0).expect("a window of three holds element 0") == 2);
     CRUCIBLE_FATAL_INVARIANT(*part.view().get(2).expect("a window of three holds element 2") == 4);
-    CRUCIBLE_FATAL_INVARIANT(numbers.window(6, 3).is_none());
-    CRUCIBLE_FATAL_INVARIANT(numbers.window(8, 0).is_some());
+    CRUCIBLE_FATAL_INVARIANT(numbers.window(RunStart{ElementCount{6}}, ElementCount{3}).is_none());
+    CRUCIBLE_FATAL_INVARIANT(numbers.window(RunStart{ElementCount{8}}, ElementCount{0}).is_some());
     ArenaRun<std::uint32_t const, TestFamily> const read = part;
     CRUCIBLE_FATAL_INVARIANT(address_of(::foundation::core::to(*read.view().get(1).expect("element 1")))
                              == address_of(::foundation::core::to(*part.view().get(1).expect("element 1"))));

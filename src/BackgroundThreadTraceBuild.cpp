@@ -276,7 +276,9 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         // The scalars of each op go into its entry, also for an op with no
         // tensors, so they fold into the content hash.
         const ::fixy::ArenaRun<int64_t, DagArena> scalars =
-            scalar_arena_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars of each op");
+            scalar_arena_run
+                .window(::fixy::RunStart{::fixy::ElementCount{scalar_cursor}}, ::fixy::ElementCount{n_scalars})
+                .expect("the scan counted the scalars of each op");
         scalar_cursor += n_scalars;
         ::fixy::copy(scalars.view(),
                      re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
@@ -300,18 +302,25 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
 
             const uint64_t meta_offset = ms.raw() - first_meta.raw();
             input_meta_window =
-                meta_arena_run.window(meta_offset, n_in).expect("the copied run holds the metadata of each op");
+                meta_arena_run.window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
+                    .expect("the copied run holds the metadata of each op");
             output_meta_window =
-                meta_arena_run.window(meta_offset + n_in, n_out).expect("the copied run holds the metadata of each op");
+                meta_arena_run
+                    .window(::fixy::RunStart{::fixy::ElementCount{meta_offset + n_in}}, ::fixy::ElementCount{n_out})
+                    .expect("the copied run holds the metadata of each op");
 
             producer_window =
-                producer_arena_run.window(producer_cursor, n_in).expect("the scan counted the inputs of each op");
+                producer_arena_run
+                    .window(::fixy::RunStart{::fixy::ElementCount{producer_cursor}}, ::fixy::ElementCount{n_in})
+                    .expect("the scan counted the inputs of each op");
             producer_cursor += n_in;
             input_slot_window =
-                slot_arena_run.window(slot_cursor, n_in).expect("the scan counted the inputs of each op");
+                slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
+                    .expect("the scan counted the inputs of each op");
             slot_cursor += n_in;
             output_slot_window =
-                slot_arena_run.window(slot_cursor, n_out).expect("the scan counted the outputs of each op");
+                slot_arena_run.window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
+                    .expect("the scan counted the outputs of each op");
             slot_cursor += n_out;
 
             te.set_inputs(input_meta_window, producer_window, input_slot_window);

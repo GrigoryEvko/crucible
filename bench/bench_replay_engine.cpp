@@ -53,17 +53,19 @@ struct BenchRegion {
         const auto ops_run = arena.array(alloc, n, TraceEntry{});
 
         for (uint32_t i = 0; i < n; i++) {
-            const auto out_slot = out_slots_run.window(i, 1).expect("i is below n");
-            const auto in_slot = in_slots_run.window(i, 1).expect("i is below n");
+            const ::fixy::RunStart at_op{::fixy::ElementCount{i}};
+            const ::fixy::ElementCount one{1};
+            const auto out_slot = out_slots_run.window(at_op, one).expect("i is below n");
+            const auto in_slot = in_slots_run.window(at_op, one).expect("i is below n");
             ::fixy::fill(out_slot.view(), SlotId{i});
             ::fixy::fill(in_slot.view(), SlotId{(i > 0) ? (i - 1) : (n - 1)});
 
             TraceEntry& op = *ops_run.view().get(i).expect("i is below n");
             op.schema_hash = SchemaHash{1000 + i};
             op.shape_hash = ShapeHash{2000 + i};
-            op.set_outputs(out_metas_run.window(i, 1).expect("i is below n"), out_slot);
-            op.set_inputs(in_metas_run.window(i, 1).expect("i is below n"),
-                          in_producers_run.window(i, 1).expect("i is below n"), in_slot);
+            op.set_outputs(out_metas_run.window(at_op, one).expect("i is below n"), out_slot);
+            op.set_inputs(in_metas_run.window(at_op, one).expect("i is below n"),
+                          in_producers_run.window(at_op, one).expect("i is below n"), in_slot);
         }
 
         const auto slots_run = arena.array(alloc, n, TensorSlot{});

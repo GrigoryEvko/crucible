@@ -122,6 +122,7 @@
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
+#include <foundation/core/Side.h>
 #include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -181,6 +182,18 @@ concept EpochBrand = requires { typename detail::epoch_tag_of<Brand>::type; };
 template <EpochBrand Brand>
 class Epoch;
 
+namespace side {
+
+// The role of the offset of a window from the first element of its run.
+struct RunStart final {};
+
+}  // namespace side
+
+// The offset of a window of an ArenaRun from the first element of the run, in
+// elements.  The count of the window is an ElementCount, so the two arguments
+// of window have two types.
+using RunStart = Side<side::RunStart, ElementCount>;
+
 // A run of elements that an arena of the brand built: a View with the brand
 // of its arena.  Only the arena builds a run that is not empty, through
 // ArenaArrayDoor below.  A run converts to a run of const elements, and
@@ -206,11 +219,11 @@ public:
     [[nodiscard]] constexpr View<T> view() const& noexcept { return run_; }
     void view() const&& = delete("a View of a temporary run outlives the name of the run: name the run first");
 
-    // The count elements from offset, as a run of the same brand, or no run
+    // The count elements from start, as a run of the same brand, or no run
     // when they do not fit in this run.  The result is an Option<ArenaRun>,
     // which the class cannot name before it is complete.
-    [[nodiscard]] constexpr auto window(std::size_t offset, std::size_t count) const noexcept {
-        Option<View<T>> const part = run_.window(offset, count);
+    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) const noexcept {
+        Option<View<T>> const part = run_.window(start.value().raw(), count.raw());
         return part.match([](View<T> const& found) noexcept { return Option<ArenaRun>::some(ArenaRun{found}); },
                           []() noexcept { return Option<ArenaRun>{}; });
     }

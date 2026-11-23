@@ -211,9 +211,13 @@ struct Built {
 
     constexpr uint32_t kSplit = kNumOps / 2;
     const crucible::DagRef<crucible::RegionNode> head =
-        crucible::make_region(ctx.alloc, dag_arena, ops_run.window(0, kSplit).expect("the head is in the ops"));
+        crucible::make_region(ctx.alloc, dag_arena,
+                              ops_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{kSplit})
+                                  .expect("the head is in the ops"));
     const crucible::DagRef<crucible::RegionNode> tail = crucible::make_region(
-        ctx.alloc, dag_arena, ops_run.window(kSplit, kNumOps - kSplit).expect("the tail is in the ops"));
+        ctx.alloc, dag_arena,
+        ops_run.window(::fixy::RunStart{::fixy::ElementCount{kSplit}}, ::fixy::ElementCount{kNumOps - kSplit})
+            .expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
     const auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});

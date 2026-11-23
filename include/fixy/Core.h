@@ -149,6 +149,7 @@ using ::foundation::core::box_word_key;
 using ::foundation::core::BoxWord;
 using ::foundation::core::ArenaBlockSize;
 using ::foundation::core::ArenaRun;
+using ::foundation::core::RunStart;
 using ::foundation::core::BumpArena;
 using ::foundation::core::EpochArena;
 using ::foundation::core::EpochOf;

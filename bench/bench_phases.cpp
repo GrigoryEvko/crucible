@@ -575,7 +575,9 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 te.kernel_id = CKernelId::OPAQUE;
                 const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
                 const auto scalars =
-                    scalar_arena_run.window(scalar_cursor, n_scalars).expect("the scan counted the scalars");
+                    scalar_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{scalar_cursor}}, ::fixy::ElementCount{n_scalars})
+                        .expect("the scan counted the scalars");
                 scalar_cursor += n_scalars;
                 ::fixy::copy(scalars.view(),
                              re.scalar_values.view().window(0, n_scalars).expect("an entry stores five scalars"))
@@ -587,13 +589,25 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 const uint16_t n_in = re.num_inputs;
                 const uint16_t n_out = re.num_outputs;
                 const uint64_t meta_offset = ms.raw() - first_meta.raw();
-                te.set_inputs(meta_arena_run.window(meta_offset, n_in).expect("the copied run holds each op"),
-                              producer_arena_run.window(producer_cursor, n_in).expect("the scan counted the inputs"),
-                              slot_arena_run.window(slot_cursor, n_in).expect("the scan counted the inputs"));
+                te.set_inputs(
+                    meta_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{meta_offset}}, ::fixy::ElementCount{n_in})
+                        .expect("the copied run holds each op"),
+                    producer_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{producer_cursor}}, ::fixy::ElementCount{n_in})
+                        .expect("the scan counted the inputs"),
+                    slot_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_in})
+                        .expect("the scan counted the inputs"));
                 producer_cursor += n_in;
                 slot_cursor += n_in;
-                te.set_outputs(meta_arena_run.window(meta_offset + n_in, n_out).expect("the copied run holds each op"),
-                               slot_arena_run.window(slot_cursor, n_out).expect("the scan counted the outputs"));
+                te.set_outputs(
+                    meta_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{meta_offset + n_in}}, ::fixy::ElementCount{n_out})
+                        .expect("the copied run holds each op"),
+                    slot_arena_run
+                        .window(::fixy::RunStart{::fixy::ElementCount{slot_cursor}}, ::fixy::ElementCount{n_out})
+                        .expect("the scan counted the outputs"));
                 slot_cursor += n_out;
             }
             return copied_ops;

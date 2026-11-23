@@ -173,7 +173,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots1 = slots1_run.view();
             const uint32_t max_death = materialize(set, slots1);
-            const auto set_slots1_run = slots1_run.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
+            const auto set_slots1_run =
+                slots1_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{num_slots})
+                    .expect("a set holds at most kMaxSlots slots");
             const ::fixy::View<TensorSlot> set_slots1 = set_slots1_run.view();
 
             auto test = ::foundation::effects::testing::test();
@@ -228,7 +230,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots2 = slots2_run.view();
             (void)materialize(set, slots2);
-            const auto set_slots2_run = slots2_run.window(0, num_slots).expect("a set holds at most kMaxSlots slots");
+            const auto set_slots2_run =
+                slots2_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{num_slots})
+                    .expect("a set holds at most kMaxSlots slots");
             const ::fixy::View<TensorSlot> set_slots2 = set_slots2_run.view();
             BackgroundThread bt2{::foundation::effects::testing::test().alloc};
             const crucible::DagRef<crucible::MemoryPlan> plan_storage2 =

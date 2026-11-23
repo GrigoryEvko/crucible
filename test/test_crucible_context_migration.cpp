@@ -99,8 +99,10 @@ void make_ops(::fixy::View<TraceEntry> ops, ::fixy::ArenaRun<SlotId const, cruci
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
         op.shape_hash = ShapeHash{200 + index};
-        op.set_outputs(output_metas_run.window(index, 1).expect("a test region has one output for each op"),
-                       outputs.window(index, 1).expect("a test region has one output for each op"));
+        op.set_outputs(output_metas_run.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
+                           .expect("a test region has one output for each op"),
+                       outputs.window(::fixy::RunStart{::fixy::ElementCount{index}}, ::fixy::ElementCount{1})
+                           .expect("a test region has one output for each op"));
     }
 }
 
@@ -143,8 +145,10 @@ bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const new_ops = new_ops_run.view();
     make_ops(new_ops, new_outputs);
-    const crucible::DagRef<MemoryPlan> new_plan = make_plan(
-        test.alloc, arena, new_slots_run.window(0, new_count).expect("a test plan holds at most kWideSlots slots"));
+    const crucible::DagRef<MemoryPlan> new_plan =
+        make_plan(test.alloc, arena,
+                  new_slots_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{new_count})
+                      .expect("a test plan holds at most kWideSlots slots"));
     const crucible::DagRef<RegionNode> new_region =
         build_region(test.alloc, arena, new_ops_run, crucible::make_plan_link(new_plan));
 
