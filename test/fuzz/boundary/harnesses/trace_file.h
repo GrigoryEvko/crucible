@@ -50,15 +50,53 @@ namespace crucible::fuzz::boundary {
     return seed.finish();
 }
 
-// Two seeds of the version that the loader reads.  The first trace loads,
+// The hash that the reserve of the harness holds for the name aten::x.  The
+// second hash of the first seed is 0xABCE, so one flip of its lowest bit
+// gives the reserved hash.
+inline constexpr SchemaHash kHarnessReservedHash{0xABCF};
+
+// The search of the reserve of the harness: aten::x for the reserved hash,
+// and no name for each other hash.
+[[nodiscard]] constexpr ::fixy::Option<SchemaNameParts> find_harness_reserved_name(SchemaHash hash) noexcept {
+    if (hash != kHarnessReservedHash) return ::fixy::Option<SchemaNameParts>{::fixy::none};
+    return ::fixy::some(SchemaNameParts{::fixy::TextView{"aten::x"}});
+}
+
+// The reserve that each load of the harness takes.  A trace that gives the
+// reserved hash another name does not load, and a trace that gives it
+// aten::x loads.
+inline constexpr SchemaNameReserve kHarnessReserve{SchemaNameSearchOf<&find_harness_reserved_name>{}};
+
+// Three seeds of the version that the loader reads.  The first trace loads,
 // with each of its two names, so the fuzzer starts from a trace that loads.
 // The second trace gives one hash the name aten::x and then aten::y, and the
-// load refuses the repeated hash whole.
+// load refuses the repeated hash whole.  The third trace gives the reserved
+// hash the name aten::y, and the load refuses it before it registers a name.
 [[nodiscard]] inline SeedList seeds_trace_file() noexcept {
     SeedList seeds = empty_seed_list();
     add_seed(seeds, write_trace_seed(SchemaHash{0xABCE}));
     add_seed(seeds, write_trace_seed(SchemaHash{0xABCD}));
+    add_seed(seeds, write_trace_seed(kHarnessReservedHash));
     return seeds;
+}
+
+// True when a name of the image has a hash that the reserve of the harness
+// holds for another name.  An image that fails its check holds no such name.
+// Complexity: linear in the names of the image.
+[[nodiscard]] inline bool holds_name_on_reserved_hash(::fixy::View<std::byte const> image) noexcept {
+    const auto checked = CheckedTraceImage::check(image, kHarnessCtx.cap().alloc);
+    return checked.match(
+        [](CheckedTraceImage const& trace_image) noexcept {
+            ::fixy::View<std::byte const> rest = trace_image.names();
+            for (std::uint32_t index = 0; index < trace_image.num_names(); ++index) {
+                const detail::TraceName name =
+                    detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+                const SchemaNameParts parts{detail::trace_name_text_(name).value()};
+                if (kHarnessReserve.is_reserved_for_other_name(name.hash, parts)) return true;
+            }
+            return false;
+        },
+        [](TraceLoadError) noexcept { return false; });
 }
 
 // Each name of a loaded trace passes sanitize_schema_name, the validator of
@@ -77,6 +115,9 @@ inline void claim_names_registered(::fixy::View<std::byte const> image) noexcept
                     detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
                 const auto text = detail::trace_name_text_(name);
                 CRUCIBLE_FUZZ_CLAIM("trace_file", sanitize_schema_name(name.hash, text).is_ok());
+                // No loaded name takes a reserved hash with another name.
+                const SchemaNameParts parts{text.value()};
+                CRUCIBLE_FUZZ_CLAIM("trace_file", !kHarnessReserve.is_reserved_for_other_name(name.hash, parts));
                 const ::fixy::Option<InternedSchemaName> held = global_schema_table().lookup(name.hash);
                 const bool is_held_name = held.match(
                     [&text](InternedSchemaName const& found) noexcept { return found.value().view() == text.value(); },
@@ -107,14 +148,16 @@ inline void run_trace_file(::fixy::View<std::byte const> bytes) noexcept {
     // of them or none.  The table starts empty at each run, so no name of an
     // earlier input collides.  A trace can name more schemas than the table
     // holds, and the load then refuses the whole trace.
-    // The harness reserves no hash, so the reserve refuses no name.
+    // The load takes the reserve of the harness.
     constexpr VigilFgCtx kForeground = ::foundation::effects::testing::foreground<Vigil>();
-    constexpr SchemaNameReserve kNoReservedNames = SchemaNameReserve::none();
     global_schema_table().clear(::foundation::effects::testing::test());
-    auto loaded = load_trace(kHarnessCtx, kForeground, path, kNoReservedNames);
-    // A refused load registers no name.
+    auto loaded = load_trace(kHarnessCtx, kForeground, path, kHarnessReserve);
+    // A refused load registers no name.  A refusal of a reserved hash names
+    // a name of the image on a reserved hash.
     if (loaded.is_err()) {
         CRUCIBLE_FUZZ_CLAIM("trace_file", global_schema_table().count() == 0);
+        const bool is_reserved_refusal = loaded.err() == ::fixy::some(TraceLoadError::NameReserved);
+        CRUCIBLE_FUZZ_CLAIM("trace_file", !is_reserved_refusal || holds_name_on_reserved_hash(image));
         return;
     }
     const LoadedTrace trace = std::move(loaded).expect("the load holds a trace after the check of its error");
