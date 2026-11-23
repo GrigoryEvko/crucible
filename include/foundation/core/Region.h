@@ -357,8 +357,11 @@ class ViewCursorDoor final : ::foundation::NoObject<ViewCursorDoor> {
 // proves and that OwnerCore of foundation/core/Owner.h does not fit.  Such an
 // owner reaches the raw constructors of a View through one plain door class.
 // This header declares the class, and View names it as a friend.  The header
-// of the owner defines it, with the owner as its one friend, and the comment
-// of each door states the invariant that its owner holds.  A home owner row
+// of the owner defines it.  The friends of the door are the parts of the
+// owner that hold the invariant: the owner class for most doors, the stable
+// sort and the radix sort for SortRunDoor, and the tested window and the
+// door of its list for TestedWindowDoor.  The comment of each door states
+// the invariant that its owner holds.  A home owner row
 // of utils/rule-table.txt keeps the one definition of each door in that
 // header, so no other file defines a second door of the same name.
 class FixedListSlotsDoor;
