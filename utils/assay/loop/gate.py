@@ -700,8 +700,9 @@ Lanes
     Up to LANES landings run at the same time, each in a warm tree of its
     own: TREE, TREE-2, TREE-3 and so on, each with its own build
     directories.  LANES is the size of the slot pool of the host divided by
-    SLICE, with one as the minimum and MOST_LANES as the maximum (5 for 224
-    slots, where the division gives 7).  The pool caps the
+    SLICE, with one as the minimum and MOST_LANES as the maximum.  MOST_LANES
+    is 1: one holder at a time holds the branch, so no batch stacks on a
+    different batch and no run loses the compare-and-swap.  The pool caps the
     slots of all the lanes together, so a lane past the slots of the busy
     lanes only fills idle slots.
     free_lane() holds the lock of the first free lane.  A holder of the
@@ -753,10 +754,11 @@ LOGS = "logs"
 RUNS_LOCK = "logs.lock"
 # The lock that a holder of the first lane holds, and the count of the lanes (the lanes).  The pool caps the slots of
 # all the lanes together, so each lane past the slots of the busy lanes fills only idle slots.  The count comes from the
-# CPUs and not from the slots of the pool, because each lane has a warm tree of its own.  MOST_LANES caps the count: the
-# owner set 5 lanes on 2026-11-16, for 5 working agents.  A host with fewer CPUs still gets fewer lanes.
+# CPUs and not from the slots of the pool, because each lane has a warm tree of its own.  MOST_LANES caps the count.  On
+# 2026-11-23, the owner set one lane: one request at a time holds main, and its run takes each slot of the host.  With
+# five lanes, 39 of 143 runs passed and then ran again, because a different lane moved main first.
 PRIMARY = "primary.lock"
-MOST_LANES = 5
+MOST_LANES = 1
 LANES = min(MOST_LANES, max(1, proc.DEFAULT_JOBS // heavy.SLICE))
 # The name of the directory of the logs of one run, before its number, the count of the ended runs that stay, and the
 # file of the directory that a live run holds a lock on (the logs).
