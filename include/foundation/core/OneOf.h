@@ -243,6 +243,7 @@ public:
     // alternatives only when the counts agree.
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
+             && ArmsHoldNoLinearValue<Arms...>
              && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>> && ...)
              && (TakesPayloadByValue<Arms, Ts> && ...) && HoldsNoBorrow<std::invoke_result_t<Arms...[0], Ts...[0]&&>>
     constexpr std::invoke_result_t<Arms...[0], Ts...[0]&&>
@@ -254,7 +255,8 @@ public:
     // An arm of the rvalue match that takes its alternative by reference
     // binds to this overload, so the refusal gives its reason.
     template <class... Arms>
-        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
+        requires(sizeof...(Arms) == sizeof...(Ts))
+                 && ArmsHoldNoLinearValue<Arms...> && (std::is_invocable_v<Arms, Ts &&> && ...)
                  && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>>
                      && ...)
                  && (!(TakesPayloadByValue<Arms, Ts> && ...))
@@ -265,7 +267,8 @@ public:
     // A result of the rvalue match that holds a borrow binds to this
     // overload, so the refusal gives its reason.
     template <class... Arms>
-        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts &&> && ...)
+        requires(sizeof...(Arms) == sizeof...(Ts))
+                 && ArmsHoldNoLinearValue<Arms...> && (std::is_invocable_v<Arms, Ts &&> && ...)
                  && (std::same_as<std::invoke_result_t<Arms, Ts &&>, std::invoke_result_t<Arms...[0], Ts...[0] &&>>
                      && ...)
                  && (TakesPayloadByValue<Arms, Ts> && ...)
@@ -273,6 +276,14 @@ public:
     void match(Arms&&... arms) && = delete("the result of the rvalue match holds no borrow, because each alternative "
                                            "ends in its arm: give a value with no reference and no address, or name "
                                            "the OneOf and match its borrow");
+
+    // Arms of the rvalue match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue of
+    // foundation/core/Choice.h).
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (!ArmsHoldNoLinearValue<Arms...>)
+                 && (std::is_invocable_v<Arms, Ts &&> && ...)
+    void match(Arms&&... arms) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The total match of a borrow: the arm of the active alternative gets its
     // value as a const reference, and the OneOf keeps it.  The parameter of
@@ -283,6 +294,7 @@ public:
     // OneOf counts the lend (the lend count in Choice.h).
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
+             && ArmsHoldNoLinearValue<Arms...>
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                  && ...)
              && (TakesPayloadByBorrow<Arms, Ts> && ...)
@@ -296,7 +308,8 @@ public:
     // An arm of the borrow match that takes another type binds to this
     // overload, so the refusal gives its reason.
     template <class... Arms>
-        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
+        requires(sizeof...(Arms) == sizeof...(Ts))
+                 && ArmsHoldNoLinearValue<Arms...> && (std::is_invocable_v<Arms, Ts const&> && ...)
                  && (std::same_as<std::invoke_result_t<Arms, Ts const&>,
                                   std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                      && ...)
@@ -305,13 +318,22 @@ public:
                                                "value or a const reference, so no conversion reads an alternative as "
                                                "another type: write the parameter as that alternative");
 
+    // Arms of the borrow match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue of
+    // foundation/core/Choice.h).  A const rvalue binds to it too.
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (!ArmsHoldNoLinearValue<Arms...>)
+                 && (std::is_invocable_v<Arms, Ts const&> && ...)
+    void match(Arms&&... arms) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
     // A const rvalue of a OneOf that the borrow match would take binds to
     // this overload, so an arm cannot give a reference into an object that the
     // full expression ends.  An rvalue that is not const binds to the rvalue
     // match.  The constraint is that of the borrow match, so a call with the
     // wrong arms gets the refusal of its arms.
     template <class... Arms>
-        requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
+        requires(sizeof...(Arms) == sizeof...(Ts))
+                 && ArmsHoldNoLinearValue<Arms...> && (std::is_invocable_v<Arms, Ts const&> && ...)
                  && (std::same_as<std::invoke_result_t<Arms, Ts const&>,
                                   std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                      && ...)
@@ -333,7 +355,7 @@ public:
     // alternative.
     template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (DroppablePayload<Ts> && ...)
-             && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
+             && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...) && ArmsHoldNoLinearValue<Arms...>
              && (std::same_as<std::invoke_result_t<Arms &&, RefMut<Ts, Fresh>>,
                               std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>>
                  && ...)
@@ -348,7 +370,7 @@ public:
     // Arms whose result holds a borrow or names the brand of the frame bind
     // to this overload, so the refusal gives its reason.
     template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Arms) == sizeof...(Ts)) && (DroppablePayload<Ts> && ...)
+        requires(sizeof...(Arms) == sizeof...(Ts)) && ArmsHoldNoLinearValue<Arms...> && (DroppablePayload<Ts> && ...)
                  && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
                  && (std::same_as<std::invoke_result_t<Arms &&, RefMut<Ts, Fresh>>,
                                   std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>>
@@ -356,6 +378,14 @@ public:
                  && (!FrameResult<std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>, Fresh>)
     void with_mut(Arms&&... arms) & = delete("the result of a frame door leaves the frame, so it holds no reference "
                                              "and no address, and it names no brand of the frame: give a plain value");
+
+    // Arms that hold a linear value by value bind to this overload, so the
+    // refusal gives its reason (ArmsHoldNoLinearValue of
+    // foundation/core/Choice.h).
+    template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Arms) == sizeof...(Ts)) && (!ArmsHoldNoLinearValue<Arms...>) && (DroppablePayload<Ts> && ...)
+                 && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
+    void with_mut(Arms&&... arms) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class... Arms>
     void with_mut(Arms&&... arms) && = delete("a frame door of a temporary OneOf writes an alternative that the full "

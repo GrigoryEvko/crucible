@@ -1082,6 +1082,37 @@ static_assert(ResultWritesInPlace<Result<int, Code>> && ResultWritesInPlace<Resu
 static_assert(!ResultWritesInPlace<Result<int, Code> const> && !ResultWritesInPlace<Result<Token, Code>>);
 static_assert(!ResultWritesInPlace<Result<int, Token>>);
 
+// An arm of a match or of a frame door holds no linear value by value
+// (ArmsHoldNoLinearValue): the door calls the arm, and a call is no consume.
+// Each form of each door refuses an arm that holds a token, and takes an arm
+// that holds none.
+using HoldsTokenArm = decltype([held = Token{1}](auto) noexcept { return held.handle; });
+using HoldsTokenRest = decltype([held = Token{1}](auto...) noexcept { return held.handle; });
+using HoldsNoTokenArm = decltype([](auto) noexcept { return 0; });
+using HoldsNoTokenRest = decltype([](auto...) noexcept { return 0; });
+static_assert(!ArmsHoldNoLinearValue<HoldsTokenArm> && ArmsHoldNoLinearValue<HoldsNoTokenArm, HoldsNoTokenRest>);
+template <class S, class First, class Second>
+concept MatchesWith = requires(S sum, First first, Second second) {
+    static_cast<S&&>(sum).match(static_cast<First&&>(first), static_cast<Second&&>(second));
+};
+template <class S, class First, class Second>
+concept WritesWith = requires(S& sum, First first, Second second) {
+    sum.with_mut(static_cast<First&&>(first), static_cast<Second&&>(second));
+};
+static_assert(MatchesWith<Option<int>, HoldsNoTokenArm, HoldsNoTokenRest>);
+static_assert(MatchesWith<Option<int> const&, HoldsNoTokenArm, HoldsNoTokenRest>);
+static_assert(!MatchesWith<Option<int>, HoldsTokenArm, HoldsNoTokenRest>);
+static_assert(!MatchesWith<Option<int>, HoldsNoTokenArm, HoldsTokenRest>);
+static_assert(!MatchesWith<Option<int> const&, HoldsTokenArm, HoldsNoTokenRest>);
+static_assert(!MatchesWith<Option<int> const, HoldsTokenArm, HoldsNoTokenRest>);
+static_assert(MatchesWith<Result<int, Code>, HoldsNoTokenArm, HoldsNoTokenArm>);
+static_assert(!MatchesWith<Result<int, Code>, HoldsTokenArm, HoldsNoTokenArm>);
+static_assert(!MatchesWith<Result<int, Code> const&, HoldsNoTokenArm, HoldsTokenArm>);
+static_assert(WritesWith<Option<int>, HoldsNoTokenArm, HoldsNoTokenRest>);
+static_assert(!WritesWith<Option<int>, HoldsTokenArm, HoldsNoTokenRest>);
+static_assert(WritesWith<Result<int, Code>, HoldsNoTokenArm, HoldsNoTokenArm>);
+static_assert(!WritesWith<Result<int, Code>, HoldsNoTokenArm, HoldsTokenArm>);
+
 // A linear error.  The const err() would copy it, so only the rvalue err()
 // gives it, and value_or() would drop it.
 static_assert(ErrorValue<Token> && ErrorValue<HoldsToken>);

@@ -218,6 +218,27 @@ concept BorrowedMatchReadsExactly = requires(O const& value) {
 };
 static_assert(!BorrowedMatchSwapsArms<OneOf<Celsius, Kelvin>> && BorrowedMatchReadsExactly<OneOf<Celsius, Kelvin>>);
 
+// An arm of a match or of the frame door holds no linear value by value
+// (ArmsHoldNoLinearValue of foundation/core/Choice.h): the door calls the arm,
+// and a call is no consume.  Each form refuses an arm that holds a token, and
+// takes an arm that holds none.
+using HoldsTokenArm = decltype([held = Token{1}](auto) noexcept { return held.handle; });
+using HoldsNoTokenArm = decltype([](auto) noexcept { return 0; });
+template <class O, class First, class Second>
+concept MatchesWithArms = requires(O value, First first, Second second) {
+    static_cast<O&&>(value).match(static_cast<First&&>(first), static_cast<Second&&>(second));
+};
+template <class O, class First, class Second>
+concept WritesWithArms = requires(O& value, First first, Second second) {
+    value.with_mut(static_cast<First&&>(first), static_cast<Second&&>(second));
+};
+static_assert(MatchesWithArms<OneOf<int, Code8>, HoldsNoTokenArm, HoldsNoTokenArm>);
+static_assert(MatchesWithArms<OneOf<int, Code8> const&, HoldsNoTokenArm, HoldsNoTokenArm>);
+static_assert(!MatchesWithArms<OneOf<int, Code8>, HoldsTokenArm, HoldsNoTokenArm>);
+static_assert(!MatchesWithArms<OneOf<int, Code8> const&, HoldsNoTokenArm, HoldsTokenArm>);
+static_assert(WritesWithArms<OneOf<int, Code8>, HoldsNoTokenArm, HoldsNoTokenArm>);
+static_assert(!WritesWithArms<OneOf<int, Code8>, HoldsTokenArm, HoldsNoTokenArm>);
+
 // get<T> lends the active alternative as a Ref of T const, from a OneOf that
 // is const or not, and no Ref from a temporary.  So no write and no move
 // through the Ref changes the alternative that the OneOf keeps.  get names

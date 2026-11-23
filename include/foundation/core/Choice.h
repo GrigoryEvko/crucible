@@ -1149,6 +1149,17 @@ concept TakesPayloadByValue = detail::takes_payload_by_value_<Arm, Payload>();
 template <class Arm, class Payload>
 concept TakesPayloadByBorrow = detail::takes_payload_by_borrow_<Arm, Payload>();
 
+// The arms of a match or of a frame door of a sum hold no linear value by
+// value (HoldsNoLinearValue of foundation/Linear.h).  The door calls one arm,
+// and a call is no consume, so a linear capture of an arm would end with the
+// arm after the call, where no rule reads it.  An arm that only reads a
+// linear value of its caller captures it by const reference, and an arm that
+// consumes it takes it through a frame slot.  Each match and each frame door
+// has a deleted twin that refuses such arms, and the twin reads this gate
+// first.
+template <class... Arms>
+concept ArmsHoldNoLinearValue = (::foundation::linear::HoldsNoLinearValue<Arms> && ...);
+
 // A result of an rvalue match that holds no borrow.  The match ends the
 // payload, so a reference or an address in the result could name an object
 // that ends.  The concept refuses each reference and each address, also an
@@ -1496,26 +1507,47 @@ public:
     }
 };
 
-// The arms of the frame door of an Option: on_some takes the RefMut of the
-// payload, on_none takes nothing, each with no throw, and the two give one
+// The callables of the frame door of an Option: on_some takes the RefMut of
+// the payload, on_none takes nothing, each with no throw, and the two give one
 // type.  A linear payload has no frame door, because an arm could move the
 // payload out through the RefMut and leave the Option full.  The door reads
 // the niche of the payload in its body (Option::with_mut).
 template <class T, class OnSome, class OnNone, class Brand>
-concept OptionFrameArms =
+concept OptionFrameCallables =
     DroppablePayload<T> && std::is_nothrow_invocable_v<OnSome&&, RefMut<T, Brand>>
     && std::is_nothrow_invocable_v<OnNone&&>
     && std::same_as<std::invoke_result_t<OnSome&&, RefMut<T, Brand>>, std::invoke_result_t<OnNone&&>>;
 
-// The arms of the frame door of a Result: on_ok takes the RefMut of the
+// The arms of the frame door of an Option: callables of OptionFrameCallables
+// that hold no linear value by value (ArmsHoldNoLinearValue).
+template <class T, class OnSome, class OnNone, class Brand>
+concept OptionFrameArms = OptionFrameCallables<T, OnSome, OnNone, Brand> && ArmsHoldNoLinearValue<OnSome, OnNone>;
+
+// Callables of OptionFrameCallables of which one holds a linear value by
+// value: the linear twin of the frame door binds to them.
+template <class T, class OnSome, class OnNone, class Brand>
+concept LinearOptionFrameArms =
+    (!ArmsHoldNoLinearValue<OnSome, OnNone>) && OptionFrameCallables<T, OnSome, OnNone, Brand>;
+
+// The callables of the frame door of a Result: on_ok takes the RefMut of the
 // value and on_err the RefMut of the error, each with no throw, and the two
 // give one type.  A linear value or error has no frame door, for the reason
-// of OptionFrameArms.
+// of OptionFrameCallables.
 template <class T, class E, class OnOk, class OnErr, class Brand>
-concept ResultFrameArms =
+concept ResultFrameCallables =
     DroppablePayload<T> && DroppablePayload<E> && std::is_nothrow_invocable_v<OnOk&&, RefMut<T, Brand>>
     && std::is_nothrow_invocable_v<OnErr&&, RefMut<E, Brand>>
     && std::same_as<std::invoke_result_t<OnOk&&, RefMut<T, Brand>>, std::invoke_result_t<OnErr&&, RefMut<E, Brand>>>;
+
+// The arms of the frame door of a Result: callables of ResultFrameCallables
+// that hold no linear value by value (ArmsHoldNoLinearValue).
+template <class T, class E, class OnOk, class OnErr, class Brand>
+concept ResultFrameArms = ResultFrameCallables<T, E, OnOk, OnErr, Brand> && ArmsHoldNoLinearValue<OnOk, OnErr>;
+
+// Callables of ResultFrameCallables of which one holds a linear value by
+// value: the linear twin of the frame door binds to them.
+template <class T, class E, class OnOk, class OnErr, class Brand>
+concept LinearResultFrameArms = (!ArmsHoldNoLinearValue<OnOk, OnErr>) && ResultFrameCallables<T, E, OnOk, OnErr, Brand>;
 
 template <ChoicePayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]][[= ::foundation::linear::sum{}]]
@@ -1768,6 +1800,7 @@ public:
     // result holds no borrow: a reference or an address would dangle.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
               && TakesPayloadByValue<OnSome, T> && HoldsNoBorrow<std::invoke_result_t<OnNone>>
     constexpr std::invoke_result_t<OnNone> match(OnSome&& on_some,
@@ -1782,7 +1815,8 @@ public:
     // An arm of the rvalue match that takes its payload by reference binds
     // to this overload, so the refusal gives its reason.
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, T&&>
+                  && std::is_invocable_v<OnNone>
                   && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
                   && (!TakesPayloadByValue<OnSome, T>)
     void match(OnSome&& on_some, OnNone&& on_none) && = delete(
@@ -1792,12 +1826,20 @@ public:
     // A result of the rvalue match that holds a borrow binds to this
     // overload, so the refusal gives its reason.
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, T&&>
+                  && std::is_invocable_v<OnNone>
                   && std::same_as<std::invoke_result_t<OnSome, T&&>, std::invoke_result_t<OnNone>>
                   && TakesPayloadByValue<OnSome, T> && (!HoldsNoBorrow<std::invoke_result_t<OnNone>>)
     void match(OnSome&& on_some, OnNone&& on_none) && = delete(
         "the result of the rvalue match holds no borrow, because the payload ends in the match: give a value with "
         "no reference and no address, or name the Option and match its borrow");
+
+    // Arms of the rvalue match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).
+    template <class OnSome, class OnNone>
+        requires(!ArmsHoldNoLinearValue<OnSome, OnNone>)
+                 && std::is_invocable_v<OnSome, T&&> && std::is_invocable_v<OnNone>
+    void match(OnSome&& on_some, OnNone&& on_none) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The total match of a borrow: on_some gets the payload as a const
     // reference, and the Option keeps it.  The parameter of on_some is T or
@@ -1807,6 +1849,7 @@ public:
     // count).
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
               && TakesPayloadByBorrow<OnSome, T>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
@@ -1820,12 +1863,21 @@ public:
     // An arm of the borrow match that takes another type binds to this
     // overload, so the refusal gives its reason.
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, T const&>
+                  && std::is_invocable_v<OnNone>
                   && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
                   && (!TakesPayloadByBorrow<OnSome, T>)
     void match(OnSome&& on_some, OnNone&& on_none) const& = delete(
         "an arm of the borrow match takes the payload type, as a value or a const reference, so no conversion reads "
         "the payload as another type: write the parameter as the payload type");
+
+    // Arms of the borrow match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).  A
+    // const rvalue binds to it too.
+    template <class OnSome, class OnNone>
+        requires(!ArmsHoldNoLinearValue<OnSome, OnNone>)
+                 && std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+    void match(OnSome&& on_some, OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A const rvalue of an Option that the borrow match would take binds to
     // this overload, so an arm cannot give a reference into an object that the
@@ -1833,7 +1885,8 @@ public:
     // match.  The constraint is that of the borrow match, so a call with the
     // wrong arms gets the refusal of its arms.
     template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, T const&>
+                  && std::is_invocable_v<OnNone>
                   && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
                   && TakesPayloadByBorrow<OnSome, T>
     void match(OnSome&& on_some, OnNone&& on_none) const&& = delete(
@@ -1874,6 +1927,12 @@ public:
     void with_mut(OnSome&& on_some, OnNone&& on_none) & = delete(
         "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand "
         "of the frame: give a plain value");
+
+    // Arms that hold a linear value by value bind to this overload, so the
+    // refusal gives its reason (ArmsHoldNoLinearValue).
+    template <class OnSome, class OnNone, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && LinearOptionFrameArms<T, OnSome, OnNone, Fresh>
+    void with_mut(OnSome&& on_some, OnNone&& on_none) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class OnSome, class OnNone>
     void with_mut(OnSome&& on_some, OnNone&& on_none) && =
@@ -2940,7 +2999,7 @@ public:
     // value, and the result holds no borrow: a reference or an address would
     // dangle.  A linear part moves into its arm.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E> && ArmsHoldNoLinearValue<OnOk, OnErr>
               && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
               && TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>
               && HoldsNoBorrow<std::invoke_result_t<OnErr, E>>
@@ -2954,7 +3013,7 @@ public:
     // An arm of the rvalue match that takes its part by reference binds to
     // this overload, so the refusal gives its reason.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+        requires ArmsHoldNoLinearValue<OnOk, OnErr> && std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
                   && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
                   && (!(TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>))
     void match(OnOk&& on_ok, OnErr&& on_err) && = delete(
@@ -2964,13 +3023,19 @@ public:
     // A result of the rvalue match that holds a borrow binds to this
     // overload, so the refusal gives its reason.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+        requires ArmsHoldNoLinearValue<OnOk, OnErr> && std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
                   && std::same_as<std::invoke_result_t<OnOk, T&&>, std::invoke_result_t<OnErr, E>>
                   && TakesPayloadByValue<OnOk, T> && TakesPayloadByValue<OnErr, E>
                   && (!HoldsNoBorrow<std::invoke_result_t<OnErr, E>>)
     void match(OnOk&& on_ok, OnErr&& on_err) && = delete(
         "the result of the rvalue match holds no borrow, because each part ends in its arm: give a value with no "
         "reference and no address, or name the Result and match its borrow");
+
+    // Arms of the rvalue match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).
+    template <class OnOk, class OnErr>
+        requires(!ArmsHoldNoLinearValue<OnOk, OnErr>) && std::is_invocable_v<OnOk, T&&> && std::is_invocable_v<OnErr, E>
+    void match(OnOk&& on_ok, OnErr&& on_err) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // The total match of a borrow: on_ok gets the value and on_err gets the
     // error, each as a const reference, and the Result keeps them.  The
@@ -2980,6 +3045,7 @@ public:
     // and an owning Result counts the lend (the lend count).
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+              && ArmsHoldNoLinearValue<OnOk, OnErr>
               && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
               && TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnErr, E const&>
@@ -2993,12 +3059,21 @@ public:
     // An arm of the borrow match that takes another type binds to this
     // overload, so the refusal gives its reason.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+        requires ArmsHoldNoLinearValue<OnOk, OnErr> && std::is_invocable_v<OnOk, T const&>
+                  && std::is_invocable_v<OnErr, E const&>
                   && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
                   && (!(TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E>))
     void match(OnOk&& on_ok, OnErr&& on_err) const& = delete(
         "an arm of the borrow match takes its part type, as a value or a const reference, so no conversion reads a "
         "part as another type: write the parameter as the part type");
+
+    // Arms of the borrow match that hold a linear value by value bind to this
+    // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).  A
+    // const rvalue binds to it too.
+    template <class OnOk, class OnErr>
+        requires(!ArmsHoldNoLinearValue<OnOk, OnErr>)
+                 && std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+    void match(OnOk&& on_ok, OnErr&& on_err) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A const rvalue of a Result that the borrow match would take binds to
     // this overload, so an arm cannot give a reference into an object that the
@@ -3006,7 +3081,8 @@ public:
     // match.  The constraint is that of the borrow match, so a call with the
     // wrong arms gets the refusal of its arms.
     template <class OnOk, class OnErr>
-        requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
+        requires ArmsHoldNoLinearValue<OnOk, OnErr> && std::is_invocable_v<OnOk, T const&>
+                  && std::is_invocable_v<OnErr, E const&>
                   && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
                   && TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E>
     void match(OnOk&& on_ok, OnErr&& on_err) const&& = delete(
@@ -3039,6 +3115,12 @@ public:
     void with_mut(OnOk&& on_ok, OnErr&& on_err) & = delete(
         "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand "
         "of the frame: give a plain value");
+
+    // Arms that hold a linear value by value bind to this overload, so the
+    // refusal gives its reason (ArmsHoldNoLinearValue).
+    template <class OnOk, class OnErr, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && LinearResultFrameArms<T, E, OnOk, OnErr, Fresh>
+    void with_mut(OnOk&& on_ok, OnErr&& on_err) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     template <class OnOk, class OnErr>
     void with_mut(OnOk&& on_ok, OnErr&& on_err) && =

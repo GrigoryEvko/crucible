@@ -2557,6 +2557,18 @@ foundation_neg_compile_test(neg_core_option_borrow_match_converting_arm
 foundation_neg_compile_test(neg_core_result_borrow_match_converting_arm
   "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const & \\[with OnOk = main\\(\\)::<lambda\\(Feet\\)>; OnErr = main\\(\\)::<lambda\\(Refusal\\)>; T = Meters; E = Refusal\\]."
   "an arm of the borrow match takes its part type, as a value or a const reference")
+# An arm of a match holds no linear value by value: the match calls the arm,
+# and a call is no consume.  The rvalue match of an Option, the borrow match
+# of a Result and the rvalue match of a OneOf each refuse such an arm.
+foundation_neg_compile_test(neg_core_option_match_linear_arm
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_result_match_linear_arm
+  "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const &"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_one_of_match_linear_arm
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) &&"
+  "the body holds a linear value by value, and the door calls it with no consume")
 foundation_neg_compile_test(neg_core_option_map_takes_reference
   "use of deleted function .void foundation::core::Option<T>::map\\(Fn&&\\) &&"
   "the function of map takes the payload by value, so it names no object that map ends")
