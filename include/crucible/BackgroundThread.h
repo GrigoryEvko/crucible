@@ -48,7 +48,7 @@ class PlanScratch {
 public:
     struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
     using Epoch = ::foundation::core::Epoch<::fixy::EpochOf<Arena>>;
-    explicit PlanScratch(::fixy::Quantity<::fixy::unit::Byte, size_t> block_size) noexcept
+    explicit PlanScratch(::fixy::ArenaBlockSize block_size) noexcept
         : arena{::fixy::mint_epoch_arena<Arena>(block_size)} {}
     ::fixy::EpochArena<Arena> arena;
 };

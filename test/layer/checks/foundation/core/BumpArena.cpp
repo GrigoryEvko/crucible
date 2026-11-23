@@ -55,6 +55,13 @@ static_assert(!NamedArenaTag<Unmarked> && !NamedArenaTag<Both>);
 static_assert(!ArenaBrand<Unmarked> && !ArenaBrand<::foundation::brand::DefaultBrand>);
 static_assert(EpochBrand<EpochOf<Owner::Member>> && !EpochBrand<Owner::Member>);
 
+// A block size comes only from a constant Quantity or from plus, so it has no
+// default value and no constructor from a plain number.  It is one size_t.
+static_assert(!std::is_default_constructible_v<ArenaBlockSize>);
+static_assert(!std::is_constructible_v<ArenaBlockSize, std::size_t>);
+static_assert(std::is_trivially_copyable_v<ArenaBlockSize> && sizeof(ArenaBlockSize) == sizeof(std::size_t));
+static_assert(ArenaBlockSize{Bytes{64}}.plus(Bytes{64}).bytes() == Bytes{128});
+
 // The core of an arena keeps its fields first, in one cache line, and the
 // table of blocks follows them.  Each bump reads only the first three
 // fields.  An arena of each kind is its core and nothing more.

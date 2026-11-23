@@ -148,15 +148,18 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
 
     // The arena of the region holds each run of the region in its first
     // block: the bytes of each run, and at most the alignment of its element
-    // for the bump of its first element.  The sum of the alignments is above
-    // zero, so the block is too.  A larger run takes a block of its own.
-    const size_t region_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_metas} * sizeof(TensorMeta)
-                              + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
-                              + (size_t{total_inputs} + total_outputs) * sizeof(SlotId)
-                              + size_t{most_slots} * sizeof(TensorSlot) + alignof(TraceEntry) + alignof(TensorMeta)
-                              + alignof(int64_t) + alignof(OpIndex) + alignof(SlotId) + alignof(TensorSlot);
-    ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
-        ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, ::fixy::Quantity<::fixy::unit::Byte, size_t>{region_bytes});
+    // for the bump of its first element.  The sum of the alignments is a
+    // constant above zero, so the block is too.  A larger run takes a block
+    // of its own.
+    constexpr ::fixy::ArenaBlockSize kRegionAlignments{
+        ::fixy::Quantity<::fixy::unit::Byte, size_t>{alignof(TraceEntry) + alignof(TensorMeta) + alignof(int64_t)
+                                                     + alignof(OpIndex) + alignof(SlotId) + alignof(TensorSlot)}};
+    const size_t run_bytes = size_t{count} * sizeof(TraceEntry) + size_t{total_metas} * sizeof(TensorMeta)
+                           + size_t{total_scalars} * sizeof(int64_t) + size_t{total_inputs} * sizeof(OpIndex)
+                           + (size_t{total_inputs} + total_outputs) * sizeof(SlotId)
+                           + size_t{most_slots} * sizeof(TensorSlot);
+    ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
+        a, kRegionAlignments.plus(::fixy::Quantity<::fixy::unit::Byte, size_t>{run_bytes}));
 
     // The ops of the region, one for each entry of the trace.  The column of
     // the ops takes the brand of the scope, so one index of an op reads it

@@ -146,6 +146,7 @@ using ::foundation::core::OwnerStateMark;
 using ::foundation::core::Box;
 using ::foundation::core::box_word_key;
 using ::foundation::core::BoxWord;
+using ::foundation::core::ArenaBlockSize;
 using ::foundation::core::ArenaRun;
 using ::foundation::core::BumpArena;
 using ::foundation::core::EpochArena;

@@ -21,6 +21,10 @@
 //   epoch.make<T>(...), epoch.array(...)
 //                                      as above, with the brand EpochOf<Tag>
 //   retained_bytes()                   the bytes of each block of the arena
+//   ArenaBlockSize                     the block_size of each door: a constant
+//                                      Quantity above zero, or such a size
+//                                      plus(more) bytes.  A constant of zero
+//                                      bytes does not compile
 //
 // An allocation is a bump of an offset in the current block and a mask of
 // the address for the alignment.  The allocation capability is the first
@@ -266,7 +270,42 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
 
 class BumpArenaCore;
 
+// ArenaBlockSize calls this function for a size of zero bytes.  It has no
+// definition, so the call is no constant expression, and the error of the
+// compiler names the rule.
+void arena_block_size_must_be_above_zero() noexcept;
+
 }  // namespace detail
+
+// The size of each block of an arena: a count of bytes above zero.  A
+// constant Quantity converts at compile time, and a constant of zero bytes
+// does not compile.  plus(more) gives a larger size, which stays above zero,
+// so a size that a caller adds up at run time takes no check.
+class ArenaBlockSize final {
+public:
+    // The size of a constant Quantity.  The constructor is implicit, so a
+    // door of an arena takes a constant Quantity as it is.
+    consteval ArenaBlockSize(Quantity<unit::Byte, std::size_t> bytes) noexcept : bytes_{bytes.raw()} {
+        if (bytes_ == 0) detail::arena_block_size_must_be_above_zero();
+    }
+
+    // This size plus more bytes.  The sum saturates at the largest size_t,
+    // so it stays above zero.  The sum is a copy of this size with the new
+    // count, so no constructor takes a count of run time.
+    [[nodiscard]] constexpr ArenaBlockSize plus(Quantity<unit::Byte, std::size_t> more) const noexcept {
+        ArenaBlockSize sum = *this;
+        sum.bytes_ = saturating_add(bytes(), more).raw();
+        return sum;
+    }
+
+    // The count of bytes, above zero.
+    [[nodiscard]] constexpr Quantity<unit::Byte, std::size_t> bytes() const noexcept {
+        return Quantity<unit::Byte, std::size_t>{bytes_};
+    }
+
+private:
+    std::size_t bytes_ = 1;
+};
 
 // The door of an arena to the raw constructors of a View (the doors of the
 // owners above this header in foundation/core/Region.h) and to the
@@ -312,14 +351,10 @@ public:
     BumpArenaCore(BumpArenaCore&&) = delete("a Ref of an arena names its blocks: build a new arena instead");
     BumpArenaCore& operator=(BumpArenaCore&&) = delete("a Ref of an arena names its blocks: build a new arena instead");
 
-    // An arena with no block.  A block size of zero ends the process.  The
+    // An arena with no block.  The type of the size holds it above zero.  The
     // constructor is open, because a core gives nothing by itself: each door
     // that gives bytes is private, and the arenas are its friends.
-    explicit BumpArenaCore(Quantity<unit::Byte, std::size_t> block_size) noexcept : block_size_{block_size.raw()} {
-        if (block_size_ == 0) [[unlikely]] {
-            fatal("an arena of blocks of zero bytes: give a block size above zero");
-        }
-    }
+    explicit BumpArenaCore(ArenaBlockSize block_size) noexcept : block_size_{block_size.bytes().raw()} {}
 
     // Gives each block back to the allocation door.
     ~BumpArenaCore();
@@ -416,12 +451,12 @@ private:
 // caller builds it in place by guaranteed elision.
 struct BumpArenaDoor final : ::foundation::NoObject<BumpArenaDoor> {
     template <ArenaBrand Brand>
-    [[nodiscard]] static BumpArena<Brand> open(Quantity<unit::Byte, std::size_t> block_size) noexcept {
+    [[nodiscard]] static BumpArena<Brand> open(ArenaBlockSize block_size) noexcept {
         return BumpArena<Brand>{block_size};
     }
 
     template <ArenaMemberTag Tag>
-    [[nodiscard]] static EpochArena<Tag> open_epoch(Quantity<unit::Byte, std::size_t> block_size) noexcept {
+    [[nodiscard]] static EpochArena<Tag> open_epoch(ArenaBlockSize block_size) noexcept {
         return EpochArena<Tag>{block_size};
     }
 };
@@ -480,7 +515,7 @@ public:
 private:
     friend struct detail::BumpArenaDoor;
 
-    explicit BumpArena(Quantity<unit::Byte, std::size_t> block_size) noexcept : core_{block_size} {}
+    explicit BumpArena(ArenaBlockSize block_size) noexcept : core_{block_size} {}
 
     detail::BumpArenaCore core_;
 };
@@ -756,7 +791,7 @@ public:
 private:
     friend struct detail::BumpArenaDoor;
 
-    explicit EpochArena(Quantity<unit::Byte, std::size_t> block_size) noexcept : core_{block_size} {}
+    explicit EpochArena(ArenaBlockSize block_size) noexcept : core_{block_size} {}
 
     detail::BumpArenaCore core_;
 };
@@ -765,14 +800,14 @@ private:
 // member or a local of the type takes it with no move.
 template <class Tag, class... Refused>
     requires NamedArenaTag<Tag> && (sizeof...(Refused) == 0)
-[[nodiscard]] BumpArena<Tag> mint_bump_arena(Quantity<unit::Byte, std::size_t> block_size) noexcept {
+[[nodiscard]] BumpArena<Tag> mint_bump_arena(ArenaBlockSize block_size) noexcept {
     return detail::BumpArenaDoor::open<Tag>(block_size);
 }
 
 // The epoch arena of a member tag, built in place by guaranteed elision.
 template <class Tag, class... Refused>
     requires ArenaMemberTag<Tag> && (sizeof...(Refused) == 0)
-[[nodiscard]] EpochArena<Tag> mint_epoch_arena(Quantity<unit::Byte, std::size_t> block_size) noexcept {
+[[nodiscard]] EpochArena<Tag> mint_epoch_arena(ArenaBlockSize block_size) noexcept {
     return detail::BumpArenaDoor::open_epoch<Tag>(block_size);
 }
 
@@ -785,7 +820,7 @@ concept BoxedArena = requires { typename T::brand_type; }
 // door in its heap storage, with no move.
 template <class T, class Marker>
     requires BoxedArena<T> && AllocationCapability<Marker>
-[[nodiscard]] Box<T> mint_box(Marker /*allocation*/, Quantity<unit::Byte, std::size_t> block_size) noexcept {
+[[nodiscard]] Box<T> mint_box(Marker /*allocation*/, ArenaBlockSize block_size) noexcept {
     return Box<T>{detail::BoxDoor::key(), detail::BoxBuild{},
                   [block_size]() noexcept { return detail::BumpArenaDoor::open<typename T::brand_type>(block_size); }};
 }
@@ -823,8 +858,8 @@ concept RefusedBumpScopeBody = std::is_nothrow_invocable_v<Body&&, BumpArena<Bra
 // the brand.
 template <class... Refused, class Marker, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && AllocationCapability<Marker> && BumpScopeBody<Body, Fresh>
-detail::bump_scope_result_t<Body, Fresh>
-with_bump_arena(Marker /*allocation*/, Quantity<unit::Byte, std::size_t> block_size, Body&& body) noexcept {
+detail::bump_scope_result_t<Body, Fresh> with_bump_arena(Marker /*allocation*/, ArenaBlockSize block_size,
+                                                         Body&& body) noexcept {
     BumpArena<Fresh> arena = detail::BumpArenaDoor::open<Fresh>(block_size);
     return static_cast<Body&&>(body)(arena);
 }
@@ -833,7 +868,7 @@ with_bump_arena(Marker /*allocation*/, Quantity<unit::Byte, std::size_t> block_s
 // this overload, so the refusal gives its reason.
 template <class... Refused, class Marker, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && AllocationCapability<Marker> && RefusedBumpScopeBody<Body, Fresh>
-void with_bump_arena(Marker allocation, Quantity<unit::Byte, std::size_t> block_size, Body&& body) =
+void with_bump_arena(Marker allocation, ArenaBlockSize block_size, Body&& body) =
     delete("the end of the scope of with_bump_arena ends the arena, so the result of the body holds no reference "
            "and no address, and it names no brand of the arena: give a plain value");
 

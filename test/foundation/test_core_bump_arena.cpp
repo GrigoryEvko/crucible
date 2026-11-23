@@ -52,7 +52,8 @@ struct[[= ::foundation::brand::arena_family_brand{}]] TestFamily final {};
 struct Scratch {
     struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
 
-    explicit Scratch(Bytes block) noexcept : arena{::foundation::core::mint_epoch_arena<Arena>(block)} {}
+    explicit Scratch(::foundation::core::ArenaBlockSize block) noexcept
+        : arena{::foundation::core::mint_epoch_arena<Arena>(block)} {}
 
     EpochArena<Arena> arena;
 };
@@ -237,9 +238,31 @@ void test_long_run_keeps_its_blocks() {
                              <= EpochArena<Scratch::Arena>::default_retained_bytes_limit);
 }
 
+// A block size above zero stays above zero after each plus, and a sum past
+// the largest size_t saturates there.  A block size of zero does not compile
+// (neg_core_arena_block_size_zero).
+void test_block_size_stays_above_zero() {
+    constexpr ::foundation::core::ArenaBlockSize floor{Bytes{16}};
+    static_assert(floor.bytes() == Bytes{16});
+    static_assert(floor.plus(Bytes{0}).bytes() == Bytes{16});
+    static_assert(floor.plus(Bytes{48}).bytes() == Bytes{64});
+    static_assert(floor.plus(Bytes{~std::size_t{0}}).bytes() == Bytes{~std::size_t{0}});
+    // A count that the compiler cannot fold: below(1) is zero at run time.
+    ::crucible::test::PhiloxStream stream{0x5EEDA7E4A0000002u};
+    Bytes const counted{std::size_t{240} + stream.below(1)};
+    ::foundation::core::ArenaBlockSize const block = floor.plus(counted);
+    CRUCIBLE_FATAL_INVARIANT(block.bytes() == Bytes{256});
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    ::foundation::core::with_bump_arena(alloc, block, [alloc](auto& arena) noexcept {
+        auto const pair = arena.template make<Pair>(alloc, Pair{.key = 7});
+        CRUCIBLE_FATAL_INVARIANT(pair->key == 7);
+        CRUCIBLE_FATAL_INVARIANT(arena.retained_bytes() == 256);
+    });
+}
+
 // Each wrong use that a type cannot refuse ends the process: an array past
-// the largest View, and a block size of zero.  Each wrong use runs in a child
-// through expect_dies of the Check family.
+// the largest View.  The wrong use runs in a child through expect_dies of the
+// Check family.
 void test_wrong_uses_end_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
@@ -252,16 +275,6 @@ void test_wrong_uses_end_the_process(::fixy::TestRunnerCtx const& test) {
         ::foundation::core::TextView{
             "foundation: fatal: an array of 4611686018427387903 elements of 8 bytes in an arena is longer than "
             "the largest View"});
-
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            ::foundation::core::with_bump_arena(
-                ::foundation::effects::testing::test().alloc, Bytes{0},
-                [](auto& arena) noexcept { static_cast<void>(arena.retained_bytes()); });
-        },
-        ::foundation::core::TextView{"foundation: fatal: an arena of blocks of zero bytes: give a block size above "
-                                     "zero"});
 }
 
 // The property: arrays of random counts and alignments in random epochs sit
@@ -310,6 +323,7 @@ int main() {
     test_end_above_the_limit_keeps_one_block();
     test_set_limit_refuses_the_blocks_above_it();
     test_long_run_keeps_its_blocks();
+    test_block_size_stays_above_zero();
     test_wrong_uses_end_the_process(test);
     test_agrees_with_plain_model();
     return 0;

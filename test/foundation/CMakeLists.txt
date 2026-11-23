@@ -3431,14 +3431,22 @@ foundation_neg_compile_test(neg_core_bump_arena_cross_family
   "conversion from .Ref<\\[...\\],Family>. to non-scalar type .Ref<\\[...\\],Other>. requested"
   "neg_core_bump_arena_cross_family\\.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_bump_arena_public_constructor
-  "foundation::core::BumpArena<Brand>::BumpArena\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\) \\[with Brand = Family\\]. is private within this context"
+  "foundation::core::BumpArena<Brand>::BumpArena\\(foundation::core::ArenaBlockSize\\) \\[with Brand = Family\\]. is private within this context"
   "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_bump_arena_ref_of_dead_arena
   "this function gives back a borrow of the local arena, and that object ends with the frame of the function"
   "neg_core_bump_arena_ref_of_dead_arena\\.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_bump_arena_scope_gives_ref
-  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, Quantity<unit::Byte, long unsigned int>, Body&&\\)"
+  "use of deleted function .void foundation::core::with_bump_arena\\(Marker, ArenaBlockSize, Body&&\\)"
   "the end of the scope of with_bump_arena ends the arena, so the result of the body holds no reference")
+# The block size of an arena is above zero by its type: a constant of zero
+# bytes and a size of run time do not convert to ArenaBlockSize.
+foundation_neg_compile_test(neg_core_arena_block_size_zero
+  "call to non-.constexpr. function .void foundation::core::detail::arena_block_size_must_be_above_zero\\(\\)."
+  "neg_core_arena_block_size_zero\\.cpp:[0-9]+:[0-9]+:")
+foundation_neg_compile_test(neg_core_arena_block_size_run_time
+  "call to consteval function .foundation::core::ArenaBlockSize\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\(counted\\)\\). is not a constant expression"
+  "the value of .counted. is not usable in a constant expression")
 foundation_neg_compile_test(neg_core_bump_arena_scope_erase
   "no matching function for call to .erase_brand\\(foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >\\)."
   "required for the satisfaction of .ErasableBrand<Brand>.")
@@ -3473,7 +3481,7 @@ foundation_neg_compile_test(neg_core_epoch_arena_capture_owner
   "use of deleted function .void foundation::core::EpochArena<Tag>::with_epoch\\(Body&&\\) &"
   "the body of an epoch captures a writer of a type that can hold the epoch brand, or reaches the arena")
 foundation_neg_compile_test(neg_core_epoch_arena_public_constructor
-  "foundation::core::EpochArena<Tag>::EpochArena\\(foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>\\) \\[with Tag = Owner::Scratch\\]. is private within this context"
+  "foundation::core::EpochArena<Tag>::EpochArena\\(foundation::core::ArenaBlockSize\\) \\[with Tag = Owner::Scratch\\]. is private within this context"
   "BumpArena\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_epoch_handle_from_arena
   "no matching function for call to .foundation::core::Epoch<foundation::core::EpochOf<Owner::Scratch> >::Epoch\\(<brace-enclosed initializer list>\\)."
