@@ -185,8 +185,12 @@ class DataAddress {
     FixedArray<unsigned char, sizeof(void*) - sizeof(Device)> pad_{};
 
     // The null value of an Option of a DataAddress: the null address with
-    // the device of value initialization.  Only the niche below reads it.
-    [[nodiscard]] static constexpr DataAddress empty_() noexcept {
+    // the device of value initialization.  Only the niche below reads it, and
+    // it takes the key that only the storage of an Option builds, so it is a
+    // niche door.  DataAddress is a friend of RunAddress, so the kind
+    // niche-access of the rule proof-routes reads this body, and it admits
+    // the null RunAddress only in a function that takes a niche key.
+    [[nodiscard]] static constexpr DataAddress empty_(niche_key<DataAddress> const& /*key*/) noexcept {
         return DataAddress{RunAddress{RunAddress::NullTag{}}, Device{}};
     }
     [[nodiscard]] constexpr bool is_empty_() const noexcept { return address_.address_ == nullptr; }
@@ -224,8 +228,8 @@ public:
 template <DeviceIdentity Device>
 struct niche<DataAddress<Device>> {
     static constexpr niche_statement is_empty_never_built{};
-    [[nodiscard]] static constexpr DataAddress<Device> empty(niche_key<DataAddress<Device>> const& /*key*/) noexcept {
-        return DataAddress<Device>::empty_();
+    [[nodiscard]] static constexpr DataAddress<Device> empty(niche_key<DataAddress<Device>> const& key) noexcept {
+        return DataAddress<Device>::empty_(key);
     }
     [[nodiscard]] static constexpr bool is_empty(niche_key<DataAddress<Device>> const& /*key*/,
                                                  DataAddress<Device> const& data) noexcept {
