@@ -88,6 +88,7 @@
 #include <fixy/concurrent/SpscRing.h>
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -176,6 +177,11 @@ class LaneRingFrameKeyDoor final : ::foundation::NoObject<LaneRingFrameKeyDoor> 
 }  // namespace foundation::core
 
 namespace fixy::concurrent {
+
+// A drop of the drain of a ring of lanes: it takes each item and does not
+// throw.
+template <class Drop, class T>
+concept LaneDrainDrop = std::is_nothrow_invocable_v<Drop&, T>;
 
 template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
 class[[= ::foundation::transfer::synchronized{}]] LaneRing
@@ -302,10 +308,16 @@ public:
     // a function of the items of the lanes, so the drop can hold state.  Each
     // lane publishes its tail when it leaves the turn, so the drain ends with
     // no deferred pop.  The proof names the one consumer, and the caller holds
-    // the ring alone: no push runs at the same time.  Complexity: linear in
-    // the items, and quadratic in the lanes at most.
+    // the ring alone: no push runs at the same time.  The drain borrows its
+    // drop and calls it for each item, so the drop holds no linear value
+    // (HoldsNoLinearValue of foundation/Linear.h).  The drain has no deleted
+    // twin: the ring states synchronized{}, and the door check of
+    // foundation/Transfer.h finds no specialization of a deleted member
+    // template for its probe body, so it would refuse the ring.  A drop that
+    // holds a linear value meets the failed constraint, which names the gate.
+    // Complexity: linear in the items, and quadratic in the lanes at most.
     template <typename Drop>
-        requires std::is_nothrow_invocable_v<Drop&, T>
+        requires LaneDrainDrop<Drop, T> && ::foundation::linear::HoldsNoLinearValue<Drop>
     void drain(ConsumerProof const& /*proof*/, Drop&& drop) noexcept {
         while (!turn_.is_empty()) {
             ::foundation::core::Option<T> item = pop_lane_of_turn_();

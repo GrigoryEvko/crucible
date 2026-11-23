@@ -53,6 +53,7 @@
 #include <fixy/concurrent/RingValue.h>
 #include <fixy/concurrent/SequenceCells.h>
 
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
@@ -180,11 +181,15 @@ public:
     // the caller guarantees no concurrent push.  The order of the items reads
     // the merge, so the drop holds no state: its class is empty, and it can
     // only end each item.  A drop with no state can still write a global,
-    // and no gate refuses that.  Complexity: linear in the count of the items.
+    // and no gate refuses that.  The drain borrows its drop and calls it for
+    // each item, so the drop holds no linear value (HoldsNoLinearValue of
+    // foundation/Linear.h).  An empty class holds none, so no deleted twin can
+    // bind a drop that this gate refuses.  Complexity: linear in the count of
+    // the items.
     template <typename Drop>
-        requires __is_empty
-    (__remove_cvref(Drop))
-        && __is_nothrow_invocable(Drop&, T) void drain(consumer_proof const& /*proof*/, Drop&& drop) noexcept {
+        requires(__is_empty(__remove_cvref(Drop))) && (__is_nothrow_invocable(Drop&, T))
+             && ::foundation::linear::HoldsNoLinearValue<Drop>
+    void drain(consumer_proof const& /*proof*/, Drop&& drop) noexcept {
         for (::foundation::core::Option<T> item = pop_one_(); item.is_some(); item = pop_one_()) {
             drop(static_cast<::foundation::core::Option<T>&&>(item).expect("the test of the loop found an item"));
         }
