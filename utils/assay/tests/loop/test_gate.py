@@ -1918,6 +1918,30 @@ def lower_cases(expect: testing.Expect) -> None:
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
 
 
+def host_use_cases(expect: testing.Expect) -> None:
+    """Hold the use of the host: the reads of the CPU times, the busy share between two reads, and the verdict."""
+    with tempfile.TemporaryDirectory(prefix="gate-host-") as work_text:
+        stat = Path(work_text) / "stat"
+        stat.write_text("cpu  100 0 100 700 100 0 0 0 0 0\ncpu0 50 0 50 350 50 0 0 0 0 0\n", encoding="ascii")
+        before = gate.host_jiffies(stat)
+        stat.write_text("cpu  300 0 300 900 100 0 0 0 0 0\n", encoding="ascii")
+        after = gate.host_jiffies(stat)
+        stat.write_text("intr 1 2 3\n", encoding="ascii")
+        other = gate.host_jiffies(stat)
+        missing = gate.host_jiffies(Path(work_text) / "absent")
+    expect(
+        f"the read of the CPU times gives the total and the idle and iowait jiffies, and a line that is not the CPU "
+        f"line or a missing file gives no read: {before}, {after}, {other}, {missing}",
+        before == (1000, 800) and after == (1600, 1000) and other is None and missing is None,
+    )
+    expect(
+        "the busy share between two reads is the part of the new jiffies that is not idle, and a missing read gives 0",
+        gate.busy_percent(before, after) == 66.7
+        and gate.busy_percent(None, after) == 0.0
+        and gate.busy_percent(after, before) == 0.0,
+    )
+
+
 def changed_tests_cases(expect: testing.Expect) -> None:
     """Hold a configuration of the tests of the changed inputs: no --all, and a red test rejects."""
     with tempfile.TemporaryDirectory(prefix="gate-changed-") as work_text:
@@ -3006,6 +3030,7 @@ def main(argv: list[str]) -> int:
             budget_cases,
             budget_row_cases,
             lower_cases,
+            host_use_cases,
             changed_tests_cases,
             touched_cases,
             thread_cases,

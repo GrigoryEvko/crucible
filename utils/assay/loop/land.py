@@ -702,7 +702,9 @@ Record
     and the problems.  It holds the subject and the result of each request of
     the run: landed, refused, accepted, rejected or dropped.  A run of the
     base holds no request.  It holds the commit that the gate judged last and
-    the ledgers that it wrote.
+    the ledgers that it wrote.  It holds the use of the host of the run:
+    host_busy_pct and cpu_seconds of the verdict (the use of the host of
+    assay.loop.gate).
 
     Each request of the line also holds the field queued: the time of the
     entry of the request into the queue, as ISO 8601 text in UTC.  The

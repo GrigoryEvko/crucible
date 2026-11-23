@@ -312,6 +312,14 @@ Compiler heal
     Outside the gate, cmake/StaleCompiler.cmake refuses such a cache in each
     configure, with the command that heals it.
 
+Use of the host
+    The verdict of each check gives the busy share of all CPUs of the host
+    over the run, from two reads of STAT_FILE (host_busy_pct), and the CPU
+    time of each process that the run started and waited for (cpu_seconds).
+    The record of each run then holds them (assay.loop.land, the record).
+    The busy share counts each process of the host, so a run with idle CPUs
+    shows a slot or a step that waits.
+
 Jobserver
     Each configuration of a check holds a lease of the slot pool of the host
     while it runs (the pool of assay.loop.heavy).  The writes of the built
@@ -730,6 +738,7 @@ import json
 import math
 import os
 import re
+import resource
 import shutil
 import sys
 import threading
@@ -863,6 +872,10 @@ TEST_KINDS = ("test",)
 GB_STEP = 0.1
 # The file of the work directory with one JSON line for each kill for lack of memory (the kill for memory).
 KILL_LOG = "oom-kills.jsonl"
+# The file whose first line gives the CPU times of all CPUs of the host, in jiffies, and the fields of the idle time in
+# that line: idle and iowait (the use of the host).
+STAT_FILE = Path("/proc/stat")
+IDLE_FIELDS = (3, 4)
 # The forms of a file HEAD that names a commit: a hash of SHA-1 or of SHA-256 in lowercase hexadecimal digits, and the
 # branch with no commit that repair_head() writes when the reflog names no commit (the warm tree).
 HASH_LENGTHS = (40, 64)
@@ -1070,6 +1083,9 @@ class Verdict:
     failing items).  A verdict with problems and no items gets each problem as its own item.  `raised` holds a line for
     each row of a budget that the gate raised, with the old and the new value (the raise of a budget).  `lowered`
     holds a line for each row that the gate lowered, or the line of a lower that wrote nothing (the lower of a budget).
+    `host_busy_pct` is the busy share of all CPUs of the host over the run, for each process of the host, or 0.0 when
+    STAT_FILE does not read.  `cpu_seconds` is the CPU time of the processes that the run started and waited for (the
+    use of the host).
     """
 
     configurations: tuple[str, ...]
@@ -1088,6 +1104,8 @@ class Verdict:
     items: tuple[str, ...] = ()
     raised: tuple[str, ...] = ()
     lowered: tuple[str, ...] = ()
+    host_busy_pct: float = 0.0
+    cpu_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         """Give each problem as its own item when the verdict has no items, so a problem always has an item."""
@@ -1639,6 +1657,36 @@ def repair_head(tree: Path) -> None:
         head.write_text(f"ref: {UNBORN_REF}\n", encoding="ascii")
 
 
+def host_jiffies(path: Path = STAT_FILE) -> tuple[int, int] | None:
+    """Return the total and the idle CPU time of all CPUs of the host in jiffies, or None for a file that does not read.
+
+    Complexity: one read of the first line of the file.
+    """
+    try:
+        with open(path, encoding="ascii") as handle:
+            words = handle.readline().split()
+    except OSError, UnicodeDecodeError:
+        return None
+    if len(words) <= max(IDLE_FIELDS) + 1 or words[0] != "cpu" or not all(word.isdigit() for word in words[1:]):
+        return None
+    values = [int(word) for word in words[1:]]
+    return sum(values), sum(values[index] for index in IDLE_FIELDS)
+
+
+def busy_percent(before: tuple[int, int] | None, after: tuple[int, int] | None) -> float:
+    """Return the busy share of all CPUs of the host between two reads of host_jiffies(), or 0.0 with no reads."""
+    if before is None or after is None or after[0] <= before[0]:
+        return 0.0
+    idle = max(0, after[1] - before[1])
+    return round(100.0 * (1.0 - idle / (after[0] - before[0])), 1)
+
+
+def children_cpu_seconds() -> float:
+    """Return the user and system CPU time of each child that this process started and waited for, in seconds."""
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return usage.ru_utime + usage.ru_stime
+
+
 def remove_untracked(tree: Path) -> None:
     """Remove each file of a warm tree that the commit does not hold and that no ignore rule names (the warm tree).
 
@@ -2027,6 +2075,7 @@ class Gate:
             git.GitError: If a git command fails
         """
         started = time.monotonic()
+        host_before, cpu_before = host_jiffies(), children_cpu_seconds()
         unknown = [path for path in candidate.built if path not in BUILT_FILES]
         if unknown:
             raise GateError(
@@ -2195,6 +2244,8 @@ class Gate:
             tuple(dict.fromkeys(found for item in outcomes for found in item.items or item.problems)),
             raised,
             lowered,
+            busy_percent(host_before, host_jiffies()),
+            round(children_cpu_seconds() - cpu_before, 1),
         )
 
     def ratchet(
