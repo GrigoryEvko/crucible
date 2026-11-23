@@ -36,10 +36,11 @@ constexpr ::foundation::effects::cap::Nondet kRead = ::foundation::effects::test
     return crucible::perf::mint_workload_profiler(::fixy::ColdInitCtx{::foundation::effects::testing::init()}, senses);
 }
 
-// A profiler that borrows senses.
-[[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses& senses) noexcept {
+// A profiler that borrows senses, so the senses outlive the profiler.
+[[nodiscard]] WorkloadProfiler make_profiler(const crucible::perf::Senses& senses CRUCIBLE_LIFETIMEBOUND) noexcept {
     return make_profiler(crucible::perf::ProfiledSenses::some(::fixy::erase_brand(::fixy::to(senses))));
 }
+WorkloadProfiler make_profiler(const crucible::perf::Senses&&) = delete("a profiler of a temporary Senses dangles");
 
 // The header asserts that the proof of origin carries no storage.
 // Restating it here is the per-translation-unit witness that it keeps
