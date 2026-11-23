@@ -910,9 +910,10 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
             return;
         case TraceLoadError::NameTableFull:
             ::fixy::report(::fixy::Sink::Err,
-                           "load_trace: the schema table holds at most {} names and has no place for each new name "
-                           "of the trace, so the load refuses the trace and registers none of its {} names\n",
-                           SCHEMA_TABLE_CAP, image.num_names());
+                           "load_trace: the schema table takes at most {} names from outside and has no place for "
+                           "each new name of the trace, so the load refuses the trace and registers none of its {} "
+                           "names\n",
+                           SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames, image.num_names());
             return;
         case TraceLoadError::NameTableSealed:
             ::fixy::report(::fixy::Sink::Err,

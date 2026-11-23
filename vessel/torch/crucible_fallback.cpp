@@ -179,6 +179,35 @@ using crucible::vessel::is_foreach_op_name;
 using crucible::vessel::phase_flag_bits;
 
 // =====================================================================
+// Room of the internal names
+//
+// The unboxed kernel of each operator of the generated table registers the
+// name of the operator as an internal name when the operator first records,
+// and after the seal of the global table that name goes to the late table.
+// An internal name that finds no place ends the process, and names from
+// outside fill the late table only up to its room of internal names
+// (SCHEMA_INTERNAL_ROOM_SHARE of crucible/SchemaTable.h).  So the build
+// stops when the names of the generated table do not fit that room.
+// =====================================================================
+
+// The bytes of the names of the operators of the generated table, each name
+// with its zero.  The walk reads each row of each part, as the parts lie in
+// the table.  Complexity: the rows of the table, at compile time.
+[[nodiscard]] static consteval std::size_t generated_name_bytes() noexcept {
+    std::size_t total = 0;
+    for (const ::fixy::View<crucible::vessel::OpEntry const> part : crucible::vessel::aten_op_parts) {
+        for (const crucible::vessel::OpEntry& row : part)
+            total += crucible::vessel::name_parts_of(row).full_size() + 1;
+    }
+    return total;
+}
+
+static_assert(crucible::vessel::kAtenOpCount <= crucible::LateSchemaTable::kInternalRoomNames,
+              "each operator of the generated table finds a place in the room of internal names of the late table");
+static_assert(generated_name_bytes() <= crucible::LateSchemaTable::kInternalRoomBytes.raw(),
+              "the names of the generated table fit the bytes of the room of internal names of the late table");
+
+// =====================================================================
 // Schema hash cache
 //
 // One process-wide table: the key of an operator gives its schema hash and

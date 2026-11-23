@@ -625,18 +625,20 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
     CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0));
     CRUCIBLE_TEST_ASSERT(
         kTest, ::fixy::find(report.output(),
-                            ::fixy::TextView{"load_trace: the schema table holds at most 512 names and has no place "
-                                             "for each new name of the trace, so the load refuses the trace and "
-                                             "registers none of its 3 names"})
+                            ::fixy::TextView{"load_trace: the schema table takes at most 480 names from outside and "
+                                             "has no place for each new name of the trace, so the load refuses the "
+                                             "trace and registers none of its 3 names"})
                    .is_some());
 
-    // A table with three places takes the three new names of the trace.
+    // A table with three places for names from outside takes the three new
+    // names of the trace.  The room of internal names stays out of the count.
+    constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames;
     global_schema_table().clear(::foundation::effects::testing::test());
     global_schema_table()
         .mint_mutable_view(kVigilForeground)
         .match(
             [](SchemaTable::MutableView view) noexcept {
-                for (uint64_t filler = 1; filler <= SCHEMA_TABLE_CAP - 3; ++filler) {
+                for (uint64_t filler = 1; filler <= kOutsideNames - 3; ++filler) {
                     const bool was_registered =
                         register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
                                              InternalSchemaName{::fixy::TextView{"aten::filler"}})
@@ -646,7 +648,7 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
             },
             []() noexcept {});
     CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP);
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == kOutsideNames);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kLaterHash), "aten::matmul"));
 
     global_schema_table().clear(::foundation::effects::testing::test());

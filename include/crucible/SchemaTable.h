@@ -42,6 +42,17 @@ inline constexpr std::size_t SCHEMA_NAME_MAX = 65535;
 // keeps the memory of the names of a table at 64 MiB.
 inline constexpr ::fixy::ByteCount SCHEMA_NAME_BYTES_MAX{std::size_t{64} << 20};
 
+// The room for internal names: one part in SCHEMA_INTERNAL_ROOM_SHARE of the
+// names and of the name bytes of each table.  A name from outside gets the
+// refusal full at the bound minus the room, and an internal name can take the
+// whole table.  So no outside name can starve an internal one.  Names from
+// outside (the C interface, the operators of a library, a trace file) have no
+// bound of their own, and an internal name that finds no place ends the
+// process.  The internal names of the program fit the room: the vessel checks
+// at compile time that the names of the operators of its generated table fit
+// the room of the late table.  The late table keeps 4096 names and 4 MiB.
+inline constexpr uint32_t SCHEMA_INTERNAL_ROOM_SHARE = 16;
+
 // The name holds its characters and one zero after them, so a C caller reads
 // the name through foreign_c_str.  The name is a HeapText, so no append
 // changes it, and a C text of it lives as long as the entry keeps it.  A
@@ -319,9 +330,14 @@ template <SchemaNameBoundary Tag>
 // refuse.  The two tables of the process are SchemaTable, the global table,
 // and LateSchemaTable, the late table.
 template <uint32_t Capacity>
-    requires(Capacity > 0)
+    requires(Capacity >= SCHEMA_INTERNAL_ROOM_SHARE)
 class SchemaTableOf {
 public:
+    // The room of the internal names of the table (SCHEMA_INTERNAL_ROOM_SHARE):
+    // the names and the name bytes past which a name from outside gets full.
+    static constexpr uint32_t kInternalRoomNames = Capacity / SCHEMA_INTERNAL_ROOM_SHARE;
+    static constexpr ::fixy::ByteCount kInternalRoomBytes{SCHEMA_NAME_BYTES_MAX.raw() / SCHEMA_INTERNAL_ROOM_SHARE};
+
     SchemaTableOf() = default;
 
     SchemaTableOf(const SchemaTableOf&) = delete("owns the storage of its names");
@@ -396,11 +412,13 @@ public:
     // the table keeps its first name.  A new hash finds no place in a table
     // that holds Capacity names, or whose names would pass
     // SCHEMA_NAME_BYTES_MAX with the bytes of the name, and the table keeps
-    // each name that it holds.  A Sanitized name comes from outside the
-    // process, such as a trace file or the C interface, and outside input can
-    // be wrong, so it gives the refusal collision or full.  An internal name
-    // comes from the program itself, so each of the two is a defect, and it
-    // ends the process with the reason.
+    // each name that it holds.  A Sanitized name finds no place already at
+    // the room of internal names (SCHEMA_INTERNAL_ROOM_SHARE), so no name
+    // from outside takes the place of an internal one.  A Sanitized name
+    // comes from outside the process, such as a trace file or the C
+    // interface, and outside input can be wrong, so it gives the refusal
+    // collision or full.  An internal name comes from the program itself, so
+    // each of the two is a defect, and it ends the process with the reason.
     //
     // A Sanitized name passed sanitize_schema_name, so its type proves its
     // check.  An internal name passed the check of its consteval constructor
@@ -609,10 +627,10 @@ private:
     // The verdict of the name of hash with characters, against the table and
     // the names of check.  A hash of check is a collision, because a walk
     // gives each hash one time.  A new hash finds a place while the table and
-    // the new hashes of check hold fewer than Capacity names, and their bytes
-    // and the bytes of the name stay within SCHEMA_NAME_BYTES_MAX.  Each hash
-    // of check is a held hash or a new hash, so check holds at most Capacity
-    // hashes.  Complexity: O(log n) and linear in check.
+    // the new hashes of check leave a place for a name from outside
+    // (has_room_for_).  Each hash of check is a held hash or a new hash, so
+    // check holds at most Capacity hashes.  Complexity: O(log n) and linear
+    // in check.
     [[nodiscard]] NameVerdict judge_name_(NameCheck const& check, SchemaHash hash,
                                           SchemaNameParts const& characters) const noexcept {
         for (const SchemaHash earlier : check.hashes.view()) {
@@ -628,17 +646,24 @@ private:
             return is_same_name ? NameVerdict::held : NameVerdict::collision;
         }
         const ::fixy::ByteCount pending_bytes{check.added_bytes.raw() + stored_bytes_of_(characters).raw()};
-        if (!has_room_for_(::fixy::ElementCount{std::size_t{check.added} + 1}, pending_bytes)) return NameVerdict::full;
+        if (!has_room_for_(::fixy::ElementCount{std::size_t{check.added} + 1}, pending_bytes, NameSource::outside))
+            return NameVerdict::full;
         return NameVerdict::added;
     }
 
-    // True when the table has a place for more names of more bytes: the
-    // names that it holds and the more names are at most Capacity, and the
-    // bytes of its names and the more bytes are at most
-    // SCHEMA_NAME_BYTES_MAX.  Complexity: constant.
-    [[nodiscard]] bool has_room_for_(::fixy::ElementCount more_names, ::fixy::ByteCount more_bytes) const noexcept {
-        return entries_.size() + more_names.raw() <= Capacity
-            && name_bytes_.raw() + more_bytes.raw() <= SCHEMA_NAME_BYTES_MAX.raw();
+    // True when the table has a place for more names of more bytes from
+    // source: the names that it holds and the more names are at most the
+    // bound of the names, and the bytes of its names and the more bytes are at
+    // most the bound of the bytes.  The bounds of an internal name are
+    // Capacity and SCHEMA_NAME_BYTES_MAX.  The bounds of a name from outside
+    // leave out the room of internal names.  Complexity: constant.
+    [[nodiscard]] bool has_room_for_(::fixy::ElementCount more_names, ::fixy::ByteCount more_bytes,
+                                     NameSource source) const noexcept {
+        const bool is_internal = source == NameSource::internal;
+        const std::size_t names_bound = is_internal ? Capacity : Capacity - kInternalRoomNames;
+        const std::size_t bytes_bound =
+            is_internal ? SCHEMA_NAME_BYTES_MAX.raw() : SCHEMA_NAME_BYTES_MAX.raw() - kInternalRoomBytes.raw();
+        return entries_.size() + more_names.raw() <= names_bound && name_bytes_.raw() + more_bytes.raw() <= bytes_bound;
     }
 
     // Runs inside the write section, so no seal and no other writer runs
@@ -672,7 +697,7 @@ private:
             }
         }
         const ::fixy::ByteCount name_bytes = stored_bytes_of_(characters);
-        if (!has_room_for_(::fixy::ElementCount{1}, name_bytes)) [[unlikely]] {
+        if (!has_room_for_(::fixy::ElementCount{1}, name_bytes, source)) [[unlikely]] {
             if (source == NameSource::internal) report_full_(characters);
             report_room_once_();
             return ::fixy::some(SchemaRefusal::full);
@@ -773,8 +798,10 @@ private:
     [[gnu::cold, gnu::noinline]] void report_room_() const noexcept {
         ::fixy::report(::fixy::Sink::Err,
                        "crucible: the schema table holds {} of {} names and {} of {} bytes of names, so it refuses "
-                       "each new name from outside\n",
-                       count(), Capacity, name_bytes_.raw(), SCHEMA_NAME_BYTES_MAX.raw());
+                       "each new name from outside.  The last {} names and {} bytes are a room for the internal "
+                       "names of the program\n",
+                       count(), Capacity, name_bytes_.raw(), SCHEMA_NAME_BYTES_MAX.raw(), kInternalRoomNames,
+                       kInternalRoomBytes.raw());
     }
 
     // The characters of the full name, and one zero after them, frozen into a

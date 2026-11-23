@@ -203,12 +203,20 @@ static ::fixy::FixedText<16> op_name(uint32_t i) {
 // hash that the full table refuses.
 static SchemaHash filler_hash(uint32_t i) { return H(0x1000 + i); }
 
-// Fills the table with SCHEMA_TABLE_CAP names.  The names are texts of the
-// run time, so they come from outside, through sanitize_schema_name.
+// The most names from outside of a table of SCHEMA_TABLE_CAP names: the
+// places before its room of internal names.
+constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames;
+
+// Fills the table with SCHEMA_TABLE_CAP names.  The first kOutsideNames names
+// are texts of the run time, so they come from outside, through
+// sanitize_schema_name.  The internal names of the room take the rest.
 static void fill_table(SchemaTable& t, SchemaTable::MutableView const& view) {
-    for (uint32_t i = 0; i < SCHEMA_TABLE_CAP; ++i) {
+    for (uint32_t i = 0; i < kOutsideNames; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
         reg(t, view, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
+    }
+    for (uint32_t i = kOutsideNames; i < SCHEMA_TABLE_CAP; ++i) {
+        reg(t, view, filler_hash(i), S("aten::filler"));
     }
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
 }
@@ -227,9 +235,10 @@ static void test_outside_name_at_full_table_is_refused() {
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
     CRUCIBLE_TEST_ASSERT(kTest, missing(t.lookup(H(1))));
     const ::fixy::FixedText<16> first = op_name(0);
-    const ::fixy::FixedText<16> last = op_name(SCHEMA_TABLE_CAP - 1);
+    const ::fixy::FixedText<16> last = op_name(kOutsideNames - 1);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(0)), first.view()));
-    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(SCHEMA_TABLE_CAP - 1)), last.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(kOutsideNames - 1)), last.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(SCHEMA_TABLE_CAP - 1)), "aten::filler"));
     const SanitizedSchemaName same = sanitize_outside_name(filler_hash(0), first.view());
     CRUCIBLE_TEST_ASSERT(
         kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, filler_hash(0), same).is_ok());
@@ -254,9 +263,32 @@ static void test_internal_name_at_full_table_ends_the_process() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     ::fixy::check::expect_dies(
         test, register_past_a_full_table,
-        ::fixy::TextView{"crucible: the schema table holds 512 of 512 names and 3474 of 67108864 bytes of names, so "
+        ::fixy::TextView{"crucible: the schema table holds 512 of 512 names and 3666 of 67108864 bytes of names, so "
                          "it has no place for the schema aten::one_too_many"});
     ::fixy::check::pass(kTest, "  test_internal_name_at_full_table: PASSED\n");
+}
+
+// Names from outside take the places of a table up to its room of internal
+// names, and then each new one gets full.  An internal name still finds a
+// place in the room, so no name from outside ends the process.  On the old
+// table the names from outside took each place, and the internal name then
+// ended the process: "the schema table holds 512 names, so it has no place
+// for the schema aten::internal".
+static void test_outside_names_leave_the_room_of_internal_names() {
+    SchemaTable t;
+    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
+    uint32_t registered = 0;
+    for (; registered <= SCHEMA_TABLE_CAP; ++registered) {
+        const ::fixy::FixedText<16> name = op_name(registered);
+        const SanitizedSchemaName outside = sanitize_outside_name(filler_hash(registered), name.view());
+        if (!t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, filler_hash(registered), outside)
+                 .is_ok())
+            break;
+    }
+    reg(t, mv, H(1), S("aten::internal"));
+    CRUCIBLE_TEST_ASSERT(kTest, registered == kOutsideNames);
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == kOutsideNames + 1 && eq(t.lookup(H(1)), "aten::internal"));
+    ::fixy::check::pass(kTest, "  test_outside_names_leave_room:  PASSED\n");
 }
 
 static void test_binary_search_across_many() {
@@ -573,19 +605,19 @@ static void test_register_names_writes_each_name_or_none() {
     CRUCIBLE_TEST_ASSERT(kTest, register_walk(t, mv, held_and_new).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 2 && eq(t.lookup(H(0x44)), "aten::c"));
 
-    // The table takes fillers until it has one place.
-    for (uint32_t i = 0; t.count() < SCHEMA_TABLE_CAP - 1; ++i) {
+    // The table takes fillers until it has one place for a name from outside.
+    for (uint32_t i = 0; t.count() < kOutsideNames - 1; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
         reg(t, mv, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
     }
     const ::fixy::FixedArray<WalkName, 2> two_new{WalkName{.hash = H(0x45), .name = "aten::d"},
                                                   WalkName{.hash = H(0x46), .name = "aten::e"}};
     CRUCIBLE_TEST_ASSERT(kTest, is_full(register_walk(t, mv, two_new)));
-    CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP - 1 && missing(t.lookup(H(0x45))));
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == kOutsideNames - 1 && missing(t.lookup(H(0x45))));
     const ::fixy::FixedArray<WalkName, 2> held_and_last{WalkName{.hash = H(0x44), .name = "aten::c"},
                                                         WalkName{.hash = H(0x45), .name = "aten::d"}};
     CRUCIBLE_TEST_ASSERT(kTest, register_walk(t, mv, held_and_last).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP && eq(t.lookup(H(0x45)), "aten::d"));
+    CRUCIBLE_TEST_ASSERT(kTest, t.count() == kOutsideNames && eq(t.lookup(H(0x45)), "aten::d"));
 
     t.seal(kTest);
     const ::fixy::FixedArray<WalkName, 1> held_only{WalkName{.hash = H(0x42), .name = "first"}};
@@ -625,9 +657,11 @@ static void test_late_table_holds_many_names() {
 }
 
 // The late table holds at most SCHEMA_NAME_BYTES_MAX bytes of names, each
-// name with its zero.  Names of SCHEMA_NAME_MAX characters reach that bound
-// far below the capacity of the table.  Then a new name from outside, long or
-// short, gets full, and the table keeps each name that it holds.
+// name with its zero, and names from outside stop at that bound minus the
+// room of internal names.  Names of SCHEMA_NAME_MAX characters reach it far
+// below the capacity of the table.  Then a new name from outside, long or
+// short, gets full, the table keeps each name that it holds, and an internal
+// name still finds a place.
 static void test_late_table_refuses_names_past_its_bytes() {
     LateSchemaTable& late = late_schema_table();
     late.clear(test_ctx());
@@ -644,7 +678,8 @@ static void test_late_table_refuses_names_past_its_bytes() {
             break;
     }
     constexpr std::size_t kStoredBytes = SCHEMA_NAME_MAX + 1;
-    CRUCIBLE_TEST_ASSERT(kTest, registered == SCHEMA_NAME_BYTES_MAX.raw() / kStoredBytes);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, registered == (SCHEMA_NAME_BYTES_MAX.raw() - LateSchemaTable::kInternalRoomBytes.raw()) / kStoredBytes);
     CRUCIBLE_TEST_ASSERT(kTest, late.name_bytes() == ::fixy::ByteCount{registered * kStoredBytes});
     const SchemaHash next = filler_hash(registered);
     CRUCIBLE_TEST_ASSERT(
@@ -653,6 +688,8 @@ static void test_late_table_refuses_names_past_its_bytes() {
         kTest, is_full(late.register_name(kTest, allocation, view, H(1), sanitize_outside_name(H(1), "aten::short"))));
     CRUCIBLE_TEST_ASSERT(kTest, late.count() == registered && missing(late.lookup(H(1))));
     CRUCIBLE_TEST_ASSERT(kTest, eq(late.lookup(filler_hash(0)), longest.view()));
+    CRUCIBLE_TEST_ASSERT(kTest, late.register_name(kTest, allocation, view, H(2), S("aten::internal")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, eq(late.lookup(H(2)), "aten::internal"));
     late.clear(test_ctx());
     ::fixy::check::pass(kTest, "  test_late_table_bytes_bound:    PASSED\n");
 }
@@ -674,6 +711,7 @@ int main() {
     test_binary_search_across_many();
     test_outside_name_at_full_table_is_refused();
     test_internal_name_at_full_table_ends_the_process();
+    test_outside_names_leave_the_room_of_internal_names();
     test_global_table_convenience();
     test_empty_name_is_refused();
     test_internal_name_of_two_parts();
@@ -692,6 +730,6 @@ int main() {
     test_late_table_holds_many_names();
     test_late_table_refuses_names_past_its_bytes();
     test_entry_has_no_padding_byte();
-    ::fixy::check::pass(kTest, "test_schema_table: 26 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_schema_table: 27 groups, all passed\n");
     return 0;
 }
