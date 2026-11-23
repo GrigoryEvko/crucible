@@ -1114,6 +1114,24 @@ fixy_neg_compile_test(neg_fn_affine_copy_assigned
 fixy_neg_compile_test(neg_fn_default_refined_binding
   "use of deleted function .fixy::fn<Type, Atoms>::fn\\(\\) requires ! fixy::fn<Type, Atoms ...>::admits_default \\[with Type = int; Atoms = \\{fixy::atom::refined_with<fixy::IsPositive>\\}\\]."
   "a default binding would hold Type\\{\\}, which no mint admitted")
+# The mint of a refined pack takes a Refined of the predicate of the pack, so
+# the type of the argument carries the fact.  A plain payload and a Refined of
+# a different predicate do not reach it.
+fixy_neg_compile_test(neg_fn_refined_plain_payload
+  "no matching function for call to .mint_fn<int, fixy::atom::refined_with<fixy::IsPositive> >\\(const int&\\)."
+  "required for the satisfaction of .IsUnrefinedBinding<")
+fixy_neg_compile_test(neg_fn_refined_other_predicate
+  "no matching function for call to .mint_fn<int, fixy::atom::refined_with<fixy::IsPositive> >\\(const fixy::Refinement<fixy::IsNonZero\\(\\), int, false>&\\)."
+  "required for the satisfaction of .IsRefinedProofOf<")
+# The role mint has the same two doors.  A role that states a refinement
+# takes no Refined of a different predicate, and an alias that names the
+# payload itself is no role.
+fixy_neg_compile_test(neg_fn_role_refined_other_predicate
+  "no matching function for call to .mint_fn_for<template<class T> using \\{anonymous\\}::positive_count"
+  "required for the satisfaction of .IsRefinedProofForRole<")
+fixy_neg_compile_test(neg_fn_role_refined_not_a_role
+  "no matching function for call to .mint_fn_for<template<class T> using \\{anonymous\\}::bare_payload = T>"
+  "required for the satisfaction of .IsRoleFor<")
 fixy_neg_compile_test(neg_fn_default_copy_binding
   "use of deleted function .fixy::fn<Type, Atoms>::fn\\(\\) requires ! fixy::fn<Type, Atoms ...>::admits_default \\[with Type = int; Atoms = \\{fixy::atom::copy\\}\\]."
   "a default binding would hold Type\\{\\}, which no mint admitted")

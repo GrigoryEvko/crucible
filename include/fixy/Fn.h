@@ -28,10 +28,11 @@
 #include <fixy/Tags.h>
 #include <fixy/atoms/Syscall.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Pre.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/reflect/Hash.h>
+#include <foundation/reflect/Members.h>
 #include <foundation/reflect/ReflectionList.h>
 
 #include <cstddef>
@@ -79,11 +80,157 @@ struct is_accepted_fn<fn<T, Atoms...>> : std::bool_constant<IsAccepted<T, Atoms.
 
 }  // namespace detail::role
 
+namespace detail::refinement {
+
+// The predicate that a pack states on the Refinement axis, or the
+// reflection of void when the pack states none.  The grade comes from
+// fixy::collision::grades, as the refinement tier of fixy/Reject.h reads it.
+template <class... Atoms>
+[[nodiscard]] consteval std::meta::info stated_predicate_() noexcept {
+    using Grade = typename ::fixy::collision::grades<Atoms...>::template on<Axis::Refinement>;
+    return ::fixy::atom::refinement_predicate_of(^^Grade);
+}
+
+// True when the pack states the predicate of the type Predicate, the
+// predicate_type of a Refined (fixy/Refined.h).
+template <class Predicate, class... Atoms>
+[[nodiscard]] consteval bool states_predicate_type_() noexcept {
+    return stated_predicate_<Atoms...>() == std::meta::dealias(^^std::remove_cvref_t<Predicate>);
+}
+
+// True when Proof is a Refined of fixy/Refined.h: an instance of the class
+// template fixy::Refinement that is not sealed.  The test names the template
+// by reflection, so this header needs no declaration of it, and it does not
+// include fixy/Refined.h with the graded headers of foundation/algebra.
+template <class Proof>
+[[nodiscard]] consteval bool is_refined_proof_() noexcept {
+    constexpr std::meta::info type = std::meta::dealias(^^Proof);
+    if constexpr (!std::meta::is_class_type(type) || !std::meta::has_template_arguments(type)) {
+        return false;
+    } else {
+        constexpr std::meta::info general = std::meta::template_of(type);
+        if constexpr (!::foundation::reflect::has_identifier_named(general, "Refinement")
+                      || std::meta::parent_of(general) != ^^::fixy) {
+            return false;
+        } else {
+            return !Proof::is_sealed;
+        }
+    }
+}
+
+// Oracle of the proof
+//   A Refined is the proof of its predicate, so a mint of a refined pack runs
+//   no check in Release.  mint_refined_trusted builds a Refined with no call
+//   of the predicate, so a false proof can reach the mint.  A test build
+//   (CRUCIBLE_QTT_TRACK_CONSUME, as for the end of a linear alternative) runs
+//   the predicate in the mint as a test oracle, and a false proof ends the
+//   process.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+inline constexpr bool checks_proofs_ = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+inline constexpr bool checks_proofs_ = false;
+#endif
+
+[[noreturn]] CRUCIBLE_COLD inline void report_false_proof_() noexcept {
+    ::foundation::core::fatal(
+        "fixy::fn: the Refined of the mint fails the predicate of the pack, so a trusted mint made a false proof");
+}
+
+// True for refined_with, the one atom of the Refinement axis.  A pack with
+// no such atom states no predicate.  The test reads only the types of the
+// atoms, so it reads no grade, and it runs on a pack that the gate refuses
+// too.
+template <class Atom>
+inline constexpr bool is_refined_with_ = false;
+
+template <class Pred>
+inline constexpr bool is_refined_with_<::fixy::atom::refined_with<Pred>> = true;
+
+template <class... Atoms>
+inline constexpr bool names_refinement_ = (is_refined_with_<Atoms> || ...);
+
+// The same two questions for a binding type, such as the fn that a role
+// names.
+template <class Binding>
+inline constexpr bool binding_names_refinement_ = false;
+
+template <class T, class... Atoms>
+inline constexpr bool binding_names_refinement_<fn<T, Atoms...>> = names_refinement_<Atoms...>;
+
+template <class Predicate, class Binding>
+inline constexpr bool binding_states_predicate_type_ = false;
+
+template <class Predicate, class T, class... Atoms>
+inline constexpr bool binding_states_predicate_type_<Predicate, fn<T, Atoms...>> =
+    states_predicate_type_<Predicate, Atoms...>();
+
+// The payload and the predicate of a proof.  A Refined publishes the two as
+// value_type and predicate_type.  The predicate of a refined pack is an empty
+// class that has a default constructor (atom::IsRefinementPredicate), so a
+// value of its type is the predicate of the proof.
+template <class Proof>
+using proved_payload_t = typename Proof::value_type;
+
+template <class Proof>
+using proved_predicate_t = std::remove_cvref_t<typename Proof::predicate_type>;
+
+// True when Proof proves the predicate that the pack states, on the payload T.
+template <class Proof, class T, class... Atoms>
+[[nodiscard]] consteval bool proves_pack_() noexcept {
+    if constexpr (!is_refined_proof_<Proof>()) {
+        return false;
+    } else {
+        return std::is_same_v<proved_payload_t<Proof>, T>
+            && states_predicate_type_<proved_predicate_t<Proof>, Atoms...>();
+    }
+}
+
+// Runs the oracle on the value of a proof, and gives the value.
+template <class Proof>
+[[nodiscard]] constexpr proved_payload_t<Proof>
+take_proved_(Proof&& proof) noexcept(std::is_nothrow_move_constructible_v<proved_payload_t<Proof>>) {
+    if constexpr (checks_proofs_) {
+        if (!static_cast<bool>(proved_predicate_t<Proof>{}(proof.value()))) [[unlikely]] {
+            report_false_proof_();
+        }
+    }
+    return static_cast<Proof&&>(proof).into();
+}
+
+}  // namespace detail::refinement
+
+// A binding of the gate whose pack states no refinement.  Its mint takes the
+// payload.
+template <class T, class... Atoms>
+concept IsUnrefinedBinding = !detail::refinement::names_refinement_<Atoms...> && IsAccepted<T, Atoms...>;
+
+// A proof for a binding of the gate whose pack states the predicate Pred
+// (atom::refined_with): a Refined<Pred, T> of fixy/Refined.h.  Its own mint
+// ran the predicate on the value, or its constant mint ran it at compile
+// time.  So the type of the argument carries the fact, and the mint of the
+// binding runs no check.
+template <class Proof, class T, class... Atoms>
+concept IsRefinedProofOf = IsAccepted<T, Atoms...> && detail::refinement::proves_pack_<Proof, T, Atoms...>();
+
 // A role is an alias template naming one canonical pack, written in
 // fixy/Role.h.  The gate asks that the alias lands on an fn the
 // gate itself admits, so a role cannot smuggle a pack past the tiers.
 template <template <class> class Role, class T>
 concept IsRoleFor = is_fn_v<Role<T>> && detail::role::is_accepted_fn<Role<T>>::value;
+
+// The two gates of a binding above, for a role.  The plain mint of a role
+// deduces T from its argument, so a Refined argument gives a T that is a
+// Refined.  The gate refuses a role that names a refinement before it asks
+// the gate of the binding.  So the refinement tier never calls the predicate
+// of a refined role on a Refined payload.
+template <template <class> class Role, class T>
+concept IsUnrefinedRoleFor = !detail::refinement::binding_names_refinement_<Role<T>> && IsRoleFor<Role, T>;
+
+template <template <class> class Role, class Proof>
+concept IsRefinedProofForRole =
+    detail::refinement::is_refined_proof_<Proof>() && IsRoleFor<Role, detail::refinement::proved_payload_t<Proof>>
+    && detail::refinement::binding_states_predicate_type_<detail::refinement::proved_predicate_t<Proof>,
+                                                          Role<detail::refinement::proved_payload_t<Proof>>>;
 
 namespace detail::resolve {
 
@@ -283,27 +430,33 @@ private:
     // constructor private and befriending only the mint factories
     // leaves one name to grep for to find every such event.
     //
-    // The Refinement grade is a fact about the value, and fixy/Axis.h says
-    // that a contract discharges it.  So the door runs the predicate of
-    // refined_with on the value, as the checked mint of fixy/Refined.h
-    // does, and a value that fails it ends the process.  Tier 5 of
-    // fixy/Reject.h makes sure that the call can run on the payload.  A
-    // pack with no refinement has no check, so its code does not change.
-    explicit constexpr fn(held_ v) noexcept(std::is_nothrow_move_constructible_v<held_>) : value_{std::move(v)} {
-        constexpr std::meta::info predicate = atom::refinement_predicate_of(^^grade_on<Axis::Refinement>);
-        if constexpr (predicate != ^^void) {
-            using Predicate = [:predicate:];
-            CRUCIBLE_PRE(Predicate{}(value_));
-        }
-    }
+    // The Refinement grade is a fact about the value.  The mint of a pack
+    // that states refined_with<Pred> takes a Refined of that predicate
+    // (fixy/Refined.h), so the type of its argument carries the fact, and
+    // the constructor runs no check.  Tier 5 of fixy/Reject.h makes sure
+    // that a call of the predicate can run on the payload.
+    explicit constexpr fn(held_ v) noexcept(std::is_nothrow_move_constructible_v<held_>) : value_{std::move(v)} {}
 
     template <class T, class... G>
-        requires IsAccepted<T, G...>
+        requires IsUnrefinedBinding<T, G...>
     friend constexpr auto mint_fn(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> fn<T, G...>;
 
+    // The refined mints take the proof as a deduced Proof, so no friend of
+    // this class names Refined.  A gate that reads this class then reads no
+    // definition of Refinement and no comparison of it.
+    template <class T, class... G, class Proof>
+        requires IsRefinedProofOf<Proof, T, G...>
+    friend constexpr auto mint_fn(Proof) noexcept(std::is_nothrow_move_constructible_v<T>) -> fn<T, G...>;
+
     template <template <class> class Role, class T>
-        requires IsRoleFor<Role, T>
+        requires IsUnrefinedRoleFor<Role, T>
     friend constexpr auto mint_fn_for(T) noexcept(std::is_nothrow_move_constructible_v<T>) -> Role<T>;
+
+    template <template <class> class Role, class Proof>
+        requires IsRefinedProofForRole<Role, Proof>
+    friend constexpr auto
+        mint_fn_for(Proof) noexcept(std::is_nothrow_move_constructible_v<detail::refinement::proved_payload_t<Proof>>)
+            -> Role<detail::refinement::proved_payload_t<Proof>>;
 
     held_ value_{};
 };
@@ -316,18 +469,37 @@ fn(T) -> fn<detail::ctad::fn_ctad_blocked_use_mint_fn>;
 // It earns its place by putting the gate in the signature, where a
 // reader of the declaration sees it and where a failed call reports at
 // the call site rather than inside the instantiation.
+//
+// A pack that states refined_with<Pred> takes a Refined<Pred, Type>, and
+// each other pack takes the payload.  A refined pack refuses a plain
+// payload, so no binding claims a fact that no check made.
 
 template <class Type, class... Atoms>
-    requires IsAccepted<Type, Atoms...>
+    requires IsUnrefinedBinding<Type, Atoms...>
 [[nodiscard]] constexpr auto mint_fn(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>)
     -> fn<Type, Atoms...> {
     return fn<Type, Atoms...>{std::move(v)};
 }
 
+template <class Type, class... Atoms, class Proof>
+    requires IsRefinedProofOf<Proof, Type, Atoms...>
+[[nodiscard]] constexpr auto mint_fn(Proof proof) noexcept(std::is_nothrow_move_constructible_v<Type>)
+    -> fn<Type, Atoms...> {
+    return fn<Type, Atoms...>{detail::refinement::take_proved_(std::move(proof))};
+}
+
 template <template <class> class Role, class Type>
-    requires IsRoleFor<Role, Type>
+    requires IsUnrefinedRoleFor<Role, Type>
 [[nodiscard]] constexpr auto mint_fn_for(Type v) noexcept(std::is_nothrow_move_constructible_v<Type>) -> Role<Type> {
     return Role<Type>{std::move(v)};
+}
+
+template <template <class> class Role, class Proof>
+    requires IsRefinedProofForRole<Role, Proof>
+[[nodiscard]] constexpr auto
+mint_fn_for(Proof proof) noexcept(std::is_nothrow_move_constructible_v<detail::refinement::proved_payload_t<Proof>>)
+    -> Role<detail::refinement::proved_payload_t<Proof>> {
+    return Role<detail::refinement::proved_payload_t<Proof>>{detail::refinement::take_proved_(std::move(proof))};
 }
 
 // ---------------------------------------------------------------------

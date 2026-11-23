@@ -18,6 +18,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/Fn.h>
 #include <fixy/Predicates.h>
+#include <fixy/Refined.h>
 #include <fixy/Reject.h>
 #include <fixy/atoms/Stdio.h>
 #include <fixy/atoms/Sync.h>
@@ -547,32 +548,94 @@ static_assert(!::fixy::CtxAdmitsBinding<::fixy::BgCompileCtx, StderrBinding>, "t
 }
 
 // ---------------------------------------------------------------------
-// The door checks the claim of the Refinement grade.
+// The type of the argument carries the claim of the Refinement grade.
 //
-// refined_with<Pred> states a fact about the value, and the Refinement
-// axis says that a contract discharges it.  So each mint runs the
-// predicate on the value, and a value that fails it ends the process.  The
-// role form goes through the same door.  A refused mint runs in a child
-// through expect_dies of the Check family.
+// refined_with<Pred> states a fact about the value.  The mint of such a
+// pack takes a Refined of the predicate (fixy/Refined.h), whose mint ran the
+// predicate on the value, or whose constant mint ran it at compile time.  So
+// the mint of the binding runs no check.  A plain payload and a Refined of a
+// different predicate do not reach the mint.  The role form has the same
+// two doors.
 
 template <class T>
 using positive_count = fn<T, ::fixy::atom::refined_with<::fixy::IsPositive>>;
 
+using refined_by_positive = ::fixy::atom::refined_with<::fixy::IsPositive>;
+
+template <class Argument>
+concept MintsRefined = requires(Argument argument) { mint_fn<int, refined_by_positive>(argument); };
+
+template <class Argument>
+concept MintsRefinedRole = requires(Argument argument) { ::fixy::mint_fn_for<positive_count>(argument); };
+
+template <class Argument>
+concept MintsUnrefined = requires(Argument argument) { mint_fn<int>(argument); };
+
+using positive_int = ::fixy::Refined<::fixy::positive, int>;
+using non_zero_int = ::fixy::Refined<::fixy::non_zero, int>;
+
+static_assert(MintsRefined<positive_int> && MintsRefinedRole<positive_int>);
+static_assert(!MintsRefined<int> && !MintsRefinedRole<int>, "a refined pack takes no plain payload");
+static_assert(!MintsRefined<non_zero_int> && !MintsRefinedRole<non_zero_int>,
+              "a refined pack takes no Refined of a different predicate");
+static_assert(MintsUnrefined<int>);
+static_assert(!MintsUnrefined<positive_int>, "a pack with no refinement takes the payload");
+
+// A proof is a Refined of fixy/Refined.h.  A class of the same name and the
+// same members in a different namespace proves nothing, and a SealedRefined
+// gives no value back.
+namespace look_alike {
+template <auto Pred, class T, bool Sealed>
+struct Refinement {
+    using value_type = T;
+    using predicate_type = decltype(Pred);
+    static constexpr bool is_sealed = Sealed;
+    T held{};
+    [[nodiscard]] constexpr T const& value() const noexcept { return held; }
+    [[nodiscard]] constexpr T into() && noexcept { return held; }
+};
+}  // namespace look_alike
+
+static_assert(!MintsRefined<look_alike::Refinement<::fixy::positive, int, false>>,
+              "a proof is an instance of fixy::Refinement");
+static_assert(!MintsRefined<::fixy::SealedRefined<::fixy::positive, int>>, "a sealed refinement is no proof");
+
+static_assert(mint_fn<int, refined_by_positive>(::fixy::mint_refined_constant<::fixy::positive, 3>()).value() == 3);
+
 [[nodiscard]] int check_refinement_doors() {
-    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    int volatile seed = -1;
-    int const refused = seed;
+    int volatile seed = 1;
+    int const admitted = seed;
+    if (mint_fn<int, refined_by_positive>(::fixy::mint_refined<::fixy::positive>(admitted)).value() != 1) return 20;
+    if (::fixy::mint_fn_for<positive_count>(::fixy::mint_refined<::fixy::positive>(admitted)).value() != 1) return 21;
 
-    ::fixy::check::expect_dies(
-        test, [refused] noexcept { (void)mint_fn<int, ::fixy::atom::refined_with<::fixy::IsPositive>>(refused); },
-        ::fixy::TextView{"foundation: contract violation: Predicate{}(value_)"});
-    ::fixy::check::expect_dies(
-        test, [refused] noexcept { (void)::fixy::mint_fn_for<positive_count>(refused); },
-        ::fixy::TextView{"foundation: contract violation: Predicate{}(value_)"});
-
-    int const admitted = -refused;
-    if (mint_fn<int, ::fixy::atom::refined_with<::fixy::IsPositive>>(admitted).value() != 1) return 20;
-    if (::fixy::mint_fn_for<positive_count>(admitted).value() != 1) return 21;
+    // The oracle of the proof: mint_refined_trusted runs no predicate, so it
+    // can make a false proof.  A test build runs the predicate in the mint of
+    // the binding, and the false proof ends the process.  A Release build
+    // runs no check there, and the binding holds the value of the proof.  The
+    // case reads the value of the switch of the oracle, because fixy/Qtt.h
+    // defines CRUCIBLE_QTT_TRACK_CONSUME as 0 in a build that sets nothing.
+    int const refused = -admitted;
+    if constexpr (::fixy::detail::refinement::checks_proofs_) {
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+        constexpr ::fixy::TextView kFalseProof{
+            "fixy::fn: the Refined of the mint fails the predicate of the pack, so a trusted mint made a false proof"};
+        ::fixy::check::expect_dies(
+            test,
+            [refused] noexcept {
+                (void)mint_fn<int, refined_by_positive>(::fixy::mint_refined_trusted<::fixy::positive>(refused));
+            },
+            kFalseProof);
+        ::fixy::check::expect_dies(
+            test,
+            [refused] noexcept {
+                (void)::fixy::mint_fn_for<positive_count>(::fixy::mint_refined_trusted<::fixy::positive>(refused));
+            },
+            kFalseProof);
+    } else {
+        auto const unchecked =
+            mint_fn<int, refined_by_positive>(::fixy::mint_refined_trusted<::fixy::positive>(refused));
+        if (unchecked.value() != refused) return 22;
+    }
     return 0;
 }
 
