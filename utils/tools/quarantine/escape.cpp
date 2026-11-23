@@ -34,6 +34,17 @@
 //   initializer.  A conversion, a conditional, a comma and a temporary pass
 //   their origins on.
 //
+// Marked owners
+//   A parameter that CRUCIBLE_LIFETIMEBOUND marks states that the result
+//   borrows its argument.  So the object of an argument at a marked parameter
+//   of a door of the base is an origin of the call, also when the result names
+//   no part of its type.  An arena gives a Ref of an int, and it holds no int.
+//   The rule reads the mark only for an owner: an object that holds no borrow,
+//   or a class that states owns_its_storage{} of
+//   include/foundation/core/Owner.h, whose pointers name its own storage.  The
+//   result of a door that takes a View or a Ref borrows the target of that
+//   borrow, which the origins above follow.
+//
 // Finding
 //   escaped-borrow   a return whose value has an origin that ends with the
 //                    frame: a local of automatic storage, a parameter by
@@ -172,6 +183,16 @@ bool holds_borrow(tree type, int depth) {
     }
     borrow_classes[TYPE_UID(type)] = is_held;
     return is_held;
+}
+
+// True for a class that states owns_its_storage{} of
+// include/foundation/core/Owner.h: its pointers name its own storage, and no
+// door of it stores a borrow that a caller gives (the marked owners).
+bool owns_its_storage(tree type) {
+    static tree const mark = get_identifier("owns_its_storage");
+    static tree const core = get_identifier("core");
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) && carries_base_annotation(TYPE_ATTRIBUTES(type), mark, core);
 }
 
 // True for a function of the base, whose borrow the origins follow.
@@ -599,12 +620,34 @@ public:
             is_lend_taken = is_lend_taken || is_value;
             if (is_moved) {
                 add_object(argument_object(argument), moved, depth + 1);
+            } else if (is_marked_owner_argument(callee, index, argument)) {
+                add_object(argument_object(argument), out, depth + 1);
             }
         }
         out.erase(std::remove_if(
                       out.begin() + static_cast<std::ptrdiff_t>(first_found), out.end(),
                       [&moved](tree origin) { return std::find(moved.begin(), moved.end(), origin) != moved.end(); }),
                   out.end());
+    }
+
+    // True when the argument at INDEX of a call of CALLEE names an owner at a
+    // parameter that CRUCIBLE_LIFETIMEBOUND marks (the marked owners).  The
+    // index counts the object parameter of a member first, as the arguments
+    // of the call do.
+    static bool is_marked_owner_argument(tree callee, int index, tree argument) {
+        tree parameter = DECL_ARGUMENTS(callee);
+        for (int position = 0; parameter != NULL_TREE && position < index; ++position) {
+            parameter = DECL_CHAIN(parameter);
+        }
+        if (parameter == NULL_TREE || TREE_CODE(parameter) != PARM_DECL || !is_lifetime_bound_parameter(parameter)) {
+            return false;
+        }
+        tree stripped = strip_conversions(argument);
+        if (stripped == NULL_TREE || TREE_TYPE(stripped) == NULL_TREE || !POINTER_TYPE_P(TREE_TYPE(stripped))) {
+            return false;
+        }
+        tree object_type = TREE_TYPE(TREE_TYPE(stripped));
+        return object_type != NULL_TREE && (!holds_borrow(object_type, 0) || owns_its_storage(object_type));
     }
 
     // The object that an argument by reference names: the operand of an
@@ -637,7 +680,11 @@ public:
             if (type != NULL_TREE && TREE_CODE(type) == REFERENCE_TYPE) {
                 type = TREE_TYPE(type);
             }
-            if (origin != NULL_TREE && could_name(result, type, Lend::part)) {
+            // An owner of its storage, such as an arena, holds objects of each
+            // type, so it can hold each target of the result (the marked
+            // owners).
+            bool const holds_each_type = type != NULL_TREE && owns_its_storage(type);
+            if (origin != NULL_TREE && (holds_each_type || could_name(result, type, Lend::part))) {
                 out.push_back(origin);
             }
         }

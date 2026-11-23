@@ -1,0 +1,52 @@
+// A member tag that names its one member, a borrow of that arena in a
+// different class, an arena of a tag with no mark, and an epoch brand in a
+// carrier and in locals give no line.
+
+#include "Arena.h"
+
+namespace planted {
+
+// The owner of one member arena.
+struct Owner {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Arena<Tag> arena{};
+};
+
+// Two member arenas of two tags in one class.
+struct TwoTags {
+    struct [[= ::foundation::brand::arena_member_brand{}]] First final {};
+    struct [[= ::foundation::brand::arena_member_brand{}]] Second final {};
+    Arena<First> first{};
+    Arena<Second> second{};
+};
+
+// A borrow of a member arena in a different class.
+struct Borrower {
+    Ref<Arena<Owner::Tag>, Owner::Tag> arena{};
+};
+
+// A tag with no mark: a local and a static object of its arena.
+struct Plain final {};
+
+Arena<Plain> const plain_arena{};
+
+unsigned local_plain_arena() noexcept {
+    Arena<Plain> local{};
+    return local.bytes + plain_arena.bytes;
+}
+
+// A carrier that states its epoch brand, and a carrier and a Ref of the epoch
+// in locals.
+struct Carrier {
+    using brand_type = EpochOf<Owner::Tag>;
+    Ref<int, EpochOf<Owner::Tag>> kept{};
+    Carrier* next = nullptr;
+};
+
+unsigned local_carrier() noexcept {
+    Carrier carrier{};
+    Ref<int, EpochOf<Owner::Tag>> const kept = carrier.kept;
+    return kept.object == nullptr ? 0u : 1u;
+}
+
+}  // namespace planted

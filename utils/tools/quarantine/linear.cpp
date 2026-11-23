@@ -538,6 +538,36 @@
 //     "quarantine: ", so a regex of a negative fixture reads it.  A value of a
 //     scope brand that a type erases, such as a function object that captures
 //     an index, holds no brand in its type, and the rule cannot see it.
+//
+// Arena brands
+//     An arena of include/foundation/core/BumpArena.h carries the annotation
+//     branded_arena of include/foundation/Brand.h, and its first type argument
+//     is its brand.  A member arena tag carries arena_member_brand: it names
+//     the one arena that a class holds as a member.  Two arenas of one tag
+//     would share the brand, and a Ref of one would fit a field that names the
+//     other.  An epoch brand carries epoch_brand: EpochOf<Tag> names the bytes
+//     of one epoch of an epoch arena, and the end of the epoch ends them.  A
+//     carrier of an epoch is a class that states the epoch brand as its member
+//     brand_type, and a carrier holds the brand for each check below:
+//       arena-member        a member that holds an arena of a member tag in a
+//                           different type, such as an Option or a Box of it,
+//                           a member of an arena whose tag is no nested class
+//                           of the class, a second member of one tag, a nested
+//                           member tag with no member, a local or an object
+//                           of static or thread storage duration that holds
+//                           an arena of a member tag, and an object of static
+//                           or thread storage duration that reaches one
+//                           through a path that is not const, such as an
+//                           owner of the arena.  A body of an epoch with no
+//                           capture reaches each such object
+//       epoch-member        a member whose type holds an epoch brand, also
+//                           through a reference, a pointer or a carrier, in a
+//                           class that does not state that brand
+//       epoch-static        an object of static or thread storage duration
+//                           whose type holds an epoch brand
+//     Each finding of the three kinds is a compile error in each build and
+//     each mode.  The door with_epoch refuses a result and a capture by a
+//     reference that is not const that hold the brand, at compile time.
 
 #include "plugin.h"
 
@@ -568,6 +598,16 @@ struct LinearNames {
     tree brand_type = NULL_TREE;
     tree brand = NULL_TREE;  // the namespace foundation::brand
     tree scope_brand = NULL_TREE;
+    // The arena brands: the annotations of an epoch brand, of a member arena
+    // tag and of an arena class, and the marks of a borrow of
+    // include/foundation/Transfer.h.
+    tree epoch_brand = NULL_TREE;
+    tree arena_member_brand = NULL_TREE;
+    tree branded_arena = NULL_TREE;
+    tree transfer = NULL_TREE;
+    tree refers = NULL_TREE;
+    tree refers_unique = NULL_TREE;
+    tree refers_deep = NULL_TREE;
     tree drop_door = NULL_TREE;
     tree detach_door = NULL_TREE;
     tree scope_end_door = NULL_TREE;
@@ -3864,6 +3904,7 @@ struct ShapeCaches {
     std::unordered_map<tree, bool> refuses_lifetime;
     std::unordered_map<tree, tree> library_holder;
     std::unordered_map<tree, std::vector<tree>> brands;
+    std::unordered_map<tree, std::vector<tree>> epoch_brands;
 };
 
 ShapeCaches shape_caches;
@@ -4230,6 +4271,306 @@ tree unbound_brand(tree type, tree scope) {
     return NULL_TREE;
 }
 
+// ── The arena brands ───────────────────────────────────────────────────────
+
+// True when the class TYPE carries the annotation foundation::brand::NAME, or
+// the pattern of its class template does.  A brand in a template argument is
+// often never instantiated, and such a specialization holds no attribute.
+bool carries_brand_mark(tree type, tree name) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type)) {
+        return false;
+    }
+    if (carries_annotation(TYPE_ATTRIBUTES(type), name, linear_names.brand)) {
+        return true;
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    if (info == NULL_TREE || TREE_CODE(TI_TEMPLATE(info)) != TEMPLATE_DECL) {
+        return false;
+    }
+    tree pattern = TREE_TYPE(DECL_TEMPLATE_RESULT(most_general_template(TI_TEMPLATE(info))));
+    return pattern != NULL_TREE && pattern != type && CLASS_TYPE_P(pattern)
+        && carries_annotation(TYPE_ATTRIBUTES(pattern), name, linear_names.brand);
+}
+
+// True when TYPE is an epoch brand: a class with the annotation epoch_brand,
+// the class template EpochOf of include/foundation/core/BumpArena.h.
+bool is_epoch_brand(tree type) { return carries_brand_mark(type, linear_names.epoch_brand); }
+
+// True when the class TYPE states a borrow of include/foundation/Transfer.h,
+// such as a Ref or a View.
+bool is_borrow_class(tree type) {
+    tree attributes = TYPE_ATTRIBUTES(TYPE_MAIN_VARIANT(type));
+    return carries_annotation(attributes, linear_names.refers, linear_names.transfer)
+        || carries_annotation(attributes, linear_names.refers_unique, linear_names.transfer)
+        || carries_annotation(attributes, linear_names.refers_deep, linear_names.transfer);
+}
+
+// The member tag of TYPE when TYPE is an arena of a member tag: a class with
+// the annotation branded_arena whose first type argument carries
+// arena_member_brand.  Null for each other type.
+tree member_arena_tag(tree type) {
+    if (!carries_brand_mark(type, linear_names.branded_arena)) {
+        return NULL_TREE;
+    }
+    tree info = CLASSTYPE_TEMPLATE_INFO(TYPE_MAIN_VARIANT(type));
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    if (arguments == NULL_TREE || TREE_VEC_LENGTH(arguments) < 1) {
+        return NULL_TREE;
+    }
+    tree tag = TREE_VEC_ELT(arguments, 0);
+    return carries_brand_mark(tag, linear_names.arena_member_brand) ? TYPE_MAIN_VARIANT(tag) : NULL_TREE;
+}
+
+// The first arena of a member tag that a value of TYPE holds as an owner:
+// TYPE itself, the element of an array, and a type argument of a class that
+// states no borrow, at each depth, such as the payload of an Option or of a
+// Box.  A reference, a pointer and a borrow name an arena that a different
+// object holds.  Complexity: linear in the type arguments, to kTypeDepth.
+tree held_member_arena(tree type, int depth = 0) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
+        return NULL_TREE;
+    }
+    type = element_type_of(type);
+    if (!CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (member_arena_tag(type) != NULL_TREE) {
+        return type;
+    }
+    if (is_borrow_class(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE) {
+        return NULL_TREE;
+    }
+    tree found = NULL_TREE;
+    each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+        if (found == NULL_TREE && TYPE_P(argument)) {
+            found = held_member_arena(argument, depth + 1);
+        }
+    });
+    return found;
+}
+
+// The epoch brand that the class TYPE or one of its bases names as its member
+// brand_type: TYPE is a carrier of that epoch.  Null for each other class.
+tree named_epoch_brand_of(tree type, int depth = 0) {
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || depth > kTypeDepth) {
+        return NULL_TREE;
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) == TYPE_DECL && DECL_NAME(member) == linear_names.brand_type
+            && is_epoch_brand(TREE_TYPE(member))) {
+            return TYPE_MAIN_VARIANT(TREE_TYPE(member));
+        }
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            if (tree brand = named_epoch_brand_of(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1)) {
+                return brand;
+            }
+        }
+    }
+    return NULL_TREE;
+}
+
+// Adds each epoch brand that TYPE holds to OUT: an epoch brand, a brand in a
+// type argument at each depth, through a reference, a pointer and an array,
+// the brand that a carrier names, and a brand in a capture or a field of a
+// closure or of a local class.  Complexity: the walk visits each class one
+// time between two collections.
+void collect_epoch_brands(tree type, std::vector<tree>& out, int depth = 0) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
+        return;
+    }
+    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
+        collect_epoch_brands(TREE_TYPE(type), out, depth + 1);
+        return;
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type)) {
+        return;
+    }
+    if (is_epoch_brand(type)) {
+        out.push_back(type);
+        return;
+    }
+    auto found = shape_caches.epoch_brands.find(type);
+    if (found == shape_caches.epoch_brands.end()) {
+        shape_caches.epoch_brands.emplace(type, std::vector<tree>{});
+        std::vector<tree> held;
+        if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+            each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+                if (TYPE_P(argument)) {
+                    collect_epoch_brands(argument, held, depth + 1);
+                }
+            });
+        }
+        if (tree named = named_epoch_brand_of(type)) {
+            held.push_back(named);
+        }
+        tree decl = TYPE_MAIN_DECL(type);
+        if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
+            for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+                if (TREE_CODE(field) == FIELD_DECL) {
+                    collect_epoch_brands(TREE_TYPE(field), held, depth + 1);
+                }
+            }
+        }
+        found = shape_caches.epoch_brands.find(type);
+        found->second = std::move(held);
+    }
+    out.insert(out.end(), found->second.begin(), found->second.end());
+}
+
+// The first arena of a member tag that a value of TYPE reaches through a
+// path that is not const: TYPE itself, a base, a member, a type argument, and
+// the target of a reference or a pointer, at each depth.  A const part ends
+// the path, because a const arena gives nothing and opens no epoch.  A body
+// with no capture reaches each object of static or thread storage duration,
+// so such an object that reaches an epoch arena would let a body open a
+// second epoch of it.  Complexity: each class one time for each walk.
+tree reached_member_arena(tree type, std::unordered_set<tree>& seen, int depth = 0) {
+    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth || TYPE_READONLY(type)) {
+        return NULL_TREE;
+    }
+    if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
+        return reached_member_arena(TREE_TYPE(type), seen, depth + 1);
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type) || !seen.insert(type).second) {
+        return NULL_TREE;
+    }
+    if (member_arena_tag(type) != NULL_TREE) {
+        return type;
+    }
+    tree found = NULL_TREE;
+    if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+        each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+            if (found == NULL_TREE && TYPE_P(argument)) {
+                found = reached_member_arena(argument, seen, depth + 1);
+            }
+        });
+    }
+    if (!COMPLETE_TYPE_P(type)) {
+        return found;
+    }
+    for (tree field = TYPE_FIELDS(type); found == NULL_TREE && field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
+            found = reached_member_arena(TREE_TYPE(field), seen, depth + 1);
+        }
+    }
+    return found;
+}
+
+// The first epoch brand that TYPE holds, or null.
+tree first_epoch_brand(tree type) {
+    std::vector<tree> held;
+    collect_epoch_brands(type, held);
+    return held.empty() ? NULL_TREE : held.front();
+}
+
+// The name of a class in an entity.
+std::string class_text(tree type) { return qualified_name(TYPE_MAIN_DECL(TYPE_MAIN_VARIANT(type))); }
+
+// The checks of the objects with static or thread storage duration and of the
+// locals (the arena brands): an arena of a member tag lives only in the one
+// member that its tag names, and an epoch brand lives in no such object.
+void check_arena_object(tree decl, const std::string& entity, location_t location, bool is_static) {
+    tree type = TREE_TYPE(decl);
+    if (tree arena = held_member_arena(type)) {
+        record_shape(Kind::brand_arena_member, location,
+                     entity + ", an object of the arena " + class_text(arena) + " that is no member of the class of "
+                         + class_text(member_arena_tag(arena)));
+    }
+    if (!is_static) {
+        return;
+    }
+    std::unordered_set<tree> seen;
+    tree reached = held_member_arena(type) == NULL_TREE ? reached_member_arena(type, seen) : NULL_TREE;
+    if (reached != NULL_TREE) {
+        record_shape(Kind::brand_arena_member, location,
+                     entity + ", an object of static or thread storage duration that reaches the arena "
+                         + class_text(reached) + " of the class of " + class_text(member_arena_tag(reached)));
+    }
+    if (tree epoch = first_epoch_brand(type)) {
+        record_shape(Kind::brand_epoch_static, location, entity + ", " + class_text(epoch));
+    }
+}
+
+// The checks of the members of the complete class TYPE (the arena brands).
+// A member that holds an arena of a member tag is that arena itself, its tag
+// is a nested class of TYPE, and no second member holds an arena of the same
+// tag.  Each nested member tag of TYPE names one member.  A member that holds
+// an epoch brand is a member of a carrier of that brand.  Complexity: linear
+// in the members, times the walk of each type.
+void check_member_brands(tree type, const std::string& name) {
+    std::vector<tree> named_tags;
+    tree carried = named_epoch_brand_of(type);
+    // A class template whose type argument holds the arena, such as an Option
+    // of it, is the different type of the finding at the member that holds it.
+    bool const is_wrapper = CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE && held_member_arena(type) != NULL_TREE;
+    // An epoch brand that a type argument of the class gives is bound, as the
+    // payload of an Option is: the member that holds the class gives the
+    // finding.
+    std::vector<tree> bound;
+    if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+        each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+            if (TYPE_P(argument)) {
+                collect_epoch_brands(argument, bound);
+            }
+        });
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) != FIELD_DECL || DECL_FIELD_IS_BASE(member) || TREE_TYPE(member) == NULL_TREE
+            || TREE_TYPE(member) == error_mark_node) {
+            continue;
+        }
+        std::string entity = name + ": " + simple_name(member);
+        location_t location = DECL_SOURCE_LOCATION(member);
+        std::vector<tree> epochs;
+        collect_epoch_brands(TREE_TYPE(member), epochs);
+        for (tree epoch : epochs) {
+            if (epoch != carried && std::find(bound.begin(), bound.end(), epoch) == bound.end()) {
+                record_shape(Kind::brand_epoch_member, location, entity + ", " + class_text(epoch));
+                break;
+            }
+        }
+        tree arena = held_member_arena(TREE_TYPE(member));
+        if (arena == NULL_TREE || is_wrapper) {
+            continue;
+        }
+        tree tag = member_arena_tag(arena);
+        std::string tag_name = class_text(tag);
+        if (TYPE_MAIN_VARIANT(strip_top_quals(TREE_TYPE(member))) != arena) {
+            record_shape(Kind::brand_arena_member, location,
+                         entity + ", the arena of the member tag " + tag_name + " inside a different type");
+            named_tags.push_back(tag);
+        } else if (TYPE_CONTEXT(tag) != type) {
+            record_shape(Kind::brand_arena_member, location,
+                         entity + ", the member tag " + tag_name + " is no nested class of the class");
+        } else if (std::find(named_tags.begin(), named_tags.end(), tag) != named_tags.end()) {
+            record_shape(Kind::brand_arena_member, location,
+                         entity + ", a second member of the member tag " + tag_name);
+        } else {
+            named_tags.push_back(tag);
+        }
+    }
+    for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
+        if (TREE_CODE(member) != TYPE_DECL || !DECL_IMPLICIT_TYPEDEF_P(member)) {
+            continue;
+        }
+        tree tag = TYPE_MAIN_VARIANT(TREE_TYPE(member));
+        if (carries_brand_mark(tag, linear_names.arena_member_brand) && TYPE_CONTEXT(tag) == type
+            && std::find(named_tags.begin(), named_tags.end(), tag) == named_tags.end()) {
+            record_shape(Kind::brand_arena_member, DECL_SOURCE_LOCATION(member),
+                         name + ": the member tag " + class_text(tag) + " names no member");
+        }
+    }
+}
+
 // The name of a brand in an entity: the place of its lambda, because GCC
 // prints each brand as <lambda()>.
 std::string brand_text(tree brand) {
@@ -4307,6 +4648,7 @@ void check_static_object(tree decl, const std::string& owner) {
         record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(decl),
                      entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
     }
+    check_arena_object(decl, entity, DECL_SOURCE_LOCATION(decl), true);
     check_class(type);
 }
 
@@ -4366,6 +4708,7 @@ void check_class(tree type, int depth) {
     if (facts.linearity == Linearity::direct && !refuses_lifetime(type)) {
         record_shape(Kind::linear_unsealed_lifetime, location, name);
     }
+    check_member_brands(type, name);
     bool is_union = TREE_CODE(type) == UNION_TYPE;
     for (tree member = TYPE_FIELDS(type); member != NULL_TREE; member = DECL_CHAIN(member)) {
         tree member_type = TREE_TYPE(member);
@@ -4760,6 +5103,7 @@ void check_local(tree decl, const ShapeWalk& walk) {
         record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(decl),
                      entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
     }
+    check_arena_object(decl, entity, DECL_SOURCE_LOCATION(decl), false);
     tree brand = unbound_brand(type, walk.function);
     if (brand == NULL_TREE) {
         return;
@@ -4788,11 +5132,12 @@ void check_named_static(tree decl, const ShapeWalk& walk) {
     }
     std::vector<tree> held;
     collect_brands(type, held);
+    location_t location = walk.last_location != UNKNOWN_LOCATION ? walk.last_location : DECL_SOURCE_LOCATION(decl);
     if (tree scope = first_scope_brand(held)) {
-        location_t location = walk.last_location != UNKNOWN_LOCATION ? walk.last_location : DECL_SOURCE_LOCATION(decl);
         record_shape(Kind::brand_scope_static, location,
                      walk.name + ": " + qualified_name(decl) + ", " + brand_text(scope));
     }
+    check_arena_object(decl, walk.name + ": " + qualified_name(decl), location, true);
 }
 
 void note_linear_variable(tree variable, ShapeWalk& walk) {
@@ -5533,6 +5878,7 @@ void on_linear_collection(void*, void*) {
     shape_caches.refuses_lifetime.clear();
     shape_caches.library_holder.clear();
     shape_caches.brands.clear();
+    shape_caches.epoch_brands.clear();
     folded_initializers.clear();
     empty_assignments.clear();
     empty_assignment_of_source.clear();
@@ -5566,8 +5912,8 @@ void check_static_linear_sum(tree decl, const std::string& entity) {
     add_finding(Kind::linear_option_static, nullptr, place, entity + " (" + linear_type_text(TREE_TYPE(decl)) + ")");
 }
 
-// The error of one finding of the kinds of the scope brands that no region
-// opts out.
+// The error of one finding of the kinds of the scope brands and the arena
+// brands that no region opts out.
 void report_scope_escape(const Finding& finding) {
     if (finding.kind == Kind::brand_scope_static) {
         error_at(finding.spelling,
@@ -5585,6 +5931,28 @@ void report_scope_escape(const Finding& finding) {
                "the result leaves the call of the mint, so a value of the brand outlives its scope, also when a "
                "capture of a closure or a field of a local class holds it");
         inform(finding.spelling, "give a result that holds no value of the scope, such as the number of an index");
+    } else if (finding.kind == Kind::brand_arena_member) {
+        error_at(finding.spelling, "a member arena tag does not name exactly one member of the class that nests it: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "two arenas of one member tag share the brand, so a Ref of one fits a field that names the other");
+        inform(finding.spelling,
+               "nest the tag in the class beside its one member, which holds the arena itself, and give each other "
+               "arena its own tag or the scope arena of %<with_bump_arena%>");
+    } else if (finding.kind == Kind::brand_epoch_member) {
+        error_at(finding.spelling, "a member holds an epoch brand that its class does not state: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling,
+               "the end of the epoch ends each byte that the epoch gave out, so only a carrier of the epoch, a class "
+               "that states the brand as its %<brand_type%>, holds a value of it, and the rules then read the carrier");
+        inform(finding.spelling,
+               "state the epoch brand as the %<brand_type%> of the class, or keep the value in a local "
+               "of the body of the epoch");
+    } else if (finding.kind == Kind::brand_epoch_static) {
+        error_at(finding.spelling, "an object of static or thread storage duration holds an epoch brand: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling, "the object outlives the epoch, so a value of the epoch in it names ended bytes");
+        inform(finding.spelling, "keep the value in a local of the body of the epoch");
     } else {
         return;
     }
@@ -5692,6 +6060,13 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.brand_type = get_identifier("brand_type");
     linear_names.brand = get_identifier("brand");
     linear_names.scope_brand = get_identifier("scope_brand");
+    linear_names.epoch_brand = get_identifier("epoch_brand");
+    linear_names.arena_member_brand = get_identifier("arena_member_brand");
+    linear_names.branded_arena = get_identifier("branded_arena");
+    linear_names.transfer = get_identifier("transfer");
+    linear_names.refers = get_identifier("refers");
+    linear_names.refers_unique = get_identifier("refers_unique");
+    linear_names.refers_deep = get_identifier("refers_deep");
     linear_names.drop_door = get_identifier("drop_door");
     linear_names.detach_door = get_identifier("detach_door");
     linear_names.scope_end_door = get_identifier("scope_end_door");

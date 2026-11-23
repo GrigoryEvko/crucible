@@ -1,0 +1,31 @@
+#pragma once
+
+// An arena with the shape of BumpArena: its first template argument is its
+// brand, and the annotation branded_arena marks it.  An epoch brand with the
+// shape of EpochOf, a Ref with a brand, and an Option that holds its payload
+// by value.
+
+#include <foundation/Brand.h>
+
+namespace planted {
+
+template <class Tag>
+struct [[= ::foundation::brand::branded_arena{}]] Arena {
+    unsigned bytes = 0;
+};
+
+template <class Tag>
+struct [[= ::foundation::brand::epoch_brand{}]] EpochOf final {};
+
+template <class T, class Brand>
+struct Ref {
+    T* object = nullptr;
+};
+
+template <class T>
+struct Option {
+    T payload{};
+    bool is_full = false;
+};
+
+}  // namespace planted

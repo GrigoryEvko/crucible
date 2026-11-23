@@ -1,0 +1,9 @@
+# A member tag that names its one member, a borrow of that arena in a
+# different class, an arena of a tag with no mark, and an epoch brand in a
+# carrier and in locals give no line, and the compile passes.
+
+compile arenas src/arenas.cpp linear-shapes=on
+flag arenas -freflection
+exit arenas pass
+finding arenas quarantine raw-pointer-object src/arenas.cpp:43:14 | next
+finding arenas quarantine raw-pointer-object src/Arena.h:22:8 | object

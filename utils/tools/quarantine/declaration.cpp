@@ -3993,6 +3993,8 @@ void note_borrowed_parameter(tree function, tree parameter, int index) {
     note_borrow_claim(function, parameter, index);
 }
 
+bool is_lifetime_bound_parameter(tree parameter) { return is_marked_parameter(parameter); }
+
 // One walk of every namespace that a system header does not own, for the
 // contract rule and for the quarantine rule, and one walk for the family
 // declaration property (the walk).

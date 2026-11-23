@@ -314,6 +314,9 @@ BRAND_ESCAPE_RULE = "brand-escape"
 SCOPE_ERRORS = {
     "scope-static": "an object of static or thread storage duration holds a value of a scope brand",
     "scope-return": "a scope mint gives a result that holds its own scope brand",
+    "arena-member": "a member arena tag does not name exactly one member of the class that nests it",
+    "epoch-member": "a member holds an epoch brand that its class does not state",
+    "epoch-static": "an object of static or thread storage duration holds an epoch brand",
 }
 # The rule must-consume, and the start of the error of each of its kinds that is an error in each mode: the end of a
 # linear sum with its payload (the sums of utils/tools/quarantine/linear.cpp).  Its other kinds are lines of a ledger.

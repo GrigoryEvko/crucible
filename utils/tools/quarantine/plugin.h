@@ -451,6 +451,14 @@
 //                           outlives the call of its mint (the scope brands of
 //                           linear.cpp).  Each finding of the two kinds is an
 //                           error in each mode (is_each_mode_kind)
+//     arena-member          brand-escape: a member arena tag that does not name
+//                           exactly one member of the class that nests it
+//     epoch-member, epoch-static
+//                           brand-escape: an epoch brand in a member of a class
+//                           that does not state the brand, and in an object of
+//                           static or thread storage duration (the arena brands
+//                           of linear.cpp).  Each finding of the three kinds is
+//                           an error in each mode
 //     reentry               brand-reentry: a branded value in a call that can
 //                           reach the function that minted the brand again
 //     The rule specialization-home of the family specialization home
@@ -1140,6 +1148,9 @@ enum class Kind : std::uint8_t {
     brand_escaped_alias,
     brand_scope_static,
     brand_scope_return,
+    brand_arena_member,
+    brand_epoch_member,
+    brand_epoch_static,
     brand_reentry,
     // The family specialization home (specialization.cpp).
     specialization_outside_home,
@@ -1542,6 +1553,12 @@ inline const char* kind_name(Kind kind) {
             return "scope-static";
         case Kind::brand_scope_return:
             return "scope-return";
+        case Kind::brand_arena_member:
+            return "arena-member";
+        case Kind::brand_epoch_member:
+            return "epoch-member";
+        case Kind::brand_epoch_static:
+            return "epoch-static";
         case Kind::brand_reentry:
             return "reentry";
         case Kind::specialization_outside_home:
@@ -1731,6 +1748,9 @@ inline Rule rule_of(Kind kind) {
         case Kind::brand_escaped_alias:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::brand_arena_member:
+        case Kind::brand_epoch_member:
+        case Kind::brand_epoch_static:
             return Rule::brand_escape;
         case Kind::brand_reentry:
             return Rule::brand_reentry;
@@ -1783,6 +1803,9 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::fast_math_override:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::brand_arena_member:
+        case Kind::brand_epoch_member:
+        case Kind::brand_epoch_static:
         case Kind::linear_option_unconsumed:
         case Kind::linear_option_discarded:
         case Kind::linear_option_known_full:
@@ -2029,6 +2052,9 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"brand-escape", "escaped-alias"},
     {"brand-escape", "scope-static"},
     {"brand-escape", "scope-return"},
+    {"brand-escape", "arena-member"},
+    {"brand-escape", "epoch-member"},
+    {"brand-escape", "epoch-static"},
     {"brand-reentry", "reentry"},
     {"specialization-home", "specialization"},
     {"specialization-home", "orphan"},
@@ -2072,6 +2098,9 @@ inline bool is_name_kind(Kind kind) {
         case Kind::base_namespace_using_directive:
         case Kind::brand_scope_static:
         case Kind::brand_scope_return:
+        case Kind::brand_arena_member:
+        case Kind::brand_epoch_member:
+        case Kind::brand_epoch_static:
         case Kind::linear_option_unconsumed:
         case Kind::linear_option_discarded:
         case Kind::linear_option_known_full:
@@ -3042,6 +3071,12 @@ void report_view_escape(const Finding& finding);
 // it (the borrowed parameters of declaration.cpp).
 void note_borrowed_parameter(tree function, tree parameter, int index);
 
+// declaration.cpp: true when CRUCIBLE_LIFETIMEBOUND marks the parameter, by its
+// own attribute or by the noted place of a marked parameter (the rule
+// lifetime-twin of declaration.cpp).  The walk of the origins of escape.cpp
+// reads it (the marked owners of escape.cpp).
+bool is_lifetime_bound_parameter(tree parameter);
+
 // home.cpp: the family home, where a definition or a specialization stands.
 // The place helpers of the place and the sites of home.cpp, which the family
 // specialization home reads too.
@@ -3122,9 +3157,10 @@ void check_static_linear_sum(tree decl, const std::string& entity);
 // must-consume, in each mode (the self-moves).  Its text names the move, so a
 // fixture reads it as an error of the compile and not as a finding.
 void report_self_move(const Finding& finding);
-// linear.cpp: the error of one finding of the kinds scope-static and
-// scope-return of the rule brand-escape that no region opts out (the scope
-// brands of linear.cpp).
+// linear.cpp: the error of one finding of the kinds scope-static,
+// scope-return, arena-member, epoch-member and epoch-static of the rule
+// brand-escape that no region opts out (the scope brands and the arena brands
+// of linear.cpp).
 void report_scope_escape(const Finding& finding);
 // linear.cpp: the error of one finding of the option kinds and of the kind
 // borrow-move-out of the rule must-consume that no region opts out (the sums

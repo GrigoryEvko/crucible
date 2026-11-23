@@ -1,0 +1,35 @@
+# Each route that gives a member arena tag more or fewer than one member is an
+# error in each mode: a second member of one tag (19), a nested tag with no
+# member (24), a member of a tag that a different class nests (30), a member
+# that holds the arena in an Option (36), a static object (40) and a local (43)
+# of an arena of a member tag.  Each route that keeps an epoch brand past its
+# epoch is an error in each mode: a Ref of the epoch in a class that does not
+# state the brand (55), a carrier in such a class by value (59) and through a
+# pointer (63), and a static (67) and a thread_local (76) object.  A static
+# owner of a member arena (72) reaches the arena with no capture, and a const
+# owner (73) gives no line.
+
+compile arenas src/arenas.cpp linear-shapes=on errors=arenas
+flag arenas -freflection
+exit arenas fail
+finding arenas brand-escape arena-member src/arenas.cpp:19:16 | planted::TwoMembers: second, a second member of the member tag planted::TwoMembers::Tag
+finding arenas brand-escape arena-member src/arenas.cpp:24:60 | planted::NoMember: the member tag planted::NoMember::Tag names no member
+finding arenas brand-escape arena-member src/arenas.cpp:30:23 | planted::Foreign: arena, the member tag planted::Owner::Tag is no nested class of the class
+finding arenas brand-escape arena-member src/arenas.cpp:36:24 | planted::Wrapped: arena, the arena of the member tag planted::Wrapped::Tag inside a different type
+finding arenas brand-escape arena-member src/arenas.cpp:40:19 | planted: global_arena, an object of the arena planted::Arena that is no member of the class of planted::Owner::Tag
+finding arenas brand-escape arena-member src/arenas.cpp:43:23 | planted::local_arena: local, an object of the arena planted::Arena that is no member of the class of planted::Owner::Tag
+finding arenas brand-escape epoch-member src/arenas.cpp:55:35 | planted::NotCarrier: kept, planted::EpochOf
+finding arenas brand-escape epoch-member src/arenas.cpp:59:13 | planted::HoldsCarrier: carrier, planted::EpochOf
+finding arenas brand-escape epoch-member src/arenas.cpp:63:14 | planted::PointsToCarrier: carrier, planted::EpochOf
+finding arenas brand-escape epoch-static src/arenas.cpp:67:31 | planted: kept_ref, planted::EpochOf
+finding arenas brand-escape arena-member src/arenas.cpp:72:7 | planted: global_owner, an object of static or thread storage duration that reaches the arena planted::Arena of the class of planted::Owner::Tag
+finding arenas brand-escape epoch-static src/arenas.cpp:76:26 | planted::kept_carrier: carrier, planted::EpochOf
+finding arenas process-wide-state unmarked-static src/arenas.cpp:40:19 | planted::global_arena
+finding arenas process-wide-state unmarked-static src/arenas.cpp:67:31 | planted::kept_ref
+finding arenas process-wide-state unmarked-static src/arenas.cpp:72:7 | planted::global_owner
+finding arenas process-wide-state unmarked-static src/arenas.cpp:76:26 | planted::kept_carrier()::carrier
+finding arenas quarantine raw-pointer-object src/arenas.cpp:63:14 | carrier
+finding arenas quarantine raw-pointer-object src/Arena.h:22:8 | object
+text arenas | nest the tag in the class beside its one member, which holds the arena itself
+text arenas | state the epoch brand as the 'brand_type' of the class, or keep the value in a local of the body of the epoch
+text arenas | keep the value in a local of the body of the epoch

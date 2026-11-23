@@ -37,6 +37,21 @@ Scope brands
     and each mode, so no object holds one.  No ledger row admits such a line,
     and a write refuses a build that holds one.
 
+Arena brands
+    A member arena tag (arena_member_brand of include/foundation/Brand.h) names
+    the one arena that a class holds as a member, and an epoch brand
+    (epoch_brand, EpochOf<Tag> of include/foundation/core/BumpArena.h) names
+    the bytes of one epoch (linear.cpp, the arena brands).  The three kinds:
+      arena-member              a member tag that does not name exactly one
+                                member of the class that nests it, and a local
+                                or a static object of an arena of a member tag
+      epoch-member              a member that holds an epoch brand in a class
+                                that does not state it as its brand_type
+      epoch-static              an object of static or thread storage duration
+                                that holds an epoch brand
+    Each line of the three kinds is a compile error, as a line of a scope kind
+    is.
+
 Ledger, write
     assay.guard.engines.plugin.linear_family.
 
@@ -68,8 +83,8 @@ ACTIONS = {
         "escaped-alias",
     )
 }
-# The kinds of the scope brands.  Each line is a compile error, and no ledger row admits one.
-SCOPE_KINDS = ("scope-static", "scope-return")
+# The kinds of the scope brands and the arena brands.  Each line is a compile error, and no ledger row admits one.
+SCOPE_KINDS = ("scope-static", "scope-return", "arena-member", "epoch-member", "epoch-static")
 ACTIONS["scope-static"] = (
     "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call "
     "of its mint.  Keep the value in an object of automatic storage duration in the body of the scope"
@@ -77,6 +92,18 @@ ACTIONS["scope-static"] = (
 ACTIONS["scope-return"] = (
     "a scope mint gives a result that holds its own scope brand.  Give a result that holds no value of the scope, "
     "such as the number of an index"
+)
+ACTIONS["arena-member"] = (
+    "a member arena tag does not name exactly one member of the class that nests it.  Nest the tag in the class "
+    "beside its one member, which holds the arena itself, and give each other arena its own tag or a scope arena"
+)
+ACTIONS["epoch-member"] = (
+    "a member holds an epoch brand that its class does not state.  State the epoch brand as the brand_type of the "
+    "class, or keep the value in a local of the body of the epoch"
+)
+ACTIONS["epoch-static"] = (
+    "an object of static or thread storage duration holds an epoch brand, so it outlives the epoch.  Keep the value "
+    "in a local of the body of the epoch"
 )
 
 

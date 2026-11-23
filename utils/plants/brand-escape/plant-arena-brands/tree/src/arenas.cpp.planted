@@ -1,0 +1,80 @@
+// Each route that gives a member arena tag more or fewer than one member, and
+// each route that keeps an epoch brand past its epoch.  Each one is an error
+// in each mode.
+
+#include "Arena.h"
+
+namespace planted {
+
+// The owner of one member arena, which the routes below name.
+struct Owner {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Arena<Tag> arena{};
+};
+
+// A second member of one tag.
+struct TwoMembers {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Arena<Tag> first{};
+    Arena<Tag> second{};
+};
+
+// A member tag with no member.
+struct NoMember {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    unsigned count = 0;
+};
+
+// A member of an arena whose tag a different class nests.
+struct Foreign {
+    Arena<Owner::Tag> arena{};
+};
+
+// A member that holds the arena inside a different type.
+struct Wrapped {
+    struct [[= ::foundation::brand::arena_member_brand{}]] Tag final {};
+    Option<Arena<Tag>> arena{};
+};
+
+// A static object and a local of an arena of a member tag.
+Arena<Owner::Tag> global_arena{};
+
+unsigned local_arena() noexcept {
+    Arena<Owner::Tag> local{};
+    return local.bytes;
+}
+
+// A member that holds an epoch brand in a class that does not state it, by
+// value, through a carrier, and through a pointer to a carrier.
+struct Carrier {
+    using brand_type = EpochOf<Owner::Tag>;
+    Ref<int, EpochOf<Owner::Tag>> kept{};
+};
+
+struct NotCarrier {
+    Ref<int, EpochOf<Owner::Tag>> kept{};
+};
+
+struct HoldsCarrier {
+    Carrier carrier{};
+};
+
+struct PointsToCarrier {
+    Carrier* carrier = nullptr;
+};
+
+// An object of static or thread storage duration that holds an epoch brand.
+Ref<int, EpochOf<Owner::Tag>> kept_ref{};
+
+// An object of static storage duration that reaches an arena of a member tag
+// through its owner, and a const owner, which reaches nothing that opens an
+// epoch.
+Owner global_owner{};
+Owner const const_owner{};
+
+unsigned kept_carrier() noexcept {
+    thread_local Carrier carrier{};
+    return carrier.kept.object == nullptr ? 0u : 1u;
+}
+
+}  // namespace planted

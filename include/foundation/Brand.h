@@ -168,6 +168,36 @@ using undeducible_brand_t = typename undeducible_brand<Brand>::type;
 // it.
 struct scope_brand {};
 
+// The mark of a member arena tag.  A member arena tag is the brand of the one
+// arena that a class holds as a member, such as the scratch arena of a stage
+// (foundation/core/BumpArena.h).  The tag is a class that the owner nests
+// beside that member.  The rule brand-escape of the quarantine plugin refuses
+// a tag that does not name exactly one member of the class that nests it, and
+// a local or a static object of an arena of the tag.  So no second arena
+// shares the brand, and a Ref of one arena does not fit a field that names a
+// different arena of the class.  Two objects of the owner class still share
+// the brand, which no type tells apart.
+struct arena_member_brand {};
+
+// The mark of a family arena tag.  A family arena tag is the brand of a
+// family of arenas of one kind of data, such as the regions of the DAG.  No
+// rule counts its arenas, so two arenas of the family share the brand: a Ref
+// of one fits a field that names the other, and that identity needs a
+// run-time id or a graph type that takes the brand of its own arena.
+struct arena_family_brand {};
+
+// The mark of an arena class whose first template argument is its brand,
+// BumpArena and EpochArena of foundation/core/BumpArena.h.  The rule
+// brand-escape reads it, with arena_member_brand on that argument.
+struct branded_arena {};
+
+// The mark of an epoch brand: EpochOf<Tag> of foundation/core/BumpArena.h, the
+// brand of the bytes of one epoch of an epoch arena.  The end of an epoch
+// ends those bytes.  The rule brand-escape refuses an epoch brand in an object
+// of static or thread storage duration, and in a member of a class that does
+// not state the brand as its brand_type.
+struct epoch_brand {};
+
 }  // namespace foundation::brand
 
 // The fresh brand, for a mint's LAST template parameter and nowhere

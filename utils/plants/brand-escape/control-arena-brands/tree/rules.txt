@@ -1,0 +1,11 @@
+# The rule table of the control control-arena-brands of the rule
+# brand-escape.  The unit and the header of the arena are quarantined.  The
+# headers of the repository are outside the root of the control, so the table
+# admits the marks of the arena brands and of a borrow.
+
+admit foundation::brand::branded_arena | the mark of an arena class whose first template argument is its brand
+admit foundation::brand::arena_member_brand | the mark of a member arena tag
+admit foundation::brand::epoch_brand | the mark of an epoch brand
+admit foundation::transfer::refers | the mark of a borrow
+
+quarantine src/
