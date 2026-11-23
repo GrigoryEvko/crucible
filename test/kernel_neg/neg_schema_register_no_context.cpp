@@ -16,7 +16,7 @@ int main() {
     crucible::SchemaTable table;
     const auto view = table.mint_mutable_view(::foundation::effects::testing::foreground<crucible::Vigil>())
                           .expect("an open table mints a mutable view");
-    (void)table.register_name(::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{0x42},
-                              crucible::InternalSchemaName{::fixy::TextView{"aten::mm"}});
+    (void)table.register_name(::foundation::effects::testing::test().alloc, view,
+                              crucible::InternalSchemaName{crucible::SchemaHash{0x42}, ::fixy::TextView{"aten::mm"}});
     return 0;
 }

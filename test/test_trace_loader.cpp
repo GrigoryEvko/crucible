@@ -540,8 +540,8 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
         .mint_mutable_view(kVigilForeground)
         .match(
             [&kHeldHash](SchemaTable::MutableView view) noexcept {
-                const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, kHeldHash,
-                                                                 InternalSchemaName{::fixy::TextView{"aten::held"}})
+                const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view,
+                                                                 InternalSchemaName{kHeldHash, "aten::held"})
                                                 .is_ok();
                 CRUCIBLE_TEST_ASSERT(kTest, was_registered);
             },
@@ -577,33 +577,42 @@ test_schema_name_table_collision_is_refused(::fixy::Path<::fixy::tags::source::S
     ::fixy::check::pass(kTest, "  test_schema_name_table_collision_is_refused: PASSED\n");
 }
 
+// Registers count names from outside in the global table, each aten::filler
+// on the hashes from 1.  A hash of the run time comes from outside, so each
+// name goes through sanitize_schema_name.
+static void register_outside_fillers(::fixy::ElementCount count) {
+    global_schema_table()
+        .mint_mutable_view(kVigilForeground)
+        .match(
+            [count](SchemaTable::MutableView view) noexcept {
+                for (uint64_t filler = 1; filler <= count.raw(); ++filler) {
+                    const SanitizedSchemaName name =
+                        sanitize_schema_name(SchemaHash{filler}, ::fixy::mint_tagged<::fixy::tags::source::External>(
+                                                                     ::fixy::TextView{"aten::filler"}))
+                            .expect("each filler passes the validator");
+                    const bool was_registered = register_schema_name(kTestIo, kTestIo.cap().alloc, view, name).is_ok();
+                    CRUCIBLE_TEST_ASSERT(kTest, was_registered);
+                }
+            },
+            []() noexcept {});
+}
+
 // The trace of trace_path gives aten::add, aten::mul and aten::matmul to
-// three hashes, and the table holds one name less than SCHEMA_TABLE_CAP
-// first.  The table has one place, and the trace has three new names.  Input
-// from outside can name more schemas than the table holds, so the load
-// refuses the whole trace, it registers no name of it, it reports the reason,
-// and the process lives.  The load runs in a child, so the test reads the
-// report on the standard error of the child.  The old load put aten::add in
-// the last place and gave the trace.
+// three hashes, and the table holds two names less than the names from
+// outside that it takes first.  The table has two places for names from
+// outside, and the trace has three new names.  Input from outside can name
+// more schemas than the table holds, so the load refuses the whole trace, it
+// registers no name of it, it reports the reason, and the process lives.  The
+// load runs in a child, so the test reads the report on the standard error of
+// the child.  The old load put aten::add in the last place and gave the trace.
 static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::source::Sanitized> const& trace_path) {
     global_schema_table().clear(::foundation::effects::testing::test());
     constexpr SchemaHash kFirstHash{0xAAAA111122223333ULL};
     constexpr SchemaHash kRefusedHash{0xBBBB444455556666ULL};
     constexpr SchemaHash kLaterHash{0xCCCC777788889999ULL};
-    global_schema_table()
-        .mint_mutable_view(kVigilForeground)
-        .match(
-            [](SchemaTable::MutableView view) noexcept {
-                for (uint64_t filler = 1; filler < SCHEMA_TABLE_CAP; ++filler) {
-                    const bool was_registered =
-                        register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                                             InternalSchemaName{::fixy::TextView{"aten::filler"}})
-                            .is_ok();
-                    CRUCIBLE_TEST_ASSERT(kTest, was_registered);
-                }
-            },
-            []() noexcept {});
-    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == SCHEMA_TABLE_CAP - 1);
+    constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames;
+    register_outside_fillers(::fixy::ElementCount{kOutsideNames - 2});
+    CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == kOutsideNames - 2);
 
     const ::fixy::process::ChildReport report =
         ::fixy::process::wait(::fixy::process::spawn_child(
@@ -615,7 +624,7 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
                                       const bool skips_first = missing(global_schema_table().lookup(kFirstHash));
                                       const bool skips_next = missing(global_schema_table().lookup(kRefusedHash));
                                       const bool skips_later = missing(global_schema_table().lookup(kLaterHash));
-                                      const bool keeps_count = global_schema_table().count() == SCHEMA_TABLE_CAP - 1;
+                                      const bool keeps_count = global_schema_table().count() == kOutsideNames - 2;
                                       if (!is_refused || !skips_first || !skips_next || !skips_later || !keeps_count) {
                                           ::fixy::fatal("the full schema table took a name of a refused trace");
                                       }
@@ -632,21 +641,8 @@ static void test_schema_name_table_full_is_refused(::fixy::Path<::fixy::tags::so
 
     // A table with three places for names from outside takes the three new
     // names of the trace.  The room of internal names stays out of the count.
-    constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames;
     global_schema_table().clear(::foundation::effects::testing::test());
-    global_schema_table()
-        .mint_mutable_view(kVigilForeground)
-        .match(
-            [](SchemaTable::MutableView view) noexcept {
-                for (uint64_t filler = 1; filler <= kOutsideNames - 3; ++filler) {
-                    const bool was_registered =
-                        register_schema_name(kTestIo, kTestIo.cap().alloc, view, SchemaHash{filler},
-                                             InternalSchemaName{::fixy::TextView{"aten::filler"}})
-                            .is_ok();
-                    CRUCIBLE_TEST_ASSERT(kTest, was_registered);
-                }
-            },
-            []() noexcept {});
+    register_outside_fillers(::fixy::ElementCount{kOutsideNames - 3});
     CRUCIBLE_TEST_ASSERT(kTest, load_trace(kTestIo, kVigilForeground, trace_path).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, global_schema_table().count() == kOutsideNames);
     CRUCIBLE_TEST_ASSERT(kTest, is_named(global_schema_table().lookup(kLaterHash), "aten::matmul"));

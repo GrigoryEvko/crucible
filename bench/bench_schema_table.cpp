@@ -163,10 +163,8 @@ int main() {
         const crucible::SanitizedSchemaName sanitized =
             crucible::sanitize_schema_name(hashes.at(i), ::fixy::mint_tagged<::fixy::tags::source::External>(name_view))
                 .expect("each name of the bench passes the validator");
-        const bool was_registered = table
-                                        .register_name(writer, ::foundation::effects::testing::test().alloc,
-                                                       mutable_view, hashes.at(i), sanitized)
-                                        .is_ok();
+        const bool was_registered =
+            table.register_name(writer, ::foundation::effects::testing::test().alloc, mutable_view, sanitized).is_ok();
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }
 

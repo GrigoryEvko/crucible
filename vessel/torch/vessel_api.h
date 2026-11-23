@@ -342,9 +342,10 @@ CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCI
 // The file goes to a temporary file in the directory of path, and a rename
 // puts it at path, so a reader of path sees the whole old file or the whole
 // new file.
-// Returns 1 on success, 0 on failure (no active region, file I/O error).  A
-// schema name that the loader refuses (sanitize_schema_name of
-// crucible/SchemaTable.h) gives 0 too, and the export writes nothing.
+// Returns 1 on success, 0 on failure (no active region, file I/O error).  The
+// tables hold only names that the loader takes (sanitize_schema_name of
+// crucible/SchemaTable.h).  A test build checks each name again, and a name
+// that the loader refuses then gives 0, and the export writes nothing.
 CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of ops in the active compiled region.  0 if no region.

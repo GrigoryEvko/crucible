@@ -26,13 +26,15 @@
 namespace crucible::testing {
 
 // The test door of a Sanitized name, which crucible/SchemaTable.h names as a
-// friend of the name.  It plants a name that no check read, such as a name
-// that holds a zero, which sanitize_schema_name refuses.  Then the test
-// reaches the refusal of the export.  Only this test defines the door.
+// friend of the name.  It plants a name on a hash that no check read, such as
+// a name that holds a zero, which sanitize_schema_name refuses.  Then the
+// test reaches the refusal of the export of a test build.  Only this test
+// defines the door.
 class UncheckedSchemaNameDoor final {
 public:
-    [[nodiscard]] static SanitizedSchemaName plant(::fixy::TextView characters) noexcept {
-        return SanitizedSchemaName{::fixy::mint_tagged<::fixy::tags::source::External>(SchemaNameParts{characters})
+    [[nodiscard]] static SanitizedSchemaName plant(SchemaHash hash, ::fixy::TextView characters) noexcept {
+        return SanitizedSchemaName{hash,
+                                   ::fixy::mint_tagged<::fixy::tags::source::External>(SchemaNameParts{characters})
                                        .retag<::fixy::tags::source::Sanitized>()};
     }
 };
@@ -45,6 +47,15 @@ namespace {
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 int g_failures = 0;
+
+// True in a test build, whose export checks each name of the tables again, as
+// vessel_api.cpp reads the same key.  A build with a sanitizer sets
+// CRUCIBLE_QTT_TRACK_CONSUME.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+constexpr bool kExportChecksNames = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+constexpr bool kExportChecksNames = false;
+#endif
 
 #define EXPECT(cond, msg)                                                                          \
     do {                                                                                           \
@@ -295,9 +306,11 @@ void remove_export_file() noexcept {
 // the loader reads the file of the export.  The C entry refuses one character
 // more.  The table refuses an internal name that starts with a zero, so only
 // a Sanitized name that no validator made puts an empty name in the table.
-// The export refuses such a name, because the loader refuses an empty name:
-// the export gives 0 and writes no file.  The old export wrote the file with
-// the length 0, and the old C entry refused each name past 256 characters.
+// The export of a test build refuses such a name, because the loader refuses
+// an empty name: the export gives 0 and writes no file.  A Release build has
+// no such check, so the case of the planted name runs only in a test build.
+// The old export wrote the file with the length 0, and the old C entry
+// refused each name past 256 characters.
 void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) {
     // Each text holds its characters and the zero that ends a C text.
     ::fixy::FixedText<crucible::SCHEMA_NAME_MAX + 1> longest{};
@@ -327,26 +340,28 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
     // that this binary registers.  The global table is sealed, so the name
     // goes to the late table.  The test door skips sanitize_schema_name,
     // which refuses a name that holds a zero.
-    ::fixy::FixedText<8> leading_zero{};
-    EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok() && leading_zero.append('b').is_ok(),
-           "the text holds a zero and two letters");
-    EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
-    const crucible::SanitizedSchemaName unchecked =
-        crucible::testing::UncheckedSchemaNameDoor::plant(leading_zero.view());
     constexpr crucible::VigilFgCtx kForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
-    EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc,
-                                          crucible::SchemaHash{kEmptyStoredSchema}, unchecked)
-               .is_ok(),
-           "the table takes the Sanitized name");
-    const auto stored = crucible::schema_name(crucible::SchemaHash{kEmptyStoredSchema});
-    const bool is_stored_empty = stored.match(
-        [](crucible::InternedSchemaName const& found) noexcept { return found.value().view().size() == 0; },
-        [] noexcept { return false; });
-    EXPECT(is_stored_empty, "the table keeps the Sanitized name as an empty name");
+    if (kExportChecksNames) {
+        ::fixy::FixedText<8> leading_zero{};
+        EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok()
+                   && leading_zero.append('b').is_ok(),
+               "the text holds a zero and two letters");
+        EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
+        const crucible::SanitizedSchemaName unchecked = crucible::testing::UncheckedSchemaNameDoor::plant(
+            crucible::SchemaHash{kEmptyStoredSchema}, leading_zero.view());
+        EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc, unchecked)
+                   .is_ok(),
+               "the table takes the Sanitized name");
+        const auto stored = crucible::schema_name(crucible::SchemaHash{kEmptyStoredSchema});
+        const bool is_stored_empty = stored.match(
+            [](crucible::InternedSchemaName const& found) noexcept { return found.value().view().size() == 0; },
+            [] noexcept { return false; });
+        EXPECT(is_stored_empty, "the table keeps the Sanitized name as an empty name");
 
-    EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
-           "the export refuses an empty name");
-    EXPECT(!export_file_exists(), "a refused export writes no file");
+        EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 0,
+               "the export of a test build refuses an empty name");
+        EXPECT(!export_file_exists(), "a refused export writes no file");
+    }
 
     // A table with no such name exports again.  The late table takes more
     // names than the 1024 of two tables of SCHEMA_TABLE_CAP names, the export
@@ -363,10 +378,9 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
         const crucible::SanitizedSchemaName late_name =
             crucible::sanitize_schema_name(hash, ::fixy::mint_tagged<::fixy::tags::source::ABIBoundary>(name.view()))
                 .expect("each name of the case passes the validator");
-        EXPECT(
-            crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc, hash, late_name)
-                .is_ok(),
-            "the late table takes each name");
+        EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc, late_name)
+                   .is_ok(),
+               "the late table takes each name");
     }
     EXPECT(crucible_export_crtrace(handle, ::foundation::core::foreign_c_str(kExportFile)) == 1,
            "the export writes a table of valid names");

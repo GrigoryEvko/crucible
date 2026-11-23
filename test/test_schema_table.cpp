@@ -18,13 +18,13 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 using namespace crucible;
 namespace source = ::fixy::tags::source;
 
-static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
+static constexpr SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
-// The inputs here are string literals in the source, so crucible produced
-// them: they register as internal names.  The constructor of an internal
-// name is consteval, so this helper is consteval too, and it takes only a
-// text of the program image.
-static consteval InternalSchemaName S(::fixy::TextView s) { return InternalSchemaName{s}; }
+// The inputs here are string literals in the source on constant hashes, so
+// crucible produced them: they register as internal names.  The constructor
+// of an internal name is consteval, so this helper is consteval too, and it
+// takes only a constant hash and a text of the program image.
+static consteval InternalSchemaName S(SchemaHash hash, ::fixy::TextView s) { return InternalSchemaName{hash, s}; }
 
 static bool missing(::fixy::Option<InternedSchemaName> const& name) { return name.is_none(); }
 
@@ -34,11 +34,11 @@ static bool eq(::fixy::Option<InternedSchemaName> const& name, ::fixy::TextView 
                       [] noexcept { return false; });
 }
 
-// A registration into an open table always lands.
+// A registration into an open table always lands, on the hash of the name.
 template <SchemaNameSource NameType>
-static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash hash, NameType const& name) {
+static void reg(SchemaTable& t, SchemaTable::MutableView const& view, NameType const& name) {
     const bool was_registered =
-        t.register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash, name).is_ok();
+        t.register_name(kTest, ::foundation::effects::testing::test().alloc, view, name).is_ok();
     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
 }
 
@@ -67,7 +67,7 @@ static_assert(std::is_same_v<decltype(sanitize_schema_name(
 
 template <typename NameType, typename Ctx = ::fixy::TestRunnerCtx>
 concept registers_name = requires(SchemaTable& t, Ctx const& ctx, SchemaTable::MutableView const& v, NameType const& n,
-                                  ::foundation::effects::Alloc a) { t.register_name(ctx, a, v, SchemaHash{1}, n); };
+                                  ::foundation::effects::Alloc a) { t.register_name(ctx, a, v, n); };
 template <typename Tag, typename Ctx = ::fixy::TestRunnerCtx>
 concept registers_as = registers_name<TaggedName<Tag>, Ctx>;
 static_assert(registers_name<SanitizedSchemaName>);
@@ -86,9 +86,22 @@ static_assert(!registers_name<InternalSchemaName, ::fixy::ColdInitCtx>);
 static_assert(!registers_name<InternalSchemaName, ::fixy::HotFgCtx>);
 
 // An internal name has no default value, so each one comes from its
-// consteval constructor.
+// consteval constructor.  The constructor takes the hash with the name, so
+// no name exists apart from its hash, and a table takes no second hash.
 static_assert(!std::is_default_constructible_v<InternalSchemaName>);
 static_assert(!std::is_constructible_v<InternalSchemaName, TaggedName<source::FromInternal>>);
+static_assert(!std::is_constructible_v<InternalSchemaName, ::fixy::TextView>);
+static_assert(S(H(0x9), "aten::mm").hash() == H(0x9));
+
+// A registration takes the name alone: a hash beside a name is no argument of
+// the table.
+template <typename NameType>
+concept registers_with_separate_hash =
+    requires(SchemaTable& t, SchemaTable::MutableView const& v, NameType const& n, ::foundation::effects::Alloc a) {
+        t.register_name(kTest, a, v, SchemaHash{1}, n);
+    };
+static_assert(!registers_with_separate_hash<InternalSchemaName>);
+static_assert(!registers_with_separate_hash<SanitizedSchemaName>);
 
 // The seal waits with no exit, so its context owns Div.
 template <typename Ctx>
@@ -114,9 +127,9 @@ static void test_empty_lookup_returns_nullptr() {
 static void test_register_and_lookup() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x100), S("aten::mm"));
-    reg(t, mv, H(0x200), S("aten::add.Tensor"));
-    reg(t, mv, H(0x300), S("aten::linear"));
+    reg(t, mv, S(H(0x100), "aten::mm"));
+    reg(t, mv, S(H(0x200), "aten::add.Tensor"));
+    reg(t, mv, S(H(0x300), "aten::linear"));
 
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x100)), "aten::mm"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x200)), "aten::add.Tensor"));
@@ -128,9 +141,9 @@ static void test_register_and_lookup() {
 static void test_short_name_strips_aten_prefix() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x100), S("aten::mm"));
-    reg(t, mv, H(0x200), S("aten::scaled_dot_product_attention"));
-    reg(t, mv, H(0x300), S("prim::TupleConstruct"));  // non-aten
+    reg(t, mv, S(H(0x100), "aten::mm"));
+    reg(t, mv, S(H(0x200), "aten::scaled_dot_product_attention"));
+    reg(t, mv, S(H(0x300), "prim::TupleConstruct"));  // non-aten
 
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.short_name(H(0x100)), "mm"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.short_name(H(0x200)), "scaled_dot_product_attention"));
@@ -145,9 +158,9 @@ static void test_short_name_strips_aten_prefix() {
 static void test_same_name_registers_once() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x42), S("first"));
+    reg(t, mv, S(H(0x42), "first"));
     const InternedSchemaName held = t.lookup(H(0x42)).expect("the hash is registered");
-    reg(t, mv, H(0x42), S("first"));
+    reg(t, mv, S(H(0x42), "first"));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1);
     CRUCIBLE_TEST_ASSERT(kTest, held.value().view() == ::fixy::TextView{"first"});
     const InternedSchemaName again = t.lookup(H(0x42)).expect("the hash is registered");
@@ -160,8 +173,8 @@ static void test_same_name_registers_once() {
 static void register_two_names_of_one_hash() noexcept {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x42), S("first"));
-    reg(t, mv, H(0x42), S("second"));
+    reg(t, mv, S(H(0x42), "first"));
+    reg(t, mv, S(H(0x42), "second"));
 }
 
 // A name from outside the process can be wrong, so a different name of a
@@ -170,14 +183,13 @@ static void register_two_names_of_one_hash() noexcept {
 static void test_outside_name_collision_is_refused() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x42), S("first"));
+    reg(t, mv, S(H(0x42), "first"));
     const SanitizedSchemaName other = sanitize_outside_name(H(0x42), "second");
-    CRUCIBLE_TEST_ASSERT(
-        kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(0x42), other)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, other)));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
     const SanitizedSchemaName same = sanitize_outside_name(H(0x42), "first");
-    CRUCIBLE_TEST_ASSERT(
-        kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(0x42), same).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, same).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
     ::fixy::check::pass(kTest, "  test_outside_name_collision:    PASSED\n");
 }
@@ -201,11 +213,21 @@ static ::fixy::FixedText<16> op_name(uint32_t i) {
 
 // The hash of filler i of a full table.  Each hash of a filler is above the
 // hash that the full table refuses.
-static SchemaHash filler_hash(uint32_t i) { return H(0x1000 + i); }
+static constexpr SchemaHash filler_hash(uint32_t i) { return H(0x1000 + i); }
 
 // The most names from outside of a table of SCHEMA_TABLE_CAP names: the
 // places before its room of internal names.
 constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoomNames;
+
+// Registers the internal names of the room from Position to the end of a
+// table of SCHEMA_TABLE_CAP names, each on the filler hash of its position.
+// The hash of an internal name is a constant, so each position is a template
+// argument.
+template <uint32_t Position>
+static void fill_room(SchemaTable& t, SchemaTable::MutableView const& view) {
+    reg(t, view, S(filler_hash(Position), "aten::filler"));
+    if constexpr (Position + 1 < SCHEMA_TABLE_CAP) fill_room<Position + 1>(t, view);
+}
 
 // Fills the table with SCHEMA_TABLE_CAP names.  The first kOutsideNames names
 // are texts of the run time, so they come from outside, through
@@ -213,11 +235,9 @@ constexpr uint32_t kOutsideNames = SCHEMA_TABLE_CAP - SchemaTable::kInternalRoom
 static void fill_table(SchemaTable& t, SchemaTable::MutableView const& view) {
     for (uint32_t i = 0; i < kOutsideNames; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, view, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
+        reg(t, view, sanitize_outside_name(filler_hash(i), name.view()));
     }
-    for (uint32_t i = kOutsideNames; i < SCHEMA_TABLE_CAP; ++i) {
-        reg(t, view, filler_hash(i), S("aten::filler"));
-    }
+    fill_room<kOutsideNames>(t, view);
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
 }
 
@@ -230,8 +250,8 @@ static void test_outside_name_at_full_table_is_refused() {
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     fill_table(t, mv);
     const SanitizedSchemaName outside = sanitize_outside_name(H(1), "aten::outside");
-    CRUCIBLE_TEST_ASSERT(
-        kTest, is_full(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(1), outside)));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_full(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, outside)));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
     CRUCIBLE_TEST_ASSERT(kTest, missing(t.lookup(H(1))));
     const ::fixy::FixedText<16> first = op_name(0);
@@ -240,10 +260,10 @@ static void test_outside_name_at_full_table_is_refused() {
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(kOutsideNames - 1)), last.view()));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(SCHEMA_TABLE_CAP - 1)), "aten::filler"));
     const SanitizedSchemaName same = sanitize_outside_name(filler_hash(0), first.view());
-    CRUCIBLE_TEST_ASSERT(
-        kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, filler_hash(0), same).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
-                                                             filler_hash(0), outside)));
+    CRUCIBLE_TEST_ASSERT(kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, same).is_ok());
+    const SanitizedSchemaName other = sanitize_outside_name(filler_hash(0), "aten::outside");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, other)));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
     ::fixy::check::pass(kTest, "  test_outside_name_at_full_table: PASSED\n");
 }
@@ -253,7 +273,7 @@ static void register_past_a_full_table() noexcept {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     fill_table(t, mv);
-    reg(t, mv, H(1), S("aten::one_too_many"));
+    reg(t, mv, S(H(1), "aten::one_too_many"));
 }
 
 // A full table has no place for an internal name, a defect of the program,
@@ -281,11 +301,9 @@ static void test_outside_names_leave_the_room_of_internal_names() {
     for (; registered <= SCHEMA_TABLE_CAP; ++registered) {
         const ::fixy::FixedText<16> name = op_name(registered);
         const SanitizedSchemaName outside = sanitize_outside_name(filler_hash(registered), name.view());
-        if (!t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, filler_hash(registered), outside)
-                 .is_ok())
-            break;
+        if (!t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, outside).is_ok()) break;
     }
-    reg(t, mv, H(1), S("aten::internal"));
+    reg(t, mv, S(H(1), "aten::internal"));
     CRUCIBLE_TEST_ASSERT(kTest, registered == kOutsideNames);
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == kOutsideNames + 1 && eq(t.lookup(H(1)), "aten::internal"));
     ::fixy::check::pass(kTest, "  test_outside_names_leave_room:  PASSED\n");
@@ -299,7 +317,7 @@ static void test_binary_search_across_many() {
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, mv, SchemaHash{key}, sanitize_outside_name(SchemaHash{key}, name.view()));
+        reg(t, mv, sanitize_outside_name(SchemaHash{key}, name.view()));
     }
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == N);
     for (uint32_t i = 0; i < N; ++i) {
@@ -315,7 +333,7 @@ static void test_global_table_convenience() {
     global_schema_table().clear(test_ctx());  // this table outlives the test
     const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
     const bool was_registered =
-        register_schema_name(kTest, ::foundation::effects::testing::test().alloc, gv, H(0xAA), S("aten::relu")).is_ok();
+        register_schema_name(kTest, ::foundation::effects::testing::test().alloc, gv, S(H(0xAA), "aten::relu")).is_ok();
     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
     CRUCIBLE_TEST_ASSERT(kTest, eq(schema_name(H(0xAA)), "aten::relu"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(schema_short_name(H(0xAA)), "relu"));
@@ -343,24 +361,25 @@ static void test_empty_name_is_refused() {
 static void test_internal_name_of_two_parts() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    constexpr InternalSchemaName add_tensor{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
+    constexpr InternalSchemaName add_tensor{H(0x61),
+                                            ::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
                                             ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{"Tensor"})};
-    constexpr InternalSchemaName relu{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::relu"}),
+    constexpr InternalSchemaName relu{H(0x62), ::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::relu"}),
                                       ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{})};
-    reg(t, mv, H(0x61), add_tensor);
-    reg(t, mv, H(0x61), add_tensor);
-    reg(t, mv, H(0x61), S("aten::add.Tensor"));
-    reg(t, mv, H(0x62), relu);
+    reg(t, mv, add_tensor);
+    reg(t, mv, add_tensor);
+    reg(t, mv, S(H(0x61), "aten::add.Tensor"));
+    reg(t, mv, relu);
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 2);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x61)), "aten::add.Tensor"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.short_name(H(0x61)), "add.Tensor"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x62)), "aten::relu"));
     const SanitizedSchemaName other_overload = sanitize_outside_name(H(0x61), "aten::add.Scalar");
-    CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
-                                                             H(0x61), other_overload)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, other_overload)));
     const SanitizedSchemaName no_overload = sanitize_outside_name(H(0x61), "aten::add");
-    CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
-                                                             H(0x61), no_overload)));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, no_overload)));
     ::fixy::check::pass(kTest, "  test_internal_name_of_two_parts: PASSED\n");
 }
 
@@ -369,28 +388,18 @@ static void test_internal_name_of_two_parts() {
 static void register_other_overload_of_one_hash() noexcept {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x63), S("aten::add.Tensor"));
-    reg(t, mv, H(0x63),
-        InternalSchemaName{::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
+    reg(t, mv, S(H(0x63), "aten::add.Tensor"));
+    reg(t, mv,
+        InternalSchemaName{H(0x63), ::fixy::side_as<side::SchemaBaseName>(::fixy::TextView{"aten::add"}),
                            ::fixy::side_as<side::SchemaOverload>(::fixy::TextView{"Scalar"})});
 }
 
-// Registers an internal name on the hash zero, the sentinel of no schema.
-static void register_name_of_the_hash_zero() noexcept {
-    SchemaTable t;
-    const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0), S("aten::mm"));
-}
-
-// A name on the hash zero would stand for no schema, and a second internal
-// name of one hash is a collision.  Each is a defect of the program, and the
-// registration ends the process with the reason, in a child process of
-// expect_dies.  A name with no character or with a zero is a refusal of the
-// compile (the fixtures neg_schema_internal_name_*).
+// A second internal name of one hash is a collision, a defect of the
+// program, and the registration ends the process with the reason, in a child
+// process of expect_dies.  A name on the hash zero, with no character or with
+// a zero is a refusal of the compile (the fixtures neg_schema_internal_name_*).
 static void test_refused_internal_name_ends_the_process() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
-    ::fixy::check::expect_dies(test, register_name_of_the_hash_zero,
-                               ::fixy::TextView{"crucible: an internal schema name has the hash zero"});
     ::fixy::check::expect_dies(
         test, register_other_overload_of_one_hash,
         ::fixy::TextView{"crucible: the schema hash 99 names two schemas, aten::add.Tensor and aten::add.Scalar"});
@@ -421,7 +430,7 @@ static void test_sealed_table_mints_no_mutable_view() {
 static void test_clear_resets_seal() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0xAB), S("aten::matmul"));
+    reg(t, mv, S(H(0xAB), "aten::matmul"));
     t.seal(kTest);
     CRUCIBLE_TEST_ASSERT(kTest, t.is_sealed());
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1);
@@ -431,7 +440,7 @@ static void test_clear_resets_seal() {
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 0);
     // After clear, the table is Mutable again — register works.
     const auto mv_after_clear = t.mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-    reg(t, mv_after_clear, H(0xCD), S("aten::add"));
+    reg(t, mv_after_clear, S(H(0xCD), "aten::add"));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0xCD)), "aten::add"));
     ::fixy::check::pass(kTest, "  test_clear_resets_seal:         PASSED\n");
@@ -442,15 +451,15 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
     // seal that lands between the mint and the write must refuse the write.
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x10), S("aten::before"));
+    reg(t, mv, S(H(0x10), "aten::before"));
     t.seal(kTest);
     CRUCIBLE_TEST_ASSERT(kTest, is_sealed_refusal(t.register_name(kTest, ::foundation::effects::testing::test().alloc,
-                                                                  mv, H(0x20), S("aten::after"))));
+                                                                  mv, S(H(0x20), "aten::after"))));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1);
     CRUCIBLE_TEST_ASSERT(kTest, missing(t.lookup(H(0x20))));
     // A write to an existing hash is refused too, and keeps the old name.
     CRUCIBLE_TEST_ASSERT(kTest, is_sealed_refusal(t.register_name(kTest, ::foundation::effects::testing::test().alloc,
-                                                                  mv, H(0x10), S("aten::renamed"))));
+                                                                  mv, S(H(0x10), "aten::renamed"))));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x10)), "aten::before"));
     ::fixy::check::pass(kTest, "  test_write_after_seal_refused:  PASSED\n");
 }
@@ -458,7 +467,7 @@ static void test_write_after_seal_through_an_older_view_is_refused() {
 static void test_typed_register_with_mutable_view() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0xBEEF), S("aten::conv2d"));
+    reg(t, mv, S(H(0xBEEF), "aten::conv2d"));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0xBEEF)), "aten::conv2d"));
     ::fixy::check::pass(kTest, "  test_typed_register:            PASSED\n");
 }
@@ -471,7 +480,8 @@ static void test_sanitized_boundary_name_registers() {
     const SanitizedSchemaName sanitized =
         sanitize_schema_name(H(0xAB1), ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::from_abi"}))
             .expect("a valid name of the C interface passes");
-    reg(t, mv, H(0xAB1), sanitized);
+    CRUCIBLE_TEST_ASSERT(kTest, sanitized.hash() == H(0xAB1));
+    reg(t, mv, sanitized);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0xAB1)), "aten::from_abi"));
     ::fixy::check::pass(kTest, "  test_sanitized_boundary_name:   PASSED\n");
 }
@@ -481,8 +491,8 @@ static void test_lookup_works_post_seal() {
     // thread's path and has to keep working afterwards.
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x111), S("aten::sum"));
-    reg(t, mv, H(0x222), S("aten::mean"));
+    reg(t, mv, S(H(0x111), "aten::sum"));
+    reg(t, mv, S(H(0x222), "aten::mean"));
     t.seal(kTest);
 
     const auto sv = t.mint_sealed_view();
@@ -500,13 +510,13 @@ static void test_sole_writer_registers_with_one_exchange() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     CRUCIBLE_TEST_ASSERT(kTest, t.register_name(kVigilForeground, ::foundation::effects::testing::test().alloc, mv,
-                                                H(0x51), S("aten::sole"))
+                                                S(H(0x51), "aten::sole"))
                                     .is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0x51)), "aten::sole"));
     t.seal(kTest);
     CRUCIBLE_TEST_ASSERT(
         kTest, is_sealed_refusal(t.register_name(kVigilForeground, ::foundation::effects::testing::test().alloc, mv,
-                                                 H(0x52), S("aten::late"))));
+                                                 S(H(0x52), "aten::late"))));
     ::fixy::check::pass(kTest, "  test_sole_writer:               PASSED\n");
 }
 
@@ -577,7 +587,7 @@ static SchemaRegistration register_walk(SchemaTable& t, SchemaTable::MutableView
     return t.register_names(kTest, ::foundation::effects::testing::test().alloc, view,
                             [&names](AddSchemaName const& add_name) noexcept {
                                 for (const WalkName& entry : names) {
-                                    add_name(entry.hash, sanitize_outside_name(entry.hash, entry.name));
+                                    add_name(sanitize_outside_name(entry.hash, entry.name));
                                 }
                             });
 }
@@ -591,7 +601,7 @@ static SchemaRegistration register_walk(SchemaTable& t, SchemaTable::MutableView
 static void test_register_names_writes_each_name_or_none() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    reg(t, mv, H(0x42), S("first"));
+    reg(t, mv, S(H(0x42), "first"));
     const ::fixy::FixedArray<WalkName, 2> held_hash_renamed{WalkName{.hash = H(0x41), .name = "aten::a"},
                                                             WalkName{.hash = H(0x42), .name = "second"}};
     CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_walk(t, mv, held_hash_renamed)));
@@ -608,7 +618,7 @@ static void test_register_names_writes_each_name_or_none() {
     // The table takes fillers until it has one place for a name from outside.
     for (uint32_t i = 0; t.count() < kOutsideNames - 1; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
-        reg(t, mv, filler_hash(i), sanitize_outside_name(filler_hash(i), name.view()));
+        reg(t, mv, sanitize_outside_name(filler_hash(i), name.view()));
     }
     const ::fixy::FixedArray<WalkName, 2> two_new{WalkName{.hash = H(0x45), .name = "aten::d"},
                                                   WalkName{.hash = H(0x46), .name = "aten::e"}};
@@ -641,7 +651,7 @@ static void test_late_table_holds_many_names() {
     for (uint32_t i = 0; i < kNames; ++i) {
         const ::fixy::FixedText<16> name = op_name(i);
         const bool was_registered = late.register_name(kTest, ::foundation::effects::testing::test().alloc, view,
-                                                       hash_at(i), sanitize_outside_name(hash_at(i), name.view()))
+                                                       sanitize_outside_name(hash_at(i), name.view()))
                                         .is_ok();
         CRUCIBLE_TEST_ASSERT(kTest, was_registered);
         if (i == 0) first = late.lookup(hash_at(0));
@@ -674,8 +684,7 @@ static void test_late_table_refuses_names_past_its_bytes() {
     uint32_t registered = 0;
     for (; registered < LATE_SCHEMA_TABLE_CAP; ++registered) {
         const SchemaHash hash = filler_hash(registered);
-        if (!late.register_name(kTest, allocation, view, hash, sanitize_outside_name(hash, longest.view())).is_ok())
-            break;
+        if (!late.register_name(kTest, allocation, view, sanitize_outside_name(hash, longest.view())).is_ok()) break;
     }
     constexpr std::size_t kStoredBytes = SCHEMA_NAME_MAX + 1;
     CRUCIBLE_TEST_ASSERT(
@@ -683,12 +692,12 @@ static void test_late_table_refuses_names_past_its_bytes() {
     CRUCIBLE_TEST_ASSERT(kTest, late.name_bytes() == ::fixy::ByteCount{registered * kStoredBytes});
     const SchemaHash next = filler_hash(registered);
     CRUCIBLE_TEST_ASSERT(
-        kTest, is_full(late.register_name(kTest, allocation, view, next, sanitize_outside_name(next, longest.view()))));
+        kTest, is_full(late.register_name(kTest, allocation, view, sanitize_outside_name(next, longest.view()))));
     CRUCIBLE_TEST_ASSERT(
-        kTest, is_full(late.register_name(kTest, allocation, view, H(1), sanitize_outside_name(H(1), "aten::short"))));
+        kTest, is_full(late.register_name(kTest, allocation, view, sanitize_outside_name(H(1), "aten::short"))));
     CRUCIBLE_TEST_ASSERT(kTest, late.count() == registered && missing(late.lookup(H(1))));
     CRUCIBLE_TEST_ASSERT(kTest, eq(late.lookup(filler_hash(0)), longest.view()));
-    CRUCIBLE_TEST_ASSERT(kTest, late.register_name(kTest, allocation, view, H(2), S("aten::internal")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, late.register_name(kTest, allocation, view, S(H(2), "aten::internal")).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, eq(late.lookup(H(2)), "aten::internal"));
     late.clear(test_ctx());
     ::fixy::check::pass(kTest, "  test_late_table_bytes_bound:    PASSED\n");
@@ -700,10 +709,10 @@ static void register_other_internal_name_of_a_global_hash() noexcept {
     global_schema_table().clear(test_ctx());
     late_schema_table().clear(test_ctx());
     const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-    reg(global_schema_table(), gv, H(0x5A), S("aten::global"));
+    reg(global_schema_table(), gv, S(H(0x5A), "aten::global"));
     global_schema_table().seal(kTest);
-    static_cast<void>(register_schema_name(kVigilForeground, ::foundation::effects::testing::test().alloc, H(0x5A),
-                                           S("aten::internal_other")));
+    static_cast<void>(register_schema_name(kVigilForeground, ::foundation::effects::testing::test().alloc,
+                                           S(H(0x5A), "aten::internal_other")));
 }
 
 // A hash that the sealed global table holds keeps its name there.  A late
@@ -716,15 +725,15 @@ static void test_late_name_of_a_held_global_hash_is_a_collision() {
     global_schema_table().clear(test_ctx());
     late_schema_table().clear(test_ctx());
     const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
-    reg(global_schema_table(), gv, H(0x5A), S("aten::global"));
+    reg(global_schema_table(), gv, S(H(0x5A), "aten::global"));
     global_schema_table().seal(kTest);
     const ::foundation::effects::Alloc allocation = ::foundation::effects::testing::test().alloc;
-    CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_schema_name(kVigilForeground, allocation, H(0x5A),
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_schema_name(kVigilForeground, allocation,
                                                                   sanitize_outside_name(H(0x5A), "aten::other"))));
-    CRUCIBLE_TEST_ASSERT(kTest, register_schema_name(kVigilForeground, allocation, H(0x5A),
-                                                     sanitize_outside_name(H(0x5A), "aten::global"))
-                                    .is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, register_schema_name(kVigilForeground, allocation, H(0x5A), S("aten::global")).is_ok());
+    CRUCIBLE_TEST_ASSERT(
+        kTest,
+        register_schema_name(kVigilForeground, allocation, sanitize_outside_name(H(0x5A), "aten::global")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, register_schema_name(kVigilForeground, allocation, S(H(0x5A), "aten::global")).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, late_schema_table().count() == 0 && eq(schema_name(H(0x5A)), "aten::global"));
     global_schema_table().clear(test_ctx());
     ::fixy::check::expect_dies(

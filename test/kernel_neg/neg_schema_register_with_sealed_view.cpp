@@ -13,7 +13,7 @@ int main() {
     t.seal(test);
     auto sv = t.mint_sealed_view();
 
-    t.register_name(test, ::foundation::effects::testing::test().alloc, sv, crucible::SchemaHash{0x42},
-                    crucible::InternalSchemaName{::fixy::TextView{"aten::mm"}});
+    t.register_name(test, ::foundation::effects::testing::test().alloc, sv,
+                    crucible::InternalSchemaName{crucible::SchemaHash{0x42}, ::fixy::TextView{"aten::mm"}});
     return 0;
 }

@@ -414,10 +414,10 @@ template <class VigilType>
     ::fixy::Tagged<crucible::SchemaNameParts, ::fixy::tags::source::ABIBoundary> const& name) noexcept {
     return crucible::sanitize_schema_name(hash, name)
         .match(
-            [&vigil, hash](crucible::SanitizedSchemaName sanitized) noexcept -> OutsideNameRegistration {
-                if (is_reserved_for_other_name(hash, sanitized.parts()))
+            [&vigil](crucible::SanitizedSchemaName sanitized) noexcept -> OutsideNameRegistration {
+                if (is_reserved_for_other_name(sanitized.hash(), sanitized.parts()))
                     return ::fixy::err(OutsideNameRefusal::reserved);
-                const crucible::SchemaRegistration registration = vigil.register_schema_name(hash, sanitized);
+                const crucible::SchemaRegistration registration = vigil.register_schema_name(sanitized);
                 if (crucible::is_collision(registration)) return ::fixy::err(OutsideNameRefusal::collision);
                 if (crucible::is_full(registration)) return ::fixy::err(OutsideNameRefusal::full);
                 return ::fixy::Unit{};

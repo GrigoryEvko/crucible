@@ -94,9 +94,10 @@ struct SchemaOverload final {};
 namespace detail {
 
 // The consteval constructor of an internal schema name calls one of these
-// functions when a part of the name breaks a rule.  No function has a
-// definition, so the call is no constant expression, and the error of the
-// compiler names the rule.
+// functions when its hash or a part of the name breaks a rule.  No function
+// has a definition, so the call is no constant expression, and the error of
+// the compiler names the rule.
+void internal_schema_name_has_the_zero_hash() noexcept;
 void internal_schema_name_has_no_character() noexcept;
 void internal_schema_name_holds_a_zero_byte() noexcept;
 void internal_schema_name_is_longer_than_schema_name_max() noexcept;
@@ -227,13 +228,17 @@ namespace detail {
 }  // namespace detail
 
 // A name from outside the process, such as a name of a trace file or of the
-// C interface, that passed sanitize_schema_name.  The constructor is private,
-// and its one friend in the product is that door.  So no retag of a boundary
-// name to Sanitized makes a name that a table takes, and a name from outside
-// is checked once, at its boundary.  The name holds the Sanitized tag that
-// the door gives.
+// C interface, that passed sanitize_schema_name, with its hash.  The
+// constructor is private, and its one friend in the product is that door.  So
+// no retag of a boundary name to Sanitized makes a name that a table takes,
+// and a name from outside is checked once, at its boundary.  The name holds
+// the hash that the door checked and the Sanitized tag that the door gives,
+// so a table registers the name only on that hash.
 class SanitizedSchemaName final {
 public:
+    // The hash of the name, which is not zero.
+    [[nodiscard]] constexpr SchemaHash hash() const noexcept { return hash_; }
+
     // The parts of the name: one text, or the name and the overload of an
     // operator of PyTorch.
     [[nodiscard]] constexpr SchemaNameParts parts() const noexcept { return name_.value(); }
@@ -241,8 +246,9 @@ public:
 private:
     using Checked = ::fixy::Tagged<SchemaNameParts, ::fixy::tags::source::Sanitized>;
 
-    constexpr explicit SanitizedSchemaName(Checked name) noexcept : name_{name} {}
+    constexpr explicit SanitizedSchemaName(SchemaHash hash, Checked name) noexcept : hash_{hash}, name_{name} {}
 
+    SchemaHash hash_{};
     Checked name_;
 
     // The friend gives a Result of this class.  The class is incomplete
@@ -252,41 +258,48 @@ private:
     friend class ::crucible::testing::UncheckedSchemaNameDoor;
 };
 
-// A name that crossed no trust boundary: the name of an operator of the
-// generated op table, or a literal of the program.  Its two parts, the name
-// and the overload, are texts of the program image.  The constructors are
-// consteval, so no text of the run time reaches them: a text from outside,
-// or a copy of one in a buffer, is never an internal name, and the only route
-// from outside to a table is sanitize_schema_name.  The check of the parts
-// runs at compile time: a name with no character, a part that holds a zero,
-// or a full name of more than SCHEMA_NAME_MAX characters stops the build.
-// The full name is the name, and a dot and the overload when the overload
-// has characters.  The hash stays an argument of register_name, which checks
-// that it is not zero.  That check moves into this type when the hash joins
-// it.
+// A name that crossed no trust boundary, with its hash: the name of an
+// operator of the generated op table, or a literal of the program.  Its hash
+// is a constant of the program, and its two parts, the name and the
+// overload, are texts of the program image.  The constructors are consteval,
+// so no value of the run time reaches them: a text from outside, or a copy of
+// one in a buffer, is never an internal name, and the only route from outside
+// to a table is sanitize_schema_name.  The check of the hash and the parts
+// runs at compile time: the hash zero, which is the sentinel of no schema, a
+// name with no character, a part that holds a zero, or a full name of more
+// than SCHEMA_NAME_MAX characters stops the build.  The full name is the
+// name, and a dot and the overload when the overload has characters.
 class InternalSchemaName final {
 public:
-    // The name of one text, such as "aten::mm".
-    consteval explicit InternalSchemaName(::fixy::TextView name) noexcept : parts_{name} { check_parts_(); }
-
-    // The name and the overload of an operator, such as the two parts of a
-    // row of the generated table.
-    consteval InternalSchemaName(::fixy::Side<side::SchemaBaseName, ::fixy::TextView> name,
-                                 ::fixy::Side<side::SchemaOverload, ::fixy::TextView> overload) noexcept
-        : parts_{static_cast<::fixy::Side<side::SchemaBaseName, ::fixy::TextView>&&>(name),
-                 static_cast<::fixy::Side<side::SchemaOverload, ::fixy::TextView>&&>(overload)} {
-        check_parts_();
+    // The name of one text on its hash, such as "aten::mm".
+    consteval explicit InternalSchemaName(SchemaHash hash, ::fixy::TextView name) noexcept : hash_{hash}, parts_{name} {
+        check_();
     }
+
+    // The name and the overload of an operator on its hash, such as the hash
+    // and the two parts of a row of the generated table.
+    consteval InternalSchemaName(SchemaHash hash, ::fixy::Side<side::SchemaBaseName, ::fixy::TextView> name,
+                                 ::fixy::Side<side::SchemaOverload, ::fixy::TextView> overload) noexcept
+        : hash_{hash},
+          parts_{static_cast<::fixy::Side<side::SchemaBaseName, ::fixy::TextView>&&>(name),
+                 static_cast<::fixy::Side<side::SchemaOverload, ::fixy::TextView>&&>(overload)} {
+        check_();
+    }
+
+    // The hash of the name, which is not zero.
+    [[nodiscard]] constexpr SchemaHash hash() const noexcept { return hash_; }
 
     [[nodiscard]] constexpr SchemaNameParts parts() const noexcept { return parts_; }
 
 private:
-    consteval void check_parts_() const noexcept {
+    consteval void check_() const noexcept {
+        if (hash_.raw() == 0) detail::internal_schema_name_has_the_zero_hash();
         if (parts_.name().size() == 0) detail::internal_schema_name_has_no_character();
         if (parts_.holds_zero()) detail::internal_schema_name_holds_a_zero_byte();
         if (parts_.full_size() > SCHEMA_NAME_MAX) detail::internal_schema_name_is_longer_than_schema_name_max();
     }
 
+    SchemaHash hash_{};
     SchemaNameParts parts_;
 };
 
@@ -308,19 +321,19 @@ using InternedSchemaName = ::fixy::Tagged<::fixy::CText, ::fixy::tags::source::I
 template <typename NameType>
 concept SchemaNameSource = std::same_as<NameType, SanitizedSchemaName> || std::same_as<NameType, InternalSchemaName>;
 
-// The callable that a walk of names calls for each name: its hash and its
-// Sanitized name (SchemaTableOf::register_names).
-using AddSchemaName = ::fixy::CallRef<void(SchemaHash, SanitizedSchemaName const&) noexcept>;
+// The callable that a walk of names calls for each name: its Sanitized name,
+// which holds its hash (SchemaTableOf::register_names).
+using AddSchemaName = ::fixy::CallRef<void(SanitizedSchemaName const&) noexcept>;
 
 // The one validator of a schema name from outside the process, and the one
 // door from a boundary tag to a Sanitized name.  Each door that takes a name
-// from outside calls it: the C entry of the vessel, the trace loader, and
-// the export, which writes no name that the loader refuses.  So a Sanitized
-// name means the same at each door.  It refuses a hash of zero, an empty
-// name, a full name of more than SCHEMA_NAME_MAX characters, and a name that
-// holds a zero.  The name is one text, or the name and the overload of an
-// operator of PyTorch, which no caller joins.  The result is a
-// Result<SanitizedSchemaName, SchemaNameError>, and the type is deduced, as
+// from outside calls it: the C entry of the vessel and the trace loader.  So a
+// Sanitized name means the same at each door.  It refuses a hash of zero, an
+// empty name, a full name of more than SCHEMA_NAME_MAX characters, and a name
+// that holds a zero.  The name is one text, or the name and the overload of an
+// operator of PyTorch, which no caller joins.  The Sanitized name holds the
+// hash, so a table registers it only on the hash of this check.  The result is
+// a Result<SanitizedSchemaName, SchemaNameError>, and the type is deduced, as
 // in the friend declaration of the name.  Complexity: the length of the name.
 template <SchemaNameBoundary Tag>
 [[nodiscard]] inline auto sanitize_schema_name(SchemaHash hash,
@@ -328,12 +341,13 @@ template <SchemaNameBoundary Tag>
     using Sanitized = ::fixy::Result<SanitizedSchemaName, SchemaNameError>;
     const SchemaNameParts parts = name.value();
     const ::fixy::Option<SchemaNameError> refusal = schema_name_error(hash, parts);
-    return refusal.match([](SchemaNameError const& refused) noexcept { return Sanitized{::fixy::err(refused)}; },
-                         [parts] noexcept {
-                             if (parts.holds_zero()) return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
-                             return Sanitized{SanitizedSchemaName{
-                                 ::fixy::mint_tagged<Tag>(parts).template retag<::fixy::tags::source::Sanitized>()}};
-                         });
+    return refusal.match(
+        [](SchemaNameError const& refused) noexcept { return Sanitized{::fixy::err(refused)}; },
+        [hash, parts] noexcept {
+            if (parts.holds_zero()) return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
+            return Sanitized{SanitizedSchemaName{
+                hash, ::fixy::mint_tagged<Tag>(parts).template retag<::fixy::tags::source::Sanitized>()}};
+        });
 }
 
 // The same for a name of one text.
@@ -439,11 +453,11 @@ public:
     // collision or full.  An internal name comes from the program itself, so
     // each of the two is a defect, and it ends the process with the reason.
     //
-    // A Sanitized name passed sanitize_schema_name, so its type proves its
-    // check.  An internal name passed the check of its consteval constructor
-    // at compile time.  The hash of an internal name is a defect of the
-    // program when it is zero, the sentinel of no schema, and it ends the
-    // process with the reason.
+    // The name holds its hash, and the table registers the name on that hash.
+    // A Sanitized name passed sanitize_schema_name, so its type proves the
+    // check of its hash and its parts.  An internal name passed the check of
+    // its consteval constructor at compile time.  So no name of the two types
+    // has the hash zero, the sentinel of no schema.
     //
     // The context of the writer picks the entry of the write section
     // (RegistrationSeal::with_write_section): the context of a Vigil's
@@ -451,16 +465,13 @@ public:
     template <typename Ctx, SchemaNameSource NameType>
         requires CtxMayEnterWriteSection<Ctx>
     [[nodiscard]] SchemaRegistration register_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
-                                                   MutableView const& view, SchemaHash hash, NameType const& name) {
+                                                   MutableView const& view, NameType const& name) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const SchemaNameParts parts = name.parts();
         if (parts.name().size() == 0) return ::fixy::Unit{};
         constexpr NameSource source =
             std::same_as<NameType, InternalSchemaName> ? NameSource::internal : NameSource::outside;
-        if constexpr (source == NameSource::internal) {
-            if (hash.raw() == 0) [[unlikely]]
-                report_zero_internal_hash_();
-        }
+        const SchemaHash hash = name.hash();
         ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
         const bool was_open =
             seal_.with_write_section(writer, [&] { refusal = write_name_(allocation, hash, parts, source); });
@@ -469,9 +480,9 @@ public:
                              [] noexcept { return SchemaRegistration{::fixy::Unit{}}; });
     }
 
-    // Registers each name of a walk from outside the process, or none.  The
-    // walk calls its AddSchemaName for each name, and it gives the same names
-    // in the same order at each call.  The table runs the walk two times in
+    // Registers each name of a walk from outside the process, or none, each on
+    // its own hash.  The walk calls its AddSchemaName for each name, and it
+    // gives the same names in the same order at each call.  The table runs the walk two times in
     // one write section.  The first walk checks each name: a different name
     // of a held hash, or a hash that the walk gives two times, is a
     // collision, and a new hash past the room of the table is a full table.
@@ -492,10 +503,11 @@ public:
         ::fixy::Option<SchemaRefusal> refusal = ::fixy::none;
         const bool was_open = seal_.with_write_section(writer, [&] {
             NameCheck check{};
-            auto check_name = [this, &check](SchemaHash hash, SanitizedSchemaName const& name) noexcept {
+            auto check_name = [this, &check](SanitizedSchemaName const& name) noexcept {
                 if (check.refusal.is_some()) return;
                 const SchemaNameParts characters = cut_at_zero_(name.parts());
                 if (characters.name().size() == 0) return;
+                const SchemaHash hash = name.hash();
                 switch (judge_name_(check, hash, characters)) {
                     case NameVerdict::collision:
                         check.refusal = ::fixy::some(SchemaRefusal::collision);
@@ -524,10 +536,10 @@ public:
             }
             NameCheck const& checked = check;
             std::size_t written = 0;
-            auto write_name = [this, &checked, &written, allocation](SchemaHash hash,
-                                                                     SanitizedSchemaName const& name) noexcept {
+            auto write_name = [this, &checked, &written, allocation](SanitizedSchemaName const& name) noexcept {
                 const SchemaNameParts characters = cut_at_zero_(name.parts());
                 if (characters.name().size() == 0) return;
+                const SchemaHash hash = name.hash();
                 const bool is_checked_name = checked.hashes.get(written).match(
                     [hash](auto held) noexcept { return *held == hash; }, [] noexcept { return false; });
                 CRUCIBLE_FATAL_INVARIANT(is_checked_name);
@@ -767,13 +779,6 @@ private:
         return stored.window(0, stored.size() - 1).expect("the table keeps one zero after each name");
     }
 
-    // An internal name of the hash zero is a defect of the program.  The
-    // table would keep a name on the sentinel of no schema.
-    [[noreturn, gnu::cold]] static void report_zero_internal_hash_() noexcept {
-        ::fixy::fatal("crucible: an internal schema name has the hash zero, the sentinel of no schema.  The hash of a "
-                      "schema is never zero");
-    }
-
     // A table with no room refuses an internal name.  A quiet return leaves
     // each later schema unregistered, and the fallback dispatch that results
     // shows far from the registration that was lost.
@@ -881,9 +886,9 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline LateSchemaTable& late_schema_table() 
 template <typename Ctx, SchemaNameSource NameType>
     requires CtxMayEnterWriteSection<Ctx>
 [[nodiscard]] inline SchemaRegistration register_schema_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
-                                                             SchemaTable::MutableView const& view, SchemaHash hash,
+                                                             SchemaTable::MutableView const& view,
                                                              NameType const& name) {
-    return global_schema_table().register_name(writer, allocation, view, hash, name);
+    return global_schema_table().register_name(writer, allocation, view, name);
 }
 
 // True when a registration gave the refusal of a collision.
@@ -912,14 +917,13 @@ template <typename Ctx, SchemaNameSource NameType>
 // name of it.  The foreground context holds no allocation capability, so the
 // caller gives one.  A Vigil gives the one of its startup context.
 template <SchemaNameSource NameType>
-[[nodiscard]] inline SchemaRegistration register_schema_name(VigilFgCtx const& fg,
-                                                             ::foundation::effects::Alloc allocation, SchemaHash hash,
-                                                             NameType const& name) {
+[[nodiscard]] inline SchemaRegistration
+register_schema_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocation, NameType const& name) {
     // A sealed table mints no view, which is the refusal of a sealed table.
     SchemaTable& global_table = global_schema_table();
     SchemaRegistration in_global = global_table.mint_mutable_view(fg).match(
-        [&fg, &global_table, allocation, hash, &name](SchemaTable::MutableView global_view) {
-            return global_table.register_name(fg, allocation, global_view, hash, name);
+        [&fg, &global_table, allocation, &name](SchemaTable::MutableView global_view) {
+            return global_table.register_name(fg, allocation, global_view, name);
         },
         [] { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
     if (!is_sealed_refusal(in_global)) return in_global;
@@ -932,6 +936,7 @@ template <SchemaNameSource NameType>
         same_name,
         other_name,
     };
+    const SchemaHash hash = name.hash();
     const GlobalHold global_hold = global_table.lookup(hash).match(
         [hash, &name](InternedSchemaName held) noexcept {
             const ::fixy::TextView stored = held.value().view();
@@ -954,7 +959,7 @@ template <SchemaNameSource NameType>
     LateSchemaTable& late_table = late_schema_table();
     const LateSchemaTable::MutableView late_view =
         late_table.mint_mutable_view(fg).expect("nothing seals the late schema table, so it mints a mutable view");
-    SchemaRegistration in_late = late_table.register_name(fg, allocation, late_view, hash, name);
+    SchemaRegistration in_late = late_table.register_name(fg, allocation, late_view, name);
     CRUCIBLE_FATAL_INVARIANT(!is_sealed_refusal(in_late));
     return in_late;
 }

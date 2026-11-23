@@ -564,15 +564,15 @@ void test_schema_name_typed() {
     crucible::global_schema_table().mint_mutable_view(fg).match(
         [&](crucible::SchemaTable::MutableView view) {
             const bool was_a_registered =
-                crucible::register_schema_name(fg, ::foundation::effects::testing::test().alloc, view,
-                                               crucible::SchemaHash{hash_a},
-                                               crucible::InternalSchemaName{::fixy::TextView{"aten::test_op_a"}})
+                crucible::register_schema_name(
+                    fg, ::foundation::effects::testing::test().alloc, view,
+                    crucible::InternalSchemaName{crucible::SchemaHash{hash_a}, ::fixy::TextView{"aten::test_op_a"}})
                     .is_ok();
             EXPECT(was_a_registered, "an open schema table must take the first registration");
             const bool was_b_registered =
-                crucible::register_schema_name(fg, ::foundation::effects::testing::test().alloc, view,
-                                               crucible::SchemaHash{hash_b},
-                                               crucible::InternalSchemaName{::fixy::TextView{"aten::test_op_b"}})
+                crucible::register_schema_name(
+                    fg, ::foundation::effects::testing::test().alloc, view,
+                    crucible::InternalSchemaName{crucible::SchemaHash{hash_b}, ::fixy::TextView{"aten::test_op_b"}})
                     .is_ok();
             EXPECT(was_b_registered, "an open schema table must take the second registration");
         },
@@ -725,7 +725,7 @@ void test_schema_name_reserved_hash() {
     constexpr crucible::vessel::OpEntry overloaded = crucible::vessel::aten_op_row<1>();
     static_assert(plain.overload.size() == 0 && overloaded.overload.size() != 0,
                   "the first row has no overload, and the second row has one");
-    const crucible::SchemaHash plain_hash{plain.schema_hash};
+    constexpr crucible::SchemaHash plain_hash{plain.schema_hash};
     crucible::Vigil vigil;
 
     EXPECT(crucible::vessel::register_schema_name_typed(vigil, plain.schema_hash, abi_name("crucible::other"))
@@ -734,8 +734,8 @@ void test_schema_name_reserved_hash() {
     EXPECT(crucible::vessel::schema_name_typed(plain_hash).is_none(),
            "a refused name of a reserved hash leaves the tables as they were");
     vigil.register_schema_name(
-        plain_hash, crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(plain.name),
-                                                 ::fixy::side_as<crucible::side::SchemaOverload>(plain.overload)});
+        crucible::InternalSchemaName{plain_hash, ::fixy::side_as<crucible::side::SchemaBaseName>(plain.name),
+                                     ::fixy::side_as<crucible::side::SchemaOverload>(plain.overload)});
     const auto held_name = crucible::vessel::schema_name_typed(plain_hash);
     const bool holds_operator =
         held_name.match([&plain](TypedSchemaName const& found) noexcept { return found.value().view() == plain.name; },
@@ -755,10 +755,9 @@ void test_schema_name_reserved_hash() {
     EXPECT(crucible::vessel::register_schema_name_typed(vigil, overloaded.schema_hash, abi_name(full_name.view()))
                == CRUCIBLE_SCHEMA_NAME_REGISTERED,
            "the full name of an operator with an overload registers from outside");
-    vigil.register_schema_name(
-        crucible::SchemaHash{overloaded.schema_hash},
-        crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(overloaded.name),
-                                     ::fixy::side_as<crucible::side::SchemaOverload>(overloaded.overload)});
+    vigil.register_schema_name(crucible::InternalSchemaName{
+        crucible::SchemaHash{overloaded.schema_hash}, ::fixy::side_as<crucible::side::SchemaBaseName>(overloaded.name),
+        ::fixy::side_as<crucible::side::SchemaOverload>(overloaded.overload)});
     const auto held_full_name = crucible::vessel::schema_name_typed(crucible::SchemaHash{overloaded.schema_hash});
     const bool holds_full_name = held_full_name.match(
         [&full_name](TypedSchemaName const& found) noexcept { return found.value().view() == full_name.view(); },

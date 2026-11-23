@@ -144,10 +144,23 @@ private:
     }
 }
 
+// True in a test build, which arms the export check of each name of the
+// tables as a test oracle.  A build with a sanitizer is a test build, and it
+// sets CRUCIBLE_QTT_TRACK_CONSUME, as the consume tracker of fixy/Qtt.h reads
+// it.  A table takes a name only as an internal name or a Sanitized name, and
+// each of the two types proves the checks of the validator of the loader.  So
+// a Release build exports with no check.  Only the test door of a Sanitized
+// name (UncheckedSchemaNameDoor) plants a name that the validator refuses.
+#ifdef CRUCIBLE_QTT_TRACK_CONSUME
+constexpr bool kChecksExportedNames = CRUCIBLE_QTT_TRACK_CONSUME != 0;
+#else
+constexpr bool kChecksExportedNames = false;
+#endif
+
 // True when the name of entry passes sanitize_schema_name, the validator that
-// the loader runs on each name of a file.  The export writes the name into a
-// file, so it checks the name as a name from outside.  A refused name gets a
-// report with its hash and the reason.  Complexity: the length of the name.
+// the loader runs on each name of a file.  The export of a test build writes
+// the name into a file only after this check.  A refused name gets a report
+// with its hash and the reason.  Complexity: the length of the name.
 [[nodiscard]] bool is_exportable_name(const crucible::SchemaEntry& entry) noexcept {
     const ::fixy::TextView name = crucible::SchemaTable::name_of(entry).value().view();
     return crucible::sanitize_schema_name(entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name))
@@ -582,16 +595,18 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const auto& late = crucible::late_schema_table();
     const auto is_in_global = [&table](crucible::SchemaHash hash) noexcept { return table.lookup(hash).is_some(); };
 
-    // Each name of the file passes the validator of the loader before the
-    // first byte, so the export writes no file that the loader refuses.  The
-    // table can hold such a name: an internal name of the hash zero, or an
-    // internal name that starts with a zero, which the table keeps as an
-    // empty name.  Then the export writes nothing.
-    for (const crucible::SchemaEntry& entry : table.entries()) {
-        if (!is_exportable_name(entry)) return 0;
-    }
-    for (const crucible::SchemaEntry& entry : late.entries()) {
-        if (!is_in_global(entry.hash) && !is_exportable_name(entry)) return 0;
+    // Each name of the tables passed the validator of the loader, or the
+    // consteval check of an internal name, on its own hash.  So the export
+    // writes no file that the loader refuses.  A test build checks each name
+    // again before the first byte (kChecksExportedNames), and a refused name
+    // makes the export write nothing.
+    if (kChecksExportedNames) {
+        for (const crucible::SchemaEntry& entry : table.entries()) {
+            if (!is_exportable_name(entry)) return 0;
+        }
+        for (const crucible::SchemaEntry& entry : late.entries()) {
+            if (!is_in_global(entry.hash) && !is_exportable_name(entry)) return 0;
+        }
     }
 
     // The count is written before the records, so it has to be the

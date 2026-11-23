@@ -433,15 +433,15 @@ public:
     // holds no atom, and only this cold path allocates through the kept one.
     // A collision of an internal name ends the process, so the registration
     // of an internal name gives nothing.
-    [[gnu::cold]] void register_schema_name(SchemaHash hash, InternalSchemaName const& name) {
-        ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name)
+    [[gnu::cold]] void register_schema_name(InternalSchemaName const& name) {
+        ::crucible::register_schema_name(assert_producer_thread_(), allocation_, name)
             .expect("an internal name lands in the global or the late schema table");
     }
 
     // The same for a name from outside the process, which gives the refusal
     // of a collision (SchemaTableOf::register_name).
-    [[nodiscard, gnu::cold]] SchemaRegistration register_schema_name(SchemaHash hash, SanitizedSchemaName const& name) {
-        return ::crucible::register_schema_name(assert_producer_thread_(), allocation_, hash, name);
+    [[nodiscard, gnu::cold]] SchemaRegistration register_schema_name(SanitizedSchemaName const& name) {
+        return ::crucible::register_schema_name(assert_producer_thread_(), allocation_, name);
     }
 
     // Only the foreground writes the mode, at each activation and

@@ -24,7 +24,7 @@ int main() {
     ::fixy::FixedText<64> full_name{};
     static_cast<void>(full_name.append(foreign_name().characters()).is_ok());
     (void)table.register_name(::foundation::effects::testing::foreground<crucible::Vigil>(),
-                              ::foundation::effects::testing::test().alloc, view, crucible::SchemaHash{0x42},
-                              crucible::InternalSchemaName{full_name.view()});
+                              ::foundation::effects::testing::test().alloc, view,
+                              crucible::InternalSchemaName{crucible::SchemaHash{0x42}, full_name.view()});
     return 0;
 }

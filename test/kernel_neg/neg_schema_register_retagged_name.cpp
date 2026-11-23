@@ -17,11 +17,11 @@
 namespace crucible {
 
 [[maybe_unused]] static SchemaRegistration
-register_trace_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocation, SchemaHash hash,
+register_trace_name(VigilFgCtx const& fg, ::foundation::effects::Alloc allocation,
                     ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External> const& name) {
     auto const laundered =
         ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>{name}.retag<::fixy::tags::source::Sanitized>();
-    return register_schema_name(fg, allocation, hash, laundered);
+    return register_schema_name(fg, allocation, laundered);
 }
 
 }  // namespace crucible

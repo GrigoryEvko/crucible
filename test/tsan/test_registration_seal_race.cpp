@@ -162,11 +162,15 @@ void run_writer(RoundIndex round, WriterIndex writer, Register&& register_one, W
 struct SchemaRace {
     using Table = crucible::SchemaTable;
 
+    // A hash of the run time comes from outside, so the name goes through the
+    // validator.  A round writes 192 names, fewer than the names from outside
+    // that a table of SCHEMA_TABLE_CAP names takes.
     [[nodiscard]] static bool register_one(Table& table, Table::MutableView const& view, crucible::SchemaHash hash) {
-        return table
-            .register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash,
-                           crucible::InternalSchemaName{::fixy::TextView{"aten::race"}})
-            .is_ok();
+        const crucible::SanitizedSchemaName name =
+            crucible::sanitize_schema_name(
+                hash, ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::TextView{"aten::race"}))
+                .expect("each hash of the race is not zero");
+        return table.register_name(kTest, ::foundation::effects::testing::test().alloc, view, name).is_ok();
     }
 
     [[nodiscard]] static uint32_t read_sealed(Table const& table, RoundIndex /*round*/) {

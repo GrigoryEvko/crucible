@@ -1144,8 +1144,8 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
             // The check of the image ran sanitize_schema_name on each name,
             // and the same validator gives the Sanitized name here.  Its
             // characters stay in the image, and the table copies them.
-            add_name(entry.hash, sanitize_schema_name(entry.hash, detail::trace_name_text_(entry))
-                                     .expect("the check of the image ran the same validator on each name"));
+            add_name(sanitize_schema_name(entry.hash, detail::trace_name_text_(entry))
+                         .expect("the check of the image ran the same validator on each name"));
         }
     };
     const SchemaRegistration registration = schema_table_view.match(

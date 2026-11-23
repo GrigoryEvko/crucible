@@ -1451,11 +1451,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         // sealed by now, so the name goes to the late table, which the vessel
         // library reads.  PyTorch's operator names are compiled into the
         // generated headers this table was built from, so crucible produced
-        // the name.  The two parts of the row are texts of the program image,
-        // and the constructor of the internal name checks them at compile time.
+        // the name.  The hash and the two parts of the row are constants of the
+        // program image, and the constructor of the internal name checks them
+        // at compile time.
         vigil.register_schema_name(
-            kSchemaHash, crucible::InternalSchemaName{::fixy::side_as<crucible::side::SchemaBaseName>(kRow.name),
-                                                      ::fixy::side_as<crucible::side::SchemaOverload>(kRow.overload)});
+            crucible::InternalSchemaName{kSchemaHash, ::fixy::side_as<crucible::side::SchemaBaseName>(kRow.name),
+                                         ::fixy::side_as<crucible::side::SchemaOverload>(kRow.overload)});
         schema_name_registered.store_release(true);
     }
 

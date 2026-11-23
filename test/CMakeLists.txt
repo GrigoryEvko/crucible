@@ -2091,7 +2091,7 @@ crucible_neg_compile_test(neg_schema_register_retagged_name
   "required for the satisfaction of .SchemaNameSource<NameType>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::Sanitized>\\]")
 crucible_neg_compile_test(neg_schema_sanitized_name_from_test
   "is private within this context"
-  "neg_schema_sanitized_name_from_test.cpp:20:54: error: .constexpr crucible::SanitizedSchemaName::SanitizedSchemaName\\(Checked\\)")
+  "neg_schema_sanitized_name_from_test.cpp:21:54: error: .constexpr crucible::SanitizedSchemaName::SanitizedSchemaName\\(crucible::SchemaHash, Checked\\)")
 
 # The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 # N>, and two gates hold the positive power-of-two capacity:
@@ -4303,16 +4303,19 @@ crucible_neg_compile_test(neg_schema_register_no_div
   "no matching function for call to .crucible::SchemaTableOf<512>::register_name\\(const fixy::ColdInitCtx&, "
   "satisfaction of .CtxMayEnterWriteSection<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Init, ")
 
-# An internal name is a text of the program image: its constructor is
-# consteval.  A copy of a foreign text in a buffer, the old route of the
-# boxed fallback, is no constant, and a part with a zero stops the check of
-# the constructor.
+# An internal name is a text of the program image on a constant hash: its
+# constructor is consteval.  A copy of a foreign text in a buffer, the old
+# route of the boxed fallback, is no constant, and a part with a zero or the
+# hash zero stops the check of the constructor.
 crucible_neg_compile_test(neg_schema_internal_name_from_foreign_copy
-  "call to consteval function .crucible::InternalSchemaName\\(full_name.foundation::core::FixedText<64>::view\\(\\)\\). is not a constant expression"
+  "call to consteval function .crucible::InternalSchemaName\\(crucible::SchemaHash\\(66\\), full_name.foundation::core::FixedText<64>::view\\(\\)\\). is not a constant expression"
   "the value of .full_name. is not usable in a constant expression")
 crucible_neg_compile_test(neg_schema_internal_name_holds_zero
   "call to non-.constexpr. function .void crucible::detail::internal_schema_name_holds_a_zero_byte\\(\\)."
   "neg_schema_internal_name_holds_zero.cpp:24")
+crucible_neg_compile_test(neg_schema_internal_name_zero_hash
+  "call to non-.constexpr. function .void crucible::detail::internal_schema_name_has_the_zero_hash\\(\\)."
+  "neg_schema_internal_name_zero_hash.cpp:17")
 
 # The names and schemas in the two tables come from the ops that a Vigil
 # records, so a mutable view, and a trace load that registers names, ask

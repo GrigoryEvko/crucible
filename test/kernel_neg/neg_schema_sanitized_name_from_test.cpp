@@ -16,6 +16,7 @@
 
 int main() {
     const crucible::SanitizedSchemaName planted{
+        crucible::SchemaHash{0x42},
         ::fixy::mint_tagged<::fixy::tags::source::External>(crucible::SchemaNameParts{::fixy::TextView{"aten::mm"}})
             .retag<::fixy::tags::source::Sanitized>()};
     return planted.parts().full_size() == 8 ? 0 : 1;
