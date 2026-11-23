@@ -9,13 +9,16 @@
 
 #include <cstdint>
 
+// The tag of the one door of the slot, which builds the first slot.
+struct FirstSlot {};
+
 class MemberTemplateSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit MemberTemplateSlot(std::uint32_t raw) noexcept : raw_{raw} {}
 
 public:
-    [[nodiscard]] static constexpr MemberTemplateSlot of_byte(std::uint8_t byte) noexcept {
-        return MemberTemplateSlot{std::uint32_t{byte} + 1u};
+    [[nodiscard]] static constexpr MemberTemplateSlot first(FirstSlot /*tag*/) noexcept {
+        return MemberTemplateSlot{1u};
     }
     template <std::uint32_t Raw>
     constexpr void set_word() noexcept {
@@ -34,7 +37,7 @@ public:
 };
 
 int main() {
-    MemberTemplateSlot local = MemberTemplateSlot::of_byte(3);
+    MemberTemplateSlot local = MemberTemplateSlot::first(FirstSlot{});
     local.set_word<0>();
     return ::foundation::core::Option<MemberTemplateSlot>::some(local).is_some() ? 0 : 1;
 }

@@ -11,13 +11,16 @@
 
 struct UsingBrand {};
 
+// The tag of the one door of the slot, which builds the first slot.
+struct FirstSlot {};
+
 class UsingSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit UsingSlot(std::uint32_t raw) noexcept : raw_{raw} {}
     friend struct ::foundation::core::niche<UsingSlot>;
 
 public:
-    [[nodiscard]] static constexpr UsingSlot of(std::uint32_t raw) noexcept { return UsingSlot{raw}; }
+    [[nodiscard]] static constexpr UsingSlot first(FirstSlot /*tag*/) noexcept { return UsingSlot{1u}; }
     [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
 };
 
@@ -30,4 +33,4 @@ struct foundation::core::niche<UsingSlot> : foundation::core::niche<foundation::
     }
 };
 
-int main() { return ::foundation::core::Option<UsingSlot>::some(UsingSlot::of(0)).is_some() ? 0 : 1; }
+int main() { return ::foundation::core::Option<UsingSlot>::some(UsingSlot::first(FirstSlot{})).is_some() ? 0 : 1; }

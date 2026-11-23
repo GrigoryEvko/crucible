@@ -11,6 +11,16 @@
 #include <type_traits>
 #include <utility>
 
+// A key of no namespace of the base: a class with no public constructor that
+// a file outside the base can define.  It vouches for nothing.
+class OutsideKey {
+    constexpr OutsideKey() noexcept {}
+    constexpr OutsideKey(OutsideKey const&) noexcept {}
+
+public:
+    OutsideKey& operator=(OutsideKey const&) = delete("a key lives for one construction");
+};
+
 namespace foundation::core {
 
 namespace detail::choice_checks {
@@ -1263,10 +1273,13 @@ static_assert(NicheRead<TrustedMemberSlot>::is_empty_never_built() && !NicheRead
 // The payload gate holds the three checks of the statement, so
 // a false statement does not compile.  An aggregate builds the empty value
 // from its member, and a constructor from a pointer with no key builds the
-// empty value from the null pointer.  The two trusted slots pass the two
-// walks, but this file is outside the base, so the gate refuses them too.
+// empty value from the null pointer.  The two trusted slots build a slot
+// from a byte in a static door that takes no voucher, so the walk of the
+// doors refuses them.  They pass the walk of the members, and this file is
+// outside the base, so the gate refuses them a third time.
 static_assert(!ChoicePayload<AggregateStatedSlot> && !ChoicePayload<PointerStatedSlot>);
-static_assert(BuildsNoEmptyValue<TrustedSlot> && BuildsNoEmptyValue<TrustedMemberSlot>);
+static_assert(!BuildsNoEmptyValue<TrustedSlot> && !BuildsNoEmptyValue<TrustedMemberSlot>);
+static_assert(!vouches_each_door(^^TrustedSlot) && !vouches_each_door(^^TrustedMemberSlot));
 static_assert(WritesNoEmptyValue<TrustedSlot> && WritesNoEmptyValue<TrustedMemberSlot>);
 static_assert(!StatedInBase<TrustedSlot> && !StatedInBase<TrustedMemberSlot>);
 static_assert(!ChoicePayload<TrustedSlot> && !ChoicePayload<TrustedMemberSlot>);
@@ -1293,7 +1306,12 @@ struct OpenVoucher {
 };
 static_assert(carries_raw_value(^^RawWord) && carries_raw_value(^^HoldsReference) && carries_raw_value(^^RawWord[2]));
 static_assert(!carries_raw_value(^^EmptyTag) && !carries_raw_value(^^niche_key<KeyedPairSlot> const&));
+// A key vouches only in a namespace of the base, so OutsideKey of the global
+// namespace vouches for nothing.  LocalKey stands in a namespace of the base,
+// as each class of a check file of the base does.
 static_assert(is_voucher_type(^^niche_key<KeyedPairSlot>) && is_voucher_type(^^LocalKey));
+static_assert(!is_voucher_type(^^::OutsideKey) && !is_defined_in_base(^^::OutsideKey));
+static_assert(is_defined_in_base(^^niche_key<KeyedPairSlot>) && is_defined_in_base(^^LocalKey));
 static_assert(!is_voucher_type(^^OpenVoucher) && !is_voucher_type(^^RawWord));
 
 // Constructors of the walk: a plain class around the raw word, a voucher that
@@ -1317,11 +1335,55 @@ class TagSlot {
 public:
     constexpr explicit TagSlot(EmptyTag /*tag*/) noexcept {}
 };
-static_assert(!vouches_each_raw_parameter(^^WrappedRawSlot) && !BuildsNoEmptyValue<WrappedRawSlot>);
-static_assert(!vouches_each_raw_parameter(^^OpenVoucherSlot) && !BuildsNoEmptyValue<OpenVoucherSlot>);
-static_assert(!vouches_each_raw_parameter(^^PairStatedSlot) && !BuildsNoEmptyValue<PairStatedSlot>);
-static_assert(vouches_each_raw_parameter(^^KeyedPairSlot) && BuildsNoEmptyValue<KeyedPairSlot>);
-static_assert(vouches_each_raw_parameter(^^TagSlot) && BuildsNoEmptyValue<TagSlot>);
+static_assert(!vouches_each_door(^^WrappedRawSlot) && !BuildsNoEmptyValue<WrappedRawSlot>);
+static_assert(!vouches_each_door(^^OpenVoucherSlot) && !BuildsNoEmptyValue<OpenVoucherSlot>);
+static_assert(!vouches_each_door(^^PairStatedSlot) && !BuildsNoEmptyValue<PairStatedSlot>);
+static_assert(vouches_each_door(^^KeyedPairSlot) && BuildsNoEmptyValue<KeyedPairSlot>);
+static_assert(vouches_each_door(^^TagSlot) && BuildsNoEmptyValue<TagSlot>);
+
+// Static doors of the walk, judged as constructors: a door from nothing, a
+// door that gives a wrapper of the slot from a raw word, a door from a raw
+// word beside a key of the base, and a door from an empty tag.  A member
+// door that is not static reads a slot that is not empty, so the walk of the
+// doors does not judge it.
+class NothingDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr NothingDoorSlot() noexcept = default;
+
+public:
+    [[nodiscard]] static constexpr NothingDoorSlot make() noexcept { return NothingDoorSlot{}; }
+};
+template <class Held>
+struct WrappedDoorValue {
+    Held held;
+};
+class WrappedDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit WrappedDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    [[nodiscard]] static constexpr WrappedDoorValue<WrappedDoorSlot> of(std::uint32_t raw) noexcept {
+        return WrappedDoorValue<WrappedDoorSlot>{WrappedDoorSlot{raw}};
+    }
+};
+class KeyedDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit KeyedDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    [[nodiscard]] static constexpr KeyedDoorSlot of(std::uint32_t raw,
+                                                    niche_key<KeyedDoorSlot> const& /*key*/) noexcept {
+        return KeyedDoorSlot{raw};
+    }
+    [[nodiscard]] static constexpr KeyedDoorSlot of_tag(EmptyTag /*tag*/) noexcept { return KeyedDoorSlot{1u}; }
+    [[nodiscard]] constexpr KeyedDoorSlot next(std::uint32_t step) const noexcept { return KeyedDoorSlot{raw_ + step}; }
+};
+static_assert(!vouches_each_door(^^NothingDoorSlot) && !vouches_each_door(^^WrappedDoorSlot));
+static_assert(vouches_each_door(^^KeyedDoorSlot));
+static_assert(names_class(^^WrappedDoorValue<WrappedDoorSlot>, ^^WrappedDoorSlot)
+              && names_class(^^WrappedDoorSlot const&, ^^WrappedDoorSlot)
+              && names_class(^^Option<KeyedDoorSlot>, ^^KeyedDoorSlot));
+static_assert(!names_class(^^int, ^^WrappedDoorSlot));
 
 // The walk of the members (2 of the check of the statement).  Each class
 // below has one member that can write a value in place: a member function

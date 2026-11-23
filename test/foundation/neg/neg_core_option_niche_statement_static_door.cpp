@@ -1,9 +1,9 @@
 // A class outside the base states that no door builds its empty value.  Its
 // constructor is private, and a public static door over it builds a value
-// from each raw word, also the empty value.  A reflection over the
-// constructors does not see such a door, so the statement is open to a type
-// of the base only (the check of the statement of foundation/core/Choice.h),
-// and the Option of the class does not compile.
+// from each raw word, also the empty value.  Each public static member
+// function that gives a value of a stated type takes a voucher (the check of
+// the statement of foundation/core/Choice.h).  So the walk of the static
+// doors refuses the class, and the Option of the class does not compile.
 
 #include <foundation/core/Choice.h>
 

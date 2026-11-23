@@ -10,14 +10,15 @@
 
 #include <cstdint>
 
+// The tag of the one door of the slot, which builds the first slot.
+struct FirstSlot {};
+
 class MutatorSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit MutatorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
 
 public:
-    [[nodiscard]] static constexpr MutatorSlot of_byte(std::uint8_t byte) noexcept {
-        return MutatorSlot{std::uint32_t{byte} + 1u};
-    }
+    [[nodiscard]] static constexpr MutatorSlot first(FirstSlot /*tag*/) noexcept { return MutatorSlot{1u}; }
     constexpr void set_word(std::uint32_t raw) noexcept { raw_ = raw; }
 
     static constexpr ::foundation::core::niche_statement is_niche_empty_never_built{};
@@ -30,7 +31,7 @@ public:
 };
 
 int main() {
-    MutatorSlot local = MutatorSlot::of_byte(3);
+    MutatorSlot local = MutatorSlot::first(FirstSlot{});
     local.set_word(0);
     return ::foundation::core::Option<MutatorSlot>::some(local).is_some() ? 0 : 1;
 }

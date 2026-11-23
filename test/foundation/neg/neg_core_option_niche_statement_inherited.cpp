@@ -10,13 +10,16 @@
 
 struct InheritBrand {};
 
+// The tag of the one door of the slot, which builds the first slot.
+struct FirstSlot {};
+
 class InheritedSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit InheritedSlot(std::uint32_t raw) noexcept : raw_{raw} {}
     friend struct ::foundation::core::niche<InheritedSlot>;
 
 public:
-    [[nodiscard]] static constexpr InheritedSlot of(std::uint32_t raw) noexcept { return InheritedSlot{raw}; }
+    [[nodiscard]] static constexpr InheritedSlot first(FirstSlot /*tag*/) noexcept { return InheritedSlot{1u}; }
     [[nodiscard]] constexpr std::uint32_t raw() const noexcept { return raw_; }
 };
 
@@ -30,4 +33,6 @@ struct foundation::core::niche<InheritedSlot> : foundation::core::niche<foundati
     }
 };
 
-int main() { return ::foundation::core::Option<InheritedSlot>::some(InheritedSlot::of(0)).is_some() ? 0 : 1; }
+int main() {
+    return ::foundation::core::Option<InheritedSlot>::some(InheritedSlot::first(FirstSlot{})).is_some() ? 0 : 1;
+}

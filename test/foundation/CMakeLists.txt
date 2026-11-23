@@ -2641,12 +2641,17 @@ set_property(TEST neg_core_option_niche_statement_pointer_door APPEND PROPERTY E
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_any_voucher
   "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = VoucherSlot\\]"
-  "the expression .vouches_each_raw_parameter\\(.*\\(\\^\\^ T\\) \\[with T = VoucherSlot\\]. evaluated to .false.")
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = VoucherSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_any_voucher APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_outside_key
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = KeyedSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = KeyedSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_outside_key APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_wrapped_raw
   "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = WrappedRawSlot\\]"
-  "the expression .vouches_each_raw_parameter\\(.*\\(\\^\\^ T\\) \\[with T = WrappedRawSlot\\]. evaluated to .false.")
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = WrappedRawSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_wrapped_raw APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 # A public member function that is not const, and a public member function
@@ -2665,8 +2670,8 @@ set_property(TEST neg_core_option_niche_statement_member_template APPEND PROPERT
 # private constructor and a constructor template each build the empty value,
 # and a reflection sees neither.  So only a type of the base states the fact.
 foundation_neg_compile_test(neg_core_option_niche_statement_static_door
-  "required for the satisfaction of .StatedInBase<T>. \\[with T = StaticDoorSlot\\]"
-  "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = StaticDoorSlot\\]. evaluated to .false.")
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = StaticDoorSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = StaticDoorSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_static_door APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_constructor_template

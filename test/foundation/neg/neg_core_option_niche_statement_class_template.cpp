@@ -9,13 +9,16 @@
 
 #include <cstdint>
 
+// The tag of the one door of the slot, which builds the first slot.
+struct FirstSlot {};
+
 template <std::uint32_t Spare>
 class TemplateSlot {
     std::uint32_t raw_ = 0;
     constexpr explicit TemplateSlot(std::uint32_t raw) noexcept : raw_{raw} {}
 
 public:
-    [[nodiscard]] static constexpr TemplateSlot of(std::uint32_t raw) noexcept { return TemplateSlot{raw}; }
+    [[nodiscard]] static constexpr TemplateSlot first(FirstSlot /*tag*/) noexcept { return TemplateSlot{Spare + 1u}; }
 
     static constexpr ::foundation::core::niche_statement is_niche_empty_never_built{};
     [[nodiscard]] static constexpr TemplateSlot
@@ -27,4 +30,6 @@ public:
     }
 };
 
-int main() { return ::foundation::core::Option<TemplateSlot<0>>::some(TemplateSlot<0>::of(0)).is_some() ? 0 : 1; }
+int main() {
+    return ::foundation::core::Option<TemplateSlot<0>>::some(TemplateSlot<0>::first(FirstSlot{})).is_some() ? 0 : 1;
+}

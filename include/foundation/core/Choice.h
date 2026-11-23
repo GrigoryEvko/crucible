@@ -480,10 +480,15 @@ public:
 //        depth, so a plain class around a raw word carries the word.  A
 //        class with a part that is not public counts as raw, because the
 //        walk does not read its private state.  A voucher is a key, a class
-//        with no public constructor, such as RefKey, or a payload whose
-//        statement passes the three checks, such as the RunAddress of a
-//        DataAddress.  A raw value then comes in only through a door that
-//        checks it, or beside a value that is not empty.
+//        with no public constructor in a namespace of the base, such as
+//        RefKey, or a payload whose statement passes the three checks,
+//        such as the RunAddress of a DataAddress.  A raw value then comes in
+//        only through a door that checks it, or beside a value that is not
+//        empty.
+//      - Each public static member function that gives a T, also inside an
+//        Option or a Box, is judged as a constructor: it has a parameter,
+//        and when it takes a raw value it also takes a voucher.  Such a
+//        function is a door over a constructor that need not be public.
 //      - A reflection reads no parameter of a constructor template, so T
 //        builds no value from std::nullptr_t, a pointer, an int or an
 //        unsigned long long at all.
@@ -500,10 +505,9 @@ public:
 //      niche_statement, an own member of niche<T> or of T, and its mark
 //      stands in a header of include/foundation or include/fixy.  A
 //      reflection reads the members of a class, but it does not see a
-//      friend, or what a static door over a private constructor gives.  So
-//      only a type whose doors a review of the base reads states the fact,
-//      and the author of such a type keeps each friend and each static door
-//      to values that are not empty.  The file of a mark is the file that
+//      friend.  So only a type whose doors a review of the base reads states
+//      the fact, and the author of such a type keeps each friend to values
+//      that are not empty.  The file of a mark is the file that
 //      holds it, because the tree holds no #line directive and no line
 //      marker (the quarantine plugin and the rule banned refuse each one).
 //   A private constructor, such as the constructor of the empty value, is a
@@ -568,15 +572,38 @@ consteval bool has_public_constructor(std::meta::info type) {
     return false;
 }
 
+// True when a namespace of the base holds the class: the namespace
+// foundation or fixy of the global scope, or a namespace inside one of them.
+// The rule base-namespace of the quarantine plugin refuses each declaration
+// in such a namespace from a file outside the base.  So only a header of the
+// base, or a check file of such a header, defines such a class.  Complexity:
+// linear in the depth of the scopes of the class.
+consteval bool is_defined_in_base(std::meta::info type) {
+    std::meta::info const global_scope = ^^::;
+    std::meta::info scope = std::meta::parent_of(type);
+    while (scope != global_scope) {
+        std::meta::info const parent = std::meta::parent_of(scope);
+        bool const is_layer_namespace = parent == global_scope && std::meta::is_namespace(scope)
+                                     && (::foundation::reflect::has_identifier_named(scope, "foundation")
+                                         || ::foundation::reflect::has_identifier_named(scope, "fixy"));
+        if (is_layer_namespace) return true;
+        scope = parent;
+    }
+    return false;
+}
+
 // True when the type, with no reference and no cv, vouches for the raw
-// values beside it: a key, which is a class with no public constructor, so
-// only the doors and the friends of its author build one, or a payload whose
-// statement passes the check.  An incomplete class, such as the target of a
-// Ref, vouches for nothing.
+// values beside it: a key, which is a class with no public constructor in a
+// namespace of the base, so only the doors and the friends of an author of
+// the base build one, or a payload whose statement passes the check.  A
+// class with no public constructor outside the base, such as a key that a
+// template argument gives, vouches for nothing, as a statement outside the
+// base states nothing.  An incomplete class, such as the target of a Ref,
+// vouches for nothing.
 consteval bool is_voucher_type(std::meta::info type) {
     std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
     if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
-    if (!has_public_constructor(bare)) return true;
+    if (!has_public_constructor(bare)) return is_defined_in_base(bare);
     return std::meta::extract<bool>(std::meta::substitute(^^states_empty_never_built, {bare}))
         && is_statement_checked(bare);
 }
@@ -627,20 +654,49 @@ consteval bool takes_raw_value(std::meta::info constructor) {
     return false;
 }
 
-// True when each public constructor of the type other than copy and move
-// that takes a raw value also takes a voucher (1 of the check of the
-// statement).  A constructor with a voucher needs no walk of its raw values,
-// so the walk of the target of a Ref runs for no Ref.  Complexity: linear in
-// the members of the type and the parameters of its constructors, and the
-// walks of their types.
-consteval bool vouches_each_raw_parameter(std::meta::info type) {
+// True when the type names the class: the class itself, a reference or a
+// pointer to it, or a specialization of a class template with the class at
+// some depth of its type arguments, such as an Option or a Box of the class.
+// The walk ends, because each step goes into a part of the type.
+// Complexity: linear in the template arguments that the walk reaches.
+consteval bool names_class(std::meta::info type, std::meta::info target) {
+    std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
+    std::meta::info const pointee = std::meta::is_pointer_type(bare) ? std::meta::remove_pointer(bare) : bare;
+    std::meta::info const base = std::meta::remove_cv(pointee);
+    if (base == target) return true;
+    if (!std::meta::has_template_arguments(base)) return false;
+    auto const arguments = std::meta::template_arguments_of(base);
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (std::meta::is_type(arguments[index]) && names_class(arguments[index], target)) return true;
+    }
+    return false;
+}
+
+// True when each public door of the type vouches for what it builds (1 of
+// the check of the statement):
+//   - Each constructor other than copy and move that takes a raw value also
+//     takes a voucher.  A constructor with a voucher needs no walk of its raw
+//     values, so the walk of the target of a Ref runs for no Ref.
+//   - Each static member function that gives a value of the type is judged
+//     as a constructor.  Such a function is a door over a constructor that
+//     need not be public.  So a door with no parameter is refused, as a
+//     public default constructor is, and a door that takes a raw value also
+//     takes a voucher.
+// A deleted function builds nothing.  One walk reads the two kinds, because
+// each list of members costs a query.  Complexity: linear in the members of
+// the type and the parameters of its doors, and the walks of their types.
+consteval bool vouches_each_door(std::meta::info type) {
     auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
-        bool const is_judged = std::meta::is_function(member) && std::meta::is_constructor(member)
-                            && !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member)
-                            && !std::meta::is_deleted(member);
-        if (is_judged && !takes_voucher(member) && takes_raw_value(member)) return false;
+        if (!std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
+        if (std::meta::is_constructor(member)) {
+            bool const is_judged = !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);
+            if (is_judged && !takes_voucher(member) && takes_raw_value(member)) return false;
+        } else if (std::meta::is_static_member(member) && names_class(std::meta::return_type_of(member), type)) {
+            if (std::meta::parameters_of(member).size() == 0) return false;
+            if (!takes_voucher(member) && takes_raw_value(member)) return false;
+        }
     }
     return true;
 }
@@ -696,7 +752,7 @@ template <class T>
 concept BuildsNoEmptyValue =
     !std::is_aggregate_v<T> && !std::is_default_constructible_v<T> && !std::is_constructible_v<T, std::nullptr_t>
     && !std::is_constructible_v<T, void*> && !std::is_constructible_v<T, int>
-    && !std::is_constructible_v<T, unsigned long long> && vouches_each_raw_parameter(^^T);
+    && !std::is_constructible_v<T, unsigned long long> && vouches_each_door(^^T);
 
 // The member check of the statement of T (2 of the check of the statement).
 template <class T>
