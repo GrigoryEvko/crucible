@@ -540,14 +540,13 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
     return name;
 }
 
-// The characters of a name of the table as a text.  take_trace_name_ keeps
-// the length at most SCHEMA_NAME_MAX.  Complexity: the length of the name.
-[[nodiscard]] inline ::fixy::FixedText<SCHEMA_NAME_MAX> trace_name_text_(TraceName const& name) noexcept {
-    ::fixy::FixedText<SCHEMA_NAME_MAX> text{};
-    for (const std::byte name_byte : name.characters) {
-        text.append(static_cast<char>(name_byte)).expect("a name of a bounded length fits in its text");
-    }
-    return text;
+// The characters of a name of the table as a text from outside the program,
+// in place in the image of the file: the text borrows the image, and no
+// buffer holds a copy.  take_trace_name_ keeps the length at most
+// SCHEMA_NAME_MAX.  Complexity: constant.
+[[nodiscard]] inline ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::External>
+trace_name_text_(TraceName const& name) noexcept {
+    return ::fixy::mint_tagged<::fixy::tags::source::External>(::fixy::mint_foreign_text(name.characters));
 }
 
 // The error of a load for a refusal of sanitize_schema_name.  take_trace_name_
@@ -570,8 +569,7 @@ take_trace_name_(::fixy::View<std::byte const>& rest) noexcept {
 // test of a repeated hash reads the whole table (has_repeated_hash_).
 // Complexity: the length of the name.
 [[nodiscard]] inline ::fixy::Option<TraceLoadError> check_trace_name_(TraceName const& name) noexcept {
-    const ::fixy::FixedText<SCHEMA_NAME_MAX> text = trace_name_text_(name);
-    return sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
+    return sanitize_schema_name(name.hash, trace_name_text_(name))
         .match([](SanitizedSchemaName) noexcept { return ::fixy::Option<TraceLoadError>{}; },
                [](SchemaNameError error) noexcept { return ::fixy::some(trace_name_error_(error)); });
 }
@@ -1143,11 +1141,10 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         for (uint32_t index = 0; index < checked.num_names(); ++index) {
             const detail::TraceName entry =
                 detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
-            const ::fixy::FixedText<SCHEMA_NAME_MAX> name_text = detail::trace_name_text_(entry);
             // The check of the image ran sanitize_schema_name on each name,
-            // and the same validator gives the Sanitized name here.
-            add_name(entry.hash, sanitize_schema_name(
-                                     entry.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(name_text.view()))
+            // and the same validator gives the Sanitized name here.  Its
+            // characters stay in the image, and the table copies them.
+            add_name(entry.hash, sanitize_schema_name(entry.hash, detail::trace_name_text_(entry))
                                      .expect("the check of the image ran the same validator on each name"));
         }
     };

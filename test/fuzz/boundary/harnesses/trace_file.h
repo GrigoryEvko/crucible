@@ -75,14 +75,11 @@ inline void claim_names_registered(::fixy::View<std::byte const> image) noexcept
             for (std::uint32_t index = 0; index < trace_image.num_names(); ++index) {
                 const detail::TraceName name =
                     detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
-                const ::fixy::FixedText<SCHEMA_NAME_MAX> text = detail::trace_name_text_(name);
-                CRUCIBLE_FUZZ_CLAIM(
-                    "trace_file",
-                    sanitize_schema_name(name.hash, ::fixy::mint_tagged<::fixy::tags::source::External>(text.view()))
-                        .is_ok());
+                const auto text = detail::trace_name_text_(name);
+                CRUCIBLE_FUZZ_CLAIM("trace_file", sanitize_schema_name(name.hash, text).is_ok());
                 const ::fixy::Option<InternedSchemaName> held = global_schema_table().lookup(name.hash);
                 const bool is_held_name = held.match(
-                    [&text](InternedSchemaName const& found) noexcept { return found.value().view() == text.view(); },
+                    [&text](InternedSchemaName const& found) noexcept { return found.value().view() == text.value(); },
                     [] noexcept { return false; });
                 CRUCIBLE_FUZZ_CLAIM("trace_file", is_held_name);
             }

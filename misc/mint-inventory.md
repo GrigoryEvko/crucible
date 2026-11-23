@@ -49,8 +49,8 @@ that the axis does not apply to the row.
 | `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
-| `SchemaTable::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
-| `SchemaTable::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
+| `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
+| `SchemaTableOf::mint_sealed_view` | `include/crucible/SchemaTable.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::Box<foundation::core::BumpArena<crucible::DagArena> >&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 12 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::BumpArena<crucible::DagArena>&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 12 |
@@ -338,7 +338,8 @@ that the axis does not apply to the row.
 | `mint_fixed_array` | `include/foundation/core/Array.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_fixed_heap_array` | `include/foundation/core/FixedHeapArray.h` | Y | - | Y | Y | token | · | HS14: 8 |
 | `mint_foreign_run_address` | `include/foundation/core/DataAddress.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_foreign_text` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 3 |
+| `mint_foreign_text(const char*, std::size_t)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
+| `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
 | `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 4 |
@@ -421,4 +422,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 84 | 48 | 27 | 9 | 0 | 8 |
-| substrate (`include/foundation/`, `include/fixy/`) | 178 | 63 | 111 | 4 | 0 | 3 |
+| substrate (`include/foundation/`, `include/fixy/`) | 179 | 63 | 112 | 4 | 0 | 3 |
