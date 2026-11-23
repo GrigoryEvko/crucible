@@ -745,6 +745,93 @@ void test_schema_name_reserved_hash() {
            "the full name of an operator with an overload registers from outside");
 }
 
+// The table index of the row of the hash by a walk of each row of the table,
+// the oracle of the search of the hash order, or kAtenOpCount for no row.
+// Complexity: linear in the rows.
+[[nodiscard]] std::size_t walk_to_index_of(crucible::SchemaHash hash) noexcept {
+    std::size_t index = 0;
+    std::size_t found = crucible::vessel::kAtenOpCount;
+    crucible::vessel::for_each_aten_op_row([hash, &index, &found](crucible::vessel::OpEntry const& row) noexcept {
+        if (found == crucible::vessel::kAtenOpCount && row.schema_hash == hash.raw()) found = index;
+        ++index;
+    });
+    return found;
+}
+
+// The table index that the search of the hash order gives, or kAtenOpCount
+// for no row.
+[[nodiscard]] std::size_t search_index_of(crucible::SchemaHash hash) noexcept {
+    return crucible::vessel::aten_op_index_of(hash).match(
+        [](crucible::vessel::AtenOpIndex index) noexcept { return std::size_t{index.raw()}; },
+        [] noexcept { return std::size_t{crucible::vessel::kAtenOpCount}; });
+}
+
+// The hash order of the generated table: each hash of a part is above the
+// hash before it, the last hash of each part is the last hash of the part,
+// the order holds one place for each row, and the search finds the table
+// index of each row, as the walk does.  A hash that no row has gives no row:
+// below the first hash, above the last hash, between two neighbors of the
+// order, the largest hash, and the hash one.
+void test_hash_order_finds_each_row() {
+    std::size_t places = 0;
+    uint64_t earlier = 0;
+    bool is_rising = true;
+    bool is_each_last_hash_held = true;
+    std::size_t part_number = 0;
+    for (const ::fixy::View<uint64_t const> part : crucible::vessel::aten_op_hash_parts) {
+        for (const uint64_t hash : part) {
+            is_rising = is_rising && (places == 0 || hash > earlier);
+            earlier = hash;
+            ++places;
+        }
+        const uint64_t last_hash = *crucible::vessel::aten_op_last_hash_of_part.get(part_number).expect("a part");
+        is_each_last_hash_held = is_each_last_hash_held && last_hash == earlier;
+        ++part_number;
+    }
+    EXPECT(is_rising, "each hash of the order is above the hash before it");
+    EXPECT(is_each_last_hash_held, "the last hash of each part is the last hash that the part holds");
+    EXPECT(places == crucible::vessel::kAtenOpCount, "the order holds one place for each row");
+
+    std::size_t index = 0;
+    std::size_t found_rows = 0;
+    std::size_t agreed_rows = 0;
+    std::size_t read_rows = 0;
+    auto check_row = [&index, &found_rows, &agreed_rows, &read_rows](crucible::vessel::OpEntry const& row) noexcept {
+        const crucible::SchemaHash hash{row.schema_hash};
+        const std::size_t searched = search_index_of(hash);
+        if (searched == index) ++found_rows;
+        if (searched == walk_to_index_of(hash)) ++agreed_rows;
+        const bool is_same_row = crucible::vessel::aten_op_index_of(hash).match(
+            [&row](crucible::vessel::AtenOpIndex held) noexcept {
+                crucible::vessel::OpEntry const& read = crucible::vessel::aten_op_row_at(held);
+                return read.schema_hash == row.schema_hash && read.name == row.name && read.overload == row.overload;
+            },
+            [] noexcept { return false; });
+        if (is_same_row) ++read_rows;
+        ++index;
+    };
+    crucible::vessel::for_each_aten_op_row(check_row);
+    EXPECT(found_rows == crucible::vessel::kAtenOpCount, "the search finds the table index of each row");
+    EXPECT(agreed_rows == crucible::vessel::kAtenOpCount, "the search and the walk give one index for each hash");
+    EXPECT(read_rows == crucible::vessel::kAtenOpCount, "the row at the index of each hash is the row of the hash");
+
+    const uint64_t first_hash =
+        *(*crucible::vessel::aten_op_hash_parts.get(0).expect("a part")).get(0).expect("a hash");
+    const uint64_t second_hash =
+        *(*crucible::vessel::aten_op_hash_parts.get(0).expect("a part")).get(1).expect("a hash");
+    const uint64_t last_hash =
+        *crucible::vessel::aten_op_last_hash_of_part.get(crucible::vessel::aten_op_last_hash_of_part.size() - 1)
+             .expect("a part");
+    const ::fixy::FixedArray<crucible::SchemaHash, 5> misses{
+        crucible::SchemaHash{first_hash - 1}, crucible::SchemaHash{last_hash + 1},
+        crucible::SchemaHash{first_hash + (second_hash - first_hash) / 2}, crucible::SchemaHash{~uint64_t{0}},
+        crucible::SchemaHash{1}};
+    for (const crucible::SchemaHash miss : misses) {
+        EXPECT(walk_to_index_of(miss) == crucible::vessel::kAtenOpCount, "the walk finds no row of the hash");
+        EXPECT(crucible::vessel::aten_op_index_of(miss).is_none(), "the search finds no row of the hash");
+    }
+}
+
 void test_handle_distinct_pointers() {
     // Two storage blocks give two pointers, and the wrapper must keep
     // them apart rather than collapse or reuse a value.
@@ -913,6 +1000,7 @@ int main() {
     test_schema_name_registration_codes();
     test_schema_name_full_code();
     test_schema_name_reserved_hash();
+    test_hash_order_finds_each_row();
     test_handle_distinct_pointers();
     test_ladder_refuses_unnamed_enumerations();
     test_ladder_refuses_a_count_that_disagrees_with_the_entry();

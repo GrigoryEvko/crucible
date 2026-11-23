@@ -391,16 +391,15 @@ enum class OutsideNameRefusal : std::uint8_t {
 }
 
 // True when an operator of the generated table has the hash and a name other
-// than name (the reserved hashes).  Complexity: linear in the rows of the
-// table, one time for each name from outside.  The fallback keeps the result
-// in its schema cache, and crucible_mode.py keeps the hash of each name.
+// than name (the reserved hashes).  The search of the hash order of the
+// table finds the row of the hash (aten_op_index_of).  Complexity: O(log n)
+// in the rows of the table and the length of the name, one time for each
+// name from outside.  The fallback keeps the result in its schema cache, and
+// crucible_mode.py keeps the hash of each name.
 [[nodiscard]] constexpr bool is_reserved_for_other_name(crucible::SchemaHash hash, ::fixy::TextView name) noexcept {
-    for (const ::fixy::View<OpEntry const> part : aten_op_parts) {
-        for (const OpEntry& row : part) {
-            if (row.schema_hash == hash.raw()) return !is_full_name_of(row, name);
-        }
-    }
-    return false;
+    return aten_op_index_of(hash).match(
+        [name](AtenOpIndex index) noexcept { return !is_full_name_of(aten_op_row_at(index), name); },
+        [] noexcept { return false; });
 }
 
 // The result of register_outside_schema_name.
@@ -410,8 +409,8 @@ using OutsideNameRegistration = ::fixy::Result<::fixy::Unit, OutsideNameRefusal>
 // list above).  The name crossed a foreign ABI: the C text of a ctypes caller,
 // or a text of PyTorch.  The function is a template on the Vigil, because
 // this header names the Vigil only through a declaration.  Its caller
-// includes crucible/Vigil.h.  Complexity: the length of the name, and linear
-// in the rows of the generated table.
+// includes crucible/Vigil.h.  Complexity: the length of the name, and
+// O(log n) in the rows of the generated table.
 template <class VigilType>
     requires std::same_as<VigilType, crucible::Vigil>
 [[nodiscard, gnu::cold]] OutsideNameRegistration

@@ -416,7 +416,7 @@ CRUCIBLE_COLD static void refuse_schema_name(::fixy::AddressKey const& key, Oper
 // operation of it.  The first empty slot of the window of the key keeps the
 // facts or the refusal, so the door runs one time for each operator.  The
 // helper is cold, and the text of the name is on its stack only.
-// Complexity: the length of the name, and linear in the rows of the
+// Complexity: the length of the name, and O(log n) in the rows of the
 // generated table.
 CRUCIBLE_COLD static ::fixy::Option<SchemaInfo> record_schema_miss(crucible::Vigil& vigil,
                                                                    OperatorNameParts const& name, bool mutable_op,

@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import itertools
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -537,9 +538,11 @@ HEADER_TEMPLATE = '''#pragma once
 //   classified              {classified} ({opaque} OPAQUE)
 
 #include <crucible/CKernel.h>
+#include <crucible/Types.h>
 #include <fixy/Core.h>
 #include <foundation/Quarantine.h>
 
+#include <cstddef>
 #include <cstdint>
 
 namespace crucible::vessel {{
@@ -612,6 +615,53 @@ constexpr void for_each_aten_op_row(Visit&& visit) {{
     }}
 }}
 
+// The schema hash of each row in the order of the hashes, from the lowest,
+// in parts of at most kAtenOpRowsPerPart hashes, and the table index of the
+// row of each hash at the same place.  The generator sorts the rows by their
+// schema hashes, and it refuses a table with two rows of one hash, so a hash
+// names one row at most.  test_vessel_api_typed.cpp checks that each row
+// stands in this order one time, at the place of its hash.
+{hash_parts}
+
+// The View of each part of the hashes, the View of each part of the table
+// indices, and the last hash of each part, in the order of the hashes.
+inline constexpr ::fixy::FixedArray<::fixy::View<uint64_t const>, {part_count}> aten_op_hash_parts{{
+{hash_part_views}
+}};
+inline constexpr ::fixy::FixedArray<::fixy::View<uint16_t const>, {part_count}> aten_op_hash_row_parts{{
+{hash_row_part_views}
+}};
+inline constexpr ::fixy::FixedArray<uint64_t, {part_count}> aten_op_last_hash_of_part{{
+{last_hashes}
+}};
+
+// The position of a row in the table.
+using AtenOpIndex = ::fixy::Index<kAtenOpCount>;
+
+// The table index of the row of the schema hash, or no value.  The search
+// finds the first part whose last hash is not below the hash, and then the
+// first place in that part whose hash is not below the hash.  Complexity:
+// O(log n), at most {search_steps} compares.
+[[nodiscard]] constexpr ::fixy::Option<AtenOpIndex> aten_op_index_of(crucible::SchemaHash schema_hash) noexcept {{
+    constexpr auto kHashOf = [](uint64_t hash) noexcept {{ return hash; }};
+    const uint64_t probe = schema_hash.raw();
+    const std::size_t part = ::fixy::find_lower_bound_by_key(aten_op_last_hash_of_part.view(), kHashOf, probe);
+    if (part == aten_op_last_hash_of_part.size()) return ::fixy::none;
+    const ::fixy::View<uint64_t const> hashes = *aten_op_hash_parts.get(part).expect("a part below the count");
+    const std::size_t place = ::fixy::find_lower_bound_by_key(hashes, kHashOf, probe);
+    const uint64_t found = *hashes.get(place).expect("the last hash of the part is not below the probe");
+    if (found != probe) return ::fixy::none;
+    const ::fixy::View<uint16_t const> rows = *aten_op_hash_row_parts.get(part).expect("a part below the count");
+    return AtenOpIndex::check(*rows.get(place).expect("each part of the indices holds one index for each hash"));
+}}
+
+// The row at a table index.  Complexity: O(1).
+[[nodiscard]] constexpr const OpEntry& aten_op_row_at(AtenOpIndex index) noexcept {{
+    const ::fixy::View<OpEntry const> part =
+        *aten_op_parts.get(index.raw() / kAtenOpRowsPerPart).expect("an index below the count names a part");
+    return *part.get(index.raw() % kAtenOpRowsPerPart).expect("an index below the count names a row of its part");
+}}
+
 // The operator structs, paired with their table index, for register.cpp to
 // expand. A type cannot be spelled as data, so this is the one place the
 // generator emits tokens rather than values. Each part macro holds at most
@@ -627,6 +677,37 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 }}  // namespace crucible::vessel
 '''
+
+
+def hash_order_of(ops: list[Op]) -> list[tuple[int, int]]:
+    """Return the schema hash and the table index of each operator, in the order of the hashes.
+
+    The search of aten_op_row_of finds one row for a hash, so two rows of one hash would hide one of them.  The
+    background thread and the schema tables also key each operator on its hash.  So a table with two rows of one
+    hash stops the generator.  Complexity: O(n log n).
+
+    Args:
+        ops: The operators in table order
+
+    Returns:
+        The pairs of a schema hash and a table index, sorted by the hash
+    """
+    if len(ops) >= 1 << 16:
+        raise SystemExit(f"the table has {len(ops)} rows, and the hash order keeps a table index in 16 bits")
+    order = sorted((schema_hash(op.name, op.overload), index) for index, op in enumerate(ops))
+    for (earlier_hash, earlier), (later_hash, later) in itertools.pairwise(order):
+        if earlier_hash == later_hash:
+            first, second = ops[earlier], ops[later]
+            raise SystemExit(
+                f"the operators {first.name}.{first.overload} and {second.name}.{second.overload} have one schema "
+                f"hash {earlier_hash:#018x}; the table keys each operator on its hash"
+            )
+    return order
+
+
+def search_steps_of(count: int) -> int:
+    """Return the most steps of a binary search for the first place not below a probe, over count values."""
+    return count.bit_length()
 
 
 def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str) -> str:
@@ -666,6 +747,27 @@ def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str)
     last = f"return aten_op_rows_{len(row_parts) - 1}.at(::fixy::index<kInPart>());"
     branches.append(f"    else\n        {last}" if branches else f"    static_assert(kPart == 0);\n    {last}")
     row_branches = "\n".join(branches)
+    hash_order = hash_order_of(ops)
+    hash_parts = []
+    last_hashes = []
+    for start in range(0, len(hash_order), OPS_PER_PART):
+        part = start // OPS_PER_PART
+        placed = hash_order[start:start + OPS_PER_PART]
+        hash_parts.append(
+            f"inline constexpr ::fixy::FixedArray<uint64_t, {len(placed)}> aten_op_hashes_{part}{{\n"
+            + "\n".join(f"    {hash_value:#018x}ULL," for hash_value, _ in placed)
+            + "\n};\n"
+            + f"inline constexpr ::fixy::FixedArray<uint16_t, {len(placed)}> aten_op_hash_rows_{part}{{\n"
+            + "\n".join(f"    {row}," for _, row in placed)
+            + "\n};"
+        )
+        last_hashes.append(f"    {placed[-1][0]:#018x}ULL,")
+    hash_part_views = ",\n".join(
+        f"    ::fixy::View<uint64_t const>{{aten_op_hashes_{part}.view()}}" for part in range(len(hash_parts))
+    )
+    hash_row_part_views = ",\n".join(
+        f"    ::fixy::View<uint16_t const>{{aten_op_hash_rows_{part}.view()}}" for part in range(len(hash_parts))
+    )
     classified = sum(1 for op in ops if op.ckernel != OPAQUE)
     return HEADER_TEMPLATE.format(
         torch_version=torch_version,
@@ -678,6 +780,11 @@ def emit(ops: list[Op], yaml_sha256: str, yaml_entries: int, torch_version: str)
         part_count=len(row_parts),
         part_views=part_views,
         row_branches=row_branches,
+        hash_parts="\n\n".join(hash_parts),
+        hash_part_views=hash_part_views,
+        hash_row_part_views=hash_row_part_views,
+        last_hashes="\n".join(last_hashes),
+        search_steps=search_steps_of(len(hash_parts)) + search_steps_of(OPS_PER_PART) + 1,
         ops_per_part=OPS_PER_PART,
         op_region_reason=OP_REGION_REASON,
         op_parts="\n\n".join(parts),
@@ -852,6 +959,24 @@ def self_test(torch_dir: Path) -> int:
         except SystemExit:
             refused = True
         expect("a header the kit cannot parse stops the generator", refused, True)
+
+    def planted_op(name: str, overload: str) -> Op:
+        """Return an operator of one tensor argument with a name and an overload."""
+        return Op(struct=name, header="planted", name=name, overload=overload, schema_str="", arity=1,
+                  tensor_arg_mask=1, tensor_list_mask=0, is_mutable=False, ckernel=OPAQUE)
+
+    planted = [planted_op("aten::mm", ""), planted_op("aten::mm", "out"), planted_op("aten::relu", "")]
+    order = hash_order_of(planted)
+    expect("the hash order sorts the rows by their schema hashes and keeps the index of each row",
+           [hash_value for hash_value, _ in order] == sorted(schema_hash(op.name, op.overload) for op in planted)
+           and sorted(row for _, row in order) == [0, 1, 2]
+           and all(schema_hash(planted[row].name, planted[row].overload) == hash_value for hash_value, row in order))
+    try:
+        hash_order_of([*planted, planted_op("aten::mm", "out")])
+        refused = False
+    except SystemExit:
+        refused = True
+    expect("two rows of one schema hash stop the generator", refused, True)
     if failures:
         print(f"gen-aten-op-table --self-test: FAILED — {len(failures)} case(s) did not hold")
         return 2

@@ -23,6 +23,22 @@
 //   and it moves each key one time for each byte in which two keys differ:
 //   eight moves of 1024 keys of eight bytes, about 2 cycles for each key and
 //   pass at a store a cycle, about 16 thousand cycles.
+//
+// Reserved hash of an outside name
+//   The door of an outside name refuses a name whose hash is the hash of an
+//   operator of the generated table with a different name
+//   (is_reserved_for_other_name of vessel/torch/vessel_api_typed.h).  The
+//   rows time the check of the first row of the table, of its last row, and
+//   of a hash of no row, the case of each operator from outside:
+//     walk             the walk of each row in table order, the old form:
+//                      it stops at the row of the hash, so a miss reads
+//                      each of the 3110 rows
+//     search           aten_op_row_of: the search of the last hash of each
+//                      of the 25 parts, then of the 128 hashes of one part
+//   The floor of the search is its chain of dependent loads: at most 5 and 8
+//   steps, each a load of an L1 or L2 line and a compare, then the load of
+//   the row and the compare of the name, about 14 loads at 4 to 14 cycles,
+//   with a mispredicted branch at about half of the steps.
 
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +46,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceLoader.h>
 
+#include "../vessel/torch/vessel_api_typed.h"
 #include "bench_harness.h"
 
 using crucible::SchemaHash;
@@ -69,6 +86,31 @@ void append_word(NameTableImage& image, Word value) noexcept {
         const bool is_put = image.append(static_cast<std::byte>(static_cast<uint8_t>(value >> shift))).is_ok();
         CRUCIBLE_FATAL_INVARIANT(is_put);
     }
+}
+
+// The old form of is_reserved_for_other_name: the walk of each row of the
+// generated table in table order, to the row of the hash.  Complexity:
+// linear in the rows.
+[[nodiscard]] bool is_reserved_by_walk(SchemaHash hash, ::fixy::TextView name) noexcept {
+    for (const ::fixy::View<crucible::vessel::OpEntry const> part : crucible::vessel::aten_op_parts) {
+        for (const crucible::vessel::OpEntry& row : part) {
+            if (row.schema_hash == hash.raw()) return !crucible::vessel::is_full_name_of(row, name);
+        }
+    }
+    return false;
+}
+
+// The full name of a row: its name, and a dot and its overload when the
+// overload has characters.
+using FullName = ::fixy::FixedText<crucible::SCHEMA_NAME_MAX>;
+
+[[nodiscard]] FullName full_name_of(crucible::vessel::OpEntry const& row) noexcept {
+    FullName name{};
+    const bool is_joined =
+        name.append(row.name).is_ok()
+        && (row.overload.size() == 0 || (name.append('.').is_ok() && name.append(row.overload).is_ok()));
+    CRUCIBLE_FATAL_INVARIANT(is_joined);
+    return name;
 }
 
 [[nodiscard]] NameTableImage make_name_table_image() noexcept {
@@ -186,5 +228,63 @@ int main() {
     };
 
     bench::emit_reports(table_reports.view(), json);
+
+    constexpr crucible::vessel::OpEntry const& first_row = crucible::vessel::aten_op_row<0>();
+    constexpr crucible::vessel::OpEntry const& last_row =
+        crucible::vessel::aten_op_row<crucible::vessel::kAtenOpCount - 1>();
+    const FullName first_name = full_name_of(first_row);
+    const FullName last_name = full_name_of(last_row);
+    const SchemaHash first_hash{first_row.schema_hash};
+    const SchemaHash last_hash{last_row.schema_hash};
+    constexpr ::fixy::TextView kOutsideName{"crucible::outside_op"};
+    const SchemaHash outside_hash{0x5DEECE66DULL};
+    CRUCIBLE_FATAL_INVARIANT(is_reserved_by_walk(outside_hash, kOutsideName) == false);
+    CRUCIBLE_FATAL_INVARIANT(crucible::vessel::aten_op_index_of(outside_hash).is_none());
+
+    bench::print("\n=== reserved hash of an outside name ===\n");
+    bench::print("  rows of the generated table: {}\n\n", crucible::vessel::kAtenOpCount);
+
+    // Each body takes copies of its hash and its name that the optimizer does
+    // not know, so it runs the whole check in each call.
+    ::fixy::FixedArray<bench::Report, 6> reserved_reports{
+        bench::run("walk (old), first row",
+                   [&] {
+                       const bool is_reserved =
+                           is_reserved_by_walk(bench::make_opaque(first_hash), bench::make_opaque(first_name.view()));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+        bench::run("walk (old), last row",
+                   [&] {
+                       const bool is_reserved =
+                           is_reserved_by_walk(bench::make_opaque(last_hash), bench::make_opaque(last_name.view()));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+        bench::run("walk (old), no row",
+                   [&] {
+                       const bool is_reserved =
+                           is_reserved_by_walk(bench::make_opaque(outside_hash), bench::make_opaque(kOutsideName));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+        bench::run("search, first row",
+                   [&] {
+                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                           bench::make_opaque(first_hash), bench::make_opaque(first_name.view()));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+        bench::run("search, last row",
+                   [&] {
+                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                           bench::make_opaque(last_hash), bench::make_opaque(last_name.view()));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+        bench::run("search, no row",
+                   [&] {
+                       const bool is_reserved = crucible::vessel::is_reserved_for_other_name(
+                           bench::make_opaque(outside_hash), bench::make_opaque(kOutsideName));
+                       bench::do_not_optimize(is_reserved);
+                   }),
+    };
+
+    bench::emit_reports(reserved_reports.view(), json);
     return 0;
 }
