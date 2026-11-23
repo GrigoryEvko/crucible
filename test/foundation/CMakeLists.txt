@@ -2674,6 +2674,11 @@ foundation_neg_compile_test(neg_core_option_niche_statement_static_door
   "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = StaticDoorSlot\\]. evaluated to .false.")
 set_property(TEST neg_core_option_niche_statement_static_door APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_static_value
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = StaticValueSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = StaticValueSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_static_value APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
 foundation_neg_compile_test(neg_core_option_niche_statement_constructor_template
   "required for the satisfaction of .StatedInBase<T>. \\[with T = TemplateDoorSlot\\]"
   "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = TemplateDoorSlot\\]. evaluated to .false.")

@@ -207,14 +207,6 @@ consteval bool is_layer_header(Side<side::ChoiceHeader, char const*> const& anch
     return true;
 }
 
-// The place of a niche statement: true when the declaration that makes the
-// statement stands in a header of the base, at the scope of a class or of a
-// namespace.  A mark that the body of a function makes or copies, such as
-// the element of a container of the base, reads the name of its function,
-// so it is no statement.  Only the default argument of the constructor of
-// niche_statement builds a place, because the two constructors are private,
-// so no caller names a file.  The copy is user-provided, so std::bit_cast and
-// a lifetime start over bytes build no place, for the reasons that niche_key
 }  // namespace detail
 
 // The place of a niche statement: true when the declaration that makes the
@@ -575,9 +567,12 @@ consteval bool has_public_constructor(std::meta::info type) {
 // True when a namespace of the base holds the class: the namespace
 // foundation or fixy of the global scope, or a namespace inside one of them.
 // The rule base-namespace of the quarantine plugin refuses each declaration
-// in such a namespace from a file outside the base.  So only a header of the
-// base, or a check file of such a header, defines such a class.  Complexity:
-// linear in the depth of the scopes of the class.
+// in such a namespace from a file outside the base, but not an explicit or a
+// partial specialization.  A specialization of a template with the open mark,
+// such as niche<T> in the file of T, and a specialization in a PROBE: region
+// stand in such a namespace from a different file.  So the namespace does
+// not prove that a header of the base defines the class.  Complexity: linear
+// in the depth of the scopes of the class.
 consteval bool is_defined_in_base(std::meta::info type) {
     std::meta::info const global_scope = ^^::;
     std::meta::info scope = std::meta::parent_of(type);
@@ -594,12 +589,12 @@ consteval bool is_defined_in_base(std::meta::info type) {
 
 // True when the type, with no reference and no cv, vouches for the raw
 // values beside it: a key, which is a class with no public constructor in a
-// namespace of the base, so only the doors and the friends of an author of
-// the base build one, or a payload whose statement passes the check.  A
-// class with no public constructor outside the base, such as a key that a
-// template argument gives, vouches for nothing, as a statement outside the
-// base states nothing.  An incomplete class, such as the target of a Ref,
-// vouches for nothing.
+// namespace of the base, or a payload whose statement passes the check.  A
+// class with no public constructor in a different namespace vouches for
+// nothing.  A key from a specialization of a different file, which
+// is_defined_in_base gives, vouches too.  No stated type takes a key from a
+// template argument, so no such key comes into a door of the base.  An
+// incomplete class, such as the target of a Ref, vouches for nothing.
 consteval bool is_voucher_type(std::meta::info type) {
     std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
     if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
@@ -654,13 +649,13 @@ consteval bool takes_raw_value(std::meta::info constructor) {
     return false;
 }
 
-// True when the type names the class: the class itself, a reference or a
-// pointer to it, or a specialization of a class template with the class at
-// some depth of its type arguments, such as an Option or a Box of the class.
-// The walk ends, because each step goes into a part of the type.
-// Complexity: linear in the template arguments that the walk reaches.
+// True when the type names the class: the class itself, an array of it, a
+// reference or a pointer to it, or a specialization of a class template with
+// the class at some depth of its type arguments, such as an Option or a Box
+// of the class.  The walk ends, because each step goes into a part of the
+// type.  Complexity: linear in the template arguments that the walk reaches.
 consteval bool names_class(std::meta::info type, std::meta::info target) {
-    std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(type));
+    std::meta::info const bare = std::meta::remove_all_extents(std::meta::remove_cvref(std::meta::dealias(type)));
     std::meta::info const pointee = std::meta::is_pointer_type(bare) ? std::meta::remove_pointer(bare) : bare;
     std::meta::info const base = std::meta::remove_cv(pointee);
     if (base == target) return true;
@@ -682,13 +677,19 @@ consteval bool names_class(std::meta::info type, std::meta::info target) {
 //     need not be public.  So a door with no parameter is refused, as a
 //     public default constructor is, and a door that takes a raw value also
 //     takes a voucher.
-// A deleted function builds nothing.  One walk reads the two kinds, because
+//   - A static data member that holds a value of the type is a door with no
+//     parameter, because a copy of it is a value that a private constructor
+//     built.  So it is refused.  A member variable template is refused too,
+//     because the walk cannot read its type before an instance.
+// A deleted function builds nothing.  One walk reads the three kinds, because
 // each list of members costs a query.  Complexity: linear in the members of
 // the type and the parameters of its doors, and the walks of their types.
 consteval bool vouches_each_door(std::meta::info type) {
     auto const members = std::meta::members_of(type, std::meta::access_context::unprivileged());
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
+        if (std::meta::is_variable_template(member)) return false;
+        if (std::meta::is_variable(member) && names_class(std::meta::type_of(member), type)) return false;
         if (!std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
         if (std::meta::is_constructor(member)) {
             bool const is_judged = !std::meta::is_copy_constructor(member) && !std::meta::is_move_constructor(member);

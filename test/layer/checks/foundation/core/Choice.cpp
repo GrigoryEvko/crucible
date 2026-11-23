@@ -1385,6 +1385,36 @@ static_assert(names_class(^^WrappedDoorValue<WrappedDoorSlot>, ^^WrappedDoorSlot
               && names_class(^^Option<KeyedDoorSlot>, ^^KeyedDoorSlot));
 static_assert(!names_class(^^int, ^^WrappedDoorSlot));
 
+// Static values of the walk, judged as doors with no parameter: a static
+// data member of the slot and a member variable template.  A static data
+// member of a different type, such as a statement, is no door.  An array of
+// the slot names the slot.
+class StaticValueSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit StaticValueSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    static StaticValueSlot const empty_value;
+};
+class StatementValueSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    constexpr explicit StatementValueSlot(EmptyTag /*tag*/) noexcept {}
+    static constexpr niche_statement is_niche_empty_never_built{};
+};
+inline constexpr StaticValueSlot StaticValueSlot::empty_value{0xFFFFFFFFu};
+class VariableTemplateSlot {
+    std::uint32_t raw_ = 1;
+
+public:
+    template <std::uint32_t Raw>
+    static constexpr std::uint32_t word_of = Raw;
+};
+static_assert(!vouches_each_door(^^StaticValueSlot) && !BuildsNoEmptyValue<StaticValueSlot>);
+static_assert(!vouches_each_door(^^VariableTemplateSlot) && vouches_each_door(^^StatementValueSlot));
+static_assert(names_class(^^StaticValueSlot const[2], ^^StaticValueSlot));
+
 // The walk of the members (2 of the check of the statement).  Each class
 // below has one member that can write a value in place: a member function
 // that is not const, a member function template, a public data member, a
