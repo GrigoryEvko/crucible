@@ -711,6 +711,91 @@ consteval bool holds_class(std::meta::info type, Side<side::HeldClass, std::meta
     return holds_class_at<0>(type, target);
 }
 
+// True when the member is a class or a union that the scope declares: a
+// nested class, of each access.  An alias of a class names a class of a
+// different scope, which has no access of the scope.
+consteval bool is_nested_class(std::meta::info member, std::meta::info scope) {
+    bool const is_record =
+        std::meta::is_type(member) && (std::meta::is_class_type(member) || std::meta::is_union_type(member));
+    return is_record && !std::meta::is_type_alias(member) && std::meta::parent_of(member) == scope;
+}
+
+// True when a parameter of the function is a reference or a pointer to an
+// object that is not const and that holds the stated type (holds_class), so
+// a member of a nested class can write the type through it.  Complexity:
+// linear in the parameters, and the walks of their types.
+consteval bool writes_through_parameter(std::meta::info function, Side<side::HeldClass, std::meta::info> const& held) {
+    auto const parameters = std::meta::parameters_of(function);
+    for (std::size_t index = 0; index < parameters.size(); ++index) {
+        std::meta::info const parameter_type = std::meta::type_of(parameters[index]);
+        bool const is_pointer = std::meta::is_pointer_type(parameter_type);
+        if (!is_pointer && !std::meta::is_reference_type(parameter_type)) continue;
+        std::meta::info const target =
+            is_pointer ? std::meta::remove_pointer(parameter_type) : std::meta::remove_reference(parameter_type);
+        if (!std::meta::is_const_type(target) && holds_class(target, held)) return true;
+    }
+    return false;
+}
+
+// True when a nested class of the stated type, and each class nested in it,
+// passes the arms of the own doors and members of the type (1 and 2 of the
+// check of the statement).  A nested class has the access of the type, so its
+// members build or write the type through a private member, as a door of the
+// type does.  A private nested class counts too, because a public member can
+// give a value of it, and a caller then names the members through that value.
+//   - A function of the nested class that is not private and gives a value
+//     that holds the type takes a voucher.  A member function that is not
+//     static counts, and so does a conversion function, because the object
+//     of a nested class is no value of the type.
+//   - A function or a constructor that is not private and takes a writable
+//     parameter that holds the type is refused (writes_through_parameter).
+//     The copy and the move of the nested class write only the nested class.
+//   - A field of each access that holds the type is refused, also a static
+//     one, because its initializer or a constructor of the nested class
+//     builds the type.  So is a base that holds the type.
+//   - A member template is refused, because the walk cannot read its
+//     signature before an instance.
+//   - An incomplete nested class fails closed (IncompleteCheckedClass).
+// One walk reads the two kinds of arms, because each list of members costs a
+// query.  The bodies of the members are not read here.  The kind
+// niche-access of the rule proof-routes of the quarantine plugin reads them.
+// Complexity: linear in the members of the nested classes, and the walks of
+// their types.
+consteval bool admits_nested_class(std::meta::info nested, Side<side::HeldClass, std::meta::info> const& held) {
+    if (!std::meta::is_complete_type(nested)) return !stop_at_incomplete_class(nested);
+    std::meta::access_context const each = std::meta::access_context::unchecked();
+    auto const bases = std::meta::bases_of(nested, each);
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        if (holds_class(std::meta::type_of(bases[index]), held)) return false;
+    }
+    auto const members = std::meta::members_of(nested, each);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (std::meta::is_function(member)) {
+            if (std::meta::is_private(member) || std::meta::is_deleted(member)) continue;
+            bool const is_door = !std::meta::is_constructor(member) && !std::meta::is_special_member_function(member);
+            if (is_door && holds_class(std::meta::return_type_of(member), held) && !takes_voucher(member)) return false;
+            bool const is_copy_or_move = std::meta::is_copy_constructor(member)
+                                      || std::meta::is_move_constructor(member) || std::meta::is_copy_assignment(member)
+                                      || std::meta::is_move_assignment(member);
+            if (!is_copy_or_move && writes_through_parameter(member, held)) return false;
+            continue;
+        }
+        if (std::meta::is_function_template(member)) {
+            if (!std::meta::is_private(member)) return false;
+            continue;
+        }
+        if (std::meta::is_variable_template(member) || std::meta::is_class_template(member)) return false;
+        if (is_nested_class(member, nested)) {
+            if (!admits_nested_class(member, held)) return false;
+            continue;
+        }
+        bool const is_field = std::meta::is_variable(member) || std::meta::is_nonstatic_data_member(member);
+        if (is_field && holds_class(std::meta::type_of(member), held)) return false;
+    }
+    return true;
+}
+
 // True when each door of the type that is not private vouches for what it
 // builds (1 of the check of the statement):
 //   - Each constructor other than copy and move takes a voucher.
@@ -723,20 +808,27 @@ consteval bool holds_class(std::meta::info type, Side<side::HeldClass, std::meta
 //   - A static data member of each access that holds a value of the type is
 //     a door with no parameter, because a copy of it is a value that a
 //     private constructor built, and a friend or a nested class can copy a
-//     private one.  So it is refused.  A member variable template is refused
-//     too, because the walk cannot read its type before an instance.
+//     private one.  So it is refused.  A member variable template and a
+//     member class template are refused too, because the walk cannot read
+//     them before an instance.
+//   - Each nested class of each access passes the same arms, and the arms
+//     of the members (admits_nested_class).
 // A member function that is not static is no door: its object is a valid
 // value of the type, so it is a voucher, with the trust of a constructor
 // that takes a voucher.  A deleted function builds nothing.  One walk reads
 // the kinds, because each list of members costs a query.  Complexity: linear
-// in the members of the type and the parameters of its doors, and the walks
-// of their types.
+// in the members of the type and of its nested classes, and the parameters
+// of their doors, and the walks of their types.
 consteval bool vouches_each_door(std::meta::info type) {
     Side<side::HeldClass, std::meta::info> const held = side_as<side::HeldClass>(type);
     auto const members = std::meta::members_of(type, std::meta::access_context::unchecked());
     for (std::size_t index = 0; index < members.size(); ++index) {
         std::meta::info const member = members[index];
-        if (std::meta::is_variable_template(member)) return false;
+        if (std::meta::is_variable_template(member) || std::meta::is_class_template(member)) return false;
+        if (is_nested_class(member, type)) {
+            if (!admits_nested_class(member, held)) return false;
+            continue;
+        }
         if (std::meta::is_variable(member) && holds_class(std::meta::type_of(member), held)) return false;
         if (std::meta::is_private(member) || !std::meta::is_function(member) || std::meta::is_deleted(member)) continue;
         if (std::meta::is_constructor(member)) {
@@ -772,7 +864,8 @@ consteval bool has_writable_parameter(std::meta::info function) {
 // of the derived value gives its base part as a value of the type.  A
 // deleted function writes nothing.  The walk of the fields reads the private
 // fields too, because a const member function writes a mutable field of each
-// access.  Complexity: linear in the members of the type.
+// access.  The walk of the doors reads the writers of each nested class
+// (admits_nested_class).  Complexity: linear in the members of the type.
 consteval bool writes_no_payload(std::meta::info type) {
     std::meta::access_context const each = std::meta::access_context::unchecked();
     if (std::meta::bases_of(type, each).size() != 0) return false;

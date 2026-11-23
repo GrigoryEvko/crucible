@@ -2754,6 +2754,47 @@ foundation_neg_compile_test(neg_core_option_niche_statement_incomplete_holder
   "static assertion failed: the check of the statement of a type that states its niche meets an incomplete class"
   "In instantiation of .struct foundation::core::detail::IncompleteCheckedClass<LaterBox>."
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option.")
+# A nested class has the access of the class, so each nested class of each
+# access passes the arms of the own doors: a static door, a member function
+# of a private nested class, a conversion function, a field, a writable
+# parameter and a member class template each build or write the empty word.
+# On the old walk each of these classes failed only the place of the
+# statement.  An incomplete nested class fails closed, and the diagnostic
+# names it.
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_door
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedDoorSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedDoorSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_door APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_maker
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedMakerSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedMakerSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_maker APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_conversion
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedConversionSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedConversionSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_conversion APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_field
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedFieldSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedFieldSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_field APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_writer
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedWriterSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedWriterSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_writer APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_template
+  "required for the satisfaction of .BuildsNoEmptyValue<T>. \\[with T = NestedTemplateSlot\\]"
+  "the expression .vouches_each_door\\(.*\\(\\^\\^ T\\) \\[with T = NestedTemplateSlot\\]. evaluated to .false.")
+set_property(TEST neg_core_option_niche_statement_nested_template APPEND PROPERTY ENVIRONMENT
+  "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=4")
+foundation_neg_compile_test(neg_core_option_niche_statement_nested_incomplete
+  "static assertion failed: the check of the statement of a type that states its niche meets an incomplete class"
+  "In instantiation of .struct foundation::core::detail::IncompleteCheckedClass<NestedLaterSlot::Later>."
+  "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option.")
 foundation_neg_compile_test(neg_core_option_niche_statement_constructor_template
   "required for the satisfaction of .StatedInBase<T>. \\[with T = TemplateDoorSlot\\]"
   "the expression .is_stated_in_base\\(.*\\(\\^\\^ T\\) \\[with T = TemplateDoorSlot\\]. evaluated to .false.")

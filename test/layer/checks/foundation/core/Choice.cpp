@@ -1642,6 +1642,88 @@ static_assert(!WritesNoEmptyValue<StaticWriterSlot> && !WritesNoEmptyValue<Based
 static_assert(!WritesNoEmptyValue<ProtectedWriterSlot> && !WritesNoEmptyValue<ProtectedFieldSlot>);
 static_assert(WritesNoEmptyValue<ReaderSlot>);
 
+// The walk of the nested classes.  A nested class has the access of the slot,
+// so each nested class of each access passes the arms of the own doors: a
+// function that gives the slot takes a voucher, a field that holds the slot
+// is refused, a writable parameter that holds the slot is refused, and a
+// member template is refused.  A private empty tag, as the NullTag of a Ref,
+// a reader and a keyed door pass.
+class NestedTagSlot {
+    std::uint32_t raw_ = 1;
+    struct NullTag {};
+    constexpr explicit NestedTagSlot(NullTag /*tag*/) noexcept {}
+};
+class NestedReaderSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedReaderSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    struct Door {
+        [[nodiscard]] static constexpr bool is_first(NestedReaderSlot const& slot) noexcept { return slot.raw_ == 1; }
+        [[nodiscard]] static constexpr NestedReaderSlot of(std::uint32_t raw,
+                                                           niche_key<NestedReaderSlot> const& /*key*/) noexcept {
+            return NestedReaderSlot{raw};
+        }
+    };
+};
+class NestedDoorSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedDoorSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    struct Door {
+        [[nodiscard]] static constexpr NestedDoorSlot empty_value() noexcept { return NestedDoorSlot{0xFFFFFFFFu}; }
+    };
+};
+class NestedMakerSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedMakerSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+    struct Maker {
+        [[nodiscard]] constexpr NestedMakerSlot make() const noexcept { return NestedMakerSlot{0xFFFFFFFFu}; }
+    };
+};
+class NestedConversionSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedConversionSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    struct Converter {
+        constexpr operator NestedConversionSlot() const noexcept { return NestedConversionSlot{0xFFFFFFFFu}; }
+    };
+};
+class NestedFieldSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedFieldSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    struct Holder;
+};
+struct NestedFieldSlot::Holder {
+    NestedFieldSlot value{0xFFFFFFFFu};
+};
+class NestedWriterSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedWriterSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    struct Writer {
+        static constexpr void clear(NestedWriterSlot& slot) noexcept { slot.raw_ = 0xFFFFFFFFu; }
+    };
+};
+class NestedTemplateSlot {
+    std::uint32_t raw_ = 1;
+    constexpr explicit NestedTemplateSlot(std::uint32_t raw) noexcept : raw_{raw} {}
+
+public:
+    template <class Unused>
+    struct Door {};
+};
+static_assert(vouches_each_door(^^NestedTagSlot) && WritesNoEmptyValue<NestedTagSlot>);
+static_assert(vouches_each_door(^^NestedReaderSlot) && WritesNoEmptyValue<NestedReaderSlot>);
+static_assert(!vouches_each_door(^^NestedDoorSlot) && !vouches_each_door(^^NestedMakerSlot));
+static_assert(!vouches_each_door(^^NestedConversionSlot) && !vouches_each_door(^^NestedFieldSlot));
+static_assert(!vouches_each_door(^^NestedTemplateSlot) && !vouches_each_door(^^NestedWriterSlot));
+
 // The place of the statement (3 of the check of the statement).  A header of
 // the two layers below the include root of the anchor holds a statement, and
 // a path that leaves the layers through a segment that starts with a dot
