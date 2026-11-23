@@ -23,6 +23,22 @@
 #include <cstdlib>
 #include <utility>
 
+namespace crucible::testing {
+
+// The test door of a Sanitized name, which crucible/SchemaTable.h names as a
+// friend of the name.  It plants a name that no check read, such as a name
+// that holds a zero, which sanitize_schema_name refuses.  Then the test
+// reaches the refusal of the export.  Only this test defines the door.
+class UncheckedSchemaNameDoor final {
+public:
+    [[nodiscard]] static SchemaTable::SanitizedName plant(::fixy::TextView characters) noexcept {
+        return SchemaTable::SanitizedName{
+            ::fixy::mint_tagged<::fixy::tags::source::External>(characters).retag<::fixy::tags::source::Sanitized>()};
+    }
+};
+
+}  // namespace crucible::testing
+
 namespace {
 
 // The context of the test, which each check of the Check family takes.
@@ -306,15 +322,14 @@ void test_export_writes_only_names_that_the_loader_takes(CrucibleHandle handle) 
 
     // The tables are process-wide, so the export of the library reads a name
     // that this binary registers.  The global table is sealed, so the name
-    // goes to the late table.  The retag skips sanitize_schema_name, which
-    // refuses a name that holds a zero.
+    // goes to the late table.  The test door skips sanitize_schema_name,
+    // which refuses a name that holds a zero.
     ::fixy::FixedText<8> leading_zero{};
     EXPECT(leading_zero.append('\0').is_ok() && leading_zero.append('a').is_ok() && leading_zero.append('b').is_ok(),
            "the text holds a zero and two letters");
     EXPECT(leading_zero.size() == 3, "the view of the name holds the zero");
     const crucible::SchemaTable::SanitizedName unchecked =
-        ::fixy::mint_tagged<::fixy::tags::source::External>(leading_zero.view())
-            .retag<::fixy::tags::source::Sanitized>();
+        crucible::testing::UncheckedSchemaNameDoor::plant(leading_zero.view());
     constexpr crucible::VigilFgCtx kForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
     EXPECT(crucible::register_schema_name(kForeground, ::foundation::effects::testing::test().alloc,
                                           crucible::SchemaHash{kEmptyStoredSchema}, unchecked)

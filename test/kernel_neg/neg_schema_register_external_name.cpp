@@ -1,17 +1,17 @@
 // Negative-compile test. This file must fail to compile.
 //
-// The schema table admits a name only when its tag satisfies
-// SchemaNameSource: Sanitized (a boundary checked it, and the check
-// retagged it) or FromInternal (it crossed no boundary).  A name read from
-// a trace file is External until the loader checks it.  If register_name
-// admitted it before the retag, bytes that no check read could become an
-// interned name that every reader trusts.
+// The schema table admits a name only when its type satisfies
+// SchemaNameSource: a Sanitized name (sanitize_schema_name checked it) or an
+// internal name (it crossed no boundary).  A name read from a trace file is
+// External until the loader checks it.  If register_name admitted it before
+// the check, bytes that no check read could become an interned name that
+// every reader trusts.
 //
 // The companion fixture neg_schema_register_abi_boundary_name refuses a
 // name from the C ABI at register_schema_name.
 //
-// Expected diagnostic: the SchemaNameSource constraint of register_name is
-// not satisfied for source::External.
+// Expected diagnostic: the SchemaNameOf constraint of register_name is not
+// satisfied for a Tagged of source::External.
 
 #include <crucible/SchemaTable.h>
 #include <fixy/Tagged.h>

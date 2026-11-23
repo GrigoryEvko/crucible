@@ -34,28 +34,44 @@ static bool eq(::fixy::Option<SchemaTable::LookupName> const& name, ::fixy::Text
 }
 
 // A registration into an open table always lands.
-template <SchemaNameSource Tag>
-static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash hash, SchemaTable::Name<Tag> name) {
+template <SchemaNameSource NameType>
+static void reg(SchemaTable& t, SchemaTable::MutableView const& view, SchemaHash hash, NameType const& name) {
     const bool was_registered =
         t.register_name(kTest, ::foundation::effects::testing::test().alloc, view, hash, name).is_ok();
     CRUCIBLE_TEST_ASSERT(kTest, was_registered);
 }
 
-// The table admits exactly two provenances, and a looked-up name claims
-// neither of them: it is the table's interned copy.
-static_assert(SchemaNameSource<source::Sanitized>);
-static_assert(SchemaNameSource<source::FromInternal>);
-static_assert(!SchemaNameSource<source::External>);
-static_assert(!SchemaNameSource<source::ABIBoundary>);
-static_assert(!SchemaNameSource<source::Interned>);
-static_assert(std::is_same_v<SchemaTable::LookupName::tag_type, source::Interned>);
+// The Sanitized name of a name from outside, through the one door that
+// gives it.  Each name of the cases passes the validator.
+static SchemaTable::SanitizedName sanitize_outside_name(SchemaHash hash, ::fixy::TextView name) {
+    return sanitize_schema_name(hash, ::fixy::mint_tagged<source::External>(name))
+        .expect("each name of the case passes the validator");
+}
 
+// The table admits exactly two types of a name, and a looked-up name claims
+// neither of them: it is the table's interned copy.  A Sanitized tag that a
+// retag gave, with no run of sanitize_schema_name, is no Sanitized name.
+template <typename Tag>
+using TaggedName = ::fixy::Tagged<::fixy::TextView, Tag>;
+static_assert(SchemaNameSource<SchemaTable::SanitizedName>);
+static_assert(SchemaNameSource<SchemaTable::InternalName>);
+static_assert(!SchemaNameSource<TaggedName<source::Sanitized>>);
+static_assert(!SchemaNameSource<TaggedName<source::External>>);
+static_assert(!SchemaNameSource<TaggedName<source::ABIBoundary>>);
+static_assert(!SchemaNameSource<SchemaTable::LookupName>);
+static_assert(std::is_same_v<SchemaTable::LookupName::tag_type, source::Interned>);
+static_assert(std::is_same_v<decltype(sanitize_schema_name(
+                                 SchemaHash{1}, ::fixy::mint_tagged<source::External>(::fixy::TextView{"aten::mm"}))),
+                             ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>>);
+
+template <typename NameType, typename Ctx = ::fixy::TestRunnerCtx>
+concept registers_name = requires(SchemaTable& t, Ctx const& ctx, SchemaTable::MutableView const& v, NameType const& n,
+                                  ::foundation::effects::Alloc a) { t.register_name(ctx, a, v, SchemaHash{1}, n); };
 template <typename Tag, typename Ctx = ::fixy::TestRunnerCtx>
-concept registers_as =
-    requires(SchemaTable& t, Ctx const& ctx, SchemaTable::MutableView const& v, ::fixy::Tagged<::fixy::TextView, Tag> n,
-             ::foundation::effects::Alloc a) { t.register_name(ctx, a, v, SchemaHash{1}, n); };
-static_assert(registers_as<source::Sanitized>);
+concept registers_as = registers_name<TaggedName<Tag>, Ctx>;
+static_assert(registers_name<SchemaTable::SanitizedName>);
 static_assert(registers_as<source::FromInternal>);
+static_assert(!registers_as<source::Sanitized>, "a retag to Sanitized skips sanitize_schema_name");
 static_assert(!registers_as<source::External>, "a raw external name must not reach the table");
 static_assert(!registers_as<source::ABIBoundary>, "a C ABI name must pass its boundary check first");
 
@@ -148,13 +164,11 @@ static void test_outside_name_collision_is_refused() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     reg(t, mv, H(0x42), S("first"));
-    const SchemaTable::SanitizedName other =
-        ::fixy::mint_tagged<source::External>(::fixy::TextView{"second"}).retag<source::Sanitized>();
+    const SchemaTable::SanitizedName other = sanitize_outside_name(H(0x42), "second");
     CRUCIBLE_TEST_ASSERT(
         kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(0x42), other)));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
-    const SchemaTable::SanitizedName same =
-        ::fixy::mint_tagged<source::External>(::fixy::TextView{"first"}).retag<source::Sanitized>();
+    const SchemaTable::SanitizedName same = sanitize_outside_name(H(0x42), "first");
     CRUCIBLE_TEST_ASSERT(
         kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(0x42), same).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == 1 && eq(t.lookup(H(0x42)), "first"));
@@ -199,8 +213,7 @@ static void test_outside_name_at_full_table_is_refused() {
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
     fill_table(t, mv);
-    const SchemaTable::SanitizedName outside =
-        ::fixy::mint_tagged<source::External>(::fixy::TextView{"aten::outside"}).retag<source::Sanitized>();
+    const SchemaTable::SanitizedName outside = sanitize_outside_name(H(1), "aten::outside");
     CRUCIBLE_TEST_ASSERT(
         kTest, is_full(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, H(1), outside)));
     CRUCIBLE_TEST_ASSERT(kTest, t.count() == SCHEMA_TABLE_CAP);
@@ -209,8 +222,7 @@ static void test_outside_name_at_full_table_is_refused() {
     const ::fixy::FixedText<16> last = op_name(SCHEMA_TABLE_CAP - 1);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(0)), first.view()));
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(filler_hash(SCHEMA_TABLE_CAP - 1)), last.view()));
-    const SchemaTable::SanitizedName same =
-        ::fixy::mint_tagged<source::External>(first.view()).retag<source::Sanitized>();
+    const SchemaTable::SanitizedName same = sanitize_outside_name(filler_hash(0), first.view());
     CRUCIBLE_TEST_ASSERT(
         kTest, t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv, filler_hash(0), same).is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, is_collision(t.register_name(kTest, ::foundation::effects::testing::test().alloc, mv,
@@ -394,11 +406,12 @@ static void test_typed_register_with_mutable_view() {
 
 static void test_sanitized_boundary_name_registers() {
     // A name from the C ABI registers only after the boundary check, which
-    // the retag from ABIBoundary to Sanitized records.
+    // sanitize_schema_name runs, and which its Sanitized name records.
     SchemaTable t;
     const auto mv = t.mint_mutable_view(kVigilForeground).expect("an open table mints a mutable view");
-    auto sanitized =
-        ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::from_abi"}).retag<source::Sanitized>();
+    const SchemaTable::SanitizedName sanitized =
+        sanitize_schema_name(H(0xAB1), ::fixy::mint_tagged<source::ABIBoundary>(::fixy::TextView{"aten::from_abi"}))
+            .expect("a valid name of the C interface passes");
     reg(t, mv, H(0xAB1), sanitized);
     CRUCIBLE_TEST_ASSERT(kTest, eq(t.lookup(H(0xAB1)), "aten::from_abi"));
     ::fixy::check::pass(kTest, "  test_sanitized_boundary_name:   PASSED\n");
@@ -502,14 +515,12 @@ struct WalkName {
 template <std::size_t Count>
 static SchemaRegistration register_walk(SchemaTable& t, SchemaTable::MutableView const& view,
                                         ::fixy::FixedArray<WalkName, Count> const& names) {
-    return t.register_names(
-        kTest, ::foundation::effects::testing::test().alloc, view,
-        [&names](SchemaTable::AddName const& add_name) noexcept {
-            for (const WalkName& entry : names) {
-                add_name(entry.hash, sanitize_schema_name(entry.hash, ::fixy::mint_tagged<source::External>(entry.name))
-                                         .expect("each name of the case passes the validator"));
-            }
-        });
+    return t.register_names(kTest, ::foundation::effects::testing::test().alloc, view,
+                            [&names](SchemaTable::AddName const& add_name) noexcept {
+                                for (const WalkName& entry : names) {
+                                    add_name(entry.hash, sanitize_outside_name(entry.hash, entry.name));
+                                }
+                            });
 }
 
 // register_names writes each name of a walk or none.  A walk that gives a

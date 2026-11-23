@@ -39,16 +39,29 @@ struct Mutable {};
 struct Sealed {};
 }  // namespace schema_state
 
-// The two provenances a registered name may carry.  A name that crossed a
-// trust boundary (the C ABI, a trace file) is Sanitized, and that tag is
-// earned: only a retag from the boundary tag reaches it, after the
-// boundary's check ran.  A name that crossed no boundary (the generated op
-// table, the operator schema of the libtorch this process links) is
-// FromInternal.  Every other tag is refused, so a raw External name cannot
-// be registered.
+// The tags of a name that crosses a trust boundary: a trace file gives an
+// External name, and the C interface gives an ABIBoundary name.
 template <typename Tag>
-concept SchemaNameSource =
-    std::same_as<Tag, ::fixy::tags::source::Sanitized> || std::same_as<Tag, ::fixy::tags::source::FromInternal>;
+concept SchemaNameBoundary =
+    std::same_as<Tag, ::fixy::tags::source::External> || std::same_as<Tag, ::fixy::tags::source::ABIBoundary>;
+
+// The two types of a name that a table registers (SchemaNameSource).  The
+// table is a parameter, so the class SchemaTable can read the concept before
+// it is complete.  A concept has no specialization, so no unit can admit a
+// third type.
+template <typename NameType, typename Table>
+concept SchemaNameOf =
+    std::same_as<NameType, typename Table::SanitizedName> || std::same_as<NameType, typename Table::InternalName>;
+
+namespace testing {
+
+// The test door of a Sanitized name (SchemaTable::SanitizedName), a named
+// friend of the name.  This header only declares it.  The one test that
+// defines it plants a name that no check read, so the test reaches a
+// refusal of a later door.  A search for this name lists each such plant.
+class UncheckedSchemaNameDoor;
+
+}  // namespace testing
 
 // The refusal of the registration of a schema name.
 enum class SchemaRefusal : std::uint8_t {
@@ -158,10 +171,33 @@ public:
         return t.is_sealed();
     }
 
-    template <SchemaNameSource Tag>
-    using Name = ::fixy::Tagged<::fixy::TextView, Tag>;
-    using SanitizedName = Name<::fixy::tags::source::Sanitized>;
-    using InternalName = Name<::fixy::tags::source::FromInternal>;
+    // A name from outside the process, such as a name of a trace file or of
+    // the C interface, that passed sanitize_schema_name.  The constructor is
+    // private, and its one friend in the product is that door.  So no retag
+    // of a boundary name to Sanitized makes a name that the table takes, and
+    // a name from outside is checked once, at its boundary.  The name holds
+    // the Sanitized tag that the door gives.
+    class SanitizedName final {
+    public:
+        [[nodiscard]] constexpr ::fixy::TextView value() const noexcept { return name_.value(); }
+
+    private:
+        using Checked = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::Sanitized>;
+
+        constexpr explicit SanitizedName(Checked name) noexcept : name_{name} {}
+
+        Checked name_;
+
+        // The friend gives a Result of this class.  The class is incomplete
+        // here, and Result checks its payload, so the result type is deduced.
+        template <SchemaNameBoundary Tag>
+        friend auto sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept;
+        friend class ::crucible::testing::UncheckedSchemaNameDoor;
+    };
+
+    // A name that crossed no trust boundary: the generated op table, or the
+    // operator schema of the libtorch that this process links.
+    using InternalName = ::fixy::Tagged<::fixy::TextView, ::fixy::tags::source::FromInternal>;
 
     // A looked-up name is a C text in the storage of the table, and the
     // table is the interning owner that made it canonical for its hash.  It
@@ -202,15 +238,14 @@ public:
     // The context of the writer picks the entry of the write section
     // (RegistrationSeal::with_write_section): the context of a Vigil's
     // producer claim, or a context that owns Div.
-    template <typename Ctx, SchemaNameSource Tag>
-        requires CtxMayEnterWriteSection<Ctx>
+    template <typename Ctx, typename NameType>
+        requires CtxMayEnterWriteSection<Ctx> && SchemaNameOf<NameType, SchemaTable>
     [[nodiscard]] SchemaRegistration register_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
-                                                   MutableView const& view, SchemaHash hash,
-                                                   Name<Tag> const& name_tag) {
+                                                   MutableView const& view, SchemaHash hash, NameType const& name_tag) {
         CRUCIBLE_FATAL_INVARIANT(&view.carrier() == this);
         const ::fixy::TextView name = name_tag.value();
         if (name.size() == 0) return ::fixy::Unit{};
-        constexpr bool is_internal_name = std::same_as<Tag, ::fixy::tags::source::FromInternal>;
+        constexpr bool is_internal_name = std::same_as<NameType, InternalName>;
         if constexpr (is_internal_name) {
             schema_name_error(hash, characters_of_(name))
                 .match([hash](SchemaNameError refused) noexcept { report_refused_internal_name_(hash, refused); },
@@ -521,11 +556,13 @@ private:
     RegistrationSeal seal_;
 };
 
-// The tags of a name that crosses a trust boundary: a trace file gives an
-// External name, and the C interface gives an ABIBoundary name.
-template <typename Tag>
-concept SchemaNameBoundary =
-    std::same_as<Tag, ::fixy::tags::source::External> || std::same_as<Tag, ::fixy::tags::source::ABIBoundary>;
+// The two types of a name that the table registers: a Sanitized name, which
+// crossed a trust boundary (the C ABI, a trace file) and passed
+// sanitize_schema_name, and an internal name, which crossed no boundary.
+// Each other type is refused, so a raw External name, and a Sanitized tag
+// that no check gave, cannot be registered.
+template <typename NameType>
+concept SchemaNameSource = SchemaNameOf<NameType, SchemaTable>;
 
 // The one validator of a schema name from outside the process, and the one
 // door from a boundary tag to a Sanitized name.  Each door that takes a name
@@ -533,10 +570,12 @@ concept SchemaNameBoundary =
 // the export, which writes no name that the loader refuses.  So a Sanitized
 // name means the same at each door.  It refuses a hash of zero, an empty
 // name, a name of more than SCHEMA_NAME_MAX characters, and a name that holds
-// a zero.  Complexity: the length of the name.
+// a zero.  The result is a Result<SchemaTable::SanitizedName,
+// SchemaNameError>, and the type is deduced, as in the friend declaration of
+// the name.  Complexity: the length of the name.
 template <SchemaNameBoundary Tag>
-[[nodiscard]] inline ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>
-sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept {
+[[nodiscard]] inline auto sanitize_schema_name(SchemaHash hash,
+                                               ::fixy::Tagged<::fixy::TextView, Tag> const& name) noexcept {
     using Sanitized = ::fixy::Result<SchemaTable::SanitizedName, SchemaNameError>;
     const ::fixy::TextView characters = name.value();
     const ::fixy::Option<SchemaNameError> refusal = schema_name_error(hash, characters);
@@ -546,7 +585,8 @@ sanitize_schema_name(SchemaHash hash, ::fixy::Tagged<::fixy::TextView, Tag> cons
             if (::fixy::find(characters, '\0').is_some()) {
                 return Sanitized{::fixy::err(SchemaNameError::holds_zero)};
             }
-            return Sanitized{::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()};
+            return Sanitized{SchemaTable::SanitizedName{
+                ::fixy::mint_tagged<Tag>(characters).template retag<::fixy::tags::source::Sanitized>()}};
         });
 }
 
@@ -578,11 +618,11 @@ CRUCIBLE_PROCESS_WIDE [[nodiscard]] inline SchemaTable& late_schema_table() {
 // was minted, and then nothing is registered.  The copy of the name
 // allocates through the allocation capability of the caller.  The context of
 // the writer picks the entry of the write section (CtxMayEnterWriteSection).
-template <typename Ctx, SchemaNameSource Tag>
+template <typename Ctx, SchemaNameSource NameType>
     requires CtxMayEnterWriteSection<Ctx>
 [[nodiscard]] inline SchemaRegistration register_schema_name(Ctx const& writer, ::foundation::effects::Alloc allocation,
                                                              SchemaTable::MutableView const& view, SchemaHash hash,
-                                                             SchemaTable::Name<Tag> const& name) {
+                                                             NameType const& name) {
     return global_schema_table().register_name(writer, allocation, view, hash, name);
 }
 
@@ -610,10 +650,10 @@ template <typename Ctx, SchemaNameSource Tag>
 // process there (SchemaTable::register_name).  The foreground context holds
 // no allocation capability, so the caller gives one.  A Vigil gives the one
 // of its startup context.
-template <SchemaNameSource Tag>
+template <SchemaNameSource NameType>
 [[nodiscard]] inline SchemaRegistration register_schema_name(VigilFgCtx const& fg,
                                                              ::foundation::effects::Alloc allocation, SchemaHash hash,
-                                                             SchemaTable::Name<Tag> const& name) {
+                                                             NameType const& name) {
     // A sealed table mints no view, which is the refusal of a sealed table.
     SchemaTable& global_table = global_schema_table();
     SchemaRegistration in_global = global_table.mint_mutable_view(fg).match(

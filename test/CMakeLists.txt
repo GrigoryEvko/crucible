@@ -2069,19 +2069,29 @@ crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
   "conversion from .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Interned>>. to non-scalar type .Option<Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>>. requested"
   "neg_schema_table_lookup_cross_tag.cpp:23")
 
-# The schema table admits a name only when its tag satisfies
-# SchemaNameSource: Sanitized (a boundary check retagged it) or
-# FromInternal (it crossed no boundary).
+# The schema table admits a name only when its type satisfies
+# SchemaNameSource: a Sanitized name (sanitize_schema_name checked it) or an
+# internal name (it crossed no boundary).
 #   * neg_schema_register_external_name: a trace-file name that the loader
-#     did not retag is refused at register_name.
+#     did not check is refused at register_name.
 #   * neg_schema_register_abi_boundary_name: a C ABI name that the entry did
-#     not retag is refused at register_schema_name.
+#     not check is refused at register_schema_name.
+#   * neg_schema_register_retagged_name: product code that retags an External
+#     name to Sanitized, with no check, is refused at register_schema_name.
+#   * neg_schema_sanitized_name_from_test: a test outside the friends of the
+#     Sanitized name cannot build one from a retag.
 crucible_neg_compile_test(neg_schema_register_external_name
   "neg_schema_register_external_name.cpp:26:31: error: no matching function for call to .crucible::SchemaTable::register_name"
-  "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::External\\]")
+  "required for the satisfaction of .SchemaNameOf<NameType, crucible::SchemaTable>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::External>\\]")
 crucible_neg_compile_test(neg_schema_register_abi_boundary_name
   "neg_schema_register_abi_boundary_name.cpp:24:42: error: no matching function for call to .register_schema_name"
-  "required for the satisfaction of .SchemaNameSource<Tag>. \\[with Tag = fixy::tags::source::ABIBoundary\\]")
+  "required for the satisfaction of .SchemaNameSource<NameType>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::ABIBoundary>\\]")
+crucible_neg_compile_test(neg_schema_register_retagged_name
+  "neg_schema_register_retagged_name.cpp:24:32: error: no matching function for call to .register_schema_name"
+  "required for the satisfaction of .SchemaNameSource<NameType>. \\[with NameType = fixy::Tagged<foundation::core::TextView, fixy::tags::source::Sanitized>\\]")
+crucible_neg_compile_test(neg_schema_sanitized_name_from_test
+  "is private within this context"
+  "neg_schema_sanitized_name_from_test.cpp:20:54: error: .constexpr crucible::SchemaTable::SanitizedName::SanitizedName\\(Checked\\)")
 
 # The ring storage of TransactionLog<N> is fixy::CyclicBuffer<Transaction,
 # N>, and two gates hold the positive power-of-two capacity:

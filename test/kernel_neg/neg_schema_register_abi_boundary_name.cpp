@@ -1,15 +1,15 @@
 // Negative-compile test. This file must fail to compile.
 //
 // A name that comes through the C ABI is tagged ABIBoundary.  The C ABI
-// entry checks the length and the terminator, and then retags the name to
-// Sanitized.  A call that skips the retag hands register_schema_name a name
-// that no check read, and SchemaNameSource refuses it.
+// entry gives the name to sanitize_schema_name, which gives a Sanitized
+// name.  A call that skips the check hands register_schema_name a name that
+// no check read, and SchemaNameSource refuses it.
 //
 // The companion fixture neg_schema_register_external_name refuses a name
 // from a trace file at the register_name member.
 //
 // Expected diagnostic: the SchemaNameSource constraint of
-// register_schema_name is not satisfied for source::ABIBoundary.
+// register_schema_name is not satisfied for a Tagged of source::ABIBoundary.
 
 #include <crucible/SchemaTable.h>
 #include <fixy/Tagged.h>
