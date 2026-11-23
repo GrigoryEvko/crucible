@@ -92,7 +92,7 @@ public:
     // resource must also stay alive until the session over it is closed
     // or detached.  A second establish ends the process, as
     // PublishOnce::publish does.
-    void establish(Resource& resource) noexcept { resource_.publish(&resource); }
+    void establish(Resource& resource) noexcept { resource_.publish(::foundation::core::to(resource)); }
 
     // Gives the one session of the channel to the first caller after
     // establish.  A call before establish claims nothing, so the

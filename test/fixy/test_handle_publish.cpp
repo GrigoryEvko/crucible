@@ -60,6 +60,35 @@ static_assert(!h::PublishOncePointee<Payload*>);
 static_assert(!h::PublishOncePointee<void*>);
 static_assert(!h::PublishOncePointee<Payload&>);
 
+// ── The publish of a Ref ─────────────────────────────────────────────
+//
+// Each publish takes a Ref, which is never null.  So no publish stores the
+// null pointer of the empty slot, and the publish needs no test.  A raw
+// pointer, the null pointer and a Ref of an unrelated type do not reach
+// publish.
+template <typename Slot, typename Argument>
+concept Publishes = requires(Slot& slot, Argument argument) { slot.publish(argument); };
+
+struct Other {
+    int c = 0;
+};
+
+// The brand of the Refs of the cells.  A publish takes a Ref of each brand.
+struct CellBrand final {};
+
+using PayloadRef = ::fixy::Ref<Payload, CellBrand>;
+static_assert(Publishes<h::PublishOnce<Payload>, PayloadRef>);
+static_assert(Publishes<h::PublishSlot<Payload>, PayloadRef>);
+static_assert(Publishes<h::PublishOnce<Payload const>, PayloadRef>, "a slot of a const target takes a Ref of T");
+static_assert(Publishes<h::PublishOnce<void>, PayloadRef>, "a slot of void takes a Ref of each object");
+static_assert(!Publishes<h::PublishOnce<Payload>, ::fixy::Ref<Payload const, CellBrand>>,
+              "a publish never drops a const");
+static_assert(!Publishes<h::PublishOnce<Payload>, ::fixy::Ref<Other, CellBrand>>);
+static_assert(!Publishes<h::PublishOnce<Payload>, Payload*>, "a raw pointer can be null");
+static_assert(!Publishes<h::PublishSlot<Payload>, Payload*>, "a raw pointer can be null");
+static_assert(!Publishes<h::PublishOnce<Payload>, decltype(nullptr)>);
+static_assert(!Publishes<h::PublishSlot<Payload>, decltype(nullptr)>);
+
 // ── Shape ────────────────────────────────────────────────────────────
 
 // PublishOnce keeps the natural alignment of an atomic pointer.  It is
@@ -96,7 +125,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         return 1;
     }
 
-    slot.publish(&value);
+    slot.publish(::fixy::to(value));
     if (!slot.is_published() || slot.observe() != &value) {
         std::fprintf(stderr, "publish did not reach the slot\n");
         return 1;
@@ -114,7 +143,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         return 1;
     }
 
-    slot.publish(&first);
+    slot.publish(::fixy::to(first));
     if (!slot.has_pending() || slot.observe() != &first) {
         std::fprintf(stderr, "PublishSlot did not take the first publish\n");
         return 1;
@@ -122,7 +151,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 
     // Unlike PublishOnce, republishing is the point: the slot is a
     // handoff point, not a one-shot claim.
-    slot.publish(&second);
+    slot.publish(::fixy::to(second));
     if (slot.observe() != &second) {
         std::fprintf(stderr, "PublishSlot did not take the second publish\n");
         return 1;
@@ -281,8 +310,8 @@ void double_publish_aborts(::fixy::TestRunnerCtx const& test) {
             Payload first{1, 1.0};
             Payload second{2, 2.0};
             h::PublishOnce<Payload> slot{};
-            slot.publish(&first);
-            slot.publish(&second);
+            slot.publish(::fixy::to(first));
+            slot.publish(::fixy::to(second));
         },
         ::fixy::TextView{"crucible: fatal: PublishOnceDoublePublish"});
 
@@ -290,35 +319,21 @@ void double_publish_aborts(::fixy::TestRunnerCtx const& test) {
     // handle that aborts on every call.  It runs in the test process.
     Payload only{1, 1.0};
     h::PublishOnce<Payload> slot{};
-    slot.publish(&only);
+    slot.publish(::fixy::to(only));
     CRUCIBLE_TEST_ASSERT(test, slot.observe() == &only);
     ::fixy::check::pass(test, "  a second publish aborts, and one publish does not\n");
 }
 
 // ── Runtime: the preconditions no constant evaluation reaches ────────
 //
-// publish and Lazy::get read atomics, so neither is constexpr, and a
-// negative-compile fixture cannot reach their preconditions.  Each
-// refusal is observed in a child process through expect_dies instead.  The
-// runs above are the positive controls: a non-null publish and a get after
-// the value is built do not abort.
+// Lazy::get reads an atomic, so it is not constexpr, and a negative-compile
+// fixture cannot reach its precondition.  Each refusal is observed in a
+// child process through expect_dies instead.  The runs above are the
+// positive controls: a get after the value is built does not abort.  A
+// publish has no precondition: the cells of the publish of a Ref above
+// refuse the null pointer at compile time.
 void preconditions_abort(::fixy::TestRunnerCtx const& test) {
-    constexpr ::fixy::TextView kNullPublish{"foundation: contract violation: ptr != nullptr"};
     constexpr ::fixy::TextView kNeverBuilt{"foundation: fatal invariant failed: initialized()"};
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            h::PublishOnce<Payload> slot{};
-            slot.publish(nullptr);
-        },
-        kNullPublish);
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            h::PublishSlot<Payload> slot{};
-            slot.publish(nullptr);
-        },
-        kNullPublish);
     ::fixy::check::expect_dies(
         test,
         [] noexcept {

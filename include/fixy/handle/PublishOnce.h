@@ -5,10 +5,11 @@
 // publisher again and again and lets a consumer take the pointer back
 // out.
 
+#include <foundation/Brand.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Post.h>
-#include <foundation/contracts/Pre.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
 #include <foundation/diag/tags/Aborts.h>
@@ -57,11 +58,19 @@ namespace fixy::handle {
 // reason, as an opaque handle whose pointee type the publisher and the
 // observer agree on out of band.
 //
-// A reference type is rejected here rather than left to std::atomic,
-// where "forming pointer to reference type" names neither this header
-// nor the mistake.
+// A publish takes a Ref (foundation/core/Ref.h), so T is a target of a
+// Ref or void.  A reference type, an array and a volatile type are no
+// target of a Ref, so the guard refuses them here, and not in the
+// overload set of publish or in std::atomic, where "forming pointer to
+// reference type" names neither this header nor the mistake.
 template <typename T>
-concept PublishOncePointee = (!std::is_pointer_v<T>) && (!std::is_reference_v<T>);
+concept PublishOncePointee = (!std::is_pointer_v<T>) && (std::is_void_v<T> || ::foundation::core::RefTarget<T>);
+
+// The targets of a Ref that a slot of T takes: each target whose address
+// converts to a T*, such as a Foo for a slot of a Foo const, or each
+// object for a slot of void.
+template <typename Target, typename T>
+concept PublishesInto = std::is_convertible_v<Target*, T*>;
 
 // The guard this concept replaced read `is_pointer_v<T*> ||
 // is_same_v<T, T>`, whose second disjunct is true for every T.  It
@@ -106,10 +115,13 @@ public:
     PublishOnce(PublishOnce&&) = delete("atomic is the channel identity");
     PublishOnce& operator=(PublishOnce&&) = delete("atomic is the channel identity");
 
-    // A null pointer is the never-published state, so publishing one is
-    // always a caller mistake.
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept {
-        CRUCIBLE_PRE(ptr != nullptr);
+    // A null pointer is the never-published state.  The slot takes the
+    // address of the object of a Ref, and a Ref is never null, so no
+    // publish stores that state, and the publish needs no test.
+    template <::foundation::core::RefTarget Target, ::foundation::brand::IsBrand Brand>
+        requires PublishesInto<Target, T>
+    CRUCIBLE_INLINE void publish(::foundation::core::Ref<Target, Brand> object) noexcept {
+        T* const ptr = __builtin_addressof(*object);
         T* expected = nullptr;
         // The failure order is relaxed because a failure only has to be
         // detected, not synchronized with.  It means another publisher
@@ -160,11 +172,15 @@ public:
     PublishSlot(PublishSlot&&) = delete("atomic slot is the channel identity");
     PublishSlot& operator=(PublishSlot&&) = delete("atomic slot is the channel identity");
 
-    // This one carries no postcondition.  Another publisher, or a
-    // consume, can replace the pointer before the witness reads it, so
-    // the witness would be racy.
-    CRUCIBLE_INLINE void publish(T* ptr) noexcept {
-        CRUCIBLE_PRE(ptr != nullptr);
+    // The slot takes the address of the object of a Ref, as PublishOnce
+    // does, so no publish stores the null pointer of the empty slot.  This
+    // one carries no postcondition.  Another publisher, or a consume, can
+    // replace the pointer before the witness reads it, so the witness would
+    // be racy.
+    template <::foundation::core::RefTarget Target, ::foundation::brand::IsBrand Brand>
+        requires PublishesInto<Target, T>
+    CRUCIBLE_INLINE void publish(::foundation::core::Ref<Target, Brand> object) noexcept {
+        T* const ptr = __builtin_addressof(*object);
         slot_.store(ptr, std::memory_order_release);
     }
 

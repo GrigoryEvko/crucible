@@ -19,7 +19,7 @@ struct Payload {
 int main() {
     Payload value{1};
     h::PublishOnce<Payload> slot{};
-    slot.publish(&value);
+    slot.publish(::foundation::core::to(value));
 
     auto second = slot;
     return second.observe() == &value ? 0 : 1;

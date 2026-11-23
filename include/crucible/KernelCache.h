@@ -526,7 +526,7 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     // The content hash half of the key carries the recipe, because the region
     // above was built under it.
     kernel_cache.lookup(nondet, new_region->content_hash, RowHash{0})
-        .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(&*kernel); },
+        .match([new_region](KernelCache::KernelRef kernel) noexcept { new_region->compiled.publish(kernel); },
                []() noexcept {});
 
     const DagRef<BranchNode> branch = mint_dag_node<BranchNode>(a, arena);

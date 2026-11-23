@@ -5843,6 +5843,15 @@ fixy_neg_compile_test(neg_handle_publish_slot_pointer_pointee
   "static assertion failed"
   "PublishSlot<T> hands off a T\\*, so T is the pointee")
 
+# A publish takes a Ref, which is never null.  A raw pointer and the null
+# pointer do not reach it, so no publish stores the empty state of a slot.
+fixy_neg_compile_test(neg_handle_publish_once_raw_pointer
+  "no matching function for call to"
+  "PublishOnce<\\{anonymous\\}::Payload>::publish\\(\\{anonymous\\}::Payload\\*\\)")
+fixy_neg_compile_test(neg_handle_publish_slot_null
+  "no matching function for call to"
+  "PublishSlot<\\{anonymous\\}::Payload>::publish\\(std::nullptr_t\\)")
+
 # Once::call and Lazy::get_or_init each refuse, at the door, an argument
 # their body cannot use as it must.
 fixy_neg_compile_test(neg_handle_once_call_not_invocable
