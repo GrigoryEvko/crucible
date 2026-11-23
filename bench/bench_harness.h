@@ -385,6 +385,14 @@ template <typename T, std::size_t Extent>
     (void)elements;
 }
 
+// The same sink for the run of a frame.  The call takes the ViewMut through
+// a const reference, so the body keeps the one writer of its run.  As for a
+// View, the optimizer keeps each write and each read of the elements.
+template <typename T, typename Brand, std::size_t Extent>
+[[gnu::noipa]] void clobber_array(::fixy::ViewMut<T, Brand, Extent> const& elements) noexcept {
+    (void)elements;
+}
+
 namespace detail {
 
 // The time of the monotonic clock in nanoseconds, through the clock door of
@@ -1425,8 +1433,7 @@ read_proc_file_again(ProcFile const& file, ::fixy::FixedText<Capacity>& text) no
     text = ::fixy::FixedText<Capacity>{};
     ::fixy::FixedArray<std::byte, Capacity> bytes{};
     CRUCIBLE_TRY(count, bytes.with_mut([&startup, &file](auto run) noexcept {
-        return ::fixy::fs::read_full_at(startup, file.ref(), ::fixy::View<std::byte>{run.view()},
-                                        ::fixy::fs::FileOffset{0});
+        return ::fixy::fs::read_full_at(startup, file.ref(), std::move(run), ::fixy::fs::FileOffset{0});
     }));
     for (std::byte const byte : bytes.view().window(0, count).expect("a read gives at most the size of its buffer")) {
         if (text.append(::fixy::bit_cast<char>(byte)).is_err()) return ::fixy::err(::foundation::os::Errno::efbig);

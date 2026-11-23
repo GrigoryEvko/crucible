@@ -60,7 +60,8 @@ struct SaturationCase {
 
         return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
             const std::size_t np = ring->try_push_batch(tx.view());
-            const std::size_t nc = rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(run.view()); });
+            const std::size_t nc =
+                rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
             bench::do_not_optimize(np);
             bench::do_not_optimize(nc);
             // The sink reads and writes each byte of rx, so the copy of the

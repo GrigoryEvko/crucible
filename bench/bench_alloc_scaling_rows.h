@@ -1283,8 +1283,10 @@ struct Sh6bench {
     [[gnu::always_inline]] static void op(Shared& /*shared*/, Local& local, RowControl const& /*control*/) noexcept {
         fill(local);
         local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
-            for (::fixy::Option<Block>& held : run.view().reverse())
-                give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
+            for (std::size_t position = run.size(); position > 0; --position) {
+                auto held = run.get_mut(position - 1).expect("a position below the count of the blocks");
+                give_block<A>(local.tally, std::move(*held).expect("the fill above gave each position a block"));
+            }
         });
         fill(local);
         local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
@@ -2172,8 +2174,11 @@ struct RoundWorkload {
             with_bank_of(shared, given_bank, slot, [&local](Blocks& given) noexcept {
                 given.with_mut([&local](auto given_run) noexcept {
                     local.with_mut([&given_run](auto local_run) noexcept {
-                        for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{})
-                            given_run.view().at(position) = std::move(local_run.view().at(position));
+                        for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{}) {
+                            auto given_slot = given_run.get_mut(position.raw()).expect("a position below kSlots");
+                            auto local_slot = local_run.get_mut(position.raw()).expect("a position below kSlots");
+                            *given_slot = std::move(*local_slot);
+                        }
                     });
                 });
             });

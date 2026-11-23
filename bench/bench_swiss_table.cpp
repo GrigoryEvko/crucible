@@ -32,7 +32,8 @@ static constexpr size_t kGroupWidth = crucible::detail::group_width();
 namespace {
 
 // Fill ctrl bytes: `occupied_pct` gets random H2 tags, rest get kEmpty.
-void fill_ctrl(::fixy::View<int8_t> ctrl, double occupied_pct, uint64_t seed) {
+template <class Brand, std::size_t Extent>
+void fill_ctrl(::fixy::ViewMut<int8_t, Brand, Extent> ctrl, double occupied_pct, uint64_t seed) {
     uint64_t state = seed;
     uint64_t position = 0;
     for (int8_t& byte : ctrl) {
@@ -60,7 +61,7 @@ struct MiniSwissTable {
 
     MiniSwissTable(::foundation::effects::Alloc alloc, size_t cap) : capacity{cap} {
         ctrl = ::fixy::with_mut(::fixy::mint_masked_array<int8_t>(alloc, cap),
-                                [](auto run) noexcept { ::fixy::fill(run.view(), kEmpty); });
+                                [](auto run) noexcept { ::fixy::fill(std::move(run), kEmpty); });
         hashes = ::fixy::mint_masked_array<uint64_t>(alloc, cap);
     }
     MiniSwissTable(const MiniSwissTable&) = delete;
@@ -149,7 +150,7 @@ int main() {
     // ── load() aligned vs unaligned ──────────────────────────────────
     bench::add_report(reports, [&] {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.5, 99); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
         const CtrlGroup::GroupBytes aligned = ctrl.view().template window<kGroupWidth>(0).expect("the first group");
         return bench::run("load() aligned", [&] {
             auto g = CtrlGroup::load(aligned);
@@ -158,7 +159,7 @@ int main() {
     }());
     bench::add_report(reports, [&] {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.5, 99); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
         const CtrlGroup::GroupBytes unaligned = ctrl.view().template window<kGroupWidth>(3).expect("a group from 3");
         return bench::run("load() unaligned (+3)", [&] {
             auto g = CtrlGroup::load(unaligned);
@@ -169,7 +170,7 @@ int main() {
     // ── match(h2) ─────────────────────────────────────────────────────
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 42); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
         ctrl.with_element(::fixy::index<5>(), [target](int8_t& byte) noexcept { byte = target; });
         auto group = CtrlGroup::load(ctrl.view());
@@ -181,7 +182,7 @@ int main() {
 
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 42); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t miss = 0x7F;
         ctrl.with_mut([miss](auto run) noexcept {
             for (int8_t& byte : run)
@@ -196,11 +197,13 @@ int main() {
 
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 42); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
         ctrl.with_mut([target](auto cells) noexcept {
-            for (::fixy::View<int8_t, 4> run : cells.view().template chunks<4>())
-                run.at(::fixy::index<0>()) = target;
+            for (std::size_t first = 0; first + 4 <= cells.size(); first += 4) {
+                auto byte = cells.get_mut(first).expect("a chunk of four lies inside the group");
+                *byte = target;
+            }
         });
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match(h2) — multiple matches", [&] {
@@ -212,7 +215,7 @@ int main() {
     // ── match_empty() ─────────────────────────────────────────────────
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 123); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 123); });
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 75% load", [&] {
             auto m = group.match_empty();
@@ -221,7 +224,7 @@ int main() {
     }());
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), int8_t{0x42}); });  // all occupied
+        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), int8_t{0x42}); });  // all occupied
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 100% full", [&] {
             auto m = group.match_empty();
@@ -230,7 +233,7 @@ int main() {
     }());
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), kEmpty); });  // all empty
+        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), kEmpty); });  // all empty
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 0% load (all empty)", [&] {
             auto m = group.match_empty();
@@ -268,7 +271,7 @@ int main() {
     // ── Combined probe step (match + empty check) ────────────────────
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 42); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
         ctrl.with_element(::fixy::index<5>(), [target](int8_t& byte) noexcept { byte = target; });
         auto group = CtrlGroup::load(ctrl.view());
@@ -287,7 +290,7 @@ int main() {
 
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(run.view(), 0.75, 42); });
+        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t miss = 0x7E;
         ctrl.with_mut([miss](auto run) noexcept {
             for (int8_t& byte : run)

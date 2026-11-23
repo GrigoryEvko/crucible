@@ -83,8 +83,7 @@ public:
             ::fixy::FixedArray<std::byte, sizeof(T)> image{};
             ::fixy::View<std::byte const> const part = take_bytes(sizeof(T));
             image.with_mut([part](auto run) noexcept {
-                ::fixy::copy(
-                    ::fixy::View<std::byte>{run.view()}.window(0, part.size()).expect("a field holds its part"), part)
+                ::fixy::copy(::fixy::take_window(std::move(run), 0, part.size()).expect("a field holds its part"), part)
                     .expect("the window holds the count of the part");
             });
             return ::fixy::bit_cast<T>(image);
@@ -145,9 +144,8 @@ public:
     [[nodiscard]] SeedBytes finish() const noexcept {
         SeedBytes seed = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), bytes_.size());
         seed = ::fixy::with_mut(std::move(seed), [this](auto run) noexcept {
-            ::fixy::View<std::byte> const target = run.view();
-            bytes_.with_view([target](::fixy::View<std::byte const> all) noexcept {
-                ::fixy::copy(target, all).expect("the seed holds each byte of the writer");
+            bytes_.with_view([&run](::fixy::View<std::byte const> all) noexcept {
+                ::fixy::copy(std::move(run), all).expect("the seed holds each byte of the writer");
             });
         });
         return seed;

@@ -88,10 +88,12 @@ using HeapSeeds = ::fixy::FixedList<Bytes, 4>;
     std::size_t const size = ::fixy::encoded_size(value);
     Bytes input = ::fixy::mint_heap_array_zeroed<std::byte>(alloc(), kBudgetBytes + size);
     input = ::fixy::with_mut(std::move(input), [&value, units, size](auto run) noexcept {
-        ::fixy::View<std::byte> const whole = run.view();
-        *whole.get(0).expect("the input holds the budget") = static_cast<std::byte>(units & 0xFFU);
-        *whole.get(1).expect("the input holds the budget") = static_cast<std::byte>(units >> 8);
-        ::fixy::encode(value, whole.window(kBudgetBytes, size).expect("the input holds the image"));
+        auto low = run.get_mut(0).expect("the input holds the budget");
+        *low = static_cast<std::byte>(units & 0xFFU);
+        auto high = run.get_mut(1).expect("the input holds the budget");
+        *high = static_cast<std::byte>(units >> 8);
+        ::fixy::encode(value,
+                       ::fixy::take_window(std::move(run), kBudgetBytes, size).expect("the input holds the image"));
     });
     return input;
 }
@@ -159,7 +161,7 @@ inline void run_protocol_heap(::fixy::View<std::byte const> input) noexcept {
                 CRUCIBLE_FATAL_INVARIANT(detail::storage_of(value) <= budget.raw());
                 detail::Bytes again = ::fixy::mint_heap_array_zeroed<std::byte>(detail::alloc(), image.size());
                 again = ::fixy::with_mut(std::move(again),
-                                         [&value](auto run) noexcept { ::fixy::encode(value, run.view()); });
+                                         [&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
                 detail::Bytes const& written = again;
                 CRUCIBLE_FATAL_INVARIANT(::fixy::equal(written.view(), image));
             },

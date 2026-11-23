@@ -239,8 +239,9 @@ int main() {
     });
     // The scope rows and the walk row, in a second frame of the output.
     out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
-        ::fixy::StridedView<float, 2> const out_view =
-            ::fixy::mint_strided_view(run.view(), plane_sizes.view(), plane_strides.view(), 0).expect("the plane fits");
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), plane_sizes.view(), plane_strides.view(), 0)
+                          .expect("a dense plane has no overlap");
+        ::fixy::StridedView<float, 2> const out_view = unique.view();
         has_failure = judge(budget(5),
                             measure(bench::Run{"scope dense"},
                                     [&] {

@@ -45,7 +45,8 @@ template <class Image>
     seed.with_mut([&image](auto run) noexcept {
         std::size_t position = 0;
         for (std::byte const byte : image) {
-            *run.get(position).expect("an image fits a seed") = byte;
+            auto element = run.get_mut(position).expect("an image fits a seed");
+            *element = byte;
             ++position;
         }
     });

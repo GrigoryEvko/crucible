@@ -92,12 +92,16 @@ int main() {
                        std::uint64_t word = 0;
                        // The capture by reference keeps the volatile read of the key in each call.
                        scratch.with_mut([&word, &key](auto run) noexcept {
-                           for (::fixy::View<std::uint32_t, 4> const four : run.view().template chunks<4>()) {
+                           for (std::size_t first = 0; first + 4 <= run.size(); first += 4) {
                                auto c = Philox4x32::generate(word, key);
-                               four.at(::fixy::index<0>()) = c.at(::fixy::index<0>());
-                               four.at(::fixy::index<1>()) = c.at(::fixy::index<1>());
-                               four.at(::fixy::index<2>()) = c.at(::fixy::index<2>());
-                               four.at(::fixy::index<3>()) = c.at(::fixy::index<3>());
+                               auto lane0 = run.get_mut(first).expect("a chunk of four lies inside the buffer");
+                               *lane0 = c.at(::fixy::index<0>());
+                               auto lane1 = run.get_mut(first + 1).expect("a chunk of four lies inside the buffer");
+                               *lane1 = c.at(::fixy::index<1>());
+                               auto lane2 = run.get_mut(first + 2).expect("a chunk of four lies inside the buffer");
+                               *lane2 = c.at(::fixy::index<2>());
+                               auto lane3 = run.get_mut(first + 3).expect("a chunk of four lies inside the buffer");
+                               *lane3 = c.at(::fixy::index<3>());
                                word += 4;
                            }
                        });
@@ -150,7 +154,7 @@ int main() {
                 const u32x8 lane_offsets = foundation::simd::iota_v<u32x8>();
                 std::uint32_t call_idx = 0;
                 scratch.with_mut([&call_idx, &lane_offsets, &key0, &key1](auto run) noexcept {
-                    for (::fixy::View<std::uint32_t, 32> const call : run.view().template chunks<32>()) {
+                    for (std::size_t first = 0; first + 32 <= run.size(); first += 32) {
                         const u32x8 base(call_idx * 8u);
                         const u32x8 ctr0 = base + lane_offsets;
                         const u32x8 ctr1(0u);
@@ -158,13 +162,19 @@ int main() {
                         const u32x8 ctr3(0u);
                         auto out = crucible::detail::philox_batch8(ctr0, ctr1, ctr2, ctr3, key0, key1);
                         // Four vector stores — 32 u32 per call in 4
-                        // instructions instead of 32.  The window offsets are
-                        // constants inside a run of 32 lanes, so the checks of
-                        // the windows fold away.
-                        foundation::simd::store(out.r0, call.window<8>(0).expect("a call fills 32 lanes"));
-                        foundation::simd::store(out.r1, call.window<8>(8).expect("a call fills 32 lanes"));
-                        foundation::simd::store(out.r2, call.window<8>(16).expect("a call fills 32 lanes"));
-                        foundation::simd::store(out.r3, call.window<8>(24).expect("a call fills 32 lanes"));
+                        // instructions instead of 32.  Each split of the
+                        // window of 32 lanes has a fixed offset and a fixed
+                        // extent, so the splits have no check.
+                        run = ::fixy::reborrow(std::move(run), [&out, first](auto lent) noexcept {
+                            auto call = ::fixy::take_window<32>(std::move(lent), first).expect("a call fills 32 lanes");
+                            auto [low, high] = ::fixy::split_at<16>(std::move(call));
+                            auto [first_lanes, second_lanes] = ::fixy::split_at<8>(std::move(low));
+                            auto [third_lanes, fourth_lanes] = ::fixy::split_at<8>(std::move(high));
+                            foundation::simd::store(out.r0, std::move(first_lanes));
+                            foundation::simd::store(out.r1, std::move(second_lanes));
+                            foundation::simd::store(out.r2, std::move(third_lanes));
+                            foundation::simd::store(out.r3, std::move(fourth_lanes));
+                        });
                         ++call_idx;
                     }
                 });

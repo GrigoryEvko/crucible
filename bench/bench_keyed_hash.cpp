@@ -83,7 +83,7 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a row go to the door of the
     fc::FixedArray<std::byte, 32> out{};
     out.with_mut([&key, &input, size](auto run) noexcept {
         bench_keyed_hash_references::blake3_keyed(&key.at(fc::index<0>()), &input.bytes.at(fc::index<0>()), size,
-                                                  &run.view().at(fc::index<0>()));
+                                                  fc::foreign_first(run));
     });
     return out;
 }

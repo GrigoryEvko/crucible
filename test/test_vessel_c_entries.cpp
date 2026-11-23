@@ -136,7 +136,7 @@ enum class Place : uint8_t {
 template <class Element, std::size_t Count, class Entry>
 [[nodiscard]] auto call_with_array(CallerBytes<Element, Count>& bytes, Place place, Entry&& entry) noexcept {
     return bytes.bytes.with_mut([place, &entry](auto run) noexcept {
-        std::byte* const first = ::foundation::core::foreign_first(run.view());
+        std::byte* const first = ::foundation::core::foreign_first(run);
         return entry(std::bit_cast<Element*>(place == Place::Aligned ? first : first + 1));
     });
 }

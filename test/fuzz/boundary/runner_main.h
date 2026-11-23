@@ -159,7 +159,7 @@ template <class Left, class Right>
     SeedBytes buffer = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), static_cast<std::size_t>(size));
     std::size_t const capacity = buffer.size();
     auto [count, filled] = ::fixy::with_mut(std::move(buffer), [&file, capacity](auto run) noexcept {
-        return fs::read_full(kCtx, file.ref(), run.view()).value_or(capacity + 1);
+        return fs::read_full(kCtx, file.ref(), std::move(run)).value_or(capacity + 1);
     });
     if (count > filled.size()) return ::fixy::none;
     if (count == filled.size()) return ::fixy::Option<SeedBytes>::some(std::move(filled));

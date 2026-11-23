@@ -1722,6 +1722,16 @@ template <class T, std::size_t Extent>
     return first_of_(detail::BaseLayerRead{}, view);
 }
 
+// The address of the first element of the run of a frame, for the same raw
+// loops and in the same opt-out regions as the form above, such as a foreign
+// entry that writes the run.  The door reads the ViewMut through a const
+// reference, so the frame keeps its one writer, and the address lives only
+// while the frame lends the run.
+template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr T* foreign_first(ViewMut<T, Brand, Extent> const& view) noexcept {
+    return first_of_(detail::BaseLayerRead{}, view);
+}
+
 namespace detail {
 
 // The root stages of the iteration verbs give the walks of the stages of

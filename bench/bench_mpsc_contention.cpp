@@ -135,7 +135,8 @@ struct BatchedPushWorker {
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
             buf.with_mut([this, pushed, n](auto run) noexcept {
                 for (std::size_t i = 0; i < n; ++i) {
-                    *run.get(i).expect("a position of a batch is below BATCH") = base + (pushed + i);
+                    auto element = run.get_mut(i).expect("a position of a batch is below BATCH");
+                    *element = base + (pushed + i);
                 }
             });
             std::size_t in_batch = 0;
@@ -167,7 +168,7 @@ struct DrainWorker {
         const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
             const std::size_t n = buf.with_mut([this, merge](auto run) noexcept {
-                return ring.try_pop_batch(RingOwner::consumer(), merge, run.view());
+                return ring.try_pop_batch(RingOwner::consumer(), merge, std::move(run));
             });
             if (n == 0) {
                 CRUCIBLE_SPIN_PAUSE;

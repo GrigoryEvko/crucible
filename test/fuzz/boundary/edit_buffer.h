@@ -29,7 +29,7 @@ public:
           back_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), seed.size() + room.raw())},
           count_{seed.size()} {
         front_ = ::fixy::with_mut(std::move(front_), [seed](auto run) noexcept {
-            ::fixy::copy(run.view().window(0, seed.size()).expect("the buffer holds the seed"), seed)
+            ::fixy::copy(::fixy::take_window(std::move(run), 0, seed.size()).expect("the buffer holds the seed"), seed)
                 .expect("the window holds the count of the seed");
         });
     }
@@ -63,14 +63,20 @@ public:
         std::size_t const tail = count_ - position;
         ::fixy::View<std::byte const> const source = view();
         back_ = ::fixy::with_mut(std::move(back_), [source, part, position, tail](auto run) noexcept {
-            ::fixy::View<std::byte> const target = run.view();
-            ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
-                         source.window(0, position).expect("an insert is at a position of the input"))
-                .expect("the two heads hold one count");
-            ::fixy::copy(target.window(position, part.size()).expect("the buffer has room for the part"), part)
-                .expect("the window holds the count of the part");
-            ::fixy::copy(target.window(position + part.size(), tail).expect("the tail fits the buffer"),
-                         source.window(position, tail).expect("the tail is in the input"))
+            run = ::fixy::reborrow(std::move(run), [source, position](auto lent) noexcept {
+                ::fixy::copy(::fixy::take_window(std::move(lent), 0, position).expect("the head fits the buffer"),
+                             source.window(0, position).expect("an insert is at a position of the input"))
+                    .expect("the two heads hold one count");
+            });
+            run = ::fixy::reborrow(std::move(run), [part, position](auto lent) noexcept {
+                ::fixy::copy(::fixy::take_window(std::move(lent), position, part.size())
+                                 .expect("the buffer has room for the part"),
+                             part)
+                    .expect("the window holds the count of the part");
+            });
+            ::fixy::copy(
+                ::fixy::take_window(std::move(run), position + part.size(), tail).expect("the tail fits the buffer"),
+                source.window(position, tail).expect("the tail is in the input"))
                 .expect("the two tails hold one count");
         });
         swap_();
@@ -85,11 +91,12 @@ public:
         std::size_t const tail = count_ - position - 1;
         ::fixy::View<std::byte const> const source = view();
         back_ = ::fixy::with_mut(std::move(back_), [source, position, tail](auto run) noexcept {
-            ::fixy::View<std::byte> const target = run.view();
-            ::fixy::copy(target.window(0, position).expect("the head fits the buffer"),
-                         source.window(0, position).expect("an erase is at a position of the input"))
-                .expect("the two heads hold one count");
-            ::fixy::copy(target.window(position, tail).expect("the tail fits the buffer"),
+            run = ::fixy::reborrow(std::move(run), [source, position](auto lent) noexcept {
+                ::fixy::copy(::fixy::take_window(std::move(lent), 0, position).expect("the head fits the buffer"),
+                             source.window(0, position).expect("an erase is at a position of the input"))
+                    .expect("the two heads hold one count");
+            });
+            ::fixy::copy(::fixy::take_window(std::move(run), position, tail).expect("the tail fits the buffer"),
                          source.window(position + 1, tail).expect("the tail is in the input"))
                 .expect("the two tails hold one count");
         });

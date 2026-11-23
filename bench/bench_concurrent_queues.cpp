@@ -146,7 +146,7 @@ int main() {
             return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
                 const std::size_t np = ring->try_push_batch(tx.view());
                 const std::size_t nc =
-                    rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(run.view()); });
+                    rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
                 bench::do_not_optimize(np);
                 bench::do_not_optimize(nc);
             });

@@ -56,7 +56,7 @@ inline void run_recipe(::fixy::View<std::byte const> bytes) noexcept {
     ::fixy::FixedArray<std::byte, sizeof(NumericalRecipe)> image{};
     const std::size_t taken = bytes.size() < image.size() ? bytes.size() : image.size();
     image.with_mut([bytes, taken](auto run) noexcept {
-        ::fixy::copy(::fixy::View<std::byte>{run.view()}.window(0, taken).expect("the image holds the bytes it takes"),
+        ::fixy::copy(::fixy::take_window(std::move(run), 0, taken).expect("the image holds the bytes it takes"),
                      bytes.window(0, taken).expect("the input holds the bytes that the image takes"))
             .expect("the two windows hold the same count");
     });

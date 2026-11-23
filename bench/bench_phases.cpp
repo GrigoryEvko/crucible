@@ -55,7 +55,7 @@ struct BuildScratchOfBench {
     static void clear_map(BackgroundThread& bg) noexcept {
         bg.build_state_.scratch_map_ =
             ::fixy::with_mut(std::move(bg.build_state_.scratch_map_), [](auto slots) noexcept {
-                for (BackgroundThread::PtrSlot& slot : slots.view()) {
+                for (BackgroundThread::PtrSlot& slot : slots) {
                     slot = BackgroundThread::PtrSlot{};
                 }
             });

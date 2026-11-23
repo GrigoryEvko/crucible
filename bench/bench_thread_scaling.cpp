@@ -607,7 +607,7 @@ void run_producer(RowState& state, ThreadLine& line, Seat const& seat) noexcept 
     return std::move(item).value_or(Item{0});
 }
 
-[[gnu::always_inline]] inline std::uint64_t sum_of(::fixy::View<Item> out, std::size_t count) noexcept {
+[[gnu::always_inline]] inline std::uint64_t sum_of(::fixy::View<Item const> out, std::size_t count) noexcept {
     std::uint64_t sum = 0;
     for (Item const item : out.window(0, count).expect("a batch pop gives at most the count of its View"))
         sum += item;
@@ -616,9 +616,8 @@ void run_producer(RowState& state, ThreadLine& line, Seat const& seat) noexcept 
 
 // One pop of the consumer of an op: true when it took an item.  It adds
 // the items that it took into sum.
-template <OpKind Kind>
-[[gnu::always_inline]] inline bool pop_once(RowState& state, [[maybe_unused]] ::fixy::View<Item> out,
-                                            std::uint64_t& sum) noexcept {
+template <OpKind Kind, class Items>
+[[gnu::always_inline]] inline bool pop_once(RowState& state, [[maybe_unused]] Items& out, std::uint64_t& sum) noexcept {
     // A pop of an MPSC ring is a merge of the producers, so it takes Nondet.
     [[maybe_unused]] eff::cap::Nondet const merge = eff::testing::test().nondet;
     auto const take_one = [&sum](::fixy::Option<Item> item) noexcept {
@@ -626,8 +625,8 @@ template <OpKind Kind>
         sum += sum_of(std::move(item));
         return has_item;
     };
-    auto const take_batch = [&sum, out](std::size_t count) noexcept {
-        sum += sum_of(out, count);
+    auto const take_batch = [&sum, &out](std::size_t count) noexcept {
+        sum += sum_of(out.view(), count);
         return count != 0;
     };
     if constexpr (Kind == OpKind::MpscPush || Kind == OpKind::MpscSlowPush) {
@@ -639,7 +638,11 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::MpscPackedPush) {
         return take_one(state.mpsc_packed.try_pop(MpscOwner::consumer(), merge));
     } else if constexpr (Kind == OpKind::MpscBatchPush) {
-        return take_batch(state.mpsc.try_pop_batch(MpscOwner::consumer(), merge, out));
+        auto [count, back] = ::fixy::reborrow(std::move(out), [&state, merge](auto lent) noexcept {
+            return state.mpsc.try_pop_batch(MpscOwner::consumer(), merge, std::move(lent));
+        });
+        out = std::move(back);
+        return take_batch(count);
     } else if constexpr (Kind == OpKind::MpscReferencePush) {
         return take_one(state.mpsc_reference.try_pop());
     } else if constexpr (Kind == OpKind::SpscPush) {
@@ -647,7 +650,10 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::SpscProvenPush) {
         return take_one(state.spsc_proven.try_pop_proven(ProvenOwner::consumer()));
     } else if constexpr (Kind == OpKind::SpscBatchPush) {
-        return take_batch(state.spsc.try_pop_batch(out));
+        auto [count, back] = ::fixy::reborrow(
+            std::move(out), [&state](auto lent) noexcept { return state.spsc.try_pop_batch(std::move(lent)); });
+        out = std::move(back);
+        return take_batch(count);
     } else {
         return take_one(state.spsc_reference.try_pop());
     }
@@ -661,9 +667,9 @@ template <OpKind Kind>
 // The pop is a call of the thread, as the op of run_producer_loop is.  The
 // loop gives the pop its source on each call, so a pop of the end of a channel
 // holds no borrow of the end.
-template <class Pop, class Source>
+template <class Pop, class Source, class Items>
 [[nodiscard]] std::uint64_t run_consumer_loop(RowControl& control, Pop const& pop, Source& source,
-                                              ::fixy::View<Item> items) noexcept {
+                                              Items&& items) noexcept {
     std::uint64_t sum = 0;
     static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
     while (read_phase(control) != Phase::Stop) {
@@ -681,10 +687,10 @@ void run_consumer(RowState& state, ThreadLine& line) noexcept {
     std::uint64_t const item_sum = out.with_mut([&state](auto run) noexcept {
         return run_consumer_loop(
             state,
-            [] [[gnu::always_inline]] (RowState & from, ::fixy::View<Item> items, std::uint64_t& sum) noexcept {
+            [] [[gnu::always_inline]] (RowState & from, auto& items, std::uint64_t& sum) noexcept {
                 return pop_once<Kind>(from, items, sum);
             },
-            state, run.view());
+            state, run);
     });
     line.cell.store_release(item_sum);
 }

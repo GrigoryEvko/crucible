@@ -115,10 +115,12 @@ template <class KeyOf>
 // defaults to DATA_FLOW; bucketing depends only on src/dst, so a constant
 // kind is fine — the src/dst/port variation already distinguishes edges for
 // the oracle).
-::fixy::View<const crucible::Edge> materialize(const GraphSpec& spec, ::fixy::View<crucible::Edge> out) noexcept {
+template <class Brand, std::size_t Extent>
+::fixy::View<const crucible::Edge> materialize(const GraphSpec& spec,
+                                               ::fixy::ViewMut<crucible::Edge, Brand, Extent> out) noexcept {
     using crucible::Edge;
     using crucible::OpIndex;
-    const ::fixy::View<Edge> run = out.window(0, spec.num_edges).expect("a spec holds at most kMaxEdges edges");
+    auto run = ::fixy::take_window(std::move(out), 0, spec.num_edges).expect("a spec holds at most kMaxEdges edges");
     uint32_t e = 0;
     for (Edge& edge : run) {
         const EdgeSpec& edge_spec = edge_spec_at(spec, e);
@@ -129,7 +131,7 @@ template <class KeyOf>
         edge.dst_port = edge_spec.dst_port;
         ++e;
     }
-    return run;
+    return run.view();
 }
 
 [[nodiscard]] bool edge_eq(const crucible::Edge& a, const crucible::Edge& b) noexcept {
@@ -154,7 +156,9 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 template <class T, std::size_t N>
 void copy_prefix(::fixy::FixedArray<T, N>& copy, ::fixy::View<const T> source) noexcept {
     copy.with_mut([source](auto run) noexcept {
-        ::fixy::copy(run.view().window(0, source.size()).expect("the copy holds each element of the source"), source)
+        ::fixy::copy(
+            ::fixy::take_window(std::move(run), 0, source.size()).expect("the copy holds each element of the source"),
+            source)
             .expect("the window holds the count of the source");
     });
 }
@@ -196,7 +200,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const uint32_t num_edges = spec.num_edges;
 
             ::fixy::FixedArray<Edge, kMaxEdges> in_edges{};
-            in_edges.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, run.view())); });
+            in_edges.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
             const ::fixy::View<const Edge> in_run =
                 in_edges.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
 
@@ -267,7 +271,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             // (D) Determinism — rebuild in a fresh epoch, compare bytes.
             ::fixy::FixedArray<Edge, kMaxEdges> in_edges2{};
-            in_edges2.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, run.view())); });
+            in_edges2.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
             const ::fixy::View<const Edge> in_run2 =
                 in_edges2.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
             const ::fixy::FixedArray<uint32_t, kMaxOps + 1>& fwd = fwd_copy;

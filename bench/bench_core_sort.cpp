@@ -264,7 +264,7 @@ public:
     void before_sample() noexcept {
         View<T const> const window = windows_.next();
         work_ = with_mut(std::move(work_),
-                         [window](auto run) noexcept { static_cast<void>(::fixy::copy(run.view(), window)); });
+                         [window](auto run) noexcept { static_cast<void>(::fixy::copy(std::move(run), window)); });
     }
 
     void operator()() noexcept { bench::do_not_optimize(sort_through_frames(work_, scratch_, less_)); }

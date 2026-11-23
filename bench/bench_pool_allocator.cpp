@@ -330,9 +330,8 @@ int main() {
             ::fixy::mint_heap_array<unsigned char, 256>(test.alloc, size_t{N_EXT} * 256, static_cast<unsigned char>(0));
         bench::Report r{};
         ext_bytes = ::fixy::with_mut(std::move(ext_bytes), [&r, &pool, &pv](auto buffers) noexcept {
-            ::fixy::View<unsigned char, size_t{N_EXT} * 256> const ext_run =
-                buffers.view().template window<size_t{N_EXT} * 256>(0).expect(
-                    "the heap run holds each external buffer");
+            auto const ext_run = ::fixy::take_window<size_t{N_EXT} * 256>(std::move(buffers), 0)
+                                     .expect("the heap run holds each external buffer");
             r = bench::run("register_external(20 slots)", [&] {
                 for (uint32_t i = 0; i < N_EXT; i++) {
                     const ::fixy::RunAddress address = ::fixy::mint_run_address(ext_run, size_t{i} * 256)

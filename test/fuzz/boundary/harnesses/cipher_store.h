@@ -118,21 +118,26 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
         ::fixy::mint_heap_array(test_alloc(), event_count * sizeof(SessionEvent), std::byte{0});
     records = ::fixy::with_mut(std::move(records), [&cursor, event_count, first_step, session_raw](auto run) noexcept {
         for (std::size_t i = 0; i < event_count; ++i) {
-            const ::fixy::View<std::byte, sizeof(SessionEvent)> record =
-                run.view()
-                    .template window<sizeof(SessionEvent)>(i * sizeof(SessionEvent))
-                    .expect("the batch holds each record");
             const ::fixy::View<std::byte const> input = cursor.take_bytes(sizeof(SessionEvent));
-            ::fixy::copy(
-                ::fixy::View<std::byte>{record}.window(0, input.size()).expect("an input holds at most a record"),
-                input)
-                .expect("the window holds the count of the input");
             const std::uint64_t step = std::uint64_t{first_step} + i;
-            ::fixy::copy(record.window<sizeof(step)>(detail::kRecordStepOffset).expect("the record holds a step"),
-                         ::fixy::bytes(step));
-            ::fixy::copy(
-                record.window<sizeof(session_raw)>(detail::kRecordSessionOffset).expect("the record holds a session"),
-                ::fixy::bytes(session_raw));
+            run = ::fixy::reborrow(std::move(run), [input, step, session_raw, i](auto lent) noexcept {
+                auto record = ::fixy::take_window<sizeof(SessionEvent)>(std::move(lent), i * sizeof(SessionEvent))
+                                  .expect("the batch holds each record");
+                record = ::fixy::reborrow(std::move(record), [input](auto part) noexcept {
+                    ::fixy::copy(
+                        ::fixy::take_window(std::move(part), 0, input.size()).expect("an input holds at most a record"),
+                        input)
+                        .expect("the window holds the count of the input");
+                });
+                record = ::fixy::reborrow(std::move(record), [step](auto part) noexcept {
+                    ::fixy::copy(::fixy::take_window<sizeof(step)>(std::move(part), detail::kRecordStepOffset)
+                                     .expect("the record holds a step"),
+                                 ::fixy::bytes(step));
+                });
+                ::fixy::copy(::fixy::take_window<sizeof(session_raw)>(std::move(record), detail::kRecordSessionOffset)
+                                 .expect("the record holds a session"),
+                             ::fixy::bytes(session_raw));
+            });
         }
     });
     const ::fixy::View<std::byte const> extra_index_lines = take_chunk();

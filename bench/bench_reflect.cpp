@@ -480,7 +480,7 @@ int main() {
     slot.nbytes = 64;
     slot.dtype = crucible::ScalarType::Float;
     slot.slot_id = crucible::SlotId{3};
-    image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, run.view()); });
+    image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
 
     // Tiny FeedbackEdge (2 × u16 = 4 B); span of 8 edges per call.
     ::foundation::core::FixedArray<crucible::FeedbackEdge, 8> edges_buf{{0, 1}, {1, 2}, {2, 3}, {3, 4},
@@ -546,7 +546,7 @@ int main() {
         bench::run("encode<TensorSlot>   (40 bytes)",
                    [&] {
                        slot.offset_bytes = vbytes;
-                       image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, run.view()); });
+                       image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
                        bench::do_not_optimize(image);
                    }),
         bench::run("copy of 40 bytes     (reference)",
@@ -592,8 +592,7 @@ int main() {
         kAlloc, kHeapWords, [](std::size_t position) noexcept { return static_cast<std::uint32_t>(position * 5); });
     HeapBytes heap_bytes{};
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<HeapBytes>> heap_image{};
-    heap_image.with_mut(
-        [&heap_record](auto run) noexcept { ::fixy::encode(heap_record, ::fixy::View<std::byte>{run.view()}); });
+    heap_image.with_mut([&heap_record](auto run) noexcept { ::fixy::encode(heap_record, std::move(run)); });
 
     ::fixy::FixedArray<bench::Report, 8> part_reports{
         bench::run("hash<SumRecord>      (3 sums, 23 bytes)",

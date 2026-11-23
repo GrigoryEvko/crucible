@@ -172,9 +172,11 @@ template <class Out, class First, class Second>
 // gives a View of the left run that holds each element that the strides
 // reach.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loops over runs and strides are the baselines of the strided walks")
-[[gnu::noipa, gnu::hot]] void add_raw_strided(::fixy::View<float> out, ::fixy::View<float const> left_run,
-                                              ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
-                                              std::size_t row_stride, std::size_t column_stride) noexcept {
+template <class Brand, std::size_t Extent>
+[[gnu::noipa, gnu::hot]] void add_raw_strided(::fixy::ViewMut<float, Brand, Extent>& out,
+                                              ::fixy::View<float const> left_run, ::fixy::View<float const> right,
+                                              std::size_t rows, std::size_t columns, std::size_t row_stride,
+                                              std::size_t column_stride) noexcept {
     float* const target = &*out.begin();
     float const* const left = &*left_run.begin();
     float const* const second = &*right.begin();
@@ -193,8 +195,10 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loops over runs and strides are 
 // columns.
 constexpr std::size_t kRawBlock = 16;
 
-[[gnu::noipa, gnu::hot]] void add_raw_blocked(::fixy::View<float> out, ::fixy::View<float const> left_run,
-                                              ::fixy::View<float const> right, std::size_t rows, std::size_t columns,
+template <class Brand, std::size_t Extent>
+[[gnu::noipa, gnu::hot]] void add_raw_blocked(::fixy::ViewMut<float, Brand, Extent>& out,
+                                              ::fixy::View<float const> left_run, ::fixy::View<float const> right,
+                                              std::size_t rows, std::size_t columns,
                                               std::size_t column_stride) noexcept {
     float* const target = &*out.begin();
     float const* const left = &*left_run.begin();
@@ -222,7 +226,8 @@ constexpr std::size_t kRawBlock = 16;
 // The raw loop of the op of four inputs over dense runs, with the NaN rule of
 // the pointwise walk and restrict pointers: the baseline of the pointwise rows
 // of four inputs.
-[[gnu::noipa, gnu::hot]] void four_raw(::fixy::View<float> out, ::fixy::View<float const> first_run,
+template <class Brand, std::size_t Extent>
+[[gnu::noipa, gnu::hot]] void four_raw(::fixy::ViewMut<float, Brand, Extent>& out, ::fixy::View<float const> first_run,
                                        ::fixy::View<float const> second_run, ::fixy::View<float const> scale_run,
                                        ::fixy::View<float const> factor_run) noexcept {
     float* __restrict const target = &*out.begin();
@@ -240,11 +245,11 @@ constexpr std::size_t kRawBlock = 16;
 // in row-major order, with the NaN rule of the pointwise walk and restrict
 // pointers: the baseline of the pointwise rows of three inputs with a stepped
 // third input.  noipa keeps the strides a value of run time, as in the walk.
-[[gnu::noipa, gnu::hot]] void three_raw_strided(::fixy::View<float> out, ::fixy::View<float const> first_run,
-                                                ::fixy::View<float const> second_run,
-                                                ::fixy::View<float const> third_run, std::size_t rows,
-                                                std::size_t columns, std::size_t row_stride,
-                                                std::size_t column_stride) noexcept {
+template <class Brand, std::size_t Extent>
+[[gnu::noipa, gnu::hot]] void
+three_raw_strided(::fixy::ViewMut<float, Brand, Extent>& out, ::fixy::View<float const> first_run,
+                  ::fixy::View<float const> second_run, ::fixy::View<float const> third_run, std::size_t rows,
+                  std::size_t columns, std::size_t row_stride, std::size_t column_stride) noexcept {
     float* __restrict const target = &*out.begin();
     float const* __restrict const first = &*first_run.begin();
     float const* __restrict const second = &*second_run.begin();
@@ -449,28 +454,29 @@ template <class Out>
             .expect("a row broadcasts to the plane");
 
     // The raw, walk and scope rows, in one frame of the output.  The frame
-    // holds the storage of the output, so the sink of each row takes the run
-    // of the frame, the pointer and the count that the owner held.
+    // holds the storage of the output, so the sink of each raw row takes the
+    // run of the frame, the pointer and the count that the owner held.  The
+    // walk and scope rows write through the unique view of the run, and
+    // their sink takes that view.
     out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
-        Plane const out_view = plane_of(run.view(), rows, columns, columns, 1);
         print_row(level, "raw transposed",
                   measure(bench::Run{"raw transposed"}, wall,
                           [&] {
-                              add_raw_strided(run.view(), left_run, right_run, rows, columns, 1, rows);
+                              add_raw_strided(run, left_run, right_run, rows, columns, 1, rows);
                               bench::do_not_optimize(run);
                           }),
                   three_views, roof);
         print_row(level, "raw step 2",
                   measure(bench::Run{"raw step 2"}, wall,
                           [&] {
-                              add_raw_strided(run.view(), wide_run, right_run, rows, columns, 2 * columns, 2);
+                              add_raw_strided(run, wide_run, right_run, rows, columns, 2 * columns, 2);
                               bench::do_not_optimize(run);
                           }),
                   three_views, roof);
         print_row(level, "raw transposed blocked",
                   measure(bench::Run{"raw transposed blocked"}, wall,
                           [&] {
-                              add_raw_blocked(run.view(), left_run, right_run, rows, columns, rows);
+                              add_raw_blocked(run, left_run, right_run, rows, columns, rows);
                               bench::do_not_optimize(run);
                           }),
                   three_views, roof);
@@ -479,59 +485,60 @@ template <class Out>
         print_row(level, "raw four inputs",
                   measure(bench::Run{"raw four inputs"}, wall,
                           [&] {
-                              four_raw(run.view(), left_run, right_run, third_run, fourth_run);
+                              four_raw(run, left_run, right_run, third_run, fourth_run);
                               bench::do_not_optimize(run);
                           }),
                   five_views, roof);
         print_row(level, "raw three inputs step 2",
                   measure(bench::Run{"raw three inputs step 2"}, wall,
                           [&] {
-                              three_raw_strided(run.view(), left_run, right_run, wide_run, rows, columns, 2 * columns,
-                                                2);
+                              three_raw_strided(run, left_run, right_run, wide_run, rows, columns, 2 * columns, 2);
                               bench::do_not_optimize(run);
                           }),
                   four_views, roof);
         print_row(level, "raw three inputs step 3",
                   measure(bench::Run{"raw three inputs step 3"}, wall,
                           [&] {
-                              three_raw_strided(run.view(), left_run, right_run, wider_run, rows, columns, 3 * columns,
-                                                3);
+                              three_raw_strided(run, left_run, right_run, wider_run, rows, columns, 3 * columns, 3);
                               bench::do_not_optimize(run);
                           }),
                   four_views, roof);
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), plane_sizes.view(), plane_strides.view(), 0)
+                          .expect("a dense plane has no overlap");
+        Plane const out_view = unique.view();
         print_row(level, "walk dense",
                   measure(bench::Run{"walk dense"}, wall,
                           [&] {
                               walk_add(out_view, left_view, right_view);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk broadcast",
                   measure(bench::Run{"walk broadcast"}, wall,
                           [&] {
                               walk_add(out_view, left_view, broadcast);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk step 2",
                   measure(bench::Run{"walk step 2"}, wall,
                           [&] {
                               walk_add(out_view, every_second, right_view);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk transposed",
                   measure(bench::Run{"walk transposed"}, wall,
                           [&] {
                               walk_add(out_view, transposed, right_view);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "walk three inputs",
                   measure(bench::Run{"walk three inputs"}, wall,
                           [&] {
                               walk_three(out_view, left_view, right_view, third_view);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   four_views, roof);
         print_row(level, "scope dense",
@@ -539,7 +546,7 @@ template <class Out>
                           [&] {
                               std::size_t const adds = scope_add(out_view, left_view, right_view);
                               bench::do_not_optimize(adds);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "scope transposed",
@@ -547,7 +554,7 @@ template <class Out>
                           [&] {
                               std::size_t const adds = scope_add(out_view, transposed, right_view);
                               bench::do_not_optimize(adds);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "scope walk dense",
@@ -555,7 +562,7 @@ template <class Out>
                           [&] {
                               std::size_t const adds = scope_walk_add(out_view, left_view, right_view);
                               bench::do_not_optimize(adds);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
         print_row(level, "scope walk transposed",
@@ -563,7 +570,7 @@ template <class Out>
                           [&] {
                               std::size_t const adds = scope_walk_add(out_view, transposed, right_view);
                               bench::do_not_optimize(adds);
-                              bench::do_not_optimize(run);
+                              bench::do_not_optimize(unique);
                           }),
                   three_views, roof);
     });

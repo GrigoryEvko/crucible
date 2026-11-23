@@ -480,7 +480,7 @@ void test_clobber_array_various_types() {
     // These three doubles are exact in binary, so a change of any kind
     // would show even through the tolerance comparator.
     ::fixy::FixedArray<double, 3> dbls{1.5, -2.25, 3.125};
-    dbls.with_mut([](auto cells) noexcept { bench::clobber_array(::fixy::View<double>{cells.view()}); });
+    dbls.with_mut([](auto cells) noexcept { bench::clobber_array(cells); });
     CHECK(approx(dbls.at(::fixy::index<0>()), 1.5));
     CHECK(approx(dbls.at(::fixy::index<1>()), -2.25));
     CHECK(approx(dbls.at(::fixy::index<2>()), 3.125));
@@ -507,11 +507,11 @@ void test_clobber_array_various_types() {
 }
 
 void test_clobber_array_empty_and_single() {
-    // A zero-length array is not permitted, so the empty View is built
-    // as a window of length zero over a one-element one.
+    // A zero-length array is not permitted, so the empty run is a window of
+    // length zero over a one-element one.
     ::fixy::FixedArray<int, 1> empty_arr{};
     empty_arr.with_mut([](auto cells) noexcept {
-        ::fixy::View<int> const empty = ::fixy::View<int>{cells.view()}.window(0, 0).expect("an empty window");
+        auto const empty = ::fixy::take_window(std::move(cells), 0, 0).expect("an empty window");
         CHECK(empty.size() == 0);
         bench::clobber_array(empty);
         CHECK(empty.size() == 0);

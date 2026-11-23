@@ -528,19 +528,18 @@ void print_light(fixy::TextView name, bench::Report const& measured, double cycl
 // that the cycle visits.  Complexity: linear in the lines.
 void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_t lines) noexcept {
     order.with_mut([lines](auto run) noexcept {
-        core::View<std::uint32_t, kChainLines> const slots = run.view();
         for (std::size_t position = 0; position < lines; ++position) {
-            slots.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines")) =
-                static_cast<std::uint32_t>(position);
+            auto slot = run.get_mut(position).expect("a position below kChainLines");
+            *slot = static_cast<std::uint32_t>(position);
         }
         for (std::size_t last = lines - 1; last > 0; --last) {
             std::size_t const other = draw_of(last + kPicks) % last;
-            auto const at = [&slots](std::size_t position) noexcept -> std::uint32_t& {
-                return slots.at(core::Index<kChainLines>::check(position).expect("a position below kChainLines"));
-            };
-            std::uint32_t const held = at(last);
-            at(last) = at(other);
-            at(other) = held;
+            std::uint32_t const held = *run.get(last).expect("a position below kChainLines");
+            std::uint32_t const drawn = *run.get(other).expect("a position below kChainLines");
+            auto last_slot = run.get_mut(last).expect("a position below kChainLines");
+            *last_slot = drawn;
+            auto other_slot = run.get_mut(other).expect("a position below kChainLines");
+            *other_slot = held;
         }
     });
 }

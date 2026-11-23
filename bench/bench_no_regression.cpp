@@ -199,7 +199,7 @@ void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRo
     double acc = 0.0;
     for (std::size_t i = rows.begin; i < rows.end; ++i) {
         out[i - rows.begin].with_mut([matrix_a, matrix_b, n, i, &acc] [[gnu::always_inline]] (auto run) noexcept {
-            double* const row_out = ::foundation::core::foreign_first(run.view());
+            double* const row_out = ::foundation::core::foreign_first(run);
             for (std::size_t j = 0; j < n; ++j) {
                 double sum = 0.0;
                 for (std::size_t k = 0; k < n; ++k) {
@@ -261,7 +261,8 @@ void run_range(WorkloadInputs const& inputs, Range range, Sink& sink, ProductRow
 
 // The units of the workload on the calling thread.  ROWS is the run of the
 // rows of the product in the frame of measure_once.
-void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::View<ProductRow> rows) noexcept {
+template <typename RowsBrand>
+void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::ViewMut<ProductRow, RowsBrand>& rows) noexcept {
     run_range(inputs, Range{0, inputs.units}, sink, ::foundation::core::foreign_first(rows));
 }
 
@@ -312,7 +313,7 @@ run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::ViewMut<Pr
                         tally.note_calling_thread();
                         if (shard.size() == 0) return;
                         run_l2_rows(inputs, Range{place.first(), place.first() + shard.size()}, sink,
-                                    ::foundation::core::foreign_first(shard.view()));
+                                    ::foundation::core::foreign_first(shard));
                     },
                     options);
             });
@@ -355,8 +356,10 @@ namespace {
 // 1, as the threads of the rule arm take them.  With no claim each worker
 // keeps the affinity of the process.  ROWS is the run of the rows of the
 // product in the frame of measure_once.
-void run_forced_parallel(WorkloadInputs const& inputs, ForcedWorkers workers, ::fixy::View<ProductRow> rows, Sink& sink,
-                         bench::CpuTally& tally, bench::Cores const& cores) {
+template <typename RowsBrand>
+void run_forced_parallel(WorkloadInputs const& inputs, ForcedWorkers workers,
+                         ::fixy::ViewMut<ProductRow, RowsBrand>& rows, Sink& sink, bench::CpuTally& tally,
+                         bench::Cores const& cores) {
     const std::size_t forced_workers = workers.raw();
     ProductRow* const product = ::foundation::core::foreign_first(rows);
     const std::size_t worker_cores = cores.count() >= 2 ? cores.count() - 1 : 0;
@@ -526,7 +529,6 @@ namespace {
     // frame.
     w.product = ::fixy::with_mut(std::move(w.product), [&run, &report, &tally, &pieces, &cores, &inputs, budget,
                                                         workers, samples, strategy](auto rows) noexcept {
-        ::fixy::View<ProductRow> const product = rows.view();
         report = run.samples(samples)
                      .warmup(::fixy::max(std::size_t{2}, samples / 6))
                      .batch(1)
@@ -536,13 +538,13 @@ namespace {
                          Sink sink{};
                          switch (strategy) {
                              case Strategy::Sequential:
-                                 run_sequential(inputs, sink, product);
+                                 run_sequential(inputs, sink, rows);
                                  break;
                              case Strategy::Rule:
                                  rows = run_rule(inputs, budget, std::move(rows), sink, pieces, tally, cores);
                                  break;
                              case Strategy::ForcedParallel:
-                                 run_forced_parallel(inputs, workers, product, sink, tally, cores);
+                                 run_forced_parallel(inputs, workers, rows, sink, tally, cores);
                                  break;
                              default:
                                  break;
@@ -658,9 +660,12 @@ int main() {
             const std::size_t i = workload.raw();
             workloads.with_element(workload, [&rows, &pieces, samples, &cores, i](Workload& w) noexcept {
                 Trio trio = run_workload(w, pieces, samples, cores);
-                *rows.get(i * 3 + 0).expect("the sequential row of a workload") = std::move(trio.sequential);
-                *rows.get(i * 3 + 1).expect("the rule row of a workload") = std::move(trio.rule);
-                *rows.get(i * 3 + 2).expect("the forced row of a workload") = std::move(trio.forced);
+                auto sequential_row = rows.get_mut(i * 3 + 0).expect("the sequential row of a workload");
+                *sequential_row = std::move(trio.sequential);
+                auto rule_row = rows.get_mut(i * 3 + 1).expect("the rule row of a workload");
+                *rule_row = std::move(trio.rule);
+                auto forced_row = rows.get_mut(i * 3 + 2).expect("the forced row of a workload");
+                *forced_row = std::move(trio.forced);
             });
         }
     });

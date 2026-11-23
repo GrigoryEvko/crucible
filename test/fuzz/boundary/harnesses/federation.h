@@ -30,7 +30,8 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
         std::size_t count = 0;
         body.with_mut([payload, &count](auto run) noexcept {
             for (const char character : payload) {
-                *run.get(count).expect("a seed payload fits 16 bytes") = static_cast<std::byte>(character);
+                auto element = run.get_mut(count).expect("a seed payload fits 16 bytes");
+                *element = static_cast<std::byte>(character);
                 ++count;
             }
         });

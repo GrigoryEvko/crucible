@@ -149,7 +149,8 @@ struct AddOp final {
 // Reference: the raw loop of the add over three runs of one count.  An
 // add of floats is commutative, so a swap of left and right changes no bit.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the raw loop of the add is the reference of the parallel walk")
-[[gnu::noipa, gnu::hot]] void add_raw(::fixy::View<float> out, ::fixy::View<float const> left,
+template <class Brand, std::size_t Extent>
+[[gnu::noipa, gnu::hot]] void add_raw(::fixy::ViewMut<float, Brand, Extent>& out, ::fixy::View<float const> left,
                                       ::fixy::View<float const> right) noexcept {
     float* const target = &*out.begin();
     float const* const first = &*left.begin();
@@ -345,15 +346,15 @@ void run_level(Level const& level, RowNames names, Placement const& placement,
     // of the output, so the sink takes the run of the frame.
     bench::Report reference{};
     out = ::fixy::with_mut(std::move(out), [&reference, &names, &placement, &left, &right](auto run) noexcept {
-        reference = names.reference.core(placement.measuring_core)
-                        .batch(1)
-                        .warmup(16)
-                        .max_wall_ms(kWallMs)
-                        .measure([&run, &left, &right] {
-                            add_raw(run.view(), ::fixy::View<float const>{left.view()},
-                                    ::fixy::View<float const>{right.view()});
-                            bench::do_not_optimize(run);
-                        });
+        reference =
+            names.reference.core(placement.measuring_core)
+                .batch(1)
+                .warmup(16)
+                .max_wall_ms(kWallMs)
+                .measure([&run, &left, &right] {
+                    add_raw(run, ::fixy::View<float const>{left.view()}, ::fixy::View<float const>{right.view()});
+                    bench::do_not_optimize(run);
+                });
     });
 
     constexpr BodyCoupling kWaiting = BodyCoupling::WaitOnEachOther;
