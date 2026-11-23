@@ -87,8 +87,8 @@ static_assert(std::is_convertible_v<ArenaRun<int, Family>, ArenaRun<int const, F
 static_assert(!std::is_convertible_v<ArenaRun<int const, Family>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int, Owner::Member>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int const, Owner::Member>, ArenaRun<int, Family>>);
-static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(0, 0)),
-                             Option<ArenaRun<int, Family>>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(0, 0)), Option<ArenaRun<int, Family>>>);
 static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
 
 // make takes a type with a trivial destructor that the arguments build with
@@ -163,6 +163,15 @@ using KeepingBody = decltype([](KeptRef& kept, Alloc alloc) noexcept {
     return [&kept, alloc](MemberEpoch& epoch) noexcept { kept = some(epoch.make<int>(alloc, 1)); };
 }(std::declval<KeptRef&>(), std::declval<Alloc>()));
 static_assert(!EpochCaptures<KeepingBody, Member>);
+
+// An Address holds no borrow and names no brand, so a capture by a reference
+// that is not const of an Option of an Address passes.  A body writes the
+// address of a value of the epoch there, and the caller compares it after the
+// epoch with no read of the bytes.
+using AddressBody = decltype([](Option<Address>& seen) noexcept {
+    return [&seen](MemberEpoch&) noexcept { seen = none; };
+}(std::declval<Option<Address>&>()));
+static_assert(EpochCaptures<AddressBody, Member>);
 
 // C++ const is shallow: a const Ref of the owner and a const reference to a
 // Ref of an Option still reach a place that is not const.
