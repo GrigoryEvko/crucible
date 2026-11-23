@@ -7,6 +7,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/concurrent/ParallelTree.h>
 #include <fixy/os/Process.h>
+#include <foundation/core/AtomicCells.h>
 #include <foundation/core/Reduce.h>
 
 #include <fixy/check/Check.h>
@@ -92,7 +93,7 @@ void check_reduce_on_stated_threads(View<std::uint64_t const> all) noexcept {
     // The combine keeps a View of the table, so each call of the combine runs
     // in the frame of the table.
     table = ::fixy::with_mut(std::move(table), [&ctx, run](auto slots) noexcept {
-        RecordingMix const mix{slots.view(), ++next_generation};
+        RecordingMix const mix{::foundation::core::share_atomic_cells(slots), ++next_generation};
         auto const parallel =
             ::fixy::concurrent::reduce_by_tree_in_parallel<spawn::BodyCoupling::WaitOnEachOther, Shards>(
                 ctx, tree::test_alloc(), run, mix);

@@ -21,6 +21,7 @@
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/AtomicCells.h>
 #include <foundation/core/BitSet.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Branded.h>
@@ -189,6 +190,7 @@ using ::foundation::core::RunAddress;
 
 using ::foundation::core::Atomic;
 using ::foundation::core::AtomicBits;
+using ::foundation::core::AtomicCell;
 using ::foundation::core::AtomicCount;
 using ::foundation::core::AtomicValue;
 using ::foundation::core::atomic_word_key;
@@ -198,6 +200,7 @@ using ::foundation::core::CasRefusal;
 using ::foundation::core::Counter;
 using ::foundation::core::fence_seq_cst;
 using ::foundation::core::mint_sole_writer;
+using ::foundation::core::share_atomic_cells;
 using ::foundation::core::SoleWriter;
 using ::foundation::core::Tally;
 

@@ -24,6 +24,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/concurrent/ParallelTree.h>
+#include <foundation/core/AtomicCells.h>
 #include <foundation/core/Reduce.h>
 #include <foundation/core/Scan.h>
 
@@ -211,8 +212,9 @@ struct PlanCombine {
         fired = ::fixy::with_mut(std::move(fired), [&](auto fired_counts) noexcept {
             strays = ::fixy::with_mut(std::move(strays), [&](auto stray_counts) noexcept {
                 PlanCombine const combine{View<core::TreeStep const>{steps.view()},
-                                          View<std::uint32_t const>{step_of_left.view()}, fired_counts.view(),
-                                          stray_counts.view(), leaves};
+                                          View<std::uint32_t const>{step_of_left.view()},
+                                          ::foundation::core::share_atomic_cells(fired_counts),
+                                          ::foundation::core::share_atomic_cells(stray_counts), leaves};
                 result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run,
                                                                                           combine)
                              .expect("the run has leaves");

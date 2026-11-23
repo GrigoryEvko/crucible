@@ -3942,6 +3942,14 @@ foundation_neg_compile_test(neg_core_atomic_count_of_bool
 foundation_neg_compile_test(neg_core_atomic_count_store
   ".class foundation::core::Atomic<long unsigned int, foundation::core::Counter>. has no member named .store_release."
   "has no member named .store_release.")
+# share_atomic_cells of foundation/core/AtomicCells.h lends a shared View of
+# the run of a frame only when each element is a cell of the base.
+foundation_neg_compile_test(neg_core_atomic_cells_plain_element
+  "no matching function for call to .share_atomic_cells\\(foundation::core::ViewMut<int, .*, 4>&\\)."
+  "required for the satisfaction of .AtomicCell<T>. \\[with T = int\\]")
+foundation_neg_compile_test(neg_core_atomic_cells_class_with_cell
+  "no matching function for call to .share_atomic_cells\\(foundation::core::ViewMut<.*CountedSlot, .*, 4>&\\)."
+  "required for the satisfaction of .AtomicCell<T>. \\[with T = .*CountedSlot\\]")
 
 # The cell of 128 bits of foundation/os/WideAtomic.h holds a value of 16
 # bytes with one bit pattern for each value, as its compare-and-swap compares

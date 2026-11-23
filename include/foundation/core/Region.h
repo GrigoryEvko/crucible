@@ -327,7 +327,8 @@ class ViewMutChunks;
 namespace detail {
 
 // The run of a ViewMut as a plain View of its extent, for the doors of the
-// base that hold the ViewMut by move or by value.  This header defines it.
+// base that hold the ViewMut by move or by value, and for the shared view of
+// atomic cells of foundation/core/AtomicCells.h.  This header defines it.
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
 
@@ -1458,9 +1459,11 @@ give_run_back_(FrameKey const& key, Owner&& held, View<T, Extent> run, Body&& bo
 namespace detail {
 
 // The run of view as a plain View of its extent.  Only the doors of the base
-// use it, and each of them holds the ViewMut by move or by value, so the View
-// is a part of the one writer that the door holds.  The ViewMut proves its
-// run, so the View takes its parts with no check.
+// use it.  A door that holds the ViewMut by move or by value makes the View a
+// part of the one writer that it holds.  The shared view of atomic cells of
+// foundation/core/AtomicCells.h reads the ViewMut through a const reference,
+// because each write of an atomic cell is one atomic operation.  The ViewMut
+// proves its run, so the View takes its parts with no check.
 template <class T, class Brand, std::size_t Extent>
 constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept {
     T* const first = first_of_(BaseLayerRead{}, view);

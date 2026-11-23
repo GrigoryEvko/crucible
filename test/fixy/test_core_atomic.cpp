@@ -13,6 +13,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/AtomicCells.h>
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -698,6 +699,62 @@ void test_fetch_add_under_contention() {
     CRUCIBLE_FATAL_INVARIANT(counter.load_acquire() == 4 * steps_per_worker);
 }
 
+// Two Views of the cells of one frame, from two calls of share_atomic_cells,
+// add to each cell on four threads.  Each addition is one atomic operation, so
+// each cell holds the sum of each addition.  The ViewMut of the frame then
+// adds to one cell, and each View reads that addition.
+void test_shared_cells_of_one_frame() {
+    static_assert(::foundation::core::AtomicCell<Atomic<std::uint64_t, Counter>>);
+    static_assert(!::foundation::core::AtomicCell<Atomic<std::uint64_t> const>);
+    static_assert(!::foundation::core::AtomicCell<CacheLine<Atomic<std::uint64_t>>>);
+    constexpr std::uint64_t sum_of_threads = 4 * steps_per_worker * 3;
+    ::fixy::HeapArray<Atomic<std::uint64_t>> cells = ::fixy::mint_heap_array_with<Atomic<std::uint64_t>>(
+        eff::testing::test().alloc, 4, [](std::size_t) noexcept { return Atomic<std::uint64_t>{0}; });
+    cells = ::fixy::with_mut(std::move(cells), [](auto run) noexcept {
+        ::fixy::View<Atomic<std::uint64_t>> const first = ::foundation::core::share_atomic_cells(run);
+        ::fixy::View<Atomic<std::uint64_t>> const second = ::foundation::core::share_atomic_cells(run);
+        run_on_four_threads([first, second] {
+            for (std::uint64_t step = 0; step < steps_per_worker; ++step) {
+                for (Atomic<std::uint64_t>& cell : first) {
+                    static_cast<void>(cell.fetch_add_acq_rel(1));
+                }
+                for (Atomic<std::uint64_t>& cell : second) {
+                    static_cast<void>(cell.fetch_add_acq_rel(2));
+                }
+            }
+        });
+        for (Atomic<std::uint64_t> const& cell : run) {
+            CRUCIBLE_FATAL_INVARIANT(cell.load_acquire() == sum_of_threads);
+        }
+        auto element = run.get_mut(0).expect("the run holds four cells");
+        static_cast<void>(element->fetch_add_acq_rel(5));
+        Atomic<std::uint64_t> const& first_cell = *first.get(0).expect("the run holds four cells");
+        Atomic<std::uint64_t> const& second_cell = *second.get(0).expect("the run holds four cells");
+        CRUCIBLE_FATAL_INVARIANT(first_cell.load_acquire() == sum_of_threads + 5);
+        CRUCIBLE_FATAL_INVARIANT(second_cell.load_acquire() == sum_of_threads + 5);
+    });
+    std::uint64_t total = 0;
+    for (Atomic<std::uint64_t> const& cell : cells) {
+        total += cell.load_acquire();
+    }
+    CRUCIBLE_FATAL_INVARIANT(total == 4 * sum_of_threads + 5);
+
+    // The run of a FixedArray gives a shared View of its fixed extent.
+    ::fixy::FixedArray<Atomic<std::uint64_t>, 4> fixed{};
+    std::uint64_t const fixed_total = fixed.with_mut([](auto run) noexcept {
+        ::fixy::View<Atomic<std::uint64_t>, 4> const shared = ::foundation::core::share_atomic_cells(run);
+        for (Atomic<std::uint64_t>& cell : shared) {
+            static_cast<void>(cell.fetch_add_acq_rel(3));
+        }
+        std::uint64_t sum = 0;
+        for (Atomic<std::uint64_t> const& cell : run) {
+            sum += cell.load_acquire();
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(fixed_total == 12);
+}
+
 void test_cas_under_contention() {
     Atomic<std::uint64_t> counter{};
     run_on_four_threads([&counter] {
@@ -1187,6 +1244,7 @@ int main() {
     test_agrees_with_plain_model();
     test_signed_bounds_agree_with_plain_model();
     test_fetch_add_under_contention();
+    test_shared_cells_of_one_frame();
     test_cas_under_contention();
     test_read_modify_write_under_contention();
     test_tally_under_contention();

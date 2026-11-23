@@ -144,6 +144,10 @@
 // bytes, so the type states that no other data shares its cache line.
 // *line and line->member borrow the cell.
 //
+// AtomicCell<T> holds for a cell of this family, of each writer.  A frame
+// lends a run of such cells to many writers through share_atomic_cells of
+// foundation/core/AtomicCells.h.
+//
 // Tally is a statistics counter of 64 bits over a count (the count).  add()
 // is a relaxed fetch-add, and read() is an acquire load.  A value of a Tally
 // orders no other data.
@@ -183,6 +187,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
+#include <foundation/reflect/Instance.h>
 
 #include <concepts>
 #include <cstddef>
@@ -342,6 +347,15 @@ class Atomic;
 
 // The writer of a count that each thread adds to with no order (the count).
 struct Counter final {};
+
+// A cell of this family, of each writer: an Atomic of the base, not const,
+// and not a class that holds one.  Each write to such a cell is one atomic
+// operation, and the cell has no assignment.  So two threads can write one
+// run of cells at the same time (share_atomic_cells of
+// foundation/core/AtomicCells.h).  A class that holds a cell can add a plain
+// member or an assignment, so the concept refuses it.
+template <class T>
+concept AtomicCell = detail::AtomicObject<T> && ::foundation::reflect::IsInstanceOf<T, ^^Atomic>;
 
 namespace detail {
 
