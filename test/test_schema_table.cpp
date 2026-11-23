@@ -694,6 +694,45 @@ static void test_late_table_refuses_names_past_its_bytes() {
     ::fixy::check::pass(kTest, "  test_late_table_bytes_bound:    PASSED\n");
 }
 
+// The sealed global table holds aten::global on a hash, and then an internal
+// name of the same hash registers late with another name.
+static void register_other_internal_name_of_a_global_hash() noexcept {
+    global_schema_table().clear(test_ctx());
+    late_schema_table().clear(test_ctx());
+    const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
+    reg(global_schema_table(), gv, H(0x5A), S("aten::global"));
+    global_schema_table().seal(kTest);
+    static_cast<void>(register_schema_name(kVigilForeground, ::foundation::effects::testing::test().alloc, H(0x5A),
+                                           S("aten::internal_other")));
+}
+
+// A hash that the sealed global table holds keeps its name there.  A late
+// registration of the same name writes nothing, and a different name from
+// outside gets collision, as in one table.  A different internal name ends
+// the process with the two names.  On the old code the late table took the
+// different name, so the lookup gave aten::global for an op that recorded
+// aten::other, and the export skipped aten::other.
+static void test_late_name_of_a_held_global_hash_is_a_collision() {
+    global_schema_table().clear(test_ctx());
+    late_schema_table().clear(test_ctx());
+    const auto gv = global_schema_table().mint_mutable_view(kVigilForeground).expect("a cleared table is open");
+    reg(global_schema_table(), gv, H(0x5A), S("aten::global"));
+    global_schema_table().seal(kTest);
+    const ::foundation::effects::Alloc allocation = ::foundation::effects::testing::test().alloc;
+    CRUCIBLE_TEST_ASSERT(kTest, is_collision(register_schema_name(kVigilForeground, allocation, H(0x5A),
+                                                                  sanitize_outside_name(H(0x5A), "aten::other"))));
+    CRUCIBLE_TEST_ASSERT(kTest, register_schema_name(kVigilForeground, allocation, H(0x5A),
+                                                     sanitize_outside_name(H(0x5A), "aten::global"))
+                                    .is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, register_schema_name(kVigilForeground, allocation, H(0x5A), S("aten::global")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, late_schema_table().count() == 0 && eq(schema_name(H(0x5A)), "aten::global"));
+    global_schema_table().clear(test_ctx());
+    ::fixy::check::expect_dies(
+        kTest, register_other_internal_name_of_a_global_hash,
+        ::fixy::TextView{"crucible: the schema hash 90 names two schemas, aten::global and aten::internal_other"});
+    ::fixy::check::pass(kTest, "  test_late_name_of_global_hash:  PASSED\n");
+}
+
 // A table holds 512 entries, and each padding byte of an entry costs one
 // store at each initialization of an automatic table (padding_bytes.h).
 static void test_entry_has_no_padding_byte() {
@@ -729,7 +768,8 @@ int main() {
     test_register_names_writes_each_name_or_none();
     test_late_table_holds_many_names();
     test_late_table_refuses_names_past_its_bytes();
+    test_late_name_of_a_held_global_hash_is_a_collision();
     test_entry_has_no_padding_byte();
-    ::fixy::check::pass(kTest, "test_schema_table: 27 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_schema_table: 28 groups, all passed\n");
     return 0;
 }

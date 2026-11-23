@@ -207,6 +207,25 @@ enum class SchemaNameError : std::uint8_t {
     return ::fixy::none;
 }
 
+namespace detail {
+
+// The dot between the name and the overload of a full name, or no character
+// for a name with no overload, for a report.
+[[nodiscard]] inline ::fixy::TextView schema_name_dot_of(SchemaNameParts const& parts) noexcept {
+    return parts.overload().size() == 0 ? ::fixy::TextView{} : ::fixy::TextView{"."};
+}
+
+// A second internal name of a held hash is a defect of the program, and the
+// process ends with the two names.
+[[noreturn, gnu::cold]] inline void report_schema_collision(SchemaHash hash, ::fixy::TextView stored,
+                                                            SchemaNameParts const& other) noexcept {
+    ::fixy::fatal("crucible: the schema hash {} names two schemas, {} and {}{}{}.  A second name of one hash is a "
+                  "collision of the schema hash",
+                  hash.raw(), stored, other.name(), schema_name_dot_of(other), other.overload());
+}
+
+}  // namespace detail
+
 // A name from outside the process, such as a name of a trace file or of the
 // C interface, that passed sanitize_schema_name.  The constructor is private,
 // and its one friend in the product is that door.  So no retag of a boundary
@@ -692,7 +711,7 @@ private:
             if (held->hash == hash) {
                 const ::fixy::TextView stored = stored_characters_of_(*held);
                 if (characters.is_same_full_name(SchemaNameParts{stored})) return ::fixy::none;
-                if (source == NameSource::internal) report_collision_(hash, stored, characters);
+                if (source == NameSource::internal) detail::report_schema_collision(hash, stored, characters);
                 return ::fixy::some(SchemaRefusal::collision);
             }
         }
@@ -748,19 +767,6 @@ private:
         return stored.window(0, stored.size() - 1).expect("the table keeps one zero after each name");
     }
 
-    // The dot between the name and the overload of a full name, or no
-    // character for a name with no overload, for a report.
-    [[nodiscard]] static ::fixy::TextView dot_of_(SchemaNameParts const& parts) noexcept {
-        return parts.overload().size() == 0 ? ::fixy::TextView{} : ::fixy::TextView{"."};
-    }
-
-    [[noreturn, gnu::cold]] static void report_collision_(SchemaHash hash, ::fixy::TextView stored,
-                                                          SchemaNameParts const& other) noexcept {
-        ::fixy::fatal("crucible: the schema hash {} names two schemas, {} and {}{}{}.  A second name of one hash is a "
-                      "collision of the schema hash",
-                      hash.raw(), stored, other.name(), dot_of_(other), other.overload());
-    }
-
     // An internal name of the hash zero is a defect of the program.  The
     // table would keep a name on the sentinel of no schema.
     [[noreturn, gnu::cold]] static void report_zero_internal_hash_() noexcept {
@@ -775,8 +781,8 @@ private:
         ::fixy::fatal("crucible: the schema table holds {} of {} names and {} of {} bytes of names, so it has no "
                       "place for the schema {}{}{}.  Raise the capacity of the table or SCHEMA_NAME_BYTES_MAX in "
                       "crucible/SchemaTable.h, or register fewer schemas",
-                      count(), Capacity, name_bytes_.raw(), SCHEMA_NAME_BYTES_MAX.raw(), name.name(), dot_of_(name),
-                      name.overload());
+                      count(), Capacity, name_bytes_.raw(), SCHEMA_NAME_BYTES_MAX.raw(), name.name(),
+                      detail::schema_name_dot_of(name), name.overload());
     }
 
     // The count of the table at a power of two past SCHEMA_TABLE_CAP: the
@@ -901,9 +907,10 @@ template <typename Ctx, SchemaNameSource NameType>
 // other refusal of the global table is the result, so a full global table
 // puts no name in the late table.  A collision or a full table in the table
 // that takes the name gives its refusal, and an internal name ends the
-// process there (SchemaTableOf::register_name).  The foreground context
-// holds no allocation capability, so the caller gives one.  A Vigil gives the
-// one of its startup context.
+// process there (SchemaTableOf::register_name).  A hash that the sealed
+// global table holds keeps its name there: the late table takes no second
+// name of it.  The foreground context holds no allocation capability, so the
+// caller gives one.  A Vigil gives the one of its startup context.
 template <SchemaNameSource NameType>
 [[nodiscard]] inline SchemaRegistration register_schema_name(VigilFgCtx const& fg,
                                                              ::foundation::effects::Alloc allocation, SchemaHash hash,
@@ -916,6 +923,32 @@ template <SchemaNameSource NameType>
         },
         [] { return SchemaRegistration{::fixy::err(SchemaRefusal::sealed)}; });
     if (!is_sealed_refusal(in_global)) return in_global;
+    // The global table is sealed, so this thread reads it with no lock.  The
+    // same name of a hash that it holds writes nothing, and a different name
+    // is a collision, as in one table.  So lookup gives no name of the global
+    // table for an op that recorded another name.
+    enum class GlobalHold : std::uint8_t {
+        absent,
+        same_name,
+        other_name,
+    };
+    const GlobalHold global_hold = global_table.lookup(hash).match(
+        [hash, &name](InternedSchemaName held) noexcept {
+            const ::fixy::TextView stored = held.value().view();
+            if (name.parts().is_same_full_name(SchemaNameParts{stored})) return GlobalHold::same_name;
+            // The generator of the operator table refuses two rows with one
+            // hash, and the door of a name from outside refuses a name with
+            // the hash of a row (the reserved hashes of
+            // vessel/torch/vessel_api_typed.h).  So an internal name meets no
+            // other name of its hash in the global table, and this arm is a
+            // defect of the program.
+            if constexpr (std::same_as<NameType, InternalSchemaName>)
+                detail::report_schema_collision(hash, stored, name.parts());
+            return GlobalHold::other_name;
+        },
+        [] noexcept { return GlobalHold::absent; });
+    if (global_hold == GlobalHold::same_name) return SchemaRegistration{::fixy::Unit{}};
+    if (global_hold == GlobalHold::other_name) return SchemaRegistration{::fixy::err(SchemaRefusal::collision)};
     // Nothing seals the late table, so its view exists and no seal refuses
     // its write.
     LateSchemaTable& late_table = late_schema_table();
