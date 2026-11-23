@@ -28,7 +28,7 @@ int main() {
     const Owner owner = Owner::claim();
     crucible::TransactionLog<16, Owner> log{};
     // The log stamps with its own count, so no call takes a tag.
-    auto draft = log.begin_tx(owner, 1);
+    auto draft = log.begin_tx(owner, ::fixy::session::StepId{1});
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it")
     crucible::RegionNode* region = nullptr;
     (void)log.commit(owner, std::move(draft), region, crucible::ContentHash{}, crucible::MerkleHash{1});

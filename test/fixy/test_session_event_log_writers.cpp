@@ -106,7 +106,7 @@ void two_threads_record_into_their_own_logs() {
             const s::SessionEvent& event = *merged.get(place).expect("the merge holds each event of the two logs");
             const bool is_left = place % 2 == 0;
             const bool is_last_step = place / 2 == kSends;
-            CRUCIBLE_TEST_ASSERT(kTest, event.step_id().value == place / 2 + 1);
+            CRUCIBLE_TEST_ASSERT(kTest, event.step_id().raw() == place / 2 + 1);
             CRUCIBLE_TEST_ASSERT(kTest, event.session().value == (is_left ? 1u : 2u));
             CRUCIBLE_TEST_ASSERT(kTest, event.from_role() == (is_left ? kLeft : kRight));
             CRUCIBLE_TEST_ASSERT(kTest, event.op() == (is_last_step ? s::SessionOp::Detach : s::SessionOp::Send));
@@ -130,7 +130,7 @@ void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
     CRUCIBLE_TEST_ASSERT(kTest, merged.size() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, merged.get(0).expect("three events")->session().value == 8);
     CRUCIBLE_TEST_ASSERT(kTest, merged.get(1).expect("three events")->session().value == 7);
-    CRUCIBLE_TEST_ASSERT(kTest, merged.get(2).expect("three events")->step_id().value == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, merged.get(2).expect("three events")->step_id().raw() == 2);
 }
 
 }  // namespace

@@ -71,6 +71,7 @@
 
 #include <fixy/Mutation.h>
 #include <fixy/session/CrashCause.h>
+#include <fixy/session/StepId.h>
 
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
@@ -148,11 +149,7 @@ struct LabelWord {
     std::uint64_t value = 0;
     constexpr auto operator<=>(const LabelWord&) const noexcept = default;
 };
-// Non-decreasing inside one log.
-struct StepId {
-    std::uint64_t value = 0;
-    constexpr auto operator<=>(const StepId&) const noexcept = default;
-};
+// The step of an event is StepId of fixy/session/StepId.h.
 
 // ── The control vocabulary ──────────────────────────────────────────
 
@@ -312,7 +309,7 @@ struct RawEvent {
 // ── The event ───────────────────────────────────────────────────────
 
 class SessionEvent {
-    StepId step_id_{};
+    StepId step_id_{std::uint64_t{0}};
     SessionTagId session_{};
     RoleTagId from_role_{};
     RoleTagId to_role_{};
@@ -516,7 +513,7 @@ public:
     // The bytes, for a drain to durable storage.
     [[nodiscard]] constexpr ::foundation::core::FixedArray<std::byte, session_event_size> encode() const noexcept {
         detail::event_log::RawEvent raw{};
-        raw.step_id = step_id_.value;
+        raw.step_id = step_id_.raw();
         raw.session = session_.value;
         raw.from_role = from_role_.value;
         raw.to_role = to_role_.value;
@@ -674,14 +671,14 @@ struct StepIdKeyFn {
 };
 
 struct StepIdLess {
-    constexpr bool operator()(StepId lhs, StepId rhs) const noexcept { return lhs.value < rhs.value; }
+    constexpr bool operator()(StepId lhs, StepId rhs) const noexcept { return lhs < rhs; }
 };
 
 namespace detail::event_log {
 
 [[noreturn]] [[gnu::cold, gnu::noinline]] inline void abort_on_step_overflow() noexcept {
     std::fprintf(stderr, "fixy::session: the session event log minted its last step id.  A log holds at most "
-                         "2^64 - 1 steps; start a new log.\n");
+                         "2^64 - 2 steps.  Start a new log.\n");
     std::abort();
 }
 
@@ -711,7 +708,9 @@ class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
 
     [[nodiscard]] StepId next_step_() noexcept {
         const std::uint64_t prior = step_counter_.bump();
-        if (prior == std::numeric_limits<std::uint64_t>::max()) [[unlikely]]
+        // The highest value of the word is the empty value of an Option of a
+        // step, so the last step of a log is the value below it.
+        if (prior >= std::numeric_limits<std::uint64_t>::max() - 1) [[unlikely]]
             detail::event_log::abort_on_step_overflow();
         return StepId{prior + 1};
     }

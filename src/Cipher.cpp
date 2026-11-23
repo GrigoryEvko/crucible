@@ -883,15 +883,15 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     }
 
     const ::fixy::session::SessionTagId session = events.get(0).expect("the batch holds an event")->session();
-    const uint64_t first_step = events.get(0).expect("the batch holds an event")->step_id().value;
-    const uint64_t last_step = events.get(events.size() - 1).expect("the batch holds an event")->step_id().value;
+    const uint64_t first_step = events.get(0).expect("the batch holds an event")->step_id().raw();
+    const uint64_t last_step = events.get(events.size() - 1).expect("the batch holds an event")->step_id().raw();
     bool has_previous = false;
     uint64_t previous_step = 0;
     for (const SessionEvent& event : events) {
         if (event.session() != session) [[unlikely]] {
             return ::fixy::err(PersistRefusal::mixed_sessions);
         }
-        const uint64_t step = event.step_id().value;
+        const uint64_t step = event.step_id().raw();
         if (has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1 != step)) [[unlikely]] {
             return ::fixy::err(PersistRefusal::steps_not_consecutive);
         }
@@ -1018,7 +1018,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     }));
     const ::fixy::HeapText index = ::fixy::freeze(std::move(index_text));
 
-    uint64_t highest_loaded = from_step.value;
+    uint64_t highest_loaded = from_step.raw();
     bool have_loaded = false;
     // The lines of the loaded batches.  Each loaded batch starts after the
     // last step that the load held before it, so the lines are in the order
@@ -1068,13 +1068,13 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
         // The count check above gives the batch count events, and count is
         // above zero.
         const bool has_named_range =
-            events.view().get(0).expect("the batch holds an event")->step_id().value == first
-            && events.view().get(events.size() - 1).expect("the batch holds an event")->step_id().value == last;
+            events.view().get(0).expect("the batch holds an event")->step_id().raw() == first
+            && events.view().get(events.size() - 1).expect("the batch holds an event")->step_id().raw() == last;
         if (!has_named_range) return ::fixy::err(LoadError::batch_count_mismatch);
         bool has_previous = false;
         uint64_t previous_step = 0;
         for (const SessionEvent& event : events.view()) {
-            const uint64_t step = event.step_id().value;
+            const uint64_t step = event.step_id().raw();
             const bool is_out_of_sequence =
                 has_previous && (previous_step == ::fixy::max_of<uint64_t> || previous_step + 1u != step);
             if (event.session() != session || is_out_of_sequence) return ::fixy::err(LoadError::batch_steps_mismatch);
@@ -1100,7 +1100,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
         ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
         if (parsed.is_none()) continue;
         const IndexLine index_line = std::move(parsed).expect("the index line parsed");
-        if (index_line.last < from_step.value) continue;
+        if (index_line.last < from_step.raw()) continue;
         // A writer that stores a batch again appends its line again, and the
         // load holds the events of that batch.  Each other line whose first
         // step the load holds names a batch that overlaps the events of the
@@ -1127,7 +1127,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
         // last is at or after from_step.  So the events at from_step or
         // after are one suffix of the batch, and it is not empty.
         const std::uint64_t skipped =
-            from_step.value > index_line.first ? from_step.value - index_line.first : std::uint64_t{0};
+            from_step.raw() > index_line.first ? from_step.raw() - index_line.first : std::uint64_t{0};
         const ::fixy::View<SessionEvent const> suffix =
             events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
         for (const SessionEvent& event : suffix) {
@@ -1152,7 +1152,7 @@ ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
 
     while (lo < hi) {
         const std::size_t mid = lo + (hi - lo) / 2;
-        if (log_[mid].step_id().value <= step_id) {
+        if (log_[mid].step_id().raw() <= step_id) {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -1220,7 +1220,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
         return ::fixy::err(CommitError::step_above_limit);
     }
     for (const ::fixy::session::StepId last : last_committed_step()) {
-        if (step_id < last.value) return ::fixy::err(CommitError::step_order);
+        if (step_id < last.raw()) return ::fixy::err(CommitError::step_order);
     }
     // The commit takes the next place before its append.  A write that
     // passed before a failed flush can leave the record in the file, and a
@@ -1265,7 +1265,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
 
     CRUCIBLE_POST(0, head_ == content_hash);
     CRUCIBLE_POST(0, !log_.empty());
-    CRUCIBLE_POST(0, log_.back().step_id().value == step_id);
+    CRUCIBLE_POST(0, log_.back().step_id().raw() == step_id);
     if (!is_head_written) {
         return ::fixy::err(CommitError::head_write);
     }
@@ -1449,7 +1449,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         // ceiling is corrupt too: advance_head refuses such a step, and a run
         // that opens the store starts after the last step.
         if (line.step > MAX_COMMIT_STEP) continue;
-        if (!log_.empty() && line.step < log_.back().step_id().value) continue;
+        if (!log_.empty() && line.step < log_.back().step_id().raw()) continue;
         // Each commit takes a larger place than the commit before it, also
         // after a failed append, so a place that does not grow is a corrupt
         // line.  The test keeps the count from going back.

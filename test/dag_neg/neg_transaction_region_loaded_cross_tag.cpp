@@ -29,7 +29,7 @@ int main() {
     const Owner owner = Owner::claim();
     crucible::TransactionLog<16, Owner> log{};
     // The log stamps with its own count, so no call takes a tag.
-    auto draft = log.begin_tx(owner, 1);
+    auto draft = log.begin_tx(owner, ::fixy::session::StepId{1});
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{4096}});
     const crucible::DagRef<crucible::RegionNode> region =

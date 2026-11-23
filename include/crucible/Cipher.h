@@ -526,7 +526,8 @@ public:
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard]] SessionEventLoad
     load_session_events(Ctx const& ctx, OpenView const& view, ::foundation::effects::Alloc a,
-                        ::fixy::session::SessionTagId session, ::fixy::session::StepId from_step = {}) const {
+                        ::fixy::session::SessionTagId session,
+                        ::fixy::session::StepId from_step = ::fixy::session::StepId{0}) const {
         return load_session_events_(file_ctx_(ctx), view, a, session, from_step);
     }
 

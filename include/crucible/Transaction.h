@@ -16,6 +16,7 @@
 #include <fixy/Mutation.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <fixy/session/StepId.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
@@ -277,11 +278,11 @@ public:
 
     // ── The doors with no key of a log of Unkeyed (the key) ────────────────
 
-    [[nodiscard, gnu::cold]] Draft begin_tx(Owner const& /*owner*/, uint64_t step_id) noexcept
+    [[nodiscard, gnu::cold]] Draft begin_tx(Owner const& /*owner*/, ::fixy::session::StepId step) noexcept
         requires(!is_keyed_)
     {
         detail::NoTxKey key{};
-        Slot const slot = claim_(key, step_id);
+        Slot const slot = claim_(key, step);
         return Draft{slot, claim_of_(slot), std::move(key)};
     }
 
@@ -371,10 +372,11 @@ public:
 
     // ── The doors of a log of a key brand (the key) ────────────────────────
 
-    [[nodiscard, gnu::cold]] Draft begin_tx(key_type&& key, Owner const& /*owner*/, uint64_t step_id) noexcept
+    [[nodiscard, gnu::cold]] Draft begin_tx(key_type&& key, Owner const& /*owner*/,
+                                            ::fixy::session::StepId step) noexcept
         requires is_keyed_
     {
-        Slot const slot = claim_(key, step_id);
+        Slot const slot = claim_(key, step);
         return Draft{slot, claim_of_(slot), std::move(key)};
     }
 
@@ -439,7 +441,7 @@ public:
 
     // A door with no key of a keyed log binds to these overloads, so the
     // refusal gives its reason.
-    Draft begin_tx(Owner const& owner, uint64_t step_id) noexcept
+    Draft begin_tx(Owner const& owner, ::fixy::session::StepId step) noexcept
         requires is_keyed_
     = delete("a keyed TransactionLog claims a transaction only with its LoanKey: call begin_tx(std::move(key), owner, "
              "step)");
@@ -541,7 +543,8 @@ private:
     // rollback before an activation, can put the rollback target in any slot.
     // If a claim recycles that slot, a rollback restores an older
     // transaction.
-    [[nodiscard]] Slot claim_(write_key& key, uint64_t step_id) noexcept {
+    [[nodiscard]] Slot claim_(write_key& key, ::fixy::session::StepId step) noexcept {
+        uint64_t const step_id = step.raw();
         ::fixy::Option<Slot> const target = previous_slot_();
         // A pass that finds a kept slot as the oldest claims that slot, which
         // makes it the newest entry.  The claim keeps two slots, and the ring

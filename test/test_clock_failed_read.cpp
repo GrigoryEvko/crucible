@@ -349,7 +349,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     };
 
     give_each_read(7, 0);
-    auto first_draft = log.begin_tx(owner, 1);
+    auto first_draft = log.begin_tx(owner, ::fixy::session::StepId{1});
     tally.expect(holds_place(log.with_draft(owner, first_draft, place_of).ok(), 1,
                              "begin_tx of the first transaction, with the clock at 7 s"));
 
@@ -362,7 +362,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     tally.expect(holds_place(place(first), 3, "activate of the first transaction, with the clock at 8 s"));
 
     refuse_each_read();
-    auto second_draft = log.begin_tx(owner, 2);
+    auto second_draft = log.begin_tx(owner, ::fixy::session::StepId{2});
     tally.expect(holds_place(log.with_draft(owner, second_draft, place_of).ok(), 4,
                              "begin_tx of the second transaction, with a clock that fails"));
 
@@ -376,7 +376,7 @@ void transaction_stamps_read_no_clock(Tally& tally) {
     tally.expect(holds_place(place(second), 7, "activate of the second transaction, with a clock that fails"));
 
     give_each_read(10, 0);
-    auto third_draft = log.begin_tx(owner, 3);
+    auto third_draft = log.begin_tx(owner, ::fixy::session::StepId{3});
     give_each_read(11, 0);
     const Log::Committed third = commit(std::move(third_draft), regions[2]);
     give_each_read(12, 0);

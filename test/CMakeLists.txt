@@ -2132,6 +2132,11 @@ crucible_neg_compile_test(neg_transaction_region_raw_pointer
 crucible_neg_compile_test(neg_transaction_region_loaded_cross_tag
   "neg_transaction_region_loaded_cross_tag.cpp:40:21: error: no matching function for call to .crucible::TransactionLog<16, Owner>::commit"
   "no known conversion for argument 3 from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Loaded>. to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Arena>.")
+# begin_tx takes the step of a transaction as a StepId, so a raw integer of
+# another kind cannot stand for the step.
+crucible_neg_compile_test(neg_transaction_begin_raw_step
+  "no matching function for call to .crucible::TransactionLog<16, Owner>::begin_tx\\(const Owner&, const uint64_t&\\)."
+  "no known conversion for argument 2 from .const uint64_t. .aka .const long unsigned int.. to .fixy::session::StepId.")
 # A draft does not move, so a move out of a reference gives no second draft
 # of one claim.
 crucible_neg_compile_test(neg_transaction_draft_moves_out_of_a_reference

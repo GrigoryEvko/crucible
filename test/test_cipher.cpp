@@ -98,7 +98,7 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 // The step of the event at position of a list of loaded events.
 [[nodiscard]] static std::uint64_t step_at(crucible::Cipher::SessionEventLoad const& loaded, std::size_t position) {
     return loaded.events.with_element(
-        position, [](crucible::Cipher::SessionEvent const& event) noexcept { return event.step_id().value; },
+        position, [](crucible::Cipher::SessionEvent const& event) noexcept { return event.step_id().raw(); },
         [] noexcept -> std::uint64_t { ::fixy::fatal("the position is inside the list of loaded events"); });
 }
 
@@ -420,7 +420,7 @@ static void test_commit_below_the_last_step(::fixy::TextView root) {
     auto second_run = open_cipher_under(root, ::fixy::TextView{"steps"});
     auto second_ov = second_run.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and([](::fixy::session::StepId step) {
-        return step.value == 10;
+        return step.raw() == 10;
     }) && "the open gives the step of the last commit of the log");
     const ::fixy::TestRunnerCtx child_ctx = store_ctx();
     const auto commit_in_child = [&](std::uint64_t step, bool is_refusal_expected) {
@@ -462,7 +462,7 @@ static void test_commit_below_the_last_step(::fixy::TextView root) {
     commit_head(second_run, second_ov, crucible::ContentHash{0x5800000000000003ULL}, 10);
     CRUCIBLE_TEST_ASSERT(kTest, second_run.head() == crucible::ContentHash{0x5800000000000003ULL});
     CRUCIBLE_TEST_ASSERT(kTest, second_run.last_committed_step().is_some_and(
-                                    [](::fixy::session::StepId step) { return step.value == 10; }));
+                                    [](::fixy::session::StepId step) { return step.raw() == 10; }));
     const crucible::Cipher third_run = open_cipher_under(root, ::fixy::TextView{"steps"});
     CRUCIBLE_TEST_ASSERT(kTest, third_run.head() == crucible::ContentHash{0x5800000000000000ULL}
                                     && "a refused commit takes no place of the count");
@@ -480,7 +480,7 @@ static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
     auto cipher = open_cipher_under(root, ::fixy::TextView{"high_step"});
     auto ov = cipher.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(
-        kTest, cipher.last_committed_step().is_some_and([](::fixy::session::StepId step) { return step.value == 5; }));
+        kTest, cipher.last_committed_step().is_some_and([](::fixy::session::StepId step) { return step.raw() == 5; }));
     CRUCIBLE_TEST_ASSERT(kTest, cipher.head() == crucible::ContentHash{0x5900000000000001ULL}
                                     && "the line of the step 2^64 - 1 is no commit");
     const ::fixy::TestRunnerCtx child_ctx = store_ctx();
@@ -502,7 +502,7 @@ static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
     auto at_ceiling = open_cipher_under(root, ::fixy::TextView{"ceiling_step"});
     auto at_ceiling_ov = at_ceiling.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, at_ceiling.last_committed_step().is_some_and([](::fixy::session::StepId step) {
-        return step.value == crucible::Cipher::MAX_COMMIT_STEP;
+        return step.raw() == crucible::Cipher::MAX_COMMIT_STEP;
     }) && "a line at the ceiling is a commit");
     CRUCIBLE_TEST_ASSERT(kTest,
                          is_commit_error(at_ceiling.record_event(store_ctx(), at_ceiling_ov,

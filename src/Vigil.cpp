@@ -50,7 +50,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
                         // background thread is the one writer of the step,
                         // and it starts below, so this write comes first.
                         for (const ::fixy::session::StepId last : opened.last_committed_step()) {
-                            step_.advance(last.value + 1);
+                            step_.advance(last.raw() + 1);
                         }
                         cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(startup.cap().alloc, std::move(opened)));
                     },
@@ -156,7 +156,7 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
         *ConstRegionLink{published.region}.expect("the publish stage gives a record of a region");
     // bump returns the previous value, which is the index this call
     // reserved.  The background thread is the sole writer.
-    const uint64_t step = step_.bump();
+    const ::fixy::session::StepId step{step_.bump()};
 
     // The draft is the one writer of the new transaction, and the commit
     // consumes it.  The merkle root goes through the checked accessor so the

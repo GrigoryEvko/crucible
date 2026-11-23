@@ -27,7 +27,7 @@ Log::Draft hand_over(Log::Draft& draft) noexcept { return std::move(draft); }
 int main() {
     const Owner owner = Owner::claim();
     Log log{};
-    auto draft = log.begin_tx(owner, 1);
+    auto draft = log.begin_tx(owner, ::fixy::session::StepId{1});
     log.abandon(owner, hand_over(draft));
     return 0;
 }

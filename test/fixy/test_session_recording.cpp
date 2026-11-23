@@ -126,7 +126,7 @@ static_assert(s::SessionEvent::recv(kSelf, kPeer, s::default_schema_hash<int>, s
 // The public step key reads the step of an event and orders two steps.
 static_assert(s::StepIdKeyFn{}(s::SessionEvent::cipher_event(s::SessionOp::StoreCommitted, s::StepId{9}, {1},
                                                              s::CipherEventOrder{1}))
-                  .value
+                  .raw()
               == 9);
 static_assert(s::StepIdLess{}(s::StepId{1}, s::StepId{2}));
 static_assert(!s::StepIdLess{}(s::StepId{2}, s::StepId{2}));
@@ -244,7 +244,7 @@ int check_log_steps() {
     writer.record_now(s::SessionEvent::close(kSelf, kPeer));
     writer.record_now(s::SessionEvent::close(kSelf, kPeer));
     if (log.size() != 2) return fail("the log lost an event");
-    if (log[0].step_id().value != 1 || log[1].step_id().value != 2) return fail("the steps are not 1 and 2");
+    if (log[0].step_id().raw() != 1 || log[1].step_id().raw() != 2) return fail("the steps are not 1 and 2");
     if (log[1].session().value != 77) return fail("record_now did not stamp the session");
     const auto drained = std::move(log).drain();
     return drained.size() == 2 ? 0 : fail("the drain lost an event");
@@ -379,7 +379,7 @@ int check_handoff_recording() {
     if (merged.size() != 4) return fail("the merge lost an event");
     for (std::size_t place = 0; place < 4; ++place) {
         const s::SessionEvent& event = *merged.get(place).expect("the merge holds four events");
-        if (event.op() != expected_at(place) || event.step_id().value != place / 2 + 1)
+        if (event.op() != expected_at(place) || event.step_id().raw() != place / 2 + 1)
             return fail("the merge did not order the events by step, and by the order of the logs for one step");
     }
     return 0;

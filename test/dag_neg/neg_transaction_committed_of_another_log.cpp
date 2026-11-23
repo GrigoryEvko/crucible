@@ -30,7 +30,7 @@ int main() {
     auto second = crucible::build_transaction_log<Owner>(std::move(second_minted.at(::fixy::index<0>())));
     auto& first_key = first_minted.at(::fixy::index<1>());
     auto& second_key = second_minted.at(::fixy::index<1>());
-    auto draft = first.begin_tx(std::move(first_key), owner, 1);
+    auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
     first_key = first.abandon(owner, std::move(draft));
     auto committed = first.active(first_key, owner);
     static_cast<void>(second.activate(second_key, owner, std::move(committed).expect("the first log has none")));
