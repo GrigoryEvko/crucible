@@ -1,8 +1,10 @@
 // The rule specialization-home refuses an explicit specialization of the
 // member template RefDoor::lend outside Ref.h, and this probe writes one in
-// an opt-out region.  Ref grants RefDoor no friend, so the body of such a
+// an opt-out region.  The specialization is a member of the door, so it
+// reaches the key, but Ref grants the door no friend.  So the body of such a
 // specialization cannot write the pointer of a Ref, and it cannot make a
-// null Ref.
+// null Ref.  The member of the door is private, so the probe does not call
+// it, and the compile reads the body of the specialization alone.
 
 #include <foundation/Quarantine.h>
 #include <foundation/core/Ref.h>
@@ -19,7 +21,4 @@ foundation::core::detail::RefDoor::lend<ForgeBrand, int>(int& object) noexcept {
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
-int main() {
-    int target = 1;
-    return *foundation::core::detail::RefDoor::lend<ForgeBrand>(target);
-}
+int main() { return 0; }

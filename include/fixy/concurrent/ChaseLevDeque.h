@@ -57,6 +57,7 @@
 
 #include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/SoleWriterProof.h>
 #include <foundation/Transfer.h>
@@ -93,6 +94,32 @@ struct DequeBottom final {};
 
 template <DequeValue T, std::size_t Capacity>
 class ChaseLevDeque;
+
+}  // namespace fixy::concurrent
+
+namespace foundation::core {
+
+// The door of a ChaseLevDeque to the door of a Ref (the doors of the owners
+// above foundation/core/Ref.h).  Its one member is private, and ChaseLevDeque
+// of fixy/concurrent/ChaseLevDeque.h is its one friend.  The invariant: the
+// deque lends itself only to the two ends that mint_chase_lev_ends builds,
+// with the brand of the ends of its type.  The deque is pinned, so it does
+// not move under an end, and a second mint of one deque ends the process.  A
+// home owner row of utils/rule-table.txt keeps this definition in this header.
+class ChaseLevDequeRefDoor final : ::foundation::NoObject<ChaseLevDequeRefDoor> {
+    template <::fixy::concurrent::DequeValue T, std::size_t Capacity>
+    friend class ::fixy::concurrent::ChaseLevDeque;
+
+    // The deque of an end, as a Ref of the brand of the ends.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::concurrent {
 
 // The brand of the Ref that each end of a deque of the type Deque holds.
 template <class Deque>
@@ -144,7 +171,7 @@ private:
 
     // The Ref of the deque that each end holds.
     [[nodiscard]] static end_ref lend_(ChaseLevDeque& deque) noexcept {
-        return ::foundation::core::detail::RefDoor::lend<DequeEndBrand<ChaseLevDeque>>(deque);
+        return ::foundation::core::ChaseLevDequeRefDoor::lend_<DequeEndBrand<ChaseLevDeque>>(deque);
     }
 
     // The acquire load of top pairs with the thieves' releasing CAS, so

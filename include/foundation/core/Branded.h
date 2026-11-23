@@ -44,6 +44,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Record.h>
@@ -79,6 +80,24 @@ template <class Element, ::foundation::brand::IsBrand Brand>
 class BrandedEnumerateCursor;
 
 }  // namespace detail
+
+// The door of the cursor of an enumerate loop over a branded view to the door
+// of a Ref (the doors of the owners above foundation/core/Ref.h).  Its one
+// member is private, and BrandedEnumerateCursor is its one friend.  The
+// invariant: the cursor reads only a position below the count of its branded
+// view, so each element that it reads is live, and the brand is the brand of
+// that view.  A home owner row of utils/rule-table.txt keeps this definition
+// in this header.
+class BrandedRefDoor final : ::foundation::NoObject<BrandedRefDoor> {
+    template <class Element, ::foundation::brand::IsBrand Brand>
+    friend class detail::BrandedEnumerateCursor;
+
+    // The element at the position of the cursor, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 // An index below the count of the BrandedView of Brand.  The value
 // 0xFFFFFFFF is no index, because no branded count is above it, so an
@@ -211,7 +230,7 @@ public:
         if (at_ == end_) [[unlikely]] {
             fatal("a read through the end cursor of an enumerate loop over a branded view");
         }
-        return {BrandedIndex<Brand>{static_cast<std::uint32_t>(at_)}, RefDoor::lend<Brand>(first_[at_])};
+        return {BrandedIndex<Brand>{static_cast<std::uint32_t>(at_)}, BrandedRefDoor::lend_<Brand>(first_[at_])};
     }
 
     constexpr BrandedEnumerateCursor& operator++() noexcept {

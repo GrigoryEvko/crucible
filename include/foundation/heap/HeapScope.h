@@ -106,6 +106,32 @@ concept SlabSizeClass = ::foundation::alloc::is_slab_class(Class);
 template <::foundation::brand::IsBrand Brand>
 class HeapScope;
 
+}  // namespace foundation::heap
+
+namespace foundation::core {
+
+// The door of a HeapScope to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and HeapScope is its
+// one friend.  The invariant: only HeapScopeDoor builds a scope, from the
+// heap of the calling thread and the permission of its owner on the scope
+// brand, and the scope lives in the frame of the mint.  So the scope lends
+// that heap to itself with the scope brand.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class HeapScopeRefDoor final : ::foundation::NoObject<HeapScopeRefDoor> {
+    template <::foundation::brand::IsBrand Brand>
+    friend class ::foundation::heap::HeapScope;
+
+    // The heap of a scope, as a Ref of the scope brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace foundation::heap {
+
 // One block of a class with a slab from the heap of the scope of Brand (THE
 // SCOPE).  Only a scope makes one, and only the release of a scope of the
 // same brand takes it.
@@ -184,7 +210,7 @@ private:
 
     HeapScope(::foundation::alloc::HeapState& heap,
               ::foundation::permissions::Permission<heap_tag::Owner, Brand>&& owner) noexcept
-        : heap_{::foundation::core::detail::RefDoor::lend<Brand>(heap)}, owner_{std::move(owner)} {}
+        : heap_{::foundation::core::HeapScopeRefDoor::lend_<Brand>(heap)}, owner_{std::move(owner)} {}
 
     ::foundation::core::Ref<::foundation::alloc::HeapState, Brand> heap_;
     [[no_unique_address]] ::foundation::permissions::Permission<heap_tag::Owner, Brand> owner_;

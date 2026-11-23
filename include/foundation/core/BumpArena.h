@@ -194,6 +194,26 @@ struct RunStart final {};
 // of window have two types.
 using RunStart = Side<side::RunStart, ElementCount>;
 
+// The door of a BumpArena and an Epoch to the door of a Ref (the doors of the
+// owners above foundation/core/Ref.h).  Its one member is private, and the
+// two are its friends.  The invariant: make() lends the object that the
+// arguments built in new bytes of the arena, with the brand of the arena or
+// of the epoch.  An Epoch lends the core of its arena to itself with the
+// epoch brand, and only with_epoch builds an Epoch, in its own frame.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class ArenaRefDoor final : ::foundation::NoObject<ArenaRefDoor> {
+    template <ArenaBrand Brand>
+    friend class BumpArena;
+    template <EpochBrand Brand>
+    friend class Epoch;
+
+    // An object of the bytes of the arena, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
 // A run of elements that an arena of the brand built: a View with the brand
 // of its arena.  Only the arena builds a run that is not empty, through
 // ArenaArrayDoor below.  A run converts to a run of const elements, and
@@ -504,7 +524,7 @@ public:
         requires CanMakeInArena<T, Marker, Args...>
     [[nodiscard]] Ref<T, Brand> make(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
-        return detail::RefDoor::lend<Brand>(self.core_.template build_<T>(static_cast<Args&&>(args)...));
+        return ArenaRefDoor::lend_<Brand>(self.core_.template build_<T>(static_cast<Args&&>(args)...));
     }
 
     template <class T, class... Rest>
@@ -557,7 +577,7 @@ public:
         requires CanMakeInArena<T, Marker, Args...>
     [[nodiscard]] Ref<T, Brand> make(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
-        return detail::RefDoor::lend<Brand>((*self.core_).template build_<T>(static_cast<Args&&>(args)...));
+        return ArenaRefDoor::lend_<Brand>((*self.core_).template build_<T>(static_cast<Args&&>(args)...));
     }
 
     template <class T, class... Rest>
@@ -581,7 +601,7 @@ private:
     template <ArenaMemberTag Tag>
     friend class EpochArena;
 
-    explicit Epoch(detail::BumpArenaCore& core) noexcept : core_{detail::RefDoor::lend<Brand>(core)} {}
+    explicit Epoch(detail::BumpArenaCore& core) noexcept : core_{ArenaRefDoor::lend_<Brand>(core)} {}
 
     Ref<detail::BumpArenaCore, Brand> core_;
 };

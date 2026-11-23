@@ -26,6 +26,7 @@
 #include <fixy/Qtt.h>
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Ref.h>
@@ -51,6 +52,32 @@ struct scoped_view;
 
 template <typename Carrier, typename Tag, typename Brand = ::foundation::brand::DefaultBrand>
 class ScopedView;
+
+}  // namespace fixy
+
+namespace foundation::core {
+
+// The door of a ScopedView to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and ScopedView of
+// fixy/ScopedView.h is its one friend.  The invariant: only a mint builds a
+// view from a carrier, after the check of the state of the carrier, and the
+// twin of each mint refuses a temporary carrier.  The brand is the brand of
+// the carrier or the fresh brand of the mint.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ScopedViewRefDoor final : ::foundation::NoObject<ScopedViewRefDoor> {
+    template <typename Carrier, typename Tag, typename Brand>
+    friend class ::fixy::ScopedView;
+
+    // The carrier of a view, as a Ref of the brand of the view.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy {
 
 // The one reflection query in foundation/reflect/Instance.h.  It is a
 // concept, so no translation unit can specialize it.  The field audit
@@ -156,7 +183,7 @@ class [[nodiscard]] ScopedView {
     ::foundation::core::Ref<Carrier const, Brand> ref_;
 
     constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
-        : ref_{::foundation::core::detail::RefDoor::lend<Brand>(c)} {}
+        : ref_{::foundation::core::ScopedViewRefDoor::lend_<Brand>(c)} {}
 
     constexpr explicit ScopedView(::foundation::core::Ref<Carrier const, Brand> ref) noexcept : ref_{ref} {}
 

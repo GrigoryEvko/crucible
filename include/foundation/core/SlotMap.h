@@ -108,6 +108,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/ArenaTag.h>
 #include <foundation/core/Arithmetic.h>
@@ -153,6 +154,25 @@ concept SlotMapElement = OwnedElement<T> && std::is_nothrow_move_constructible_v
 template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generation>
     requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
 class SlotMap;
+
+// The door of a SlotMap to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and SlotMap is its one
+// friend.  The invariant: get() lends the value of a slot only after the
+// generation of the slot matches the generation of the key, so the slot holds
+// the live value of the key, and the brand is the fresh brand of the call of
+// get().  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class SlotMapRefDoor final : ::foundation::NoObject<SlotMapRefDoor> {
+    template <class T, class Tag, ::foundation::brand::IsBrand Brand, class Generation>
+        requires SlotMapElement<T> && std::is_class_v<Tag> && SlotGeneration<Generation>
+    friend class SlotMap;
+
+    // The live value of a slot, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 namespace detail {
 
@@ -538,7 +558,7 @@ public:
         if (!holds_(key.raw())) {
             return Option<Ref<T, Fresh>>{none};
         }
-        return Option<Ref<T, Fresh>>::some(detail::RefDoor::lend<Fresh>(*slot_of_(key.raw())));
+        return Option<Ref<T, Fresh>>::some(SlotMapRefDoor::lend_<Fresh>(*slot_of_(key.raw())));
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
@@ -548,7 +568,7 @@ public:
             return Option<Ref<T const, Fresh>>{none};
         }
         T const& value = *slot_of_(key.raw());
-        return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(value));
+        return Option<Ref<T const, Fresh>>::some(SlotMapRefDoor::lend_<Fresh>(value));
     }
     void
     get(SlotKey<Tag, Brand>) && = delete("a value of a temporary SlotMap dangles at the end of the full expression");

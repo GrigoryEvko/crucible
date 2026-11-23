@@ -249,18 +249,6 @@ struct BaseLayerRead final {
     explicit BaseLayerRead() = default;
 };
 
-// The body of each get of the Region family: the element at position of the
-// count elements from first, as an Option of a Ref with the brand of the
-// public call, or no value at or past the count.  first is not null when
-// count is above zero.
-template <::foundation::brand::IsBrand Brand, class T>
-[[nodiscard]] constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept {
-    if (position >= count) [[unlikely]] {
-        return Option<Ref<T, Brand>>{none};
-    }
-    return Option<Ref<T, Brand>>::some(RefDoor::lend<Brand>(first[position]));
-}
-
 // The root stages of the walks of the iteration verbs reverse(),
 // windows<W>(), chunks<W>() and enumerate() of a View, and their cursors.
 // This header defines each of them.
@@ -356,6 +344,52 @@ class ViewCursorDoor final : ::foundation::NoObject<ViewCursorDoor> {
 };
 
 }  // namespace detail
+
+// The door of the owners of foundation/core/Array.h to the body of each get
+// of a run (RegionRefDoor below).  RegionRefDoor names it as a friend, and
+// Array.h defines it.
+class ArrayRefDoor;
+
+// The door of the Region family to the door of a Ref (the doors of the owners
+// above foundation/core/Ref.h).  Its members are private.  The invariant: a
+// run of the family holds count live elements from its first element, and
+// each brand is the fresh brand of a public call of get() or of enumerate(),
+// or the brand of the frame of a ViewMut.  element_at_ is the body of each
+// get of a run, and it compares the position with the count first.  View,
+// ViewMut, and the stage and the cursor of enumerate() are its friends.  The
+// doors of Array.h and List.h reach element_at_ for their owners.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class RegionRefDoor final : ::foundation::NoObject<RegionRefDoor> {
+    template <class T, std::size_t Extent>
+        requires ViewElement<T> && ViewExtent<T, Extent>
+    friend class ::foundation::core::View;
+    template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+        requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
+    friend class ::foundation::core::ViewMut;
+    template <class Element, std::size_t Count, ::foundation::brand::IsBrand Brand, std::size_t Extent>
+    friend class detail::EnumerateStage;
+    template <class Element, std::size_t Count, class Brand>
+    friend class detail::EnumerateCursor;
+    friend class ArrayRefDoor;
+    friend class ListRefDoor;
+
+    // The element of a run with its index, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+
+    // The element at position of the count elements from first, as an Option
+    // of a Ref of the brand, or no value at or past the count.  first is not
+    // null when count is above zero.
+    template <::foundation::brand::IsBrand Brand, class T>
+    [[nodiscard]] static constexpr auto element_at_(T* first, std::size_t count, std::size_t position) noexcept {
+        if (position >= count) [[unlikely]] {
+            return Option<Ref<T, Brand>>{none};
+        }
+        return Option<Ref<T, Brand>>::some(detail::RefDoor::lend<Brand>(first[position]));
+    }
+};
 
 // Doors of the owners above this header
 // An owner in a header above this one can hold an invariant that no type
@@ -614,7 +648,7 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const noexcept {
-        return detail::element_at_<Fresh>(first_, size(), position);
+        return RegionRefDoor::element_at_<Fresh>(first_, size(), position);
     }
 
     // The walk of each element with its proven index, in order:
@@ -1056,12 +1090,12 @@ public:
     template <class... Refused>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) & noexcept {
-        return detail::element_at_<Brand>(first_, size(), position);
+        return RegionRefDoor::element_at_<Brand>(first_, size(), position);
     }
     template <class... Refused>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const& noexcept {
-        return detail::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
+        return RegionRefDoor::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
     }
 
     // The element at position, as an Option<RefMut<T, Brand>> with the brand
@@ -1913,7 +1947,7 @@ public:
             fatal("a read through the end cursor of an enumerate loop over a View");
         }
         return {Index<Count>::check(at_).expect("the position of an enumerate cursor lies below its count"),
-                RefDoor::lend<Brand>(first_[at_])};
+                RegionRefDoor::lend_<Brand>(first_[at_])};
     }
 
     constexpr EnumerateCursor& operator++() noexcept {
@@ -1969,7 +2003,7 @@ class EnumerateStage final {
     [[nodiscard]] static constexpr Record<Index<Count>, Ref<Element, Brand>> pair_(Element* origin,
                                                                                    std::size_t at) noexcept {
         return {Index<Count>::check(at).expect("an enumerate position lies below the count of its View"),
-                RefDoor::lend<Brand>(origin[at])};
+                RegionRefDoor::lend_<Brand>(origin[at])};
     }
 
 public:

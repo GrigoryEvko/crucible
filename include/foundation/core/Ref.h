@@ -97,6 +97,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
@@ -155,17 +156,17 @@ using WidenedFrom = std::conditional_t<std::is_const_v<T>, Ref<std::remove_const
 // members for each brand.
 struct RefNullTag final {};
 
-// The door of an owner of the base that lends one of its objects with the
-// fresh brand of its own call, as get() of the Region family does.  The
+// The door of the constructor of a Ref from an object.  Its one member is
+// private to the friends that prove each object and each brand.  The
 // definition is after Ref.
-struct RefDoor;
+class RefDoor;
 
 // The key of the constructor of a Ref from an object.  RefDoor is its one
 // friend, so each Ref from an object comes through the door.  Both
 // constructors are user-provided and private, so std::bit_cast and a
 // lifetime start over bytes build no key.
 class [[nodiscard]] RefKey final {
-    friend struct RefDoor;
+    friend class RefDoor;
 
     constexpr RefKey() noexcept {}
     constexpr RefKey(RefKey const&) noexcept {}
@@ -249,20 +250,188 @@ public:
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }
 };
 
+// The brand of a Ref that detail::ref_of_static_ gives.  The template
+// argument of that door names an object of static storage, which lives for
+// the whole process, so such a Ref never dangles.  to() gives the brand that
+// the type of an object states, so a type that states this brand as its
+// brand_type gets it for a local object too.
+struct StaticStorageBrand final {};
+
+// The type of a Box: an object type that is not an array and not
+// cv-qualified.  The type can be one that is only declared, so a Box can be
+// a member of a class in a header that does not define the type of its
+// object.
+template <class T>
+concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
+
+// The owner of one object on the heap (the definition below).  RefDoor names
+// it as a friend for view(), so this declaration stands before the door.
+template <BoxPayload T>
+class Box;
+
+// The payload of an Option as a Ref (the definition below).  RefDoor names it
+// as a friend, so this declaration stands before the door, and the default
+// argument of the brand belongs to it.
+template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
+[[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+as_ref(Option<T> const& option) noexcept;
+
 namespace detail {
 
-// The owner gives the brand: the fresh brand of its own public call, which
-// a refused pack keeps out of the hands of the caller.  The door is in
-// namespace detail, so code outside the base cannot reach it, and to(),
-// Box::view and get() of the Region family call it.
-//
-// A file outside this header can still write an explicit specialization of
-// lend<B, T>.  That specialization is a member of RefDoor, so it builds the
-// key and gives a Ref with each brand B, such as the brand of an arena, to an
-// object that it can name.  It holds only the constructor from a reference,
-// so it cannot make a null Ref.  A rule that refuses such a specialization
-// outside its file is planned in specialization-home.
-struct RefDoor {
+// True when type is a scope brand or names one: the closure type of
+// CRUCIBLE_SCOPE_BRAND, whose call operator holds the mark
+// foundation::brand::scope_brand, or a class template specialization with
+// such a type argument at each depth, such as the brand of a view of a walk
+// of rows.  A value of a scope brand does not outlive the call of its mint
+// (foundation/Brand.h).  The call operator of a closure is public, so the
+// current access context reads it.  The loops index the lists, as the other
+// reads of reflection in this layer do.  Complexity: quadratic in the members
+// of the type, because each step reads the list again, and a closure with no
+// capture has few members.  Linear in the type arguments at each depth.  An
+// incomplete class, such as a tag that a unit only declares, is no brand.
+[[nodiscard]] consteval bool names_scope_brand(std::meta::info type) {
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    std::meta::access_context const context = std::meta::access_context::current();
+    std::size_t const member_count = std::meta::members_of(type, context).size();
+    for (std::size_t index = 0; index < member_count; ++index) {
+        std::meta::info const member = std::meta::members_of(type, context)[index];
+        if (std::meta::is_function(member) && std::meta::is_operator_function(member)
+            && std::meta::operator_of(member) == std::meta::operators::op_parentheses
+            && !std::meta::annotations_of_with_type(member, ^^::foundation::brand::scope_brand).empty()) {
+            return true;
+        }
+    }
+    if (!std::meta::has_template_arguments(type)) return false;
+    std::size_t const argument_count = std::meta::template_arguments_of(type).size();
+    for (std::size_t index = 0; index < argument_count; ++index) {
+        std::meta::info const argument = std::meta::template_arguments_of(type)[index];
+        if (std::meta::is_type(argument) && names_scope_brand(std::meta::dealias(argument))) return true;
+    }
+    return false;
+}
+
+// True when brand is the brand of an arena: a member tag, a family tag or an
+// epoch brand of foundation/core/BumpArena.h, each of which carries its mark of
+// foundation/Brand.h.  A Ref of an arena keeps the brand of its arena, so a
+// store of the Ref names its arena, and no erased Ref of an arena exists.
+[[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
+    namespace brand_marks = ::foundation::brand;
+    return ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_member_brand)
+        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_family_brand)
+        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::epoch_brand);
+}
+
+}  // namespace detail
+
+// A brand that erase_brand drops: a brand of one instance that is not a scope
+// brand, names none, and is no brand of an arena.  The rule brand-escape
+// refuses each value of a scope brand that outlives its scope, and an erased
+// Ref names no brand that the rule could read.  So a scope brand has no
+// erasure.  A Ref of an arena keeps the brand of its arena, so a field that
+// stores it names the arena that holds its object.
+template <class Brand>
+concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::names_scope_brand(^^Brand)
+                     && !detail::names_arena_brand_(^^Brand);
+
+// The door that drops the brand of a Ref (the definition below).  RefDoor
+// names it as a friend, so this declaration stands before the door.
+template <RefTarget T, ErasableBrand Brand>
+[[nodiscard]] constexpr auto erase_brand(Ref<T, Brand> ref) noexcept;
+
+// Doors of the owners above this header
+// An owner in a header above this one makes a Ref of an object that it holds,
+// and an invariant of the owner proves the object and the brand, such as an
+// element below the count of a run or a slot that holds the value of a key.
+// Such an owner reaches the door of a Ref through one plain door class.  This
+// header declares the class, and RefDoor names it as a friend.  The header of
+// the owner defines it, and the owner is its friend.  The comment of each door
+// states the invariant of its owner.  A home owner row of utils/rule-table.txt
+// keeps the one definition of each door in that header, so no other file
+// defines a second door of the same name.  The door of Region.h also holds the
+// body of each get of a run, and the doors of Array.h and List.h reach it.
+class RegionRefDoor;
+class ListRefDoor;
+class BrandedRefDoor;
+class WalkRefDoor;
+class OneOfRefDoor;
+class WindowLoanRefDoor;
+class SlotMapRefDoor;
+class ImmortalRefDoor;
+class AllocWindowRefDoor;
+class ArenaRefDoor;
+class HeapScopeRefDoor;
+class ScopedViewRefDoor;
+class ChaseLevDequeRefDoor;
+class SpscSplitRefDoor;
+class SchedProofRefDoor;
+
+namespace detail {
+
+// The Ref of the word of an atomic cell (the definition below).  RefDoor
+// names it as a friend, so this declaration stands before the door.
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] constexpr Ref<T, Brand> ref_of_word_(atomic_word_key<Ref<T, Brand>> const& key, T* word) noexcept;
+
+// The Ref of an object of static storage (the definition below).  RefDoor
+// names it as a friend, so this declaration stands before the door.
+template <auto& Object>
+    requires RefTarget<std::remove_reference_t<decltype(Object)>>
+[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static_() noexcept;
+
+// The door of the constructor of a Ref from an object.  Its one member is
+// private, and each friend names the proof of the object and of the brand:
+//   - to() gives the brand of a branded object or the fresh brand of its call.
+//   - as_ref, erase_brand and view() of a Box give the payload of an Option,
+//     the object of a Ref and the object of a Box, with the fresh brand of
+//     their call or with the erased brand.
+//   - ref_of_word_ takes the key of the word of a cell, and only a cell builds
+//     the key, from a word that to_word gave for a Ref of the brand.
+//   - ref_of_static_ takes the object as its template argument, which proves
+//     static storage, and gives the one brand of static storage.
+//   - The door class of each owner above this header lends the objects of its
+//     owner (the doors of the owners above this header).
+// So no other code of the base makes a Ref of a brand that it names.  An
+// explicit specialization of lend is a member of the door, so it would build
+// the key with each brand.  The rule specialization-home refuses such a
+// specialization outside this header.  The key holds only the constructor
+// from a reference, so a specialization cannot make a null Ref either.
+class RefDoor final : ::foundation::NoObject<RefDoor> {
+    template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0)
+    friend constexpr auto ::foundation::core::to(T& object) noexcept
+        -> Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>;
+    template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
+    friend constexpr auto ::foundation::core::as_ref(Option<T> const& option) noexcept
+        -> Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>;
+    template <RefTarget T, ErasableBrand Brand>
+    friend constexpr auto ::foundation::core::erase_brand(Ref<T, Brand> ref) noexcept;
+    template <BoxPayload T>
+    friend class ::foundation::core::Box;
+    template <RefTarget T, ::foundation::brand::IsBrand Brand>
+    friend constexpr auto ref_of_word_(atomic_word_key<Ref<T, Brand>> const& key, T* word) noexcept -> Ref<T, Brand>;
+    template <auto& Object>
+        requires RefTarget<std::remove_reference_t<decltype(Object)>>
+    friend constexpr auto ref_of_static_() noexcept
+        -> Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand>;
+
+    friend class ::foundation::core::RegionRefDoor;
+    friend class ::foundation::core::ListRefDoor;
+    friend class ::foundation::core::BrandedRefDoor;
+    friend class ::foundation::core::WalkRefDoor;
+    friend class ::foundation::core::OneOfRefDoor;
+    friend class ::foundation::core::WindowLoanRefDoor;
+    friend class ::foundation::core::SlotMapRefDoor;
+    friend class ::foundation::core::ImmortalRefDoor;
+    friend class ::foundation::core::AllocWindowRefDoor;
+    friend class ::foundation::core::ArenaRefDoor;
+    friend class ::foundation::core::HeapScopeRefDoor;
+    friend class ::foundation::core::ScopedViewRefDoor;
+    friend class ::foundation::core::ChaseLevDequeRefDoor;
+    friend class ::foundation::core::SpscSplitRefDoor;
+    friend class ::foundation::core::SchedProofRefDoor;
+
     template <::foundation::brand::IsBrand Brand, RefTarget T>
     [[nodiscard]] static constexpr Ref<T, Brand> lend(T& object) noexcept {
         return Ref<T, Brand>{object, RefKey{}};
@@ -299,7 +468,7 @@ template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
 // have the loop.  An owning Option counts each lend of its payload (the lend
 // count of Choice.h), and a Ref outlives each count: a write of the Option
 // would then end the object that the Ref names, with no check.
-template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
 [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
 as_ref(Option<T> const& option) noexcept {
@@ -347,67 +516,6 @@ template <class First, class FirstBrand, class Second, class SecondBrand>
     return second.is_none();
 }
 
-namespace detail {
-
-// True when type is a scope brand or names one: the closure type of
-// CRUCIBLE_SCOPE_BRAND, whose call operator holds the mark
-// foundation::brand::scope_brand, or a class template specialization with
-// such a type argument at each depth, such as the brand of a view of a walk
-// of rows.  A value of a scope brand does not outlive the call of its mint
-// (foundation/Brand.h).  The call operator of a closure is public, so the
-// current access context reads it.  The loops index the lists, as the other
-// reads of reflection in this layer do.  Complexity: quadratic in the members
-// of the type, because each step reads the list again, and a closure with no
-// capture has few members.  Linear in the type arguments at each depth.  An
-// incomplete class, such as a tag that a unit only declares, is no brand.
-[[nodiscard]] consteval bool names_scope_brand(std::meta::info type) {
-    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
-    std::meta::access_context const context = std::meta::access_context::current();
-    std::size_t const member_count = std::meta::members_of(type, context).size();
-    for (std::size_t index = 0; index < member_count; ++index) {
-        std::meta::info const member = std::meta::members_of(type, context)[index];
-        if (std::meta::is_function(member) && std::meta::is_operator_function(member)
-            && std::meta::operator_of(member) == std::meta::operators::op_parentheses
-            && !std::meta::annotations_of_with_type(member, ^^::foundation::brand::scope_brand).empty()) {
-            return true;
-        }
-    }
-    if (!std::meta::has_template_arguments(type)) return false;
-    std::size_t const argument_count = std::meta::template_arguments_of(type).size();
-    for (std::size_t index = 0; index < argument_count; ++index) {
-        std::meta::info const argument = std::meta::template_arguments_of(type)[index];
-        if (std::meta::is_type(argument) && names_scope_brand(std::meta::dealias(argument))) return true;
-    }
-    return false;
-}
-
-}  // namespace detail
-
-namespace detail {
-
-// True when brand is the brand of an arena: a member tag, a family tag or an
-// epoch brand of foundation/core/BumpArena.h, each of which carries its mark of
-// foundation/Brand.h.  A Ref of an arena keeps the brand of its arena, so a
-// store of the Ref names its arena, and no erased Ref of an arena exists.
-[[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
-    namespace brand_marks = ::foundation::brand;
-    return ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_member_brand)
-        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::arena_family_brand)
-        || ::foundation::linear::carries_annotation(brand, ^^brand_marks::epoch_brand);
-}
-
-}  // namespace detail
-
-// A brand that erase_brand drops: a brand of one instance that is not a scope
-// brand, names none, and is no brand of an arena.  The rule brand-escape
-// refuses each value of a scope brand that outlives its scope, and an erased
-// Ref names no brand that the rule could read.  So a scope brand has no
-// erasure.  A Ref of an arena keeps the brand of its arena, so a field that
-// stores it names the arena that holds its object.
-template <class Brand>
-concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::names_scope_brand(^^Brand)
-                     && !detail::names_arena_brand_(^^Brand);
-
 // The door that drops the brand of a Ref.  It gives a Ref of the same object
 // on the erased identity DefaultBrand, which each erased Ref of the target
 // type shares, and nothing gives the brand back.  Call it only where the
@@ -424,6 +532,21 @@ template <RefTarget T, ErasableBrand Brand>
     [[assume(__builtin_addressof(object) != nullptr)]];
     return detail::RefDoor::lend<::foundation::brand::DefaultBrand>(object);
 }
+
+namespace detail {
+
+// The Ref of Object with the brand of static storage.  A template argument
+// of a reference type names an object of static storage, so the object lives
+// for the whole process, and the Ref never dangles.  A local object is no
+// template argument, so the call of a local object does not compile.  The
+// constraint refuses a function, which a reference argument also names.
+template <auto& Object>
+    requires RefTarget<std::remove_reference_t<decltype(Object)>>
+[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static_() noexcept {
+    return RefDoor::lend<StaticStorageBrand>(Object);
+}
+
+}  // namespace detail
 
 namespace detail {
 
@@ -637,15 +760,30 @@ struct niche<Ref<T, Brand>> {
     }
 };
 
+namespace detail {
+
+// The Ref of a word that a cell gives back to from_word below.  The key
+// proves the word: only a cell builds the key, and the cell holds only words
+// that to_word gave for a Ref of the brand.  So the word names a live object
+// and is not null.  RefDoor names this function as a friend.  The door names
+// no specialization of atomic_word, because each header can specialize the
+// template.
+template <RefTarget T, ::foundation::brand::IsBrand Brand>
+[[nodiscard]] constexpr Ref<T, Brand> ref_of_word_(atomic_word_key<Ref<T, Brand>> const& /*key*/, T* word) noexcept {
+    return RefDoor::lend<Brand>(*word);
+}
+
+}  // namespace detail
+
 // The word of a Ref in an atomic cell (the word of a value of Atomic.h): the
 // pointer of its object.  No Ref holds the null pointer, so the null pointer
 // is the empty word, and the cell of an Option of a Ref holds one pointer.
 // Only a cell makes the key of from_word, and a cell holds only words that
 // to_word gave.  So from_word lends the object of the word again, with the
-// brand of the Ref, through the door of this file.  The door takes no key of
-// the Atomic family.  The word of a Ref is the address of its object, and
-// only the null Ref of the niche holds the null pointer, so the protocol
-// states the word of a stated payload of Atomic.h.
+// brand of the Ref, through detail::ref_of_word_, which takes the key.  The
+// word of a Ref is the address of its object, and only the null Ref of the
+// niche holds the null pointer, so the protocol states the word of a stated
+// payload of Atomic.h.
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 struct atomic_word<Ref<T, Brand>> {
     using word_type = T*;
@@ -656,18 +794,11 @@ struct atomic_word<Ref<T, Brand>> {
         return __builtin_addressof(*ref);
     }
 
-    [[nodiscard]] static constexpr Ref<T, Brand> from_word(atomic_word_key<Ref<T, Brand>> const& /*key*/,
+    [[nodiscard]] static constexpr Ref<T, Brand> from_word(atomic_word_key<Ref<T, Brand>> const& key,
                                                            word_type word) noexcept {
-        return detail::RefDoor::lend<Brand>(*word);
+        return detail::ref_of_word_<T, Brand>(key, word);
     }
 };
-
-// The type of a Box: an object type that is not an array and not
-// cv-qualified.  The type can be one that is only declared, so a Box can be
-// a member of a class in a header that does not define the type of its
-// object.
-template <class T>
-concept BoxPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
 
 // The object of a Box where a Box makes it or ends it: a payload of a
 // complete type that is not abstract, with a destructor that does not throw.
@@ -700,9 +831,6 @@ inline constexpr ::foundation::alloc::Layout hole_layout_ =
 template <std::size_t Size, std::size_t Align>
     requires HoleShape<Size, Align>
 class Hole;
-
-template <BoxPayload T>
-class Box;
 
 template <class T, class Marker, class... Args>
 concept CanMintBox = CompleteBoxPayload<T> && AllocationCapability<Marker> && std::constructible_from<T, Args&&...>;

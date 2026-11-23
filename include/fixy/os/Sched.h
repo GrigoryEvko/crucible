@@ -212,11 +212,12 @@ concept SchedFrameLeaves =
     SchedFrameBody<Body, Proof, Brand> && ::foundation::core::FrameResult<frame_result_t<Body, Proof, Brand>, Brand>
     && ::foundation::core::ChoicePayload<frame_value_t<frame_result_t<Body, Proof, Brand>>>;
 
-// Lends proof to body with the brand of the frame, and gives the value of
-// the frame.
+// Gives the borrow of the proof to body, and gives the value of the frame.
+// The frame door of SchedProofDoor makes the borrow with the brand of the
+// frame.
 template <class Brand, class Proof, class Body>
-[[nodiscard]] frame_value_t<frame_result_t<Body, Proof, Brand>> run_frame_(Proof const& proof, Body&& body) noexcept {
-    ProofRef<Proof, Brand> const lent = ::foundation::core::detail::RefDoor::lend<Brand>(proof);
+[[nodiscard]] frame_value_t<frame_result_t<Body, Proof, Brand>> run_frame_(ProofRef<Proof, Brand> const lent,
+                                                                           Body&& body) noexcept {
     if constexpr (std::is_void_v<frame_result_t<Body, Proof, Brand>>) {
         static_cast<Body&&>(body)(lent);
         return ::foundation::core::Unit{};
@@ -372,6 +373,32 @@ template <int Nice, class... Refused, eff::IsExecCtx Ctx, class Body,
               && detail::SchedLinearFrameBody<Body, SchedPriority<Nice>, Fresh>
 void mint_priority(Ctx const&, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+}  // namespace fixy::sched
+
+namespace foundation::core {
+
+// The door of the frames of a scheduling proof to the door of a Ref (the doors
+// of the owners above foundation/core/Ref.h).  Its one member is private, and
+// SchedProofDoor of fixy/os/Sched.h is its one friend.  The invariant: the
+// frame door builds a proof in its own frame after the syscall returned, and
+// lends it to the body with the scope brand of the call of the frame mint.
+// So the Ref names a live proof for the call of the body, and the brand does
+// not leave the frame.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
+class SchedProofRefDoor final : ::foundation::NoObject<SchedProofRefDoor> {
+    friend class ::fixy::sched::SchedProofDoor;
+
+    // The proof of a frame, as a Ref of the brand of the frame.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::sched {
+
 // The door to the two scheduling proofs.  No object of it exists.  It is
 // the authority of the key that the constructor of SchedClass and of
 // SchedPriority takes, so only its members build that key.  Its members
@@ -410,7 +437,8 @@ class SchedProofDoor final : ::foundation::NoObject<SchedProofDoor> {
     [[nodiscard]] static frame_value_of_t<Body, Proof, Brand> frame_(Body&& body, Arguments... arguments) noexcept {
         const key_ key{};
         Proof const proof{key, arguments...};
-        return detail::run_frame_<Brand>(proof, static_cast<Body&&>(body));
+        return detail::run_frame_<Brand>(::foundation::core::SchedProofRefDoor::lend_<Brand>(proof),
+                                         static_cast<Body&&>(body));
     }
 };
 

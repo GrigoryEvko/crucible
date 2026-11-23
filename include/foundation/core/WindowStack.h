@@ -40,6 +40,7 @@
 //
 // Complexity: O(1) for each open and each end.
 
+#include <foundation/NoObject.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
@@ -57,6 +58,24 @@ namespace foundation::core {
 template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_default_constructible_v<T>
 class WindowLoan;
+
+// The door of a WindowLoan to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and WindowLoan is its
+// one friend.  The invariant: a loan holds the Ref of its stack with the
+// private brand of the loan, the loan is the one holder of that Ref, and the
+// order check at the end of the loan proves that the stack lives.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class WindowLoanRefDoor final : ::foundation::NoObject<WindowLoanRefDoor> {
+    template <class T, std::size_t N>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_default_constructible_v<T>
+    friend class WindowLoan;
+
+    // The stack of a loan, as a Ref of the brand of the loan.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 // The count of the elements of a window.
 using WindowCount = Quantity<unit::Element, std::uint32_t>;
@@ -119,7 +138,7 @@ public:
     // The loan of count elements at the top of stack, or a loan of no window
     // when they do not fit.  Complexity: O(1).
     constexpr WindowLoan(WindowStack<T, N>& stack, WindowCount count) noexcept
-        : stack_{detail::RefDoor::lend<StackBrand>(stack)},
+        : stack_{WindowLoanRefDoor::lend_<StackBrand>(stack)},
           base_{stack.top_},
           count_{count.raw()},
           window_{take_window_(stack, count.raw())} {}

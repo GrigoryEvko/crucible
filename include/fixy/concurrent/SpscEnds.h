@@ -79,6 +79,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Record.h>
@@ -194,12 +195,59 @@ class SpscEnd;
 template <class Owner, class Brand>
 class SpscSplit;
 
+template <class Owner, class Brand>
+struct SpscSplitParts;
+
 namespace detail {
 
 template <class Owner, class Brand>
 struct SpscSplitDoor;
 
 }  // namespace detail
+
+// The two mints of a split (the definitions below).  SpscSplitRefDoor names
+// them as friends, so these declarations stand before the door, and the
+// default argument of the brand belongs to the first one.
+template <class Owner, class Marker, class... Args, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+    requires CanMintSpscSplit<Owner, Marker, Args...>
+[[nodiscard]] SpscSplitParts<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>
+mint_spsc_split(Marker allocation, Args&&... args) noexcept;
+
+template <class Owner, class Brand, class Marker, class... Args>
+    requires CanMintHeldSpscSplit<Owner, Brand, Marker, Args...>
+[[nodiscard]] SpscSplit<Owner, Brand> mint_held_spsc_split(Marker allocation, Args&&... args) noexcept;
+
+}  // namespace fixy::concurrent
+
+namespace foundation::core {
+
+// The door of the two mints of a split to the door of a Ref (the doors of the
+// owners above foundation/core/Ref.h).  Its one member is private, and the
+// mints of fixy/concurrent/SpscEnds.h are its two friends.  The invariant: a
+// mint lends the owner that it just built in a new Box, with the split brand
+// of the type of the owner, and the split that holds the Box takes the Ref.
+// So each Ref of the brand names the owner in the Box of its split.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class SpscSplitRefDoor final : ::foundation::NoObject<SpscSplitRefDoor> {
+    template <class Owner, class Marker, class... Args, ::foundation::brand::IsBrand Fresh>
+        requires ::fixy::concurrent::CanMintSpscSplit<Owner, Marker, Args...>
+    friend auto ::fixy::concurrent::mint_spsc_split(Marker allocation, Args&&... args) noexcept
+        -> ::fixy::concurrent::SpscSplitParts<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>;
+    template <class Owner, class Brand, class Marker, class... Args>
+        requires ::fixy::concurrent::CanMintHeldSpscSplit<Owner, Brand, Marker, Args...>
+    friend auto ::fixy::concurrent::mint_held_spsc_split(Marker allocation, Args&&... args) noexcept
+        -> ::fixy::concurrent::SpscSplit<Owner, Brand>;
+
+    // The owner in the new Box of a mint, as a Ref of the split brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy::concurrent {
 
 template <class Owner>
 using ProducerEnd = SpscEnd<Owner, SpscSide::producer>;
@@ -643,13 +691,13 @@ struct SpscSplitDoor final {
 // new owner.  The brand is the fresh brand of the call site, in
 // undeducible_brand_t, so no caller names it.  The split comes back as a
 // prvalue part of the Record, so it does not move.
-template <class Owner, class Marker, class... Args, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+template <class Owner, class Marker, class... Args, ::foundation::brand::IsBrand Fresh>
     requires CanMintSpscSplit<Owner, Marker, Args...>
 [[nodiscard]] SpscSplitParts<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>
 mint_spsc_split(Marker allocation, Args&&... args) noexcept {
     ::foundation::core::Box<Owner> owner =
         ::foundation::core::mint_box<Owner>(allocation, static_cast<Args&&>(args)...);
-    auto const ref = ::foundation::core::detail::RefDoor::lend<SpscSplitBrand<Owner>>(*owner);
+    auto const ref = ::foundation::core::SpscSplitRefDoor::lend_<SpscSplitBrand<Owner>>(*owner);
     return detail::SpscSplitDoor<Owner, ::foundation::brand::undeducible_brand_t<Fresh>>::build(std::move(owner), ref);
 }
 
@@ -663,7 +711,7 @@ template <class Owner, class Brand, class Marker, class... Args>
 [[nodiscard]] SpscSplit<Owner, Brand> mint_held_spsc_split(Marker allocation, Args&&... args) noexcept {
     ::foundation::core::Box<Owner> owner =
         ::foundation::core::mint_box<Owner>(allocation, static_cast<Args&&>(args)...);
-    auto const ref = ::foundation::core::detail::RefDoor::lend<SpscSplitBrand<Owner>>(*owner);
+    auto const ref = ::foundation::core::SpscSplitRefDoor::lend_<SpscSplitBrand<Owner>>(*owner);
     return detail::SpscSplitDoor<Owner, Brand>::build_held(std::move(owner), ref);
 }
 

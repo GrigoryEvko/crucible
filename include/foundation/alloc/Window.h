@@ -108,6 +108,7 @@
 // bodies.
 
 #include <foundation/Brand.h>
+#include <foundation/NoObject.h>
 #include <foundation/alloc/ChunkMap.h>
 #include <foundation/alloc/Metadata.h>
 #include <foundation/core/Array.h>
@@ -121,6 +122,33 @@
 
 #include <cstddef>
 #include <cstdint>
+
+namespace foundation::alloc {
+
+class Window;
+
+}  // namespace foundation::alloc
+
+namespace foundation::core {
+
+// The door of the window of the allocator to the door of a Ref (the doors of
+// the owners above foundation/core/Ref.h).  Its one member is private, and
+// Window is its one friend.  The invariant: the window lends the record of a
+// chunk or of a unit only after the commit of its step and the construction
+// of the record, the record lives as long as the window, and the brand is the
+// fresh brand of the call of the start.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class AllocWindowRefDoor final : ::foundation::NoObject<AllocWindowRefDoor> {
+    friend class ::foundation::alloc::Window;
+
+    // A record that the window started, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
 
 namespace foundation::alloc {
 
@@ -242,7 +270,7 @@ public:
         ::foundation::core::Ref<ChunkMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
     start_chunk_meta(WindowCommits& commits, ChunkIndex chunk) noexcept {
         CRUCIBLE_TRY(meta, start_chunk_meta_(commits, chunk));
-        return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
+        return ::foundation::core::AllocWindowRefDoor::lend_<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
     }
 
     // The record of a unit of a chunk, the same way.
@@ -252,7 +280,7 @@ public:
         ::foundation::core::Ref<SlabMeta, ::foundation::brand::undeducible_brand_t<Fresh>>, ::foundation::os::Errno>
     start_slab_meta(WindowCommits& commits, ChunkIndex chunk, UnitIndex unit) noexcept {
         CRUCIBLE_TRY(meta, start_slab_meta_(commits, chunk, unit));
-        return ::foundation::core::detail::RefDoor::lend<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
+        return ::foundation::core::AllocWindowRefDoor::lend_<::foundation::brand::undeducible_brand_t<Fresh>>(*meta);
     }
 
 private:

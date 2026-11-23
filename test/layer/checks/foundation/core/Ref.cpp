@@ -185,6 +185,21 @@ static_assert(!std::is_trivially_copyable_v<detail::RefKey>);
 // reference beside it in the walk of the constructors.
 static_assert(detail::is_base_key(^^detail::RefKey) && detail::is_voucher_type(^^detail::RefKey));
 
+// The door of a Ref is private to the friends that prove each object and each
+// brand, so this unit reaches no lend with a brand that it names.  The same
+// expression through to() compiles, so the requires-expression reads the
+// access and not its shape.  The door of static storage gives the one brand of
+// static storage, and no door is an object.
+template <class Brand>
+concept ReachesRefDoor = requires(int& object) { detail::RefDoor::lend<Brand>(object); };
+static_assert(!ReachesRefDoor<CheckBrand>);
+static_assert(requires(int& object) { to(object); });
+inline constexpr int static_target = 7;
+static_assert(*detail::ref_of_static_<static_target>() == 7);
+static_assert(std::is_same_v<decltype(detail::ref_of_static_<static_target>()), Ref<int const, StaticStorageBrand>>);
+static_assert(!std::is_default_constructible_v<detail::RefDoor>);
+static_assert(!std::is_trivially_copyable_v<detail::RefDoor>);
+
 // A const target comes from a mutable one with the same brand, and never
 // the reverse.  No brand changes into a different brand.
 static_assert(std::is_convertible_v<Ref<int, CheckBrand>, Ref<int const, CheckBrand>>);

@@ -148,6 +148,7 @@
 #include <foundation/Brand.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Algorithms.h>
@@ -178,6 +179,49 @@ namespace foundation::core {
 template <class T>
 concept OwnedElement = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>
                     && std::is_nothrow_destructible_v<T>;
+
+namespace detail {
+
+// The alignment of the storage of a HeapArray: a power of two, and at least
+// the alignment of the element.
+template <class T, std::size_t Align>
+concept HeapArrayAlignment = Align != 0 && (Align & (Align - 1)) == 0 && Align >= alignof(T);
+
+}  // namespace detail
+
+// The two arrays of this header.  ArrayRefDoor names them as friends, so
+// these declarations stand before the door, and the definitions below give
+// the default arguments.
+template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+class FixedArray;
+template <class T, std::size_t Align>
+    requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+class HeapArray;
+
+// The door of a FixedArray and a HeapArray to the body of each get of a run
+// (RegionRefDoor of foundation/core/Region.h).  Its one member is private,
+// and the two arrays are its friends.  The invariant: a FixedArray holds N
+// live elements from its first element, and a HeapArray holds the count of
+// its state from the first element of its state, so get() names the first
+// element and the count of live elements.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class ArrayRefDoor final : ::foundation::NoObject<ArrayRefDoor> {
+    template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+    friend class FixedArray;
+    template <class T, std::size_t Align>
+        requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
+    friend class HeapArray;
+
+    // The element at position of the count live elements from first, as an
+    // Option of a Ref of the brand, or no value at or past the count.
+    template <::foundation::brand::IsBrand Brand, class T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr auto element_at_(T* first, std::size_t count,
+                                                                    std::size_t position) noexcept {
+        return RegionRefDoor::element_at_<Brand>(first, count, position);
+    }
+};
 
 namespace detail {
 
@@ -515,7 +559,7 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        return detail::element_at_<Fresh>(&elements_[0], N, position);
+        return ArrayRefDoor::element_at_<Fresh>(&elements_[0], N, position);
     }
     void get(std::size_t) && = delete("an element of a temporary FixedArray dangles at the end of the full expression");
     void
@@ -605,11 +649,6 @@ mint_fixed_array() noexcept {
 // ── HeapArray ──────────────────────────────────────────────────────────────
 
 namespace detail {
-
-// The alignment of the storage of a HeapArray: a power of two, and at least
-// the alignment of the element.
-template <class T, std::size_t Align>
-concept HeapArrayAlignment = Align != 0 && (Align & (Align - 1)) == 0 && Align >= alignof(T);
 
 // The layout of the storage of count elements of T: their bytes rounded up
 // to the alignment, at the alignment.  count is above zero.  A count past the
@@ -1012,7 +1051,8 @@ public:
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
     get(std::size_t position) const& noexcept {
-        return detail::element_at_<Fresh>(static_cast<T const*>(this->state_.first), this->state_.count, position);
+        return ArrayRefDoor::element_at_<Fresh>(static_cast<T const*>(this->state_.first), this->state_.count,
+                                                position);
     }
     void get(std::size_t) && = delete("an element of a temporary HeapArray dangles at the end of the full expression");
     void

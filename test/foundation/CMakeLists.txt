@@ -879,7 +879,7 @@ foundation_neg_compile_test(neg_specialization_home_orphan_ref
 # each specialization the private members of the class.  Each fixture reads
 # only the texts of the rule, so a change of the class does not change it.
 foundation_neg_compile_test(neg_specialization_home_member_ref_door
-  "neg_specialization_home_member_ref_door\\.cpp:15:[0-9]+: error: this file specializes the template .foundation::core::detail::RefDoor::lend. outside its home .include/foundation/core/Ref\\.h."
+  "neg_specialization_home_member_ref_door\\.cpp:17:[0-9]+: error: this file specializes the template .foundation::core::detail::RefDoor::lend. outside its home .include/foundation/core/Ref\\.h."
   "an explicit specialization gives the function a different body")
 foundation_neg_compile_test(neg_specialization_home_friend_box
   "neg_specialization_home_friend_box\\.cpp:14:[0-9]+: error: this file specializes the template .foundation::core::mint_box. outside its home .include/foundation/core/Ref\\.h."
@@ -2872,6 +2872,22 @@ foundation_neg_compile_test(neg_core_niche_key_of_other_type
 foundation_neg_compile_test(neg_core_ref_door_forges_null
   ".int\\* foundation::core::Ref<int, ForgeBrand>::object_. is private within this context"
   "foundation/core/Ref.h:[0-9]+:[0-9]+: note: declared private here")
+# The door of a Ref is private to the friends that prove each object and each
+# brand: a unit that is no friend, a function with the name of a friend in
+# another namespace, and a unit that is not the owner of a door class do not
+# reach it.  The door of static storage takes no local object.
+foundation_neg_compile_test(neg_core_ref_door_private
+  "static constexpr foundation::core::Ref<T, Brand> foundation::core::detail::RefDoor::lend\\(T&\\) \\[with Brand = ArenaBrand; T = int\\]. is private within this context"
+  "Ref\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_ref_door_lookalike
+  "static constexpr foundation::core::Ref<T, Brand> foundation::core::detail::RefDoor::lend\\(T&\\) \\[with Brand = ArenaBrand; T = int\\]. is private within this context"
+  "Ref\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_slot_map_ref_door_private
+  "static constexpr foundation::core::Ref<T, Brand> foundation::core::SlotMapRefDoor::lend_\\(T&\\) \\[with Brand = ArenaBrand; T = int\\]. is private within this context"
+  "SlotMap\\.h:[0-9]+:[0-9]+: note: declared private here")
+foundation_neg_compile_test(neg_core_ref_of_static_local
+  "the address of .local. is not a valid template argument because it does not have static storage duration"
+  "no matching function for call to .ref_of_static_<local>\\(\\).")
 foundation_neg_compile_test(neg_core_niche_ref_outside_specialization
   "no matching function for call to .foundation::core::Ref<Forged, ForgeBrand>::Ref\\(<brace-enclosed initializer list>\\)."
   "no known conversion for argument 1 from .Forged\\*. to .foundation::core::detail::RefNullTag.")
@@ -4946,7 +4962,7 @@ foundation_neg_compile_test(neg_core_fixed_list_view_of_temporary
 # Region.h defines the body of get of a View, so a unit that includes only
 # Region.h cannot give it a body of its own.
 foundation_neg_compile_test(neg_core_view_get_forged_body
-  "redefinition of .template<class Brand, class T>  requires  IsBrand<Brand> constexpr auto foundation::core::detail::element_at_\\(T\\*, std::size_t, std::size_t\\)."
+  "redefinition of .static constexpr auto foundation::core::RegionRefDoor::element_at_\\(T\\*, std::size_t, std::size_t\\)."
   "previously declared here")
 foundation_neg_compile_test(neg_core_fixed_array_get_of_temporary
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::get\\(std::size_t\\) && \\[with T = int; long unsigned int N = 4; KeyBrand = foundation::core::Unkeyed; std::size_t = long unsigned int\\]."

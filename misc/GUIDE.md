@@ -774,7 +774,7 @@ class BumpArena final {
         requires(... && CanMakeInArena<T, Marker, Args...>)
     [[nodiscard]] Ref<T, Fresh> make(Marker /*allocation*/, Args&&... args) & noexcept {
         T* const object = ::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);  // the constructor starts the lifetime
-        return detail::RefDoor::lend<Fresh>(*object);
+        return ArenaRefDoor::lend_<Fresh>(*object);  // the door of the arena, whose friends are the arenas
     }
 };
 ```
@@ -2030,7 +2030,7 @@ template <class T, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIB
 [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> make(Marker /*allocation*/,
                                                                            Args&&... args) & noexcept {
     T* const object = ::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
-    return detail::RefDoor::lend<Fresh>(*object);
+    return ArenaRefDoor::lend_<Fresh>(*object);
 }
 ```
 

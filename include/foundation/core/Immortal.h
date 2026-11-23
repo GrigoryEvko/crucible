@@ -32,6 +32,7 @@
 //   or move, because the address of the T is in its storage.
 
 #include <foundation/Brand.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Ref.h>
 
@@ -44,6 +45,26 @@ namespace foundation::core {
 // const and not volatile.
 template <class T>
 concept ImmortalPayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const_v<T> && !std::is_volatile_v<T>;
+
+template <ImmortalPayload T>
+class Immortal;
+
+// The door of an Immortal to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and Immortal is its one
+// friend.  The invariant: get() lends the object only after the test of the
+// fill, the object lives for the whole process, and the brand is the fresh
+// brand of the call of get().  A home owner row of utils/rule-table.txt keeps
+// this definition in this header.
+class ImmortalRefDoor final : ::foundation::NoObject<ImmortalRefDoor> {
+    template <ImmortalPayload T>
+    friend class Immortal;
+
+    // The object of a filled holder, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 template <ImmortalPayload T>
 class Immortal final {
@@ -77,13 +98,13 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> get() noexcept {
-        return detail::RefDoor::lend<Fresh>(*held_());
+        return ImmortalRefDoor::lend_<Fresh>(*held_());
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>> get() const noexcept {
         T const& object = *held_();
-        return detail::RefDoor::lend<Fresh>(object);
+        return ImmortalRefDoor::lend_<Fresh>(object);
     }
 
 private:

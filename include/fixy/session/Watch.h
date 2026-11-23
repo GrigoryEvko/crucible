@@ -207,12 +207,6 @@ inline constexpr std::uint64_t untracked_owner = ~std::uint64_t{0};
     return static_cast<std::uint32_t>(packed >> 32);
 }
 
-// The brand of the protocol text of a record.  Each such text is an object of
-// static storage that a claim names as its template argument.
-struct protocol_text_brand {};
-
-using protocol_text_ref = ::foundation::core::Ref<::foundation::core::TextView const, protocol_text_brand>;
-
 // One live endpoint.  A record changes generation at each claim, so a
 // stale reference to an old session never matches a new one.
 struct alignas(64) endpoint_record {
@@ -228,9 +222,12 @@ struct alignas(64) endpoint_record {
     ::foundation::core::Atomic<std::uint64_t> peer{};
     // The thread that holds the handle, packed with its slot generation.
     ::foundation::core::Atomic<std::uint64_t> owner{};
-    // The text of the protocol at the mint, an object of static storage.  The
-    // cell holds one pointer, and an empty cell names no text.
-    ::foundation::core::Atomic<::foundation::core::Option<protocol_text_ref>> protocol_text{};
+    // The text of the protocol at the mint, an object of static storage that a
+    // claim names as its template argument.  The cell holds one pointer, and an
+    // empty cell names no text.
+    ::foundation::core::Atomic<::foundation::core::Option<
+        ::foundation::core::Ref<::foundation::core::TextView const, ::foundation::core::StaticStorageBrand>>>
+        protocol_text{};
     // The file of the site of the mint, a static text.  The cell holds one
     // pointer, and an empty cell names no site.
     ::foundation::core::Atomic<::foundation::core::Option<::foundation::core::StaticText>> site_file{};
@@ -653,11 +650,12 @@ enum class holder_on_claim : std::uint8_t {
 namespace detail {
 
 // Claims a record with the protocol text `protocol`.  claim below is the one
-// caller, and it gives a text of static storage.  The site is a constant Site
-// of foundation/core/Fatal.h, so the file that the record keeps is a static
-// text.
-[[nodiscard]] inline endpoint_id claim_with_text(protocol_text_ref protocol, ::foundation::core::Site site,
-                                                 priority order, holder_on_claim holder) noexcept {
+// caller, and the brand of the Ref proves a text of static storage.  The site
+// is a constant Site of foundation/core/Fatal.h, so the file that the record
+// keeps is a static text.
+[[nodiscard]] inline endpoint_id claim_with_text(
+    ::foundation::core::Ref<::foundation::core::TextView const, ::foundation::core::StaticStorageBrand> protocol,
+    ::foundation::core::Site site, priority order, holder_on_claim holder) noexcept {
     std::uint32_t index = pop_free();
     if (index == 0) {
         const std::uint32_t fresh = g_registry.next_unused.fetch_add_acq_rel(1);
@@ -669,7 +667,7 @@ namespace detail {
     // and a store suffice.  A concurrent trace only reads it.
     record.generation.store_release(record.generation.load_acquire() + 1);
     record.peer.store_release(0);
-    record.protocol_text.store_release(::foundation::core::Option<protocol_text_ref>::some(protocol));
+    record.protocol_text.store_release(::foundation::core::Option<decltype(protocol)>::some(protocol));
     record.site_file.store_release(
         ::foundation::core::Option<::foundation::core::StaticText>::some(::foundation::core::StaticText{site}));
     record.site_line.store_release(::foundation::core::detail::site_line_(site));
@@ -691,14 +689,15 @@ namespace detail {
 /// Claims a record for a session that starts at the protocol whose text is
 /// Protocol, minted at `site`, with the priority of its Resource.  The text
 /// is a template argument, so it is an object of static storage, and the
-/// record never names a text that ends before it.  The site is a constant
+/// record never names a text that ends before it.  ref_of_static_ of
+/// foundation/core/Ref.h takes the text as its template argument too, and it
+/// gives the Ref with the brand of static storage.  The site is a constant
 /// Site, so the file of the record is a static text too.  The body is one
 /// function for each text.  A full table gives endpoint_id::none, and the
 /// session is then not tracked.
 template <::foundation::core::TextView const& Protocol>
 [[nodiscard]] inline endpoint_id claim(::foundation::core::Site site, priority order, holder_on_claim holder) noexcept {
-    return detail::claim_with_text(::foundation::core::detail::RefDoor::lend<detail::protocol_text_brand>(Protocol),
-                                   site, order, holder);
+    return detail::claim_with_text(::foundation::core::detail::ref_of_static_<Protocol>(), site, order, holder);
 }
 
 /// Makes `first` and `second` the two ends of one channel.

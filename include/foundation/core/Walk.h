@@ -109,6 +109,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Quantity.h>
@@ -131,6 +132,31 @@ struct LengthMismatch final {};
 
 template <class Stage>
 class Walk;
+
+namespace detail {
+
+template <class First, class Second, class Brand>
+class ZipStage;
+
+}  // namespace detail
+
+// The door of the stage of a zip to the door of a Ref (the doors of the owners
+// above foundation/core/Ref.h).  Its one member is private, and ZipStage is
+// its one friend.  The invariant: the stage gives a Ref only of an element
+// that one of its two stages gave as a reference, which names a live object
+// of that stage, and the brand is the brand of the call of zip that made the
+// stage.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class WalkRefDoor final : ::foundation::NoObject<WalkRefDoor> {
+    template <class First, class Second, class Brand>
+    friend class detail::ZipStage;
+
+    // The element of a stage of the zip, as a Ref of the brand of the zip.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 namespace detail {
 
@@ -508,7 +534,7 @@ class ZipStage final {
     template <class Element>
     [[nodiscard]] static constexpr typename ZipPart<Element, Brand>::type part_(Element&& element) noexcept {
         if constexpr (std::is_lvalue_reference_v<Element>) {
-            return RefDoor::lend<Brand>(element);
+            return WalkRefDoor::lend_<Brand>(element);
         } else {
             return static_cast<Element&&>(element);
         }

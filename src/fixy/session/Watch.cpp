@@ -34,11 +34,12 @@ namespace core = ::foundation::core;
 // go to the sink write as they are.
 void print_endpoint(core::TextView label, std::uint32_t index) noexcept {
     endpoint_record const& record = record_at_(index);
-    core::Option<protocol_text_ref> const text = record.protocol_text.load_acquire();
+    core::Option<core::Ref<core::TextView const, core::StaticStorageBrand>> const text =
+        record.protocol_text.load_acquire();
     core::Option<core::StaticText> const file = record.site_file.load_acquire();
     core::report(core::Sink::Err, "  {} endpoint {}: ", label, index);
     text.match(
-        [](protocol_text_ref const& protocol) noexcept {
+        [](core::Ref<core::TextView const, core::StaticStorageBrand> const& protocol) noexcept {
             core::detail::write_sink_(core::Sink::Err, core::detail::text_first_(*protocol), protocol->size());
         },
         [] noexcept {});

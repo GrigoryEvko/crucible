@@ -41,6 +41,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
@@ -67,6 +68,28 @@ namespace detail {
 }
 
 }  // namespace detail
+
+template <class... Ts>
+    requires OneOfAlternatives<Ts...>
+class OneOf;
+
+// The door of a OneOf to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and OneOf is its one
+// friend.  The invariant: get() lends only the active alternative, after the
+// compare of the tag, so the Ref names the live alternative, and the brand is
+// the fresh brand of the call of get().  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
+class OneOfRefDoor final : ::foundation::NoObject<OneOfRefDoor> {
+    template <class... Ts>
+        requires OneOfAlternatives<Ts...>
+    friend class OneOf;
+
+    // The active alternative, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
 
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
@@ -224,7 +247,7 @@ public:
         if (index_() != index) return Option<Ref<T const, Fresh>>{none};
         T const& alternative = alternative_<index>();
         [[assume(__builtin_addressof(alternative) != nullptr)]];
-        return Option<Ref<T const, Fresh>>::some(detail::RefDoor::lend<Fresh>(alternative));
+        return Option<Ref<T const, Fresh>>::some(OneOfRefDoor::lend_<Fresh>(alternative));
     }
     template <class T, class... Refused>
         requires ::foundation::reflect::OccursIn<T, Ts...>

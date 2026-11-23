@@ -91,6 +91,34 @@ class FixedListSlotsDoor final : ::foundation::NoObject<FixedListSlotsDoor> {
     }
 };
 
+// The door of a FixedList to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h) and to the body of each get of a run (RegionRefDoor
+// of foundation/core/Region.h).  Its members are private, and FixedList is
+// its one friend.  The invariant is the invariant of FixedListSlotsDoor: the
+// first count slots hold live elements and no other slot does.  So the
+// element that an append just started and each element below the count is
+// live.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
+class ListRefDoor final : ::foundation::NoObject<ListRefDoor> {
+    template <class T, std::size_t N>
+        requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
+    friend class FixedList;
+
+    // The element that an append started, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+
+    // The element at position of the count live elements from the first slot,
+    // as an Option of a Ref of the brand, or no value at or past the count.
+    template <::foundation::brand::IsBrand Brand, class T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr auto element_at_(T* first, std::size_t count,
+                                                                    std::size_t position) noexcept {
+        return RegionRefDoor::element_at_<Brand>(first, count, position);
+    }
+};
+
 namespace detail {
 
 // The slots of a FixedList: N elements, each of which starts its lifetime at
@@ -272,7 +300,7 @@ public:
         }
         T* const element = ::new(static_cast<void*>(slots_.slot(count_))) T(static_cast<T&&>(value));
         ++count_;
-        return detail::RefDoor::lend<Fresh>(*element);
+        return ListRefDoor::lend_<Fresh>(*element);
     }
     void append(T) && =
         delete("an append into a temporary FixedList gives a Ref that dangles at the end of the full expression");
@@ -356,7 +384,7 @@ public:
         if (position >= size()) {
             return Option<Ref<T, Fresh>>{none};
         }
-        return detail::element_at_<Fresh>(first_(), size(), position);
+        return ListRefDoor::element_at_<Fresh>(first_(), size(), position);
     }
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
@@ -365,7 +393,7 @@ public:
         if (position >= size()) {
             return Option<Ref<T const, Fresh>>{none};
         }
-        return detail::element_at_<Fresh>(first_(), size(), position);
+        return ListRefDoor::element_at_<Fresh>(first_(), size(), position);
     }
     void get(std::size_t) && = delete("an element of a temporary FixedList dangles at the end of the full expression");
     void
