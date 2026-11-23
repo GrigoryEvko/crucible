@@ -99,6 +99,7 @@ fixy/collision/Report.cpp | 3.9 | ::fixy::atom::detail, ::fixy::atom::dispatch, 
 fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Pipeline.cpp | 1.2 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Spawn.cpp | 0.5 | unknown
+fixy/concurrent/SpscEnds.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown

@@ -181,7 +181,7 @@ that the axis does not apply to the row.
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_bounded_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_budget_authority` | `include/fixy/Budgeted.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
-| `mint_cyclic_buffer` | `include/fixy/CyclicBuffer.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_cyclic_buffer` | `include/fixy/CyclicBuffer.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_fn` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_foreign_owned_region` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
@@ -240,7 +240,7 @@ that the axis does not apply to the row.
 | `mint_pipeline_dag` | `include/fixy/concurrent/Pipeline.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_spawn_on_host` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 11 |
+| `mint_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 12 |
 | `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 24 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
