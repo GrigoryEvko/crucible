@@ -114,11 +114,14 @@ public:
     template <class Fn>
         requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn>
     constexpr void step(Fn&& fn) & noexcept {
-        // The storage of the payload, before fn moves the payload.
-        void* const storage = static_cast<void*>(__builtin_addressof(payload_));
+        // The storage of the payload, before fn moves the payload.  It is a
+        // pointer to T and not to void, so it is no view of the bytes of the
+        // payload, and the placement new builds a T in it (the byte views of
+        // the quarantine plugin).
+        T* const storage = __builtin_addressof(payload_);
         T next = fn(static_cast<T&&>(payload_));
         end_payload_();
-        ::new(storage) T(static_cast<T&&>(next));
+        ::new(static_cast<void*>(storage)) T(static_cast<T&&>(next));
     }
 
     // A function that holds a linear value by value binds to this overload,
