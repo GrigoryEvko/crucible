@@ -40,6 +40,20 @@
 //   mul_div_floor(a, b, c)                  the same floor.  A zero c and a
 //                                           quotient past the type end the
 //                                           process
+//   strict_add, strict_sub, strict_mul      the exact result.  A result that
+//                                           the type does not hold ends the
+//                                           process
+//   strict_div, strict_rem                  the quotient and the remainder.
+//                                           A zero divisor ends the process,
+//                                           and so does the quotient of the
+//                                           minimum by -1.  The minimum rem
+//                                           -1 is 0
+//   strict_shl(v, n), strict_shr(v, n)      the shift.  A count outside
+//                                           [0, bits) ends the process, and
+//                                           so does a strict_shl whose
+//                                           v * 2^n does not fit
+//   Strict<T>                               one T whose +, -, *, /, %, <<
+//                                           and >> are the strict forms
 //
 // Each operation takes two operands of one Integer type, so a pair of
 // different types does not compile and no promotion hides a conversion.
@@ -47,6 +61,36 @@
 // builtins, so no result changes with -fno-strict-overflow.  A checked form
 // costs one test of the flag of the builtin.  The trapping form of an
 // operation is its checked form and Option::expect with a reason.
+//
+// Strict forms
+//   A strict form is the trapping form with no Option: the exact result, or
+//   the end of the process in each build, with a report of the operation,
+//   the two operands, the operand type and the site of the call.  It is for
+//   own data, whose overflow is a defect of the program.  Outside data takes
+//   a checked form at its boundary, so a bad value refuses with an error
+//   and does not end the process.  A strict add, sub or mul costs the test
+//   of the flag of its builtin and one branch that the hint predicts, and
+//   the optimizer removes the two where it knows the ranges of the
+//   operands.  A strict div and rem cost the tests of the checked form.
+//   The report is a cold function out of line in
+//   src/foundation/core/Report.cpp, because the formatter of the operands is
+//   above this header.  The caller loads the parts of the report into
+//   registers and calls it, so the hot path keeps only the branch.  An
+//   overflow of a strict form in a constant expression is no constant, so
+//   the build stops at the call.
+//
+//   Each strict function takes the Site of its caller as a default
+//   argument.  An operator takes no default argument, so the report of an
+//   operator of Strict<T> names the operator in this header, and the stack
+//   of the core names the caller.  A size computation whose report must
+//   name its own site calls the strict function.
+//
+//   Strict<T> holds one T, with its size and its bits.  Its constructor is
+//   explicit and takes only a T, so no other integer type, bool, character,
+//   enumeration or Strict of a different type becomes a Strict, and raw()
+//   is the one road out.  Each operator takes two Strict of one type, so a
+//   Strict does not mix with a T or with a Strict of a different type.  A
+//   shift takes an int count, as each count of the family.
 //
 // A count of a shift is an int, as each count of the family.  In C++20 a
 // shift of a negative signed value is defined, and so is the conversion of
@@ -86,8 +130,11 @@
 // same bits on each target, where a float or a long double does not.
 
 #include <foundation/core/Choice.h>
+#include <foundation/core/Fatal.h>
 #include <foundation/core/Number.h>
 
+#include <compare>
+#include <concepts>
 #include <cstdint>
 #include <type_traits>
 
@@ -381,5 +428,236 @@ template <UnsignedInteger T>
         .match([](T quotient) noexcept { return quotient; },
                [] noexcept -> T { fatal("mul_div_floor got a quotient that the type does not hold"); });
 }
+
+namespace detail {
+
+// The operation of a strict form that ends the process.  align_up is the
+// strict form of foundation/core/Bits.h.
+enum class StrictOperation : std::uint8_t {
+    add,
+    sub,
+    mul,
+    div,
+    rem,
+    shl,
+    shr,
+    align_up,
+};
+
+// The sign of the operand type of a strict form.
+enum class StrictSign : std::uint8_t {
+    unsigned_type,
+    signed_type,
+};
+
+// The operation and the operand type of a strict form that ends the process,
+// in one word: the StrictOperation in bits 0 to 7, the StrictSign in bits 8
+// to 15 and the width of the type in bits 16 to 23.  The word of each call
+// is a constant, so the call loads it with one move.  A struct of the three
+// parts made GCC 16 also store the parts to the stack, and a function with
+// two strict forms then got a stack frame on its hot path.
+enum class StrictFault : std::uint32_t {
+};
+
+template <Integer T>
+[[nodiscard]] constexpr StrictFault strict_fault_of_(StrictOperation operation) noexcept {
+    std::uint32_t const sign = std::is_signed_v<T> ? std::uint32_t{1} : std::uint32_t{0};
+    return StrictFault{static_cast<std::uint32_t>(operation) | (sign << 8U)
+                       | (static_cast<std::uint32_t>(bits_of<T>) << 16U)};
+}
+
+// The two operands of a strict form that ends the process, as the bits of
+// their values: a signed operand as the bits of its std::int64_t value.  The
+// count of a shift is the right operand, and it is signed.  The pair has 16
+// bytes, so the call takes it in two registers.
+//
+// For an add and a sub, first holds the result modulo 2^bits, and the report
+// computes the left operand from it: the result less the right operand, or
+// the result plus the right operand, modulo 2^bits.  The add and the sub
+// write their result over the left operand, so a copy of the left operand
+// would stay live only for the report.  In a loop of sums, GCC 16 then moved
+// the left operand to a second register in each step.  An align_up to a
+// power of two holds the sum of the value and the alignment less one in the
+// same way.  For each other operation, first is the left operand.
+struct StrictOperands {
+    std::uint64_t first = 0;
+    std::uint64_t right = 0;
+};
+
+// Writes the operation, the operands, the operand type and the site to
+// standard error, and ends the process.  The body is in
+// src/foundation/core/Report.cpp.
+[[noreturn, gnu::cold]] void report_strict_fault_(StrictFault fault, StrictOperands operands, char const* file,
+                                                  std::uint32_t line, char const* function) noexcept;
+
+// The bits of an operand in a StrictOperands.
+template <Integer T>
+[[nodiscard]] constexpr std::uint64_t strict_bits_of_(T value) noexcept {
+    if constexpr (std::is_signed_v<T>) {
+        return static_cast<std::uint64_t>(static_cast<std::int64_t>(value));
+    } else {
+        return static_cast<std::uint64_t>(value);
+    }
+}
+
+// The end of a strict form of the operand type T.  It loads the parts of
+// the report into registers and calls the cold report, so the caller keeps
+// only the branch to the call.  first is the first word of the
+// StrictOperands of the operation.
+template <Integer T, Integer Right>
+[[noreturn, gnu::always_inline]] inline void refuse_strict_(StrictOperation operation, T first, Right right,
+                                                            Site site) noexcept {
+    report_strict_fault_(strict_fault_of_<T>(operation), StrictOperands{strict_bits_of_(first), strict_bits_of_(right)},
+                         site_file_(site), site_line_(site), site_function_(site));
+}
+
+}  // namespace detail
+
+template <Integer T>
+[[nodiscard]] constexpr T strict_add(T left, T right, Site site = Site{}) noexcept {
+    T sum{};
+    if (__builtin_add_overflow(left, right, &sum)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::add, sum, right, site);
+    }
+    return sum;
+}
+
+template <Integer T>
+[[nodiscard]] constexpr T strict_sub(T left, T right, Site site = Site{}) noexcept {
+    T difference{};
+    if (__builtin_sub_overflow(left, right, &difference)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::sub, difference, right, site);
+    }
+    return difference;
+}
+
+template <Integer T>
+[[nodiscard]] constexpr T strict_mul(T left, T right, Site site = Site{}) noexcept {
+    T product{};
+    if (__builtin_mul_overflow(left, right, &product)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::mul, left, right, site);
+    }
+    return product;
+}
+
+template <Integer T>
+[[nodiscard]] constexpr T strict_div(T dividend, T divisor, Site site = Site{}) noexcept {
+    if (divisor == T{0} || detail::is_minimum_by_minus_one(dividend, divisor)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::div, dividend, divisor, site);
+    }
+    return static_cast<T>(dividend / divisor);
+}
+
+// The remainder of the minimum by -1 is 0, as checked_rem gives it, and the
+// division instruction of x86_64 traps on these operands.  So -1 takes no
+// division.
+template <Integer T>
+[[nodiscard]] constexpr T strict_rem(T dividend, T divisor, Site site = Site{}) noexcept {
+    if (divisor == T{0}) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::rem, dividend, divisor, site);
+    }
+    if constexpr (std::is_signed_v<T>) {
+        if (divisor == T{-1}) return T{0};
+    }
+    return static_cast<T>(dividend % divisor);
+}
+
+// A negative count is a large unsigned value, so one compare refuses each
+// count outside [0, bits).  The right shift gives back the value only when
+// the left shift lost no bit and kept the sign.
+template <Integer T>
+[[nodiscard]] constexpr T strict_shl(T value, int count, Site site = Site{}) noexcept {
+    using Bits = std::make_unsigned_t<T>;
+    if (static_cast<unsigned>(count) < static_cast<unsigned>(bits_of<T>)) [[likely]] {
+        T const shifted = static_cast<T>(static_cast<Bits>(static_cast<Bits>(value) << count));
+        if (static_cast<T>(shifted >> count) == value) [[likely]] {
+            return shifted;
+        }
+    }
+    detail::refuse_strict_(detail::StrictOperation::shl, value, count, site);
+}
+
+template <Integer T>
+[[nodiscard]] constexpr T strict_shr(T value, int count, Site site = Site{}) noexcept {
+    if (static_cast<unsigned>(count) >= static_cast<unsigned>(bits_of<T>)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::shr, value, count, site);
+    }
+    return static_cast<T>(value >> count);
+}
+
+// One T whose arithmetic is the strict forms.
+template <Integer T>
+class Strict final {
+public:
+    constexpr Strict() noexcept = default;
+
+    constexpr explicit Strict(T value) noexcept : value_{value} {}
+
+    template <class Other>
+        requires(!std::same_as<Other, T>)
+    explicit Strict(Other) = delete(
+        "a Strict takes a value of its own type: give an integer of another type through widen or narrow, and the "
+        "value of a Strict through raw()");
+
+    // The number.
+    [[nodiscard]] constexpr T raw() const noexcept { return value_; }
+
+    [[nodiscard]] friend constexpr Strict operator+(Strict left, Strict right) noexcept {
+        return Strict{strict_add(left.value_, right.value_)};
+    }
+    [[nodiscard]] friend constexpr Strict operator-(Strict left, Strict right) noexcept {
+        return Strict{strict_sub(left.value_, right.value_)};
+    }
+    [[nodiscard]] friend constexpr Strict operator*(Strict left, Strict right) noexcept {
+        return Strict{strict_mul(left.value_, right.value_)};
+    }
+    [[nodiscard]] friend constexpr Strict operator/(Strict dividend, Strict divisor) noexcept {
+        return Strict{strict_div(dividend.value_, divisor.value_)};
+    }
+    [[nodiscard]] friend constexpr Strict operator%(Strict dividend, Strict divisor) noexcept {
+        return Strict{strict_rem(dividend.value_, divisor.value_)};
+    }
+    [[nodiscard]] friend constexpr Strict operator<<(Strict value, int count) noexcept {
+        return Strict{strict_shl(value.value_, count)};
+    }
+    [[nodiscard]] friend constexpr Strict operator>>(Strict value, int count) noexcept {
+        return Strict{strict_shr(value.value_, count)};
+    }
+
+    constexpr Strict& operator+=(Strict right) noexcept {
+        value_ = strict_add(value_, right.value_);
+        return *this;
+    }
+    constexpr Strict& operator-=(Strict right) noexcept {
+        value_ = strict_sub(value_, right.value_);
+        return *this;
+    }
+    constexpr Strict& operator*=(Strict right) noexcept {
+        value_ = strict_mul(value_, right.value_);
+        return *this;
+    }
+    constexpr Strict& operator/=(Strict divisor) noexcept {
+        value_ = strict_div(value_, divisor.value_);
+        return *this;
+    }
+    constexpr Strict& operator%=(Strict divisor) noexcept {
+        value_ = strict_rem(value_, divisor.value_);
+        return *this;
+    }
+    constexpr Strict& operator<<=(int count) noexcept {
+        value_ = strict_shl(value_, count);
+        return *this;
+    }
+    constexpr Strict& operator>>=(int count) noexcept {
+        value_ = strict_shr(value_, count);
+        return *this;
+    }
+
+    [[nodiscard]] friend constexpr bool operator==(Strict left, Strict right) noexcept = default;
+    [[nodiscard]] friend constexpr std::strong_ordering operator<=>(Strict left, Strict right) noexcept = default;
+
+private:
+    T value_ = 0;
+};
 
 }  // namespace foundation::core

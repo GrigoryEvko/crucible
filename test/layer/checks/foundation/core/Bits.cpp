@@ -68,6 +68,21 @@ static_assert(empty(align_up(max_of<std::uint64_t>, std::uint64_t{2})));
 static_assert(holds(align_up(std::uint64_t{1}, std::uint64_t{1} << 63), std::uint64_t{1} << 63));
 static_assert(empty(align_up((std::uint64_t{1} << 63) + 1, std::uint64_t{1} << 63)));
 
+// strict_align_up gives the multiple of align_up.  An alignment that is not a
+// power of two and a multiple past the maximum end the process, so their
+// calls are no constants.
+template <auto Value, auto Alignment>
+concept AlignsStrictlyAsConstant = requires {
+    typename std::integral_constant<decltype(Value), ::foundation::core::strict_align_up(Value, Alignment)>;
+};
+static_assert(strict_align_up(std::uint8_t{1}, std::uint8_t{64}) == std::uint8_t{64});
+static_assert(strict_align_up(std::uint8_t{192}, std::uint8_t{64}) == std::uint8_t{192});
+static_assert(strict_align_up(max_of<std::uint64_t>, std::uint64_t{1}) == max_of<std::uint64_t>);
+static_assert(AlignsStrictlyAsConstant<std::uint8_t{192}, std::uint8_t{64}>
+              && !AlignsStrictlyAsConstant<std::uint8_t{193}, std::uint8_t{64}>
+              && !AlignsStrictlyAsConstant<std::uint8_t{5}, std::uint8_t{3}>
+              && !AlignsStrictlyAsConstant<std::uint8_t{5}, std::uint8_t{0}>);
+
 // A rotation takes each count modulo the width, and a negative count turns
 // the other way.
 static_assert(rotl(std::uint8_t{0x81}, 1) == 0x03 && rotr(std::uint8_t{0x81}, 1) == 0xC0);

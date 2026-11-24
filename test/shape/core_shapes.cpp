@@ -1564,6 +1564,22 @@ protocol_decode(fixy::View<std::byte const, 16> image) noexcept {
     return fixy::saturating_add(left, right);
 }
 
+// A strict form is the operation of the raw form and one test of its flag,
+// whose failure path is the cold report of the operands.
+[[gnu::used]] std::uint64_t scalar_strict_add(std::uint64_t left, std::uint64_t right) noexcept {
+    return fixy::strict_add(left, right);
+}
+
+[[gnu::used]] std::uint64_t scalar_strict_mul(std::uint64_t left, std::uint64_t right) noexcept {
+    return (fixy::Strict<std::uint64_t>{left} * fixy::Strict<std::uint64_t>{right}).raw();
+}
+
+// The bytes of an array of 24-byte elements at an alignment of 64, as the
+// layout of a HeapArray computes them.
+[[gnu::used]] std::size_t scalar_strict_layout(std::size_t count) noexcept {
+    return fixy::strict_align_up(fixy::strict_mul(count, std::size_t{24}), std::size_t{64});
+}
+
 [[gnu::used]] ::foundation::core::WideProduct<std::uint64_t> scalar_widening_mul(std::uint64_t left,
                                                                                  std::uint64_t right) noexcept {
     return ::foundation::core::widening_mul(left, right);
@@ -2830,6 +2846,19 @@ struct RawDecodeFault final {
 
 [[gnu::used]] std::int64_t scalar_saturating_add_raw(std::int64_t left, std::int64_t right) noexcept {
     return std::saturating_add(left, right);
+}
+
+// The raw form of a strict form is the plain operation, which wraps.
+[[gnu::used]] std::uint64_t scalar_strict_add_raw(std::uint64_t left, std::uint64_t right) noexcept {
+    return left + right;
+}
+
+[[gnu::used]] std::uint64_t scalar_strict_mul_raw(std::uint64_t left, std::uint64_t right) noexcept {
+    return left * right;
+}
+
+[[gnu::used]] std::size_t scalar_strict_layout_raw(std::size_t count) noexcept {
+    return (count * 24 + 63) & ~std::size_t{63};
 }
 
 struct RawWideProduct final {

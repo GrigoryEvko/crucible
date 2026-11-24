@@ -337,6 +337,14 @@ using ::foundation::core::saturating_add;
 using ::foundation::core::saturating_div;
 using ::foundation::core::saturating_mul;
 using ::foundation::core::saturating_sub;
+using ::foundation::core::Strict;
+using ::foundation::core::strict_add;
+using ::foundation::core::strict_div;
+using ::foundation::core::strict_mul;
+using ::foundation::core::strict_rem;
+using ::foundation::core::strict_shl;
+using ::foundation::core::strict_shr;
+using ::foundation::core::strict_sub;
 using ::foundation::core::WideProduct;
 using ::foundation::core::widening_mul;
 using ::foundation::core::wrapping_add;
@@ -387,6 +395,7 @@ using ::foundation::core::low_mask;
 using ::foundation::core::popcount;
 using ::foundation::core::rotl;
 using ::foundation::core::rotr;
+using ::foundation::core::strict_align_up;
 
 // A word of named bit fields (foundation/core/PackedWord.h).
 using ::foundation::core::BitField;

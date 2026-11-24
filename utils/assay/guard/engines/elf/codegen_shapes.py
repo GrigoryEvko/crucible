@@ -1176,6 +1176,24 @@ PROBES: tuple[Probe, ...] = (
         "are different",
         branches=True,
     ),
+    Probe(
+        "scalar_strict_add",
+        "strict_add of a word is the add of the plain form and one test of the carry flag.  The failure path is the "
+        "cold report of the operands, and the plain form wraps with no test",
+        checks=("fatal",),
+    ),
+    Probe(
+        "scalar_strict_mul",
+        "the product of two Strict words is the mul of the plain form and one test of the overflow flag, into the "
+        "cold report of the operands.  The plain form wraps with no test",
+        checks=("fatal",),
+    ),
+    Probe(
+        "scalar_strict_layout",
+        "the bytes of an array at its alignment are the product and the round of the plain form, and one test of the "
+        "flag of each, into the cold report of the operands.  The plain form wraps with no test",
+        checks=("fatal",),
+    ),
     Probe("scalar_widening_mul", "widening_mul is one mul, and the low and the high half come back in rax and rdx"),
     Probe("scalar_min_float", "min of two doubles is the one compare and the one select of std::min"),
     Probe(

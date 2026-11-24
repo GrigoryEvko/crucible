@@ -143,6 +143,55 @@ static_assert(holds(checked_mul_div(std::uint8_t{200}, std::uint8_t{200}, std::u
 static_assert(empty(checked_mul_div(std::uint8_t{200}, std::uint8_t{200}, std::uint8_t{156})));
 static_assert(mul_div_floor(std::uint32_t{10}, std::uint32_t{10}, std::uint32_t{3}) == 33u);
 
+// A strict form gives the exact result in a constant expression.  An
+// overflow, a zero divisor and a count outside the width end the process,
+// so their calls are no constants.
+template <auto Left, auto Right>
+concept AddsStrictlyAsConstant =
+    requires { typename std::integral_constant<decltype(Left), ::foundation::core::strict_add(Left, Right)>; };
+template <auto Dividend, auto Divisor>
+concept DividesStrictlyAsConstant = requires {
+    typename std::integral_constant<decltype(Dividend), ::foundation::core::strict_div(Dividend, Divisor)>;
+};
+template <auto Value, int Count>
+concept ShiftsStrictlyAsConstant =
+    requires { typename std::integral_constant<decltype(Value), ::foundation::core::strict_shl(Value, Count)>; };
+static_assert(strict_add(std::uint8_t{200}, std::uint8_t{55}) == std::uint8_t{255});
+static_assert(strict_add(std::int8_t{-100}, std::int8_t{-28}) == std::int8_t{-128});
+static_assert(strict_sub(std::uint32_t{5}, std::uint32_t{5}) == 0u && strict_sub(-3, 4) == -7);
+static_assert(strict_mul(std::uint16_t{255}, std::uint16_t{257}) == std::uint16_t{65535});
+static_assert(strict_div(-7, 2) == -3 && strict_rem(-7, 3) == -1 && strict_rem(7, -3) == 1);
+static_assert(strict_rem(min_of<int>, -1) == 0 && strict_div(min_of<int>, 1) == min_of<int>);
+static_assert(strict_shl(1, 30) == 1 << 30 && strict_shl(-1, 31) == min_of<int> && strict_shl(-3, 2) == -12);
+static_assert(strict_shl(std::uint64_t{1}, 63) == std::uint64_t{1} << 63 && strict_shr(-8, 1) == -4);
+static_assert(strict_shr(std::uint16_t{0x8000}, 15) == std::uint16_t{1});
+static_assert(AddsStrictlyAsConstant<std::uint8_t{200}, std::uint8_t{55}>
+              && !AddsStrictlyAsConstant<std::uint8_t{200}, std::uint8_t{56}>
+              && !AddsStrictlyAsConstant<max_of<std::int64_t>, std::int64_t{1}>);
+static_assert(DividesStrictlyAsConstant<7, 2> && !DividesStrictlyAsConstant<7, 0>
+              && !DividesStrictlyAsConstant<min_of<int>, -1>);
+static_assert(ShiftsStrictlyAsConstant<1, 30> && !ShiftsStrictlyAsConstant<1, 31> && !ShiftsStrictlyAsConstant<1, 32>
+              && !ShiftsStrictlyAsConstant<1, -1>);
+
+// A Strict holds one T with its size.  It has no implicit conversion from or
+// to T, it takes only a T, and its operators take two Strict of one type.
+template <class Left, class Right>
+concept Adds = requires(Left left, Right right) { left + right; };
+static_assert(sizeof(Strict<std::uint64_t>) == 8 && sizeof(Strict<std::uint8_t>) == 1);
+static_assert(std::is_trivially_copyable_v<Strict<std::uint64_t>>);
+static_assert(std::is_constructible_v<Strict<std::uint64_t>, std::uint64_t>);
+static_assert(!std::is_convertible_v<std::uint64_t, Strict<std::uint64_t>>);
+static_assert(!std::is_convertible_v<Strict<std::uint64_t>, std::uint64_t>);
+static_assert(!std::is_constructible_v<Strict<std::uint64_t>, std::uint32_t>
+              && !std::is_constructible_v<Strict<std::uint64_t>, int>
+              && !std::is_constructible_v<Strict<std::uint32_t>, bool>
+              && !std::is_constructible_v<Strict<std::uint64_t>, Strict<std::uint32_t>>);
+static_assert(Adds<Strict<std::uint32_t>, Strict<std::uint32_t>> && !Adds<Strict<std::uint32_t>, Strict<std::uint64_t>>
+              && !Adds<Strict<std::uint64_t>, std::uint64_t> && !Adds<std::uint64_t, Strict<std::uint64_t>>);
+static_assert((Strict<int>{3} * Strict<int>{4} - Strict<int>{2}).raw() == 10);
+static_assert((Strict<std::uint8_t>{std::uint8_t{1}} << 7).raw() == std::uint8_t{0x80});
+static_assert(Strict<std::uint32_t>{}.raw() == 0u && Strict<int>{-1} < Strict<int>{0});
+
 // The layout: an Option of a value of four bytes has eight bytes, and a
 // WideProduct of two words holds the low word first.
 static_assert(sizeof(Option<std::uint32_t>) == 8 && sizeof(Option<std::uint64_t>) == 16);

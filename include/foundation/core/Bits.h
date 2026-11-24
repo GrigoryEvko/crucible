@@ -19,6 +19,11 @@
 //   align_up(v, a)                  the smallest multiple of a that is not
 //                                   less than v, or no value when a is not
 //                                   a power of two or T cannot hold it
+//   strict_align_up(v, a)           the same multiple.  An a that is not a
+//                                   power of two, and a multiple that T
+//                                   cannot hold, end the process with a
+//                                   report of v and a (the strict forms of
+//                                   foundation/core/Arithmetic.h)
 //   rotl(v, n), rotr(v, n)          the rotation by n modulo the width.  A
 //                                   negative n turns the other way
 //   low_mask<T>(n)                  the n low bits: 0 for n <= 0, and each
@@ -117,6 +122,24 @@ template <UnsignedInteger T>
     T sum{};
     if (__builtin_add_overflow(value, low_bits, &sum)) return none;
     return Option<T>::some(static_cast<T>(sum & static_cast<T>(~low_bits)));
+}
+
+// A constant alignment folds the test of the power, so the hot path keeps
+// the test of the flag of the add and one branch.  For an alignment that is
+// not a power of two, the report takes the value.  For a sum that does not
+// fit, it takes the sum modulo 2^bits and computes the value from it, as for
+// a strict add (StrictOperands of foundation/core/Arithmetic.h).
+template <UnsignedInteger T>
+[[nodiscard]] constexpr T strict_align_up(T value, T alignment, Site site = Site{}) noexcept {
+    if (!has_single_bit(alignment)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::align_up, value, alignment, site);
+    }
+    auto const low_bits = static_cast<T>(alignment - T{1});
+    T sum{};
+    if (__builtin_add_overflow(value, low_bits, &sum)) [[unlikely]] {
+        detail::refuse_strict_(detail::StrictOperation::align_up, sum, alignment, site);
+    }
+    return static_cast<T>(sum & static_cast<T>(~low_bits));
 }
 
 // The step of each direction is the count modulo the width, and the step of

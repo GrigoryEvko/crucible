@@ -6,9 +6,12 @@
 // saturating form is the exact result clamped to the limits.  A zero divisor
 // of saturating_div ends the process.  checked_mul_div agrees with a long
 // division of the exact product, and mul_div_floor ends the process for a
-// zero divisor and for a quotient past the type.
+// zero divisor and for a quotient past the type.  A strict form and
+// Strict<T> give the exact result where it fits, and each other input ends
+// the process with the operands in the report.
 
 #include <foundation/core/Arithmetic.h>
+#include <foundation/core/Bits.h>
 
 #include <foundation/Platform.h>
 
@@ -124,6 +127,23 @@ void check_pair(T left, T right) {
                                            : (is_negative(a) != is_negative(b) ? core::min_of<T> : core::max_of<T>);
     CRUCIBLE_FATAL_INVARIANT(core::saturating_mul(a, b) == saturated);
 
+    // A strict form gives the exact result where it fits, and Strict<T> is
+    // the strict form.  The death tests below end each other pair.
+    core::Strict<T> const strict_a{a};
+    core::Strict<T> const strict_b{b};
+    if (fits<T>(sum)) {
+        CRUCIBLE_FATAL_INVARIANT(core::strict_add(a, b) == static_cast<T>(sum));
+        CRUCIBLE_FATAL_INVARIANT((strict_a + strict_b).raw() == static_cast<T>(sum));
+    }
+    if (fits<T>(difference)) {
+        CRUCIBLE_FATAL_INVARIANT(core::strict_sub(a, b) == static_cast<T>(difference));
+        CRUCIBLE_FATAL_INVARIANT((strict_a - strict_b).raw() == static_cast<T>(difference));
+    }
+    if (product_fits) {
+        CRUCIBLE_FATAL_INVARIANT(core::strict_mul(a, b) == static_cast<T>(product.value));
+        CRUCIBLE_FATAL_INVARIANT((strict_a * strict_b).raw() == static_cast<T>(product.value));
+    }
+
     if (b == T{0}) {
         CRUCIBLE_FATAL_INVARIANT(core::checked_div(a, b).is_none() && core::checked_rem(a, b).is_none());
     } else {
@@ -133,6 +153,12 @@ void check_pair(T left, T right) {
         CRUCIBLE_FATAL_INVARIANT(!fits<T>(quotient) || holds(core::checked_div(a, b), static_cast<T>(quotient)));
         CRUCIBLE_FATAL_INVARIANT(holds(core::checked_rem(a, b), static_cast<T>(remainder)));
         CRUCIBLE_FATAL_INVARIANT(core::saturating_div(a, b) == clamp_to<T>(quotient));
+        CRUCIBLE_FATAL_INVARIANT(core::strict_rem(a, b) == static_cast<T>(remainder));
+        CRUCIBLE_FATAL_INVARIANT((strict_a % strict_b).raw() == static_cast<T>(remainder));
+        if (fits<T>(quotient)) {
+            CRUCIBLE_FATAL_INVARIANT(core::strict_div(a, b) == static_cast<T>(quotient));
+            CRUCIBLE_FATAL_INVARIANT((strict_a / strict_b).raw() == static_cast<T>(quotient));
+        }
     }
 
     // gcd divides the two operands, and no larger value divides the two.
@@ -178,6 +204,14 @@ void check_value(T input) {
                                     ? static_cast<Signed128>(value) / power
                                     : -((-static_cast<Signed128>(value) + power - 1) / power);
         CRUCIBLE_FATAL_INVARIANT(!in_range || holds(core::checked_shr(value, count), static_cast<T>(floored)));
+        if (in_range && fits<T>(scaled)) {
+            CRUCIBLE_FATAL_INVARIANT(core::strict_shl(value, count) == static_cast<T>(scaled));
+            CRUCIBLE_FATAL_INVARIANT((core::Strict<T>{value} << count).raw() == static_cast<T>(scaled));
+        }
+        if (in_range) {
+            CRUCIBLE_FATAL_INVARIANT(core::strict_shr(value, count) == static_cast<T>(floored));
+            CRUCIBLE_FATAL_INVARIANT((core::Strict<T>{value} >> count).raw() == static_cast<T>(floored));
+        }
         CRUCIBLE_FATAL_INVARIANT(core::wrapping_shr(value, count) == static_cast<T>(floored));
         Unsigned128 const shifted = static_cast<Unsigned128>(static_cast<Signed128>(value)) << step;
         CRUCIBLE_FATAL_INVARIANT(core::wrapping_shl(value, count) == modulo<T>(shifted));
@@ -461,6 +495,128 @@ void test_mul_div_floor_ends(::fixy::TestRunnerCtx const& test) {
         == core::max_of<std::uint64_t>);
 }
 
+using StrictInt32 = core::Strict<std::int32_t>;
+using StrictWord = core::Strict<std::uint64_t>;
+using StrictCount = core::Strict<std::uint32_t>;
+
+// The three sums of a plain integer that wrap with no report under the
+// flags of each build: INT32_MAX + 1, UINT64_MAX + 2 and 0u - 1.  Each one of
+// Strict<T> ends the process in a child, with the operands in the report.
+// The product 2^62 * 8 of two sizes ends too.  The largest exact result of
+// each is the control in the test process.
+void test_strict_sums_end(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
+    expect_dies(
+        test, [] noexcept { (void)(StrictInt32{opaque(core::max_of<std::int32_t>)} + StrictInt32{std::int32_t{1}}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_add got 2147483647 and 1, whose sum does not fit the signed type of 32 bits"});
+    expect_dies(
+        test, [] noexcept { (void)(StrictWord{opaque(core::max_of<std::uint64_t>)} + StrictWord{std::uint64_t{2}}); },
+        ::foundation::core::TextView{"foundation: fatal: strict_add got 18446744073709551615 and 2, whose sum does not "
+                                     "fit the unsigned type of 64 bits"});
+    expect_dies(
+        test, [] noexcept { (void)(StrictCount{opaque(std::uint32_t{0})} - StrictCount{std::uint32_t{1}}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_sub got 0 and 1, whose difference does not fit the unsigned type of 32 bits"});
+    expect_dies(
+        test,
+        [] noexcept {
+            (void)(core::Strict<std::size_t>{opaque(std::size_t{1} << 62)} * core::Strict<std::size_t>{std::size_t{8}});
+        },
+        ::foundation::core::TextView{"foundation: fatal: strict_mul got 4611686018427387904 and 8, whose product does "
+                                     "not fit the unsigned type of 64 bits"});
+    CRUCIBLE_FATAL_INVARIANT((StrictInt32{opaque(core::max_of<std::int32_t> - 1)} + StrictInt32{std::int32_t{1}}).raw()
+                             == core::max_of<std::int32_t>);
+    CRUCIBLE_FATAL_INVARIANT((StrictWord{opaque(core::max_of<std::uint64_t> - 2)} + StrictWord{std::uint64_t{2}}).raw()
+                             == core::max_of<std::uint64_t>);
+    CRUCIBLE_FATAL_INVARIANT((StrictCount{opaque(std::uint32_t{1})} - StrictCount{std::uint32_t{1}}).raw() == 0u);
+    CRUCIBLE_FATAL_INVARIANT(
+        (core::Strict<std::size_t>{opaque(std::size_t{1} << 60)} * core::Strict<std::size_t>{std::size_t{8}}).raw()
+        == std::size_t{1} << 63);
+}
+
+// Each other refusal of a strict form ends the process in a child, with the
+// operands and the cause in the report.
+void test_strict_refusals_end(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
+    expect_dies(
+        test, [] noexcept { (void)core::strict_mul(opaque(core::min_of<std::int8_t>), std::int8_t{-1}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_mul got -128 and -1, whose product does not fit the signed type of 8 bits"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_div(opaque(7), 0); },
+        ::foundation::core::TextView{"foundation: fatal: strict_div got 7 and the divisor 0, which gives no quotient"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_div(opaque(core::min_of<int>), -1); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_div got -2147483648 and -1, whose quotient does not fit the signed type of 32 "
+            "bits"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_rem(opaque(std::int64_t{-7}), std::int64_t{0}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_rem got -7 and the divisor 0, which gives no remainder"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_shl(opaque(1), 32); },
+        ::foundation::core::TextView{"foundation: fatal: strict_shl got 1 and the count 32, which is not in [0, 32)"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_shl(opaque(-1), -1); },
+        ::foundation::core::TextView{"foundation: fatal: strict_shl got -1 and the count -1, which is not in [0, 32)"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_shl(opaque(std::uint8_t{0x81}), 1); },
+        ::foundation::core::TextView{"foundation: fatal: strict_shl got 129 and the count 1, whose product by 2^count "
+                                     "does not fit the unsigned type of 8 bits"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_shr(opaque(std::uint64_t{1}), 64); },
+        ::foundation::core::TextView{"foundation: fatal: strict_shr got 1 and the count 64, which is not in [0, 64)"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_align_up(opaque(core::max_of<std::uint64_t>), std::uint64_t{8}); },
+        ::foundation::core::TextView{"foundation: fatal: strict_align_up got 18446744073709551615 and the alignment 8, "
+                                     "whose multiple does not fit the unsigned type of 64 bits"});
+    expect_dies(
+        test, [] noexcept { (void)core::strict_align_up(opaque(std::uint32_t{5}), std::uint32_t{3}); },
+        ::foundation::core::TextView{
+            "foundation: fatal: strict_align_up got 5 and the alignment 3, which is not a power of two"});
+    CRUCIBLE_FATAL_INVARIANT(core::strict_rem(opaque(core::min_of<int>), -1) == 0);
+    CRUCIBLE_FATAL_INVARIANT(core::strict_shl(opaque(-1), 31) == core::min_of<int>);
+    CRUCIBLE_FATAL_INVARIANT(core::strict_align_up(opaque(core::max_of<std::uint64_t> - 7), std::uint64_t{8})
+                             == core::max_of<std::uint64_t> - 7);
+    CRUCIBLE_FATAL_INVARIANT(core::strict_align_up(opaque(std::uint32_t{5}), std::uint32_t{4}) == 8u);
+}
+
+// A strict function that refuses names the site of its caller.
+[[gnu::noinline]] std::uint64_t add_two_past_the_top(std::uint64_t value) noexcept {
+    return core::strict_add(value, std::uint64_t{2});
+}
+
+void test_strict_report_names_the_caller(::fixy::TestRunnerCtx const& test) {
+    using ::fixy::check::expect_dies;
+    expect_dies(
+        test, [] noexcept { (void)add_two_past_the_top(opaque(core::max_of<std::uint64_t>)); },
+        ::foundation::core::TextView{" in add_two_past_the_top\n"});
+    CRUCIBLE_FATAL_INVARIANT(add_two_past_the_top(opaque(std::uint64_t{1})) == 3u);
+}
+
+// The compound forms of Strict<T> are the strict forms, the default value is
+// zero, and the order of two Strict values is the order of their numbers.
+void test_strict_compound_forms() {
+    StrictCount total{};
+    CRUCIBLE_FATAL_INVARIANT(total.raw() == 0u);
+    total += StrictCount{opaque(std::uint32_t{12})};
+    total -= StrictCount{std::uint32_t{2}};
+    total *= StrictCount{std::uint32_t{3}};
+    CRUCIBLE_FATAL_INVARIANT(total.raw() == 30u);
+    total /= StrictCount{std::uint32_t{4}};
+    CRUCIBLE_FATAL_INVARIANT(total.raw() == 7u);
+    total %= StrictCount{std::uint32_t{4}};
+    CRUCIBLE_FATAL_INVARIANT(total.raw() == 3u);
+    total <<= 4;
+    CRUCIBLE_FATAL_INVARIANT(total.raw() == 48u);
+    total >>= 3;
+    CRUCIBLE_FATAL_INVARIANT(total == StrictCount{std::uint32_t{6}});
+    CRUCIBLE_FATAL_INVARIANT(total < StrictCount{std::uint32_t{7}} && total > StrictCount{std::uint32_t{5}});
+    CRUCIBLE_FATAL_INVARIANT((StrictInt32{opaque(std::int32_t{-7})} >> 1).raw() == -4);
+}
+
 }  // namespace
 
 int main() {
@@ -472,5 +628,9 @@ int main() {
     test_mul_div_against_long_division();
     test_saturating_div_ends_on_zero(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_mul_div_floor_ends(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_strict_sums_end(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_strict_refusals_end(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_strict_report_names_the_caller(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
+    test_strict_compound_forms();
     return 0;
 }

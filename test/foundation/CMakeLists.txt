@@ -4099,6 +4099,25 @@ foundation_neg_compile_test(neg_core_scalar_wide_product_signed
   "template constraint failure for .template<class T>  requires  UnsignedInteger<T> struct foundation::core::WideProduct."
   "the expression .is_unsigned_v<T> \\[with T = int\\]. evaluated to .false.")
 
+# A Strict has no implicit conversion from or to its integer, and it takes
+# only a value of its own type.  Two Strict of different types, and a Strict
+# and a plain integer, do not mix in an operation.
+foundation_neg_compile_test(neg_core_strict_mixed_types
+  "no match for .operator\\+. \\(operand types are .const foundation::core::Strict<unsigned int>. and .const foundation::core::Strict<long unsigned int>.\\)"
+  "neg_core_strict_mixed_types.cpp:12:")
+foundation_neg_compile_test(neg_core_strict_add_integer
+  "no match for .operator\\+. \\(operand types are .const foundation::core::Strict<long unsigned int>. and .uint64_t."
+  "neg_core_strict_add_integer.cpp:11:")
+foundation_neg_compile_test(neg_core_strict_to_integer
+  "cannot convert .const foundation::core::Strict<long unsigned int>. to .const uint64_t."
+  "neg_core_strict_to_integer.cpp:10:")
+foundation_neg_compile_test(neg_core_strict_from_integer
+  "conversion from .uint64_t. .aka .long unsigned int.. to non-scalar type .const foundation::core::Strict<long unsigned int>. requested"
+  "explicit conversion function was not considered")
+foundation_neg_compile_test(neg_core_strict_from_narrower_integer
+  "use of deleted function .foundation::core::Strict<T>::Strict\\(Other\\) \\[with Other = unsigned int; T = long unsigned int\\].: a Strict takes a value of its own type"
+  "neg_core_strict_from_narrower_integer.cpp:10:")
+
 # Compare, select and convert.  compare takes two integers, a Bounds comes
 # only from its two doors, widen takes only a pair whose values all fit, and
 # narrow gives an integer.

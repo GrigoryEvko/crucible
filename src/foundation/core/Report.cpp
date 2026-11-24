@@ -13,8 +13,14 @@
 // give.  A placeholder with no argument writes nothing, and a stray brace
 // is written as itself.  The constructor of Fmt refuses the two at compile
 // time, so they do not occur.
+//
+// The file also holds the report of a strict form of
+// foundation/core/Arithmetic.h and foundation/core/Bits.h, because that
+// header is below the formatter.
 
 #include <foundation/core/Report.h>
+
+#include <foundation/core/Arithmetic.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -769,6 +775,117 @@ void report_(Sink sink, char const* text, FmtArg const* arguments, std::size_t c
         write_sink_(sink, window, taken);
         skip += taken;
     } while (skip < length);
+}
+
+namespace {
+
+// The texts of the report of a strict form.  The constructor of each Fmt
+// checks the count of its placeholders at compile time.  Each text names the
+// operation, its operands and the type that does not hold the result.
+using OperandsText = Fmt<std::uint64_t, std::uint64_t, TextView, std::uint64_t>;
+using OperandText = Fmt<std::uint64_t>;
+using PairText = Fmt<std::uint64_t, std::uint64_t>;
+using CountText = Fmt<std::uint64_t, std::uint64_t, std::uint64_t>;
+
+constexpr OperandsText strict_add_text{"strict_add got {} and {}, whose sum does not fit the {} type of {} bits"};
+constexpr OperandsText strict_sub_text{
+    "strict_sub got {} and {}, whose difference does not fit the {} type of {} bits"};
+constexpr OperandsText strict_mul_text{"strict_mul got {} and {}, whose product does not fit the {} type of {} bits"};
+constexpr OperandText strict_div_zero_text{"strict_div got {} and the divisor 0, which gives no quotient"};
+constexpr PairText strict_div_minimum_text{
+    "strict_div got {} and -1, whose quotient does not fit the signed type of {} bits"};
+constexpr OperandText strict_rem_zero_text{"strict_rem got {} and the divisor 0, which gives no remainder"};
+constexpr CountText strict_shl_count_text{"strict_shl got {} and the count {}, which is not in [0, {})"};
+constexpr OperandsText strict_shl_lost_text{
+    "strict_shl got {} and the count {}, whose product by 2^count does not fit the {} type of {} bits"};
+constexpr CountText strict_shr_count_text{"strict_shr got {} and the count {}, which is not in [0, {})"};
+constexpr PairText strict_align_power_text{"strict_align_up got {} and the alignment {}, which is not a power of two"};
+constexpr CountText strict_align_fit_text{
+    "strict_align_up got {} and the alignment {}, whose multiple does not fit the unsigned type of {} bits"};
+
+// The argument of an integer of the operand type, or of the signed count of
+// a shift.
+[[nodiscard]] FmtArg strict_integer_(std::uint64_t bits, StrictSign sign) noexcept {
+    FmtArgKind const kind = sign == StrictSign::signed_type ? FmtArgKind::signed_integer : FmtArgKind::unsigned_integer;
+    return FmtArg{kind, bits, nullptr, 0};
+}
+
+// The parts of the word of a StrictFault (foundation/core/Arithmetic.h).
+struct StrictFaultParts {
+    StrictOperation operation = StrictOperation::add;
+    StrictSign sign = StrictSign::unsigned_type;
+    std::uint32_t bits = 0;
+};
+
+[[nodiscard]] StrictFaultParts parts_of_(StrictFault fault) noexcept {
+    auto const word = static_cast<std::uint32_t>(fault);
+    return StrictFaultParts{static_cast<StrictOperation>(word & 0xFFU), static_cast<StrictSign>((word >> 8U) & 0xFFU),
+                            (word >> 16U) & 0xFFU};
+}
+
+// The left operand of an add, a sub or an align_up to a power of two, from
+// the result modulo 2^bits and the right operand, as the bits of its
+// std::int64_t or std::uint64_t value.  The width of an Integer is 8 to 64
+// bits.
+[[nodiscard]] std::uint64_t left_of_wrapped_(StrictFaultParts const& parts, StrictOperands operands) noexcept {
+    std::uint64_t left = operands.first - operands.right;
+    if (parts.operation == StrictOperation::sub) left = operands.first + operands.right;
+    if (parts.operation == StrictOperation::align_up) left = operands.first - (operands.right - 1);
+    if (parts.bits >= 64) return left;
+    std::uint64_t const mask = (std::uint64_t{1} << parts.bits) - 1;
+    std::uint64_t const low = left & mask;
+    bool const is_negative = parts.sign == StrictSign::signed_type && ((low >> (parts.bits - 1)) & 1U) != 0;
+    return is_negative ? (low | ~mask) : low;
+}
+
+// Writes the text with its arguments and the site of the strict form, and
+// ends the process.
+template <std::size_t Count>
+[[noreturn]] void end_strict_(FmtParts const& text, FmtArg const (&arguments)[Count], char const* file,
+                              std::uint32_t line, char const* function) noexcept {
+    report_fatal_with_(fmt_text_(text), file, line, function, arguments, Count);
+}
+
+}  // namespace
+
+void report_strict_fault_(StrictFault fault, StrictOperands operands, char const* file, std::uint32_t line,
+                          char const* function) noexcept {
+    StrictFaultParts const parts = parts_of_(fault);
+    bool const is_power_of_two = __builtin_popcountg(operands.right) == 1;
+    bool const is_wrapped = parts.operation == StrictOperation::add || parts.operation == StrictOperation::sub
+                         || (parts.operation == StrictOperation::align_up && is_power_of_two);
+    FmtArg const left = strict_integer_(is_wrapped ? left_of_wrapped_(parts, operands) : operands.first, parts.sign);
+    FmtArg const right = strict_integer_(operands.right, parts.sign);
+    FmtArg const count = strict_integer_(operands.right, StrictSign::signed_type);
+    FmtArg const sign = fmt_arg_of_(parts.sign == StrictSign::signed_type ? TextView{"signed"} : TextView{"unsigned"});
+    FmtArg const bits = FmtArg{FmtArgKind::unsigned_integer, parts.bits, nullptr, 0};
+    // The count of a shift is in [0, bits) exactly when the refusal is a
+    // lost bit and not the count.
+    auto const signed_count = static_cast<std::int64_t>(operands.right);
+    bool const is_count_in_range = signed_count >= 0 && signed_count < static_cast<std::int64_t>(parts.bits);
+    switch (parts.operation) {
+        case StrictOperation::add:
+            end_strict_(strict_add_text, {left, right, sign, bits}, file, line, function);
+        case StrictOperation::sub:
+            end_strict_(strict_sub_text, {left, right, sign, bits}, file, line, function);
+        case StrictOperation::mul:
+            end_strict_(strict_mul_text, {left, right, sign, bits}, file, line, function);
+        case StrictOperation::div:
+            if (operands.right == 0) end_strict_(strict_div_zero_text, {left}, file, line, function);
+            end_strict_(strict_div_minimum_text, {left, bits}, file, line, function);
+        case StrictOperation::rem:
+            end_strict_(strict_rem_zero_text, {left}, file, line, function);
+        case StrictOperation::shl:
+            if (is_count_in_range) end_strict_(strict_shl_lost_text, {left, count, sign, bits}, file, line, function);
+            end_strict_(strict_shl_count_text, {left, count, bits}, file, line, function);
+        case StrictOperation::shr:
+            end_strict_(strict_shr_count_text, {left, count, bits}, file, line, function);
+        case StrictOperation::align_up:
+            if (!is_power_of_two) end_strict_(strict_align_power_text, {left, right}, file, line, function);
+            end_strict_(strict_align_fit_text, {left, right, bits}, file, line, function);
+        default:
+            report_fatal_("a strict form ended with an operation that has no report", file, line, function);
+    }
 }
 
 }  // namespace foundation::core::detail
