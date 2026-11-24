@@ -23,9 +23,9 @@ namespace crucible::cog {
 // at name lookup rather than reading a default of zero.
 //
 // The fold below reads each tag of the row, so it takes a new resource
-// axis with no change here. A specialisation that does not add a case
-// for the new axis gives it a ceiling of 0 and rejects every demand on
-// it, which is wrong-but-safe rather than silently permissive.
+// axis with no change here. Each switch of a specialisation names each
+// axis, with a ceiling of 0 for an axis that the kind does not expose, so
+// a new axis needs a ceiling in each specialisation.
 
 template <CogKind K>
 struct cog_max_capacity;
@@ -65,6 +65,19 @@ struct cog_max_capacity<CogKind::Gpu> {
                 return 1500ULL;
             case ResourceKind::ThermalCelsius:
                 return 95ULL;
+            // An axis that a GPU does not expose.
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -92,6 +105,22 @@ struct cog_max_capacity<CogKind::NicPort> {
                 return 50ULL;
             case ResourceKind::ThermalCelsius:
                 return 85ULL;
+            // An axis that a NIC port does not expose.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -113,6 +142,25 @@ struct cog_max_capacity<CogKind::NvSwitch> {
                 return 1500ULL;
             case ResourceKind::ThermalCelsius:
                 return 90ULL;
+            // An axis that an NVSwitch does not expose.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -134,6 +182,26 @@ struct cog_max_capacity<CogKind::CpuCore> {
                 return 50ULL;
             case ResourceKind::ThermalCelsius:
                 return 100ULL;
+            // An axis that a CPU core does not expose.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::Llc:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -155,6 +223,25 @@ struct cog_max_capacity<CogKind::CpuSocket> {
                 return 800ULL;
             case ResourceKind::ThermalCelsius:
                 return 100ULL;
+            // An axis that a CPU socket does not expose.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -169,6 +256,29 @@ struct cog_max_capacity<CogKind::DramChannel> {
     static constexpr std::uint64_t for_kind(::foundation::effects::ResourceKind k) noexcept {
         using ::foundation::effects::ResourceKind;
         switch (k) {
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::PowerWatts:
+            case ResourceKind::ThermalCelsius:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -246,6 +356,19 @@ struct caps_runtime_capacity<CogKind::Gpu> {
                 return std::uint64_t{caps.tdp_watts.value()};
             case ResourceKind::ThermalCelsius:
                 return std::uint64_t{caps.thermal_throttle_celsius.value()};
+            // An axis that a GPU does not expose.
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -270,6 +393,25 @@ struct caps_runtime_capacity<CogKind::NicPort> {
                 return std::uint64_t{caps.tcam_entries.value()};
             case ResourceKind::PcieBw:
                 return 0ULL;
+            // An axis that the schema of a NIC port carries no field for:
+            // the ring slots and the power and thermal limits too.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::NicRing:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::PowerWatts:
+            case ResourceKind::ThermalCelsius:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -288,6 +430,28 @@ struct caps_runtime_capacity<CogKind::NvSwitch> {
                 return caps.buffer_bytes.value();
             case ResourceKind::Tcam:
                 return std::uint64_t{caps.tcam_entries.value()};
+            // An axis that the schema of an NVSwitch carries no field for:
+            // the power and thermal limits too.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::CpuCore:
+            case ResourceKind::Llc:
+            case ResourceKind::PowerWatts:
+            case ResourceKind::ThermalCelsius:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -304,6 +468,29 @@ struct caps_runtime_capacity<CogKind::CpuCore> {
                 return 1ULL;
             case ResourceKind::L2:
                 return std::uint64_t{caps.l2_bytes.value()};
+            // An axis that the schema of a CPU core carries no field for:
+            // the power and thermal limits too.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::Llc:
+            case ResourceKind::PowerWatts:
+            case ResourceKind::ThermalCelsius:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }
@@ -324,6 +511,27 @@ struct caps_runtime_capacity<CogKind::CpuSocket> {
                 return std::uint64_t{caps.tdp_watts.value()};
             case ResourceKind::ThermalCelsius:
                 return std::uint64_t{caps.thermal_throttle_celsius.value()};
+            // An axis that the schema of a CPU socket carries no field for:
+            // the L2 of its cores too.
+            case ResourceKind::Sm:
+            case ResourceKind::WarpScheduler:
+            case ResourceKind::RegistersPerWarp:
+            case ResourceKind::Smem:
+            case ResourceKind::L2:
+            case ResourceKind::HbmBytes:
+            case ResourceKind::HbmBw:
+            case ResourceKind::NvlinkBw:
+            case ResourceKind::PcieBw:
+            case ResourceKind::NicQ:
+            case ResourceKind::NicRing:
+            case ResourceKind::NicQp:
+            case ResourceKind::NicCq:
+            case ResourceKind::NicMr:
+            case ResourceKind::SwitchEgressBw:
+            case ResourceKind::SwitchBuffer:
+            case ResourceKind::Tcam:
+            case ResourceKind::RackPowerKw:
+            case ResourceKind::CarbonGramsPerKwh:
             default:
                 return 0ULL;
         }

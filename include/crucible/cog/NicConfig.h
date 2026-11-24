@@ -345,6 +345,9 @@ declare_sysctl_config(SysctlConfig const& config) noexcept {
             return NicTxQdisc::FqCodel;
         case QdiscKind::Mq:
             return NicTxQdisc::Mq;
+        // The audit has no name of its own for a priority or an HTB qdisc.
+        case QdiscKind::Prio:
+        case QdiscKind::Htb:
         default:
             return NicTxQdisc::Unknown;
     }
