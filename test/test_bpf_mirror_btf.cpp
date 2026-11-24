@@ -223,6 +223,16 @@ struct BtfType {
             case BtfKind::enumeration:
             case BtfKind::function_prototype:
                 return 8 * record_count();
+            // A kind that holds only its 12 bytes.
+            case BtfKind::pointer:
+            case BtfKind::forward:
+            case BtfKind::type_alias:
+            case BtfKind::volatile_kind:
+            case BtfKind::const_kind:
+            case BtfKind::restrict_kind:
+            case BtfKind::function:
+            case BtfKind::floating:
+            case BtfKind::type_tag:
             default:
                 return 0;
         }
@@ -282,6 +292,13 @@ public:
             case BtfKind::restrict_kind:
             case BtfKind::type_tag:
                 return size_of_type(found.size_or_type());
+            // A kind with no size of its own.
+            case BtfKind::forward:
+            case BtfKind::function:
+            case BtfKind::function_prototype:
+            case BtfKind::variable:
+            case BtfKind::data_section:
+            case BtfKind::declaration_tag:
             default:
                 return 0;
         }

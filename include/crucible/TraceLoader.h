@@ -655,6 +655,23 @@ using TraceNameHashes = ::fixy::HeapArray<uint64_t>;
             ::fixy::report(::fixy::Sink::Err,
                            "load_trace: two names of the table at the offset {} have one schema hash\n", table_at);
             return;
+        // An error of another step is no fault of the name table, and the
+        // report of that step names it.
+        case TraceLoadError::OpenFailed:
+        case TraceLoadError::SizeUnknown:
+        case TraceLoadError::HeaderTruncated:
+        case TraceLoadError::WrongMagic:
+        case TraceLoadError::WrongVersion:
+        case TraceLoadError::CountPastFile:
+        case TraceLoadError::ReadTruncated:
+        case TraceLoadError::ReadFailed:
+        case TraceLoadError::MetaCorrupt:
+        case TraceLoadError::OpCorrupt:
+        case TraceLoadError::MetaRunPastCount:
+        case TraceLoadError::NameCollision:
+        case TraceLoadError::NameTableFull:
+        case TraceLoadError::NameTableSealed:
+        case TraceLoadError::NameReserved:
         default:
             return;
     }
@@ -929,6 +946,25 @@ template <std::size_t OpBytes, std::size_t MetaBytes>
                            "different name, so the load refuses the trace and registers none of its {} names\n",
                            image.num_names());
             return;
+        // An error of another step is no refusal of the schema table, and
+        // the report of that step names it.
+        case TraceLoadError::OpenFailed:
+        case TraceLoadError::SizeUnknown:
+        case TraceLoadError::HeaderTruncated:
+        case TraceLoadError::WrongMagic:
+        case TraceLoadError::WrongVersion:
+        case TraceLoadError::CountPastLimit:
+        case TraceLoadError::CountPastFile:
+        case TraceLoadError::ReadTruncated:
+        case TraceLoadError::ReadFailed:
+        case TraceLoadError::MetaCorrupt:
+        case TraceLoadError::OpCorrupt:
+        case TraceLoadError::MetaRunPastCount:
+        case TraceLoadError::NameTableTruncated:
+        case TraceLoadError::NameLengthPastLimit:
+        case TraceLoadError::TrailingBytes:
+        case TraceLoadError::NameCorrupt:
+        case TraceLoadError::NameRepeated:
         default:
             return;
     }

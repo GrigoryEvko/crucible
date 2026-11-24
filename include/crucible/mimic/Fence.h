@@ -114,6 +114,14 @@ namespace detail {
             return FenceDomain::ArmIsh;
         case MemoryScope::Outer:
             return FenceDomain::ArmOsh;
+        // The system domain, and each scope of a GPU or of one thread,
+        // which ARM spells with no smaller domain.
+        case MemoryScope::System:
+        case MemoryScope::Thread:
+        case MemoryScope::Warp:
+        case MemoryScope::Cta:
+        case MemoryScope::Cluster:
+        case MemoryScope::Gpu:
         default:
             return FenceDomain::ArmSy;
     }
@@ -127,6 +135,13 @@ namespace detail {
             return FenceDomain::GpuCluster;
         case MemoryScope::Gpu:
             return FenceDomain::GpuGpu;
+        // The system scope, and each scope of a CPU or of one thread, which
+        // PTX spells with no smaller domain.
+        case MemoryScope::System:
+        case MemoryScope::Thread:
+        case MemoryScope::Warp:
+        case MemoryScope::Inner:
+        case MemoryScope::Outer:
         default:
             return FenceDomain::GpuSys;
     }
@@ -235,6 +250,12 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
                     return dmb_of_order_(spec.order, "dmb oshld", "dmb oshst", "dmb osh");
                 case FenceDomain::ArmSy:
                     return dmb_of_order_(spec.order, "dmb ld", "dmb st", "dmb sy");
+                // No domain, or a domain of a GPU: the strongest barrier.
+                case FenceDomain::None:
+                case FenceDomain::GpuCta:
+                case FenceDomain::GpuCluster:
+                case FenceDomain::GpuGpu:
+                case FenceDomain::GpuSys:
                 default:
                     return "dmb sy";
             }
@@ -248,6 +269,11 @@ template <BarrierStrength Strength, MemoryScope Scope, FenceArch Arch>
                     return ptx_fence_of_order_(spec.order, "fence.sc.gpu", "fence.acq_rel.gpu");
                 case FenceDomain::GpuSys:
                     return ptx_fence_of_order_(spec.order, "fence.sc.sys", "fence.acq_rel.sys");
+                // No domain, or a domain of ARM: the fence of the system.
+                case FenceDomain::None:
+                case FenceDomain::ArmIsh:
+                case FenceDomain::ArmOsh:
+                case FenceDomain::ArmSy:
                 default:
                     return "fence.acq_rel.sys";
             }

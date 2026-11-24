@@ -176,6 +176,24 @@ concept SharpEligibleRecipe =
         case ScalarType::Double:
         case ScalarType::BFloat16:
             return true;
+        // A switch reduces no integer, bool, complex, eight-bit or four-bit
+        // float, and no undefined type.
+        case ScalarType::Byte:
+        case ScalarType::Char:
+        case ScalarType::Short:
+        case ScalarType::Int:
+        case ScalarType::Long:
+        case ScalarType::ComplexHalf:
+        case ScalarType::ComplexFloat:
+        case ScalarType::ComplexDouble:
+        case ScalarType::Bool:
+        case ScalarType::Float8_e5m2:
+        case ScalarType::Float8_e4m3fn:
+        case ScalarType::Float8_e5m2fnuz:
+        case ScalarType::Float8_e4m3fnuz:
+        case ScalarType::Float8_e8m0fnu:
+        case ScalarType::Float4_e2m1fn_x2:
+        case ScalarType::Undefined:
         default:
             return false;
     }
@@ -216,6 +234,14 @@ validate_sharp_switch(cog::CogIdentity const& fabric_switch, cog::NvSwitchTarget
         case SharpError::DispatchDeferred:
         case SharpError::VendorBackendUnavailable:
             return SharpFallback::RingOrTree;
+        // No error, or an error of the participants, of the switch or of the
+        // shape: the catalog of the software collectives.
+        case SharpError::None:
+        case SharpError::EmptyParticipantSet:
+        case SharpError::ParticipantCountMismatch:
+        case SharpError::ZeroSwitchCog:
+        case SharpError::NonSwitchCog:
+        case SharpError::OutputShapeMismatch:
         default:
             return SharpFallback::SoftwareCollectiveCatalog;
     }
