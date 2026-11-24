@@ -1,6 +1,6 @@
-// A plant of use-after-move: the producer key of an SPSC split moves into the producer door of the split, and the
-// code then opens the producer end again through the moved key.  The key is the one opener of its side, so the rule
-// must refuse the second use.
+// A plant of use-after-move: the producer token of an SPSC split moves into the producer door of the split, and the
+// code then opens the producer end again through the moved token.  The token is the one opener of its side, so the
+// rule must refuse the second use.
 #include <fixy/concurrent/SpscEnds.h>
 
 #include <utility>
@@ -9,9 +9,9 @@ struct WritesOne {
     void operator()(::fixy::concurrent::ProducerEnd<Owner>& end) const noexcept { (void)Owner::try_write(end); }
 };
 
-template <class Split, class Key>
-void must_catch_end_after_move(Split& split, Key key) {
-    Key back = split.with_producer(std::move(key), WritesOne{});
-    split.with_producer(key, WritesOne{});
+template <class Split, class Token>
+void must_catch_end_after_move(Split& split, Token token) {
+    Token back = with_producer(split, std::move(token), WritesOne{});
+    with_producer(split, token, WritesOne{});
     (void)back;
 }

@@ -20,7 +20,7 @@ struct Owner final {
 
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
-    return minted.split.with_owner([](Owner const& owner) noexcept {
+    return with_owner(minted.split, [](Owner const& owner) noexcept {
         auto again = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc, owner);
         return 0;
     });

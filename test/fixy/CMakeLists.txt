@@ -2234,7 +2234,7 @@ fixy_neg_compile_test(neg_cyclic_buffer_capacity_not_a_power_of_two
 # gives the key of the frame doors only to the owners of that header, so a unit
 # that is no owner builds no ViewMut of a brand that it names.
 foreach(_frame_key_door owned_region:OwnedRegion cyclic_buffer:CyclicBuffer thread_tasks:ThreadTasks
-        spsc_split:SpscSplit parallel_for:ParallelFor lane_ring:LaneRing)
+        parallel_for:ParallelFor lane_ring:LaneRing)
   string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
   list(GET _frame_key_parts 0 _frame_key_file)
   list(GET _frame_key_parts 1 _frame_key_class)
@@ -4758,11 +4758,13 @@ fixy_test(test_channel_identity)
 # object that its ring holds at its end.  The tsan preset runs its threads.
 fixy_test(test_spsc_box_channel)
 # The ends of an SPSC owner: the mint builds the owner, the split that holds
-# it with its two ends, and the key of each side, and a body borrows an end
-# through a keyed frame door of the split.  An end does not copy or move, the
-# split does not move, the owner builds no end and points no end elsewhere, a
-# body reaches no key of its side and gives no borrow out, an owner that
-# exists does not split again, and an owner that moves does not split.
+# it with its two ends, and the token of each side, and a body borrows an end
+# through a frame door of the split.  An end does not copy or move, the split
+# does not move, the owner builds no end and points no end elsewhere, a body
+# reaches no token of its side and gives no borrow out, an owner that exists
+# does not split again, and an owner that moves does not split.  A token does
+# not copy, only the mint builds one, and it opens only its side of its split.
+# The tsan preset runs the two threads of the test.
 fixy_test(test_spsc_ends)
 fixy_neg_compile_test(neg_spsc_ends_copy_of_an_end
   "use of deleted function .fixy::concurrent::SpscEnd<Owner, Side>::SpscEnd\\(const fixy::concurrent::SpscEnd<Owner, Side>&\\)"
@@ -4781,13 +4783,13 @@ fixy_neg_compile_test(neg_spsc_ends_split_that_moves
 # A body of a door of a split that keeps a Ref of its end in a capture: the
 # store check of the door refuses it.
 fixy_neg_compile_test(neg_spsc_ends_body_keeps_its_end
-  "no matching function for call to .fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
   "StoresNoBorrowOutside")
-# A body of a door of a split that captures the split by a reference that is
-# not const, to reach a second frame through a helper: the store check of the
-# door refuses the capture.
+# A body of a door of a split of an owner with a plain count that captures the
+# split by a reference that is not const, to reach a second frame through a
+# helper: the store check of the door refuses the capture.
 fixy_neg_compile_test(neg_spsc_ends_body_reaches_its_split
-  "no matching function for call to .fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
   "StoresNoBorrowOutside")
 fixy_neg_compile_test(neg_spsc_ends_end_in_an_outer_option
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
@@ -4799,25 +4801,48 @@ fixy_neg_compile_test(neg_spsc_ends_owner_points_an_end_elsewhere
   "passing .const fixy::concurrent::SpscEnd<.anonymous.::Owner, fixy::concurrent::SpscSide::producer>::owner_ref."
   "as .this. argument discards qualifiers")
 fixy_neg_compile_test(neg_spsc_ends_nested_door
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(fixy::concurrent::ProducerKey<Brand>&&, Body&&\\) &"
-  "a body of a frame door of a split reaches the key of its side, so code in the body could open a second frame of that side")
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, ProducerToken<Owner, Brand>&&, Body&&\\)"
+  "a body of a frame door of a split reaches the token of its side, so code in the body could open a second frame of that side")
 fixy_neg_compile_test(neg_spsc_ends_helper_has_no_key
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(Body&&\\) &"
-  "a split lends its producer end only with the producer key")
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, Body&&\\)"
+  "a split lends its producer end only with the producer token of its mint")
 fixy_neg_compile_test(neg_spsc_ends_called_closure
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(fixy::concurrent::ProducerKey<Brand>&&, Body&&\\) &"
-  "a body of a frame door of a split reaches the key of its side")
-# A split stays on one thread, so two bodies of run_joined that borrow one
-# split are refused, also when each holds the key of a different side.
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, ProducerToken<Owner, Brand>&&, Body&&\\)"
+  "a body of a frame door of a split reaches the token of its side")
+# Two threads cannot write a split whose owner holds a plain part, so two
+# bodies of run_joined that borrow one such split are refused, also when each
+# holds the token of a different side.
 fixy_neg_compile_test(neg_spsc_ends_split_on_two_threads
-  "static assertion failed: run_joined: the body captures .split. .field [_a-z]*, type fixy::concurrent::SpscSplit<"
+  "static assertion failed: run_joined: the body captures .split. .field [_a-z]*, type fixy::concurrent::SpscSplit<.anonymous.::PlainLog"
   "a write through this reference that is not const races")
 fixy_neg_compile_test(neg_spsc_ends_ref_alias
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(Body&&\\) &"
-  "a split lends its producer end only with the producer key, or with the producer proof of a held brand: call with_producer")
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, Body&&\\)"
+  "a split lends its producer end only with the producer token of its mint: call with_producer")
 fixy_neg_compile_test(neg_spsc_ends_body_gives_its_end_out
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\(fixy::concurrent::ProducerKey<Brand>&, Body&&\\) &"
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, ProducerToken<Owner, Brand>&, Body&&\\)"
   "the result of a frame door of a split leaves the frame, so it holds no reference and no address")
+# A side token does not copy, only the door of the mint builds one, the
+# token of one side opens no other side, the token of one split opens no
+# other split, the member door of an end takes the key of the frame doors,
+# and the door of the two ends takes the token of each side.
+fixy_neg_compile_test(neg_spsc_ends_token_copy
+  "use of deleted function .fixy::concurrent::SpscSplit<Owner, Brand>::producer_token::producer_token\\(const fixy::concurrent::SpscSplit<Owner, Brand>::producer_token&\\)"
+  "a side token is the authority over one side: a copy would give a second holder of the side")
+fixy_neg_compile_test(neg_spsc_ends_second_token
+  ".constexpr fixy::concurrent::SpscSplit<Owner, Brand>::producer_token::producer_token\\(\\) .with Owner = .anonymous.::Owner"
+  "is private within this context")
+fixy_neg_compile_test(neg_spsc_ends_consumer_token_at_the_producer_door
+  "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "fixy::concurrent::ConsumerToken<.anonymous.::Owner, ")
+fixy_neg_compile_test(neg_spsc_ends_token_of_another_split
+  "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "neg_spsc_ends_token_of_another_split\\.cpp:[0-9]+:[0-9]+: error")
+fixy_neg_compile_test(neg_spsc_ends_member_door_outside_a_frame
+  ".constexpr fixy::concurrent::SpscFrameKey::SpscFrameKey\\(\\). is private within this context"
+  "neg_spsc_ends_member_door_outside_a_frame\\.cpp:[0-9]+:[0-9]+: error")
+fixy_neg_compile_test(neg_spsc_ends_ends_door_with_one_token
+  "no matching function for call to .with_ends\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "fixy::concurrent::ProducerToken<.anonymous.::Owner, fixy::concurrent::<lambda\\(\\)> >&, fixy::concurrent::ProducerToken<")
 fixy_neg_compile_test(neg_spsc_ends_split_of_an_owner_that_exists
   "no matching function for call to .mint_spsc_split<.*Owner>\\("
   "the expression .is_constructible_v<_Tp, _Args ...>")
@@ -4825,16 +4850,33 @@ fixy_neg_compile_test(neg_spsc_ends_owner_that_moves
   "no matching function for call to .mint_spsc_split<.*MovableOwner>\\("
   "the expression .!\\(is_move_constructible_v<Owner>\\) \\[with Owner = <unnamed>::MovableOwner\\]. evaluated to .false.")
 # A held split names a proof for each side in its brand, opens a side only
-# with the proof of that side, and refuses a body that reaches the split.
+# with the proof of that side, refuses a body that reaches a side of the
+# proof, gives no borrow out, lends no side of a temporary, does not move, and
+# opens through no frame door of a split with tokens.
 fixy_neg_compile_test(neg_spsc_ends_held_brand_without_proofs
   "no matching function for call to .mint_held_spsc_split<.*Owner, .*PlainBrand>\\("
   "SpscHeldBrand")
 fixy_neg_compile_test(neg_spsc_ends_held_proof_of_the_other_side
-  "no matching function for call to .fixy::concurrent::SpscSplit<.*Owner, .*HeldBrand>::with_producer\\("
+  "no matching function for call to .fixy::concurrent::SpscHeldSide<.*Owner, fixy::concurrent::SpscSide::producer, .*ProducerProof>::with_end\\("
   "ConsumerProof")
 fixy_neg_compile_test(neg_spsc_ends_held_nested_door
-  "use of deleted function .void fixy::concurrent::SpscSplit<Owner, Brand>::with_producer\\("
-  "a body of a frame door of a held split reaches a split of its brand through a borrow")
+  "use of deleted function .void fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::with_end\\(const Proof&, Body&&\\) &"
+  "a body of the door of a side of a held split reaches a side of its proof through a borrow")
+fixy_neg_compile_test(neg_spsc_ends_held_side_with_no_proof
+  "use of deleted function .void fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::with_end\\(Body&&\\) &"
+  "a side of a held split lends its end only with the proof of the side")
+fixy_neg_compile_test(neg_spsc_ends_held_body_gives_its_end_out
+  "use of deleted function .void fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::with_end\\(const Proof&, Body&&\\) &"
+  "the result of the door of a side leaves the frame, so it holds no reference and no address")
+fixy_neg_compile_test(neg_spsc_ends_side_of_a_temporary_held_split
+  "use of deleted function .fixy::concurrent::SpscHeldSplit<Owner, Brand>::consumer_side_type& fixy::concurrent::SpscHeldSplit<Owner, Brand>::consumer_side\\(\\) &&"
+  "a temporary held split ends at the end of the statement, and its side with it")
+fixy_neg_compile_test(neg_spsc_ends_held_split_that_moves
+  "use of deleted function .fixy::concurrent::SpscHeldSplit<Owner, Brand>::SpscHeldSplit\\(fixy::concurrent::SpscHeldSplit<Owner, Brand>&&\\)"
+  "the sides of a held split live beside the Box of their owner, so a held split does not move")
+fixy_neg_compile_test(neg_spsc_ends_frame_door_on_a_held_split
+  "no matching function for call to .with_producer\\(fixy::concurrent::SpscHeldSplit<.anonymous.::Owner, .anonymous.::HeldBrand>&"
+  "neg_spsc_ends_frame_door_on_a_held_split\\.cpp:[0-9]+:[0-9]+: error")
 # The end of the channel ends each object that its ring holds, so the channel
 # holds no linear payload.
 fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload

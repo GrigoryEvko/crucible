@@ -18,8 +18,7 @@ struct Owner final {
 
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
-    minted.split.with_producer(minted.producer_key, [](::fixy::concurrent::ProducerEnd<Owner>& end) noexcept {
-        [[maybe_unused]] auto second = end;
-    });
+    with_producer(minted.split, minted.producer_token,
+                  [](::fixy::concurrent::ProducerEnd<Owner>& end) noexcept { [[maybe_unused]] auto second = end; });
     return 0;
 }

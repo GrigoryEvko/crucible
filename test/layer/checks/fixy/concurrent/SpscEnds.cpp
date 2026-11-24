@@ -2,14 +2,16 @@
 
 #include <fixy/concurrent/SpscEnds.h>
 
+#include <foundation/Linear.h>
 #include <foundation/Transfer.h>
-#include <foundation/core/Frame.h>
-#include <foundation/core/RootKeys.h>
-#include <foundation/effects/Effect.h>
+
+#include <cstdint>
+#include <type_traits>
 
 namespace fixy::concurrent::detail::spsc_ends_checks {
 
-// An owner with two empty states, and the brands of two splits of it.
+// An owner with two empty states, an owner with a plain count, and the brands
+// of two splits.
 struct CheckOwner final {
     struct producer_state {};
     struct consumer_state {};
@@ -17,38 +19,80 @@ struct CheckOwner final {
     CheckOwner(CheckOwner const&) = delete("an owner of a split is pinned");
     CheckOwner(CheckOwner&&) = delete("an owner of a split is pinned");
 };
+struct PlainOwner final {
+    struct producer_state {};
+    struct consumer_state {};
+    PlainOwner() noexcept = default;
+    PlainOwner(PlainOwner const&) = delete("an owner of a split is pinned");
+    PlainOwner(PlainOwner&&) = delete("an owner of a split is pinned");
+    std::uint64_t count = 0;
+};
 struct CheckBrand final {};
 struct OtherBrand final {};
 
-using ProducerBrand = SpscSideBrand<CheckBrand, SpscSide::producer>;
-using ConsumerBrand = SpscSideBrand<CheckBrand, SpscSide::consumer>;
+using CheckSplit = SpscSplit<CheckOwner, CheckBrand>;
+using OtherSplit = SpscSplit<CheckOwner, OtherBrand>;
 
-// A root door mints one key of each brand that its body names
-// (foundation/core/RootKeys.h).  A body that borrows a split and names a key
-// of one of its sides would then hold a second key of a live side, beside the
-// key of the mint.  The walk of the borrow refuses such a body for each side,
-// so the refusal does not rest on the Sendable test of a thread door.  A body
-// that borrows a split of another brand passes, so the walk reads the split.
-struct BorrowsTheSplit {
-    SpscSplit<CheckOwner, CheckBrand>& split;
-    void operator()(ConsumerKey<CheckBrand>& /*key*/) noexcept {}
-};
-struct BorrowsAnotherSplit {
-    SpscSplit<CheckOwner, OtherBrand>& split;
-    void operator()(ConsumerKey<CheckBrand>& /*key*/) noexcept {}
-};
-static_assert(::foundation::core::NamesRootKeys<BorrowsTheSplit, 0>);
-static_assert(!::foundation::core::BorrowsNoKeyOwner<BorrowsTheSplit, ConsumerBrand>);
-static_assert(!::foundation::core::BorrowsNoKeyOwner<BorrowsTheSplit, ProducerBrand>);
-static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ConsumerBrand>);
-static_assert(::foundation::core::BorrowsNoKeyOwner<BorrowsAnotherSplit, ProducerBrand>);
+// A side token is linear, carries authority, does not copy, moves, and no code
+// builds one with no argument.  The tokens of the two sides are two types, and
+// the tokens of two brands are two types.
+static_assert(::foundation::linear::is_linear_type(^^ProducerToken<CheckOwner, CheckBrand>));
+static_assert(!std::is_copy_constructible_v<ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(std::is_nothrow_move_constructible_v<ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(!std::is_default_constructible_v<ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(!std::is_same_v<ProducerToken<CheckOwner, CheckBrand>, ConsumerToken<CheckOwner, CheckBrand>>);
+static_assert(!std::is_same_v<ProducerToken<CheckOwner, CheckBrand>, ProducerToken<CheckOwner, OtherBrand>>);
 
-// A split stays on one thread: two threads cannot write it at the same time,
-// also when its owner holds no state that two threads cannot write.  The
-// Box of the owner and the state of each end are plain, and a loan key
-// proves no thread.
+// Two threads can write a split whose owner two threads write (the statement
+// of the split), and no thread shares a split of an owner with a plain part.
 static_assert(::foundation::transfer::Synchronized<CheckOwner>);
-static_assert(!::foundation::transfer::Synchronized<SpscSplit<CheckOwner, CheckBrand>>);
+static_assert(::foundation::transfer::Synchronized<CheckSplit>);
+static_assert(!::foundation::transfer::Synchronized<PlainOwner>);
+static_assert(!::foundation::transfer::Synchronized<SpscSplit<PlainOwner, CheckBrand>>);
+
+// The producer token of a split opens its producer side.  The consumer token
+// and the token of another brand open nothing there.
+struct WritesNothing final {
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) const noexcept {}
+};
+template <class Split, class Opener>
+constexpr bool opens_producer =
+    requires(Split& split, Opener& opener) { with_producer(split, opener, WritesNothing{}); };
+static_assert(opens_producer<CheckSplit, ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(!opens_producer<CheckSplit, ConsumerToken<CheckOwner, CheckBrand>>);
+static_assert(!opens_producer<CheckSplit, ProducerToken<CheckOwner, OtherBrand>>);
+static_assert(!opens_producer<OtherSplit, ProducerToken<CheckOwner, CheckBrand>>);
+
+// The gate of a frame door refuses a body that reaches the token of its side,
+// and it admits a body that reaches the token of the other side.
+struct ReachesItsToken {
+    ProducerToken<CheckOwner, CheckBrand>& token;
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) noexcept {}
+};
+struct ReachesTheOtherToken {
+    ConsumerToken<CheckOwner, CheckBrand>& token;
+    void operator()(ProducerEnd<CheckOwner>& /*end*/) noexcept {}
+};
+static_assert(!ReachesNoSideToken<ReachesItsToken, ProducerToken<CheckOwner, CheckBrand>>);
+static_assert(ReachesNoSideToken<ReachesTheOtherToken, ProducerToken<CheckOwner, CheckBrand>>);
+
+// An owner gives the first state of each end with two static members, and
+// the mint builds each end of each other owner with the state that its type
+// gives.
+struct StartOwner final {
+    struct producer_state {
+        std::uint64_t written = 0;
+    };
+    struct consumer_state {
+        std::uint64_t read = 0;
+    };
+    StartOwner() noexcept = default;
+    StartOwner(StartOwner const&) = delete("an owner of a split is pinned");
+    StartOwner(StartOwner&&) = delete("an owner of a split is pinned");
+    [[nodiscard]] static producer_state first_producer_state(StartOwner const& /*owner*/) noexcept { return {}; }
+    [[nodiscard]] static consumer_state first_consumer_state(StartOwner const& /*owner*/) noexcept { return {}; }
+};
+static_assert(SpscGivesFirstStates<StartOwner> && !SpscGivesFirstStates<CheckOwner>);
 
 // The held split.  A proof is an empty class that no code builds with no
 // argument and that does not copy.  A held brand names one proof for each
@@ -78,43 +122,55 @@ struct OneProofBrand final {
 static_assert(SpscSideProof<ProducerProof> && !SpscSideProof<CheckBrand> && !SpscSideProof<int>);
 static_assert(SpscHeldBrand<HeldBrand> && !SpscHeldBrand<CheckBrand> && !SpscHeldBrand<OneProofBrand>);
 
-// A held split opens each side with the proof of that side, and with no key
-// and no proof of the other side.  A split of a brand that is not held opens
-// with no proof.
-struct WritesNothing final {
-    void operator()(ProducerEnd<CheckOwner>& /*end*/) const noexcept {}
-};
-using HeldSplit = SpscSplit<CheckOwner, HeldBrand>;
-template <class Split, class Opener>
-constexpr bool opens_producer =
-    requires(Split& split, Opener& opener) { split.with_producer(opener, WritesNothing{}); };
-static_assert(opens_producer<HeldSplit, ProducerProof const>);
-static_assert(!opens_producer<HeldSplit, ConsumerProof const>);
-static_assert(!opens_producer<HeldSplit, ProducerKey<HeldBrand>>);
-static_assert(opens_producer<SpscSplit<CheckOwner, CheckBrand>, ProducerKey<CheckBrand>>);
-static_assert(!opens_producer<SpscSplit<CheckOwner, CheckBrand>, SpscNoSideProof const>);
+// A side of a held split opens with the proof of its side, and with no other
+// proof.  The type of a side names no brand.  A held split states no transfer
+// fact, because its proofs belong to its holder.
+using HeldSplit = SpscHeldSplit<CheckOwner, HeldBrand>;
+using HeldProducerSide = HeldSplit::producer_side_type;
+static_assert(std::is_same_v<HeldProducerSide, SpscHeldSide<CheckOwner, SpscSide::producer, ProducerProof>>);
+template <class Side, class Opener>
+constexpr bool opens_side = requires(Side& side, Opener& opener) { side.with_end(opener, WritesNothing{}); };
+static_assert(opens_side<HeldProducerSide, ProducerProof const>);
+static_assert(!opens_side<HeldProducerSide, ConsumerProof const>);
+static_assert(!::foundation::transfer::Synchronized<HeldSplit>);
 
-// The same refusal for the fresh brand of mint_spsc_split.  GCC 16 lists no
-// member alias of a specialization whose argument is a fresh brand, so the
-// statement of the side brand is a base (states_owner_brand of
-// foundation/core/Frame.h), and this check reads the split of a real mint.
-// No code calls the function: its checks hold where it stands.  The class has
-// internal linkage, because its closure holds a reference to a split of a
-// fresh brand, and a walk unit that includes this file would otherwise give
-// a class of external linkage a member of internal linkage.
-namespace {
-struct FreshSplitCheck {
-    static void check(::foundation::effects::Alloc allocation) noexcept {
-        [[maybe_unused]] auto [split, producer_key, consumer_key] = mint_spsc_split<CheckOwner>(allocation);
-        using Brand = typename decltype(split)::brand_type;
-        auto const borrows_the_split = [&split](ConsumerKey<Brand>& /*key*/) noexcept { static_cast<void>(split); };
-        static_assert(::foundation::core::NamesRootKeys<decltype(borrows_the_split), 0>);
-        static_assert(!::foundation::core::BorrowsNoKeyOwner<decltype(borrows_the_split),
-                                                             SpscSideBrand<Brand, SpscSide::consumer>>);
-        static_assert(!::foundation::core::BorrowsNoKeyOwner<decltype(borrows_the_split),
-                                                             SpscSideBrand<Brand, SpscSide::producer>>);
-    }
+// The door of a side refuses a body that reaches a side of its proof through a
+// borrow, also through the held split that holds it.  A body that reaches a
+// held split of other proofs passes.
+struct OtherProducerProof final {
+    OtherProducerProof() = delete("a proof of another holder");
+    OtherProducerProof(OtherProducerProof const&) = delete("a proof of another holder");
 };
-}  // namespace
+struct OtherConsumerProof final {
+    OtherConsumerProof() = delete("a proof of another holder");
+    OtherConsumerProof(OtherConsumerProof const&) = delete("a proof of another holder");
+};
+struct OtherHeldBrand final {
+    using producer_proof = OtherProducerProof;
+    using consumer_proof = OtherConsumerProof;
+};
+struct ReachesTheSide {
+    HeldProducerSide& side;
+};
+struct ReachesTheSplit {
+    HeldSplit& split;
+};
+struct ReachesAnotherSplit {
+    SpscHeldSplit<CheckOwner, OtherHeldBrand>& split;
+};
+static_assert(SpscReachesHeldSide<ReachesTheSide, ProducerProof>);
+static_assert(SpscReachesHeldSide<ReachesTheSplit, ProducerProof>);
+static_assert(!SpscReachesHeldSide<ReachesAnotherSplit, ProducerProof>);
+
+// The residual of a held side: a proof is not tied to one holder.  One proof
+// of the producer side opens the producer side of two held splits of one
+// brand, so the type does not refuse the proof of one holder at the side of a
+// second holder.  The door of the side states this route.
+template <class Proof>
+constexpr bool opens_two_holders = requires(HeldSplit& first, HeldSplit& second, Proof const& proof) {
+    first.producer_side().with_end(proof, WritesNothing{});
+    second.producer_side().with_end(proof, WritesNothing{});
+};
+static_assert(opens_two_holders<ProducerProof>);
 
 }  // namespace fixy::concurrent::detail::spsc_ends_checks

@@ -1,7 +1,7 @@
-// A body of the producer door captures the moved producer key and the split,
-// and opens a second frame of the producer side with it.  The two bodies
-// would hold the one producer end two times.  The door refuses a body that
-// reaches the key of its side.
+// A body of the producer door captures the moved producer token and the
+// split, and opens a second frame of the producer side with it.  The two
+// bodies would hold the one producer end two times.  The door refuses a body
+// that reaches the token of its side.
 
 #include <fixy/concurrent/SpscEnds.h>
 
@@ -24,9 +24,9 @@ struct Owner final {
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
     auto& split = minted.split;
-    auto& key = minted.producer_key;
-    key = split.with_producer(std::move(key), [&split, &key](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {
-        split.with_producer(key, [](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {});
+    auto& token = minted.producer_token;
+    token = with_producer(split, std::move(token), [&split, &token](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {
+        with_producer(split, token, [](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {});
     });
     return 0;
 }

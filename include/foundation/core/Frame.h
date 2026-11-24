@@ -195,13 +195,12 @@
 //   that reaches a key of the brand in either region, because a body could
 //   move its key into a field that the caller reads after the call.  An owner
 //   that moves into the body by value stays admitted (BorrowsNoKeyOwner).
-//   A key brand that opens one side of an owner of another brand, such as
-//   SpscSideBrand of fixy/concurrent/SpscEnds.h, states that brand: it
-//   derives from states_owner_brand<OwnerBrand>.  The walk then counts an
-//   owner of the stated brand as an owner of the key brand, so a body that
-//   borrows a split and names a key of one of its sides gets no second key of
-//   that side.  A statement only makes the walk refuse more bodies, so a
-//   brand that states a brand it does not open weakens no proof.
+//   A key brand that opens one side of an owner of another brand states that
+//   brand: it derives from states_owner_brand<OwnerBrand>.  The walk then
+//   counts an owner of the stated brand as an owner of the key brand, so a
+//   body that borrows the owner and names a key of one of its sides gets no
+//   second key of that side.  A statement only makes the walk refuse more
+//   bodies, so a brand that states a brand it does not open weakens no proof.
 //
 // Dispatch brand
 //   The body of a dispatch reaches its owners through outside data, such as the
@@ -260,7 +259,6 @@ class AlignedBytesFrameKeyDoor;
 class OwnedRegionFrameKeyDoor;
 class CyclicBufferFrameKeyDoor;
 class ThreadTasksFrameKeyDoor;
-class SpscSplitFrameKeyDoor;
 class ParallelForFrameKeyDoor;
 class LaneRingFrameKeyDoor;
 
@@ -308,7 +306,6 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::OwnedRegionFrameKeyDoor;
     friend class ::foundation::core::CyclicBufferFrameKeyDoor;
     friend class ::foundation::core::ThreadTasksFrameKeyDoor;
-    friend class ::foundation::core::SpscSplitFrameKeyDoor;
     friend class ::foundation::core::ParallelForFrameKeyDoor;
     friend class ::foundation::core::LaneRingFrameKeyDoor;
 

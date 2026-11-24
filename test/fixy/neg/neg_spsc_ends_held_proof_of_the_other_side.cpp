@@ -46,6 +46,6 @@ struct HeldBrand final {
 int main() {
     auto split =
         ::fixy::concurrent::mint_held_spsc_split<Owner, HeldBrand>(::foundation::effects::testing::test().alloc);
-    split.with_producer(ProofDoor::consumer(), [](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {});
+    split.producer_side().with_end(ProofDoor::consumer(), [](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {});
     return 0;
 }

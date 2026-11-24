@@ -28,7 +28,7 @@ struct ProducerStage final {
 
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
-    minted.split.with_producer(minted.producer_key, [](::fixy::concurrent::ProducerEnd<Owner>& end) noexcept {
+    with_producer(minted.split, minted.producer_token, [](::fixy::concurrent::ProducerEnd<Owner>& end) noexcept {
         ProducerStage stage{end};
         static_cast<void>(stage.give_end());
     });
