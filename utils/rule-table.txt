@@ -1116,6 +1116,9 @@ witness <foundation/core/BitSet.h> private | foundation::core::BitKeys<foundatio
 witness <foundation/core/BitSet.h> no-match | foundation::core::HeapBitSet<forge::brand> | foundation::core::HeapBitSet<forge::brand>{forge::rvalue<unsigned long*>(), forge::rvalue<unsigned int>()}
 witness <foundation/core/SlotMap.h> no-match | foundation::core::SlotMap<int, forge::brand, forge::brand> | foundation::core::SlotMap<int, forge::brand, forge::brand>{forge::rvalue<int*>(), forge::rvalue<unsigned int>()}
 witness <foundation/core/SmallList.h> no-match | foundation::core::SmallList<int, 4> | foundation::core::SmallList<int, 4>{forge::rvalue<int*>(), forge::rvalue<unsigned long>()}
+# A loan of a window comes only from a window door of its stack: its one
+# constructor is private, and the stack is its friend.
+witness <foundation/core/WindowStack.h> private | foundation::core::WindowLoan<int, 4> | foundation::core::WindowLoan<int, 4>{forge::lvalue<foundation::core::WindowStack<int, 4>>(), forge::rvalue<unsigned long>()}
 # A walk of a SlotMap and its cursor come only from the map, so no state that
 # a caller holds becomes a walk over slots that it did not fill.
 witness <foundation/core/SlotMap.h> private | foundation::core::SlotWalk<int const, unsigned int, int const&> | foundation::core::SlotWalk<int const, unsigned int, int const&>{forge::lvalue<foundation::core::detail::owner::SlotMapState<int, unsigned int> const>()}
