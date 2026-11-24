@@ -4,6 +4,7 @@
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
+#include <fixy/Qtt.h>
 #include <fixy/check/Check.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Entry.h>
@@ -257,12 +258,29 @@ static_assert(
     return 0;
 }
 
+// with_session owns its body and calls it one time through the once door, so
+// the body can hold a linear value by move and consume it in its one call.
+[[nodiscard]] int body_consumes_a_linear_capture() {
+    const BgCtx ctx{eff::testing::bg()};
+    int consumed = 0;
+    const Counter back = s::with_session<Stream>(
+        ctx, Counter{}, [token = ::fixy::mint_linear<int>(5), &consumed](auto head) mutable noexcept {
+            consumed = std::move(token).consume();
+            head = std::move(head).template select<0>(s::no_label).send(consumed, count_one);
+            return std::move(head).template select<1>(s::no_label);
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, back.sent == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, consumed == 5);
+    return 0;
+}
+
 }  // namespace
 
 int main() {
     if (const int rc = mint_walks_to_end(); rc != 0) return rc;
     if (const int rc = loop_head_is_the_choice(); rc != 0) return rc;
     if (const int rc = callback_lends_the_resource(); rc != 0) return rc;
+    if (const int rc = body_consumes_a_linear_capture(); rc != 0) return rc;
     ::fixy::check::pass(kTest, "test_session_entry: OK\n");
     return 0;
 }

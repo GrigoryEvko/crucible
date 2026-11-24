@@ -981,14 +981,18 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
                                     Handler handler, std::index_sequence<Is...>);
 
     // Calls the handler for branch I, with the index first when PassesIndex
-    // holds.
+    // holds.  The branch owns its handler and calls it one time through the
+    // once door call_once of foundation/Linear.h, so the handler can hold a
+    // linear value by move and consume it in the arm that runs.
     template <bool PassesIndex, std::size_t I, typename Handler, typename BranchHandle>
     static constexpr decltype(auto) call_branch_(Handler&& handler, BranchHandle&& branch_handle) {
         if constexpr (PassesIndex) {
-            return std::invoke(std::forward<Handler>(handler), std::integral_constant<std::size_t, I>{},
-                               std::forward<BranchHandle>(branch_handle));
+            return ::foundation::linear::call_once(static_cast<Handler&&>(handler),
+                                                   std::integral_constant<std::size_t, I>{},
+                                                   std::forward<BranchHandle>(branch_handle));
         } else {
-            return std::invoke(std::forward<Handler>(handler), std::forward<BranchHandle>(branch_handle));
+            return ::foundation::linear::call_once(static_cast<Handler&&>(handler),
+                                                   std::forward<BranchHandle>(branch_handle));
         }
     }
 
@@ -3025,11 +3029,14 @@ public:
     // body returns.  The calling thread opens the session, runs the body and
     // closes the End handle, so each handle of the session lives on that
     // thread.  Thus the session opens under the owned form of the policy.
+    // The door owns the body and calls it one time through the once door
+    // call_once of foundation/Linear.h, so the body can hold a linear value
+    // by move and consume it in its one call.
     template <typename Proto, AbandonmentPolicy Policy, typename Ctx, typename Resource, typename Body>
         requires CtxFitsSessionFrom<Ctx, Proto, Resource> && SessionBody<Body, Proto, Resource, Policy>
     [[nodiscard]] static constexpr Resource run(Ctx const&, Resource r, Body body, MintSite site) noexcept(
         std::is_nothrow_invocable_v<Body, detail::owned_head_t<Proto, Resource, Policy, Body>>) {
-        auto at_end = std::invoke(
+        auto at_end = ::foundation::linear::call_once(
             std::move(body),
             open_end_<Proto, detail::one_end_peer, Resource, Resource, check::detail::owned_policy_t<Policy>,
                       ::foundation::permissions::EmptyPermSet, detail::brand_ctx_t<Body>>(std::forward<Resource>(r),
