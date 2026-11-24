@@ -625,6 +625,20 @@ void test_copy_of_fixed_extent() {
 }  // namespace
 
 int main() {
+    // A body that captures a closure of main by a reference that is not const
+    // passes the store check of a frame door (foundation/core/CaptureStore.h).
+    // The walk reads the closure as a writable object, and its test of the
+    // base goes up through the scopes of the closure.  GCC gives main no
+    // parent, so the test stops at main, and the closure is no class of the
+    // base.
+    int calls = 0;
+    auto count_call = [&calls]() noexcept { ++calls; };
+    FixedArray<int, 2> pair{3, 4};
+    int const pair_total = pair.with_mut([&count_call](auto out) noexcept {
+        count_call();
+        return sum_of(out);
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, pair_total == 7 && calls == 1);
     test_fixed_array();
     test_keyed_array();
     test_heap_array();

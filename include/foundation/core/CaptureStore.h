@@ -163,30 +163,15 @@ enum class Annotated : unsigned char {
     return element == ^^unsigned char || element == ^^char || element == ^^signed char || element == ^^std::byte;
 }
 
-// True for a class whose outermost namespace is foundation or fixy.  The walk
-// goes up through each enclosing class and function, so a local class and a
-// closure of a function of the base are classes of the base too.  The layer
-// foundation declares no namespace fixy, so the test reads the name of the
-// namespace.  Complexity: linear in the depth of the scopes of the class.
-[[nodiscard]] consteval bool is_base_class_(std::meta::info type) {
-    std::meta::info scope = std::meta::parent_of(type);
-    std::meta::info outermost = ^^::;
-    while (scope != ^^::) {
-        if (std::meta::is_namespace(scope)) outermost = scope;
-        scope = std::meta::parent_of(scope);
-    }
-    return ::foundation::reflect::has_identifier_named(outermost, "foundation")
-        || ::foundation::reflect::has_identifier_named(outermost, "fixy");
-}
-
-// True for an owner of the walk: a class of the base that states an owner
-// mark or derives from OwnerCore.  No rule keeps the marks in the base, so the
-// walk reads the members of a marked class outside the base.  A class with no
-// annotation states nothing, so the test reads the annotations only of a
-// class that has some.
+// True for an owner of the walk: a class of the base (is_class_of_the_base_ of
+// foundation/core/Owner.h) that states an owner mark or derives from
+// OwnerCore.  No rule keeps the marks in the base, so the walk reads the
+// members of a marked class outside the base.  A class with no annotation
+// states nothing, so the test reads the annotations only of a class that has
+// some.
 [[nodiscard]] consteval bool is_storage_owner_(std::meta::info type, Annotated annotated) {
     namespace tr = ::foundation::transfer;
-    if (!is_base_class_(type)) return false;
+    if (!is_class_of_the_base_(type)) return false;
     if (annotated == Annotated::yes
         && (tr::detail::states(type, ^^tr::by_arguments) || tr::detail::states(type, ^^tr::synchronized)
             || tr::detail::states(type, ^^tr::payload_cell) || tr::detail::states(type, ^^owns_its_storage))) {

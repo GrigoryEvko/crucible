@@ -137,15 +137,18 @@ concept ReleasesNothing = requires { requires State::releases_nothing; };
 namespace detail {
 
 // True when the class of type is declared in the namespace foundation or
-// fixy, or in a namespace inside them: the outermost named scope of the
-// class below the global namespace is one of the two.  A specialization
-// gives the scope of its template.  Complexity: the depth of the scopes.
+// fixy, or in a namespace inside them: the outermost scope of the class below
+// the global namespace is one of the two.  The walk goes up through each
+// enclosing class and function, so a local class and a closure of a function
+// of the base are classes of the base too.  A specialization gives the scope
+// of its template.  The walk stops at a scope with no parent: GCC gives the
+// function main no parent, so a class of main is no class of the base.  The
+// layer foundation declares no namespace fixy, so the test reads the name of
+// the namespace.  Complexity: the depth of the scopes.
 [[nodiscard]] consteval bool is_class_of_the_base_(std::meta::info type) {
-    std::meta::info scope = std::meta::parent_of(std::meta::dealias(type));
-    std::meta::info outermost = scope;
-    while (scope != ^^::) {
-        outermost = scope;
-        scope = std::meta::parent_of(scope);
+    std::meta::info outermost = std::meta::dealias(type);
+    while (std::meta::has_parent(outermost) && std::meta::parent_of(outermost) != ^^::) {
+        outermost = std::meta::parent_of(outermost);
     }
     return std::meta::is_namespace(outermost)
         && (::foundation::reflect::has_identifier_named(outermost, "foundation")
