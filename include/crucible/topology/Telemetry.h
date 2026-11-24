@@ -262,12 +262,13 @@ compute_effective_bandwidth(NicTelemetrySnapshot const& snapshot, NicTelemetryPo
     const std::uint64_t tcp_btl = tcp.btl_bw_bps.value();
 
     const std::uint64_t base = ::fixy::min(::fixy::min(line_rate, sysctl_ceiling), tcp_btl);
-    const std::uint64_t penalty_scale = std::uint64_t{8} * policy.fairness_penalty_ppm;
+    // The penalty of the policy is a 32-bit count, so its product by 8 fits.
+    const std::uint64_t penalty_scale =
+        ::fixy::strict_mul(std::uint64_t{8}, std::uint64_t{policy.fairness_penalty_ppm});
     const std::uint64_t effective =
         ::fixy::checked_mul_div(std::uint64_t{tcp.in_flight_bytes}, penalty_scale, rtt_us)
-            .match(
-                [base](std::uint64_t penalty) noexcept { return penalty < base ? base - penalty : std::uint64_t{0}; },
-                [] noexcept { return std::uint64_t{0}; });
+            .match([base](std::uint64_t penalty) noexcept { return ::fixy::saturating_sub(base, penalty); },
+                   [] noexcept { return std::uint64_t{0}; });
     return ::fixy::mint_refined<::fixy::positive>(static_cast<double>(::fixy::max(std::uint64_t{1}, effective)));
 }
 
