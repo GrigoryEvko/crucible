@@ -68,17 +68,25 @@ concept BytewiseOrderedElement = std::same_as<T, unsigned char> || std::same_as<
 // A predicate of a scan: it takes an element as a const reference, gives a
 // bool, does not throw, and holds no linear value by value
 // (HoldsNoLinearValue of foundation/Linear.h).  The door calls it many times
-// and ends it, and a call is no consume.
+// and ends it, and a call is no consume.  It stores no borrow of an element
+// outside the scan (StoresNoBorrowOutside of foundation/core/CaptureStore.h),
+// so the View of the scan stays the one road to its elements.
 template <class Predicate, class T>
 concept ElementPredicate =
     std::is_nothrow_invocable_v<Predicate&, T const&> && std::same_as<std::invoke_result_t<Predicate&, T const&>, bool>
-    && ::foundation::linear::HoldsNoLinearValue<Predicate>;
+    && ::foundation::linear::HoldsNoLinearValue<Predicate> && StoresNoBorrowOutside<Predicate>;
 
 // A predicate or a key function that holds a linear value by value: the
 // deleted twin of find_if and of find_lower_bound_by_key binds to it.
 template <class Function, class T>
 concept LinearElementFunction =
     (!::foundation::linear::HoldsNoLinearValue<Function>) && std::is_invocable_v<Function&, T const&>;
+
+// A predicate that stores a borrow of an element outside the scan: the deleted
+// twin of find_if binds to it.
+template <class Function, class T>
+concept StoringElementFunction = ::foundation::linear::HoldsNoLinearValue<Function>
+                              && std::is_invocable_v<Function&, T const&> && (!StoresNoBorrowOutside<Function>);
 
 // A key of an ordered search: an integer or an enumeration, so the order of
 // the keys is total.  A floating key is refused, because a NaN is in no
@@ -212,6 +220,12 @@ template <class T, std::size_t Extent, class Predicate>
 template <class T, std::size_t Extent, class Predicate>
     requires detail::LinearElementFunction<Predicate, std::remove_const_t<T>>
 void find_if(View<T, Extent> view, Predicate predicate) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A predicate that stores a borrow of an element outside the scan binds to
+// this overload, so the refusal gives its reason (StoringElementFunction).
+template <class T, std::size_t Extent, class Predicate>
+    requires detail::StoringElementFunction<Predicate, std::remove_const_t<T>>
+void find_if(View<T, Extent> view, Predicate predicate) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // True when text begins with the characters of prefix.  An empty prefix
 // gives true.  Complexity: O(m) for a prefix of m characters.

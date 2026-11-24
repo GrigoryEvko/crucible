@@ -1372,13 +1372,23 @@ constexpr void run_walk_(Body& body, std::index_sequence<Is...> rest_views,
 // The arguments of a walk: a body that takes the element of each view with
 // no throw, and holds no linear value by value (HoldsNoLinearValue of
 // foundation/Linear.h).  The walk calls the body, and a call is no consume.
+// The body stores no borrow of an element outside the walk
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), so a walk of a
+// unique view leaves no second writer of an element after the call.
 template <class Body, class... Ts>
-concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...> && ::foundation::linear::HoldsNoLinearValue<Body>;
+concept CanWalk = std::is_nothrow_invocable_v<Body&, Ts&...> && ::foundation::linear::HoldsNoLinearValue<Body>
+               && StoresNoBorrowOutside<Body>;
 
 // A body of a walk that holds a linear value by value: the deleted twin of
 // each walk binds to it.
 template <class Body, class... Ts>
 concept LinearWalkBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&, Ts&...>;
+
+// A body of a walk that stores a borrow of an element outside the walk: the
+// store twin of each walk binds to it.
+template <class Body, class... Ts>
+concept StoringWalkBody = ::foundation::linear::HoldsNoLinearValue<Body> && std::is_invocable_v<Body&, Ts&...>
+                       && (!StoresNoBorrowOutside<Body>);
 
 namespace detail {
 
@@ -1421,6 +1431,13 @@ template <class Body, class First, class... Rest, std::size_t Rank>
 void walk(Body&& body, StridedView<First, Rank> first,
           StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// A body that stores a borrow of an element outside the walk binds to this
+// overload, so the refusal gives its reason (StoringWalkBody).
+template <class Body, class First, class... Rest, std::size_t Rank>
+    requires StoringWalkBody<Body, First, Rest...>
+void walk(Body&& body, StridedView<First, Rank> first,
+          StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
 // The walk above with the elements of the unique view first as its first
 // view.  The walk borrows first for the call, so the plain view of first that
 // it walks is a part of the one writer.  It calls the walk above, so it gives
@@ -1439,6 +1456,11 @@ template <class Body, class First, class... Rest, std::size_t Rank, ::foundation
     requires LinearWalkBody<Body, First, Rest...>
 void walk(Body&& body, StridedViewMut<First, Rank, Brand>& first,
           StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires StoringWalkBody<Body, First, Rest...>
+void walk(Body&& body, StridedViewMut<First, Rank, Brand>& first,
+          StridedView<Rest, Rank>... rest) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // A const unique view writes nothing, so it gives no writer to the walk.  A
 // moved unique view is no borrow of the writer that the caller keeps.
@@ -1800,5 +1822,10 @@ template <class Body, class First, class... Rest, std::size_t Rank, ::foundation
     requires LinearWalkBody<Body, First, Rest...>
 void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& first,
           BrandedStridedView<Rest, Rank, Brand> const&... rest) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
+    requires StoringWalkBody<Body, First, Rest...>
+void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& first,
+          BrandedStridedView<Rest, Rank, Brand> const&... rest) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 }  // namespace foundation::core

@@ -966,6 +966,56 @@ constexpr bool borrowed_result_match_reads_exactly = requires(R const& result) {
 static_assert(!borrowed_result_match_converts<Result<Meters, Code>>);
 static_assert(borrowed_result_match_reads_exactly<Result<Meters, Code>>);
 
+// Each door that lends a part to an arm refuses an arm that can store a
+// borrow of the part outside the door, and admits an arm that takes the part
+// by value (LentArmStoresNoBorrow).  KeepsPointer holds a pointer that it can
+// write, so the store check refuses it.  The arm of the empty case gets no
+// part, so it takes no gate.
+struct KeepsPointer {
+    int*& slot;
+    [[nodiscard]] constexpr double operator()(Meters const& meters) const noexcept { return meters.value; }
+};
+struct KeepsPointerTakesCopy {
+    int*& slot;
+    [[nodiscard]] constexpr double operator()(Meters meters) const noexcept { return meters.value; }
+};
+struct KeepsPointerTests {
+    int*& slot;
+    [[nodiscard]] constexpr bool operator()(Meters const& meters) const noexcept { return meters.value > 0.0; }
+};
+struct KeepsPointerTestsCopy {
+    int*& slot;
+    [[nodiscard]] constexpr bool operator()(Meters meters) const noexcept { return meters.value > 0.0; }
+};
+struct KeepsPointerOnEmpty {
+    int*& slot;
+    [[nodiscard]] constexpr double operator()() const noexcept { return 0.0; }
+};
+struct ReadsNothingOnEmpty {
+    [[nodiscard]] constexpr double operator()() const noexcept { return 0.0; }
+};
+struct KeepsPointerOnCode {
+    int*& slot;
+    [[nodiscard]] constexpr double operator()(Code const&) const noexcept { return 0.0; }
+};
+struct ReadsCode {
+    [[nodiscard]] constexpr double operator()(Code) const noexcept { return 0.0; }
+};
+static_assert(!StoresNoBorrowOutside<KeepsPointer> && !LentArmStoresNoBorrow<KeepsPointer, Meters>);
+static_assert(LentArmStoresNoBorrow<KeepsPointerTakesCopy, Meters>);
+template <class Sum, class OnPart, class OnEmpty>
+constexpr bool borrow_match_takes = requires(Sum const& sum, OnPart on_part, OnEmpty on_empty) {
+    sum.match(static_cast<OnPart&&>(on_part), static_cast<OnEmpty&&>(on_empty));
+};
+static_assert(!borrow_match_takes<Option<Meters>, KeepsPointer, ReadsNothingOnEmpty>);
+static_assert(borrow_match_takes<Option<Meters>, KeepsPointerTakesCopy, ReadsNothingOnEmpty>);
+static_assert(borrow_match_takes<Option<Meters>, KeepsPointerTakesCopy, KeepsPointerOnEmpty>);
+static_assert(!borrow_match_takes<Result<Meters, Code>, KeepsPointer, ReadsCode>);
+static_assert(!borrow_match_takes<Result<Meters, Code>, KeepsPointerTakesCopy, KeepsPointerOnCode>);
+static_assert(borrow_match_takes<Result<Meters, Code>, KeepsPointerTakesCopy, ReadsCode>);
+static_assert(!borrow_match_takes<OneOf<Meters, Code>, KeepsPointer, ReadsCode>);
+static_assert(borrow_match_takes<OneOf<Meters, Code>, KeepsPointerTakesCopy, ReadsCode>);
+
 // The result of an rvalue match holds no borrow: no reference, no address,
 // and no closure that captures by reference.  A closure that captures by
 // value holds a value, because the sixth GCC patch shows its fields.
@@ -1156,6 +1206,18 @@ template <class S, class Fn>
 concept TestsOkWith = requires(S const& sum, Fn fn) { sum.is_ok_and(static_cast<Fn&&>(fn)); };
 template <class S, class Fn>
 concept TestsErrWith = requires(S const& sum, Fn fn) { sum.is_err_and(static_cast<Fn&&>(fn)); };
+
+// is_some_and, is_none_or, is_ok_and and is_err_and refuse a test that can
+// store a borrow of the part, and admit a test that takes the part by value
+// (KeepsPointerTests above).
+static_assert(!TestsSomeWith<Option<Meters>, KeepsPointerTests>
+              && TestsSomeWith<Option<Meters>, KeepsPointerTestsCopy>);
+static_assert(!TestsNoneOrWith<Option<Meters>, KeepsPointerTests>
+              && TestsNoneOrWith<Option<Meters>, KeepsPointerTestsCopy>);
+static_assert(!TestsOkWith<Result<Meters, Code>, KeepsPointerTests>
+              && TestsOkWith<Result<Meters, Code>, KeepsPointerTestsCopy>);
+static_assert(!TestsErrWith<Result<Code, Meters>, KeepsPointerTests>
+              && TestsErrWith<Result<Code, Meters>, KeepsPointerTestsCopy>);
 using ChainsWithToken = decltype([held = Token{1}](auto) noexcept { return Option<int>::some(held.handle); });
 using ChainsWithNoToken = decltype([](auto) noexcept { return Option<int>{}; });
 using ResultsWithToken = decltype([held = Token{1}](auto) noexcept { return Result<int, Code>{held.handle}; });
@@ -2096,13 +2158,13 @@ static_assert(doors_are_pinned<12, door_count<OptionSlot<SlotNumber>>()>,
               "a new door of the niche Option slot: test it below, then pin the count");
 static_assert(doors_are_pinned<12, door_count<ResultSlot<std::uint64_t, Code>>()>,
               "a new door of the Result slot: test it below, then pin the count");
-static_assert(doors_are_pinned<47, door_count<Option<std::uint64_t>>()>,
+static_assert(doors_are_pinned<50, door_count<Option<std::uint64_t>>()>,
               "a new door of Option: test it below, then pin the count");
-static_assert(doors_are_pinned<45, door_count<Result<std::uint64_t, Code>>()>,
+static_assert(doors_are_pinned<48, door_count<Result<std::uint64_t, Code>>()>,
               "a new door of Result: test it below, then pin the count");
-static_assert(doors_are_pinned<31, door_count<OneOf<std::uint32_t, Code>>()>,
+static_assert(doors_are_pinned<32, door_count<OneOf<std::uint32_t, Code>>()>,
               "a new door of OneOf: test it below, then pin the count");
-static_assert(doors_are_pinned<29, door_count<OneOf<Owner, int>>()>,
+static_assert(doors_are_pinned<30, door_count<OneOf<Owner, int>>()>,
               "a new door of an owning OneOf: test it below, then pin the count");
 
 // The constructor of the cells and of each slot takes the index of an

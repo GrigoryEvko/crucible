@@ -1394,6 +1394,20 @@ concept TakesPayloadByBorrow = detail::takes_payload_by_borrow_<Arm, Payload>();
 template <class... Arms>
 concept ArmsHoldNoLinearValue = (::foundation::linear::HoldsNoLinearValue<Arms> && ...);
 
+// An arm of a door that lends it a part of a sum, such as the borrow match,
+// is_some_and or is_ok_and, that stores no borrow of the part outside the
+// door.  An arm that takes the part by value gets a copy, so the door lends
+// it nothing.  Each other arm passes the store check of its captures
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), so it writes no
+// borrow of the part into an object that the caller reads after the door.  A
+// door gives no part to an arm of the empty case, so that arm takes no gate.
+// The test of a generic arm substitutes the part into its call operator, so
+// the body of an arm of the form auto&& with a deduced result is instantiated
+// for an rvalue of the part, and a body that refuses an rvalue stops the build
+// with its own error.
+template <class Arm, class Payload>
+concept LentArmStoresNoBorrow = TakesPayloadByValue<Arm, Payload> || StoresNoBorrowOutside<Arm>;
+
 // A result of an rvalue match that holds no borrow.  The match ends the
 // payload, so a reference or an address in the result could name an object
 // that ends.  The concept refuses each reference and each address, also an
@@ -2060,10 +2074,11 @@ public:
 
     // True when the Option holds a payload that holds accepts.  holds reads
     // the payload through a const reference, the Option keeps it, and an
-    // owning Option counts the lend (the lend count).
+    // owning Option counts the lend (the lend count).  holds stores no
+    // borrow of the payload outside the call (LentArmStoresNoBorrow).
     template <class Holds>
         requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
-              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && LentArmStoresNoBorrow<Holds, T>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_some_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         if (!slot_.holds_()) return false;
@@ -2075,11 +2090,19 @@ public:
         requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
     void is_some_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+    // A holds that stores a borrow of the payload outside the call binds to
+    // this overload, and to the same twin of each other door that lends a
+    // part, so the refusal gives its reason (LentArmStoresNoBorrow).
+    template <class Holds>
+        requires ArmsHoldNoLinearValue<Holds> && std::is_invocable_v<Holds&, T const&>
+                  && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && (!LentArmStoresNoBorrow<Holds, T>)
+    void is_some_and(Holds&& holds) const = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
     // True when the Option is empty, or when holds accepts its payload.  The
     // read is that of is_some_and.
     template <class Holds>
         requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
-              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && LentArmStoresNoBorrow<Holds, T>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_none_or(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         if (!slot_.holds_()) return true;
@@ -2090,6 +2113,11 @@ public:
     template <class Holds>
         requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
     void is_none_or(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    template <class Holds>
+        requires ArmsHoldNoLinearValue<Holds> && std::is_invocable_v<Holds&, T const&>
+                  && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && (!LentArmStoresNoBorrow<Holds, T>)
+    void is_none_or(Holds&& holds) const = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // The total match.  on_some gets the payload, or on_none runs, and
     // the two arms give the same type.  A call with one arm does not
@@ -2145,12 +2173,13 @@ public:
     // T const&, so no conversion reads the payload as another type.  The rule
     // borrow-match of the plugin refuses an arm that assigns, moves or
     // changes this Option, and an owning Option counts the lend (the lend
-    // count).
+    // count).  on_some stores no borrow of the payload outside the match
+    // (LentArmStoresNoBorrow).
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && ArmsHoldNoLinearValue<OnSome, OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
-              && TakesPayloadByBorrow<OnSome, T>
+              && TakesPayloadByBorrow<OnSome, T> && LentArmStoresNoBorrow<OnSome, T>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         match(OnSome&& on_some, OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
                                                                   && std::is_nothrow_invocable_v<OnNone>) {
@@ -2169,6 +2198,16 @@ public:
     void match(OnSome&& on_some, OnNone&& on_none) const& = delete(
         "an arm of the borrow match takes the payload type, as a value or a const reference, so no conversion reads "
         "the payload as another type: write the parameter as the payload type");
+
+    // An on_some that stores a borrow of the payload outside the match binds
+    // to this overload, so the refusal gives its reason
+    // (LentArmStoresNoBorrow).
+    template <class OnSome, class OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, T const&>
+                  && std::is_invocable_v<OnNone>
+                  && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
+                  && TakesPayloadByBorrow<OnSome, T> && (!LentArmStoresNoBorrow<OnSome, T>)
+    void match(OnSome&& on_some, OnNone&& on_none) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // Arms of the borrow match that hold a linear value by value bind to this
     // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).  A
@@ -3301,9 +3340,11 @@ public:
     // True when the Result holds a value that holds accepts.  holds reads the
     // value through a const reference, the Result keeps it, and an owning
     // Result counts the lend (the lend count), as the borrow match does.
+    // holds stores no borrow of the value outside the call
+    // (LentArmStoresNoBorrow).
     template <class Holds>
         requires std::is_invocable_v<Holds&, T const&> && ArmsHoldNoLinearValue<Holds>
-              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool>
+              && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && LentArmStoresNoBorrow<Holds, T>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_ok_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, T const&>) {
         [[maybe_unused]] auto const lend = slot_.lend_();
@@ -3315,11 +3356,16 @@ public:
         requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, T const&>
     void is_ok_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+    template <class Holds>
+        requires ArmsHoldNoLinearValue<Holds> && std::is_invocable_v<Holds&, T const&>
+                  && std::same_as<std::invoke_result_t<Holds&, T const&>, bool> && (!LentArmStoresNoBorrow<Holds, T>)
+    void is_ok_and(Holds&& holds) const = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
     // True when the Result holds an error that holds accepts.  The read is
     // that of is_ok_and.
     template <class Holds>
         requires std::is_invocable_v<Holds&, E const&> && ArmsHoldNoLinearValue<Holds>
-              && std::same_as<std::invoke_result_t<Holds&, E const&>, bool>
+              && std::same_as<std::invoke_result_t<Holds&, E const&>, bool> && LentArmStoresNoBorrow<Holds, E>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] constexpr bool is_err_and(Holds&& holds) const
         noexcept(std::is_nothrow_invocable_v<Holds&, E const&>) {
         [[maybe_unused]] auto const lend = slot_.lend_();
@@ -3330,6 +3376,11 @@ public:
     template <class Holds>
         requires(!ArmsHoldNoLinearValue<Holds>) && std::is_invocable_v<Holds&, E const&>
     void is_err_and(Holds&& holds) const = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    template <class Holds>
+        requires ArmsHoldNoLinearValue<Holds> && std::is_invocable_v<Holds&, E const&>
+                  && std::same_as<std::invoke_result_t<Holds&, E const&>, bool> && (!LentArmStoresNoBorrow<Holds, E>)
+    void is_err_and(Holds&& holds) const = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // The total match: on_ok gets the value, or on_err gets the error, and
     // the two arms give the same type.  A call with one arm does not
@@ -3381,12 +3432,14 @@ public:
     // parameter of each arm is its part type or a const reference to it, so
     // no conversion reads a part as another type.  The rule borrow-match of
     // the plugin refuses an arm that assigns, moves or changes this Result,
-    // and an owning Result counts the lend (the lend count).
+    // and an owning Result counts the lend (the lend count).  Each arm stores
+    // no borrow of its part outside the match (LentArmStoresNoBorrow).
     template <class OnOk, class OnErr>
         requires std::is_invocable_v<OnOk, T const&> && std::is_invocable_v<OnErr, E const&>
               && ArmsHoldNoLinearValue<OnOk, OnErr>
               && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
-              && TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E>
+              && TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E> && LentArmStoresNoBorrow<OnOk, T>
+              && LentArmStoresNoBorrow<OnErr, E>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnErr, E const&>
         match(OnOk&& on_ok, OnErr&& on_err) const& noexcept(std::is_nothrow_invocable_v<OnOk, T const&>
                                                             && std::is_nothrow_invocable_v<OnErr, E const&>) {
@@ -3405,6 +3458,16 @@ public:
     void match(OnOk&& on_ok, OnErr&& on_err) const& = delete(
         "an arm of the borrow match takes its part type, as a value or a const reference, so no conversion reads a "
         "part as another type: write the parameter as the part type");
+
+    // An arm that stores a borrow of its part outside the match binds to this
+    // overload, so the refusal gives its reason (LentArmStoresNoBorrow).
+    template <class OnOk, class OnErr>
+        requires ArmsHoldNoLinearValue<OnOk, OnErr> && std::is_invocable_v<OnOk, T const&>
+                  && std::is_invocable_v<OnErr, E const&>
+                  && std::same_as<std::invoke_result_t<OnOk, T const&>, std::invoke_result_t<OnErr, E const&>>
+                  && TakesPayloadByBorrow<OnOk, T> && TakesPayloadByBorrow<OnErr, E>
+                  && (!(LentArmStoresNoBorrow<OnOk, T> && LentArmStoresNoBorrow<OnErr, E>))
+    void match(OnOk&& on_ok, OnErr&& on_err) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // Arms of the borrow match that hold a linear value by value bind to this
     // overload, so the refusal gives its reason (ArmsHoldNoLinearValue).  A

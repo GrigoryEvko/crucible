@@ -5288,6 +5288,49 @@ foundation_neg_compile_test(neg_core_reduce_combine_keeps_an_operand
 foundation_neg_compile_test(neg_core_walk_chain_step_keeps_a_link
   "no matching function for call to .walk_chain\\("
   "StoresNoBorrowOutside")
+# A door that lends a part of a sum, find_if and the strided walk refuse a body
+# that can store a borrow of what they lend outside the door, and the store
+# twin of each door gives the reason (LentArmStoresNoBorrow of
+# foundation/core/Choice.h, StoresNoBorrowOutside of
+# foundation/core/CaptureStore.h).  The gate tests a generic arm with a
+# substitution of the part, so an arm of the form auto&& that refuses an
+# rvalue stops the build with its own error.
+foundation_neg_compile_test(neg_core_option_match_arm_writes_through_a_ref
+  "use of deleted function .void foundation::core::Option<T>::match\\(OnSome&&, OnNone&&\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_option_is_some_and_keeps_a_ref
+  "use of deleted function .void foundation::core::Option<T>::is_some_and\\(Holds&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_option_is_none_or_keeps_a_ref
+  "use of deleted function .void foundation::core::Option<T>::is_none_or\\(Holds&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_result_match_arm_keeps_a_ref
+  "use of deleted function .void foundation::core::Result<T, E>::match\\(OnOk&&, OnErr&&\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_result_is_ok_and_keeps_a_ref
+  "use of deleted function .void foundation::core::Result<T, E>::is_ok_and\\(Holds&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_result_is_err_and_keeps_a_ref
+  "use of deleted function .void foundation::core::Result<T, E>::is_err_and\\(Holds&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_one_of_match_arm_keeps_a_ref
+  "use of deleted function .void foundation::core::OneOf<Ts>::match\\(Arms&& \\.\\.\\.\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_link_is_some_and_keeps_a_ref
+  "no matching function for call to .foundation::core::Link<.anonymous.::Node, .anonymous.::Chain>::is_some_and\\("
+  "LentArmStoresNoBorrow")
+foundation_neg_compile_test(neg_core_link_match_arm_keeps_a_ref
+  "use of deleted function .void foundation::core::Link<T, Brand>::match\\(OnSome&&, OnNone&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_find_if_keeps_an_element
+  "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_strided_walk_keeps_an_element
+  "use of deleted function .void foundation::core::walk\\(Body&&, StridedView<First, Rank>, StridedView<Rest, Rank>\\.\\.\\.\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_match_generic_arm_refuses_an_rvalue
+  "neg_core_match_generic_arm_refuses_an_rvalue\\.cpp:[0-9]+:[0-9]+: error: static assertion failed"
+  "the arm refuses an rvalue")
 foundation_neg_compile_test(neg_core_seat_step_linear_capture
   "use of deleted function .void foundation::core::Seat<T>::step\\(Fn&&\\) &"
   "the body holds a linear value by value, and the door calls it with no consume")

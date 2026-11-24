@@ -300,13 +300,15 @@ public:
     // it, so no conversion reads an alternative as another type, and arms in
     // the wrong order do not compile.  The rule borrow-match of the plugin
     // refuses an arm that assigns, moves or changes this OneOf, and an owning
-    // OneOf counts the lend (the lend count in Choice.h).
+    // OneOf counts the lend (the lend count in Choice.h).  Each arm stores no
+    // borrow of its alternative outside the match (LentArmStoresNoBorrow of
+    // Choice.h).
     template <class... Arms>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (std::is_invocable_v<Arms, Ts const&> && ...)
              && ArmsHoldNoLinearValue<Arms...>
              && (std::same_as<std::invoke_result_t<Arms, Ts const&>, std::invoke_result_t<Arms...[0], Ts...[0] const&>>
                  && ...)
-             && (TakesPayloadByBorrow<Arms, Ts> && ...)
+             && (TakesPayloadByBorrow<Arms, Ts> && ...) && (LentArmStoresNoBorrow<Arms, Ts> && ...)
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Arms...[0], Ts...[0] const&>
         match(Arms&&... arms) const& noexcept((std::is_nothrow_invocable_v<Arms, Ts const&> && ...)) {
         using Result = std::invoke_result_t<Arms...[0], Ts...[0] const&>;
@@ -326,6 +328,18 @@ public:
     void match(Arms&&... arms) const& = delete("an arm of the borrow match takes the alternative at its position, as a "
                                                "value or a const reference, so no conversion reads an alternative as "
                                                "another type: write the parameter as that alternative");
+
+    // An arm that stores a borrow of its alternative outside the match binds
+    // to this overload, so the refusal gives its reason
+    // (LentArmStoresNoBorrow of Choice.h).
+    template <class... Arms>
+        requires(sizeof...(Arms) == sizeof...(Ts))
+                 && ArmsHoldNoLinearValue<Arms...> && (std::is_invocable_v<Arms, Ts const&> && ...)
+                 && (std::same_as<std::invoke_result_t<Arms, Ts const&>,
+                                  std::invoke_result_t<Arms...[0], Ts...[0] const&>>
+                     && ...)
+                 && (TakesPayloadByBorrow<Arms, Ts> && ...) && (!(LentArmStoresNoBorrow<Arms, Ts> && ...))
+    void match(Arms&&... arms) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // Arms of the borrow match that hold a linear value by value bind to this
     // overload, so the refusal gives its reason (ArmsHoldNoLinearValue of

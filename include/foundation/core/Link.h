@@ -116,25 +116,26 @@ public:
     // const.  The match borrows a copy of the Link, so on_some takes the Ref
     // by const reference or by value.  The match calls one arm, and a call is
     // no consume, so the arms hold no linear value by value
-    // (ArmsHoldNoLinearValue of foundation/core/Choice.h), and each match has
-    // a deleted twin for arms that hold one.
+    // (ArmsHoldNoLinearValue of foundation/core/Choice.h), and on_some stores
+    // no borrow of the Ref outside the match (LentArmStoresNoBorrow).  Each
+    // match has a deleted twin for each of the two refusals.
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
-              && ArmsHoldNoLinearValue<OnSome, OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone> && LentArmStoresNoBorrow<OnSome, Ref<T, Brand>>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) & {
         const Option<Ref<T, Brand>> target = target_;
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
     }
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T, Brand> const&> && std::is_invocable_v<OnNone>
-              && ArmsHoldNoLinearValue<OnSome, OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone> && LentArmStoresNoBorrow<OnSome, Ref<T, Brand>>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) && {
         const Option<Ref<T, Brand>> target = target_;
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
     }
     template <class OnSome, class OnNone>
         requires std::is_invocable_v<OnSome, Ref<T const, Brand> const&> && std::is_invocable_v<OnNone>
-              && ArmsHoldNoLinearValue<OnSome, OnNone>
+              && ArmsHoldNoLinearValue<OnSome, OnNone> && LentArmStoresNoBorrow<OnSome, Ref<T const, Brand>>
     constexpr auto match(OnSome&& on_some, OnNone&& on_none) const& {
         const Option<Ref<T const, Brand>> target = option();
         return target.match(std::forward<OnSome>(on_some), std::forward<OnNone>(on_none));
@@ -155,9 +156,27 @@ public:
                  && std::is_invocable_v<OnSome, Ref<T const, Brand> const&> && std::is_invocable_v<OnNone>
     void match(OnSome&& on_some, OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+    // An on_some that stores a borrow of the Ref outside the match binds to
+    // these overloads, so the refusal gives its reason.
+    template <class OnSome, class OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, Ref<T, Brand> const&>
+                  && std::is_invocable_v<OnNone> && (!LentArmStoresNoBorrow<OnSome, Ref<T, Brand>>)
+    void match(OnSome&& on_some, OnNone&& on_none) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, Ref<T, Brand> const&>
+                  && std::is_invocable_v<OnNone> && (!LentArmStoresNoBorrow<OnSome, Ref<T, Brand>>)
+    void match(OnSome&& on_some, OnNone&& on_none) && = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <class OnSome, class OnNone>
+        requires ArmsHoldNoLinearValue<OnSome, OnNone> && std::is_invocable_v<OnSome, Ref<T const, Brand> const&>
+                  && std::is_invocable_v<OnNone> && (!LentArmStoresNoBorrow<OnSome, Ref<T const, Brand>>)
+    void match(OnSome&& on_some, OnNone&& on_none) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
     // True when the Link refers to an object and holds gives true for it.
+    // holds stores no borrow of the Ref outside the call, as for is_some_and
+    // of an Option (LentArmStoresNoBorrow of foundation/core/Choice.h).
     template <class Holds>
         requires std::is_invocable_r_v<bool, Holds&, Ref<T const, Brand> const&>
+              && LentArmStoresNoBorrow<Holds, Ref<T const, Brand>>
     [[nodiscard]] constexpr bool is_some_and(Holds&& holds) const {
         return option().is_some_and(holds);
     }

@@ -91,6 +91,30 @@ static_assert(MatchesLink<NodeLink&, HoldsNothing> && MatchesLink<NodeLink&&, Ho
 static_assert(!MatchesLink<NodeLink&, HoldsEnd> && !MatchesLink<NodeLink&&, HoldsEnd>
               && !MatchesLink<NodeLink const&, HoldsEnd>);
 
+// An arm that can store a borrow of the Ref outside the match binds to the
+// store twin of each match, and an arm that takes the Ref by value passes
+// (LentArmStoresNoBorrow of foundation/core/Choice.h).  The arm holds a
+// pointer that it can write, so the store check refuses it.
+struct KeepsPointerOfLink {
+    int*& slot;
+    template <class Given>
+    [[nodiscard]] constexpr int operator()(Given const&) const noexcept {
+        return 0;
+    }
+};
+struct KeepsPointerOfLinkTakesCopy {
+    int*& slot;
+    template <class Given>
+    [[nodiscard]] constexpr int operator()(Given) const noexcept {
+        return 0;
+    }
+};
+static_assert(!MatchesLink<NodeLink&, KeepsPointerOfLink> && !MatchesLink<NodeLink&&, KeepsPointerOfLink>
+              && !MatchesLink<NodeLink const&, KeepsPointerOfLink>);
+static_assert(MatchesLink<NodeLink&, KeepsPointerOfLinkTakesCopy>
+              && MatchesLink<NodeLink&&, KeepsPointerOfLinkTakesCopy>
+              && MatchesLink<NodeLink const&, KeepsPointerOfLinkTakesCopy>);
+
 // The store check of foundation/core/CaptureStore.h reads the target of a
 // const Link as const (gives_const_access_), because each door of a const
 // Link gives only a Ref of a const target: option, expect, the pass above,

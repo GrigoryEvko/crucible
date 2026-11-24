@@ -1,8 +1,10 @@
 // The rule reads the body of the arm only.  These writes still end the
 // payload that the arm borrows, and the rule does not see them: a write in a
-// free function that the arm calls with the sum, a write through a pointer to
-// the sum, a write through a second reference parameter to the same sum, and
-// a write in an arm that the caller gives as a parameter.
+// free function that the arm calls with the sum, a write through a second
+// reference parameter to the same sum, and a write in an arm that the caller
+// gives as a parameter.  A write through a pointer to the sum does not
+// compile: the arm captures the pointer by reference, and the store check of
+// the borrow match refuses an arm that reaches a pointer that it can write.
 #include <foundation/core/Choice.h>
 
 namespace planted {
@@ -16,11 +18,6 @@ int callee(Option<int>& held) {
     return held.match([&](int const& value) { clear(held); return value; }, [] { return 0; });
 }
 
-int pointer(Option<int>& held) {
-    Option<int>* target = &held;
-    return held.match([&](int const& value) { *target = none; return value; }, [] { return 0; });
-}
-
 int second_reference(Option<int>& held, Option<int>& alias) {
     return held.match([&](int const& value) { alias = none; return value; }, [] { return 0; });
 }
@@ -32,7 +29,7 @@ int given_arm(Option<int>& held, Arm const& arm) {
 
 int calls(Option<int>& source) {
     auto const arm = [&source](int const& value) { source = none; return value; };
-    return callee(source) + pointer(source) + second_reference(source, source) + given_arm(source, arm);
+    return callee(source) + second_reference(source, source) + given_arm(source, arm);
 }
 
 }  // namespace planted

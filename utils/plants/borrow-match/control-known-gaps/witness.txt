@@ -1,9 +1,8 @@
-# The rule does not see a write in a callee of the arm, through a pointer,
-# through a second reference parameter, or in an arm that the caller gives as
-# a parameter.  The pointer is a finding of the rule quarantine, and no line
-# names the rule borrow-match.
+# The rule does not see a write in a callee of the arm, through a second
+# reference parameter, or in an arm that the caller gives as a parameter, and
+# no line names the rule borrow-match.  A write through a pointer to the sum
+# does not compile: the store check of the borrow match refuses the arm.
 
 compile gaps src/gaps.cpp
 flag gaps -freflection
 exit gaps pass
-finding gaps quarantine raw-pointer-object src/gaps.cpp:20:18 | target
