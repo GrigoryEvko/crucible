@@ -907,16 +907,39 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // Recording wrote.  fill_meta and scalar_result_meta write each byte of a
 // slot, so the lanes of a record past its rank stay zero.
 //
-// Where the slots of a Recording live: in a frame of the record stack or a
-// list that the caller lends as a View (Lent), or in the list that the
-// Recording holds inline (Owned).  An operation with an exact bound records
-// into a Recording of its own, so its list gives out no View.
-enum class SlotsHome : std::uint8_t {
-    Lent,
-    Owned,
+// Where the slots of a Recording live: in the window of a foreign frame of the
+// record stack or of the list of the cold path, which the caller lends as the
+// ViewMut of the window (SlotsLent), or in the list that the Recording holds
+// inline (SlotsOwned).  An operation with an exact bound records into a
+// Recording of its own, so its list gives out no View.  Each caller of a lent
+// window erases its brand (erase_brand), so each family of the record has one
+// instance for its lent windows.
+template <class Brand>
+struct SlotsLent final {
+    template <uint32_t Count>
+    using storage = ::fixy::ViewMut<crucible::TensorMeta, Brand, Count>;
+};
+struct SlotsOwned final {
+    template <uint32_t Count>
+    using storage = ::fixy::FixedArray<crucible::TensorMeta, Count>;
 };
 
-template <uint32_t Capacity, bool MayOverflow, SlotsHome Home = SlotsHome::Lent>
+// Lends the slot at a proven index of the run of a frame to body in place,
+// and gives the result of body.  The index is below the extent of the run, so
+// the read of the element finds it, and the second arm never runs.
+template <class Brand, std::size_t Count, class Body>
+CRUCIBLE_INLINE decltype(auto) with_frame_slot(::fixy::ViewMut<crucible::TensorMeta, Brand, Count>& run,
+                                               ::fixy::Index<Count> slot, Body&& body) noexcept {
+    using Given = std::invoke_result_t<Body&&, crucible::TensorMeta&>;
+    return run.get_mut(slot.raw())
+        .match(
+            [&body](::fixy::RefMut<crucible::TensorMeta, Brand> element) noexcept -> Given {
+                return static_cast<Body&&>(body)(*element);
+            },
+            []() noexcept -> Given { ::fixy::unreachable(); });
+}
+
+template <uint32_t Capacity, bool MayOverflow, class Home>
 struct Recording {
     static_assert(Capacity <= MAX_INLINE_METAS, "a Recording must not admit more metadata than either path records");
 
@@ -925,17 +948,18 @@ struct Recording {
     // Capacity.
     static constexpr uint32_t kSlots = Capacity > 0 ? Capacity : 1;
 
-    // The slots of the records that a caller lends, and the list that a
-    // Recording of the home Owned holds.
-    using Slots = ::fixy::View<crucible::TensorMeta, kSlots>;
-    using List = ::fixy::FixedArray<crucible::TensorMeta, kSlots>;
-    using Storage = std::conditional_t<Home == SlotsHome::Lent, Slots, List>;
+    // True when the caller lends the slots.
+    static constexpr bool kIsLent = !std::is_same_v<Home, SlotsOwned>;
 
-    explicit Recording(Slots slots) noexcept
-        requires(Home == SlotsHome::Lent)
-        : metas{slots} {}
+    // The slots of the records: the ViewMut of the window that a caller
+    // lends, or the list that a Recording of the home SlotsOwned holds.
+    using Storage = typename Home::template storage<kSlots>;
+
+    explicit Recording(Storage&& slots) noexcept
+        requires kIsLent
+        : metas{std::move(slots)} {}
     Recording() noexcept
-        requires(Home == SlotsHome::Owned)
+        requires(!kIsLent)
         : metas{} {}
 
     Storage metas;
@@ -951,16 +975,16 @@ struct Recording {
     // read of the counts, and each check of an index or a window folds.
     //
     // Lends the slot at position to body in place, and gives the result of
-    // body.  The slots of the home Lent are a View that the caller lends for
-    // the record of one op, and the list of the home Owned lends its slot
-    // through its element door.  Each caller tests the position against
+    // body.  The slots of a lent window are the ViewMut that the caller lends
+    // for the record of one op, and the list of the home SlotsOwned lends its
+    // slot through its element door.  Each caller tests the position against
     // Capacity first, so the optimizer removes the check.
     template <class Body>
     CRUCIBLE_INLINE decltype(auto) with_slot(uint32_t position, Body&& body) noexcept {
         const ::fixy::Index<kSlots> slot =
             ::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot");
-        if constexpr (Home == SlotsHome::Lent) {
-            return static_cast<Body&&>(body)(metas.at(slot));
+        if constexpr (kIsLent) {
+            return with_frame_slot(metas, slot, static_cast<Body&&>(body));
         } else {
             return metas.with_element(slot, static_cast<Body&&>(body));
         }
@@ -968,11 +992,7 @@ struct Recording {
 
     // The slots for a read.
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const crucible::TensorMeta> read_slots() const& noexcept {
-        if constexpr (Home == SlotsHome::Lent) {
-            return ::fixy::View<const crucible::TensorMeta>{metas};
-        } else {
-            return ::fixy::View<const crucible::TensorMeta>{metas.view()};
-        }
+        return ::fixy::View<const crucible::TensorMeta>{metas.view()};
     }
 
     // The records of the input tensors.  add_input keeps the count of the
@@ -1000,15 +1020,18 @@ struct Recording {
     // The three adds below take the tensors of PyTorch.  Each writes the meta
     // of a tensor into its slot in place, and sets each_tensor_description to
     // refused when fill_meta refuses the tensor.  A lent slot is an element of
-    // a View, and fill_meta writes it.  The list of the home Owned builds its
-    // slot through its value door build_at, which lends no borrow of the list,
-    // so the tensor and the description go to make_described_meta as
-    // arguments of the door.
+    // the ViewMut of a window, and fill_meta writes it through
+    // with_frame_slot.  The list of the home SlotsOwned builds its slot
+    // through its value door build_at, which lends no borrow of the list, so
+    // the tensor and the description go to make_described_meta as arguments of
+    // the door.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a Recording takes the tensors of an operator of PyTorch")
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            if constexpr (Home == SlotsHome::Lent) {
-                if (!fill_meta(metas.at(slot_at(counts.inputs)), tensor)) {
+            if constexpr (kIsLent) {
+                if (!with_frame_slot(metas, slot_at(counts.inputs), [&tensor](crucible::TensorMeta& slot) noexcept {
+                        return fill_meta(slot, tensor);
+                    })) {
                     each_tensor_description = TensorDescription::refused;
                 }
             } else {
@@ -1034,8 +1057,10 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            if constexpr (Home == SlotsHome::Lent) {
-                if (!fill_meta(metas.at(slot_at(counts.total())), tensor)) {
+            if constexpr (kIsLent) {
+                if (!with_frame_slot(metas, slot_at(counts.total()), [&tensor](crucible::TensorMeta& slot) noexcept {
+                        return fill_meta(slot, tensor);
+                    })) {
                     each_tensor_description = TensorDescription::refused;
                 }
             } else {
@@ -1064,7 +1089,7 @@ struct Recording {
 // terminates.  Role is the role of each slot of the argument (argument_role),
 // and an absent optional fills a structural slot.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the record reads the arguments and the results of an operator of PyTorch")
-template <crucible::ScalarRole Role, uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+template <crucible::ScalarRole Role, uint32_t Capacity, bool MayOverflow, class Home, class T>
 void record_argument(Recording<Capacity, MayOverflow, Home>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
 
@@ -1133,7 +1158,7 @@ void record_argument(Recording<Capacity, MayOverflow, Home>& recording, const T&
 // an IValue of the tag Double, ComplexDouble, Bool or Int, and the element
 // type of its meta follows the tag.  A symbolic SymInt boxes into a tag of
 // its own and gives no meta.
-template <uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+template <uint32_t Capacity, bool MayOverflow, class Home, class T>
 void record_scalar_result(Recording<Capacity, MayOverflow, Home>& recording, const T& value) {
     constexpr ArgumentKind kind = argument_kind_of<T>();
     if constexpr (kind == ArgumentKind::Bool) {
@@ -1163,7 +1188,7 @@ void record_scalar_result(Recording<Capacity, MayOverflow, Home>& recording, con
 // destructuring the tuple reaches the same elements in the same order. A
 // result that is neither a tensor, a scalar nor a list of tensors
 // contributes nothing, which is what the fallback does with one.
-template <uint32_t Capacity, bool MayOverflow, SlotsHome Home, class T>
+template <uint32_t Capacity, bool MayOverflow, class Home, class T>
 void record_result(Recording<Capacity, MayOverflow, Home>& recording, const T& result) {
     using Result = std::remove_cvref_t<T>;
     if constexpr (std::is_same_v<Result, at::Tensor>) {
@@ -1321,13 +1346,13 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The scalar slots of an entry, from the Recording of its operation.
-template <uint32_t Capacity, SlotsHome Home>
+template <uint32_t Capacity, class Home>
 void write_recorded_scalars(crucible::TraceRing::Entry& entry,
                             const Recording<Capacity, false, Home>& recording) noexcept {
     write_scalar_slots(entry, recording.scalars);
 }
 
-template <uint32_t Capacity, SlotsHome Home>
+template <uint32_t Capacity, class Home>
 void write_recorded_scalars(crucible::TraceRing::Entry& entry,
                             const Recording<Capacity, true, Home>& recording) noexcept {
     write_scalar_slots(entry, recording.scalars, recording.overflow);
@@ -1343,7 +1368,7 @@ void write_recorded_scalars(crucible::TraceRing::Entry& entry,
 // Never inlined: an inline copy in each of the 3110 kernels would take the
 // place of the one copy of each family.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the dispatch keys of PyTorch give the flags of the entry")
-template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, SlotsHome Home>
+template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, class Home>
 [[gnu::noinline]] void append_trace_entry(const Recording<Capacity, MayOverflow, Home>& recording,
                                           crucible::SchemaHash schema_hash, c10::DispatchKeySet dispatch_keys,
                                           crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
@@ -1508,8 +1533,10 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         schema_name_registered.store_release(true);
     }
 
-    using OpRecording = Recording<kCapacity, kMayOverflow>;
-    using OwnedRecording = Recording<kCapacity, kMayOverflow, SlotsHome::Owned>;
+    using OwnedRecording = Recording<kCapacity, kMayOverflow, SlotsOwned>;
+
+    // The count of the slots of a Recording of the kernel.
+    static constexpr uint32_t kSlots = OwnedRecording::kSlots;
 
     // True when the operator has no exact bound of its records: a tensor-list
     // argument, or a result that is a list.  Then the records go into a frame
@@ -1535,7 +1562,9 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // past these slots, and its frame closes before the redispatch returns.
     // An unwind of a PyTorch error closes the frame too.  When the stack has
     // fewer free slots than kCapacity, the kernel records through
-    // call_recording_on_stack.
+    // call_recording_on_stack.  The arm of the frame runs the operator and
+    // gives its result, which can be a reference, so the frame is a foreign
+    // frame (with_foreign_frame of ValidatedOp.h).
     //
     // The functions from here to call take the arguments of an operator of
     // PyTorch and its dispatch keys, so they are in an ABI region.
@@ -1553,13 +1582,12 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
         crucible::OpRecordStack& stack = vigil.op_record_stack(fg);
         const crucible::VigilOpNest nest{vigil, fg};
         if constexpr (kRecordsInFrame) {
-            const crucible::OpRecordFrame frame{stack, kCapacity};
-            for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
-                for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
-                    return record_in_slots(vigil, fg, dispatch_keys, nest.depth(), metas, args...);
-                }
-            }
-            return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...);
+            return stack.template with_foreign_frame<kSlots>(
+                [&](auto slots) -> Ret {
+                    return record_in_slots(vigil, fg, dispatch_keys, nest.depth(),
+                                           ::fixy::erase_brand(std::move(slots)), args...);
+                },
+                [&]() -> Ret { return call_recording_on_stack(vigil, fg, dispatch_keys, nest.depth(), args...); });
         } else {
             // The Recording holds its slots inline, on the stack of this call,
             // and writes them across the redispatch.
@@ -1569,14 +1597,16 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     }
 
     // The record of an operator with no exact bound, into the slots of a frame
-    // or of the list of the cold path.  One body serves the two paths, so the
-    // kernel holds one copy of it.
-    [[gnu::noinline]] static Ret record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                                                 c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
-                                                 typename OpRecording::Slots metas, Args... args)
+    // or of the list of the cold path.  Each caller erases the brand of its
+    // window, so one body serves the two paths, and the kernel holds one copy
+    // of it.
+    template <class Brand>
+    [[gnu::noinline]] static Ret
+    record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg, c10::DispatchKeySet dispatch_keys,
+                    crucible::OpDepth depth, ::fixy::ViewMut<crucible::TensorMeta, Brand, kSlots> metas, Args... args)
         requires kRecordsInFrame
     {
-        OpRecording recording{metas};
+        Recording<kCapacity, kMayOverflow, SlotsLent<Brand>> recording{std::move(metas)};
         return record_operation(vigil, fg, dispatch_keys, depth, recording, args...);
     }
 
@@ -1585,26 +1615,25 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // fewer free slots than kCapacity, which a deep nest of operations needs.
     // The list costs a fill of each of its slots.  The list is in this
     // function, so the frame of call_recording holds no list.  The list is a
-    // window stack, and one loan lends its slots to the Recording of the
-    // home Lent, so this path and the frame path share one body of the record.
+    // window stack, and its foreign door lends its slots to the Recording of a
+    // lent window, so this path and the frame path share one body of the
+    // record.  A new list holds no window, so the window of kSlots fits.
     CRUCIBLE_COLD static Ret call_recording_on_stack(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                      c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                      Args... args)
         requires kRecordsInFrame
     {
-        ::foundation::core::WindowStack<crucible::TensorMeta, OpRecording::kSlots> list{};
-        const ::foundation::core::WindowLoan loan{list, ::foundation::core::WindowCount{OpRecording::kSlots}};
-        for (const ::fixy::View<crucible::TensorMeta> slots : loan.window()) {
-            for (const typename OpRecording::Slots metas : slots.template window<OpRecording::kSlots>(0)) {
-                return record_in_slots(vigil, fg, dispatch_keys, depth, metas, args...);
-            }
-        }
-        ::fixy::unreachable();
+        ::foundation::core::WindowStack<crucible::TensorMeta, kSlots> list{};
+        return list.template with_foreign_window<kSlots>(
+            [&](auto slots) -> Ret {
+                return record_in_slots(vigil, fg, dispatch_keys, depth, ::fixy::erase_brand(std::move(slots)), args...);
+            },
+            []() -> Ret { ::fixy::unreachable(); });
     }
 
     // Records each argument with the role of its position (kArgumentRole), in
     // the order of the arguments, as the boxed fallback reads its stack.
-    template <SlotsHome Home, std::size_t... Positions>
+    template <class Home, std::size_t... Positions>
     CRUCIBLE_INLINE static void record_arguments(Recording<kCapacity, kMayOverflow, Home>& recording,
                                                  std::index_sequence<Positions...>, const Args&... args) {
         (record_argument<kArgumentRole<Positions, Args>>(recording, args), ...);
@@ -1614,7 +1643,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     // records its results, and gives the operation to the Vigil.  The slots
     // hold the records from the first record_argument to the dispatch, and no
     // other operation writes them in between.
-    template <SlotsHome Home>
+    template <class Home>
     CRUCIBLE_INLINE static Ret record_operation(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                 c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
                                                 Recording<kCapacity, kMayOverflow, Home>& recording, Args... args) {

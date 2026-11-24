@@ -639,26 +639,34 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // =====================================================================
 
 // The slots of the records of one operation of the fallback, the inputs and
-// then the outputs.  The slots are a frame of the record stack of the Vigil,
-// or the list of the cold path.  A slot of a frame holds the record of an
-// earlier operation until the extraction writes it, and each reader reads
-// only the slots that the extraction wrote.
-using MetaSlots = ::fixy::View<crucible::TensorMeta, MAX_INLINE_METAS>;
+// then the outputs: the ViewMut of the window of a foreign frame of the record
+// stack of the Vigil, or of the list of the cold path.  Each caller erases the
+// brand of its window, so the record is one instance for the two paths.  A
+// slot of a frame holds the record of an earlier operation until the
+// extraction writes it, and each reader reads only the slots that the
+// extraction wrote.
+template <class Brand>
+using MetaSlots = ::fixy::ViewMut<crucible::TensorMeta, Brand, MAX_INLINE_METAS>;
 
 // The slots of the cold path, on the stack of its call.
 using InlineMetas = ::foundation::core::WindowStack<crucible::TensorMeta, MAX_INLINE_METAS>;
 
-// The slot at position.  Each caller tests the position against
-// MAX_INLINE_METAS first, so the optimizer removes the check.
-[[nodiscard]] static crucible::TensorMeta& inline_slot(MetaSlots metas, uint32_t position) noexcept {
-    return metas.at(
-        ::fixy::Index<MAX_INLINE_METAS>::check(position).expect("a count below MAX_INLINE_METAS names a slot"));
+// Lends the slot at position to body in place, and gives the result of body.
+// Each caller tests the position against MAX_INLINE_METAS first, so the
+// optimizer removes the check.
+template <class Brand, class Body>
+static decltype(auto) with_inline_slot(MetaSlots<Brand>& metas, uint32_t position, Body&& body) noexcept {
+    return crucible::vessel::with_frame_slot(
+        metas, ::fixy::Index<MAX_INLINE_METAS>::check(position).expect("a count below MAX_INLINE_METAS names a slot"),
+        static_cast<Body&&>(body));
 }
 
 // The first count records of the slots.  The extraction keeps each count at
 // most MAX_INLINE_METAS.
-[[nodiscard]] static ::fixy::View<const crucible::TensorMeta> first_records(MetaSlots metas, uint32_t count) noexcept {
-    return ::fixy::View<const crucible::TensorMeta>{metas}.window(0, count).expect(
+template <class Brand>
+[[nodiscard]] static ::fixy::View<const crucible::TensorMeta> first_records(MetaSlots<Brand> const& metas,
+                                                                            uint32_t count) noexcept {
+    return ::fixy::View<const crucible::TensorMeta>{metas.view()}.window(0, count).expect(
         "the extraction keeps each count at most MAX_INLINE_METAS");
 }
 
@@ -676,9 +684,13 @@ struct ExtractionResult {
     // One defined input tensor: a meta of the slots while they have room, and
     // a fold of the overflow digest after that.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction takes one tensor of PyTorch")
-    void add_input(const at::Tensor& tensor, MetaSlots metas) {
+    template <class Brand>
+    void add_input(const at::Tensor& tensor, MetaSlots<Brand>& metas) {
         if (counts.inputs < MAX_INLINE_METAS) {
-            if (!fill_meta(inline_slot(metas, counts.inputs), tensor)) is_each_tensor_described = false;
+            if (!with_inline_slot(metas, counts.inputs,
+                                  [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+                is_each_tensor_described = false;
+            }
             counts.inputs++;
             return;
         }
@@ -692,8 +704,9 @@ struct ExtractionResult {
 // The two extractions below read the boxed stack of PyTorch, so they are in
 // an ABI region.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an operator of PyTorch")
+template <class Brand>
 [[nodiscard]] static ExtractionResult extract_inputs(const torch::jit::Stack& stack, size_t args_begin, size_t num_args,
-                                                     DataArguments data_arguments, MetaSlots metas) {
+                                                     DataArguments data_arguments, MetaSlots<Brand>& metas) {
     ExtractionResult r{};
 
     for (size_t i = 0; i < num_args; i++) {
@@ -758,8 +771,15 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the extraction reads the boxed stack of an o
     return r;
 }
 
-static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, MetaSlots metas,
+template <class Brand>
+static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, MetaSlots<Brand>& metas,
                             ExtractionResult& extracted) {
+    const auto fill_slot = [&metas, &extracted](uint32_t position, const at::Tensor& tensor) noexcept {
+        if (!with_inline_slot(metas, position,
+                              [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
+            extracted.is_each_tensor_described = false;
+        }
+    };
     if (num_returns == 0 || stack.size() < num_returns) return;
     const auto rets_begin = stack.size() - num_returns;
     MetaCount& counts = extracted.counts;
@@ -770,7 +790,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
         if (iv.isTensor()) {
             const auto& t = iv.toTensor();
             if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_tensor_described = false;
+                fill_slot(counts.total(), t);
                 counts.outputs++;
             }
         } else if (iv.isTensorList()) {
@@ -778,7 +798,7 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
             for (const auto ref : iv.toTensorList()) {
                 const at::Tensor t = ref;
                 if (t.defined() && counts.total() < MAX_INLINE_METAS) {
-                    if (!fill_meta(inline_slot(metas, counts.total()), t)) extracted.is_each_tensor_described = false;
+                    fill_slot(counts.total(), t);
                     counts.outputs++;
                 }
             }
@@ -790,7 +810,8 @@ static void extract_outputs(const torch::jit::Stack& stack, size_t num_returns, 
                                                  : iv.isComplexDouble() ? crucible::ScalarType::ComplexDouble
                                                  : iv.isBool()          ? crucible::ScalarType::Bool
                                                                         : crucible::ScalarType::Long;
-                inline_slot(metas, counts.total()) = scalar_result_meta(dtype);
+                const crucible::TensorMeta meta = scalar_result_meta(dtype);
+                with_inline_slot(metas, counts.total(), [&meta](crucible::TensorMeta& slot) noexcept { slot = meta; });
                 counts.outputs++;
             }
         }
@@ -814,9 +835,10 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 // writes: a frame of the record stack of the Vigil, or a list on the stack of
 // the cold path.
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the boxed fallback takes the operator handle and the stack of PyTorch")
+template <class Brand>
 static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack& stack,
                             c10::CrucibleState& state, crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
-                            crucible::OpDepth depth, MetaSlots metas) {
+                            crucible::OpDepth depth, MetaSlots<Brand> metas) {
     const auto& schema = op.schema();
     // Runs the operation at the keys after the recorder, and records nothing.
     const auto run_unrecorded = [&op, dispatch_keys, &stack] {
@@ -914,21 +936,20 @@ static void record_boxed_op(const c10::OperatorHandle& op, c10::DispatchKeySet d
 // free slots than MAX_INLINE_METAS, which a deep nest of boxed operations
 // needs.  The records are the records of the frame path, and the list costs a
 // fill of each of its slots.  The list is in this function, so the frame of
-// crucibleFallback holds no list.
+// crucibleFallback holds no list.  The op can raise, and its arm captures the
+// stack of PyTorch and the Vigil, so the list lends its run through its
+// foreign door, which an unwind ends too.  A new list holds no window, so the
+// window of MAX_INLINE_METAS fits.
 CRUCIBLE_COLD static void record_boxed_op_on_stack(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys,
                                                    torch::jit::Stack& stack, c10::CrucibleState& state,
                                                    crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
                                                    crucible::OpDepth depth) {
-    // The op can raise, so the slots lend their run through a loan, which an
-    // unwind ends too, and not through a frame door, whose body cannot raise.
     InlineMetas slots{};
-    const ::foundation::core::WindowLoan<crucible::TensorMeta, MAX_INLINE_METAS> loan{
-        slots, ::foundation::core::WindowCount{MAX_INLINE_METAS}};
-    for (const ::fixy::View<crucible::TensorMeta> window : loan.window()) {
-        for (const MetaSlots metas : window.window<MAX_INLINE_METAS>(0)) {
-            record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, depth, metas);
-        }
-    }
+    slots.with_foreign_window<MAX_INLINE_METAS>(
+        [&](auto window) {
+            record_boxed_op(op, dispatch_keys, stack, state, vigil, fg, depth, ::fixy::erase_brand(std::move(window)));
+        },
+        [] { ::fixy::unreachable(); });
 }
 
 void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatch_keys, torch::jit::Stack* stack) {
@@ -1023,7 +1044,9 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     // The frame holds MAX_INLINE_METAS slots from the extraction of the
     // inputs to the dispatch.  An operation that the redispatch runs opens
     // its frame past these slots, and its frame closes before the redispatch
-    // returns.  An unwind of a PyTorch error closes the frame too.
+    // returns.  An unwind of a PyTorch error closes the frame too.  The arm
+    // runs the operator, which can raise, and it captures the stack of
+    // PyTorch and the Vigil, so the frame is a foreign frame.
     const crucible::VigilFgCtx fg = vigil.mint_producer_context();
     // The CPU allocator follows the mode of the Vigil at the entry and at the
     // exit of the operation (storage_generation.h).  The scope comes before
@@ -1031,14 +1054,12 @@ void crucibleFallback(const c10::OperatorHandle& op, c10::DispatchKeySet dispatc
     const crucible::vessel::AllocatorFollowScope follow{vigil.context()};
     crucible::OpRecordStack& record_stack = vigil.op_record_stack(fg);
     const crucible::VigilOpNest nest{vigil, fg};
-    const crucible::OpRecordFrame frame{record_stack, MAX_INLINE_METAS};
-    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
-        for (const MetaSlots metas : slots.window<MAX_INLINE_METAS>(0)) {
-            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, nest.depth(), metas);
-            return;
-        }
-    }
-    record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg, nest.depth());
+    record_stack.with_foreign_frame<MAX_INLINE_METAS>(
+        [&](auto slots) {
+            record_boxed_op(op, dispatch_keys, *stack, state, vigil, fg, nest.depth(),
+                            ::fixy::erase_brand(std::move(slots)));
+        },
+        [&] { record_boxed_op_on_stack(op, dispatch_keys, *stack, state, vigil, fg, nest.depth()); });
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 

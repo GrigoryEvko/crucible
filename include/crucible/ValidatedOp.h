@@ -17,6 +17,7 @@
 
 #include <fixy/Core.h>
 #include <foundation/Platform.h>
+#include <foundation/Quarantine.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/WindowStack.h>
 
@@ -134,8 +135,10 @@ public:
     // The foreign frame doors: the frame doors above with no check of the
     // result and of the captures of the arms, for an arm that runs PyTorch
     // and gives its result (the foreign doors of WindowStack.h).  Each call
-    // stands in an opt-out region of the class ABI.  O(1), and the cost of the
-    // arm.
+    // stands in an opt-out region of the class ABI, and so do these doors: they
+    // give the result of an operator of PyTorch, such as a std::vector of
+    // tensors.  O(1), and the cost of the arm.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a foreign frame gives the result of an operator of PyTorch")
     template <class OnOpen, class OnClosed>
     constexpr decltype(auto) with_foreign_frame(
         ::foundation::core::WindowCount count, OnOpen&& on_open,
@@ -150,6 +153,7 @@ public:
         return slots_.template with_foreign_window<Count>(static_cast<OnOpen&&>(on_open),
                                                           static_cast<OnClosed&&>(on_closed));
     }
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 private:
     friend class OpRecordFrame;
