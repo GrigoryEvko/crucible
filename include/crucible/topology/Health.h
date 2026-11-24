@@ -248,13 +248,6 @@ template <class Slot, std::size_t Count>
     return ::fixy::none;
 }
 
-// The index after index in a ring of Count slots: 0 after the last slot.
-// The check of the index cannot fail, because the remainder is below Count.
-template <std::size_t Count>
-[[nodiscard]] constexpr ::fixy::Index<Count> next_ring_index(::fixy::Index<Count> index) noexcept {
-    return ::fixy::Index<Count>::check((index.raw() + 1u) % Count).value_or(::fixy::index<0>());
-}
-
 template <class T>
 concept IsMonotoneCount = ::foundation::reflect::IsInstanceOf<T, ^^::fixy::Monotonic>;
 
@@ -398,7 +391,7 @@ private:
         if (prior != 0 && observed_ns > prior) {
             slot.intervals.with_element(
                 slot.next, [interval = observed_ns - prior](std::uint64_t& held) noexcept { held = interval; });
-            slot.next = next_ring_index(slot.next);
+            slot.next = slot.next.next_cyclic();
             if (slot.count < Window) {
                 ++slot.count;
             }
@@ -516,7 +509,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     // Puts a transition event in the next slot of the ring of events.
     constexpr void push_event(HealthDeltaEvent const& event) noexcept {
         events_.with_element(next_event_, [event](HealthDeltaEvent& held) noexcept { held = event; });
-        next_event_ = detail::next_ring_index(next_event_);
+        next_event_ = next_event_.next_cyclic();
         if (event_count_ < MaxEvents) {
             ++event_count_;
         }

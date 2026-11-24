@@ -233,7 +233,7 @@ class AsymmetricFailureDetector
         if (success) {
             ++window.successes;
         }
-        window.next = static_cast<std::uint16_t>(detail::next_ring_index(next).raw());
+        window.next = static_cast<std::uint16_t>(next.next_cyclic().raw());
     }
 
     [[nodiscard]] constexpr FailureSummary summarize(::fixy::Index<MaxPeers> index) const noexcept {
@@ -314,7 +314,7 @@ class AsymmetricFailureDetector
             .sequence = summary.sequence,
         };
         events_.with_element(next_event_, [&event](AsymmetricFailureEvent& held) noexcept { held = event; });
-        next_event_ = detail::next_ring_index(next_event_);
+        next_event_ = next_event_.next_cyclic();
         if (event_count_ < kMaxEvents) {
             ++event_count_;
         }

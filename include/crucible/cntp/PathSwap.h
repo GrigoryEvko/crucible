@@ -283,8 +283,7 @@ private:
             },
             []() noexcept { ::fixy::fatal("an event of a swap comes after begin_swap, which sets the plan"); });
         guarded.events.with_element(guarded.next_event, [&event](PathSwapEvent& slot) noexcept { slot = event; });
-        guarded.next_event = EventIndex::check((guarded.next_event.raw() + 1u) % MaxEvents)
-                                 .expect("a remainder of a division by MaxEvents is below MaxEvents");
+        guarded.next_event = guarded.next_event.next_cyclic();
         if (guarded.event_count < MaxEvents) {
             ++guarded.event_count;
         }

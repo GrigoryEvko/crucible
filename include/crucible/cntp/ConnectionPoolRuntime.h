@@ -150,11 +150,6 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
         return ::fixy::min(config_.max_per_remote.value(), max_per_remote());
     }
 
-    // The slot of the ring that follows index.
-    [[nodiscard]] static EventIndex next_event_index(EventIndex index) noexcept {
-        return EventIndex::check((index.raw() + 1u) % MaxEvents).expect("a position modulo the ring size is in it");
-    }
-
     // The caller holds the lock and gives its state.
     static void append_event(State& state, PoolEventKind kind, Connection<T> const& connection) noexcept {
         const PoolEvent event{
@@ -166,7 +161,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
             .sequence = ++state.sequence,
         };
         state.events.with_element(state.next_event, [&event](PoolEvent& held) noexcept { held = event; });
-        state.next_event = next_event_index(state.next_event);
+        state.next_event = state.next_event.next_cyclic();
         if (state.event_count < MaxEvents) {
             ++state.event_count;
         }

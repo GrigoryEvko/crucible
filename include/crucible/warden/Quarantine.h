@@ -285,8 +285,7 @@ class QuarantinePolicy : public ::foundation::Pinned<QuarantinePolicy<MaxCogs, M
             .sequence = slot.sequence.get(),
         };
         events_.with_element(next_event_, [event](QuarantineEvent& held) noexcept { held = event; });
-        next_event_ = EventIndex::check((next_event_.raw() + 1u) % MaxEvents)
-                          .expect("a remainder of MaxEvents is a slot of the ring");
+        next_event_ = next_event_.next_cyclic();
         if (event_count_ < MaxEvents) {
             ++event_count_;
         }

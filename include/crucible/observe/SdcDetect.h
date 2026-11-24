@@ -189,19 +189,6 @@ private:
         return ::fixy::none;
     }
 
-    // The slot after cursor, and the first slot after the last one.
-    [[nodiscard]] static constexpr EventIndex next_event_slot(EventIndex cursor) noexcept {
-        return EventIndex::check(cursor.raw() + 1u).value_or(::fixy::index<0>());
-    }
-
-    // The slot before cursor, and the last slot before the first one.
-    [[nodiscard]] static constexpr EventIndex previous_event_slot(EventIndex cursor) noexcept {
-        if (cursor.raw() == 0) {
-            return ::fixy::index<MaxEvents - 1>();
-        }
-        return EventIndex::check(cursor.raw() - 1u).value_or(::fixy::index<0>());
-    }
-
     // Every event carries the strategy and tolerance it was judged under.
     [[nodiscard]] constexpr SdcEvent make_event(SdcEventKind kind, std::size_t compared_replicas) const noexcept {
         return SdcEvent{.kind = kind,
@@ -213,7 +200,7 @@ private:
     void record_event(SdcEvent event) noexcept {
         event.sequence = ++event_sequence_;
         events_.with_element(event_cursor_, [event](SdcEvent& entry) noexcept { entry = event; });
-        event_cursor_ = next_event_slot(event_cursor_);
+        event_cursor_ = event_cursor_.next_cyclic();
     }
 
 public:
@@ -228,7 +215,7 @@ public:
         if (event_sequence_ == 0) {
             return ::fixy::none;
         }
-        return ::fixy::Option<SdcEvent>::some(events_.at(previous_event_slot(event_cursor_)));
+        return ::fixy::Option<SdcEvent>::some(events_.at(event_cursor_.prev_cyclic()));
     }
 
     [[nodiscard]] std::size_t active_cog_count() const noexcept { return active_cogs_; }
