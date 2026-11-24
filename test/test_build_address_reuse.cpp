@@ -180,16 +180,17 @@ constexpr uint32_t kX = 0;
 constexpr uint32_t kY = 1024;
 constexpr uint32_t kZ = 2048;
 
-// The thread, the log and the work of one build.
+// The thread, its ring and its log, and the work of one build.
 struct Rig {
-    // The log comes before the thread, so the thread ends first.
+    // The log and the ring come before the thread, so the thread ends first.
     crucible::test::RigLog log{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), log.side()};
     Work work;
 
-    Rig() { bt.bind_meta_log(log.side()); }
-    Rig(const Rig&) = delete("the thread holds the address of the log");
-    Rig& operator=(const Rig&) = delete("the thread holds the address of the log");
+    Rig() = default;
+    Rig(const Rig&) = delete("the thread holds Refs to the sides of the ring and of the log");
+    Rig& operator=(const Rig&) = delete("the thread holds Refs to the sides of the ring and of the log");
 
     [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt, *log.view()); }
 };

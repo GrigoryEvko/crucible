@@ -2225,6 +2225,11 @@ crucible_neg_compile_test(neg_publish_job_captures_this
 crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
   "no matching function for call to .crucible::BackgroundThread::trace_build_state\\(\\)"
   "candidate expects 1 argument, 0 provided")
+# A BackgroundThread takes its two sides in its constructor, so start takes no
+# side, and no start after stop names another ring or log.
+crucible_neg_compile_test(neg_background_thread_start_takes_no_sides
+  "cannot convert .crucible::BackgroundThread::TraceRingSide. \\{aka .fixy::concurrent::SpscHeldSide<crucible::TraceRing, fixy::concurrent::SpscSide::consumer, crucible::BackgroundThread::DrainStage>.\\} to .int32_t."
+  "initializing argument 2 of .void crucible::BackgroundThread::start\\(const fixy::InitLoadCtx&, int32_t, int32_t, uint64_t\\).")
 # A job reaches the publish stage only through its view, so the door refuses a
 # capture that reaches the BackgroundThread, such as a Ref of it.
 crucible_neg_compile_test(neg_publish_job_captures_a_ref_of_the_background_thread
@@ -4478,7 +4483,7 @@ crucible_neg_compile_test(neg_federation_deserialize_wrong_org_permission
 
 crucible_neg_compile_test(neg_vigil_copy_attempt
     "use of deleted function .crucible::Vigil::Vigil\\(const crucible::Vigil&\\)."
-    "Vigil owns the runtime organism. not copyable")
+    "the Refs of bg_ name the sides of ring_ and meta_log_ of this Vigil, so a Vigil has no copy")
 
 # Vigil::AlignmentPos is fixy::Refined<bounded_above<5>, uint8_t>, and
 # Vigil::alignment_pos_at is its one door.  A constant above the bound

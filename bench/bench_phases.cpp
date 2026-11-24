@@ -909,10 +909,12 @@ int run_bench(::fixy::os::Args const& arguments) {
         []() noexcept { return kDefaultIters; });
 
     // The bench builds each trace from its own log, so no stage of the
-    // BackgroundThread reads the log.
+    // BackgroundThread reads the log.  The thread holds the sides of a rig of
+    // its own, which no stage reads either.
     crucible::test::OpenLog meta_log{};
+    crucible::test::TraceRig sides{};
 
-    BackgroundThread bg{::foundation::effects::testing::test().alloc};
+    BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
 
     bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};

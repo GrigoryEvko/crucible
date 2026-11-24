@@ -30,7 +30,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
-      bg_{startup.cap().alloc, region_ready_, cfg_.limits} {
+      bg_{startup.cap().alloc, ring_.consumer_side(), meta_log_.consumer_side(), region_ready_, cfg_.limits} {
     // An empty path gives no store.  The configured path is operator-supplied,
     // so it crosses the trust boundary here and is declared external until
     // the store's own sanitizer promotes it.  A root that does not open gives
@@ -81,8 +81,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
 
     eager_ = cfg_.eager;
     bg_.set_numerics(compute_numerics_hash(cfg_.numerics, cfg_.eager));
-    bg_.start(startup, ring_.consumer_side(), meta_log_.consumer_side(), cfg_.rank, cfg_.world_size,
-              cfg_.device_capability);
+    bg_.start(startup, cfg_.rank, cfg_.world_size, cfg_.device_capability);
 }
 
 Vigil::~Vigil() = default;

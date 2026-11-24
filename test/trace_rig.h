@@ -5,16 +5,18 @@
 // (fixy/concurrent/SpscEnds.h), as the Vigil does.  The producer sides open
 // with the proof of the rig, which only the rig builds, and the consumer
 // sides open with the proofs of the drain stage and of the publish stage.  So
-// the rig gives the BackgroundThread the two consumer sides that it binds,
-// and the test writes each op through the doors of the rig on one thread.
+// the rig gives the constructor of a BackgroundThread the two consumer sides
+// that it holds, and the test writes each op through the doors of the rig on
+// one thread.
 //
 // RigRing holds a ring, RigLog holds a log, and TraceRig holds one of each.
-// A test that runs some pipelines one after the other can bind one RigLog to
+// A test that runs some pipelines one after the other can give one RigLog to
 // each of them, so it holds one log of 176 MiB and not one for each case.
 //
-// A rig must live longer than each BackgroundThread that binds its sides: a
-// test declares the rig before the BackgroundThread.  A rig is never a
-// static, because the plugin refuses a static that reaches a loan key.
+// A rig must live longer than each BackgroundThread that holds its sides: a
+// test declares the rig before the BackgroundThread.  The plugin refuses a
+// static that reaches a loan key, so a rig is a static only in the PROBE
+// region of a death test, as in test_transaction_owner.
 //
 // Local holds a ring or a log whose two sides open with the proofs of the
 // test, for a test or a bench with no BackgroundThread.  OpenRing and OpenLog
@@ -93,7 +95,7 @@ public:
         });
     }
 
-    // The consumer side, which a BackgroundThread binds.
+    // The consumer side, which a BackgroundThread holds.
     [[nodiscard]] BackgroundThread::TraceRingSide& side() & noexcept { return ring_.consumer_side(); }
 
     // The counters, which any thread reads.
@@ -129,7 +131,7 @@ public:
             RigProducerProof{}, [metas](MetaLog::Producer& log) noexcept { return MetaLog::try_append(log, metas); });
     }
 
-    // The consumer side, which a BackgroundThread binds.
+    // The consumer side, which a BackgroundThread holds.
     [[nodiscard]] BackgroundThread::MetaLogSide& side() & noexcept { return log_.consumer_side(); }
 
     // The counters, which any thread reads.

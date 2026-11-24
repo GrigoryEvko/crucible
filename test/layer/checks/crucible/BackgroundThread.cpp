@@ -12,10 +12,18 @@ static_assert(!__is_constructible(BackgroundThread, BackgroundThread const&)
 static_assert(!__is_assignable(BackgroundThread&, BackgroundThread const&)
               && !__is_assignable(BackgroundThread&, BackgroundThread&&));
 
-// The class states synchronized{}, and nine doors of it take no proof.  The
+// Each BackgroundThread holds the consumer side of a trace ring and of a
+// metadata log from its construction, so no constructor builds one with no
+// side, and the stages read the two with no test.
+static_assert(!__is_constructible(BackgroundThread, ::foundation::effects::Alloc)
+              && !__is_constructible(BackgroundThread, ::foundation::effects::Alloc, PipelineLimits const&));
+static_assert(__is_constructible(BackgroundThread, ::foundation::effects::Alloc, BackgroundThread::TraceRingSide&,
+                                 BackgroundThread::MetaLogSide&));
+
+// The class states synchronized{}, and some doors of it take no proof.  The
 // check of the statement exempts its doors (the exemption of
 // foundation/Transfer.h), so the class is Synchronized.  The keyed doors of
-// the owner-key member series replace the nine doors and the exemption.
+// the owner-key member series replace those doors and the exemption.
 static_assert(::foundation::transfer::Synchronized<BackgroundThread>);
 
 // The publish stage and the readers of the totals use the cell of the count

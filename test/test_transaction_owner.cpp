@@ -185,7 +185,9 @@ void rollback_on_a_fresh_vigil() {
 // runs on its caller, who owns the state while no stage runs.  Two jobs in
 // a row show that the inline path gives the mailbox back.
 void job_runs_on_the_caller_without_a_stage() {
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+    crucible::test::TraceRig rig{};
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
+                                          rig.log_side()};
     int runs = 0;
     background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStageView&,
                                             crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
@@ -209,8 +211,9 @@ std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
 // caller again.
 void job_runs_on_the_stage_while_it_runs() {
     crucible::test::TraceRig rig{};
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
-    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
+                                          rig.log_side()};
+    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     const std::thread::id caller = std::this_thread::get_id();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
@@ -228,12 +231,16 @@ void job_runs_on_the_stage_while_it_runs() {
 // on itself, because the thread that runs it holds the stage.  The view of a
 // job has no door that posts a job, and the door refuses a capture that
 // reaches the background thread, so the job names a background thread of
-// static storage, which it does not capture.  The contract ends the process
-// instead of letting it hang.  The refused call runs in a child through
-// expect_dies of the Check family, before the test starts a thread.
+// static storage, which it does not capture.  The thread holds the sides of a
+// rig of static storage, which the region declares before the thread, so the
+// rig ends after it.  The contract ends the process instead of letting it
+// hang.  The refused call runs in a child through expect_dies of the Check
+// family, before the test starts a thread.
 void nested_job_ends_the_process() {
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a nested publish job names the thread with no capture, in a child process")
-    static crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+    static crucible::test::TraceRig rig{};
+    static crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
+                                                 rig.log_side()};
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     background.run_on_publish_stage(
         [](crucible::BackgroundThread::PublishStageView&, crucible::BackgroundThread::PublishStage const&) noexcept {

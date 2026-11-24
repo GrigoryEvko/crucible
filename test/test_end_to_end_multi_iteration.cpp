@@ -31,13 +31,13 @@ namespace test_end_to_end {
 void test_pipeline_multi_iteration() {
     crucible::test::TraceRig rig{};
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     feed_iteration(rig, Iteration{0});
     feed_iteration(rig, Iteration{1});
     feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     wait_processed(bt, rig);
     const DagRef<const RegionNode> region1 = bt.active_region().expect("BackgroundThread did not produce a region");

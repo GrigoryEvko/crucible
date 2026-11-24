@@ -274,7 +274,6 @@ int run_bench(::fixy::os::Args const& arguments) {
                 ++slot_index;
             }
         });
-        BackgroundThread bg{::foundation::effects::testing::test().alloc};
         // The planner writes the offsets into the slots, so each run plans a
         // copy of them in an arena of its own.  The arrays of the sweep are in
         // sweep_scratch.
@@ -288,7 +287,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             // The plan is in the arena of the slots that it borrows, so it
             // ends with them.
             const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(test.alloc);
-            BackgroundThread::PlanTarget const target = bg.plan_target();
+            BackgroundThread::PlanTarget const target{};
             sweep_scratch.arena.with_epoch(
                 [target, alloc = test.alloc, plan_storage, &copy_run](PlanScratch::Epoch& epoch) noexcept {
                     const DagRef<MemoryPlan> plan =
@@ -347,8 +346,10 @@ int run_bench(::fixy::os::Args const& arguments) {
         }
 
         // The bench drains the ring and builds the trace itself, so no stage
-        // of the BackgroundThread reads the ring or the log.
-        BackgroundThread bg{::foundation::effects::testing::test().alloc};
+        // of the BackgroundThread reads the ring or the log.  The thread
+        // holds the sides of a rig of its own, which no stage reads either.
+        crucible::test::TraceRig sides{};
+        BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
 
         // The drain buffers have static storage; 4× 4096-element arrays on
         // the stack blow past our 512 kB stack-usage budget.
@@ -457,7 +458,10 @@ int run_bench(::fixy::os::Args const& arguments) {
 
             crucible::test::OpenLog meta_log{};
 
-            BackgroundThread bg{::foundation::effects::testing::test().alloc};
+            // The thread holds the sides of a rig of its own, which no stage
+            // reads: the bench builds each trace from its own log.
+            crucible::test::TraceRig sides{};
+            BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
             // The block takes 256 bytes for each op, and at least 1 MiB.  The
             // floor is a constant, and the bytes of the ops above the floor
             // are the part of run time.

@@ -5,14 +5,20 @@
 // A job runs on the thread of the publish stage, so a capture of `this` of its
 // owner, a plain address of an object that the caller owns, is refused.
 
+#include "../trace_rig.h"
+
 #include <crucible/BackgroundThread.h>
 
 #include <foundation/effects/Effect.h>
 
 namespace {
 
+// The owner holds the ring and the log of its thread before the thread, so
+// the thread ends first.
 struct Owner {
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+    crucible::test::TraceRig rig{};
+    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
+                                          rig.log_side()};
     unsigned count = 0;
 
     void count_regions() {

@@ -30,7 +30,7 @@ namespace test_end_to_end {
 void test_pipeline_basic() {
     crucible::test::TraceRig rig{};
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     // Everything is queued before the background thread starts, so the
     // drain sees one complete stream and the outcome does not depend on
@@ -39,7 +39,7 @@ void test_pipeline_basic() {
     feed_iteration(rig, Iteration{1});
     feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
@@ -115,13 +115,13 @@ void test_pipeline_basic() {
 void test_pipeline_divergence() {
     crucible::test::TraceRig rig{};
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     feed_iteration(rig, Iteration{0});
     feed_iteration(rig, Iteration{1});
     feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");

@@ -33,10 +33,8 @@ namespace test_background_thread_run_in_row {
 // What is under test is that the entry point forwards at all.
 void test_t04_runtime_smoke() {
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
-    bt.bind_ring(rig.ring_side());
-    bt.bind_meta_log(rig.log_side());
     bt.stop_requested.signal();
 
     bool done = false;
@@ -61,9 +59,7 @@ void test_t04_runtime_smoke() {
 // drain motion to observe.
 void test_concurrent_spsc_drain() {
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_ring(rig.ring_side());
-    bt.bind_meta_log(rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     bt.rearm_stop();
 
     ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
@@ -106,9 +102,7 @@ void test_concurrent_spsc_drain() {
 // order to reach the entry point directly.
 void test_large_batch_drain() {
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_ring(rig.ring_side());
-    bt.bind_meta_log(rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     bt.rearm_stop();
 
     ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
@@ -149,9 +143,7 @@ void test_large_batch_drain() {
 // invocation dead, and the second cycle would then drain nothing.
 void test_rearm_cycle() {
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_ring(rig.ring_side());
-    bt.bind_meta_log(rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     constexpr uint32_t PER_CYCLE = 4;
 
@@ -208,9 +200,7 @@ void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
         test,
         [] {
             crucible::test::TraceRig rig{};
-            BackgroundThread bt{::foundation::effects::testing::test().alloc};
-            bt.bind_ring(rig.ring_side());
-            bt.bind_meta_log(rig.log_side());
+            BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
             bt.rearm_stop();
             auto first = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
             auto second = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };

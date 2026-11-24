@@ -21,6 +21,7 @@
 //                                       the copy of its records
 
 #include "background_thread_run_in_row.h"
+#include "trace_rig.h"
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
@@ -148,7 +149,8 @@ void test_cross_fence_consistency() {
 // takes the publish-stage proof.  No pipeline of the owner runs, so its job
 // runs on this thread with the proof.
 void test_uncompiled_queue_is_bounded() {
-    BackgroundThread owner{::foundation::effects::testing::test().alloc};
+    crucible::test::TraceRig rig{};
+    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     owner.run_on_publish_stage([](BackgroundThread::PublishStageView&,
                                   BackgroundThread::PublishStage const& stage) noexcept {
         constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
@@ -201,7 +203,8 @@ void test_uncompiled_queue_is_bounded() {
 // keeps the three newest regions and drops each older one.  A queue of zero
 // keeps no region and only counts.  The reads run in a job, as above.
 void test_uncompiled_queue_refuses_past_its_capacity() {
-    BackgroundThread owner{::foundation::effects::testing::test().alloc};
+    crucible::test::TraceRig rig{};
+    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     owner.run_on_publish_stage(
         [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
             using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;

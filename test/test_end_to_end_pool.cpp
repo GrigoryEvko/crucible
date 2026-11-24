@@ -32,13 +32,13 @@ constexpr std::size_t kTensorBytes = 4096;
 void test_pipeline_data_flow() {
     crucible::test::TraceRig rig{};
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     feed_iteration(rig, Iteration{0});
     feed_iteration(rig, Iteration{1});
     feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
@@ -104,13 +104,13 @@ void test_pipeline_data_flow() {
 void test_pipeline_pool_bounds() {
     crucible::test::TraceRig rig{};
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     feed_iteration(rig, Iteration{0});
     feed_iteration(rig, Iteration{1});
     feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");

@@ -171,8 +171,8 @@ void test_detect_stage_holds_a_bounded_trace() {
     // history, and then it moves through a second full history.  The ring and
     // the log come before the BackgroundThread, so the thread ends first.
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
     constexpr uint64_t kOps = uint64_t{2} * IterationDetector::HISTORY_MAX_CAPACITY;

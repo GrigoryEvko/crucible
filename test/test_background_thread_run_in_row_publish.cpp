@@ -142,9 +142,9 @@ void test_reset_drops_inflight_regions() {
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -234,9 +234,9 @@ void test_reset_applies_at_its_point() {
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -292,9 +292,9 @@ void test_mark_keeps_an_unapplied_restart() {
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -352,9 +352,9 @@ void test_reset_skips_the_stale_backlog() {
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -392,9 +392,9 @@ void test_published_regions_keep_their_hashes() {
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
@@ -432,7 +432,7 @@ void test_published_regions_keep_their_hashes() {
 // processed each op, and stops bt.  Gives the count of published regions.
 static uint64_t run_family_a(BackgroundThread& bt, crucible::test::TraceRig& rig, uint32_t iters) {
     using namespace publish_rig;
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     for (uint32_t iter = 0; iter < iters; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
             push(rig, Gate::FAMILY_A, op);
@@ -457,13 +457,14 @@ void test_long_run_keeps_its_scratch() {
     constexpr uint32_t LONG_RUN_ITERS = 10000;
 
     crucible::test::TraceRig short_rig{};
-    BackgroundThread short_bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread short_bt{::foundation::effects::testing::test().alloc, short_rig.ring_side(),
+                              short_rig.log_side()};
     const uint64_t short_published = run_family_a(short_bt, short_rig, A_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          short_published >= 1 && "the short run published no region, so its arenas witness nothing");
 
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     const uint64_t published = run_family_a(bt, rig, LONG_RUN_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
@@ -501,7 +502,7 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
     limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{2};
     limits.scratch_retained = ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096};
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{witness.alloc, limits};
+    BackgroundThread bt{witness.alloc, rig.ring_side(), rig.log_side(), limits};
     CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_limit() == limits.scratch_retained);
     CRUCIBLE_TEST_ASSERT(test,
                          bt.uncompiled_regions().capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);

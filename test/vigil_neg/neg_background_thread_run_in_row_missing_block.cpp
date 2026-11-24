@@ -12,9 +12,14 @@
 
 namespace eff = ::foundation::effects;
 
-int main() {
-    ::crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
+namespace {
+
+// The thread is a parameter, so the fixture builds no ring and no log for it.
+[[maybe_unused]] void run_in_row_with(::crucible::BackgroundThread& bt) {
     const eff::ExecCtx<eff::Bg, eff::Row<eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO>> ctx{eff::testing::bg()};
     bt.run_in_row(bt.prove_quiescence(), ctx);
-    return 0;
 }
+
+}  // namespace
+
+int main() { return 0; }

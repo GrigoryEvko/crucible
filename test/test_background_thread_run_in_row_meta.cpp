@@ -173,11 +173,14 @@ struct PublishedBytes {
     Bytes stored{size_t{0}};
 };
 
-// Builds the region of the work, and publishes it into the store of a new
-// pipeline that runs no thread.  The store holds no other region, so its
-// bytes are the bytes of the arena of the region after the publish.
-[[nodiscard]] PublishedBytes publish_one_region(Work const& work, MetaLog const& log) {
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+// Builds the region of the work from the log, and publishes it into the store
+// of a new pipeline that runs no thread.  The store holds no other region, so
+// its bytes are the bytes of the arena of the region after the publish.  The
+// pipeline holds a ring of its own and the side of the log.
+[[nodiscard]] PublishedBytes publish_one_region(Work const& work, crucible::test::RigLog& metalog) {
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
+    MetaLog const& log = *metalog.view();
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
@@ -212,8 +215,8 @@ void test_overflow_build_leaves_tail() {
     seal_global_tables();
 
     crucible::test::RigLog metalog{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog.side());
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     // The bodies of the epochs capture the state of the build and the log by
     // a const reference, and not the thread.
@@ -259,11 +262,12 @@ void test_unrecorded_nest_refuses_the_build() {
     using namespace meta_rig;
     seal_global_tables();
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    crucible::test::TraceRig rig{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     const auto test = ::foundation::effects::testing::test();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     // The build reads no record of this log.
-    MetaLog const log{::foundation::effects::testing::test().alloc};
+    MetaLog const& log = *rig.log_view();
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     crucible::NumericsHash const numerics = bt.numerics();
 
@@ -303,8 +307,8 @@ void test_publish_stage_releases_in_order() {
     seal_global_tables();
 
     crucible::test::RigLog log{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(log.side());
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), log.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -372,8 +376,8 @@ void test_pipeline_releases_after_overflow() {
     using namespace meta_rig;
 
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     // The detector accepts the period of one iteration and then cuts each
     // iteration after it.  The last iteration below meets the overflow at
@@ -437,8 +441,8 @@ void test_built_graph_owns_its_metadata() {
     seal_global_tables();
 
     crucible::test::RigLog metalog{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog.side());
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -503,8 +507,8 @@ void test_build_and_release_pass_two_to_the_32() {
     // The log starts two records before the wrap of 32 bits.
     constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
     crucible::test::RigLog metalog{MetaIndex{BELOW_WRAP}};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog.side());
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -553,11 +557,12 @@ void test_scalars_of_an_op_with_no_tensors() {
     using namespace meta_rig;
     seal_global_tables();
 
-    // The ops have no metadata index, so the build reads no metadata log.
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    // The ops have no metadata index, so the build reads no record of the log.
+    crucible::test::TraceRig rig{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     const auto test = ::foundation::effects::testing::test();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    MetaLog const log{::foundation::effects::testing::test().alloc};
+    MetaLog const& log = *rig.log_view();
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     crucible::NumericsHash const numerics = bt.numerics();
 
@@ -613,9 +618,8 @@ void test_publish_adds_no_block_to_the_region_arena() {
     Work unslotted;
     unslotted.push_op_with_scalars(0, 5, 6);
 
-    MetaLog const& log = *metalog.view();
-    const PublishedBytes with_plan = publish_one_region(slotted, log);
-    const PublishedBytes with_no_plan = publish_one_region(unslotted, log);
+    const PublishedBytes with_plan = publish_one_region(slotted, metalog);
+    const PublishedBytes with_no_plan = publish_one_region(unslotted, metalog);
     CRUCIBLE_TEST_ASSERT(kTest, with_plan.built > Bytes{size_t{0}} && with_no_plan.built > Bytes{size_t{0}});
     CRUCIBLE_TEST_ASSERT(kTest,
                          with_plan.stored == with_plan.built && "the publish of a region with slots took a block");

@@ -216,16 +216,6 @@ private:
     uint64_t max_sleep_nanos_ = MIN_SLEEP_NANOS;
 };
 
-// True when no start set the slot, or when the slot holds object.  The first
-// start sets the ring and the metadata log of the pipeline.  A start after
-// stop() continues the stream of the last pipeline, so it must name the same
-// ring and the same log: the ring holds the ops that the last pipeline did
-// not read, and the cursor of the detect stage is a position in that log.
-template <class T>
-[[nodiscard]] bool is_unset_or_holds(::fixy::WriteOnceNonNull<T*> const& slot, T const& object) noexcept {
-    return !slot.has_value() || ::fixy::same_object(::fixy::to(*slot), ::fixy::to(object));
-}
-
 // Loop of the Vigil.  The foreground records each op into the trace ring,
 // the four stages make the regions of the ops, and the publish stage counts
 // the ops that it processed.  A flush of the foreground waits on that count.
@@ -532,9 +522,14 @@ struct BackgroundThread::Pipeline {
 
 // ignore_regions_ comes before region_ready_ in the class, so it is built
 // before the Ref of it.  The region store holds one empty slot for each
-// region of the limits.
-BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, PipelineLimits const& limits)
-    : region_ready_{::fixy::erase_brand(::fixy::to(ignore_regions_))},
+// region of the limits.  No consumer of the ring runs at the construction, so
+// the tail of the ring holds still for the read of ring_base_.
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side,
+                                   MetaLogSide& meta_log_side, PipelineLimits const& limits)
+    : ring_{::fixy::erase_brand(::fixy::to(ring_side))},
+      meta_log_{::fixy::erase_brand(::fixy::to(meta_log_side))},
+      ring_base_{ring_side.with_owner([](TraceRing const& ring) noexcept { return ring.total_consumed(); })},
+      region_ready_{::fixy::erase_brand(::fixy::to(ignore_regions_))},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},
@@ -543,9 +538,13 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Pipe
     publish_scratch_.arena.set_retained_limit(limits.scratch_retained);
 }
 
-BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
+BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side,
+                                   MetaLogSide& meta_log_side, RegionReadyCall const& on_region_ready,
                                    PipelineLimits const& limits)
-    : region_ready_{::fixy::erase_brand(::fixy::to(on_region_ready))},
+    : ring_{::fixy::erase_brand(::fixy::to(ring_side))},
+      meta_log_{::fixy::erase_brand(::fixy::to(meta_log_side))},
+      ring_base_{ring_side.with_owner([](TraceRing const& ring) noexcept { return ring.total_consumed(); })},
+      region_ready_{::fixy::erase_brand(::fixy::to(on_region_ready))},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
       uncompiled_regions_{allocation, limits.uncompiled_queue},
@@ -641,7 +640,7 @@ BackgroundThread::prepare_iteration_build_work(::foundation::effects::Alloc allo
     (void)iterations_completed.bump();
 
     ::fixy::Option<::fixy::Box<BgBuildWork>> built{::fixy::none};
-    if (meta_log_ && completed_len > 0) {
+    if (completed_len > 0) {
         ::fixy::Box<BgBuildWork> work = ::fixy::mint_box<BgBuildWork>(alloc);
         work->reset_point = applied_reset_.peek_relaxed();
         work->numerics = stream_numerics_;
@@ -693,7 +692,7 @@ void BackgroundThread::apply_due_reset_() noexcept {
 // with the log, and a tail past the head would give the producer slots that
 // it did not write.
 void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta_floor) {
-    meta_log_.get()->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept {
+    meta_log_->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept {
         if (meta_floor <= MetaLog::released(log)) return;
         CRUCIBLE_FATAL_INVARIANT(meta_floor <= MetaLog::produced(log));
         MetaLog::advance_tail(log, meta_floor);
@@ -879,7 +878,7 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out) {
     // the request at the end of its sleep, at most RING_MAX_SLEEP_NANOS later.
     // The stage opens the consumer side of the ring for each pop with its
     // proof, which lives for the loop on the thread of the stage.
-    TraceRingSide& ring_side = *owner.ring_.get();
+    TraceRingSide& ring_side = *owner.ring_;
     DrainStage const stage{};
     auto const pop = [&ring_side, &stage](BgTraceBatch& into) noexcept {
         return ring_side.with_end(stage, [&into](TraceRing::Consumer& ring) noexcept {
@@ -1018,9 +1017,8 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
         //
         // The body captures the state of the build, the metadata log by a
         // const reference and the work, and not the owner, so it reaches no
-        // arena of the owner.  A work reaches this stage only with a bound
-        // metadata log (the detect stage).  The build reads the log through
-        // the view that the consumer side of the log gives (owner_view of
+        // arena of the owner.  The build reads the log through the view that
+        // the consumer side of the log gives (owner_view of
         // fixy/concurrent/SpscEnds.h), and it reads only the records that the
         // meta starts of the drained ops of the work name.  The record path
         // published each such record before its op, and the publish stage
@@ -1028,7 +1026,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
         ::fixy::Option<::fixy::Box<BgGraphPublish>> publish{::fixy::none};
         TraceBuildState& build_state = owner.build_state_;
         ::fixy::Ref<MetaLog const, ::fixy::concurrent::SpscSplitBrand<MetaLog>> const meta_log_view =
-            owner.meta_log_.get()->owner_view();
+            owner.meta_log_->owner_view();
         MetaLog const& meta_log = *meta_log_view;
         ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
         owner.build_scratch_.arena.with_epoch([&build_state, &meta_log, alloc, &work,
@@ -1142,29 +1140,9 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
 // comes before start(), so the door of the thread reads it as defaulted.
 BackgroundThread::~BackgroundThread() = default;
 
-void BackgroundThread::bind_ring(TraceRingSide& ring_side) noexcept {
-    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring_, ring_side),
-                     "a start after stop names the trace ring of the first start");
-    if (!ring_.has_value()) {
-        ring_.set(&ring_side);
-        // No consumer runs at the bind, so the tail holds still.
-        ring_base_ = ring_side.with_owner([](TraceRing const& ring) noexcept { return ring.total_consumed(); });
-    }
-}
-
-void BackgroundThread::bind_meta_log(MetaLogSide& meta_log_side) noexcept {
-    CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log_, meta_log_side),
-                     "a start after stop names the metadata log of the first start");
-    if (!meta_log_.has_value()) meta_log_.set(&meta_log_side);
-}
-
-void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
-                             int32_t rank, int32_t world_size, uint64_t device_cap) {
+void BackgroundThread::start(::fixy::InitLoadCtx const& startup, int32_t rank, int32_t world_size,
+                             uint64_t device_cap) {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
-    bind_ring(ring_side);
-    bind_meta_log(meta_log_side);
     global_schema_table().seal(startup);
     global_ckernel_table().value()->seal(startup);
     rank_ = rank;
@@ -1176,7 +1154,7 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRingSide& 
         // The first op of the ring owns the first record that the log has
         // not released.  A later start keeps the cursor, because the ring
         // keeps the ops that the last pipeline did not read.
-        meta_cursor_ = meta_log_.get()->with_owner([](MetaLog const& log) noexcept { return log.total_released(); });
+        meta_cursor_ = meta_log_->with_owner([](MetaLog const& log) noexcept { return log.total_released(); });
     }
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.  It borrows this

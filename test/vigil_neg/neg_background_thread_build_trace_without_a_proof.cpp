@@ -11,9 +11,14 @@
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
-int main() {
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+namespace {
+
+// The thread is a parameter, so the fixture builds no ring and no log for it.
+[[maybe_unused]] void build_with(crucible::BackgroundThread& background) {
     auto& state = background.trace_build_state();
     static_cast<void>(state);
-    return 0;
 }
+
+}  // namespace
+
+int main() { return 0; }

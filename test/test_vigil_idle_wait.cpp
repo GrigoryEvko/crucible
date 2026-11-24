@@ -134,8 +134,8 @@ void check_idle_count(fixy::TestRunnerCtx const& runner,
     // The ring and the log come before the BackgroundThread, so the thread
     // ends first.
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
         CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
     wait_for_pipeline(bt, rig);

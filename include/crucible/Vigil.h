@@ -257,10 +257,17 @@ public:
     // thread first.
     ~Vigil();
 
-    Vigil(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
-    Vigil& operator=(const Vigil&) = delete("Vigil owns the runtime organism; not copyable");
-    Vigil(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
-    Vigil& operator=(Vigil&&) = delete("interior pointers from CrucibleContext and ring would dangle");
+    // The Refs of bg_ name the consumer sides of ring_ and meta_log_ of this
+    // Vigil.  A Ref to a member of the same object is sound only while that
+    // object stays at its address, so a Vigil has no copy and no move.
+    Vigil(const Vigil&) = delete("the Refs of bg_ name the sides of ring_ and meta_log_ of this Vigil, so a Vigil "
+                                 "has no copy");
+    Vigil& operator=(const Vigil&) = delete("the Refs of bg_ name the sides of ring_ and meta_log_ of this Vigil, "
+                                            "so a Vigil has no copy");
+    Vigil(Vigil&&) = delete("the Refs of bg_ name the sides of ring_ and meta_log_ at the address of this Vigil, so "
+                            "a Vigil has no move");
+    Vigil& operator=(Vigil&&) = delete("the Refs of bg_ name the sides of ring_ and meta_log_ at the address of this "
+                                       "Vigil, so a Vigil has no move");
 
     // Reserves a ring slot, appends the tensor metadata, and then commits an
     // op fingerprint to the slot (record_into).  Returns false when the ring
@@ -1561,10 +1568,10 @@ private:
     // The ring and the metadata log, each in a held split with its two ends
     // (fixy/concurrent/SpscEnds.h).  The record path opens the two producer
     // sides with the proof of the producer claim.  The background thread
-    // holds a reference to each consumer side, and it opens the side of the
-    // ring with the proof of its drain stage and the side of the log with
-    // the proof of its publish stage.  bg_ is the last member, so it joins
-    // the pipeline thread before the two splits end.
+    // holds a Ref to each consumer side from its construction, and it opens
+    // the side of the ring with the proof of its drain stage and the side of
+    // the log with the proof of its publish stage.  bg_ is the last member,
+    // so it joins the pipeline thread before the two splits end.
     ::fixy::concurrent::SpscHeldSplit<TraceRing, VigilRingSides> ring_;
     ::fixy::concurrent::SpscHeldSplit<MetaLog, VigilLogSides> meta_log_;
     // Owned by the publish stage: each member takes that stage's proof, and

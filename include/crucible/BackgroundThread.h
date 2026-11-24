@@ -112,10 +112,11 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // Each data member that is not private is a cell or a counter that two
 // threads can write, and the walk checks it.  Each private member is an
 // atomic, a ring of one producer and one consumer, a field of one stage
-// alone, or a field that start() writes before the pipeline thread starts,
-// as the comment of the member tells.  A job of the publish stage gets the
-// PublishStageView, not the class.  So the class states that two threads
-// can write it at the same time.
+// alone, a Ref to a side that the constructor writes, or a field that start()
+// writes before the pipeline thread starts, as the comment of the member
+// tells.  A job of the publish stage gets the PublishStageView, not the
+// class.  So the class states that two threads can write it at the same
+// time.
 //
 // Each public door that writes or reads the state of a stage from outside
 // the pipeline takes a proof.  run_in_row, trace_build_state, pending_op_count
@@ -123,9 +124,9 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // (prove_quiescence), and at() of the uncompiled queue takes the
 // publish-stage proof.  The mailbox of the publish stage and its two
 // sentinels are private.  The requests, the flush and rearm_stop write only
-// atomic cells, so they are const.  Eight doors take no proof that the check
-// of the statement reads: bind_ring, bind_meta_log, set_numerics, start,
-// stop, run_on_publish_stage, run_in_row and trace_build_state.
+// atomic cells, so they are const.  Six doors take no proof that the check
+// of the statement reads: set_numerics, start, stop, run_on_publish_stage,
+// run_in_row and trace_build_state.
 // compute_memory_plan is static and takes no BackgroundThread, so it is no
 // door.  The check exempts this one class until the keyed doors
 // of the owner-key member series replace those doors (the exemption of
@@ -149,15 +150,6 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
         ::fixy::concurrent::SpscHeldSide<TraceRing, ::fixy::concurrent::SpscSide::consumer, DrainStage>;
     using MetaLogSide = ::fixy::concurrent::SpscHeldSide<MetaLog, ::fixy::concurrent::SpscSide::consumer, PublishStage>;
 
-    // Binds the consumer sides of the trace ring and of the metadata log of a
-    // pipeline that the caller runs with run_in_row, before it starts the
-    // thread of that run.  start() binds the two itself.  A later bind names
-    // the same side, and a bind while the pipeline thread runs breaks the
-    // contract.  The holder of the two splits keeps them alive while this
-    // object lives, as the Vigil does with bg_ as its last member.
-    void bind_ring(TraceRingSide& ring_side) noexcept CRUCIBLE_NO_THREAD_SAFETY;
-    void bind_meta_log(MetaLogSide& meta_log_side) noexcept CRUCIBLE_NO_THREAD_SAFETY;
-
     // The last published region, or an empty reference before the first
     // publication.  The acquire load sees each write of the region before
     // its publication, and no code writes a published region.
@@ -169,26 +161,27 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     }
 
 private:
-    // The first start() or bind sets each pointer, and never to null.  Each
-    // later start() names the same two sides, so no start sets a pointer
-    // again.  The drain stage opens the side of the ring, the publish stage
-    // opens the side of the log, and the build stage and a flush read the
-    // owner of each side through a const frame.
-    ::fixy::WriteOnceNonNull<TraceRingSide*> ring_ = ::fixy::mint_write_once_non_null<TraceRingSide*>();
-    ::fixy::WriteOnceNonNull<MetaLogSide*> meta_log_ = ::fixy::mint_write_once_non_null<MetaLogSide*>();
+    // The consumer sides of the trace ring and of the metadata log.  The
+    // constructor sets the two, and no code changes them.  The holder of the
+    // two splits keeps them alive while this object lives (the order rule of
+    // the constructor).  The drain stage opens the side of the ring, the
+    // publish stage opens the side of the log, and the build stage and a
+    // flush read the owner of each side through a const frame.
+    ::fixy::Ref<TraceRingSide> const ring_;
+    ::fixy::Ref<MetaLogSide> const meta_log_;
 
     // start() writes the three before it starts the pipeline thread.
     int32_t rank_ = -1;
     int32_t world_size_ = 0;
     DeviceCapability device_capability_{};
 
-    // The tail of the ring at the first bind: the count of the ops that the
-    // ring gave to an earlier consumer, such as an earlier BackgroundThread.
-    // total_processed counts only the ops of this object, so a flush adds
-    // this base (count_processed_ring_ops).  The first bind writes it before
-    // the pipeline thread starts, and the thread that holds this object reads
-    // it.  It lies in the bytes before the line of active_region_, so it
-    // moves no other member.
+    // The tail of the ring at the construction: the count of the ops that
+    // the ring gave to an earlier consumer, such as an earlier
+    // BackgroundThread.  total_processed counts only the ops of this object,
+    // so a flush adds this base (count_processed_ring_ops).  The constructor
+    // writes it, while no consumer of the ring runs, and the thread that
+    // holds this object reads it.  It lies in the bytes before the line of
+    // active_region_, so it moves no other member.
     uint64_t ring_base_ = 0;
 
     // The last published region.  The publish stage writes it, and a reader
@@ -1036,7 +1029,8 @@ public:
     // ops in the ring, and the flush then gives pipeline_stopped with no wait.
     // The pipeline thread stores the stop after its last count, so a caller
     // that reads the stop reads each count before it.  A BackgroundThread
-    // that never started has no ring, holds no op, and gives Unit.
+    // that never started gives Unit when its ring took no op after the
+    // construction, and pipeline_stopped when the ring took one.
     //
     // The publish stage notifies the event count after each count, and the
     // pipeline thread notifies it after the stop, so no wake is lost (the
@@ -1055,9 +1049,8 @@ public:
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) const noexcept {
         CRUCIBLE_PRE(!holds_stage_on_this_thread_());
-        if (!ring_.has_value()) return ::fixy::Unit{};
         const uint64_t target_produced =
-            ring_.get()->with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
+            ring_->with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
         const auto is_settled = [this, target_produced]() noexcept {
             return count_processed_ring_ops() >= target_produced
                 || pipeline_run_.load_acquire() == PipelineRun::stopped;
@@ -1068,8 +1061,8 @@ public:
     }
 
     // The count of the ops of the ring that no pipeline has to process any
-    // more: the ops that the ring gave to a consumer before the first bind of
-    // this object, and each op that the pipeline of this object processed
+    // more: the ops that the ring gave to a consumer before the construction
+    // of this object, and each op that the pipeline of this object processed
     // since.  A reader compares it with the head of the ring.  The acquire
     // load of total_processed orders each write of the pipeline before it.
     [[nodiscard]] uint64_t count_processed_ring_ops() const noexcept {
@@ -1418,26 +1411,25 @@ public:
     void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                         StreamPoint reset_point) CRUCIBLE_NO_THREAD_SAFETY;
 
-    // Seals the global schema and kernel tables, sets the ring and the
-    // metadata log, and starts the pipeline thread.  The thread runs the
-    // pipeline under the background context, which it takes from the door.
+    // Seals the global schema and kernel tables, and starts the pipeline
+    // thread on the ring and the metadata log of the constructor.  The thread
+    // runs the pipeline under the background context, which it takes from
+    // the door.
     //
     // Sealing the global registration tables here turns "all registrations
     // complete before the background thread starts" into a load-bearing
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
-    // The two consumer sides are references, so no caller can give a null
-    // pointer.  The init context is the authority to start the thread.  A
-    // start while a pipeline thread runs breaks the contract: call stop()
-    // first.
+    // The init context is the authority to start the thread.  A start while a
+    // pipeline thread runs breaks the contract: call stop() first.
     //
     // A start after stop() continues the stream of the last pipeline.  The
     // ring keeps the ops that the last pipeline did not read, and the detect
-    // stage keeps its held ops, its detector and its cursor of the log.  So
-    // a later start names the two sides of the first start, and a start that
-    // names a different side breaks the contract.
-    void start(::fixy::InitLoadCtx const& startup, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
-               int32_t rank = -1, int32_t world_size = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
+    // stage keeps its held ops, its detector and its cursor of the log.  Each
+    // start reads the two sides of the constructor, so no start can name a
+    // different side.
+    void start(::fixy::InitLoadCtx const& startup, int32_t rank = -1, int32_t world_size = 0, uint64_t device_cap = 0)
+        CRUCIBLE_NO_THREAD_SAFETY;
 
     // Sets the numerics hash of the start of the run, which the build folds
     // into each region until a request_numerics.  The owner calls it before
@@ -1461,19 +1453,33 @@ public:
 
     // src/BackgroundThread.cpp defines the two, where the pipeline is a
     // complete type.  The caller gives the allocation capability of its
-    // context, and the pipeline takes its storage through it.  The first
+    // context, and the pipeline takes its storage through it.  The object
+    // keeps a Ref to the consumer side of the trace ring and a Ref to the
+    // consumer side of the metadata log, and each run of the pipeline reads
+    // the two.  No consumer of the ring runs at the construction.  The first
     // has no region callback.  The second borrows the callback of the
     // caller, which outlives this BackgroundThread (region_ready_).  The
     // limits size the region store and the uncompiled queue, and set the
     // retained limit of the two scratch arenas.
-    explicit BackgroundThread(::foundation::effects::Alloc allocation, PipelineLimits const& limits = PipelineLimits{});
-    BackgroundThread(::foundation::effects::Alloc allocation, RegionReadyCall const& on_region_ready,
+    //
+    // The order rule: the two sides and the callback outlive this object,
+    // because the holder declares them before this object, and this object
+    // is the last member of its holder.  The end of this object joins the
+    // pipeline thread, so no stage reads a side after the end of its split.
+    // The Vigil holds ring_, meta_log_ and region_ready_ before bg_, and each
+    // test declares its ring and its log before its BackgroundThread.
+    BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
                      PipelineLimits const& limits = PipelineLimits{});
-    BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
-    BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns the pipeline thread");
-    BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
-    BackgroundThread&
-    operator=(BackgroundThread&&) = delete("BackgroundThread owns the pipeline thread with captured this");
+    BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
+                     RegionReadyCall const& on_region_ready, PipelineLimits const& limits = PipelineLimits{});
+    BackgroundThread(const BackgroundThread&) =
+        delete("BackgroundThread owns the pipeline thread, and its Refs name the one consumer of each side");
+    BackgroundThread& operator=(const BackgroundThread&) =
+        delete("BackgroundThread owns the pipeline thread, and its Refs name the one consumer of each side");
+    BackgroundThread(BackgroundThread&&) =
+        delete("the pipeline thread reaches this object and its Refs to the two sides at one address");
+    BackgroundThread& operator=(BackgroundThread&&) =
+        delete("the pipeline thread reaches this object and its Refs to the two sides at one address");
 
     // The bytes of blocks that the two scratch arenas hold.  The build stage
     // and the publish stage write the arenas, so read the value only when no
@@ -1938,7 +1944,10 @@ public:
     // The device that a memory plan is for: the rank, the size of the world
     // and the capability of the device.  start() writes the three of this
     // background thread before it starts the pipeline thread.  A plan body
-    // captures this value, and not the background thread.
+    // captures this value, and not the background thread.  The value of
+    // PlanTarget{} is the plan target of a background thread that never
+    // started, so a test of a memory plan uses it with no background thread.
+    // test_background_thread_start_stop pins the two to one value.
     struct PlanTarget {
         int32_t rank = -1;
         int32_t world_size = 0;

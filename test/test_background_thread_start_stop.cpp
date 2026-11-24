@@ -1,11 +1,12 @@
 // The pipeline thread of a BackgroundThread starts with start() and joins
 // with stop(), and a stop with no thread joins nothing.  A start while a
 // pipeline thread runs breaks the contract of start(), and the end of a
-// BackgroundThread joins a pipeline that runs.  A start after stop() with
-// the same ring and log continues the stream of ops, and a start after
-// stop() with a different ring or log breaks the contract.  Each broken
-// contract runs in a child process through expect_dies of the Check family,
-// while the test process has one thread.
+// BackgroundThread joins a pipeline that runs.  A start after stop() reads
+// the ring and the log of the constructor, so it continues the stream of
+// ops.  The fixture neg_background_thread_start_takes_no_sides shows that no
+// start names a side.  The broken contract runs in a child process through
+// expect_dies of the Check family, while the test process has one thread.
+// The plan target of a thread that never started is PlanTarget{}.
 // The tsan preset runs the same binary, so each start and each join has a
 // check of ThreadSanitizer.
 
@@ -93,9 +94,9 @@ void test_start_and_stop() {
     // Each test holds its own ring and log, declared before its
     // BackgroundThread, so the thread ends first.
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
-    bt.start(startup(), rig.ring_side(), rig.log_side());
+    bt.start(startup());
     static_cast<void>(record_loop(rig, 0));
     wait_for_pipeline(bt, rig);
     bt.stop();
@@ -112,9 +113,9 @@ void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& t
         test,
         [] noexcept {
             TraceRig rig{};
-            BackgroundThread bt{::foundation::effects::testing::test().alloc};
-            bt.start(startup(), rig.ring_side(), rig.log_side());
-            bt.start(startup(), rig.ring_side(), rig.log_side());
+            BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+            bt.start(startup());
+            bt.start(startup());
         },
         ::fixy::TextView{"foundation: contract violation: !thread_.holds_thread(), \"a start while the pipeline "
                          "thread runs: stop the pipeline first\""});
@@ -122,8 +123,8 @@ void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& t
 
 void test_end_joins_a_running_pipeline() {
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(startup(), rig.ring_side(), rig.log_side());
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    bt.start(startup());
     // The end of bt stops the pipeline and joins its thread.
 }
 
@@ -180,8 +181,8 @@ void test_start_again_continues_the_stream() {
     const auto alloc = ::foundation::effects::testing::test().alloc;
     TraceRig rig{};
     TraceRig one_rig{};
-    BackgroundThread bt{alloc};
-    bt.start(startup(), rig.ring_side(), rig.log_side());
+    BackgroundThread bt{alloc, rig.ring_side(), rig.log_side()};
+    bt.start(startup());
     record_stream(rig, 0, kOpsBeforeStop);
     wait_for_pipeline(bt, rig);
     bt.stop();
@@ -189,13 +190,13 @@ void test_start_again_continues_the_stream() {
                                     && "the first pipeline holds no op with a record of the log");
 
     record_stream(rig, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
-    bt.start(startup(), rig.ring_side(), rig.log_side());
+    bt.start(startup());
     record_stream(rig, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
     wait_for_pipeline(bt, rig);
     bt.stop();
 
-    BackgroundThread control{alloc};
-    control.start(startup(), one_rig.ring_side(), one_rig.log_side());
+    BackgroundThread control{alloc, one_rig.ring_side(), one_rig.log_side()};
+    control.start(startup());
     record_stream(one_rig, 0, kStreamOps);
     wait_for_pipeline(control, one_rig);
     control.stop();
@@ -221,24 +222,17 @@ void test_start_again_continues_the_stream() {
                                     && "the second start moved the cursor of the log");
 }
 
-// A start after stop() that names a different ring or a different log breaks
-// the contract of start(), and the report holds the message of the contract.
-// Each refused start ends its child process.  A start with the first ring and
-// log then runs a pipeline in the test process.
-void test_start_again_with_another_ring_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
+// The plan target of a thread that never started is PlanTarget{}, so a test
+// of a memory plan uses PlanTarget{} with no thread (PlanTarget of
+// BackgroundThread.h).
+void test_plan_target_before_start_is_the_default() {
     TraceRig rig{};
-    TraceRig other{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(startup(), rig.ring_side(), rig.log_side());
-    bt.stop();
-    ::fixy::check::expect_dies(
-        test, [&bt, &rig, &other] noexcept { bt.start(startup(), other.ring_side(), rig.log_side()); },
-        ::fixy::TextView{"a start after stop names the trace ring of the first start"});
-    ::fixy::check::expect_dies(
-        test, [&bt, &rig, &other] noexcept { bt.start(startup(), rig.ring_side(), other.log_side()); },
-        ::fixy::TextView{"a start after stop names the metadata log of the first start"});
-    bt.start(startup(), rig.ring_side(), rig.log_side());
-    bt.stop();
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    BackgroundThread::PlanTarget const unstarted = bt.plan_target();
+    BackgroundThread::PlanTarget const preset{};
+    CRUCIBLE_TEST_ASSERT(kTest, unstarted.rank == preset.rank && unstarted.world_size == preset.world_size
+                                    && unstarted.device_capability.value() == preset.device_capability.value()
+                                    && "the plan target of a thread that never started is not PlanTarget{}");
 }
 
 }  // namespace
@@ -249,7 +243,7 @@ int main() {
     test_start_while_running_breaks_the_contract(test);
     test_end_joins_a_running_pipeline();
     test_start_again_continues_the_stream();
-    test_start_again_with_another_ring_breaks_the_contract(test);
+    test_plan_target_before_start_is_the_default();
     ::fixy::check::pass(test, "test_background_thread_start_stop: PASSED\n");
     return 0;
 }

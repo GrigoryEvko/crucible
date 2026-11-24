@@ -84,7 +84,7 @@ void test_refused_ops_give_no_wrong_region() {
     // The ring and the log come before the BackgroundThread, so the thread
     // ends first.
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
 
     // No pipeline runs, so the ring takes CAPACITY ops of the loop and
     // refuses the rest.  The program goes on, so the index counts each
@@ -97,7 +97,7 @@ void test_refused_ops_give_no_wrong_region() {
     CRUCIBLE_TEST_ASSERT(kTest, refused == kRefused);
 
     // The pipeline publishes the regions of the iterations in the full ring.
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     wait_for_pipeline(bt, rig);
     const uint64_t regions_before_gap = bt.uncompiled_regions().total();
 

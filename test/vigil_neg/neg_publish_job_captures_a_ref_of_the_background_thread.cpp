@@ -11,11 +11,16 @@
 #include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
-int main() {
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
+namespace {
+
+// The thread is a parameter, so the fixture builds no ring and no log for it.
+[[maybe_unused]] void post_with(crucible::BackgroundThread& background) {
     const ::fixy::Ref<crucible::BackgroundThread> whole{::fixy::erase_brand(::fixy::to(background))};
     background.run_on_publish_stage(
         [whole](crucible::BackgroundThread::PublishStageView&,
                 crucible::BackgroundThread::PublishStage const&) noexcept { static_cast<void>(whole->works_built()); });
-    return 0;
 }
+
+}  // namespace
+
+int main() { return 0; }
