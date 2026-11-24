@@ -402,6 +402,179 @@ void keyed_log_passes_its_key(::foundation::effects::Alloc alloc, const SoloOwne
     CRUCIBLE_TEST_ASSERT(kTest, !log.rollback(key_back, owner));
 }
 
+// One mint site of a keyed log.  Each call runs the same site, so each log
+// that it gives has one brand, as two turns of a loop over one site do.  The
+// brand leaves this helper on purpose: the tests below prove that the Identity
+// of a log tells such logs apart at run time.
+[[nodiscard]] auto mint_keyed_log() noexcept {
+    return ::fixy::mint_keyed_owner(crucible::transaction_log_owner<4, SoloOwner>);
+}
+
+// The step of a transaction, for a read through with_tx of a keyed log.
+[[nodiscard]] uint64_t step_of_tx(crucible::Transaction const& tx) noexcept { return tx.step_id.get(); }
+
+// Begins and commits the transaction of one step in a keyed log, and puts the
+// key back.
+template <class LogType, class Key>
+[[nodiscard]] typename LogType::Committed commit_keyed_step(LogType& log, Key& key, const SoloOwner& owner,
+                                                            uint32_t step, crucible::RegionNode& region) {
+    auto draft = log.begin_tx(std::move(key), owner, ::fixy::session::StepId{step});
+    auto committed = log.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash);
+    typename LogType::Committed const token = committed.at(::fixy::index<0>());
+    key = std::move(committed.at(::fixy::index<1>()));
+    return token;
+}
+
+// Two logs of one mint site share one brand, as two turns of a loop over one
+// site do, so the type of a token does not tell the two logs apart, and the
+// slot and the claim of a token of the first log name the transaction of the
+// second.  The second log refuses the token of the first as stale, at the read
+// and at the activation.  Each call of the closure runs the one mint site.
+void token_of_a_second_log_of_one_site_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    auto [first, first_key] = mint_keyed_log();
+    auto [second, second_key] = mint_keyed_log();
+    const auto of_first = commit_keyed_step(first, first_key, owner, 11, *region_of_step(alloc, arena, 11));
+    const auto of_second = commit_keyed_step(second, second_key, owner, 22, *region_of_step(alloc, arena, 22));
+    CRUCIBLE_TEST_ASSERT(kTest, !(of_first == of_second));
+    const auto read = second.with_tx(second_key, owner, of_first,
+                                     [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+    CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_first).err()
+                                    == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.active(second_key, owner).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_second).expect("fresh").is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, first.activate(first_key, owner, of_first).expect("fresh").is_none());
+}
+
+// One mint site in a loop gives a log of one brand in each turn.  A token of
+// the first turn names the transaction of the same slot and claim in the log
+// of the second turn, and that log refuses it as stale.
+void token_of_an_earlier_turn_of_a_loop_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    using Record = decltype(mint_keyed_log());
+    using Committed = std::remove_cvref_t<decltype(std::declval<Record&>().at(::fixy::index<0>()))>::Committed;
+    ::fixy::Option<Committed> kept{};
+    uint32_t refused = 0;
+    for (uint32_t turn = 0; turn < 2; ++turn) {
+        auto [log, key] = mint_keyed_log();
+        const auto token = commit_keyed_step(log, key, owner, 100 + turn, *region_of_step(alloc, arena, 100 + turn));
+        for (Committed const& earlier : kept) {
+            const auto read = log.with_tx(key, owner, earlier,
+                                          [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+            CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 log.activate(key, owner, earlier).err() == ::fixy::some(crucible::TxRefusal::stale));
+            ++refused;
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, log.activate(key, owner, token).expect("fresh").is_none());
+        kept = ::fixy::some(token);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, refused == 1);
+}
+
+// A token of a log with one claim names the first transaction of a second
+// log of the same site with two claims, and the second log refuses it as
+// stale.
+void token_of_a_log_with_fewer_claims_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    auto [first, first_key] = mint_keyed_log();
+    auto [second, second_key] = mint_keyed_log();
+    const auto of_first = commit_keyed_step(first, first_key, owner, 31, *region_of_step(alloc, arena, 31));
+    const auto first_of_second = commit_keyed_step(second, second_key, owner, 41, *region_of_step(alloc, arena, 41));
+    static_cast<void>(commit_keyed_step(second, second_key, owner, 42, *region_of_step(alloc, arena, 42)));
+    const auto read = second.with_tx(second_key, owner, of_first,
+                                     [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+    CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
+    const uint64_t step = second
+                              .with_tx(second_key, owner, first_of_second,
+                                       [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); })
+                              .expect("fresh");
+    CRUCIBLE_TEST_ASSERT(kTest, step == 41);
+}
+
+// Each log of Unkeyed has the one brand Unkeyed, as the log of each Vigil
+// has.  A log of Unkeyed refuses a token of a second such log as stale.
+void token_of_a_second_log_of_unkeyed_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    SmallestLog first{};
+    SmallestLog second{};
+    const auto of_first = commit_step(first, owner, 51, region_of_step(alloc, arena, 51));
+    const auto of_second = commit_step(second, owner, 52, region_of_step(alloc, arena, 52));
+    CRUCIBLE_TEST_ASSERT(kTest, !(of_first == of_second));
+    CRUCIBLE_TEST_ASSERT(kTest, second.with_tx(owner, of_first, facts_of_tx).err()
+                                    == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.activate(owner, of_first).err() == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.activate(owner, of_second).expect("fresh").is_none());
+}
+
+// A draft is linear, and only the door of its own log makes it, so a draft of
+// a second log at a door of a log breaks the precondition of the door.  Each
+// violation runs in a child process, which ends by the abort of the contract.
+void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    crucible::RegionNode& region = *region_of_step(alloc, arena, 61);
+    // The second log claimed nothing, so the commit would write a slot that
+    // the second log never claimed.
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner, &region] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{61});
+            auto committed =
+                second.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash);
+            static_cast<void>(committed.at(::fixy::index<0>()));
+        },
+        ::fixy::TextView{"a draft goes back only to the log that made it"});
+    // Two live drafts name one slot and one claim, so the commit would give
+    // the transaction of the draft of the second log a second writer.
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner, &region] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto of_first = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{71});
+            auto of_second = second.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{72});
+            auto committed = second.commit(owner, std::move(of_first), arena_region(region), region.content_hash,
+                                           region.merkle_hash);
+            static_cast<void>(committed.at(::fixy::index<0>()));
+            first_key = second.abandon(owner, std::move(of_second));
+        },
+        ::fixy::TextView{"a draft goes back only to the log that made it"});
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{81});
+            first_key = second.abandon(owner, std::move(draft));
+        },
+        ::fixy::TextView{"a draft goes back only to the log that made it"});
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{91});
+            const uint64_t step = second.with_draft(
+                owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+            static_cast<void>(step);
+            first_key = first.abandon(owner, std::move(draft));
+        },
+        ::fixy::TextView{"a draft goes back only to the log that made it"});
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner, &region] noexcept {
+            SmallestLog first{};
+            SmallestLog second{};
+            auto draft = first.begin_tx(owner, ::fixy::session::StepId{95});
+            static_cast<void>(
+                second.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash));
+        },
+        ::fixy::TextView{"a draft goes back only to the log that made it"});
+}
+
 // The stamps of a log are places of its own count, so two runs of one
 // computation give two logs with the same stamps.  A clock time in a stamp
 // made two such logs differ.
@@ -557,6 +730,11 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     committed_goes_stale_after_the_ring_wraps(test.alloc, owner);
     draft_goes_stale_on_a_log_of_unkeyed(test.alloc, owner);
     keyed_log_passes_its_key(test.alloc, owner);
+    token_of_a_second_log_of_one_site_is_stale(test.alloc, owner);
+    token_of_an_earlier_turn_of_a_loop_is_stale(test.alloc, owner);
+    token_of_a_log_with_fewer_claims_is_stale(test.alloc, owner);
+    token_of_a_second_log_of_unkeyed_is_stale(test.alloc, owner);
+    draft_of_a_second_log_breaks_the_precondition(test.alloc, owner);
     two_runs_of_one_computation_give_one_log(test.alloc, owner);
 
     ::fixy::check::pass(kTest, "test_transaction: all tests passed\n");

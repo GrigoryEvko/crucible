@@ -24,6 +24,7 @@
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Frame.h>
+#include <foundation/core/Identity.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -118,7 +119,7 @@ concept OwnerProof =
 
 // The refusal of an activation.
 enum class TxRefusal : uint8_t {
-    stale = 1,  // a later claim reused the slot of the transaction
+    stale = 1,  // a later claim reused the slot of the transaction, or the token names a different log
     not_committed = 2,  // the transaction is not in the committed state
     not_recording = 3,  // the transaction of the draft is not in the recording state
 };
@@ -144,12 +145,18 @@ template <class Body>
 concept TxReadBody =
     ::fixy::CyclicBody<Body, Transaction const> && !std::is_void_v<std::invoke_result_t<Body&&, Transaction const&>>;
 
-// A committed transaction of a log: the slot of the transaction and the place
-// of its claim.  It holds no reference, so it outlives each later claim, and
-// the log refuses it once a later claim reused its slot.  Only the log builds
-// one, so no code builds one from integers.  The brand of a keyed log is in
-// its type, so a CommittedTx of one log does not reach a second log of a
-// different brand.
+// A committed transaction of a log: the slot of the transaction, the place of
+// its claim and the Identity of its log.  It holds no reference, so it
+// outlives each later claim, and the log refuses it once a later claim reused
+// its slot.  Only the log builds one, so no code builds one from integers.
+//
+// The brand of a keyed log is in its type, so a CommittedTx of one log does
+// not reach a log of a different brand.  But a brand names the mint site of a
+// log, and not one log: two runs of one site, such as two turns of a loop,
+// give two logs of one brand, and each log of Unkeyed has the one brand
+// Unkeyed.  The slot and the claim of a token then name a transaction of the
+// second log too.  So the token carries the Identity of its log, and each door
+// of the log compares it at run time with the claim.
 template <uint32_t N, class KeyBrand>
 class CommittedTx final {
 public:
@@ -159,10 +166,12 @@ private:
     template <uint32_t, OwnerProof, ::foundation::brand::IsBrand>
     friend class TransactionLog;
 
-    constexpr CommittedTx(::fixy::Index<N> slot, uint64_t claim) noexcept : slot_{slot}, claim_{claim} {}
+    constexpr CommittedTx(::fixy::Index<N> slot, uint64_t claim, ::foundation::core::Identity log) noexcept
+        : slot_{slot}, claim_{claim}, log_{log} {}
 
     ::fixy::Index<N> slot_;
     uint64_t claim_ = 0;
+    ::foundation::core::Identity log_;
 };
 
 // The draft of the transaction of the last claim of a log.  Only a draft
@@ -170,7 +179,9 @@ private:
 // abandon of its log, which take it by reference.  It does not move, so no
 // code makes a second draft of one claim.  begin_tx gives it as a prvalue.
 // A draft of a keyed log holds the key of the log, so no other door of the
-// log opens while it lives, and no later claim reuses its slot.
+// log opens while it lives, and no later claim reuses its slot.  A draft
+// carries the Identity of its log, for the reason of a CommittedTx, and each
+// door that takes a draft requires the Identity of its own log.
 template <uint32_t N, class KeyBrand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]] TxDraft final {
 public:
@@ -185,14 +196,16 @@ private:
     template <uint32_t, OwnerProof, ::foundation::brand::IsBrand>
     friend class TransactionLog;
 
-    constexpr TxDraft(::fixy::Index<N> slot, uint64_t claim, detail::tx_key_t<KeyBrand>&& key) noexcept
-        : slot_{slot}, claim_{claim}, key_{std::move(key)} {}
+    constexpr TxDraft(::fixy::Index<N> slot, uint64_t claim, ::foundation::core::Identity log,
+                      detail::tx_key_t<KeyBrand>&& key) noexcept
+        : slot_{slot}, claim_{claim}, log_{log}, key_{std::move(key)} {}
 
     // The end of the draft: it gives its key out.  Only the log calls it.
     [[nodiscard]] constexpr detail::tx_key_t<KeyBrand> end_() && noexcept { return std::move(key_); }
 
     ::fixy::Index<N> slot_;
     uint64_t claim_ = 0;
+    ::foundation::core::Identity log_;
     [[no_unique_address]] detail::tx_key_t<KeyBrand> key_;
 };
 
@@ -208,6 +221,15 @@ private:
 //   the slot of the rollback target.  active and previous give the CommittedTx
 //   of their transaction, and with_tx lends a transaction as const to a body.
 //   No door gives a reference to a transaction out.
+//
+// Identity
+//   Each log holds an Identity that its constructor mints, so no caller gives
+//   a log the Identity of a different log.  Each CommittedTx and each draft
+//   carries the Identity of its log, and each door that takes one compares
+//   it.  A stored CommittedTx can go stale in correct code, so activate and
+//   with_tx refuse a token of a different log as stale.  A draft is linear,
+//   and only the door of its own log makes one, so a draft of a different log
+//   at commit, abandon or with_draft breaks the precondition of the door.
 //
 // Key
 //   A log of a key brand comes from the mint of foundation/core/KeyedMint.h
@@ -281,7 +303,7 @@ public:
     {
         detail::NoTxKey key{};
         Slot const slot = claim_(key, step);
-        return Draft{slot, claim_of_(slot), std::move(key)};
+        return Draft{slot, claim_of_(slot), identity_, std::move(key)};
     }
 
     // Commits the transaction of the draft.  A zero root is refused. Zero is
@@ -301,9 +323,10 @@ public:
                                                               MerkleHash merkle_root) noexcept
         requires(!is_keyed_)
     {
-        Committed const committed{draft.slot_, draft.claim_};
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        Committed const committed{draft.slot_, draft.claim_, draft.log_};
         detail::NoTxKey key = std::move(draft).end_();
-        if (claim_of_(committed.slot_) != committed.claim_) return ::fixy::err(TxRefusal::stale);
+        if (!names_live_(committed)) return ::fixy::err(TxRefusal::stale);
         if (!is_recording_(committed.slot_)) return ::fixy::err(TxRefusal::not_recording);
         commit_(key, committed, region, content_hash, merkle_root);
         return committed;
@@ -314,6 +337,7 @@ public:
     void abandon(Owner const& /*owner*/, Draft&& draft) noexcept
         requires(!is_keyed_)
     {
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
         static_cast<void>(std::move(draft).end_());
     }
 
@@ -365,7 +389,8 @@ public:
         requires(!is_keyed_) && TxReadBody<Body>
     [[nodiscard]] ::fixy::Result<std::invoke_result_t<Body&&, Transaction const&>, TxRefusal>
     with_draft(Owner const& /*owner*/, Draft const& draft, Body&& body) const noexcept {
-        return with_tx_(Committed{draft.slot_, draft.claim_}, static_cast<Body&&>(body));
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        return with_tx_(Committed{draft.slot_, draft.claim_, draft.log_}, static_cast<Body&&>(body));
     }
 
     // ── The doors of a log of a key brand (the key) ────────────────────────
@@ -375,7 +400,7 @@ public:
         requires is_keyed_
     {
         Slot const slot = claim_(key, step);
-        return Draft{slot, claim_of_(slot), std::move(key)};
+        return Draft{slot, claim_of_(slot), identity_, std::move(key)};
     }
 
     // The commit of a keyed log, which gives the key back after the
@@ -385,7 +410,8 @@ public:
                                                              MerkleHash merkle_root) noexcept
         requires is_keyed_
     {
-        Committed const committed{draft.slot_, draft.claim_};
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        Committed const committed{draft.slot_, draft.claim_, draft.log_};
         key_type key = std::move(draft).end_();
         commit_(key, committed, region, content_hash, merkle_root);
         return {committed, std::move(key)};
@@ -394,6 +420,7 @@ public:
     [[nodiscard]] key_type abandon(Owner const& /*owner*/, Draft&& draft) noexcept
         requires is_keyed_
     {
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
         return std::move(draft).end_();
     }
 
@@ -434,6 +461,7 @@ public:
     template <class Body>
         requires is_keyed_ && TxReadBody<Body> && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>
     [[nodiscard]] auto with_draft(Owner const& /*owner*/, Draft const& draft, Body&& body) const noexcept {
+        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
         return read_slot_(draft.slot_, static_cast<Body&&>(body));
     }
 
@@ -518,10 +546,17 @@ private:
         return read_slot_(slot, [](Transaction const& tx) noexcept { return tx.status == TxStatus::RECORDING; });
     }
 
+    // True when the token names a transaction of this log that no later claim
+    // replaced: the Identity of this log and the claim of the transaction in
+    // its slot.
+    [[nodiscard]] bool names_live_(Committed const& committed) const noexcept {
+        return committed.log_ == identity_ && claim_of_(committed.slot_) == committed.claim_;
+    }
+
     // The CommittedTx of the transaction in a slot, or no value.
     [[nodiscard]] ::fixy::Option<Committed> committed_of_(::fixy::Option<Slot> const& held) const noexcept {
         for (Slot const& slot : held)
-            return ::fixy::some(Committed{slot, claim_of_(slot)});
+            return ::fixy::some(Committed{slot, claim_of_(slot), identity_});
         return ::fixy::none;
     }
 
@@ -599,10 +634,11 @@ private:
 
     // The activation of activate.  The compare of the claim is a run-time
     // check, because a later claim reuses a slot after a count of claims
-    // that no type of a CommittedTx can hold.
+    // that no type of a CommittedTx can hold.  The compare of the Identity is
+    // a run-time check, because a brand names a mint site and not one log.
     [[nodiscard]] ::fixy::Result<::fixy::Option<Committed>, TxRefusal> activate_(write_key& key,
                                                                                  Committed committed) noexcept {
-        if (claim_of_(committed.slot_) != committed.claim_) return ::fixy::err(TxRefusal::stale);
+        if (!names_live_(committed)) return ::fixy::err(TxRefusal::stale);
         bool const is_committed = read_slot_(
             committed.slot_, [](Transaction const& tx) noexcept { return tx.status == TxStatus::COMMITTED; });
         if (!is_committed) return ::fixy::err(TxRefusal::not_committed);
@@ -683,12 +719,13 @@ private:
         return target;
     }
 
-    // The body of with_tx: the claim of the CommittedTx names the transaction
-    // of the slot, or a later claim reused the slot.
+    // The body of with_tx: the CommittedTx names the transaction of the slot
+    // of this log, or it names a different log, or a later claim reused the
+    // slot.
     template <class Body>
     [[nodiscard]] ::fixy::Result<std::invoke_result_t<Body&&, Transaction const&>, TxRefusal>
     with_tx_(Committed committed, Body&& body) const noexcept {
-        if (claim_of_(committed.slot_) != committed.claim_) return ::fixy::err(TxRefusal::stale);
+        if (!names_live_(committed)) return ::fixy::err(TxRefusal::stale);
         return read_slot_(committed.slot_, static_cast<Body&&>(body));
     }
 
@@ -707,6 +744,11 @@ private:
     // The count of the events of the log.  Each stamp advances it and gives
     // the new value to the transaction of the event.
     ::fixy::Monotonic<uint64_t> events_ = ::fixy::mint_monotonic<uint64_t>(0);
+    // The Identity of this log, which each constructor mints.  Each token and
+    // each draft of the log carries it.  Its value depends on the order of the
+    // mints of the process, so the log only compares it, and no stamp, no
+    // order and no hash reads it.
+    ::foundation::core::Identity identity_ = ::foundation::core::mint_identity();
 };
 
 // The maker of a keyed TransactionLog of N slots, for the mint of
