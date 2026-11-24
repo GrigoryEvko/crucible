@@ -345,7 +345,7 @@ void test_ffi_records_copy() {
 
     ::fixy::FixedArray<crucible::TensorMeta, 3> slots{};
     const auto ranks = slots.with_mut(
-        [typed](auto run) noexcept { return collect_ranks(crucible::vessel::decode_ffi_records(typed, run.view())); });
+        [typed](auto run) noexcept { return collect_ranks(crucible::vessel::decode_ffi_records(typed, run)); });
     EXPECT(has_ranks(ranks, ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
            "the View holds each record of the caller, in order");
 }
@@ -375,8 +375,7 @@ void test_ffi_records_read_the_c_records() {
     const TypedMeta typed = typed_records(&callers.at(::fixy::index<0>()), 2);
     slots.with_mut([typed, written](auto run) noexcept {
         const ::fixy::View<const crucible::TensorMeta> records =
-            crucible::vessel::decode_ffi_records(typed, run.view())
-                .value_or(::fixy::View<const crucible::TensorMeta>{});
+            crucible::vessel::decode_ffi_records(typed, run).value_or(::fixy::View<const crucible::TensorMeta>{});
         EXPECT(records.size() == 2, "the View holds each record of the caller");
         for (const crucible::TensorMeta& read : records) {
             EXPECT(read.ndim == 1, "a record holds the rank that the caller wrote");
@@ -460,7 +459,7 @@ void test_ffi_decode_refuses_each_broken_claim() {
     ::fixy::FixedArray<crucible::TensorMeta, 2> slots{};
     const TypedMeta typed = typed_records(&callers.at(::fixy::index<0>()), 2);
     const bool is_refused = slots.with_mut(
-        [typed](auto run) noexcept { return crucible::vessel::decode_ffi_records(typed, run.view()).is_none(); });
+        [typed](auto run) noexcept { return crucible::vessel::decode_ffi_records(typed, run).is_none(); });
     EXPECT(is_refused, "an op with a refused record is refused");
 }
 
