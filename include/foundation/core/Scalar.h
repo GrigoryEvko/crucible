@@ -3,12 +3,13 @@
 // The Scalar family: the copy of a value from the bits of another value,
 // and the checked enumerator of an underlying value.
 //
-//   enum_from<E>(raw)    the enumerator of E whose value is raw, or no value
+//   enum_from<E>(raw)    the enumerator of a closed E whose value is raw, or
+//                        no value.  For an open E, the value raw itself
 //   decode<To>(source)   a To with the bits of source, or no value when a
-//                        bool of To would hold a byte other than 0 or 1, an
-//                        enumeration of To would hold a value that names no
-//                        enumerator, or a part of To with a niche would hold
-//                        its empty value
+//                        bool of To would hold a byte other than 0 or 1, a
+//                        closed enumeration of To would hold a value that
+//                        names no enumerator, or a part of To with a niche
+//                        would hold its empty value
 //   bit_cast<To>(source) a To with the bits of source, with no check: each
 //                        bit pattern is a value of a BitValid To
 //   for_each_field(object, visit)
@@ -39,6 +40,14 @@
 // integer.  Each value of its underlying type is valid, and decode reads it
 // as an integer.  enum_from refuses such an enumeration, because no
 // enumerator can be its result.
+//
+// An enumeration with the mark open_values of foundation/ByteSeal.h is open:
+// its enumerators name some values, and each other value of its underlying
+// type is a value too, such as an error number of a newer kernel.  Each
+// other enumeration with an enumerator is closed.  decode reads an open
+// enumeration as an integer, so an open enumeration with no niche is bit
+// valid, and bit_cast makes it with no check.  enum_from of an open
+// enumeration is total, so it gives the value and no Option.
 //
 // The enumerator set of each enumeration is a variable template, so a unit
 // evaluates the set of an enumeration only when it decodes one.  When the
@@ -171,18 +180,35 @@ template <class E>
     return std::meta::is_enum_type(type) && !std::meta::enumerators_of(type).empty();
 }
 
-// True when each value of a field of Width bits is the value of an
-// enumerator of E: the enumerators hold each number from 0 to 2^Width - 1.
-// The set of the values holds each value one time, so a count of the values
-// in that range decides.  A width of 0, a width of 64 or more, and a width
-// that the underlying type cannot hold give false.  Linear in the number of
-// enumerators, at compile time only.
+// True for an enumeration with the mark open_values of foundation/ByteSeal.h:
+// each value of its underlying type is a value of it.
+[[nodiscard]] consteval bool is_open_enumeration_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    return std::meta::is_enum_type(type)
+        && !std::meta::annotations_of_with_type(type, ^^::foundation::core::open_values).empty();
+}
+
+// True for an enumeration with at least one enumerator and no mark
+// open_values: a value that names no enumerator is no value of it.
+[[nodiscard]] consteval bool is_closed_enumeration_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    return has_enumerators(type) && !is_open_enumeration_at(type);
+}
+
+// True when each value of a field of Width bits is a value of E: the
+// enumerators hold each number from 0 to 2^Width - 1, or E is open, so each
+// number of its underlying type is a value.  The set of the values holds each
+// value one time, so a count of the values in that range decides.  A width of
+// 0, a width of 64 or more, and a width that the underlying type cannot hold
+// give false.  Linear in the number of enumerators, at compile time only.
 template <class E, std::size_t Width>
 [[nodiscard]] consteval bool is_full_field() {
     using Underlying = std::underlying_type_t<E>;
     constexpr std::size_t value_bits = sizeof(Underlying) * 8 - (std::is_signed_v<Underlying> ? 1 : 0);
     if constexpr (Width == 0 || Width >= 64 || Width > value_bits) {
         return false;
+    } else if constexpr (is_open_enumeration_at(^^E)) {
+        return true;
     } else {
         using Unsigned = std::make_unsigned_t<Underlying>;
         constexpr std::uint64_t size = std::uint64_t{1} << Width;
@@ -328,15 +354,15 @@ inline constexpr int max_plain_depth = 64;
 }
 
 // True when a value of the type can hold a byte that names no value: the
-// type is or holds a bool, an enumeration with at least one enumerator, or a
-// class or an enumeration that declares a niche.  A part with no such leaf
-// gets no check.  The caller makes sure that the type is plain.
+// type is or holds a bool, a closed enumeration, or a class or an
+// enumeration that declares a niche.  A part with no such leaf gets no
+// check.  The caller makes sure that the type is plain.
 [[nodiscard]] consteval bool has_checked_leaf_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
     if (std::meta::is_array_type(type)) return has_checked_leaf_at(std::meta::remove_all_extents(type));
     if (type == ^^bool) return true;
     if (declares_niche_at(type)) return true;
-    if (std::meta::is_enum_type(type)) return has_enumerators(type);
+    if (std::meta::is_enum_type(type)) return is_closed_enumeration_at(type);
     if (!std::meta::is_class_type(type)) return false;
     for (std::size_t index = 0; index < base_count(type); ++index) {
         if (has_checked_leaf_at(base_type_at(type, index))) return true;
@@ -376,16 +402,17 @@ template <class T, std::size_t Size, std::size_t... Base, std::size_t... Member>
 }
 
 // True when the bytes at offset hold a value of each bool and each
-// enumeration of T: each bool byte is 0 or 1, and each enumeration value
-// names an enumerator.  An enumeration with no enumerator takes each value.
-// The niche of T itself is the test of holds_value_of.
+// enumeration of T: each bool byte is 0 or 1, and each value of a closed
+// enumeration names an enumerator.  An open enumeration and an enumeration
+// with no enumerator take each value.  The niche of T itself is the test of
+// holds_value_of.
 template <class T, std::size_t Size>
 [[nodiscard]] constexpr bool holds_leaf_values_of(ByteImage<Size> const& image, std::size_t offset) noexcept {
     using Bare = std::remove_cv_t<T>;
     if constexpr (std::same_as<Bare, bool>) {
         return image.bytes[offset] <= 1;
     } else if constexpr (std::is_enum_v<Bare>) {
-        if constexpr (!has_enumerators(^^Bare)) {
+        if constexpr (!is_closed_enumeration_at(^^Bare)) {
             return true;
         } else if constexpr (std::same_as<std::underlying_type_t<Bare>, bool>) {
             return image.bytes[offset] <= 1 && names_enumerator<Bare>(image.bytes[offset] == 1);
@@ -428,6 +455,17 @@ template <class T, std::size_t Size>
 template <class E>
 concept Enumerated = std::is_enum_v<E> && detail::has_enumerators(^^E);
 
+// An Enumerated E with the mark open_values of foundation/ByteSeal.h: each
+// value of its underlying type is a value of E, also a value that names no
+// enumerator.
+template <class E>
+concept OpenEnumeration = Enumerated<E> && detail::is_open_enumeration_at(^^E);
+
+// An Enumerated E with no mark open_values: a value that names no
+// enumerator is no value of E.
+template <class E>
+concept ClosedEnumeration = Enumerated<E> && !detail::is_open_enumeration_at(^^E);
+
 // A type To that decode can make from the bits of a From.  The two have one
 // size, they are trivially copyable, and each is plain: the walk of
 // detail::is_plain_at accepts it.  Each bit of From is a value bit, so no
@@ -441,18 +479,27 @@ concept DecodableFrom =
     && detail::is_plain_at(^^To, 0) && detail::is_plain_at(^^From, 0) && detail::has_no_padding_bit_at(^^From);
 
 // A type of which each bit pattern of its bytes is a value: plain, with no
-// bool, no enumeration with an enumerator and no part that declares a niche.
-// An integer, a float, an enumeration with no enumerator such as std::byte,
-// and a class or an array of such parts are bit valid.
+// bool, no closed enumeration and no part that declares a niche.  An
+// integer, a float, an enumeration with no enumerator such as std::byte, an
+// open enumeration with no niche, and a class or an array of such parts are
+// bit valid.
 template <class T>
 concept BitValid = std::is_object_v<T> && detail::is_plain_at(^^T, 0) && !detail::has_checked_leaf_at(^^T);
 
-// The enumerator of E whose value is raw, or no value when no enumerator of
-// E has the value raw.
-template <Enumerated E>
+// The enumerator of a closed E whose value is raw, or no value when no
+// enumerator of E has the value raw.
+template <ClosedEnumeration E>
 [[nodiscard]] constexpr Option<E> enum_from(std::underlying_type_t<E> raw) noexcept {
     if (!detail::names_enumerator<E>(raw)) return none;
     return Option<E>::some(static_cast<E>(raw));
+}
+
+// The value of an open E whose number is raw.  Each value of the underlying
+// type is a value of E, so the door is total: it has no check, no failure
+// and no Option.
+template <OpenEnumeration E>
+[[nodiscard]] constexpr E enum_from(std::underlying_type_t<E> raw) noexcept {
+    return static_cast<E>(raw);
 }
 
 // The enumerator of E at index in the ascending order of the values of the
@@ -465,16 +512,17 @@ template <Enumerated E>
     return Option<E>::some(static_cast<E>(detail::enumerator_set<E>.sorted[index]));
 }
 
-// An enumeration E whose enumerators fill a field of Width bits: each value
-// of Width bits is the value of an enumerator, such as the four phases of a
-// training step in a field of two bits.  E has no underlying type bool.
+// An enumeration E whose values fill a field of Width bits: each value of
+// Width bits is the value of an enumerator, such as the four phases of a
+// training step in a field of two bits.  An open E fills each field that
+// its underlying type holds.  E has no underlying type bool.
 template <class E, std::size_t Width>
 concept FullField =
     Enumerated<E> && !std::same_as<std::underlying_type_t<E>, bool> && detail::is_full_field<E, Width>();
 
-// The enumerator of E that the low Width bits of word name.  Each value of
-// the field names an enumerator (FullField), so the read is total: it has no
-// check and no failure, and it costs one mask, which folds with a mask of the
+// The value of E that the low Width bits of word give.  Each value of the
+// field is a value of E (FullField), so the read is total: it has no check
+// and no failure, and it costs one mask, which folds with a mask of the
 // caller.  The bits of word above the field do not count.
 template <class E, std::size_t Width, std::integral Word>
     requires FullField<E, Width> && (!std::same_as<Word, bool>)
@@ -485,10 +533,11 @@ template <class E, std::size_t Width, std::integral Word>
 }
 
 // A To with the bits of source, or no value when a bool of To would hold a
-// byte other than 0 or 1, an enumeration of To would hold a value that names
-// no enumerator, or a part of To that declares a niche would hold its empty
-// value.  The check of each bool and each enumeration reads the bytes before
-// a To exists.  Linear in the number of checked leaves of To.
+// byte other than 0 or 1, a closed enumeration of To would hold a value that
+// names no enumerator, or a part of To that declares a niche would hold its
+// empty value.  An open enumeration takes each value.  The check of each
+// bool and each closed enumeration reads the bytes before a To exists.
+// Linear in the number of checked leaves of To.
 template <class To, class From>
     requires DecodableFrom<To, From>
 [[nodiscard]] constexpr Option<To> decode(From const& source) noexcept {

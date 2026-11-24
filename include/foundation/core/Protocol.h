@@ -132,8 +132,8 @@
 // Codec
 //   encode writes the image into a View of exactly encoded_size_v<T> bytes,
 //   so it cannot fail.  decode reads such a View into a T.  It refuses a
-//   bool byte other than 0 and 1, an enumeration value that names no
-//   enumerator, a byte of a pad part that is not zero, a part that declares a
+//   bool byte other than 0 and 1, a value of a closed enumeration that names
+//   no enumerator, a byte of a pad part that is not zero, a part that declares a
 //   niche and holds its empty value, a sum of the sums with a tag or a tail
 //   byte that holds no value, and a list of the bounded lists with a count or
 //   a tail byte that holds no value.  The DecodeFault names the
@@ -147,7 +147,8 @@
 //   format writes `{name = value, name = value}`, with the parts of each base
 //   first.  An integer is written in decimal, a bool as true or false, a
 //   float as the text of report(), an enumerator of a scoped enumeration as
-//   its name, an array as `[a, b, c]`, an Option as `some(a)` or `none`, a
+//   its name, a value of an open enumeration that names no enumerator in
+//   decimal, an array as `[a, b, c]`, an Option as `some(a)` or `none`, a
 //   Result as `ok(a)` or `err(e)`, a OneOf as the index of its alternative
 //   and its value, `#1(a)`, a FixedList and a HeapArray as `[a, b]`, and a
 //   FixedText and a HeapText between two quotes, with a backslash before each
@@ -185,7 +186,7 @@ namespace foundation::core {
 enum class DecodeRefusal : std::uint8_t {
     // A bool byte other than 0 and 1.
     bool_byte,
-    // An enumeration value that names no enumerator.
+    // A value of a closed enumeration that names no enumerator.
     enumerator,
     // A byte of a pad part that is not zero.
     pad_byte,
@@ -1034,7 +1035,7 @@ template <class T>
     } else if constexpr (std::is_enum_v<Bare>) {
         using Underlying = std::underlying_type_t<Bare>;
         Underlying const raw = __builtin_bit_cast(Underlying, detail::read_leaf_word_<Bare>(first));
-        if constexpr (has_enumerators(std::meta::dealias(^^Bare))) {
+        if constexpr (is_closed_enumeration_at(^^Bare)) {
             if (!detail::names_enumerator<Bare>(raw)) {
                 fault = fault_at_(DecodeRefusal::enumerator, offset);
                 return false;
@@ -1844,8 +1845,15 @@ template <std::size_t Capacity, class T>
     } else if constexpr (std::is_same_v<Bare, bool> || Float<Bare> || Integer<Bare>) {
         return detail::put_number_(out, part);
     } else if constexpr (std::is_enum_v<Bare>) {
-        if constexpr (std::is_scoped_enum_v<Bare> && has_enumerators(std::meta::dealias(^^Bare))) {
+        if constexpr (std::is_scoped_enum_v<Bare> && is_closed_enumeration_at(^^Bare)) {
             return detail::put_text_(out, ::foundation::core::enum_name_text(part));
+        } else if constexpr (std::is_scoped_enum_v<Bare> && has_enumerators(std::meta::dealias(^^Bare))) {
+            // A value of an open enumeration that names no enumerator is a
+            // value too, so the text gives its number.
+            if (detail::names_enumerator<Bare>(std::to_underlying(part))) {
+                return detail::put_text_(out, ::foundation::core::enum_name_text(part));
+            }
+            return detail::put_part_(out, std::to_underlying(part));
         } else {
             return detail::put_part_(out, std::to_underlying(part));
         }

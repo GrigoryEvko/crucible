@@ -173,6 +173,7 @@ static_assert(std::is_same_v<decltype(::fixy::exchange(std::declval<int&>(), 1))
 static_assert(::fixy::bit_cast<std::uint32_t>(1.0f) == 0x3F800000u
               && ::fixy::BitValid<float> && !::fixy::BitValid<bool>);
 static_assert(::fixy::DecodableFrom<bool, std::uint8_t> && !::fixy::Enumerated<int>);
+static_assert(!::fixy::OpenEnumeration<int> && !::fixy::ClosedEnumeration<int>);
 struct CoreFields {
     std::uint32_t first = 3;
     std::uint32_t second = 4;

@@ -2,6 +2,10 @@
 
 #include <foundation/algebra/lattices/NumaNodeLattice.h>
 
+#include <foundation/core/Scalar.h>
+
+#include <cstdint>
+
 namespace foundation::algebra::lattices {
 
 static_assert(numa_node_id_sentinel_count == ::foundation::reflect::enum_count<NumaNodeId>,
@@ -21,6 +25,13 @@ static_assert(!UnboundedLattice<NumaNodeLattice>);
 static_assert(!Semiring<NumaNodeLattice>);
 
 static_assert(sizeof(NumaNodeId) == 1);
+
+// NumaNodeId is open: each byte is a node or a sentinel, so decode and
+// enum_from give each number, and bit_cast makes it with no check.
+static_assert(::foundation::core::OpenEnumeration<NumaNodeId> && ::foundation::core::BitValid<NumaNodeId>);
+static_assert(::foundation::core::enum_from<NumaNodeId>(7) == NumaNodeId{7});
+static_assert(::foundation::core::enum_from<NumaNodeId>(254) == NumaNodeId::None);
+static_assert(::foundation::core::decode<NumaNodeId>(std::uint8_t{7}).value_or(NumaNodeId::None) == NumaNodeId{7});
 
 static_assert(is_concrete_numa_node(NumaNodeId{0}) && is_concrete_numa_node(NumaNodeId{253}));
 static_assert(!is_concrete_numa_node(NumaNodeId::None) && !is_concrete_numa_node(NumaNodeId::Any),

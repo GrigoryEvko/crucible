@@ -1,9 +1,10 @@
 // Tests of foundation/core/Scalar.h at run time: enum_from gives an
 // enumerator for each value of an enumerator and no value for each other
 // value, and decode refuses each source whose bytes hold a bool other than
-// 0 or 1, or an enumeration value that names no enumerator.  The loops go
-// over each value of the small types.  for_each_field reads each member of
-// a class, the private members too, in the order of the declarations.
+// 0 or 1, or a value of a closed enumeration that names no enumerator.  An
+// open enumeration takes each value.  The loops go over each value of the
+// small types.  for_each_field reads each member of a class, the private
+// members too, in the order of the declarations.
 // for_each_base reads each direct base of a class in the same order.
 
 #include <fixy/Core.h>
@@ -13,6 +14,7 @@
 #include <foundation/core/Convert.h>
 #include <foundation/core/Scalar.h>
 #include <foundation/effects/Effect.h>
+#include <foundation/os/Errno.h>
 
 #include "philox_stream.h"
 
@@ -35,6 +37,7 @@ using ::foundation::core::decode;
 using ::foundation::core::enum_from;
 using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
+using ::foundation::os::Errno;
 
 enum class Contiguous : std::uint8_t {
     first = 3,
@@ -104,6 +107,17 @@ struct NicheWord {
 struct FlaggedWord {
     NicheWord word{};
     bool is_ready = false;
+};
+
+// An open enumeration, and a class that holds it beside a closed one.
+enum class[[= ::foundation::core::open_values{}]] Code : std::uint16_t {
+    one = 1,
+    two = 2
+};
+struct CodeAndPhase {
+    Code code = Code::one;
+    Contiguous phase = Contiguous::first;
+    std::uint8_t count = 0;
 };
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: decode walks a C array of enumerations, the array form of a quarantined type")
@@ -256,6 +270,27 @@ void test_decode_refuses_the_empty_value_of_a_niche() {
     CRUCIBLE_TEST_ASSERT(kTest, decode<FlaggedWord>(opaque(std::uint64_t{0x00000000FFFFFFFF})).is_none());
 }
 
+// An open enumeration takes each value of its underlying type: decode,
+// enum_from and bit_cast give each number of 16 bits, the numbers that no
+// enumerator names too.  A closed part beside it is still checked.
+void test_open_enumeration_takes_each_value() {
+    for (unsigned raw = 0; raw <= 65535; ++raw) {
+        std::uint16_t const word = opaque(static_cast<std::uint16_t>(raw));
+        CRUCIBLE_TEST_ASSERT(kTest, std::to_underlying(decode<Code>(word).value_or(Code::one)) == word);
+        CRUCIBLE_TEST_ASSERT(kTest, std::to_underlying(enum_from<Code>(word)) == word);
+        CRUCIBLE_TEST_ASSERT(kTest, std::to_underlying(bit_cast<Code>(word)) == word);
+        CRUCIBLE_TEST_ASSERT(kTest, std::to_underlying(decode<Errno>(word).value_or(Errno::eperm)) == word);
+        CRUCIBLE_TEST_ASSERT(kTest, std::to_underlying(enum_from<Errno>(word)) == word);
+    }
+    // The low half is the open code, and the byte above it is the closed
+    // phase.  Each code decodes, and only a phase from 3 to 5.
+    for (unsigned phase = 0; phase <= 255; ++phase) {
+        std::uint32_t const bits = opaque((std::uint32_t{phase} << 16) | 0xBEEFu);
+        bool const is_value = phase >= 3 && phase <= 5;
+        CRUCIBLE_TEST_ASSERT(kTest, decode<CodeAndPhase>(bits).is_some() == is_value);
+    }
+}
+
 // bit_cast keeps each bit, and a float source is a source: each pattern
 // goes to a word and back.
 void test_bit_cast_keeps_each_bit() {
@@ -394,6 +429,7 @@ int main() {
     test_decode_checks_each_element_of_an_array();
     test_decode_keeps_each_bit_pattern_of_a_plain_type();
     test_decode_refuses_the_empty_value_of_a_niche();
+    test_open_enumeration_takes_each_value();
     test_bit_cast_keeps_each_bit();
     test_for_each_field_reads_private_members_in_order();
     test_for_each_field_gives_no_call_for_an_empty_class();

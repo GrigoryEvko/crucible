@@ -25,6 +25,7 @@ using ::foundation::core::derive_protocol;
 using ::foundation::core::Digest;
 using ::foundation::core::encode;
 using ::foundation::core::encoded_size_v;
+using ::foundation::core::enum_from;
 using ::foundation::core::equal;
 using ::foundation::core::FixedArray;
 using ::foundation::core::FixedText;
@@ -1287,6 +1288,52 @@ void test_decode_of_sums_and_lists_agrees_with_an_oracle() {
     CRUCIBLE_FATAL_INVARIANT(accepted > 100 && accepted < 19900);
 }
 
+// ── An open enumeration part ──────────────────────────────────────────
+
+// An open enumeration: the two enumerators name two values, and each other
+// value of the underlying type is a value too.
+enum class[[= ::foundation::core::open_values{}]] Code : std::uint16_t {
+    ready = 1,
+    busy = 2,
+};
+
+// An open part beside a closed part.
+struct[[= derive_protocol{}]] HoldsCode {
+    Code code = Code::ready;
+    Phase phase = Phase::forward;
+};
+
+// True when format of value gives the text expected.
+[[nodiscard]] bool formats_as(HoldsCode const& value, TextView expected) noexcept {
+    FixedText<64> out{};
+    return format(out, value)
+        .match([&expected](TextView text) noexcept { return text == expected; },
+               [](::foundation::core::Full<char>) noexcept { return false; });
+}
+
+// decode gives back each value of the open part, also a value that no
+// enumerator names.  It still refuses a value of the closed part that names
+// no enumerator.  format writes the name of a named value and the number of
+// each other value.
+void test_open_enumeration_part() {
+    static_assert(encoded_size_v<HoldsCode> == 3);
+    for (unsigned raw = 0; raw <= 65535; ++raw) {
+        HoldsCode const value{.code = enum_from<Code>(static_cast<std::uint16_t>(raw)), .phase = Phase::other};
+        CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
+    }
+    FixedArray<std::byte, encoded_size_v<HoldsCode>> bad_phase = encoded(HoldsCode{});
+    bad_phase.with_element(index<2>(), [](std::byte& element) noexcept { element = std::byte{3}; });
+    bool const is_refused =
+        decode<HoldsCode>(bad_phase.view())
+            .match([](HoldsCode) noexcept { return false; },
+                   [](DecodeFault fault) noexcept { return fault == DecodeFault{DecodeRefusal::enumerator, 2}; });
+    CRUCIBLE_FATAL_INVARIANT(is_refused);
+    CRUCIBLE_FATAL_INVARIANT(
+        formats_as(HoldsCode{.code = Code::busy, .phase = Phase::other}, TextView{"{code = busy, phase = other}"}));
+    CRUCIBLE_FATAL_INVARIANT(formats_as(HoldsCode{.code = enum_from<Code>(4000), .phase = Phase::forward},
+                                        TextView{"{code = 4000, phase = forward}"}));
+}
+
 }  // namespace
 
 int main() {
@@ -1314,5 +1361,6 @@ int main() {
     test_lists_hash_as_array_elements_at_each_offset();
     test_lists_format_their_elements();
     test_decode_of_sums_and_lists_agrees_with_an_oracle();
+    test_open_enumeration_part();
     return 0;
 }

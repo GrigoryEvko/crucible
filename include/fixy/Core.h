@@ -293,6 +293,7 @@ using ::foundation::core::walk;
 
 using ::foundation::core::bit_cast;
 using ::foundation::core::BitValid;
+using ::foundation::core::ClosedEnumeration;
 using ::foundation::core::DecodableFrom;
 using ::foundation::core::decode;
 using ::foundation::core::enum_at;
@@ -302,6 +303,7 @@ using ::foundation::core::Enumerated;
 using ::foundation::core::FullField;
 using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
+using ::foundation::core::OpenEnumeration;
 
 using ::foundation::core::Arithmetic;
 using ::foundation::core::fits_each_value;

@@ -291,11 +291,11 @@ struct Reader {
         return read_gated<uint8_t>([](uint8_t byte) noexcept { return byte <= 1; }) != 0;
     }
 
-    // An enumerator of E.  fixy::enum_from gives the enumerator of a byte,
-    // so a new enumerator needs no edit here.  A byte that names no
+    // An enumerator of a closed E.  fixy::enum_from gives the enumerator of
+    // a byte, so a new enumerator needs no edit here.  A byte that names no
     // enumerator is refused, and none reaches a switch.  The caller gives an
     // enumerator as the substitute of a refused byte.
-    template <::fixy::Enumerated E>
+    template <::fixy::ClosedEnumeration E>
     [[nodiscard]] E read_enumerator(E valid_substitute) {
         return ::fixy::enum_from<E>(r<std::underlying_type_t<E>>())
             .match([](E value) noexcept { return value; },

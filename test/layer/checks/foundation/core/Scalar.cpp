@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace foundation::core {
 
@@ -309,6 +310,51 @@ static_assert(bit_cast<std::uint32_t>(bit_cast<float>(std::uint32_t{0x7FC00001u}
 static_assert(bit_cast<Words>(Words{1, 2}).high == 2 && bit_cast<Strong>(std::uint8_t{200}) == Strong{200});
 static_assert(std::is_same_v<decltype(bit_cast<double>(std::uint64_t{0})), double>);
 
+// ── Open enumerations ─────────────────────────────────────────────────
+
+// The two enumerators name two values, and each other value of the
+// underlying type is a value too.
+enum class[[= open_values{}]] Code : std::uint16_t {
+    one = 1,
+    two = 2
+};
+// An open enumeration beside a closed one, in four bytes with no padding.
+struct CodeAndPhase {
+    Code code = Code::one;
+    Contiguous phase = Contiguous::first;
+    std::uint8_t count = 0;
+};
+static_assert(sizeof(CodeAndPhase) == 4);
+
+static_assert(OpenEnumeration<Code> && !ClosedEnumeration<Code> && Enumerated<Code>);
+static_assert(ClosedEnumeration<Contiguous> && !OpenEnumeration<Contiguous> && ClosedEnumeration<Switch>);
+static_assert(!OpenEnumeration<Strong> && !ClosedEnumeration<Strong> && !OpenEnumeration<int>);
+
+// enum_from of an open enumeration is total: it gives the value, and no
+// Option.  The closed form still gives no value for a number with no name.
+static_assert(std::is_same_v<decltype(enum_from<Code>(std::uint16_t{1})), Code>);
+static_assert(enum_from<Code>(1) == Code::one && std::to_underlying(enum_from<Code>(300)) == 300);
+static_assert(std::to_underlying(enum_from<Code>(0)) == 0 && std::to_underlying(enum_from<Code>(65535)) == 65535);
+static_assert(enum_from<Contiguous>(6).is_none() && enum_from<Contiguous>(5).is_some());
+
+// decode of an open enumeration takes each value.  It still refuses a value
+// of a closed part that names no enumerator.
+static_assert(std::to_underlying(decode<Code>(std::uint16_t{300}).value_or(Code::one)) == 300);
+static_assert(decode<Code>(std::uint16_t{0}).is_some() && decode<Code>(std::uint16_t{65535}).is_some());
+static_assert(std::to_underlying(decode<CodeAndPhase>(std::uint32_t{0x0704012C}).value_or(CodeAndPhase{}).code) == 300);
+static_assert(decode<CodeAndPhase>(std::uint32_t{0x0706012C}).is_none());
+
+// An open enumeration with no niche is bit valid, so bit_cast makes it with
+// no check.  A class with a closed part is not.
+static_assert(BitValid<Code> && !BitValid<CodeAndPhase>);
+static_assert(std::to_underlying(bit_cast<Code>(std::uint16_t{300})) == 300);
+
+// An open enumeration fills each field that its underlying type holds.
+static_assert(FullField<Code, 1> && FullField<Code, 15> && FullField<Code, 16>);
+static_assert(!FullField<Code, 0> && !FullField<Code, 17>);
+static_assert(std::to_underlying(enum_from_field<Code, 16>(std::uint32_t{0x1234ABCD})) == 0xABCD);
+static_assert(std::to_underlying(enum_from_field<Code, 4>(std::uint8_t{0xF7})) == 7);
+
 // ── The field walk ────────────────────────────────────────────────────
 
 // Two private members, as the value of a strong id is private.
@@ -416,7 +462,8 @@ static_assert(FieldWalkable<PairThenWords> && !FieldWalkable<HidesAddressInBase>
 // the gates, and the accessors lo and hi of Bounds and the halves low and
 // high of WideProduct, which the design of the unit gives.
 inline constexpr TextView scalar_names{
-    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated DecodableFrom BitValid FieldWalkable "
+    "Integer SignedInteger UnsignedInteger Float Arithmetic Enumerated OpenEnumeration ClosedEnumeration "
+    "DecodableFrom BitValid FieldWalkable "
     "Exchangeable "
     "fits_each_value max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of "
     "quiet_nan_of "

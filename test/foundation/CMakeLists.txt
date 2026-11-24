@@ -4026,8 +4026,8 @@ foundation_neg_compile_test(neg_os_wide_atomic_padded_value
 
 # ── The Scalar family: decode and enum_from ───────────────────────────
 #
-# decode gives a value only when each bool byte is 0 or 1 and each
-# enumeration value names an enumerator.  The two types have one size, the
+# decode gives a value only when each bool byte is 0 or 1 and each value of
+# a closed enumeration names an enumerator.  The two types have one size, the
 # source has no padding, and a part whose bytes are not its whole value is
 # refused: an address, a union, a bit-field, an empty class and a sealed
 # class.  enum_from and enum_at refuse an enumeration with no enumerator.
@@ -4066,6 +4066,10 @@ foundation_neg_compile_test(neg_core_enum_from_no_enumerator
 foundation_neg_compile_test(neg_core_enum_at_no_enumerator
   "no matching function for call to .enum_at<Strong>\\(int\\)."
   "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
+# enum_from of an open enumeration is total, so its result is no Option.
+foundation_neg_compile_test(neg_core_enum_from_open_option
+  "request for member .is_some. in .*which is of non-class type .Code."
+  "enum_from<Code>\\(300\\)")
 # enum_from_field reads only a field whose each value names an enumerator,
 # from a word that is no bool.
 foundation_neg_compile_test(neg_core_enum_from_field_too_wide
