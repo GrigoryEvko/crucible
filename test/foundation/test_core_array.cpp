@@ -164,6 +164,45 @@ void test_fixed_array_element_door_writes_in_place() {
     CRUCIBLE_TEST_ASSERT(kTest, (words == FixedArray<std::uint64_t, 4>{2, 2, 20, 8}));
 }
 
+// One element of the value door: a value and the count of the calls that
+// built it.
+struct Built {
+    int value = 0;
+    int calls = 0;
+};
+
+// The function of the value door for the test: it counts its calls through
+// the reference argument.
+[[nodiscard]] Built build_counted(int value, int& calls) noexcept {
+    ++calls;
+    return Built{.value = value, .calls = calls};
+}
+
+// The value door builds the element at its index from fn(args...), one call
+// for each door, and each other element keeps its value.  A function and a
+// lambda with no capture serve as fn, and a reference argument carries a
+// count back to the caller.
+void test_fixed_array_value_door_builds_in_place() {
+    FixedArray<Built, 3> built{};
+    int calls = 0;
+    built.build_at(index<1>(), build_counted, 7, calls);
+    built.build_at(
+        Index<3>::check(2).expect("2 is below 3"),
+        [](int value, int& count) noexcept { return Built{.value = value * 2, .calls = ++count}; }, 5, calls);
+    CRUCIBLE_TEST_ASSERT(kTest, calls == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, built.at(index<0>()).value == 0 && built.at(index<0>()).calls == 0);
+    CRUCIBLE_TEST_ASSERT(kTest, built.at(index<1>()).value == 7 && built.at(index<1>()).calls == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, built.at(index<2>()).value == 10 && built.at(index<2>()).calls == 2);
+    built.build_at(index<1>(), build_counted, 3, calls);
+    CRUCIBLE_TEST_ASSERT(kTest, built.at(index<1>()).value == 3 && built.at(index<1>()).calls == 3);
+
+    // An array of one element, which GCC reads as an array of one byte at
+    // the end of its class.
+    FixedArray<Built, 1> one{};
+    one.build_at(index<0>(), build_counted, 4, calls);
+    CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).value == 4 && one.at(index<0>()).calls == 4);
+}
+
 // A body of the element door and of the frame door reads a linear local of
 // the caller through a capture by const reference, and a body of the frame
 // door of a list of linear ends takes the ends as its parameter.  The linear
@@ -362,6 +401,7 @@ int main() {
     test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_element_door_writes_in_place();
+    test_fixed_array_value_door_builds_in_place();
     test_doors_take_a_body_that_borrows_a_linear_value();
     test_fixed_array_view_fill_and_copy();
     test_prefix_up_to_is_total();

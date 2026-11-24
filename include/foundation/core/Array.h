@@ -31,7 +31,9 @@
 // elements, so no read takes an index that no check proved.  An index from
 // data goes through Index<N>::check(raw), which gives an Option.  Each read
 // gives a const element.  with_element writes one element (the element
-// door), and fill(view, value) and copy(destination, source) of the Region
+// door), build_at(index, fn, args...) makes one element the value of
+// fn(args...), built in its place (the value door), and fill(view, value) and
+// copy(destination, source) of the Region
 // family write the elements through the ViewMut of with_mut (the frame door).
 // So no two Views of one array write the same elements.
 //
@@ -387,6 +389,84 @@ concept KeyedLinearFrameBody = LinearFrameBody<Body, T, Fresh, Extent> && Reache
 template <class Body, class Element>
 concept LinearElementBody = (!::foundation::linear::HoldsNoLinearValue<Body>) && std::is_invocable_v<Body&&, Element&>;
 
+namespace detail {
+
+// The target of a pointer, or of a borrow through a View, a ViewMut or a Ref,
+// with no cv, or the type itself for each other type.  The type is bare.
+[[nodiscard]] consteval std::meta::info target_of_part_(std::meta::info bare) {
+    namespace refl = ::foundation::reflect;
+    bool const is_borrow = std::meta::has_template_arguments(bare)
+                        && (std::meta::template_of(bare) == ^^View || std::meta::template_of(bare) == ^^ViewMut
+                            || std::meta::template_of(bare) == ^^Ref);
+    if (!std::meta::is_pointer_type(bare) && !is_borrow) return bare;
+    return refl::argument_components_of(refl::TypeNode{bare, false}).begin()[0].type;
+}
+
+// True when the type names the element or the array, by value, through a
+// reference or a pointer, or as the target of a borrow (target_of_part_).
+[[nodiscard]] consteval bool names_array_part_(std::meta::info given, std::meta::info element, std::meta::info array) {
+    std::meta::info const target = target_of_part_(std::meta::remove_cvref(std::meta::dealias(given)));
+    return target == element || target == array;
+}
+
+// True when a direct member of the class names the element or the array
+// (names_array_part_), as a member of the owner of the array does.
+[[nodiscard]] consteval bool holds_array_part_(std::meta::info type, std::meta::info element, std::meta::info array) {
+    namespace refl = ::foundation::reflect;
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    for (refl::TypeNode const& member :
+         refl::member_components_of(refl::TypeNode{type, true}, refl::SpecializationRead::Instantiating)) {
+        if (names_array_part_(member.type, element, array)) return true;
+    }
+    return false;
+}
+
+// True when an argument of build_at reaches the element or the array: the
+// argument names one of them (names_array_part_), or the argument or its
+// target holds one of them in a direct member, as the owner of the array
+// does.  The test reads the direct members and no deeper part, so an argument
+// of a class of another library, such as a tensor of PyTorch, passes.
+// Complexity: linear in the direct members, at compile time only.
+[[nodiscard]] consteval bool reaches_array_part_(std::meta::info given, std::meta::info element,
+                                                 std::meta::info array) {
+    std::meta::info const bare = std::meta::remove_cvref(std::meta::dealias(given));
+    std::meta::info const target = target_of_part_(bare);
+    return target == element || target == array || holds_array_part_(bare, element, array)
+        || holds_array_part_(target, element, array);
+}
+
+}  // namespace detail
+
+// The function of the value door build_at of a FixedArray: it holds no
+// state, so the door has no captures to read.  It is a function, a pointer
+// to a function, or a class with no member, such as a lambda with no
+// capture.  Each value that it reads comes as an argument of the door.
+template <class Fn>
+concept StatelessMake = std::is_function_v<std::remove_cvref_t<Fn>>
+                     || (std::is_pointer_v<std::remove_cvref_t<Fn>>
+                         && std::is_function_v<std::remove_pointer_t<std::remove_cvref_t<Fn>>>)
+                     || (std::is_class_v<std::remove_cvref_t<Fn>> && std::is_empty_v<std::remove_cvref_t<Fn>>);
+
+// The function and the arguments of build_at: the function gives exactly
+// the element with no throw for the arguments, and the element has a trivial
+// destructor, so the door ends the old element with no call.
+template <class Fn, class Element, class... Args>
+concept MakesElementInPlace =
+    std::is_nothrow_invocable_v<Fn&, Args&&...> && std::same_as<std::invoke_result_t<Fn&, Args&&...>, Element>
+    && std::is_trivially_destructible_v<Element>;
+
+// No argument of build_at reaches the element or the array
+// (reaches_array_part_), so the function reads no element while the new
+// element takes its storage.
+template <class Element, class Array, class... Args>
+concept ArgumentsReachNoArrayPart = (!detail::reaches_array_part_(^^Args, ^^Element, ^^Array) && ...);
+
+// No argument of build_at that comes by value holds a linear value.  An
+// argument by an lvalue reference stays in the frame of the caller.
+template <class... Args>
+concept ArgumentsHoldNoLinearValue =
+    ((std::is_lvalue_reference_v<Args> || ::foundation::linear::HoldsNoLinearValue<Args>) && ...);
+
 // The body of a keyed element door: it takes the element with no throw, its
 // result holds no borrow and fits a Record, it reaches no key of the brand,
 // and it holds no linear value by value.
@@ -505,6 +585,65 @@ public:
     template <class Body>
     void with_element(Index<N> index, Body&& body) const&& =
         delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
+
+    // The value door of one element: the element at a proven index becomes
+    // the value that fn(args...) gives, built in its place, and the door
+    // gives nothing.  The value builds the new element in the storage of the
+    // old one, which the trivial destructor of T ends with no call, so no
+    // byte of the element copies or moves.  The new element takes its
+    // storage while fn runs, so fn must reach no element of the array, and
+    // the shape of the door holds that: fn holds no state (StatelessMake), so
+    // each value that it reads is an argument, and no argument names the
+    // array, an element of it, or a borrow of one of them, or holds one of
+    // them in a direct member, as the owner of the array does
+    // (ArgumentsReachNoArrayPart).  The door lends no borrow of the array, so
+    // it has no store check, and an argument of a class of another library,
+    // such as a tensor of PyTorch, passes.  The one route to the array that
+    // the door does not see is an object of static storage, or an argument
+    // that reaches the array through more than one step.  T has a trivial
+    // destructor.  An argument by value holds no linear value.  Complexity:
+    // O(1), and the cost of fn.
+    template <class Fn, class... Args>
+        requires(!is_keyed_)
+             && MakesElementInPlace<Fn, T, Args...> && StatelessMake<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
+             && ArgumentsReachNoArrayPart<T, FixedArray, Args...> && ArgumentsHoldNoLinearValue<Args...>
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) & noexcept {
+        // GCC reads an array of one element at the end of a class as an array
+        // of one byte, and its check of a placement new then refuses the
+        // build.  The address through __builtin_launder is the same address,
+        // and the check reads no array there.
+        ::new(static_cast<void*>(__builtin_launder(&elements_[index.raw()]))) T(fn(static_cast<Args&&>(args)...));
+    }
+    template <class Fn, class... Args>
+        requires(!is_keyed_) && MakesElementInPlace<Fn, T, Args...> && (!StatelessMake<Fn>)
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) & = delete(
+        "the function of build_at holds no state, so the door sees each value that it reads: give a function or a "
+        "lambda with no capture, and give each value that it reads as an argument of build_at");
+    template <class Fn, class... Args>
+        requires(!is_keyed_) && MakesElementInPlace<Fn, T, Args...> && StatelessMake<Fn>
+                 && (!ArgumentsReachNoArrayPart<T, FixedArray, Args...>)
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) & = delete(
+        "an argument of build_at names the array, an element of it or a borrow of one of them, or holds one of them: "
+        "the new element takes its storage while the function runs, so the function reads no element of the array");
+    template <class Fn, class... Args>
+        requires(!is_keyed_) && MakesElementInPlace<Fn, T, Args...> && StatelessMake<Fn>
+                 && ArgumentsReachNoArrayPart<T, FixedArray, Args...> && (!ArgumentsHoldNoLinearValue<Args...>)
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) & = delete(
+        "an argument of build_at holds a linear value, and the door gives it to one call that need not consume it: "
+        "keep the linear value a local of the caller, and give the function a reference to it");
+    template <class Fn, class... Args>
+        requires is_keyed_
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) & = delete(
+        "a keyed FixedArray writes an element only through the frame doors that take its LoanKey: call with_element("
+        "key, index, body)");
+    template <class Fn, class... Args>
+        requires MakesElementInPlace<Fn, T, Args...>
+    void build_at(Index<N> index, Fn&& fn,
+                  Args&&... args) const& = delete("a const FixedArray has no writer of its elements");
+    template <class Fn, class... Args>
+        requires MakesElementInPlace<Fn, T, Args...>
+    void build_at(Index<N> index, Fn&& fn, Args&&... args) && =
+        delete("a temporary FixedArray ends at the end of the full expression, so a write of it has no reader");
 
     // The frame door of the run in place (the frame door): body gets the
     // ViewMut<T, Fresh, N> of the elements, with the scope brand of the

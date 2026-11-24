@@ -3559,6 +3559,14 @@ foundation_neg_compile_test(neg_core_grow_list_view_kept_past_its_frame
 foundation_neg_compile_test(neg_core_grow_text_view_kept_past_its_frame
   "no matching function for call to .foundation::core::GrowText::with_view"
   "StoresNoBorrowOutside")
+# The value door build_at of a FixedArray builds an element in its place, so
+# its function holds no state and no argument reaches the array.
+foundation_neg_compile_test(neg_core_fixed_array_build_at_fn_with_state
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::build_at\\("
+  "the function of build_at holds no state, so the door sees each value that it reads")
+foundation_neg_compile_test(neg_core_fixed_array_build_at_argument_reaches_element
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::build_at\\("
+  "an argument of build_at names the array, an element of it or a borrow of one of them")
 # The exchange of a HeapArray moves a value into an element with no body.
 # A temporary array and a const array have no exchange.
 foundation_neg_compile_test(neg_core_heap_array_exchange_on_temporary

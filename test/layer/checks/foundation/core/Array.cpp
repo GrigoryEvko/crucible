@@ -133,6 +133,53 @@ static_assert(!ArrayFrameOwner<FixedArray<int, 4>> && ArrayFrameOwner<HeapArray<
 static_assert(LendsElement<FixedArray<int, 4>&> && LendsElement<FixedArray<int, 4> const&>
               && !LendsElement<FixedArray<int, 4>>);
 
+// The value door build_at: the element at a proven index becomes the value
+// of fn(args...), built in its place.  fn holds no state: a function, a
+// pointer to a function, or a lambda with no capture.  No argument names
+// the array, an element of it or a borrow of one of them, or holds one of
+// them in a direct member, as the owner of the array does.  A const array
+// and a temporary array have no value door.
+struct Slot {
+    int value = 0;
+    int twice = 0;
+};
+using Slots = FixedArray<Slot, 4>;
+struct SlotOwner {
+    Slots slots{};
+};
+struct SlotsByReference {
+    Slots& slots;
+};
+struct Unrelated {
+    int seed = 0;
+};
+// The brand of the Refs of the checks below.
+struct SlotBrand final {};
+[[nodiscard]] constexpr Slot make_slot(int value) noexcept { return Slot{.value = value, .twice = 2 * value}; }
+using MakesSlot = decltype([](int value) noexcept { return Slot{.value = value, .twice = 2 * value}; });
+using MakesSlotWithState = decltype([seed = 1](int value) noexcept { return Slot{.value = value + seed, .twice = 0}; });
+using CopiesSlot =
+    decltype([](auto const& from) noexcept { return Slot{.value = 1, .twice = sizeof(from) > 0 ? 1 : 0}; });
+using GivesInt = decltype([](int value) noexcept { return value; });
+using MayThrow = decltype([](int value) { return Slot{.value = value, .twice = 0}; });
+template <class Array, class Fn, class... Args>
+concept BuildsAt = requires(Array&& array, Fn&& fn, Args&&... args) {
+    static_cast<Array&&>(array).build_at(index<0>(), static_cast<Fn&&>(fn), static_cast<Args&&>(args)...);
+};
+static_assert(BuildsAt<Slots&, MakesSlot, int> && BuildsAt<Slots&, decltype(make_slot)&, int>
+              && BuildsAt<Slots&, decltype(&make_slot), int>);
+static_assert(!BuildsAt<Slots&, MakesSlotWithState, int>);
+static_assert(!BuildsAt<Slots const&, MakesSlot, int> && !BuildsAt<Slots, MakesSlot, int>);
+static_assert(!BuildsAt<Slots&, GivesInt, int> && !BuildsAt<Slots&, MayThrow, int>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, Slot const&> && !BuildsAt<Slots&, CopiesSlot, Slot&>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, Slots&> && !BuildsAt<Slots&, CopiesSlot, Slots const&>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, Slot const*> && !BuildsAt<Slots&, CopiesSlot, Slots*>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, View<Slot const>>
+              && !BuildsAt<Slots&, CopiesSlot, Ref<Slots const, SlotBrand>>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, SlotOwner&> && !BuildsAt<Slots&, CopiesSlot, Ref<SlotOwner, SlotBrand>>);
+static_assert(!BuildsAt<Slots&, CopiesSlot, SlotsByReference const&>);
+static_assert(BuildsAt<Slots&, CopiesSlot, Unrelated const&> && BuildsAt<Slots&, CopiesSlot, FixedArray<Slot, 2>&>);
+
 // at takes an Index<N> or a constant index below N, and an Index of a
 // different count does not convert down.
 template <class Array, class Proof>
