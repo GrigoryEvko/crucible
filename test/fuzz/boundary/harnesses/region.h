@@ -26,9 +26,10 @@ inline void claim_region_trusted(HarnessName harness, const RegionNode& region) 
         CRUCIBLE_FUZZ_CLAIM(harness, plan.pool_bytes <= PoolAllocator::kMaxPoolBytes);
         CRUCIBLE_FUZZ_CLAIM(harness, plan.num_external <= plan.num_slots());
         for (const TensorSlot& slot : plan.slots.view()) {
-            CRUCIBLE_FUZZ_CLAIM(harness, valid_scalar_type(static_cast<std::int8_t>(slot.dtype)));
-            CRUCIBLE_FUZZ_CLAIM(harness, valid_device_type(static_cast<std::int8_t>(slot.device_type)));
-            CRUCIBLE_FUZZ_CLAIM(harness, valid_layout(static_cast<std::int8_t>(slot.layout)));
+            CRUCIBLE_FUZZ_CLAIM(harness, ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(slot.dtype)).is_some());
+            CRUCIBLE_FUZZ_CLAIM(harness,
+                                ::fixy::enum_from<DeviceType>(static_cast<std::int8_t>(slot.device_type)).is_some());
+            CRUCIBLE_FUZZ_CLAIM(harness, ::fixy::enum_from<Layout>(static_cast<std::int8_t>(slot.layout)).is_some());
             if (!slot.is_external) {
                 const ::fixy::Option<std::uint64_t> end = ::fixy::checked_add(slot.offset_bytes, slot.nbytes);
                 CRUCIBLE_FUZZ_CLAIM(harness, end.is_some());

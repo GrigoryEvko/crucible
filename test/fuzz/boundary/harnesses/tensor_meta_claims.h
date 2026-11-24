@@ -14,9 +14,9 @@ namespace crucible::fuzz::boundary {
 
 inline void claim_meta_in_range(HarnessName harness, const TensorMeta& meta) noexcept {
     CRUCIBLE_FUZZ_CLAIM(harness, meta.ndim <= kMaxTensorNDim);
-    CRUCIBLE_FUZZ_CLAIM(harness, valid_scalar_type(static_cast<std::int8_t>(meta.dtype)));
-    CRUCIBLE_FUZZ_CLAIM(harness, valid_device_type(static_cast<std::int8_t>(meta.device_type)));
-    CRUCIBLE_FUZZ_CLAIM(harness, valid_layout(static_cast<std::int8_t>(meta.layout)));
+    CRUCIBLE_FUZZ_CLAIM(harness, ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(meta.dtype)).is_some());
+    CRUCIBLE_FUZZ_CLAIM(harness, ::fixy::enum_from<DeviceType>(static_cast<std::int8_t>(meta.device_type)).is_some());
+    CRUCIBLE_FUZZ_CLAIM(harness, ::fixy::enum_from<Layout>(static_cast<std::int8_t>(meta.layout)).is_some());
 }
 
 }  // namespace crucible::fuzz::boundary

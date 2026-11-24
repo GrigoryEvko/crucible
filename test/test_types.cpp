@@ -154,15 +154,15 @@ static void test_noexcept_ctors_propagate() {
 // Each value of the underlying type that no enumerator names reaches the
 // default arm of element_size, and the arm ends the process in each build.
 // Each such value runs in a child through expect_dies of the Check family.
-// Each enumerator gives its size in the test process.  The predicate of the
-// deserializer gate is the oracle for the enumerators.  Complexity: one
+// Each enumerator gives its size in the test process.  enum_from, the door of
+// the deserializer, is the oracle for the enumerators.  Complexity: one
 // child process for each value that no enumerator names.
 static void expect_element_size_ends_the_process_outside_the_enumerators(::fixy::TestRunnerCtx const& test) {
     constexpr ::fixy::TextView kUnreachable{
         "foundation: fatal: control reached a point that the code marks as unreachable"};
     for (int raw = -128; raw <= 127; ++raw) {
         ScalarType const type = static_cast<ScalarType>(static_cast<int8_t>(raw));
-        if (valid_scalar_type(raw)) {
+        if (::fixy::enum_from<ScalarType>(static_cast<int8_t>(raw)).is_some()) {
             CRUCIBLE_TEST_ASSERT(test, element_size(type).raw() <= 16);
         } else {
             ::fixy::check::expect_dies(

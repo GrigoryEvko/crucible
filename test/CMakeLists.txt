@@ -2224,23 +2224,6 @@ crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
   "no matching function for call to .start_as_array<Stage>\\(unsigned char \\[1\\], int\\)."
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = crucible::BackgroundThread::PublishStage.")
 
-# ValidTraceNodeKindRaw is the fixy Refined<bounded_above<TERMINAL>,
-# uint8_t>, minted through kValidTraceNodeKindBound at every uint8_t to
-# TraceNodeKind widening site (Serialize::read_header is the canonical
-# one).  Two fixtures, distinct mismatch classes:
-#   * neg_trace_node_kind_above_terminal — boundary edge (= TERMINAL + 1).
-#     Catches a bound that widens past TERMINAL and admits a byte that
-#     names no enumerator.
-#   * neg_trace_node_kind_uint8_max — wide miss (= UINT8_MAX).  Catches a
-#     refinement that degenerates into a plain uint8_t.
-# Each pins the door, the bound and the refused value.
-crucible_neg_compile_test(neg_trace_node_kind_above_terminal
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(\\(\\(uint8_t\\)\\(\\(\\(int\\)\\(\\(uint8_t\\)crucible::TraceNodeKind::TERMINAL\\)\\) \\+ 1\\)\\)\\)")
-crucible_neg_compile_test(neg_trace_node_kind_uint8_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<BoundedAbove<3>\\(\\), unsigned char>\\(255\\)")
-
 # Each node lives in a DAG arena: only mint_dag_node builds one, and no node
 # copies out of its arena.  So the DagArena brand of a node is sound.
 crucible_neg_compile_test(neg_dag_node_on_the_stack
@@ -2446,44 +2429,6 @@ crucible_neg_compile_test(neg_tensor_meta_strided_const_view_mut
   "use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\) \\[with T = float.*\\].: a ViewMut is the one writer of its run: a copy would be a second writer"
   "initializing argument 2 of .foundation::core::Result<foundation::core::StridedViewMut<T, 18446744073709551615, Brand>, crucible::TensorViewRefusal> crucible::strided_view_of\\(const TensorMeta&, foundation::core::ViewMut<T, Brand, Extent>\\)")
 
-# read_meta dtype gate (sibling of the ndim and kernel_id gates) — ScalarType
-# dtype byte typed gate at the read_meta()
-# deserialize boundary.  ScalarType is a SPARSE int8_t enum; without the gate,
-# a corrupt or version-skewed Cipher byte outside the enumerator set reaches
-# the default arm of element_size(), which ends the process.  ValidScalarType is
-# ::fixy::Refined<valid_scalar_type, int8_t>; its checked mint refuses an
-# invalid byte.
-# Two fixtures per HS14, distinct mismatch classes:
-#   * neg_tensor_meta_dtype_gap_value — INTERIOR gap (14, between Bool=11
-#     and BFloat16=15) catches "predicate relaxed to a plain range check
-#     [-1,26]" drift that would admit the 12..14 / 16..22 gaps.
-#   * neg_tensor_meta_dtype_above_max — ABOVE-MAX wide miss (99 > 26)
-#     catches "drop the predicate entirely" regression.
-crucible_neg_compile_test(neg_tensor_meta_dtype_gap_value
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidScalarType\\(\\), signed char>\\(14\\)")
-crucible_neg_compile_test(neg_tensor_meta_dtype_above_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidScalarType\\(\\), signed char>\\(99\\)")
-
-# read_meta device_type gate (sibling of the dtype gate) — DeviceType is a
-# sparse int8_t enum (0,1,2,6,9,13,14,20); it feeds the node content hash
-# (Merkle identity), so a corrupt/version-skewed Cipher byte silently
-# corrupts that identity.  ValidDeviceType = Refined<valid_device_type,
-# int8_t> fail-closes at deserialize entry.  NOT a UB fix (DeviceType has
-# no std::unreachable consumer).  Two fixtures per HS14, distinct classes:
-#   * neg_tensor_meta_device_type_gap_value — INTERIOR gap (3, between
-#     MKLDNN=2 and HIP=6) catches "predicate relaxed to a plain [0,20]
-#     range check" drift admitting the sparse gaps.
-#   * neg_tensor_meta_device_type_above_max — ABOVE-MAX wide miss (99 > 20)
-#     catches "drop the predicate entirely" regression.
-crucible_neg_compile_test(neg_tensor_meta_device_type_gap_value
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidDeviceType\\(\\), signed char>\\(3\\)")
-crucible_neg_compile_test(neg_tensor_meta_device_type_above_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidDeviceType\\(\\), signed char>\\(99\\)")
-
 # The one index of the host in crucible::TensorDevice.  The constructor gives
 # each index of the host as -1, and the two members are private, so no other
 # road builds a second index of the host.  The two fixtures are the two roads
@@ -2496,23 +2441,6 @@ crucible_neg_compile_test(neg_tensor_device_designated_host_zero
 crucible_neg_compile_test(neg_tensor_device_index_write
   "is private within this context"
   "crucible::TensorDevice::index_")
-
-# read_meta layout gate (last enum reconstruction in read_meta) — Layout is
-# a DENSE signed int8_t enum (Strided=0 .. SparseBsc=5); it feeds the node
-# content hash (Merkle identity), so a corrupt/version-skewed Cipher byte
-# silently corrupts that identity.  ValidLayout = Refined<valid_layout,
-# int8_t> fail-closes.  NOT a UB fix (Layout has no std::unreachable
-# consumer).  Two fixtures per HS14, distinct classes:
-#   * neg_tensor_meta_layout_below_min — BELOW-MIN (-1) catches the
-#     signed-lower-bound bug where bounded_above<5> would accept negatives.
-#   * neg_tensor_meta_layout_above_max — ABOVE-MAX wide miss (99 > 5)
-#     catches "drop the predicate entirely" regression.
-crucible_neg_compile_test(neg_tensor_meta_layout_below_min
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidLayout\\(\\), signed char>\\(-1\\)")
-crucible_neg_compile_test(neg_tensor_meta_layout_above_max
-  "__builtin_trap.*is not a constant expression"
-  "mint_refined<crucible::IsValidLayout\\(\\), signed char>\\(99\\)")
 
 # A constant refined to be zero, fixy::Refined<is_zero, uint64_t>, holds a
 # field that must be zero in an image, so an edit that feeds a live value in

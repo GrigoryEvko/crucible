@@ -387,64 +387,6 @@ using ValidNDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorNDim>, uint8_t
 
 [[nodiscard, gnu::const]] inline constexpr uint8_t make_ndim(ValidNDim raw) noexcept { return raw.value(); }
 
-// ScalarType is sparse: many int8_t values are not enumerators. A consumer
-// that switches over every enumerator and marks the remainder unreachable
-// ends the process for an unchecked byte from a file, so a deserialized
-// dtype passes through this predicate first. It fails closed.
-//
-// Each predicate here is a named class. A refinement folds the name of its
-// predicate into its row hash, and a closure type has no stable name.  Each
-// predicate asks enum_from, which reads the enumerators of the enumeration
-// by reflection, so a new enumerator needs no edit here.
-struct IsValidScalarType {
-    constexpr bool operator()(auto raw) const noexcept {
-        return ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(raw)).is_some();
-    }
-};
-
-inline constexpr IsValidScalarType valid_scalar_type{};
-
-using ValidScalarType = ::fixy::Refined<valid_scalar_type, std::int8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr ScalarType make_scalar_type(ValidScalarType raw) noexcept {
-    return static_cast<ScalarType>(raw.value());
-}
-
-// DeviceType is sparse as well, but no consumer treats a gap value as
-// unreachable, so this gate is not about undefined behaviour. The field is
-// folded into a content hash that serves as a node identity, and an invalid
-// byte corrupts that identity without any other symptom.
-struct IsValidDeviceType {
-    constexpr bool operator()(auto raw) const noexcept {
-        return ::fixy::enum_from<DeviceType>(static_cast<std::int8_t>(raw)).is_some();
-    }
-};
-
-inline constexpr IsValidDeviceType valid_device_type{};
-
-using ValidDeviceType = ::fixy::Refined<valid_device_type, std::int8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr DeviceType make_device_type(ValidDeviceType raw) noexcept {
-    return static_cast<DeviceType>(raw.value());
-}
-
-// Layout is dense, so an upper bound would appear to be enough. It is not:
-// the byte is signed, and a bound of five accepts every negative value.
-// Like the device type, an invalid layout corrupts the content hash silently.
-struct IsValidLayout {
-    constexpr bool operator()(auto raw) const noexcept {
-        return ::fixy::enum_from<Layout>(static_cast<std::int8_t>(raw)).is_some();
-    }
-};
-
-inline constexpr IsValidLayout valid_layout{};
-
-using ValidLayout = ::fixy::Refined<valid_layout, std::int8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr Layout make_layout(ValidLayout raw) noexcept {
-    return static_cast<Layout>(raw.value());
-}
-
 // The fields of one tensor descriptor as a writer outside the process gave
 // them: a C caller of the vessel, a metadata record of a trace file, or the
 // image of a descriptor in a region of the store.  No field holds a checked
@@ -510,11 +452,19 @@ struct[[= ::fixy::derive_protocol{}]] UncheckedTensorMeta {
         meta.strides[lane.raw()] = tensor_dim(stride);
     }
 
-    if (!valid_scalar_type(fields.dtype) || !valid_device_type(fields.device_type) || !valid_layout(fields.layout))
-        return ::fixy::none;
-    meta.dtype = make_scalar_type(::fixy::mint_refined<valid_scalar_type>(fields.dtype));
-    meta.device_type = make_device_type(::fixy::mint_refined<valid_device_type>(fields.device_type));
-    meta.layout = make_layout(::fixy::mint_refined<valid_layout>(fields.layout));
+    // ScalarType and DeviceType are sparse, and a switch over the element
+    // type ends the process for a value of no enumerator.  A device and a
+    // layout fold into the content hash of a node, so a value of no
+    // enumerator would change the identity of the node with no other sign.
+    // enum_from reads the enumerators by reflection, so a new enumerator
+    // needs no edit here.
+    ::fixy::Option<ScalarType> dtype = ::fixy::enum_from<ScalarType>(fields.dtype);
+    ::fixy::Option<DeviceType> device_type = ::fixy::enum_from<DeviceType>(fields.device_type);
+    ::fixy::Option<Layout> layout = ::fixy::enum_from<Layout>(fields.layout);
+    if (dtype.is_none() || device_type.is_none() || layout.is_none()) return ::fixy::none;
+    meta.dtype = std::move(dtype).value_or(ScalarType::Undefined);
+    meta.device_type = std::move(device_type).value_or(DeviceType::CPU);
+    meta.layout = std::move(layout).value_or(Layout::Strided);
 
     constexpr uint8_t known_flags = meta_flags::IS_LEAF | meta_flags::IS_CONTIGUOUS | meta_flags::HAS_GRAD_FN
                                   | meta_flags::IS_VIEW | meta_flags::IS_NEG | meta_flags::IS_CONJ;

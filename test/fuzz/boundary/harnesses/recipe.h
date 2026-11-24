@@ -30,11 +30,12 @@ struct RecipeWords {
 
 // True when each enumeration byte of the image names an enumerator.  The
 // oracle does not use the decoder.  It reads the two element types with
-// the switch of valid_scalar_type, and each other enumeration counts up
-// from zero, so the oracle compares its byte with the last enumerator.  The
-// flags and the hash take each byte.
+// enum_from, and each other enumeration counts up from zero, so the oracle
+// compares its byte with the last enumerator.  The flags and the hash take
+// each byte.
 [[nodiscard]] constexpr bool names_each_enumerator(RecipeWords words) noexcept {
-    return valid_scalar_type(byte_of(words.low, 0)) && valid_scalar_type(byte_of(words.low, 1))
+    return ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(byte_of(words.low, 0))).is_some()
+        && ::fixy::enum_from<ScalarType>(static_cast<std::int8_t>(byte_of(words.low, 1))).is_some()
         && byte_of(words.low, 2) <= static_cast<std::uint8_t>(ReductionAlgo::BLOCK_STABLE)
         && byte_of(words.low, 3) <= static_cast<std::uint8_t>(::foundation::core::RoundingMode::RP)
         && byte_of(words.low, 4) <= static_cast<std::uint8_t>(ScalePolicy::PER_CHANNEL)

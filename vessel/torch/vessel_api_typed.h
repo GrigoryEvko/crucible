@@ -545,8 +545,9 @@ register_schema_name_typed(VigilType& vigil, std::uint64_t schema_hash,
 metas_are_well_formed(::fixy::View<const crucible::TensorMeta> metas) noexcept {
     for (const crucible::TensorMeta& meta : metas) {
         if (meta.ndim > crucible::kMaxTensorNDim) return false;
-        if (!crucible::valid_scalar_type(meta.dtype) || !crucible::valid_device_type(meta.device_type)
-            || !crucible::valid_layout(meta.layout))
+        if (::fixy::enum_from<crucible::ScalarType>(std::to_underlying(meta.dtype)).is_none()
+            || ::fixy::enum_from<crucible::DeviceType>(std::to_underlying(meta.device_type)).is_none()
+            || ::fixy::enum_from<crucible::Layout>(std::to_underlying(meta.layout)).is_none())
             return false;
     }
     return true;

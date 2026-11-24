@@ -416,8 +416,7 @@ inline Header read_header(Reader& r) {
     Header h{};
     h.magic = r.r<uint32_t>();
     h.version = ::fixy::mint_tagged<::fixy::tags::source::External>(r.r<uint32_t>());
-    h.kind = make_trace_node_kind(
-        ::fixy::mint_refined<kValidTraceNodeKindBound>(r.read_gated<uint8_t>(kValidTraceNodeKindBound)));
+    h.kind = r.read_enumerator(TraceNodeKind::REGION);
     r.read_zero_pad<kHeaderPadBytes>();
     h.merkle_hash = MerkleHash{r.r<uint64_t>()};
     h.content_hash = ContentHash{r.r<uint64_t>()};
@@ -705,8 +704,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         // exceed the total.
         if (loaded_plan->num_external > num_slots) return ::fixy::err(r.reason_or(LoadError::plan_unservable));
         // An unrecognised device type would reach pool selection unchecked.
-        loaded_plan->device_type =
-            make_device_type(::fixy::mint_refined<valid_device_type>(r.read_gated<int8_t>(valid_device_type)));
+        loaded_plan->device_type = r.read_enumerator(DeviceType::CPU);
         loaded_plan->device_idx = r.r<int8_t>();
         r.read_zero_pad<sizeof(loaded_plan->pad0)>();
         loaded_plan->device_capability = r.r<uint64_t>();

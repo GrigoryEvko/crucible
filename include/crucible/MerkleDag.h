@@ -303,19 +303,12 @@ enum class TraceNodeKind : uint8_t {
     TERMINAL,
 };
 
-// A kind byte recovered from persisted state is untrusted.  A byte past
-// TERMINAL widens to an enumerator that no switch arm matches and that every
+// A kind byte recovered from persisted state is untrusted.  A byte that
+// names no kind widens to a value that no switch arm matches and that every
 // equality test against a real kind falls through, so control flow goes
-// silently wrong instead of failing.  Minting this refinement is the
-// validation point, and make_trace_node_kind consumes the proof.  The one
-// door is ::fixy::mint_refined<kValidTraceNodeKindBound>(byte).
-inline constexpr auto kValidTraceNodeKindBound = ::fixy::bounded_above<static_cast<uint8_t>(TraceNodeKind::TERMINAL)>;
-
-using ValidTraceNodeKindRaw = ::fixy::Refined<kValidTraceNodeKindBound, uint8_t>;
-
-[[nodiscard, gnu::const]] inline constexpr TraceNodeKind make_trace_node_kind(ValidTraceNodeKindRaw raw) noexcept {
-    return static_cast<TraceNodeKind>(raw.value());
-}
+// silently wrong instead of failing.  The reader of a header reads the kind
+// with fixy::enum_from (read_enumerator of crucible/Serialize.h), which
+// refuses such a byte.
 
 struct TraceNode;
 struct RegionNode;

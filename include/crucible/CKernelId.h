@@ -7,6 +7,7 @@
 // needs the enum.  The registration table, the classification and the names
 // of the identifiers are in crucible/CKernel.h, which includes this header.
 
+#include <fixy/Core.h>
 #include <fixy/Refined.h>
 
 #include <cstdint>
@@ -203,14 +204,18 @@ enum class CKernelId : uint8_t {
 // of range after version skew or corruption, and a bare static_cast would turn
 // it into an enum value no switch handles. Admitting only [0, NUM_KERNELS)
 // makes the widening below total.  The one door into the type is
-// ::fixy::mint_refined<kValidCKernelIdBound>(byte).
+// ::fixy::mint_refined<kValidCKernelIdBound>(byte).  The bound excludes the
+// sentinel NUM_KERNELS, which enum_from takes as an enumerator, so the type
+// says more than "names an enumerator".  Each byte below NUM_KERNELS names a
+// kernel (the check file of crucible/CKernel.h), so the widening has its
+// proof in the type.
 inline constexpr auto kValidCKernelIdBound =
     ::fixy::bounded_above<static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>;
 
 using ValidCKernelIdRaw = ::fixy::Refined<kValidCKernelIdBound, uint8_t>;
 
 [[nodiscard, gnu::const]] inline constexpr CKernelId make_ckernel_id(ValidCKernelIdRaw raw) noexcept {
-    return static_cast<CKernelId>(raw.value());
+    return ::fixy::enum_from<CKernelId>(raw.value()).expect("a ValidCKernelIdRaw names an enumerator");
 }
 
 }  // namespace crucible
