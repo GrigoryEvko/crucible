@@ -402,12 +402,14 @@ struct MessageBox {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
-// A trying write that puts the message into an empty mailbox.
+// A trying write that puts the message into an empty mailbox.  The message
+// is linear, so the write takes it by move and gives it back while the
+// mailbox is full.
 template <class Message>
-[[nodiscard]] bool put_message(MessageBox<Message>& box, Message& message) noexcept {
-    if (box.held.size() != 0) return false;
+[[nodiscard]] ::fixy::Option<Message> put_message(MessageBox<Message>& box, Message&& message) noexcept {
+    if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
     static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
-    return true;
+    return ::fixy::none;
 }
 
 // A polling read that takes the message out of the mailbox.

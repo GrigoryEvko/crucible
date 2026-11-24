@@ -39,9 +39,9 @@ int main() {
     auto root = fp::mint_permission_root<Region>();
     using Token = decltype(root);
     auto sender = s::mint_permissioned_session<s::Send<Token, s::End>>(ctx, Mailbox<Token>{}, std::move(root));
-    auto sender_done = std::move(sender).send([](Mailbox<Token>& box, Token& token) noexcept {
+    auto sender_done = std::move(sender).send([](Mailbox<Token>& box, Token&& token) noexcept -> ::fixy::Option<Token> {
         static_cast<void>(box.held.append(std::move(token)).expect("empty"));
-        return true;
+        return ::fixy::none;
     });
     auto receiver = s::mint_session<s::Recv<Token, s::End>>(ctx, std::move(sender_done).close());
     auto receiver_done = std::move(receiver).recv([](Mailbox<Token>& box) noexcept { return box.held.take_last(); });

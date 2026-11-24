@@ -34,6 +34,10 @@ namespace fixy::session {
 //
 //   a trying write     bool(Resource&, T&)     false while it has no room,
 //                                              and the value stays as it was
+//   a trying write     fixy::Option<T>(Resource&, T&&)    of a linear T: the
+//                                              value back while it has no
+//                                              room, and no value when it
+//                                              took the value
 //   a declared write   void(Resource&, T&&, watch::wait_scope&)
 //   a polling read     fixy::Option<T>(Resource&)    no value while nothing
 //                                                    is there
@@ -51,9 +55,26 @@ namespace fixy::session {
 // while it waits, and a call is no consume, so a linear value that one of
 // them holds would end with no consume.
 
+// A trying write of a copyable payload reads the value through a reference,
+// and the caller keeps it while the write has no room.  A trying write of a
+// linear payload takes the value by move and gives it back while it has no
+// room, so each call consumes its value one time and no write moves a value
+// out of a reference.  A linear payload with the reference shape is no trying
+// write, and each door refuses it with [Transport_Shape].
 template <typename F, typename Resource, typename T>
-concept TryWrite =
+concept TryWriteByReference =
     std::is_invocable_v<F&, Resource&, T&> && std::same_as<std::invoke_result_t<F&, Resource&, T&>, bool>;
+
+// The write of the move shape is a callable object, and the doors call it as a
+// plain call.
+template <typename F, typename Resource, typename T>
+concept TryWriteByMove = requires(F& write, Resource& resource, T&& value) {
+    { write(resource, static_cast<T&&>(value)) } -> std::same_as<::fixy::Option<T>>;
+};
+
+template <typename F, typename Resource, typename T>
+concept TryWrite = (::foundation::linear::LinearValue<T> && TryWriteByMove<F, Resource, T>)
+                || (!::foundation::linear::LinearValue<T> && TryWriteByReference<F, Resource, T>);
 
 template <typename F, typename Resource, typename T>
 concept DeclaredWrite = !TryWrite<F, Resource, T> && std::is_invocable_v<F&, Resource&, T&&, watch::wait_scope&>
@@ -76,9 +97,13 @@ concept WriteStop = ::foundation::linear::HoldsNoLinearValue<F> && requires(F& s
 };
 
 template <typename F, typename Resource, typename T>
-concept CallableTryWrite = TryWrite<F, Resource, T> && requires(F& write, Resource& resource, T& value) {
-    { write(resource, value) } -> std::same_as<bool>;
-};
+concept CallableTryWrite =
+    TryWrite<F, Resource, T>
+    && (requires(F& write, Resource& resource, T& value) {
+           { write(resource, value) } -> std::same_as<bool>;
+       } || requires(F& write, Resource& resource, T&& value) {
+           { write(resource, static_cast<T&&>(value)) } -> std::same_as<::fixy::Option<T>>;
+       });
 
 template <typename F, typename Resource, typename T>
 concept PollRead =
@@ -100,7 +125,9 @@ namespace detail {
 
 template <typename F, typename Resource, typename T>
 consteval bool write_is_nothrow() noexcept {
-    if constexpr (TryWrite<F, Resource, T>) {
+    if constexpr (TryWrite<F, Resource, T> && ::foundation::linear::LinearValue<T>) {
+        return std::is_nothrow_invocable_v<F&, Resource&, T&&> && std::is_nothrow_move_constructible_v<T>;
+    } else if constexpr (TryWrite<F, Resource, T>) {
         return std::is_nothrow_invocable_v<F&, Resource&, T&>;
     } else {
         return std::is_nothrow_invocable_v<F&, Resource&, T&&, watch::wait_scope&>;
@@ -144,6 +171,25 @@ wait_for_room(Transport& transport, Resource& resource, T& value,
         wait.poll();
 }
 
+// The same for a trying write of a linear payload: `back` holds the value
+// that the write gave back, and each try moves it in again, until the write
+// takes it.
+template <typename Transport, typename Resource, typename T>
+[[gnu::cold, gnu::noinline]] void
+wait_for_room_moved(Transport& transport, Resource& resource, ::fixy::Option<T> back,
+                    watch::endpoint_id endpoint) noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, T&&>
+                                                          && std::is_nothrow_move_constructible_v<T>) {
+    // An Option of a linear value takes no assignment, so each try fills the
+    // empty Option again with the value that the write gave back.
+    watch::wait_scope wait{endpoint};
+    for (;;) {
+        wait.poll();
+        ::fixy::Option<T> again = transport(resource, back.take().expect("the write gave the value back"));
+        if (again.is_none()) return;
+        back.fill(again.take().expect("the test above found the value"));
+    }
+}
+
 // The stop test of a send that has none.  It never reports.
 struct no_write_stop {
     [[nodiscard]] constexpr bool operator()() const noexcept { return false; }
@@ -167,29 +213,65 @@ wait_for_room_unless(Transport& transport, Stop& stop, Resource& resource, T& va
     }
 }
 
+// The same for a trying write of a linear payload: `back` holds the value
+// that the write gave back, and the result holds it when `stop` reported.
+template <typename Transport, typename Stop, typename Resource, typename T>
+[[gnu::cold, gnu::noinline]] ::fixy::Option<T>
+wait_for_room_unless_moved(Transport& transport, Stop& stop, Resource& resource, ::fixy::Option<T> back,
+                           watch::endpoint_id endpoint) noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, T&&>
+                                                                 && std::is_nothrow_invocable_v<Stop&>
+                                                                 && std::is_nothrow_move_constructible_v<T>) {
+    watch::wait_scope wait{endpoint};
+    for (;;) {
+        if (stop()) return back;
+        ::fixy::Option<T> again = transport(resource, back.take().expect("the write gave the value back"));
+        if (again.is_none()) return again;
+        back.fill(again.take().expect("the test above found the value"));
+        wait.poll();
+    }
+}
+
 // Writes `value` through a trying write, unless `stop` reports before a
 // try.  The result holds the value when `stop` reported, and no value when
 // the transport took it.  A write that finds room costs one test of `stop`
-// and one call.
+// and one call.  The caller gives the value by move, and a write of a
+// copyable payload reads it through a reference.
 template <typename T, typename Transport, typename Stop, typename Resource>
 [[nodiscard]] constexpr ::fixy::Option<T>
-write_unless(Transport& transport, Stop& stop, Resource& resource, T& value,
-             watch::endpoint_id endpoint) noexcept(std::is_nothrow_invocable_v<Transport&, Resource&, T&>
+write_unless(Transport& transport, Stop& stop, Resource& resource, T&& value,
+             watch::endpoint_id endpoint) noexcept(write_is_nothrow<Transport, Resource, T>()
                                                    && std::is_nothrow_invocable_v<Stop&>
                                                    && std::is_nothrow_move_constructible_v<T>) {
     if (stop()) [[unlikely]]
         return ::fixy::Option<T>::some(std::move(value));
-    if (transport(resource, value)) [[likely]]
-        return ::fixy::none;
-    return wait_for_room_unless(transport, stop, resource, value, endpoint);
+    if constexpr (::foundation::linear::LinearValue<T>) {
+        ::fixy::Option<T> back = transport(resource, std::move(value));
+        if (back.is_none()) [[likely]]
+            return back;
+        return ::fixy::session::detail::wait_for_room_unless_moved(transport, stop, resource, std::move(back),
+                                                                   endpoint);
+    } else {
+        if (transport(resource, value)) [[likely]]
+            return ::fixy::none;
+        return wait_for_room_unless(transport, stop, resource, value, endpoint);
+    }
 }
 
 // Writes `value` through either write shape.  A trying write that finds
-// room costs one call.  A declared write gets the scope opened for it.
+// room costs one call.  A declared write gets the scope opened for it.  The
+// caller gives the value by move, and a write of a copyable payload reads it
+// through a reference.
 template <typename T, typename Transport, typename Resource>
-constexpr void write_through(Transport& transport, Resource& resource, T& value,
+constexpr void write_through(Transport& transport, Resource& resource, T&& value,
                              watch::endpoint_id endpoint) noexcept(write_is_nothrow<Transport, Resource, T>()) {
-    if constexpr (TryWrite<Transport, Resource, T>) {
+    if constexpr (TryWrite<Transport, Resource, T> && ::foundation::linear::LinearValue<T>) {
+        ::fixy::Option<T> back = transport(resource, std::move(value));
+        // The call is qualified, so argument-dependent lookup finds no
+        // overload of a different file, and a gate that reads this body
+        // reads no open template.
+        if (back.is_some()) [[unlikely]]
+            ::fixy::session::detail::wait_for_room_moved(transport, resource, std::move(back), endpoint);
+    } else if constexpr (TryWrite<Transport, Resource, T>) {
         if (!std::invoke(transport, resource, value)) [[unlikely]]
             wait_for_room(transport, resource, value, endpoint);
     } else {
@@ -241,7 +323,14 @@ template <typename T, typename Resource, typename Read, typename Seen>
 // transport took the value.
 template <typename T, typename Resource, typename Write, typename Taken>
 [[nodiscard]] constexpr auto observed_write(Write& write, Taken taken) noexcept {
-    if constexpr (TryWrite<Write, Resource, T>) {
+    if constexpr (TryWrite<Write, Resource, T> && ::foundation::linear::LinearValue<T>) {
+        return [&write, taken](Resource& resource, T&& value) mutable noexcept(
+                   write_is_nothrow<Write, Resource, T>()) -> ::fixy::Option<T> {
+            ::fixy::Option<T> back = write(resource, std::move(value));
+            if (back.is_none()) taken();
+            return back;
+        };
+    } else if constexpr (TryWrite<Write, Resource, T>) {
         return [&write, taken](Resource& resource,
                                T& value) mutable noexcept(write_is_nothrow<Write, Resource, T>()) -> bool {
             const bool is_taken = std::invoke(write, resource, value);

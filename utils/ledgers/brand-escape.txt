@@ -16,5 +16,5 @@ test/ | escaped-return | 5 | - | -
 test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 27 | - | -
 test/fixy/ | escaped-container | 2 | - | -
-test/fixy/ | escaped-return | 42 | - | -
+test/fixy/ | escaped-return | 48 | - | a trying write of a linear payload gives the value back in an Option, and the type of a branded token names the brand of its root, as a polling read does
 test/foundation/ | escaped-return | 5 | - | -

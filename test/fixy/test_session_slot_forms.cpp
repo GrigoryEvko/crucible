@@ -61,12 +61,14 @@ struct Mailbox {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
-// A trying write that puts the message into an empty mailbox.
+// A trying write that puts the message into an empty mailbox.  The message
+// is linear, so the write takes it by move and gives it back while the
+// mailbox is full.
 template <class Message>
-[[nodiscard]] bool put_message(Mailbox<Message>& box, Message& message) noexcept {
-    if (box.held.size() != 0) return false;
+[[nodiscard]] ::fixy::Option<Message> put_message(Mailbox<Message>& box, Message&& message) noexcept {
+    if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
     static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
-    return true;
+    return ::fixy::none;
 }
 
 // A polling read that takes the message out of the mailbox.
@@ -150,8 +152,8 @@ struct LoanWire {
     using Borrows = s::Recv<Lend, s::Send<Release, s::End>>;
     using Wire = LoanWire<Brand>;
     auto lender = s::mint_permissioned_session<Lends>(ctx, Wire{.region_value = 40}, std::move(root));
-    auto lender_waits =
-        std::move(lender).send(1, [](Wire& wire, Lend& lend) noexcept { return put_message(wire.lent, lend); });
+    auto lender_waits = std::move(lender).send(
+        1, [](Wire& wire, Lend&& lend) noexcept { return put_message(wire.lent, std::move(lend)); });
     static_assert(
         fp::perm_set_equal(^^typename decltype(lender_waits)::perm_set, ^^fp::PermSet<s::LentOut<Region, Brand>>),
         "the token of the lender is parked in the LentOut slot");
@@ -169,8 +171,9 @@ struct LoanWire {
     static_assert(CanReadRegionWith<decltype(borrowing), HoldsNoTokenBody>);
     auto [seen, reading] = std::move(borrowing).template read<Region>(
         [region_value](fp::ReadView<Region, Brand> const&) noexcept { return region_value; });
-    auto borrower_done = std::move(reading).send(
-        seen + ticket, [](Wire& wire, Release& release) noexcept { return put_message(wire.released, release); });
+    auto borrower_done = std::move(reading).send(seen + ticket, [](Wire& wire, Release&& release) noexcept {
+        return put_message(wire.released, std::move(release));
+    });
     static_assert(std::is_same_v<typename decltype(borrower_done)::perm_set, NoTags>,
                   "the release carries the loan back out of the slots of the borrower");
 

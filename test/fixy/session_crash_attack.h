@@ -139,10 +139,14 @@ inline constexpr auto push_int = [](Port& port, int& value) noexcept {
     port.out->slots.push_back(static_cast<std::uint64_t>(value));
     return true;
 };
-inline constexpr auto push_token = [](Port& port, Token& token) noexcept {
-    if (port.out->is_closed) return false;
+// A token is linear, so its write takes it by move and gives it back while
+// the queue of the peer is closed.  The queue keeps the value of the token,
+// and the write ends the token through the drop door.
+inline constexpr auto push_token = [](Port& port, Token&& token) noexcept -> ::fixy::Option<Token> {
+    if (port.out->is_closed) return ::fixy::Option<Token>::some(std::move(token));
     port.out->slots.push_back(static_cast<std::uint64_t>(token.peek()));
-    return true;
+    ::foundation::linear::drop(std::move(token));
+    return ::fixy::none;
 };
 // A crash-watched reception reads with no wait: the payload when one is
 // queued, and no value otherwise.

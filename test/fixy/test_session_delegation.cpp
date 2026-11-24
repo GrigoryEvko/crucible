@@ -14,6 +14,7 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
+#include <foundation/Linear.h>
 #include <foundation/effects/Computation.h>
 #include <foundation/effects/Row.h>
 
@@ -286,10 +287,15 @@ concept Delegates = requires(H handle) { s::mint_delegated_session(std::move(han
     auto received = std::move(parcel).accept();
     static_assert(std::is_same_v<typename decltype(received)::perm_set, HoldsRegion<Brand>>,
                   "the token travels with the brand of its root");
-    auto at_end = std::move(received).send(9, [](Wire& wire, s::Transferable<int, Region, Brand>& sent) noexcept {
-        wire.sent = sent.peek();
-        return true;
-    });
+    // The marker is linear, so the write takes it by move.  The wire keeps
+    // the value and ends the marker through the drop door.
+    auto at_end = std::move(received).send(9,
+                                           [](Wire& wire, s::Transferable<int, Region, Brand>&& sent) noexcept
+                                               -> ::fixy::Option<s::Transferable<int, Region, Brand>> {
+                                               wire.sent = sent.peek();
+                                               ::foundation::linear::drop(std::move(sent));
+                                               return ::fixy::none;
+                                           });
     static_assert(std::is_same_v<typename decltype(at_end)::perm_set, fp::EmptyPermSet>);
     const Wire back = std::move(at_end).close();
     if (back.sent != 9) return fail("the recipient did not send with the token that came with the endpoint");
@@ -308,12 +314,14 @@ template <class Brand>
 using HandsRegion = s::Send<ParcelOfRegion<Brand>, s::End>;
 
 // The sender puts the endpoint into the slot, and the recipient takes it
-// out, as in delegate_over_a_channel.
+// out, as in delegate_over_a_channel.  The endpoint is linear, so the write
+// takes it by move and gives it back while the slot is full.
 template <class Brand>
-[[nodiscard]] static bool put_parcel(SenderEndOf<ParcelOfRegion<Brand>>& end, ParcelOfRegion<Brand>& parcel) noexcept {
-    if (end.slot->held.is_some()) return false;
+[[nodiscard]] static ::fixy::Option<ParcelOfRegion<Brand>> put_parcel(SenderEndOf<ParcelOfRegion<Brand>>& end,
+                                                                      ParcelOfRegion<Brand>&& parcel) noexcept {
+    if (end.slot->held.is_some()) return ::fixy::Option<ParcelOfRegion<Brand>>::some(std::move(parcel));
     end.slot->held.fill(std::move(parcel));
-    return true;
+    return ::fixy::none;
 }
 
 // The read waits in its declared form, so it gives the endpoint with no
@@ -350,10 +358,13 @@ template <class Brand>
     auto accepted = std::move(received).accept();
     static_assert(std::is_same_v<typename decltype(accepted)::perm_set, HoldsRegion<Brand>>,
                   "the endpoint keeps the token of the region in its slots, with its brand");
-    auto at_end = std::move(accepted).send(11, [](Wire& wire, s::Transferable<int, Region, Brand>& sent) noexcept {
-        wire.sent = sent.peek();
-        return true;
-    });
+    auto at_end = std::move(accepted).send(11,
+                                           [](Wire& wire, s::Transferable<int, Region, Brand>&& sent) noexcept
+                                               -> ::fixy::Option<s::Transferable<int, Region, Brand>> {
+                                               wire.sent = sent.peek();
+                                               ::foundation::linear::drop(std::move(sent));
+                                               return ::fixy::none;
+                                           });
     const Wire back = std::move(at_end).close();
     if (back.sent != 11) return fail("the recipient of the endpoint did not use the region that it holds");
     return 0;

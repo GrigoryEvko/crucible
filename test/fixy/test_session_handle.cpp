@@ -825,9 +825,9 @@ struct TokenWire {
     using Wire = TokenWire<RootToken>;
     auto sender =
         s::mint_permissioned_session<s::Send<RootToken, s::End>, s::check::Enforced>(ctx, Wire{}, std::move(root));
-    auto sender_done = std::move(sender).send([](Wire& w, RootToken& token) noexcept {
+    auto sender_done = std::move(sender).send([](Wire& w, RootToken&& token) noexcept -> ::fixy::Option<RootToken> {
         static_cast<void>(w.slot.append(std::move(token)).expect("the wire is empty"));
-        return true;
+        return ::fixy::none;
     });
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoPerms>);
     Wire wire = std::move(sender_done).close();

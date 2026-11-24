@@ -968,11 +968,21 @@ public:
         using Receiver = typename detail::crash_transport::payload_receiver<Position, Peer>::type;
         const CrashCellCore* const receiver_cell = receiver_cell_<Receiver>(watched);
         // The send with a stop test makes plain calls, and the closure gives
-        // each shape of a trying write one.
-        auto write = [transport = std::move(transport)](Resource& resource, T& payload) mutable noexcept(
-                         std::is_nothrow_invocable_v<Transport&, Resource&, T&>) -> bool {
-            return std::invoke(transport, resource, payload);
-        };
+        // each shape of a trying write one.  A linear payload moves in, and the
+        // write gives it back while it has no room.
+        auto write = [transport = std::move(transport)]() mutable noexcept {
+            if constexpr (::foundation::linear::LinearValue<T>) {
+                return [transport = std::move(transport)](Resource& resource, T&& payload) mutable noexcept(
+                           std::is_nothrow_invocable_v<Transport&, Resource&, T&&>) -> ::fixy::Option<T> {
+                    return transport(resource, std::move(payload));
+                };
+            } else {
+                return [transport = std::move(transport)](Resource& resource, T& payload) mutable noexcept(
+                           std::is_nothrow_invocable_v<Transport&, Resource&, T&>) -> bool {
+                    return std::invoke(transport, resource, payload);
+                };
+            }
+        }();
         auto sent = HandleFactory::send(
             std::move(watched.inner_), std::move(value), std::move(write),
             [receiver_cell]() noexcept { return receiver_cell != nullptr && receiver_cell->has_crashed(); });

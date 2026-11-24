@@ -1034,22 +1034,23 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         if constexpr (slot_form_v<T> != SlotForm::Plain) {
             auto [message, next_slots] = HoldFactory::message_from_slots<T>(std::move(held_slots), std::move(value));
             if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-                detail::write_through<T>(transport, resource, message, endpoint);
+                detail::write_through<T>(transport, resource, std::move(message), endpoint);
                 return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
                                                                  std::move(next_slots), origin);
             } else {
-                ::fixy::Option<T> kept = detail::write_unless<T>(transport, stop, resource, message, endpoint);
+                ::fixy::Option<T> kept =
+                    detail::write_unless<T>(transport, stop, resource, std::move(message), endpoint);
                 auto next = step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
                                                                       std::move(next_slots), origin);
                 return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
             }
         } else if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-            detail::write_through<T>(transport, resource, value, endpoint);
+            detail::write_through<T>(transport, resource, std::move(value), endpoint);
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(std::move(held_slots));
             return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots),
                                                              origin);
         } else {
-            ::fixy::Option<T> kept = detail::write_unless<T>(transport, stop, resource, value, endpoint);
+            ::fixy::Option<T> kept = detail::write_unless<T>(transport, stop, resource, std::move(value), endpoint);
             HoldSlots<Next> slots = HoldFactory::as_set<Next>(std::move(held_slots));
             auto next =
                 step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots), origin);
@@ -1367,7 +1368,7 @@ public:
         const detail::step_origin origin = core.step_origin_();
         auto [resource, held_slots] = std::move(handle).release_parts_();
         auto [token, rest] = HoldFactory::take_slot<detail::token_tag_t<T>>(std::move(held_slots));
-        detail::write_through<T>(transport, resource, token, endpoint);
+        detail::write_through<T>(transport, resource, std::move(token), endpoint);
         return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
                                                          HoldFactory::as_set<Next>(std::move(rest)), origin);
     }
@@ -1402,7 +1403,7 @@ public:
         // function, and the compiler would print no reason.
         constexpr std::uint64_t step_word = detail::step_wire_word_of(^^Send<T, R>);
         std::size_t word = step_word;
-        detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
+        detail::write_through<std::size_t>(transport, core.live_resource_(), std::move(word), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
         auto [resource, slots] = std::move(handle).release_parts_();
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
@@ -1556,7 +1557,7 @@ public:
         // The word comes from the registry and not from branch_wire_word_v,
         // so a specialization of the public spelling never reaches the wire.
         std::size_t word = detail::branch_wire_word_of<Choice, I>();
-        detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
+        detail::write_through<std::size_t>(transport, core.live_resource_(), std::move(word), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
         auto [resource, slots] = std::move(handle).release_parts_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),

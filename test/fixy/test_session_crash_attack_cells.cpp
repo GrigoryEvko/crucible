@@ -95,9 +95,9 @@ void crash_between_check_and_write_loses_token() {
             auto [token, reply] = std::move(branch).recv(read_token);
             auto chosen = std::move(reply).template select<0>(push_label);
             auto [end, undelivered] =
-                std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token& held) noexcept {
+                std::move(chosen).send(std::move(token), [&cell_p, &to_p](Port& port, Token&& held) noexcept {
                     crash_endpoint(cell_p, to_p, s::CrashCause::Abort);
-                    return push_token(port, held);
+                    return push_token(port, std::move(held));
                 });
             // The label went before the crash, so the queue of p holds it
             // and must hold nothing more.
