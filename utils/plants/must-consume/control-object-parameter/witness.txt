@@ -1,0 +1,7 @@
+# The rule of the closures that move a capture (linear.cpp) admits each call
+# of this unit through an explicit object parameter: a call of an rvalue and
+# the once door.  The directory src/ has the enforce mode error, and the unit
+# compiles with no line of the rule.
+compile objects src/objects.cpp must-consume=on
+flag objects -freflection
+exit objects pass

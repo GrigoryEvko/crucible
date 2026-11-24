@@ -1,0 +1,45 @@
+// Closures whose call operator has an explicit object parameter that is no
+// rvalue reference (the closures that move a capture of linear.cpp).  Each
+// call borrows the closure, so a body that moves its capture out gives a
+// second value at a second call.  The plugin of main read only a call
+// operator with an implicit object, so it gave none of these lines.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+// Two calls through an object parameter by an lvalue reference.
+void two_calls_by_reference() {
+    auto give = [token = Token{1}]<class Self>(this Self& /*self*/) noexcept { return std::move(token); };
+    Token first = give();
+    Token second = give();
+    sink(std::move(first));
+    sink(std::move(second));
+}
+
+// Two calls through a forwarding object parameter on an lvalue, and then the
+// once door ends the closure: three values of one token.
+void two_calls_then_the_once_door() {
+    auto give = [token = Token{2}]<class Self>(this Self&& /*self*/) noexcept { return std::move(token); };
+    Token first = give();
+    Token second = give();
+    sink(std::move(first));
+    sink(std::move(second));
+    sink(::foundation::linear::call_once(std::move(give)));
+}
+
+}  // namespace planted

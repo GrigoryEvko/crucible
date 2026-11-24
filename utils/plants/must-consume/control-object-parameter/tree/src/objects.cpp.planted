@@ -1,0 +1,36 @@
+// Closures whose call operator has an explicit object parameter, and each
+// call that the rule admits: a call of an rvalue through an object parameter
+// by an rvalue reference, one call of an rvalue through a forwarding object
+// parameter, and the once door.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+// An object parameter by an rvalue reference: the call gives up the closure.
+void one_call_by_rvalue() {
+    auto give = [token = Token{1}]<class Self>(this Self&& /*self*/) noexcept { return std::move(token); };
+    sink(std::move(give)());
+}
+
+// The once door owns the closure and calls it one time as an rvalue.
+void once_door() {
+    auto give = [token = Token{2}]<class Self>(this Self&& /*self*/) noexcept { return std::move(token); };
+    sink(::foundation::linear::call_once(std::move(give)));
+}
+
+}  // namespace planted

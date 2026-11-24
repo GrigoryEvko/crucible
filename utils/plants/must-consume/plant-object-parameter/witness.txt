@@ -1,0 +1,23 @@
+# Closures whose call operator has an explicit object parameter that is no
+# rvalue reference (the closures that move a capture of linear.cpp): two
+# calls by an lvalue reference (lines 28 and 29), and two calls through a
+# forwarding object parameter on an lvalue before the once door (38 and 39).
+# Each call borrows the closure and moves the token out, so each call is the
+# kind closure-move-out.  The closure of line 27 has no consumer, which is the
+# kind unconsumed with the plugin of main too.  The directory src/ has the
+# enforce mode error, and the tree holds no ledger of must-consume, so each
+# counted line is a compile error.  The plugin of main gave none of the four
+# lines of closure-move-out.
+compile objects src/objects.cpp must-consume=on
+flag objects -freflection
+exit objects fail
+finding objects must-consume unconsumed src/objects.cpp:27:10 | planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>)
+finding objects must-consume closure-move-out src/objects.cpp:28:23 | planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>)
+finding objects must-consume closure-move-out src/objects.cpp:29:24 | planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>)
+finding objects must-consume closure-move-out src/objects.cpp:38:23 | planted::two_calls_then_the_once_door: give (planted::two_calls_then_the_once_door()::<lambda(this Self&&)>)
+finding objects must-consume closure-move-out src/objects.cpp:39:24 | planted::two_calls_then_the_once_door: give (planted::two_calls_then_the_once_door()::<lambda(this Self&&)>)
+error objects src/objects.cpp:27 | quarantine: unconsumed planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error objects src/objects.cpp:28 | quarantine: closure-move-out planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error objects src/objects.cpp:29 | quarantine: closure-move-out planted::two_calls_by_reference: give (planted::two_calls_by_reference()::<lambda(this Self&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error objects src/objects.cpp:38 | quarantine: closure-move-out planted::two_calls_then_the_once_door: give (planted::two_calls_then_the_once_door()::<lambda(this Self&&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error objects src/objects.cpp:39 | quarantine: closure-move-out planted::two_calls_then_the_once_door: give (planted::two_calls_then_the_once_door()::<lambda(this Self&&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

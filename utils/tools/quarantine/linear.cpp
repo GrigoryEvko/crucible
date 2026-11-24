@@ -395,7 +395,10 @@
 //
 // Closures that move a capture
 //     A call operator of a lambda has no qualifier &&, so each call of a
-//     closure reads its captures as members of a borrowed object.  A body
+//     closure reads its captures as members of a borrowed object.  A call
+//     operator with an explicit object parameter that is no rvalue reference,
+//     such as this auto& self, borrows its closure the same way
+//     (calls_moving_closure).  A body
 //     that consumes a linear capture, or a linear field of one, leaves a
 //     valid moved-from value in the closure.  So a second call gives a second
 //     value of one capture, such as a second exclusive token of one
@@ -1071,8 +1074,16 @@ bool calls_moving_closure(tree call) {
         return false;
     }
     tree callee = cp_get_callee_fndecl_nofold(call);
-    return callee != NULL_TREE && TREE_CODE(callee) == FUNCTION_DECL && TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE
-        && !FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(callee)) && closure_moves_out.count(DECL_UID(callee)) != 0;
+    if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || closure_moves_out.count(DECL_UID(callee)) == 0) {
+        return false;
+    }
+    // A call operator with an explicit object parameter that is no rvalue
+    // reference borrows its closure, as one with no qualifier && does.
+    if (DECL_XOBJ_MEMBER_FUNCTION_P(callee)) {
+        tree object = TREE_VALUE(TYPE_ARG_TYPES(TREE_TYPE(callee)));
+        return !(TYPE_REF_P(object) && TYPE_REF_IS_RVALUE(object));
+    }
+    return TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE && !FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(callee));
 }
 
 // True when TYPE, or the type that the reference TYPE names, is a closure
