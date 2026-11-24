@@ -1,5 +1,6 @@
 #pragma once
 
+#include <crucible/cog/Calibrated.h>
 #include <crucible/cog/CogIdentity.h>
 #include <fixy/Bits.h>
 #include <fixy/Core.h>
@@ -44,10 +45,6 @@ enum class PcieGen : std::uint8_t {
     Gen5 = 5,
     Gen6 = 6,
 };
-
-// A figure measured on this host rather than read from the vendor.
-template <typename T>
-using CalibratedValue = ::fixy::Tagged<T, ::fixy::tags::source::Calibrated>;
 
 // Each refinement below names its predicate, so a site that builds one
 // writes ::fixy::mint_refined<predicate>(value) and the check runs there.

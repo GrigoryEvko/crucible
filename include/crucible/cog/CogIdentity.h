@@ -1,5 +1,6 @@
 #pragma once
 
+#include <crucible/topology/TopologyEdge.h>
 #include <fixy/Core.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
@@ -15,13 +16,10 @@
 #include <type_traits>
 #include <utility>
 
-// The edge of the topology graph.  crucible/topology/TopologyGraph.h
-// defines it, and that header includes this one.  A caller that reads a
-// neighbor view, or asks for its size, needs the definition.  A caller that
-// only passes the view along does not.
-namespace crucible::topology {
-struct TopologyEdge;
-}  // namespace crucible::topology
+// A CogIdentity holds its neighbor edges as Views of TopologyEdge, which
+// crucible/topology/TopologyEdge.h defines.  So the edge is complete in each
+// unit that holds a CogIdentity, and a walk of the parts of a capture, such
+// as the store check of a frame door, reads it.
 
 namespace crucible::cog {
 
