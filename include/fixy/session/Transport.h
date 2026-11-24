@@ -45,6 +45,11 @@ namespace fixy::session {
 // call waits inside the transport, and it calls poll() on the scope while
 // it waits.  A transport of any other shape could wait where the watch does
 // not see it, so each operation refuses it with [Transport_Shape].
+//
+// A transport and a stop test hold no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h).  A step calls them again
+// while it waits, and a call is no consume, so a linear value that one of
+// them holds would end with no consume.
 
 template <typename F, typename Resource, typename T>
 concept TryWrite =
@@ -54,14 +59,19 @@ template <typename F, typename Resource, typename T>
 concept DeclaredWrite = !TryWrite<F, Resource, T> && std::is_invocable_v<F&, Resource&, T&&, watch::wait_scope&>
                      && std::is_void_v<std::invoke_result_t<F&, Resource&, T&&, watch::wait_scope&>>;
 
+// A write of one of the two shapes.  A door refuses a write of another shape
+// with [Transport_Shape].
 template <typename F, typename Resource, typename T>
-concept WriteTransport = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
+concept WriteShape = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
+
+template <typename F, typename Resource, typename T>
+concept WriteTransport = WriteShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>;
 
 // A stop test of a trying write: bool(), true when the write must stop
 // and give the value back to the caller.  A send with a stop test calls
 // the test and the write as plain calls, so each is a callable object.
 template <typename F>
-concept WriteStop = requires(F& stop) {
+concept WriteStop = ::foundation::linear::HoldsNoLinearValue<F> && requires(F& stop) {
     { stop() } -> std::same_as<bool>;
 };
 
@@ -78,8 +88,13 @@ template <typename F, typename Resource, typename T>
 concept DeclaredRead = !PollRead<F, Resource, T> && std::is_invocable_v<F&, Resource&, watch::wait_scope&>
                     && std::same_as<std::invoke_result_t<F&, Resource&, watch::wait_scope&>, T>;
 
+// A read of one of the two shapes.  A door refuses a read of another shape
+// with [Transport_Shape].
 template <typename F, typename Resource, typename T>
-concept ReadTransport = PollRead<F, Resource, T> || DeclaredRead<F, Resource, T>;
+concept ReadShape = PollRead<F, Resource, T> || DeclaredRead<F, Resource, T>;
+
+template <typename F, typename Resource, typename T>
+concept ReadTransport = ReadShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>;
 
 namespace detail {
 

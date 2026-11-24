@@ -569,7 +569,7 @@ public:
 
     template <typename T, typename Transport>
         requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
-                  && (!WriteTransport<Transport, resource_type, typename protocol::message_type>)
+                  && (!WriteShape<Transport, resource_type, typename protocol::message_type>)
     void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
                                         "false with the value unchanged while it has no room, or declares its wait, "
                                         "as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A write of "
@@ -585,7 +585,7 @@ public:
 
     template <typename Transport>
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
-                  && (!ReadTransport<Transport, resource_type, typename protocol::message_type>)
+                  && (!ReadShape<Transport, resource_type, typename protocol::message_type>)
     void recv(Transport) && = delete("[Transport_Shape] a read either polls, as fixy::Option<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
@@ -643,7 +643,7 @@ public:
 
     template <typename Transport>
         requires is_send_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
-                  && (!WriteTransport<Transport, resource_type, std::size_t>)
+                  && (!WriteShape<Transport, resource_type, std::size_t>)
     void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                      "bool(Resource&, std::size_t), or declares its wait, as "
                                      "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -668,7 +668,7 @@ public:
 
     template <typename Transport>
         requires is_recv_v<protocol> && is_keyed_step_v<protocol> && (!ChannelPole<resource_type>)
-                  && (!ReadTransport<Transport, resource_type, std::size_t>)
+                  && (!ReadShape<Transport, resource_type, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
                                      "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                      "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
@@ -699,7 +699,7 @@ public:
         "states the Local network.  A select with a label needs a pole table that moves the label word.");
 
     template <std::size_t I, typename Transport>
-        requires is_select_v<protocol> && (!WriteTransport<Transport, resource_type, std::size_t>)
+        requires is_select_v<protocol> && (!WriteShape<Transport, resource_type, std::size_t>)
     void select(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                        "bool(Resource&, std::size_t), or declares its wait, as "
                                        "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -727,7 +727,7 @@ public:
 
     template <typename Reader, typename Handler>
         requires is_offer_v<protocol> && (!ChannelPole<resource_type>)
-                  && (!ReadTransport<Reader, resource_type, std::size_t>)
+                  && (!ReadShape<Reader, resource_type, std::size_t>)
     void branch(Reader, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
                                              "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                              "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of "

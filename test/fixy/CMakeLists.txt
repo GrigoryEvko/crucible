@@ -3393,6 +3393,14 @@ fixy_neg_compile_test(neg_sess_send_a_forked_head
 fixy_neg_compile_test(neg_sess_pin_body_captures_the_handle
   "use of deleted function"
   "Pin_Body_Holds_A_Handle. the body of a pin captures a session handle")
+# A pin and a transport hold no linear value by value: the door calls them
+# and does not own them, and a call is no consume.
+fixy_neg_compile_test(neg_sess_pin_body_holds_linear
+  "use of deleted function .static void fixy::session::HandleFactory::pin"
+  "the body holds a linear value by value, and the door calls it with no consume")
+fixy_neg_compile_test(neg_sess_transport_holds_linear
+  "no matching function for call to .fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::Continue>"
+  "required for the satisfaction of .HoldsNoLinearValue<F>.")
 fixy_neg_compile_test(neg_sess_send_view
   "no matching function for call to .mint_session<neg_sess_send_view_types::Proto>"
   "Payload_Not_Owned.: a payload of the protocol cannot move to another thread, or it holds a borrow"

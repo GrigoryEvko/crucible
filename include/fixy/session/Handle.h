@@ -1195,10 +1195,13 @@ public:
     // program runs, which the liveness check ends, or a none of the emptied
     // Option.
     //
-    // A pin is a bind, the body and a release in one scope.
+    // A pin is a bind, the body and a release in one scope.  The pin calls
+    // the body of its caller and does not own it, so the body holds no
+    // linear value by value (HoldsNoLinearValue of foundation/Linear.h).
     template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
               typename Body>
-        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>) && PinBody<Body>
+        requires ::foundation::effects::IsExecCtx<Ctx> && (!is_terminal_state_v<Proto>)
+              && PinBody<Body> && ::foundation::linear::HoldsNoLinearValue<Body>
               && detail::PinBodyGivesAPinnedHandle<
                      Body, SessionHandle<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>>
     [[nodiscard]] static constexpr auto
@@ -1218,6 +1221,12 @@ public:
                                      "reference or a pointer to one, or a Ref of one.  The pin holds the handle for "
                                      "the run of the body, so the body must reach it only through the pinned handle "
                                      "that it gets.");
+
+    template <typename Ctx, typename Proto, typename Resource, typename LoopCtx, AbandonAction Action, typename PS,
+              typename Body>
+        requires PinBody<Body> && (!::foundation::linear::HoldsNoLinearValue<Body>)
+    static void pin(Ctx const&, SessionHandle<Proto, Resource, LoopCtx, check::detail::tracked_policy<Action>, PS>&&,
+                    Body&&) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // Binds a tracked handle to the calling thread for the rest of its life:
     // the one holder check of a pin, with no body.  The bound handle holds the
@@ -1284,7 +1293,7 @@ public:
     template <typename T, typename R, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
               typename Transport, typename Stop = detail::no_write_stop>
         requires(!is_keyed_step_v<Send<T, R>>) && (slot_form_v<T> != SlotForm::Token) && (!ChannelPole<Resource>)
-             && WriteTransport<Transport, Resource, T>
+             && WriteTransport<Transport, Resource, T> && ::foundation::linear::HoldsNoLinearValue<Stop>
              && (std::is_same_v<Stop, detail::no_write_stop>
                  || (CallableTryWrite<Transport, Resource, T> && WriteStop<Stop>))
     [[nodiscard]] static constexpr auto
@@ -2038,7 +2047,7 @@ public:
 
     template <typename Transport>
         requires(!is_keyed) && (slot_form != SlotForm::Token) && (!ChannelPole<Resource>)
-                 && (!WriteTransport<Transport, Resource, T>)
+                 && (!WriteShape<Transport, Resource, T>)
     void send(detail::sent_value_t<T>, Transport) && = delete(
         "[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns false with the value unchanged "
         "while it has no room, or declares its wait, as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A "
@@ -2118,7 +2127,7 @@ public:
         "label word.  A write of the caller would move the words of one channel in two ways.");
 
     template <typename Transport>
-        requires is_keyed && (!ChannelPole<Resource>) && (!WriteTransport<Transport, Resource, std::size_t>)
+        requires is_keyed && (!ChannelPole<Resource>) && (!WriteShape<Transport, Resource, std::size_t>)
     void send(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                      "bool(Resource&, std::size_t), or declares its wait, as "
                                      "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -2172,7 +2181,7 @@ public:
     }
 
     template <typename Transport>
-        requires(!is_keyed) && (!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, T>)
+        requires(!is_keyed) && (!ChannelPole<Resource>) && (!ReadShape<Transport, Resource, T>)
     void recv(Transport) && = delete("[Transport_Shape] a read either polls, as fixy::Option<T>(Resource&), and "
                                      "returns no value while nothing is there, or declares its wait, as "
                                      "T(Resource&, fixy::session::watch::wait_scope&).  A read of another shape can "
@@ -2206,7 +2215,7 @@ public:
         "label word.  A read of the caller would move the words of one channel in two ways.");
 
     template <typename Transport>
-        requires is_keyed && (!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, std::size_t>)
+        requires is_keyed && (!ChannelPole<Resource>) && (!ReadShape<Transport, Resource, std::size_t>)
     void recv(Transport) && = delete("[Transport_Shape] a read of a word either polls, as "
                                      "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                      "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read of another "
@@ -2268,7 +2277,7 @@ public:
     }
 
     template <std::size_t I, typename Transport>
-        requires(!WriteTransport<Transport, Resource, std::size_t>)
+        requires(!WriteShape<Transport, Resource, std::size_t>)
     void select(Transport) && = delete("[Transport_Shape] a write of a word either tries, as "
                                        "bool(Resource&, std::size_t), or declares its wait, as "
                                        "void(Resource&, std::size_t, fixy::session::watch::wait_scope&).  A write of "
@@ -2402,7 +2411,7 @@ public:
         "branch needs a pole table that moves the label word.  A test picks a branch with pick_local<I>(ctx).");
 
     template <typename Transport, typename Handler>
-        requires(!ChannelPole<Resource>) && (!ReadTransport<Transport, Resource, std::size_t>)
+        requires(!ChannelPole<Resource>) && (!ReadShape<Transport, Resource, std::size_t>)
     void branch(Transport, Handler) && = delete("[Transport_Shape] a read of a word either polls, as "
                                                 "fixy::Option<std::size_t>(Resource&), or declares its wait, as "
                                                 "std::size_t(Resource&, fixy::session::watch::wait_scope&).  A read "
