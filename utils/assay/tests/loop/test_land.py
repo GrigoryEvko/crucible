@@ -3361,6 +3361,43 @@ def plain_cases(expect: testing.Expect) -> None:
         )
 
 
+def tree_refusal(directory: Path, given: land.Options) -> str:
+    """Return the refusal of the tree of a request in a directory, or "" when the request has a tree."""
+    try:
+        land.request_tree(directory, given)
+    except land.LandError as problem:
+        return str(problem)
+    return ""
+
+
+def tree_cases(expect: testing.Expect) -> None:
+    """Hold the tree of a request: the main work tree for a series, and no landing from another tree without one."""
+    with tempfile.TemporaryDirectory(prefix="land-tree-") as work_text:
+        work = Path(work_text)
+        root = work / "repo"
+        planted_repository(root)
+        planted_branch(root, "topic", (({"a.txt": "a\n"}, "Add a\n"),))
+        tree = work / "topic-tree"
+        git.run(root, "worktree", "add", str(tree), "topic")
+        series = replace(options(), series="topic")
+        found = [land.request_tree(directory, series).resolve() for directory in (root, tree, tree / "utils")]
+        expect(
+            f"a series has the main work tree as its tree, from the main work tree and from a different one: {found}",
+            found == [root.resolve()] * 3 and land.branch_of(found[1]) != land.branch_of(tree),
+        )
+        checked = options(is_check=True)
+        expect(
+            f"a request with no series lands from the main work tree, and the tree of a branch refuses it: "
+            f"{tree_refusal(tree, options())}",
+            tree_refusal(root, options()) == ""
+            and "is not the main work tree" in tree_refusal(tree, options())
+            and all(
+                land.request_tree(tree, given).resolve() == tree.resolve()
+                for given in (checked, options(is_dry_run=True), options(is_tree_only=True))
+            ),
+        )
+
+
 def series_landing(
     root: Path, scratch: Path, branch: str, check: land.Check
 ) -> tuple[dict[int, land.Decision], land.BatchLanding]:
@@ -4531,6 +4568,7 @@ def main(argv: list[str]) -> int:
             line_cases,
             stack_thread_cases,
             plain_cases,
+            tree_cases,
             series_cases,
             series_words_cases,
             series_cost_cases,

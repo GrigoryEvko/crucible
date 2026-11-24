@@ -116,7 +116,10 @@ Series
     message, as one request (series_request()).  The author of each commit
     is the configured identity.  A series takes no -m, no patch, no edit and
     no own path.  --all-configurations, --jobs, --right-of-way, --check,
-    --dry-run and --tree apply to the whole series.
+    --dry-run and --tree apply to the whole series.  The command in a
+    different work tree of the repository lands the same series on main
+    (request_tree()).  A request with no series lands only from the main
+    work tree, because a landing moves the branch of its tree.
       * The request holds the patch of each commit against its first parent,
         and the message of the commit.  The process writes the request
         into the file NUMBER.series of the queue.  An earlier copy of this
@@ -1483,6 +1486,29 @@ def plain_words(current: Path) -> tuple[Path, list[str]]:
             f"takes only the commits.  Commit the change, then run loop land again"
         )
     return main_tree, ["--series", branch, "--budget-reason", PLAIN_BUDGET_REASON, END_OF_OPTIONS]
+
+
+def request_tree(current: Path, options: Options) -> Path:
+    """Return the work tree of a request, whose branch its landing moves (the series).
+
+    A series takes its commits from a branch and no file from a work tree, so its tree is the main work tree from each
+    directory of the repository.  Each other request reads its own paths from the tree of the directory.
+
+    Raises:
+        LandError: If a request with no series lands from a tree that is not the main work tree
+        git.GitError: If the directory is not in a git work tree
+    """
+    tree = git.toplevel(current)
+    main_tree = heavy.main_work_tree(tree)
+    if options.series:
+        return main_tree
+    does_land = not (options.is_check or options.is_dry_run or options.is_tree_only)
+    if does_land and tree.resolve() != main_tree.resolve():
+        raise LandError(
+            f"a landing moves the branch of its work tree, and {tree} is not the main work tree {main_tree}.  Commit "
+            f"the change on a branch and run loop land with no words in its tree, or give --series BRANCH"
+        )
+    return tree
 
 
 def series_request(root: Path, revision: str, directory: Path) -> Request:
@@ -4555,7 +4581,7 @@ def main(argv: list[str]) -> int:
         if not argv:
             current, words = plain_words(current)
         request, options = parse(words, current)
-        root = git.toplevel(current)
+        root = request_tree(current, options)
         with tempfile.TemporaryDirectory(prefix="loop-land-series-") as scratch:
             if options.series:
                 request = series_request(root, options.series, Path(scratch))
