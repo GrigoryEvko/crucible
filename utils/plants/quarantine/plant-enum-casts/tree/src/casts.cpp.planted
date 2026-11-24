@@ -1,0 +1,76 @@
+// A quarantined unit.  Each cast of a number into an enumeration with
+// enumerators is the kind enum-cast: a static_cast of a variable (line 23), a
+// functional cast (24), a braced cast (25), a cast of C (26), a cast of a
+// float (27), a constant that names no enumerator (28) and one that names an
+// enumerator (29), a cast from another enumeration (30), the cast of a field
+// (31), the initializer of a constant of the namespace (32), the braced
+// initializer of a declaration (34), a default member initializer (37), a
+// cast in a template body (43), a cast to a parameter of a template in its
+// instance (48), and a cast into the enumeration Code, which has no mark
+// open_values (52).  An empty brace whose 0 names no enumerator counts at its
+// variable (55), its data member (58) and its argument (61).  The instance of
+// the door of the base header (66) is a place of the base, and the opt-out
+// region turns its cast into opted-out (70).
+#include <fixy/Field.h>
+#include <foundation/Quarantine.h>
+
+namespace planted {
+
+using ::fixy::field::Phase;
+enum class Mirror : unsigned char { forward = 0, backward = 1, optimizer = 2, other = 3 };
+enum class Gap : signed char { low = 1, high = 5 };
+
+Phase from_variable(unsigned char raw) { return static_cast<Phase>(raw); }
+Phase from_functional(unsigned char raw) { return Phase(raw); }
+Phase from_braced(unsigned char raw) { return Phase{raw}; }
+Phase from_c(int raw) { return (Phase)raw; }
+Phase from_float(float raw) { return static_cast<Phase>(raw); }
+Gap from_unnamed_constant() { return static_cast<Gap>(3); }
+Phase from_named_constant() { return static_cast<Phase>(2); }
+Mirror from_enumeration(Phase phase) { return static_cast<Mirror>(phase); }
+Phase from_field(unsigned char flags) { return static_cast<Phase>((flags & 0x30) >> 4); }
+constexpr Gap kUnnamed = static_cast<Gap>(4);
+
+Gap from_declaration() { Gap const declared{7}; return declared; }
+
+struct Holder {
+    Gap gap = static_cast<Gap>(9);
+};
+Holder make_holder() { return Holder{}; }
+
+template <class T>
+Phase in_pattern(T raw) {
+    return static_cast<Phase>(raw);
+}
+
+template <class E>
+E in_instance(int raw) {
+    return E(raw);
+}
+
+enum class Code : unsigned short { one = 1, two = 2 };
+Code from_code(unsigned short raw) { return static_cast<Code>(raw); }
+
+Gap empty_variable() {
+    Gap const empty{};
+    return empty;
+}
+struct EmptyHolder {
+    Gap gap{};
+};
+EmptyHolder make_empty_holder() { return EmptyHolder{}; }
+Gap pass(Gap const& gap) { return gap; }
+Gap empty_argument() { return pass(Gap{}); }
+
+Phase use_templates(int raw) { return in_pattern(raw) == in_instance<Phase>(raw) ? Phase::forward : Phase::other; }
+
+Phase through_base_door(unsigned char raw) { return ::fixy::field::read_checked<Phase>(raw); }
+
+Phase probe(unsigned char raw) {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test forges a phase")
+    Phase const forged = static_cast<Phase>(raw);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return forged;
+}
+
+}  // namespace planted

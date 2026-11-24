@@ -1,0 +1,52 @@
+// A quarantined unit with no cast of a number into an enumeration with
+// enumerators: an enumerator, a read of a constant, a cast into an
+// enumeration with no enumerator, a cast into the enumeration Code with the
+// mark open_values, an empty brace whose 0 names an enumerator, a read
+// through a reference, a read and a write of a bit field, the fold of a
+// conditional expression whose arms are enumerators, and a value parameter of
+// a template.  A cast in the condition of a static_assert of the namespace
+// (line 52) is a known gap: the front end folds it while it parses, and no
+// tree keeps it.
+#include <foundation/ByteSeal.h>
+
+namespace planted {
+
+enum class Phase : unsigned char { forward = 0, backward = 1, optimizer = 2, other = 3 };
+enum class Error : unsigned char { empty_input = 0, malformed = 1 };
+enum class Open : unsigned int {};
+enum class [[= ::foundation::core::open_values{}]] Code : unsigned short { one = 1, two = 2 };
+
+constexpr Phase kRead = Phase::other;
+Phase read_constant() { return kRead; }
+Phase enumerator() { return Phase::backward; }
+Open open_value(unsigned int raw) { return static_cast<Open>(raw); }
+Code from_code(unsigned short raw) { return static_cast<Code>(raw); }
+Code empty_code() { return Code{}; }
+Phase default_value() { return Phase{}; }
+Phase through_reference(Phase const& phase) { return phase; }
+
+struct Defaults {
+    Phase phase{};
+    Code code{};
+};
+Defaults make_defaults() { return Defaults{}; }
+
+struct Packed {
+    Phase phase : 2;
+};
+Phase read_bit_field(Packed const& packed) { return packed.phase; }
+void write_bit_field(Packed& packed, Phase phase) { packed.phase = phase; }
+
+Error fold_of_arms(int admitted, int records) { return admitted == records ? Error::empty_input : Error::malformed; }
+
+template <Phase P>
+Phase value_parameter() {
+    return P;
+}
+Phase use_value_parameter() { return value_parameter<Phase::optimizer>(); }
+
+constexpr int rank_of(Phase phase) { return phase == Phase::forward ? 1 : 0; }
+
+}  // namespace planted
+
+static_assert(planted::rank_of(static_cast<planted::Phase>(7)) == 0);

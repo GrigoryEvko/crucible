@@ -1,0 +1,16 @@
+#pragma once
+
+// A base header.  Its door casts a number into an enumeration after a mask,
+// as fixy::enum_from_field does.  A place of the base is no place of the kind
+// enum-cast, so the door and each instance of it give no finding.
+
+namespace fixy::field {
+
+enum class Phase : unsigned char { forward = 0, backward = 1, optimizer = 2, other = 3 };
+
+template <class E>
+constexpr E read_checked(unsigned char raw) {
+    return static_cast<E>(raw & 0x3);
+}
+
+}  // namespace fixy::field

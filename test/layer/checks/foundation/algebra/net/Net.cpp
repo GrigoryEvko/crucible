@@ -2,6 +2,8 @@
 
 #include <foundation/algebra/net/Net.h>
 
+#include <foundation/Quarantine.h>
+
 #include <cstdint>
 
 namespace foundation::algebra::net {
@@ -702,8 +704,10 @@ static_assert(explain_fault(identity, NetFault{.code = NetFaultCode::PortWithout
 static_assert(explain_fault(identity, NetFault{.code = NetFaultCode::WireNotDual, .wire = 900})
                   .says("net: wire 900 joins port 'left' of agent 'par' (node 0) of type A? with port 'left' of agent "
                         "'par' (node 0) of type A?, which is not its dual."));
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the fault code names no enumerator, as a code that no check gives")
 static_assert(explain_fault(identity, NetFault{.code = static_cast<NetFaultCode>(99)})
                   .says("net: the fault has a code that no check gives."));
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 static_assert(explain_signature_fault_(proofs, NetFault{.code = NetFaultCode::WireNotDual})
                   .says("net: the fault names a net, and the signature alone cannot name its places."));
 static_assert(explain_fault(identity, NetFault{}).is_admitted());

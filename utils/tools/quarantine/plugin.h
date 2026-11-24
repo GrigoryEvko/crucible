@@ -180,6 +180,17 @@
 //                           union with a second member of bytes.  It is an
 //                           error in each file under the root and in each
 //                           mode (the closed tags of library.cpp)
+//     enum-cast             a cast of a number, a bool or a value of another
+//                           enumeration into an enumeration with enumerators,
+//                           in a quarantined file: a static_cast, a functional
+//                           cast, a braced cast, a cast of C and the braced
+//                           initializer of a declaration, and an empty brace
+//                           E{} whose 0 names no enumerator.  Such a cast can
+//                           make a value that names no enumerator.  An
+//                           enumeration with the mark open_values takes each
+//                           value.  fixy::enum_from and fixy::enum_from_field
+//                           are the doors (the casts into an enumeration of
+//                           expression.cpp)
 //     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the
@@ -1069,6 +1080,7 @@ enum class Kind : std::uint8_t {
     base_c_library_object,
     base_c_library_call,
     forged_tag,
+    enum_cast,
     contract_specifier,
     binding_hook,
     borrow_match,
@@ -1380,6 +1392,8 @@ inline const char* kind_name(Kind kind) {
             return "base-c-library-call";
         case Kind::forged_tag:
             return "forged-tag";
+        case Kind::enum_cast:
+            return "enum-cast";
         case Kind::contract_specifier:
             return "contract-specifier";
         case Kind::binding_hook:
@@ -1998,6 +2012,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "base-c-library-object"},
     {"quarantine", "base-c-library-call"},
     {"quarantine", "forged-tag"},
+    {"quarantine", "enum-cast"},
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},

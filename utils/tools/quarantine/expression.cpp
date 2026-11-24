@@ -137,6 +137,48 @@
 //     location, so a route that a macro forms counts in the file that expands
 //     the macro.
 //
+// Casts into an enumeration (the rule quarantine)
+//     A cast of a number, a bool or a value of another enumeration into an
+//     enumeration with enumerators is the kind enum-cast, in a quarantined
+//     file only.  The cast can make a value that names no enumerator, and a
+//     switch over the enumerators then takes no arm.  The doors of the base
+//     are fixy::enum_from, which gives no value for a number that names no
+//     enumerator, and fixy::enum_from_field, which reads a field whose each
+//     value names an enumerator.  An enumeration with no enumerator, such as
+//     std::byte, and an enumeration with the mark open_values of
+//     foundation/ByteSeal.h take each value of the underlying type.
+//     Outside a template, a cast is a conversion to the enumeration from a
+//     number, or the location wrapper of a constant of the enumeration that a
+//     fold of such a conversion gives.  A cast with an operand counts also
+//     when its constant names an enumerator: the source writes the
+//     enumerator.  An empty brace E{}, E x{} or E() is the value 0, the
+//     InitSafe form of a field, and it counts only when 0 names no
+//     enumerator.  Its place is the variable, the data member of a default
+//     member initializer, or the return.  The front end keeps a cast of a
+//     constant as a wrapper, and an empty brace mostly as a bare constant, so
+//     a wrapper counts as an empty brace only when the source spells {} there
+//     (spells_empty_brace_at).  The fold of flag ? E::one : E::zero into a
+//     conversion of flag has its caret at the '?', so it is no cast
+//     (spells_enum_cast_at).  A change of cv-qualifiers and the read of a bit
+//     field of the enumeration are no casts.  In a template body, a static_cast and a functional cast to an
+//     enumeration that does not depend on a parameter count in the pattern.
+//     The body of each instantiation of a template of a quarantined file
+//     counts too, so a cast to a parameter of the template counts at the
+//     place of the cast.  The front end folds the initializer of a constant
+//     while it parses, and PLUGIN_FOLDED_INITIALIZER gives the tree before the
+//     fold.  The places of the base are no places of the kind, so the door of
+//     the base and each instance of it give no finding.
+//     The front end folds some constant expressions while it parses and keeps
+//     no tree of them: the condition of a static_assert, a template argument,
+//     a bound of an array, a case label and the condition of an if constexpr.
+//     A cast there gives no finding.  A braced cast in a template that no
+//     unit instantiates gives no finding, because the pattern keeps a braced
+//     cast as a list with no location.  A zero that a value initialization
+//     gives with no brace in the source, such as a data member with no
+//     initializer in S s{}, gives no finding: each field has an initializer
+//     (InitSafe).  The entity is ENUMERATION from TYPE, ENUMERATION from the
+//     constant VALUE, or ENUMERATION from the empty brace.
+//
 // Refined parameters (the rule refined-pre-subsumption)
 //     A parameter of a specialization of fixy::Refinement, the class of
 //     fixy::Refined and fixy::SealedRefined, carries the proof of the
@@ -687,6 +729,358 @@ void check_unlocated_cast(tree conversion, location_t location) {
         return;
     }
     record_route(Kind::route_pointer_cast, location, qualified_name(TYPE_MAIN_DECL(proof)));
+}
+
+// ── The casts into an enumeration (the rule quarantine) ─────────────────
+
+// True when TYPE is an enumeration with at least one enumerator and no mark
+// open_values of foundation/ByteSeal.h: a number that no enumerator names is
+// then no value of it.
+bool is_closed_enumeration(tree type) {
+    static tree const open_values = get_identifier("open_values");
+    static tree const core = get_identifier("core");
+    if (type == NULL_TREE || TREE_CODE(type) != ENUMERAL_TYPE) {
+        return false;
+    }
+    tree main_type = TYPE_MAIN_VARIANT(type);
+    return COMPLETE_TYPE_P(main_type) && TYPE_VALUES(main_type) != NULL_TREE
+        && !carries_base_annotation(TYPE_ATTRIBUTES(main_type), open_values, core);
+}
+
+// True when the constant VALUE is the value of an enumerator of TYPE.
+// Complexity: linear in the enumerators of TYPE.
+bool names_enumerator(tree type, tree value) {
+    for (tree item = TYPE_VALUES(TYPE_MAIN_VARIANT(type)); item != NULL_TREE; item = TREE_CHAIN(item)) {
+        tree constant = TREE_VALUE(item);
+        if (constant != NULL_TREE && TREE_CODE(constant) == CONST_DECL) {
+            constant = DECL_INITIAL(constant);
+        }
+        if (constant != NULL_TREE && TREE_CODE(constant) == INTEGER_CST && tree_int_cst_equal(constant, value)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The source of a cast: OPERAND through each location wrapper and each
+// conversion of a number.
+tree enum_cast_source(tree operand) {
+    for (int depth = 0; operand != NULL_TREE && depth < kTypeDepth; ++depth) {
+        operand = tree_strip_any_location_wrapper(operand);
+        bool const is_conversion = CONVERT_EXPR_P(operand) || TREE_CODE(operand) == NON_LVALUE_EXPR;
+        if (!is_conversion || TREE_TYPE(operand) == NULL_TREE || !INTEGRAL_TYPE_P(TREE_TYPE(operand))
+            || TREE_OPERAND(operand, 0) == NULL_TREE) {
+            break;
+        }
+        operand = TREE_OPERAND(operand, 0);
+    }
+    return operand;
+}
+
+// True when SOURCE is a read of a bit field whose declared type is TARGET:
+// the front end reads the bits as an integer and converts them.
+bool is_bit_field_read(tree source, tree target) {
+    if (source == NULL_TREE || TREE_CODE(source) != COMPONENT_REF) {
+        return false;
+    }
+    tree field = TREE_OPERAND(source, 1);
+    return field != NULL_TREE && TREE_CODE(field) == FIELD_DECL && DECL_BIT_FIELD_TYPE(field) != NULL_TREE
+        && TYPE_MAIN_VARIANT(DECL_BIT_FIELD_TYPE(field)) == TYPE_MAIN_VARIANT(target);
+}
+
+// False when the caret of LOCATION is a '?': the fold of a conditional
+// expression whose two arms are enumerators, such as flag ? E::one : E::zero,
+// converts the condition to the enumeration with the caret at the '?'.  Each
+// cast that the source spells has another caret: the keyword static_cast, the
+// name of the type, the parenthesis of a cast of C, the initializer of a
+// declaration such as E name{2}, or the operator of the operand when the fold
+// moves the conversion onto it, as in static_cast<E>(byte % count).  A line
+// that the file cache cannot read counts as a cast, so the check fails closed.
+// Complexity: O(1) after the read of the line.
+bool spells_enum_cast_at(location_t location) {
+    location_t caret =
+        linemap_resolve_location(line_table, get_pure_location(line_table, location), LRK_SPELLING_LOCATION, nullptr);
+    expanded_location at = expand_location(caret);
+    if (at.file == nullptr || at.line <= 0 || at.column <= 0) {
+        return true;
+    }
+    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(at.file, at.line);
+    std::size_t const index = static_cast<std::size_t>(at.column - 1);
+    return !line || index >= line.length() || line.get_buffer()[index] != '?';
+}
+
+// True when the source spells an empty brace at the caret of LOCATION: the
+// name of a type and {} as in E{}, or {} itself.  A line that the file cache
+// cannot read gives false, so the brace counts as a cast.  Complexity: linear
+// in the length of the line.
+bool spells_empty_brace_at(location_t location) {
+    location_t caret =
+        linemap_resolve_location(line_table, get_pure_location(line_table, location), LRK_SPELLING_LOCATION, nullptr);
+    expanded_location at = expand_location(caret);
+    if (at.file == nullptr || at.line <= 0 || at.column <= 0) {
+        return false;
+    }
+    diagnostics::char_span line = global_dc->get_file_cache().get_source_line(at.file, at.line);
+    if (!line) {
+        return false;
+    }
+    std::string const text(line.get_buffer(), line.length());
+    std::size_t index = static_cast<std::size_t>(at.column - 1);
+    auto const is_name_byte = [](char byte) {
+        return (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
+            || byte == '_' || byte == ':';
+    };
+    while (index < text.size() && is_name_byte(text[index])) {
+        ++index;
+    }
+    if (index < text.size() && text[index] == '<') {
+        for (int depth = 0; index < text.size(); ++index) {
+            if (text[index] == '<') {
+                ++depth;
+            } else if (text[index] == '>' && --depth == 0) {
+                ++index;
+                break;
+            }
+        }
+    }
+    auto skip_spaces = [&text, &index] {
+        while (index < text.size() && (text[index] == ' ' || text[index] == '\t')) {
+            ++index;
+        }
+    };
+    skip_spaces();
+    if (index >= text.size() || text[index] != '{') {
+        return false;
+    }
+    ++index;
+    skip_spaces();
+    return index < text.size() && text[index] == '}';
+}
+
+// The finding enum-cast at LOCATION, in a quarantined file only.
+void record_enum_cast(location_t location, tree target, std::string const& from) {
+    Place place = place_of(location, Scope::quarantine);
+    if (place.file_class != FileClass::quarantined || place.file == nullptr || !spells_enum_cast_at(location)) {
+        return;
+    }
+    add_finding(Kind::enum_cast, nullptr, place, type_text(TYPE_MAIN_VARIANT(target)) + " from " + from);
+}
+
+// The text of the source of a cast: its type, or the value of a constant.
+std::string enum_cast_source_text(tree source) {
+    if (TREE_CODE(source) == INTEGER_CST && tree_fits_shwi_p(source)) {
+        return "the constant " + std::to_string(tree_to_shwi(source));
+    }
+    if (TREE_CODE(source) == INTEGER_CST && tree_fits_uhwi_p(source)) {
+        return "the constant " + std::to_string(tree_to_uhwi(source));
+    }
+    return type_text(TYPE_MAIN_VARIANT(TREE_TYPE(source)));
+}
+
+// The source text of a value of the empty brace E{} or E x{} whose 0 names no
+// enumerator.
+constexpr char kEmptyBrace[] = "the empty brace, whose value 0 names no enumerator";
+
+// True when VALUE is the constant 0 of a closed enumeration whose 0 names no
+// enumerator, with no location wrapper: the value of an empty brace E{},
+// E x{} or E(), which the front end keeps as a bare constant.  A cast with an
+// operand keeps a wrapper or gives a folded initializer, so it is no such
+// value.
+bool is_unnamed_zero(tree value) {
+    return value != NULL_TREE && TREE_CODE(value) == INTEGER_CST && integer_zerop(value)
+        && is_closed_enumeration(TREE_TYPE(value)) && !names_enumerator(TREE_TYPE(value), value);
+}
+
+// The variables whose folded initializer gave a cast, by DECL_UID, so the
+// bare value that the fold leaves gives no second finding.
+std::unordered_set<unsigned> enum_cast_folded_variables;
+
+// An empty brace whose 0 names no enumerator, at the place of the object that
+// it initializes: a variable, a data member through its default member
+// initializer, or the result of a function at LOCATION.  TARGET is the object
+// and VALUE the value of an INIT_EXPR, a field of a CONSTRUCTOR or the
+// initializer of a variable.
+void check_zero_init(tree target, tree value, location_t location) {
+    if (!is_unnamed_zero(value) || target == NULL_TREE) {
+        return;
+    }
+    location_t place = UNKNOWN_LOCATION;
+    if (VAR_P(target) && enum_cast_folded_variables.count(DECL_UID(target)) == 0) {
+        place = DECL_SOURCE_LOCATION(target);
+    } else if (TREE_CODE(target) == COMPONENT_REF && TREE_CODE(TREE_OPERAND(target, 1)) == FIELD_DECL) {
+        place = DECL_SOURCE_LOCATION(TREE_OPERAND(target, 1));
+    } else if (TREE_CODE(target) == FIELD_DECL) {
+        place = DECL_SOURCE_LOCATION(target);
+    } else if (TREE_CODE(target) == RESULT_DECL) {
+        place = location;
+    }
+    if (place != UNKNOWN_LOCATION) {
+        record_enum_cast(place, TREE_TYPE(value), kEmptyBrace);
+    }
+}
+
+// A cast of a number into an enumeration with enumerators (the casts into an
+// enumeration).  NODE is a conversion to the enumeration from a number, the
+// location wrapper of a constant of the enumeration, or in a template body a
+// static_cast or a functional cast.  The cast counts at LOCATION.
+void check_enum_cast(tree node, location_t location) {
+    tree target = TREE_TYPE(node);
+    if (!is_closed_enumeration(target)) {
+        return;
+    }
+    tree operand = NULL_TREE;
+    switch (TREE_CODE(node)) {
+        case NOP_EXPR:
+        case CONVERT_EXPR:
+        case FIX_TRUNC_EXPR:
+        case STATIC_CAST_EXPR:
+            operand = TREE_OPERAND(node, 0);
+            break;
+        case NON_LVALUE_EXPR:
+            // The fold of a cast of a constant keeps the location of the cast
+            // on the wrapper of the constant.  An enumerator keeps its
+            // CONST_DECL, so it is no such constant.  An empty brace E{} is
+            // the value 0, and it counts only when 0 names no enumerator.
+            // Each other constant has an operand, and it counts also when it
+            // names an enumerator: the source writes the enumerator.
+            operand = TREE_OPERAND(node, 0);
+            if (operand == NULL_TREE || TREE_CODE(operand) != INTEGER_CST) {
+                return;
+            }
+            if (!spells_empty_brace_at(location)) {
+                record_enum_cast(location, target, enum_cast_source_text(operand));
+            } else if (!names_enumerator(target, operand)) {
+                record_enum_cast(location, target, kEmptyBrace);
+            }
+            return;
+        case CAST_EXPR: {
+            tree arguments = TREE_OPERAND(node, 0);
+            if (arguments == NULL_TREE || TREE_CODE(arguments) != TREE_LIST || TREE_CHAIN(arguments) != NULL_TREE) {
+                return;
+            }
+            operand = TREE_VALUE(arguments);
+            break;
+        }
+        default:
+            return;
+    }
+    tree source = enum_cast_source(operand);
+    if (source == NULL_TREE || TREE_TYPE(source) == NULL_TREE || uses_template_parms(TREE_TYPE(source))) {
+        return;
+    }
+    tree type = TREE_TYPE(source);
+    if (!INTEGRAL_TYPE_P(type) && !SCALAR_FLOAT_TYPE_P(type)) {
+        return;
+    }
+    if (TYPE_MAIN_VARIANT(type) == TYPE_MAIN_VARIANT(target) || is_bit_field_read(source, target)) {
+        return;
+    }
+    record_enum_cast(location, target, enum_cast_source_text(source));
+}
+
+// The empty braces at NODE (the casts into an enumeration): the value of an
+// INIT_EXPR, each field of a CONSTRUCTOR, and the initializer of a local
+// variable.  LOCATION is the place of the result of a function.
+void check_empty_braces(tree node, location_t location) {
+    switch (TREE_CODE(node)) {
+        case INIT_EXPR:
+            check_zero_init(TREE_OPERAND(node, 0), TREE_OPERAND(node, 1), location);
+            break;
+        case DECL_EXPR:
+            if (tree decl = DECL_EXPR_DECL(node); VAR_P(decl)) {
+                check_zero_init(decl, DECL_INITIAL(decl), location);
+            }
+            break;
+        case CONSTRUCTOR: {
+            unsigned index = 0;
+            tree field = NULL_TREE;
+            tree value = NULL_TREE;
+            FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(node), index, field, value) {
+                if (field != NULL_TREE && TREE_CODE(field) == FIELD_DECL) {
+                    check_zero_init(field, value, location);
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+// The walk of a tree that the walk of the bodies does not read for the casts
+// into an enumeration: the body of an instantiation of a template of a
+// quarantined file, and an initializer before a fold.
+struct EnumCastWalk {
+    location_t last = UNKNOWN_LOCATION;
+};
+
+tree visit_enum_cast(tree* node_pointer, int*, void* data) {
+    tree node = *node_pointer;
+    EnumCastWalk& walk = *static_cast<EnumCastWalk*>(data);
+    if (node == NULL_TREE) {
+        return NULL_TREE;
+    }
+    if (EXPR_P(node) && EXPR_HAS_LOCATION(node)) {
+        walk.last = EXPR_LOCATION(node);
+    }
+    switch (TREE_CODE(node)) {
+        case NOP_EXPR:
+        case CONVERT_EXPR:
+        case FIX_TRUNC_EXPR:
+        case NON_LVALUE_EXPR:
+        case STATIC_CAST_EXPR:
+        case CAST_EXPR:
+            check_enum_cast(node, walk.last);
+            break;
+        default:
+            check_empty_braces(node, walk.last);
+            break;
+    }
+    return NULL_TREE;
+}
+
+// Complexity: linear in the nodes of ROOT.
+void walk_enum_casts(tree* root, location_t location) {
+    EnumCastWalk walk;
+    walk.last = location;
+    cp_walk_tree_without_duplicates(root, visit_enum_cast, &walk);
+}
+
+// The body of an instantiation whose template a quarantined file defines.
+// The walk of the pattern cannot see a cast to a type that depends on a
+// parameter.  The instance of a template of the base gets no walk.
+void check_instance_enum_casts(tree function) {
+    location_t location = DECL_SOURCE_LOCATION(function);
+    if (DECL_SAVED_TREE(function) == NULL_TREE || !is_quarantined(location)) {
+        return;
+    }
+    walk_enum_casts(&DECL_SAVED_TREE(function), location);
+}
+
+// An initializer that the front end folds while it parses: its tree before the
+// fold keeps the cast and its location.
+void on_folded_enum_cast(void* gcc_data, void*) {
+    auto* data = static_cast<plugin_folded_initializer_data*>(gcc_data);
+    if (data == nullptr || data->original == NULL_TREE || !is_quarantined(data->location)) {
+        return;
+    }
+    std::size_t const before = state.findings.size();
+    walk_enum_casts(&data->original, data->location);
+    if (state.findings.size() != before && data->object != NULL_TREE && VAR_P(data->object)) {
+        enum_cast_folded_variables.insert(DECL_UID(data->object));
+    }
+}
+
+// A variable of a namespace or a static data member whose initializer is an
+// empty brace with a 0 that names no enumerator (the casts into an
+// enumeration).  The walk of a body reads each local variable.
+void on_finish_enum_decl(void* gcc_data, void*) {
+    tree decl = static_cast<tree>(gcc_data);
+    if (decl == NULL_TREE || !VAR_P(decl) || DECL_FUNCTION_SCOPE_P(decl)
+        || !is_quarantined(DECL_SOURCE_LOCATION(decl))) {
+        return;
+    }
+    check_zero_init(decl, DECL_INITIAL(decl), DECL_SOURCE_LOCATION(decl));
 }
 
 // ── The specializations (the proof routes) ──────────────────────────────
@@ -1630,6 +2024,20 @@ void check_expression_rules(tree node, BodyWalk& walk) {
     switch (TREE_CODE(node)) {
         case NOP_EXPR:
         case CONVERT_EXPR:
+        case FIX_TRUNC_EXPR:
+        case NON_LVALUE_EXPR:
+        case CAST_EXPR:
+            check_enum_cast(node, EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last);
+            break;
+        default:
+            if (!walk.is_pattern) {
+                check_empty_braces(node, EXPR_P(node) && EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last);
+            }
+            break;
+    }
+    switch (TREE_CODE(node)) {
+        case NOP_EXPR:
+        case CONVERT_EXPR:
         case VIEW_CONVERT_EXPR:
         case COND_EXPR:
         case POINTER_PLUS_EXPR:
@@ -1640,6 +2048,9 @@ void check_expression_rules(tree node, BodyWalk& walk) {
             }
             break;
         case STATIC_CAST_EXPR:
+            check_enum_cast(node, walk.last);
+            check_cast(node, walk.last, true);
+            break;
         case REINTERPRET_CAST_EXPR:
             check_cast(node, walk.last, true);
             break;
@@ -1884,6 +2295,7 @@ void on_pre_genericize(void* gcc_data, void*) {
     }
     if (is_in_instantiation(function)) {
         check_instantiation(function);
+        check_instance_enum_casts(function);
         return;
     }
     walk_body(function, false);
@@ -2345,6 +2757,8 @@ void register_expressions(const char* plugin_name) {
     register_callback(plugin_name, PLUGIN_GGC_START, on_route_collection, nullptr);
     register_callback(plugin_name, PLUGIN_EXPLICIT_INSTANTIATION, on_explicit_instantiation, nullptr);
     register_callback(plugin_name, PLUGIN_SIZEOF_OR_ALIGNOF, on_sizeof_or_alignof, nullptr);
+    register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_enum_cast, nullptr);
+    register_callback(plugin_name, PLUGIN_FINISH_DECL, on_finish_enum_decl, nullptr);
 }
 
 }  // namespace crucible_plugin

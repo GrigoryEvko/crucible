@@ -318,6 +318,7 @@ test/ | c-array-object | 51 | - | -
 test/ | c-library-call | 91 | - | -
 test/ | c-library-object | 7 | - | -
 test/ | door-header | 3 | - | -
+test/ | enum-cast | 31 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/ | foreign-symbol | 12 | - | -
 test/ | inline-asm | 1 | - | -
 test/ | opted-out | 8 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
@@ -371,6 +372,7 @@ test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a t
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
+test/cntp_neg/ | enum-cast | 2 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/cntp_neg/ | opted-out | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
 test/cntp_neg/ | region | 1 | PROBE: the fixture gives the swap a resource that holds a raw pointer | -
 test/cog_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
@@ -387,6 +389,7 @@ test/fixy/ | c-array-object | 58 | - | -
 test/fixy/ | c-library-call | 968 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
+test/fixy/ | enum-cast | 5 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/fixy/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | opted-out | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | opted-out | 22 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -462,6 +465,7 @@ test/fixy/ | std-object | 647 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 346 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core
+test/fixy/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | opted-out | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
@@ -550,8 +554,10 @@ test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
 test/fixy/neg/ | std-entity | 57 | - | -
 test/fixy/neg/ | std-object | 24 | - | -
+test/forge_neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/ | c-array-object | 6 | - | -
 test/foundation/ | c-library-call | 2 | - | -
+test/foundation/ | enum-cast | 26 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | opted-out | 32 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 27 | ORACLE: GCC <cpuid.h> and __builtin_cpu_supports give the x86-64 features | test_os_x86_level takes the bits of each x86-64 feature from GCC <cpuid.h> and the features of this host from __builtin_cpu_supports, as an oracle outside the level door.  test_target_units takes the address of the exact form of fp::fma in each of its units.  The level probe of the vessel gives Python the level of the host through a C entry
@@ -564,7 +570,7 @@ test/foundation/ | opted-out | 18 | ORACLE: the differential test of Record and 
 test/foundation/ | opted-out | 88 | ORACLE: the differential test of the Scalar family against the std forms | the std forms that the differential test of the Scalar family compares with
 test/foundation/ | opted-out | 15 | ORACLE: the printf of the C library gives the fixed text and the padded text | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/foundation/ | opted-out | 8 | ORACLE: the std algorithms are the model of the scans | -
-test/foundation/ | opted-out | 75 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
+test/foundation/ | opted-out | 77 | ORACLE: the std types that the Choice family replaces give the state of each step | the differential test of the sums runs each step on std::optional, std::expected and std::variant as its oracle, in one ORACLE region
 test/foundation/ | opted-out | 1 | PROBE: a bit copy of zero bytes into a Ref, as a decode of wire bytes makes | a test of the validity test makes a Ref with zero bytes through a bit copy, as a decode of wire bytes does
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a OneOf | the test of which() copies bytes that hold a tag outside the alternatives over a OneOf in a PROBE region
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
@@ -632,6 +638,7 @@ test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
 test/foundation/neg/ | detail-use | 167 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type, a range or a cursor that the fixture forges, a private door that the fixture calls from a unit that is no friend, or the key of a removed door, which the fixture shows refused
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
+test/foundation/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged OneOf shows that a sum slot names no OneOf as a friend | the route probes of a sum slot and of a niche key define a class template of the base in a PROBE region, and the witness of the key of a sum slot names the key
 test/foundation/neg/ | opted-out | 1 | PROBE: a forged address_of shows that Address has no constructor from an integer | -
@@ -700,8 +707,11 @@ test/layer/checks/crucible/ | std-object | 3 | - | -
 test/layer/checks/crucible/cog/ | std-object | 19 | - | -
 test/layer/checks/crucible/mimic/ | std-entity | 3 | - | -
 test/layer/checks/crucible/mimic/ | std-object | 1 | - | -
+test/layer/checks/crucible/observe/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/crucible/observe/ | std-entity | 1 | - | -
+test/layer/checks/crucible/topology/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/fixy/ | c-array-object | 1 | - | -
+test/layer/checks/fixy/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
 test/layer/checks/fixy/ | std-entity | 70 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -
@@ -724,7 +734,10 @@ test/layer/checks/foundation/ | region | 1 | PROBE: the walk of a value of a cel
 test/layer/checks/foundation/algebra/lattices/ | c-array-object | 1 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-entity | 28 | - | -
 test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
+test/layer/checks/foundation/algebra/net/ | opted-out | 1 | PROBE: the fault code names no enumerator, as a code that no check gives | the check file of foundation/algebra/net/Net.h probes the text of a fault code that names no enumerator, which only a cast makes
+test/layer/checks/foundation/algebra/net/ | region | 1 | PROBE: the fault code names no enumerator, as a code that no check gives | the check file of foundation/algebra/net/Net.h probes the text of a fault code that names no enumerator, which only a cast makes
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
+test/layer/checks/foundation/diag/ | enum-cast | 2 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/foundation/diag/ | std-entity | 14 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -
 test/layer/checks/foundation/effects/ | raw-function-pointer | 1 | - | -
@@ -735,6 +748,7 @@ test/layer/checks/foundation/permissions/ | raw-pointer-object | 1 | - | -
 test/layer/checks/foundation/permissions/ | std-entity | 6 | - | -
 test/layer/checks/foundation/permissions/ | std-object | 1 | - | -
 test/layer/checks/foundation/reflect/ | c-array-object | 12 | - | -
+test/layer/checks/foundation/reflect/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/foundation/reflect/ | opted-out | 6 | PROBE: the layout digest reads a raw pointer, a C array and an entry with C linkage | the layout note of the vessel declares the C entries of the dispatch library, its host tool reads the layout of the C structs that ctypes mirrors, and the check of the layout digest reads a raw pointer, a C array and an entry with C linkage
 test/layer/checks/foundation/reflect/ | raw-function-pointer | 3 | - | -
 test/layer/checks/foundation/reflect/ | raw-pointer-object | 5 | - | -
@@ -749,7 +763,8 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1382 | - | -
-test/shape/ | opted-out | 331 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
+test/shape/ | enum-cast | 2 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
+test/shape/ | opted-out | 332 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
 test/shape/ | opted-out | 2 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call
@@ -770,7 +785,7 @@ vessel/torch/ | opted-out | 27 | ABI: ctypes binds these entries by name, so the
 vessel/torch/ | opted-out | 12 | ABI: ctypes reads the name and the value of each mode of the TLS state of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 3110 | ABI: each entry names an operator struct of at::_ops of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 65 | ABI: fill_meta reads a tensor through the API of PyTorch | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
-vessel/torch/ | opted-out | 23 | ABI: the C entries give ctypes the TLS state of PyTorch and the names of the schemas | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
+vessel/torch/ | opted-out | 24 | ABI: the C entries give ctypes the TLS state of PyTorch and the names of the schemas | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts
 vessel/torch/ | opted-out | 31 | ABI: the CPU allocator of PyTorch is a class with virtual functions | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 1 | ABI: the address of the operator name of PyTorch keys the cache | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 3114 | ABI: the block of PyTorch registers the kernel of each operator struct of at::_ops | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open

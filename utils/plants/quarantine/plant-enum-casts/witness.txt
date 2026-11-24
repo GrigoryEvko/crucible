@@ -1,0 +1,62 @@
+# Each cast of a number into an enumeration with enumerators in a quarantined
+# file is the kind enum-cast: a static_cast of a variable (line 23), a
+# functional cast (24), a braced cast (25), a cast of C (26), a cast of a
+# float (27), a constant that names no enumerator (28) and one that names an
+# enumerator (29), a cast from another enumeration (30), the cast of a field
+# (31), the initializer of a constant of the namespace (32), the braced
+# initializer of a declaration (34), a default member initializer (37), a
+# cast in a template body (43), a cast to a parameter of a template in its
+# instance (48), and a cast into the enumeration Code, which has no mark
+# open_values (52).  The control control-enum-casts gives Code the mark, and
+# the same cast passes there.  An empty brace whose 0 names no enumerator
+# counts at its variable (55), its data member (59) and its argument (63).
+# The instance of the door of the base header (67) is a place of the base,
+# so it is no finding.  The opt-out region turns its cast into opted-out
+# (71).  In the mode error, each finding outside the region is an error that
+# names the two doors.
+
+compile report src/casts.cpp
+flag report -freflection
+exit report pass
+finding report quarantine enum-cast src/casts.cpp:23:49 | fixy::field::Phase from unsigned char
+finding report quarantine enum-cast src/casts.cpp:24:51 | fixy::field::Phase from unsigned char
+finding report quarantine enum-cast src/casts.cpp:25:47 | fixy::field::Phase from unsigned char
+finding report quarantine enum-cast src/casts.cpp:26:32 | fixy::field::Phase from int
+finding report quarantine enum-cast src/casts.cpp:27:38 | fixy::field::Phase from float
+finding report quarantine enum-cast src/casts.cpp:28:38 | planted::Gap from the constant 3
+finding report quarantine enum-cast src/casts.cpp:29:38 | fixy::field::Phase from the constant 2
+finding report quarantine enum-cast src/casts.cpp:30:47 | planted::Mirror from fixy::field::Phase
+finding report quarantine enum-cast src/casts.cpp:31:48 | fixy::field::Phase from unsigned char
+finding report quarantine enum-cast src/casts.cpp:32:26 | planted::Gap from the constant 4
+finding report quarantine enum-cast src/casts.cpp:34:45 | planted::Gap from the constant 7
+finding report quarantine enum-cast src/casts.cpp:37:15 | planted::Gap from the constant 9
+finding report quarantine enum-cast src/casts.cpp:43:12 | fixy::field::Phase from int
+finding report quarantine enum-cast src/casts.cpp:48:12 | fixy::field::Phase from int
+finding report quarantine enum-cast src/casts.cpp:52:45 | planted::Code from short unsigned int
+finding report quarantine enum-cast src/casts.cpp:55:15 | planted::Gap from the empty brace, whose value 0 names no enumerator
+finding report quarantine enum-cast src/casts.cpp:59:9 | planted::Gap from the empty brace, whose value 0 names no enumerator
+finding report quarantine enum-cast src/casts.cpp:63:36 | planted::Gap from the empty brace, whose value 0 names no enumerator
+finding report quarantine opted-out src/casts.cpp:71:26 | enum-cast fixy::field::Phase from unsigned char
+finding report quarantine region src/casts.cpp:70:1 | PROBE: the test forges a phase
+
+compile error src/casts.cpp mode=error out=no
+flag error -freflection
+exit error fail
+error error src/casts.cpp:23 | the cast can make a value that names no enumerator
+error error src/casts.cpp:24 | fixy::field::Phase from unsigned char
+error error src/casts.cpp:25 | fixy::field::Phase from unsigned char
+error error src/casts.cpp:26 | fixy::field::Phase from int
+error error src/casts.cpp:27 | fixy::field::Phase from float
+error error src/casts.cpp:28 | planted::Gap from the constant 3
+error error src/casts.cpp:29 | fixy::field::Phase from the constant 2
+error error src/casts.cpp:30 | planted::Mirror from fixy::field::Phase
+error error src/casts.cpp:31 | fixy::field::Phase from unsigned char
+error error src/casts.cpp:32 | planted::Gap from the constant 4
+error error src/casts.cpp:34 | planted::Gap from the constant 7
+error error src/casts.cpp:37 | planted::Gap from the constant 9
+error error src/casts.cpp:43 | fixy::field::Phase from int
+error error src/casts.cpp:48 | fixy::enum_from_field
+error error src/casts.cpp:52 | planted::Code from short unsigned int
+error error src/casts.cpp:55 | the empty brace, whose value 0 names no enumerator
+error error src/casts.cpp:59 | the empty brace, whose value 0 names no enumerator
+error error src/casts.cpp:63 | the empty brace, whose value 0 names no enumerator

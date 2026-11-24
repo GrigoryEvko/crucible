@@ -1,0 +1,14 @@
+# A quarantined unit with no cast of a number into an enumeration with
+# enumerators compiles in the mode error with no error: an enumerator, a read
+# of a constant, a cast into an enumeration with no enumerator, a cast into
+# the enumeration Code with the mark open_values (the plant plant-enum-casts
+# refuses the same cast into Code with no mark), an empty brace whose 0 names
+# an enumerator, also in a default member initializer, a read through a
+# reference, a read and a write of a bit field, the fold of a conditional
+# expression whose arms are enumerators, and a value parameter of a template.
+# The cast in the condition of the static_assert (line 52) is the known gap of
+# the casts that the front end folds while it parses.
+
+compile clean src/uses.cpp mode=error
+flag clean -freflection
+exit clean pass

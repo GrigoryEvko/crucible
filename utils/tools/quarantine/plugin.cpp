@@ -721,6 +721,11 @@ void report(bool can_add_dependencies) {
                      "and each expression names only a type or an entity of the base, or a name that an admit row "
                      "admits there",
                      kind.c_str(), entity.c_str());
+        } else if (is_error && !is_out && finding.kind == Kind::enum_cast) {
+            error_at(finding.spelling,
+                     "quarantine: enum-cast %s; the cast can make a value that names no enumerator.  Read a number "
+                     "with %qs, read a field whose each value names an enumerator with %qs, or write the enumerator",
+                     entity.c_str(), "fixy::enum_from", "fixy::enum_from_field");
         } else if (is_error && !is_out && is_include_kind(finding.kind)) {
             error_at(finding.spelling,
                      "quarantine: %s %s; the rule table does not let this file include the header, so include a "

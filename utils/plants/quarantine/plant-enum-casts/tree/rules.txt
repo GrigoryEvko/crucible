@@ -1,0 +1,9 @@
+# The rule table of the plant plant-enum-casts of the rule quarantine.  The
+# header include/fixy/Field.h is a base file, and src/casts.cpp is
+# quarantined.
+
+layer low 0 include/fixy/
+
+admit foundation::core | the vocabulary of the opt-out region
+
+quarantine src/casts.cpp
