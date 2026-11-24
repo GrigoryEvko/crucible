@@ -717,6 +717,48 @@ template <typename V, typename First, typename Second, typename Body>
 void for_each_register_run(core::View<First> first, core::View<Second> second,
                            Body body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// A body that takes the ViewMut of one register run of the run of a frame
+// and the View of one register run of a second View, gives void, and does
+// not throw.  It holds no linear value by value, as a RegisterRunBody does
+// (ChunkPairMutBody of foundation/core/Region.h).
+template <typename Body, typename V, typename First, typename Brand, typename Second>
+concept RegisterRunMutBody = core::ChunkPairMutBody<Body, First, Brand, Second, sizeof(typename V::raw_type)>;
+
+// The form of the run of a frame: body gets the ViewMut of each register run
+// of first, with the brand of first, and the View of the run at the same
+// position of second.  The door gives the ViewMut of the bytes of first after
+// the last whole run, and the View of the same bytes of second.  The door
+// takes first by move, so each run has one writer, and a store into a run
+// takes the run by move.  The loop is the loop of the form above.
+// Complexity: one call of body for each whole run.
+template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::size_t Extent, typename Second,
+          typename Body>
+    requires RegisterBytes<V, First, sizeof(typename V::raw_type)>
+          && RegisterBytes<V, Second, sizeof(typename V::raw_type)> && RegisterRunMutBody<Body, V, First, Brand, Second>
+CRUCIBLE_INLINE core::Record<core::ViewMut<First, Brand>, core::View<Second>>
+for_each_register_run(core::ViewMut<First, Brand, Extent>&& first, core::View<Second> second, Body body) noexcept {
+    return core::for_each_chunk_pair<sizeof(typename V::raw_type)>(std::move(first), second, std::move(body));
+}
+
+// A body that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (RegisterRunMutBody).
+template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::size_t Extent, typename Second,
+          typename Body>
+    requires(!::foundation::linear::HoldsNoLinearValue<Body>)
+void for_each_register_run(core::ViewMut<First, Brand, Extent>&& first, core::View<Second> second,
+                           Body body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A named ViewMut stays with the caller, so the runs would be second writers
+// of its run.  A const ViewMut writes nothing, so it gives no writer of a run.
+template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::size_t Extent, typename Second,
+          typename Body>
+void for_each_register_run(core::ViewMut<First, Brand, Extent>& first, core::View<Second> second,
+                           Body body) = delete("the runs take the ViewMut by move: pass std::move(view)");
+template <typename V, typename First, ::foundation::brand::IsBrand Brand, std::size_t Extent, typename Second,
+          typename Body>
+void for_each_register_run(core::ViewMut<First, Brand, Extent> const& first, core::View<Second> second,
+                           Body body) = delete("a const ViewMut writes nothing, so it gives no writer of a run");
+
 // The mask has the same lane byte width as the value, so its bits cast
 // straight onto the value type and the blend is a pair of bitwise
 // operations with no branch.

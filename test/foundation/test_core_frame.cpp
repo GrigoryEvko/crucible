@@ -573,6 +573,37 @@ void test_for_each_chunk() {
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, expected));
 }
 
+// for_each_chunk_pair gives the body each whole part of a fixed width, with
+// the brand of the run, and the View of the part at the same position of a
+// second run.  It gives the two rests.
+void test_for_each_chunk_pair() {
+    FixedArray<int, 10> source{};
+    source.with_mut([](auto whole) noexcept {
+        int value = 0;
+        for (int& element : whole) {
+            element = ++value;
+        }
+    });
+    HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 0);
+    run = with_mut(std::move(run), [&source](auto whole) noexcept {
+        using Whole = std::remove_cvref_t<decltype(whole)>;
+        int part_number = 0;
+        auto [rest, source_rest] = ::foundation::core::for_each_chunk_pair<4>(
+            std::move(whole), View<int const>{source.view()}, [&part_number](auto part, auto other) noexcept {
+                static_assert(std::is_same_v<typename decltype(part)::brand_type, typename Whole::brand_type>);
+                static_assert(decltype(part)::extent == 4 && decltype(other)::extent == 4);
+                ++part_number;
+                ::foundation::core::copy(std::move(part), other);
+            });
+        CRUCIBLE_TEST_ASSERT(kTest, part_number == 2 && rest.size() == 2 && source_rest.size() == 2);
+        ::foundation::core::fill(std::move(rest), 9);
+    });
+    auto const expected = [](std::size_t position) noexcept {
+        return position < 8 ? 1 + static_cast<int>(position) : 9;
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, expected));
+}
+
 // The copy of a View into a ViewMut of the same fixed extent gives no
 // Result, because the type gives the two the same count.  The copy has no
 // result to discard, so the call needs no cast to void.
@@ -611,6 +642,7 @@ int main() {
     test_fill_of_view_mut();
     test_take_window();
     test_for_each_chunk();
+    test_for_each_chunk_pair();
     test_copy_of_fixed_extent();
     return 0;
 }

@@ -4840,6 +4840,14 @@ foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_named
 foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_const
   "neg_core_view_mut_take_prefix_up_to_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a prefix")
+# The parts of a ViewMut and of a View in lockstep take the ViewMut by move
+# too.  The parts of a named ViewMut and of a const one do not compile.
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_of_named
+  "neg_core_view_mut_for_each_chunk_pair_of_named\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk_pair\\(ViewMut<T, Brand, Extent>&, View<U>, Body\\)"
+  "the parts take the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_of_const
+  "neg_core_view_mut_for_each_chunk_pair_of_const\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk_pair\\(const ViewMut<T, Brand, Extent>&, View<U>, Body\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a part")
 # The bytes of a ViewMut take it by move, so the bytes are the one writer of
 # the run.  The bytes of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named
@@ -5035,6 +5043,15 @@ foundation_neg_compile_test(neg_os_result_of_restarted_linear_capture
 foundation_neg_compile_test(neg_simd_vec_generator_linear_capture
   "use of deleted function .foundation::simd::[a-z0-9_]+::vec<ElementType, Lanes>::vec\\(Generator&&\\)"
   "the body holds a linear value by value, and the door calls it with no consume")
+# The register runs of the run of a frame take its ViewMut by move, so each
+# run has one writer.  The runs of a named ViewMut and of a const one do not
+# compile.
+foundation_neg_compile_test(neg_simd_register_run_of_named
+  "neg_simd_register_run_of_named\\.cpp:16:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
+  "the runs take the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_simd_register_run_of_const
+  "neg_simd_register_run_of_const\\.cpp:15:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(const foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a run")
 
 # The types of a strided view refuse each misuse that they can see: an axis
 # past a static rank, a write through a broadcast, a broadcast to fewer axes,

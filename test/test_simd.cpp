@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -206,8 +207,9 @@ static void test_collect_bits() {
     ::fixy::check::pass(kTest, "  test_collect_bits: PASSED\n");
 }
 
-// The register runs of two Views of one count: each whole run once, in
-// order, and the bytes after the last whole run as the rest.
+// The register runs of the run of a frame and of a View of one count: each
+// whole run once, in order, and the bytes after the last whole run as the
+// rest.  The form of two Views reads the same runs.
 static void test_for_each_register_run() {
     using Bytes = simd::vec<std::uint8_t, 16>;
     ::foundation::core::FixedArray<std::byte, 37> target{};
@@ -218,10 +220,9 @@ static void test_for_each_register_run() {
     }
     int runs = 0;
     target.with_mut([&runs, &source](auto run) noexcept {
-        auto const [target_rest, source_rest] = simd::for_each_register_run<Bytes>(
-            ::fixy::View<std::byte>{run.view()}, ::fixy::View<std::byte const>{source.view()},
-            [&runs](auto out, auto in) noexcept {
-                simd::store(simd::load<Bytes>(in), out);
+        auto [target_rest, source_rest] = simd::for_each_register_run<Bytes>(
+            std::move(run), ::fixy::View<std::byte const>{source.view()}, [&runs](auto out, auto in) noexcept {
+                simd::store(simd::load<Bytes>(in), std::move(out));
                 ++runs;
             });
         CRUCIBLE_TEST_ASSERT(kTest, runs == 2);
@@ -231,6 +232,15 @@ static void test_for_each_register_run() {
         auto const expected = index.raw() < 32 ? index.raw() + 1 : 0U;
         CRUCIBLE_TEST_ASSERT(kTest, target.at(index) == static_cast<std::byte>(expected));
     }
+    int equal_runs = 0;
+    auto const [first_rest, second_rest] = simd::for_each_register_run<Bytes>(
+        ::fixy::View<std::byte const>{target.view()}, ::fixy::View<std::byte const>{source.view()},
+        [&equal_runs](auto first, auto second) noexcept {
+            if (simd::collect_equal_bits(simd::load<Bytes>(first), simd::load<Bytes>(second)) == 0xFFFFU) {
+                ++equal_runs;
+            }
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, equal_runs == 2 && first_rest.size() == 5 && second_rest.size() == 5);
     ::fixy::check::pass(kTest, "  test_for_each_register_run: PASSED\n");
 }
 
