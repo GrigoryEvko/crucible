@@ -1039,7 +1039,8 @@ using WindowIndex = ::fixy::Index<bench::kWindows>;
 }
 
 [[nodiscard]] inline Phase phase_of(WindowIndex window) noexcept {
-    return static_cast<Phase>(static_cast<std::uint32_t>(Phase::Window0) + window.raw());
+    return ::fixy::enum_at<Phase>(static_cast<std::size_t>(Phase::Window0) + window.raw())
+        .expect("the phases count up from zero, and each window index names a phase");
 }
 
 // The line that one thread writes: its items in each window, its live bytes

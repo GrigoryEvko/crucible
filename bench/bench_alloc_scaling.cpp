@@ -37,7 +37,8 @@ namespace {
 
 [[nodiscard]] ::fixy::Option<RowKind> row_of(::fixy::TextView argument) noexcept {
     for (std::size_t raw = 0; raw < kRowKinds; ++raw) {
-        auto const kind = static_cast<RowKind>(raw);
+        RowKind const kind =
+            ::fixy::enum_from<RowKind>(static_cast<std::uint8_t>(raw)).expect("each index below kRowKinds names a row");
         if (argument == name_of(kind)) return ::fixy::some(kind);
     }
     return ::fixy::none;

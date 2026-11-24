@@ -74,14 +74,6 @@ namespace {
 using crucible::Guard;
 using crucible::OpIndex;
 
-// Number of Guard::Kind variants, read from the enumerators.
-// The hash folds the enum as an integer, so any out-of-range
-// value is still hashable; we stay in-range for P2 field-disambiguation
-// to be statistically sound (two out-of-range enums would collide on
-// the same underlying uint8_t, and the "different field → different
-// hash" property would spuriously fail).
-inline constexpr uint8_t kGuardKindCount = static_cast<uint8_t>(::foundation::reflect::enum_count<Guard::Kind>);
-
 // Number of Guard fields (including each element of pad[3]) we
 // perturb for P2.  kind (1) + pad[3] (3) + op_index (1) + arg_index
 // (1) + dim_index (1) = 7 perturbation sites.
@@ -121,20 +113,17 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 // Each helper returns a Guard that differs from `base` in exactly
 // One field.  Indices map 1:1 to kGuardPerturbSites sites below.
 //
-// kind is perturbed by (kind + 1) mod kGuardKindCount — stays in
-// range, always differs.  Integer fields use XOR-with-1 which always
+// kind takes the next enumerator (next_enumerator of property_runner.h),
+// so it names an enumerator and differs.  Integer fields use XOR-with-1 which always
 // changes the value (low bit flip) and never moves out of the type's
 // representable range.  OpIndex is perturbed through .raw() since
 // the strong type forbids arithmetic — we unwrap, XOR, rewrap.
 
 [[nodiscard]] Guard perturb_kind(const Guard& base) noexcept {
     Guard out = base;
-    // std::to_underlying returns the enum's underlying type (uint8_t
-    // here); no cast needed.  Promotion to int during (+1) is fine —
-    // the modulo brings the result back into [0, kGuardKindCount),
-    // safely representable in uint8_t.
-    const auto cur = std::to_underlying(base.kind);
-    out.kind = static_cast<Guard::Kind>(static_cast<uint8_t>((cur + 1u) % kGuardKindCount));
+    // The next kind in the order of the values, and the first kind after
+    // the last one, so the kind changes and names an enumerator.
+    out.kind = ::crucible::fuzz::prop::next_enumerator(base.kind);
     return out;
 }
 

@@ -97,6 +97,22 @@ template <class E>
 template <class E>
 concept DenseEnum = ::foundation::reflect::ScopedEnum<E> && enumerators_are_dense<E>();
 
+// The enumerator after value in the ascending order of the values, or the
+// first enumerator after the last one: a value of E other than value when E
+// has two enumerators or more.  A property that needs a second value of a
+// field takes it here, so it makes no value that names no enumerator.
+// Linear in the enumerators.
+template <::fixy::Enumerated E>
+[[nodiscard]] constexpr E next_enumerator(E value) noexcept {
+    bool is_past = false;
+    for (std::size_t index = 0; ::fixy::enum_at<E>(index).is_some(); ++index) {
+        E const at = ::fixy::enum_at<E>(index).expect("the loop test holds the index below the count");
+        if (is_past) return at;
+        is_past = at == value;
+    }
+    return ::fixy::enum_at<E>(0).expect("an enumeration with enumerators has a first one");
+}
+
 namespace detail::dense_enum_self_test {
 
 enum class Dense : std::uint8_t {
@@ -165,10 +181,12 @@ public:
     // Uniform float [0, 1).
     [[nodiscard]] float next_unit() noexcept { return Philox::to_uniform(next32()); }
 
-    // One enumerator of E, each with the same probability.
+    // One enumerator of E, each with the same probability.  The index is
+    // below the count of the enumerators, so enum_at gives an enumerator.
     template <DenseEnum E>
     [[nodiscard]] E pick() noexcept {
-        return static_cast<E>(next_below(static_cast<uint32_t>(::foundation::reflect::enum_count<E>)));
+        return ::fixy::enum_at<E>(next_below(static_cast<uint32_t>(::foundation::reflect::enum_count<E>)))
+            .expect("an index below the count of a dense enumeration names an enumerator");
     }
 
 private:

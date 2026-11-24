@@ -414,7 +414,8 @@ inline void run_vessel_entries(::fixy::View<std::byte const> bytes) noexcept {
         global_schema_table().seal(kHarnessCtx);
 
     for (std::size_t step = 0; step < vessel_entries::kMaxCommands && !cursor.is_empty(); ++step) {
-        switch (static_cast<Command>(cursor.take<std::uint8_t>() % vessel_entries::kCommandCount)) {
+        switch (::fixy::enum_at<Command>(std::size_t{cursor.take<std::uint8_t>()} % vessel_entries::kCommandCount)
+                    .expect("an index below the count of the commands names a command")) {
             case Command::Decode:
                 vessel_entries::check_decode(cursor);
                 break;

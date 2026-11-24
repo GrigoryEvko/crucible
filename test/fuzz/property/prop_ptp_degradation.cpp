@@ -95,7 +95,7 @@ struct Spec {
 }
 
 [[nodiscard]] ct::PtpServoState servo_of(std::uint8_t raw) noexcept {
-    return static_cast<ct::PtpServoState>(static_cast<std::uint8_t>(raw % 7u));
+    return ::fixy::enum_at<ct::PtpServoState>(raw % 7u).expect("an index below 7 names one of the 7 servo states");
 }
 
 // Independent re-derivation of the priority classifier.

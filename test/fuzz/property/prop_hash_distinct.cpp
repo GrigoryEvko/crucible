@@ -50,27 +50,25 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             p.field_idx = static_cast<uint8_t>(rng.next_below(8));
             switch (p.field_idx) {
                 case 0:
-                    p.b.accum_dtype = static_cast<ScalarType>(static_cast<int8_t>(p.a.accum_dtype) ^ 1);
+                    p.b.accum_dtype = next_enumerator(p.a.accum_dtype);
                     break;
                 case 1:
-                    p.b.out_dtype = static_cast<ScalarType>(static_cast<int8_t>(p.a.out_dtype) ^ 1);
+                    p.b.out_dtype = next_enumerator(p.a.out_dtype);
                     break;
                 case 2:
-                    p.b.reduction_algo = static_cast<ReductionAlgo>((static_cast<uint8_t>(p.a.reduction_algo) + 1) & 3);
+                    p.b.reduction_algo = next_enumerator(p.a.reduction_algo);
                     break;
                 case 3:
-                    p.b.rounding =
-                        static_cast<::foundation::core::RoundingMode>((static_cast<uint8_t>(p.a.rounding) + 1) & 3);
+                    p.b.rounding = next_enumerator(p.a.rounding);
                     break;
                 case 4:
-                    p.b.scale_policy = static_cast<ScalePolicy>((static_cast<uint8_t>(p.a.scale_policy) + 1) % 6);
+                    p.b.scale_policy = next_enumerator(p.a.scale_policy);
                     break;
                 case 5:
-                    p.b.softmax = static_cast<SoftmaxRecurrence>((static_cast<uint8_t>(p.a.softmax) + 1) & 3);
+                    p.b.softmax = next_enumerator(p.a.softmax);
                     break;
                 case 6:
-                    p.b.determinism =
-                        static_cast<ReductionDeterminism>((static_cast<uint8_t>(p.a.determinism) + 1) & 3);
+                    p.b.determinism = next_enumerator(p.a.determinism);
                     break;
                 case 7:
                     p.b.flags = p.a.flags ^ decltype(p.a.flags){RecipeFlags::FLUSH_TO_ZERO};

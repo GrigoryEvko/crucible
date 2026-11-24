@@ -34,8 +34,9 @@ int main() {
     for (::fixy::Index<N> const i : hit_hashes.indices()) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
         hit_hashes.with_element(i, [h](SchemaHash& element) noexcept { element = SchemaHash{h}; });
-        const auto id = static_cast<CKernelId>(
+        const auto raw_id = static_cast<uint8_t>(
             1 + (static_cast<uint32_t>(i.raw()) % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
+        const CKernelId id = ::fixy::enum_from<CKernelId>(raw_id).expect("each byte below NUM_KERNELS names a kernel");
         const bool was_registered = table.register_op(writer, mutable_view, hit_hashes.at(i), id);
         CRUCIBLE_FATAL_INVARIANT(was_registered);
     }

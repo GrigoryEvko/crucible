@@ -786,7 +786,7 @@ struct CycleLeftB {
 // nothing on its first call, so the handle waits.
 
 struct LowWire {
-    static constexpr s::watch::priority session_priority{0};
+    static constexpr s::watch::priority session_priority = s::watch::priority::lowest;
     int value = 7;
 };
 struct HighWire {
