@@ -43,11 +43,9 @@ public:
     // program, so off-CPU events on the other threads of this process
     // never reach the ring.
     //
-    // The element type is const rather than const volatile because
-    // libstdc++ cannot instantiate std::span over a volatile
-    // non-scalar element.  The kernel writes this memory while the
-    // reader walks it, so read ts_ns through an acquire load of its
-    // own and trust the rest of the slot only when ts_ns is non-zero.
+    // The kernel writes this memory while the reader walks it, so read
+    // a whole slot through its commit word, with
+    // read_committed<&TimelineSchedEvent::ts_ns>.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSchedEvent> timeline_view() const noexcept;
 
     // The index counts events forever, so the most recently written

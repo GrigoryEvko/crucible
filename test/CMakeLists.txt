@@ -809,6 +809,9 @@ if(CRUCIBLE_HAVE_BPF)
   # The BTF of each stub object agrees with the userspace mirror of each
   # record that it shares, by name, offset and size of each member.
   crucible_test(test_bpf_mirror_btf)
+  # Each program of a perf ring writes a slot through its commit word.  The test
+  # reads the instructions of each object.
+  crucible_test(test_bpf_ring_writers)
 endif()
 # warden::DeadlineWatchdog wires SchedSwitch context-
 # switch telemetry into Policy's miss-budget enforcement.  Smoke

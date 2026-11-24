@@ -58,14 +58,19 @@ static __always_inline void crucible_net_publish_event(struct crucible_net_timel
     __u64 idx = __sync_fetch_and_add(&timeline->hdr.write_idx, 1);
     struct crucible_net_event* slot = &timeline->events[idx & CRUCIBLE_NET_TIMELINE_MASK];
 
+    /* ts_ns is the commit word of the slot (the shared view of
+     * fixy/os/OwnedMmap.h). The exchange to zero is fully ordered, so a reader
+     * that sees a field of this write loads the zero or a later stamp again
+     * and drops its copy. The exchange of the stamp is fully ordered too, so
+     * each field is visible before the stamp. */
+    (void)__sync_lock_test_and_set(&slot->ts_ns, 0);
     slot->value0 = event.value0;
     slot->value1 = event.value1;
     slot->ifindex = event.ifindex;
     slot->queue_id = event.queue_id;
     slot->kind = event.kind;
     slot->_pad = 0;
-    __sync_synchronize();
-    slot->ts_ns = event.ts_ns;
+    (void)__sync_lock_test_and_set(&slot->ts_ns, event.ts_ns);
 }
 
 #endif

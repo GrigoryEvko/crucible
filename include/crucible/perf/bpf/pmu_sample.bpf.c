@@ -45,15 +45,16 @@ static __always_inline int emit_pmu_sample(struct bpf_perf_event_data* ctx, __u8
     /* The mask already bounds slot. The verifier does not follow that, and
      * rejects the array access without this test. */
     if (slot < PMU_SAMPLE_CAPACITY) {
+        /* ts_ns is the commit word of the slot (the shared view of
+         * fixy/os/OwnedMmap.h). The exchange to zero is fully ordered, so a
+         * reader that sees a field of this write loads the zero or a later
+         * stamp again and drops its copy. The exchange of the stamp is fully
+         * ordered too, so each field is visible before the stamp. */
+        (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, 0);
         tl->events[slot].ip = ip;
         tl->events[slot].tid = get_tid();
         tl->events[slot].event_type = etype;
-        /* The memory clobber stops the compiler from sinking the three stores
-         * above past the ts_ns store. It pairs with the acquire load of ts_ns
-         * in the reader. */
-        __asm__ __volatile__("" ::: "memory");
-        /* completion marker */
-        tl->events[slot].ts_ns = bpf_ktime_get_ns();
+        (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, bpf_ktime_get_ns());
     }
 
     return 0;

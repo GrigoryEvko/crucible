@@ -62,30 +62,32 @@ struct fault_val {
 #define TIMELINE_MASK (TIMELINE_CAPACITY - 1)
 
 /*
- * The writer stores ts_ns last, and a non-zero ts_ns is what marks a record
- * complete. The reader tests ts_ns before it trusts any other field.
- * On x86-64 the store order follows from TSO, so a visible ts_ns implies the
- * earlier stores are visible. On aarch64 the LDAXR and STLXR pair behind
- * __sync_fetch_and_add is a full barrier ahead of the field stores, and all
- * fields sit in one cache line, which coherency delivers as a unit.
+ * ts_ns is the commit word of a record (the shared view of
+ * fixy/os/OwnedMmap.h). The writer exchanges it to zero, stores the other
+ * fields, and exchanges it to the stamp, which is never zero. A BPF exchange
+ * is fully ordered on each architecture. So a reader that sees a field of a
+ * write sees the zero or a later stamp when it loads ts_ns again, and a
+ * reader that sees the stamp sees each field of its write. The reader loads
+ * ts_ns, copies the record, and loads ts_ns again. It drops the copy when
+ * ts_ns is zero or when the two loads differ. Two programs that write one
+ * slot at the same time can mix their fields. The ring then wraps over a
+ * program that stalls inside its write.
  */
 struct timeline_sched_event {
     __u64 off_cpu_ns;
     __u32 tid;
     __u32 on_cpu; /* CPU core switched onto */
-    __u64 ts_ns; /* written last */
+    __u64 ts_ns; /* the commit word */
     __u64 _pad; /* Rounds the record to 32 bytes, which divides
                         * the cache line, so no slot straddles two
-                        * lines.  At 24 bytes a slot could deliver a
-                        * visible ts_ns on one line while the other
-                        * fields sit stale on the next. */
+                        * lines and each slot takes one line. */
 };
 
 struct timeline_syscall_event {
     __u64 duration_ns;
     __u32 tid;
     __u32 syscall_nr;
-    __u64 ts_ns; /* written last */
+    __u64 ts_ns; /* the commit word */
     __u64 _pad; /* Rounds the record to 32 bytes so no slot
                         * straddles a cache line.  Refer to
                         * timeline_sched_event. */
@@ -96,7 +98,7 @@ struct timeline_lock_event {
     __u64 wait_ns;
     __u32 tid;
     __u32 _pad;
-    __u64 ts_ns; /* written last */
+    __u64 ts_ns; /* the commit word */
 };
 
 /*
@@ -138,7 +140,7 @@ struct pmu_sample_event {
     __u32 tid;
     __u8 event_type;
     __u8 _pad[3];
-    __u64 ts_ns; /* written last */
+    __u64 ts_ns; /* the commit word */
     __u64 _pad8; /* Rounds the record to 32 bytes so no slot
                          * straddles a cache line.  Refer to
                          * timeline_sched_event. */

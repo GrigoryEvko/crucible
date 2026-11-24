@@ -1746,8 +1746,9 @@ namespace detail {
 // ring wrapped reads the newest events.  An event whose stamp reads zero is
 // not written yet, and it does not count.  The view is a SharedView, and each
 // event is a copy through its stamp as the commit word, so each field is an
-// atomic load.  The BPF program does not clear the stamp before it writes a
-// slot again, so a copy can still mix two events of one slot.  The window of
+// atomic load.  The BPF program clears the stamp before it writes a slot
+// again, so an event that the program writes during the copy does not count
+// (events() of RingLayout of crucible/perf/detail/BpfHub.h).  The window of
 // the fixed extent of the ring checks the count of the view one time, and the
 // mask keeps each slot below it, so a read of a slot takes no check.  A view
 // of fewer slots than the ring gives no spike.  Complexity: linear in the

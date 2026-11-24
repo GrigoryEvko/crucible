@@ -352,11 +352,13 @@ struct RingLayout {
     // the view covers only the events.  view_at of the mapping checks the
     // bounds and the alignment, and it starts the lifetime of the events
     // over their bytes.  The mapping is shared, so the view is a SharedView
-    // of fixy/os/OwnedMmap.h, and each read of an event is atomic.  The BPF
-    // program writes the stamp ts_ns of an event last, but it does not
-    // clear the stamp before it writes a slot again after a wrap.  So a copy
-    // through the stamp as the commit word has no torn field, and the whole
-    // event is consistent only after the program clears the stamp first.
+    // of fixy/os/OwnedMmap.h, and each read of an event is atomic.  The stamp
+    // ts_ns is the commit word of an event: the BPF program exchanges it to
+    // zero, writes the other fields, and exchanges it to the stamp.  So a copy
+    // through the stamp drops each event that the program writes again during
+    // the copy.  Only two programs that write one slot at the same time can
+    // mix their fields: the ring then wraps over a program that stalls inside
+    // its write.
     template <class Tag>
     [[nodiscard]] static ::fixy::mmap::SharedView<const Event>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {

@@ -18,14 +18,14 @@ struct FacadeDoor;
 }  // namespace detail
 
 // The kernel-side program writes into the same byte offsets userspace
-// reads, and it writes ts_ns last.  A slot with ts_ns == 0 is still
-// being filled and its other fields are meaningless.
+// reads.  ts_ns is the commit word of a slot (the shared view of
+// fixy/os/OwnedMmap.h): the program exchanges it to zero, writes the
+// other fields, and exchanges it to the stamp.  A slot with ts_ns == 0
+// is still being filled and its other fields are meaningless.
 //
 // The trailing pad brings the struct to 32 bytes, which divides the
 // 64-byte cache line evenly, so no slot in the events array straddles
-// two lines.  At 24 bytes a straddling reader can see a committed
-// ts_ns in the second line while the fields in the first line are
-// still stale, which breaks the completion-marker rule above.
+// two lines.
 struct TimelineSchedEvent {
     uint64_t off_cpu_ns;
     uint32_t tid;
@@ -73,11 +73,9 @@ public:
     // program, so off-CPU events on the other threads of this process
     // never reach the ring.
     //
-    // The element type is const rather than const volatile because
-    // libstdc++ cannot instantiate std::span over a volatile
-    // non-scalar element.  The kernel writes this memory while the
-    // reader walks it, so read ts_ns through an acquire load of its
-    // own and trust the rest of the slot only when ts_ns is non-zero.
+    // The kernel writes this memory while the reader walks it, so read
+    // a whole slot through its commit word, with
+    // read_committed<&TimelineSchedEvent::ts_ns>.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSchedEvent> timeline_view() const noexcept;
 
     // The index counts events forever, so the most recently written

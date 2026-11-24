@@ -13,14 +13,13 @@
 namespace crucible::perf {
 
 // The kernel-side program writes into the same byte offsets userspace
-// reads, and it writes ts_ns last.  A slot with ts_ns == 0 is still
-// being filled and its other fields are meaningless.
+// reads.  ts_ns is the commit word of a slot (the shared view of
+// fixy/os/OwnedMmap.h): the program exchanges it to zero, writes the
+// other fields, and exchanges it to the stamp.  A slot with ts_ns == 0
+// is still being filled and its other fields are meaningless.
 //
 // The struct is 32 bytes, which divides the 64-byte cache line
-// evenly, so no slot in the events array straddles two lines.  A
-// straddling reader can see a committed ts_ns in the second line
-// while the fields in the first line are still stale, which breaks
-// the completion-marker rule above.
+// evenly, so no slot in the events array straddles two lines.
 struct TimelineLockEvent {
     uint64_t futex_addr;
     uint64_t wait_ns;
@@ -63,11 +62,9 @@ public:
     // declare that map mmap-able.
     [[nodiscard]] uint64_t wait_count() const noexcept;
 
-    // The element type is const rather than const volatile because
-    // libstdc++ cannot instantiate std::span over a volatile
-    // non-scalar element.  The kernel writes this memory while the
-    // reader walks it, so read ts_ns through an acquire load of its
-    // own and trust the rest of the slot only when ts_ns is non-zero.
+    // The kernel writes this memory while the reader walks it, so read
+    // a whole slot through its commit word, with
+    // read_committed<&TimelineLockEvent::ts_ns>.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineLockEvent> timeline_view() const noexcept;
 
     // The index counts events forever, so the most recently written

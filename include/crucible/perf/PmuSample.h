@@ -34,11 +34,15 @@ enum class PmuEventType : uint8_t {
     AlignmentFault = 9,
 };
 
+// ts_ns is the commit word of a slot (the shared view of
+// fixy/os/OwnedMmap.h): the kernel-side program exchanges it to zero,
+// writes the other fields, and exchanges it to the stamp.  A slot with
+// ts_ns == 0 is still being filled and its other fields are
+// meaningless.
+//
 // The trailing pad brings the struct to 32 bytes, which divides the
 // 64-byte cache line evenly, so no slot in the ring straddles two
-// lines.  A straddling reader can see a committed ts_ns in the second
-// line while the fields in the first line are still stale, which
-// breaks the rule that ts_ns marks a complete slot.
+// lines.
 struct PmuSampleEvent {
     uint64_t ip;
     uint32_t tid;
@@ -75,11 +79,9 @@ public:
     // The kernel samples the task whose TID equals the process TGID,
     // so only the main thread of this process appears here.
     //
-    // The element type is const rather than const volatile because
-    // libstdc++ cannot instantiate std::span over a volatile
-    // non-scalar element.  The kernel writes this memory while the
-    // reader walks it, so read ts_ns through an acquire load of its
-    // own and trust the rest of the slot only when ts_ns is non-zero.
+    // The kernel writes this memory while the reader walks it, so read
+    // a whole slot through its commit word, with
+    // read_committed<&PmuSampleEvent::ts_ns>.
     [[nodiscard]] ::fixy::mmap::SharedView<const PmuSampleEvent> timeline_view() const noexcept;
 
     // Slot order, not ts_ns, is the order in which samples were

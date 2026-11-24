@@ -57,9 +57,9 @@ struct NetFlowKey {
     }
 };
 
-// struct crucible_net_event: one sample of a timeline.  The publish of
-// bpf/net_common.h writes ts_ns last, after a full barrier, so ts_ns marks
-// the end of the write of a slot.
+// struct crucible_net_event: one sample of a timeline.  ts_ns is the commit
+// word of a slot: the publish of bpf/net_common.h exchanges it to zero,
+// writes the other fields, and then exchanges it to the stamp.
 struct NetEvent {
     std::uint64_t value0 = 0;
     std::uint64_t value1 = 0;

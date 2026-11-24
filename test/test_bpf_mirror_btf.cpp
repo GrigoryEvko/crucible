@@ -37,6 +37,8 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
+#include "bpf_object_reader.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -54,7 +56,8 @@ namespace perf = crucible::perf::detail;
 
 namespace {
 
-using Bytes = ::fixy::View<unsigned char const>;
+using Bytes = ::crucible::test::ObjectBytes;
+using ::crucible::test::LittleEndian;
 
 // The kinds of a BTF type (include/uapi/linux/btf.h).
 enum class BtfKind : std::uint8_t {
@@ -78,73 +81,6 @@ enum class BtfKind : std::uint8_t {
     type_tag = 18,
     enumeration64 = 19,
 };
-
-// The bytes of a little-endian object, read at a byte offset.
-class LittleEndian {
-public:
-    explicit constexpr LittleEndian(Bytes bytes) noexcept : bytes_{bytes} {}
-
-    // The word of Width bytes at offset, or no value past the end.
-    template <std::size_t Width>
-    [[nodiscard]] ::fixy::Option<std::uint64_t> word_at(std::size_t offset) const noexcept {
-        return bytes_.window<Width>(offset).map([](::fixy::View<unsigned char const, Width> word) noexcept {
-            std::uint64_t value = 0;
-            std::size_t shift = 0;
-            for (unsigned char const byte : word) {
-                value |= std::uint64_t{byte} << shift;
-                shift += 8;
-            }
-            return value;
-        });
-    }
-
-    // The word of Width bytes at offset.  The walk reads only inside the
-    // parts that the headers bound, so a read past the end ends the test.
-    template <std::size_t Width>
-    [[nodiscard]] std::uint64_t word(std::size_t offset) const noexcept {
-        return word_at<Width>(offset).expect("the walk reads inside the bytes of the object");
-    }
-
-    [[nodiscard]] constexpr Bytes bytes() const noexcept { return bytes_; }
-
-    // True when the zero-terminated name at offset is name.  A name that
-    // starts with an underscore compares without it (the note at the top).
-    [[nodiscard]] bool is_named(std::size_t offset, ::fixy::TextView name) const noexcept {
-        if (word<1>(offset) == '_') {
-            ++offset;
-        }
-        std::size_t index = 0;
-        for (char const character : name) {
-            if (word<1>(offset + index) != static_cast<unsigned char>(character)) {
-                return false;
-            }
-            ++index;
-        }
-        return word<1>(offset + index) == 0;
-    }
-
-private:
-    Bytes bytes_;
-};
-
-// The bytes of the section .BTF of an ELF64 object of little-endian data, or
-// no value when the object has no such section.  e_shoff is at byte 40,
-// e_shentsize, e_shnum and e_shstrndx at bytes 58, 60 and 62.  sh_name of a
-// section header is at its byte 0, sh_offset at byte 24 and sh_size at byte
-// 32.  Complexity: linear in the sections of the object.
-[[nodiscard]] ::fixy::Option<Bytes> btf_section_of(LittleEndian object) noexcept {
-    std::uint64_t const headers = object.word<8>(40);
-    std::uint64_t const header_size = object.word<2>(58);
-    std::uint64_t const count = object.word<2>(60);
-    std::uint64_t const names = object.word<8>(headers + header_size * object.word<2>(62) + 24);
-    for (std::uint64_t section = 0; section < count; ++section) {
-        std::uint64_t const header = headers + header_size * section;
-        if (object.is_named(names + object.word<4>(header), ".BTF")) {
-            return object.bytes().window(object.word<8>(header + 24), object.word<8>(header + 32));
-        }
-    }
-    return ::fixy::none;
-}
 
 // The part of the section .BTF after its header that the words at bytes
 // Field and Field + 4 of the header bound: the type section for 8 and the
@@ -383,7 +319,8 @@ struct MirrorCounts {
 // The types of the BTF of an embedded object.
 [[nodiscard]] BtfTypes btf_types_of(perf::ForeignBytes bytes) noexcept {
     LittleEndian const object{perf::view_bytes(bytes)};
-    return BtfTypes{btf_section_of(object).expect("each embedded object holds a section .BTF")};
+    return BtfTypes{
+        ::crucible::test::section_named(object, ".BTF").expect("each embedded object holds a section .BTF")};
 }
 
 // The count of the objects that hold the struct of Mirror, after a compare of
