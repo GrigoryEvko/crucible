@@ -587,11 +587,10 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "window_loan_open",
-        "the open and the end of a loan of a WindowStack are the window test and the step of the top of the raw "
-        "stack, with the assumption on the top kept, and the check of the end folds.  At -O3 the two sides are the "
-        "same.  At -O1 and -O2 the family side tests the fit with a branch where the raw side takes a cmov, in two "
-        "more instructions",
-        checks=("fatal",),
+        "the window door of a WindowStack is the window test and the step of the top of the raw stack, with the "
+        "assumption on the top kept.  The door ends its window before it returns, so its end has no check.  At -O3 "
+        "the two sides are the same.  At -O1 and -O2 the family side tests the fit with a branch where the raw side "
+        "takes a cmov, in two more instructions",
         branches=True,
         longer=2,
     ),

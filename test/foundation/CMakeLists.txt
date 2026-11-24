@@ -4619,14 +4619,9 @@ foundation_neg_compile_test(neg_core_mint_fixed_array_names_brand
 foundation_neg_compile_test(neg_core_mint_fixed_array_no_default
   "no matching function for call to .mint_fixed_array<.anonymous.::NoDefault, 4>\\(\\)."
   "is_nothrow_default_constructible_v")
-# A window loan and a window stack do not copy, and a loan does not move, so
-# the loans of one stack end in the reverse order of their opens.
-foundation_neg_compile_test(neg_core_window_loan_copied
-  "use of deleted function .foundation::core::WindowLoan<T, N>::WindowLoan\\(const foundation::core::WindowLoan<T, N>&\\)"
-  "a loan ends at the end of its scope, and a copy would end it two times")
-foundation_neg_compile_test(neg_core_window_loan_moved
-  "use of deleted function .foundation::core::WindowLoan<T, N>::WindowLoan\\(foundation::core::WindowLoan<T, N>&&\\)"
-  "a loan ends at the end of its scope, in the reverse order of its open")
+# A window stack does not copy, because each open window points into it.  Only
+# the window doors of a stack make a loan: the witness fixture of WindowLoan
+# in test/fixy/neg refuses a loan outside them.
 foundation_neg_compile_test(neg_core_window_stack_copied
   "use of deleted function .foundation::core::WindowStack<T, N>::WindowStack\\(const foundation::core::WindowStack<T, N>&\\)"
   "each open window points into its stack")

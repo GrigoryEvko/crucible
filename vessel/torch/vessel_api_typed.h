@@ -243,9 +243,9 @@ template <class Element>
 // exists only where the vessel makes one.  No door of the base starts the
 // life of a TensorMeta over foreign bytes: the checked lifetime start and
 // mint_foreign_view refuse a type with a Tagged pointer, a bool and
-// enumerations, and decode refuses a pointer.  So a thunk opens an
-// OpRecordFrame on the stack of the Vigil (Vigil::op_record_stack), decodes
-// each record into a slot of the frame, and the View borrows the slots.  The
+// enumerations, and decode refuses a pointer.  So a thunk opens a frame on
+// the record stack of the Vigil (Vigil::op_record_stack), decodes each record
+// into a slot of the frame, and the View borrows the slots.  The
 // stack holds the most records that the trust ladder admits: kMaxOpInputs
 // inputs and kMaxOpOutputs outputs (entry_is_well_formed).
 

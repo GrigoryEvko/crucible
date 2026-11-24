@@ -466,16 +466,13 @@ struct ShapeHeapBrand final {};
     target.with_mut(key, [words](auto run) noexcept { fixy::copy(std::move(run), words); });
 }
 
-// The open of a loan of count elements, a write of its first element, and
-// its end, as the record of one op opens its frame of records.
+// The open of a window of count elements through the window door, a read of
+// its count, and its end, as the record of one op opens its frame of records.
 [[gnu::used]] std::uint64_t window_loan_open(::foundation::core::WindowStack<std::uint64_t, 64>& stack,
                                              ::foundation::core::WindowCount count) noexcept {
-    ::foundation::core::WindowLoan<std::uint64_t, 64> const loan{stack, count};
-    std::uint64_t held = 0;
-    for (fixy::View<std::uint64_t> const window : loan.window()) {
-        held = window.size();
-    }
-    return held;
+    return stack.with_window(
+        count, [](auto window) noexcept { return std::uint64_t{window.size()}; },
+        [] noexcept { return std::uint64_t{0}; });
 }
 
 [[gnu::used]] fixy::Option<fixy::Index<16>> index_check(std::size_t position) noexcept {
@@ -2026,7 +2023,7 @@ struct RawHeapWords final {
 }
 
 // The stack and the frame of the records of an op before the window stack:
-// the window test, the step of the top and its check at the end.
+// the window test and the step of the top.
 struct RawWindowStack final {
     std::uint64_t slots[64];
     std::size_t top;
@@ -2037,7 +2034,6 @@ struct RawWindowStack final {
     [[assume(base <= 64)]];
     if (count > 64 - base) return 0;
     stack.top = base + count;
-    if (stack.top != base + count) __builtin_trap();
     stack.top = base;
     return count;
 }

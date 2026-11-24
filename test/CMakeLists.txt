@@ -4436,15 +4436,15 @@ crucible_neg_compile_test(neg_vigil_op_record_stack_unbranded_ctx
 crucible_neg_compile_test(neg_vigil_op_record_stack_other_brand
   "no known conversion for argument 1 from .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_vigil_op_record_stack_other_brand.cpp:16")
-# An OpRecordFrame gives its slots back at the end of the scope of its op,
-# so the frames of one stack close in the reverse order of their opens.  A
-# frame neither copies nor moves.
-crucible_neg_compile_test(neg_op_record_frame_copy
-  "use of deleted function .crucible::OpRecordFrame::OpRecordFrame.const crucible::OpRecordFrame&.."
-  "neg_op_record_frame_copy.cpp:13")
-crucible_neg_compile_test(neg_op_record_frame_move
-  "use of deleted function .crucible::OpRecordFrame::OpRecordFrame.crucible::OpRecordFrame&&.."
-  "neg_op_record_frame_move.cpp:15")
+# A frame door of the record stack gives its slots back when its arm
+# returns, so no View of the slots leaves the arm: the store twin and the
+# result twin of the window door give their reasons.
+crucible_neg_compile_test(neg_op_record_frame_view_kept
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_window\\(foundation::core::WindowCount, OnOpen&&, OnClosed&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
+crucible_neg_compile_test(neg_op_record_frame_gives_view
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_window\\(foundation::core::WindowCount, OnOpen&&, OnClosed&&\\) &"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
 crucible_neg_compile_test(neg_vigil_mint_producer_context_const
   "passing .const crucible::Vigil. as .this. argument discards qualifiers"
   "neg_vigil_mint_producer_context_const.cpp:10")

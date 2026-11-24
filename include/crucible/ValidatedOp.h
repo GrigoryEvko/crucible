@@ -64,16 +64,15 @@ inline constexpr uint32_t kMaxOpRecords = uint32_t{kMaxOpInputs} + uint32_t{kMax
 // The slots of an OpRecordStack.
 using OpRecordSlots = ::foundation::core::WindowStack<TensorMeta, kMaxOpRecords>;
 
-class OpRecordFrame;
-
 // The slots into which an adapter writes the records of the ops that run on
 // the producer thread.  An op can run other ops before its records are
 // complete: the boxed fallback of the vessel reads the inputs of an op, runs
 // the op, and then reads its outputs, and the op can dispatch other ops.  So
-// the slots are a stack.  An adapter opens one OpRecordFrame for each op, and
-// the frame holds its slots at the top of the stack until it closes.  A frame
-// that opens while another frame is open starts past the slots of that frame.
-// So an op never writes a record of an op that it runs inside.
+// the slots are a stack.  An adapter opens one frame for each op through a
+// frame door of the stack, and the frame holds its slots at the top of the
+// stack until the arm of the door returns.  A frame that opens while another
+// frame is open starts past the slots of that frame.  So an op never writes a
+// record of an op that it runs inside.
 //
 // Each slot holds a TensorMeta from the construction of the stack on.  The
 // thread that holds the producer claim of the Vigil is the one thread that
@@ -156,11 +155,10 @@ public:
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 private:
-    friend class OpRecordFrame;
     friend class OpNest;
 
-    // The slots and their top.  A frame takes its slots through a loan of the
-    // window stack, which opens only when its slots fit.
+    // The slots and their top.  A frame door takes its slots through a window
+    // door of the window stack, which opens only when its slots fit.
     OpRecordSlots slots_{};
     OpDepth depth_{};
     // The depth of the last op that note_given saw.
@@ -213,37 +211,6 @@ private:
     ::fixy::Ref<OpRecordStack> stack_;
     OpDepth depth_{};
     uint64_t given_at_open_ = 0;
-};
-
-// The slots of the records of one op, at the top of an OpRecordStack.  The
-// constructor takes count slots when they fit in the stack, and the
-// destructor gives them back.  A frame that does not fit holds no slot, and
-// slots() gives no value.  A frame cannot copy or move, so the frames of one
-// stack close in the reverse order of their opens.  A frame lives in the call
-// of its op, so an unwind of that call closes the frame too.  O(1) for each
-// open and each close.
-class [[nodiscard]] OpRecordFrame {
-public:
-    // The loan of the window stack checks at its end that each frame that
-    // opened after this one closed before it.
-    OpRecordFrame(OpRecordStack& stack, uint32_t count) noexcept
-        : loan_{stack.slots_, ::foundation::core::WindowCount{count}} {}
-
-    OpRecordFrame(const OpRecordFrame&) = delete("a frame closes at the end of the scope of its op");
-    OpRecordFrame& operator=(const OpRecordFrame&) = delete("a frame closes at the end of the scope of its op");
-    OpRecordFrame(OpRecordFrame&&) = delete("a frame closes at the end of the scope of its op");
-    OpRecordFrame& operator=(OpRecordFrame&&) = delete("a frame closes at the end of the scope of its op");
-
-    // True when the frame holds its count slots.
-    [[nodiscard]] constexpr bool is_open() const noexcept { return loan_.is_open(); }
-
-    // The count slots of the frame, or no value when the frame holds no
-    // slot.  A slot holds the record of an earlier op until the caller
-    // writes it, so a reader reads only the slots that the caller wrote.
-    [[nodiscard]] constexpr ::fixy::Option<::fixy::View<TensorMeta>> slots() const noexcept { return loan_.window(); }
-
-private:
-    ::foundation::core::WindowLoan<TensorMeta, kMaxOpRecords> loan_;
 };
 
 namespace detail {

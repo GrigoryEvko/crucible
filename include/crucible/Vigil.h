@@ -712,8 +712,9 @@ public:
     // op before it builds the op.  The thread that holds the producer claim
     // owns it, as it owns the producer surfaces of the ring and of the
     // metadata log.  The slots are a member, so the record of an op fills no
-    // list on the stack of each call.  The adapter opens an OpRecordFrame for
-    // each op, so an op that runs inside another op writes other slots.
+    // list on the stack of each call.  The adapter opens a frame of the stack
+    // for each op (with_foreign_frame of ValidatedOp.h), so an op that runs
+    // inside another op writes other slots.
     //
     // An op path calls this door, so the door does not read the thread
     // identity.  dispatch_op checks the thread again before the ring head
@@ -1805,8 +1806,8 @@ private:
 // op inside the nest did, the nest gives the closing entry at its depth
 // (Vigil::give_unrecorded_nest).  The nest lives in the call of its op, so an
 // unwind of a raise in that call closes it too.  An adapter opens it before
-// the OpRecordFrame of the op, so the frame closes first.  O(1) for each open
-// and each close that gives no entry.
+// the frame of the op on the record stack, so the frame closes first.  O(1) for
+// each open and each close that gives no entry.
 class [[nodiscard]] VigilOpNest {
 public:
     VigilOpNest(Vigil& vigil, VigilFgCtx const& fg) noexcept

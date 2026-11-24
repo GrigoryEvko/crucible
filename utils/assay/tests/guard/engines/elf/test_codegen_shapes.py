@@ -27,8 +27,9 @@ Probe unit of the build
     include/foundation/core/Region.h to a directory that comes first on the
     include path.  It puts a second test of the limits into View::window of
     the copy.  The probes view_window, view_append and view_window_sum must
-    then fail for each target, and no other probe.  The case applies only on
-    an x86_64 host.
+    then fail for each target, and so must window_loan_open, because the
+    window door of a WindowStack takes its fit test from View::window.  No
+    other probe fails.  The case applies only on an x86_64 host.
 """
 
 import os
@@ -777,8 +778,9 @@ def build_probe_cases(expect: testing.Expect) -> None:
             failed, _, _ = judged_probes(entry, include, shapes.PROBES, target)
             expect(
                 f"for -march={target}, a second test of the limits in View::window fails the probes view_window, "
-                f"view_append and view_window_sum, and no other: {', '.join(sorted(failed)) or 'no probe fails'}",
-                failed == {"view_window", "view_append", "view_window_sum"},
+                f"view_append, view_window_sum and window_loan_open, and no other: "
+                f"{', '.join(sorted(failed)) or 'no probe fails'}",
+                failed == {"view_window", "view_append", "view_window_sum", "window_loan_open"},
             )
 
 

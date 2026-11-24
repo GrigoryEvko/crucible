@@ -61,10 +61,11 @@
 //                       The block stays with the caller, so its frame proves
 //                       only that its windows do not overlap
 //
-// A borrow that spans more than one call, such as the records of one op that
-// runs other ops, takes a loan of a WindowStack (foundation/core/WindowStack.h):
-// each loan holds a window that no other open loan holds, and the loans end in
-// the reverse order of their opens.
+// A borrow of a run that other frames of the same storage nest inside, such
+// as the records of one op that runs other ops, takes a window door of a
+// WindowStack (foundation/core/WindowStack.h): each door lends a window that no
+// other open window holds, and the windows end in the reverse order of their
+// opens.
 //
 // A body of the first form that gives void gives the owner back alone.  A
 // body that gives a value gives a Record of the value and the owner.  The

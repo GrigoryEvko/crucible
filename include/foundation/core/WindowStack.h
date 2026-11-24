@@ -5,8 +5,8 @@
 //
 //   WindowStack<T, N>   N elements in the object itself, and the top: the
 //                       count of the elements that the open windows hold
-//   WindowLoan<T, N>    the loan of one window of count elements at the top
-//                       of a stack, from its construction to its end
+//   WindowLoan<T, N>    the loan of one window inside a window door: only the
+//                       doors of the stack make one
 //
 // Window doors
 //   stack.with_window(count, on_open, on_closed)
@@ -29,16 +29,6 @@
 // (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  So no View, Ref
 // or address of the window outlives the door.  An arm can raise.
 //
-// Loans
-//   WindowLoan loan{stack, count}   takes the count elements at the top of
-//                       the stack when they fit, and moves the top past them.
-//                       A loan that does not fit holds no window, and the top
-//                       stays
-//   loan.window()       the View<T> of the window of the loan, or no value for
-//                       a loan that does not fit
-//   the end of a loan   gives the window back: the top goes back to the start
-//                       of the window
-//
 // A window starts at the top, and each window that opens while it is open
 // starts past its end.  So the windows of two open doors do not overlap, and
 // two ViewMuts of two brands name two runs that do not overlap (the alias
@@ -52,12 +42,10 @@
 // reads only the elements that its own window wrote.
 //
 // The windows of the doors end in the reverse order of their opens, because
-// each door ends its window before it returns.  A loan does not copy and does
-// not move, and it holds a Ref to its stack, so the loans of one stack end in
-// the reverse order of their opens when each one lives in a scope.  The end of
-// a loan ends the process in each build when the top is not the end of its
-// window: a loan that ends before a loan that it holds open ends the process.
-// The stack does not copy or move, because each open window points into it.
+// each door ends its window before it returns, and the window of an arm opens
+// and ends inside the door of the arm.  No code outside the doors makes a loan,
+// so the order needs no check at the end of a window.  The stack does not copy
+// or move, because each open window points into it.
 //
 // Foreign doors
 //   A foreign door lends the same ViewMut and ends its window in the same
@@ -134,12 +122,6 @@ class WindowLoanFrameKeyDoor final : ::foundation::NoObject<WindowLoanFrameKeyDo
 
 // The count of the elements of a window.
 using WindowCount = Quantity<unit::Element, std::uint32_t>;
-
-// Whether a loan holds its window.
-enum class WindowState : std::uint8_t {
-    closed,
-    open,
-};
 
 // The result of the open arm of a window door, for the ViewMut of its window.
 template <class OnOpen, class T, class Brand, std::size_t Extent>
@@ -236,7 +218,7 @@ public:
     // Complexity: O(1), and the cost of the arm.
     template <class... Refused, class OnOpen, class OnClosed, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && WindowArms<OnOpen, OnClosed, T, Fresh, dynamic_extent>
-    constexpr decltype(auto) with_window(WindowCount count, OnOpen&& on_open, OnClosed&& on_closed) & noexcept(
+    constexpr auto with_window(WindowCount count, OnOpen&& on_open, OnClosed&& on_closed) & noexcept(
         window_arms_are_nothrow_v<OnOpen, OnClosed, T, Fresh, dynamic_extent>) {
         return WindowLoan<T, N>::template lend_<Fresh, dynamic_extent>(*this, count, static_cast<OnOpen&&>(on_open),
                                                                        static_cast<OnClosed&&>(on_closed));
@@ -260,7 +242,7 @@ public:
     template <std::size_t Count, class... Refused, class OnOpen, class OnClosed,
               ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && WindowExtent<T, Count, N> && WindowArms<OnOpen, OnClosed, T, Fresh, Count>
-    constexpr decltype(auto)
+    constexpr auto
     with_window(OnOpen&& on_open,
                 OnClosed&& on_closed) & noexcept(window_arms_are_nothrow_v<OnOpen, OnClosed, T, Fresh, Count>) {
         return WindowLoan<T, N>::template lend_<Fresh, Count>(*this, WindowCount{Count}, static_cast<OnOpen&&>(on_open),
@@ -345,17 +327,12 @@ class [[nodiscard]] WindowLoan final {
 
     Ref<WindowStack<T, N>, StackBrand> stack_;
     std::size_t base_ = 0;
-    std::size_t count_ = 0;
-    View<T> window_{};
-    WindowState state_ = WindowState::closed;
 
     // The loan of the window of count elements at the top, which the door of
-    // the stack found to fit: the top moves past the window.
+    // the stack found to fit: the top moves past the window.  The constructor
+    // is private, so only the doors of the stack make a loan.
     constexpr WindowLoan(WindowStack<T, N>& stack, std::size_t count) noexcept
-        : stack_{WindowLoanRefDoor::lend_<StackBrand>(stack)},
-          base_{stack.top_},
-          count_{count},
-          state_{WindowState::open} {
+        : stack_{WindowLoanRefDoor::lend_<StackBrand>(stack)}, base_{stack.top_} {
         stack.top_ = base_ + count;
     }
 
@@ -389,47 +366,15 @@ class [[nodiscard]] WindowLoan final {
     }
 
 public:
-    // The loan of count elements at the top of stack, or a loan of no window
-    // when they do not fit.  Complexity: O(1).
-    constexpr WindowLoan(WindowStack<T, N>& stack, WindowCount count) noexcept
-        : stack_{WindowLoanRefDoor::lend_<StackBrand>(stack)}, base_{stack.top_}, count_{count.raw()} {
-        std::size_t const top = stack.top_;
-        [[assume(top <= N)]];
-        View<T>{frame_run_(WindowLoanFrameKeyDoor::key_(), stack.slots_)}
-            .window(top, count.raw())
-            .match(
-                [this](View<T> window) noexcept {
-                    window_ = window;
-                    state_ = WindowState::open;
-                },
-                [] noexcept {});
-        if (state_ == WindowState::open) stack.top_ = top + count_;
-    }
+    // Gives the window back: the top goes back to the start of the window.
+    // Each window that opened in the arm of the door ended before the arm
+    // returned, so the top is the end of the window of this loan.
+    constexpr ~WindowLoan() { stack_->top_ = base_; }
 
-    // Gives the window back.  Each loan that opened after this one ended
-    // before it, so the top is the end of the window of this loan.  The check
-    // holds in each build and under each contract semantic.
-    constexpr ~WindowLoan() {
-        if (state_ == WindowState::closed) return;
-        CRUCIBLE_FATAL_INVARIANT(stack_->top_ == base_ + count_);
-        stack_->top_ = base_;
-    }
-
-    WindowLoan(WindowLoan const&) = delete("a loan ends at the end of its scope, and a copy would end it two times");
-    WindowLoan& operator=(WindowLoan const&) = delete("a loan ends at the end of its scope");
-    WindowLoan(WindowLoan&&) = delete("a loan ends at the end of its scope, in the reverse order of its open");
-    WindowLoan& operator=(WindowLoan&&) = delete("a loan ends at the end of its scope");
-
-    // True when the loan holds its window.
-    [[nodiscard]] constexpr bool is_open() const noexcept { return state_ == WindowState::open; }
-
-    // The View of the window of the loan, or no value for a loan that does
-    // not fit.  An element holds the value of the last loan of its slot until
-    // the caller writes it.
-    [[nodiscard]] constexpr Option<View<T>> window() const noexcept {
-        if (state_ == WindowState::closed) return none;
-        return Option<View<T>>::some(window_);
-    }
+    WindowLoan(WindowLoan const&) = delete("a loan ends with its window door, and a copy would end it two times");
+    WindowLoan& operator=(WindowLoan const&) = delete("a loan ends with its window door");
+    WindowLoan(WindowLoan&&) = delete("a loan ends with its window door, in the reverse order of its open");
+    WindowLoan& operator=(WindowLoan&&) = delete("a loan ends with its window door");
 };
 
 }  // namespace foundation::core
