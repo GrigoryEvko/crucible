@@ -84,6 +84,13 @@ void test_builds_a_path() {
     CRUCIBLE_FATAL_INVARIANT(path.append('x').is_ok());
     CRUCIBLE_FATAL_INVARIANT(path.size() == 10);
     CRUCIBLE_FATAL_INVARIANT(path.c_text().view() == core::TextView{"/proc/420x"});
+
+    // The largest 64-bit value has 20 digits, the most that a value has.
+    os::PathText<64> widest;
+    CRUCIBLE_FATAL_INVARIANT(widest.append_decimal(core::max_of<std::uint64_t>).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(widest.c_text().view() == core::TextView{"18446744073709551615"});
+    CRUCIBLE_FATAL_INVARIANT(widest.append_decimal(10000000000000000000ULL).is_ok());
+    CRUCIBLE_FATAL_INVARIANT(widest.size() == 40);
 }
 
 // An append that does not fit gives enametoolong, and an append of a zero

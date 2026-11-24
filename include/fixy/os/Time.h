@@ -590,13 +590,18 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         // less, and the null at the end: 12 bytes, in a buffer of 16.
         std::array<char, 16> path{'/', 'd', 'e', 'v', '/', 'p', 't', 'p'};
         std::size_t length = 8;
-        std::array<char, 3> digits{};
+        constexpr std::size_t kIndexDigits = 3;
+        std::array<char, kIndexDigits> digits{};
         std::size_t digit_count = 0;
         std::uint16_t remaining = index.value();
+        // The cap of the index gives at most three digits, so the second
+        // test never stops the loop early.  It states the bound of the count
+        // to the compiler, which the trap checks of a Release build otherwise
+        // hide from the copy below.
         do {
             digits[digit_count++] = static_cast<char>('0' + remaining % 10u);
             remaining = static_cast<std::uint16_t>(remaining / 10u);
-        } while (remaining != 0);
+        } while (remaining != 0 && digit_count < kIndexDigits);
         while (digit_count > 0) {
             path[length++] = digits[--digit_count];
         }

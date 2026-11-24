@@ -114,6 +114,10 @@ public:
     }
 
     // Appends the decimal digits of value, with no sign and no leading zero.
+    // A 64-bit value has at most kDecimalDigits digits, so the second test of
+    // the loop never stops it early.  The test states the bound of count to
+    // the compiler, which the trap checks of a Release build otherwise hide
+    // from the bound of the copy below.
     [[nodiscard]] constexpr core::Result<core::Unit, Errno> append_decimal(std::uint64_t value) noexcept {
         char reversed[kDecimalDigits]{};
         std::size_t count = 0;
@@ -121,7 +125,7 @@ public:
             reversed[count] = static_cast<char>('0' + value % 10);
             value /= 10;
             ++count;
-        } while (value != 0);
+        } while (value != 0 && count < kDecimalDigits);
         if (count > Capacity - size()) return core::err(Errno::enametoolong);
         char digits[kDecimalDigits]{};
         for (std::size_t index = 0; index < count; ++index) {
