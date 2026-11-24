@@ -1138,14 +1138,18 @@ public:
 // std::bit_cast builds no ViewMut.
 //
 //   size(), for (x : view)   as a View gives them
-//   get(position)            the element as an Option<Ref<T, Brand>>, with the
-//                            brand of the frame, or no value at or past the
-//                            count: one compare
+//   get(position)            the element as an Option<Ref<T const, Brand>>,
+//                            which reads, with the brand of the frame, or no
+//                            value at or past the count: one compare
 //   get_mut(position)        the element as an Option<RefMut<T, Brand>>, the
 //                            unique borrow of the element, which does not
 //                            copy, or no value at or past the count: one
 //                            compare
-//   view()                   the plain View of the run, with no brand
+//   view()                   the View of the run, which reads, with no brand
+// A ViewMut is the one writer of its run.  Its View and its Refs copy, so
+// they read and do not write.  The writes go through get_mut, the loop over
+// the ViewMut, and the doors that take the ViewMut, such as fill, copy,
+// write_each and the splits below.
 //   reborrow(std::move(view), body)
 //                            body gets a ViewMut of the run, and the door
 //                            gives the ViewMut back after the body
@@ -1273,17 +1277,14 @@ public:
         return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
     }
 
-    // The element at position, as an Option<Ref<T, Brand>> with the brand of
-    // the frame.  The brand keeps the Ref out of the result of the frame
-    // (FrameResult of Choice.h).  Each frame has a brand of its own, so each
-    // frame makes a ViewMut class of its own.  The member is a template, so
-    // that class names no Option type and checks no constraint of one until a
-    // body reads an element.  The pack refuses each explicit argument.
-    template <class... Refused>
-        requires(sizeof...(Refused) == 0)
-    [[nodiscard]] constexpr auto get(std::size_t position) & noexcept {
-        return RegionRefDoor::element_at_<Brand>(first_, size(), position);
-    }
+    // The element at position, as an Option<Ref<T const, Brand>> with the
+    // brand of the frame.  The Ref reads, and get_mut below gives the writer
+    // of an element.  A Ref copies, so a Ref that writes would be a second
+    // writer of the element.  The brand keeps the Ref out of the result of the
+    // frame (FrameResult of Choice.h).  Each frame has a brand of its own, so
+    // each frame makes a ViewMut class of its own.  The member is a template,
+    // so that class names no Option type and checks no constraint of one until
+    // a body reads an element.  The pack refuses each explicit argument.
     template <class... Refused>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const& noexcept {
@@ -1308,16 +1309,11 @@ public:
     template <class... Refused>
     void get_mut(std::size_t) const& = delete("a const ViewMut writes nothing, so it gives no writer of an element");
 
-    // The plain View of the run, for an operation that takes a View, such as
-    // fill().  The View has no brand, so it proves no difference of two runs.
-    // It has the extent of the ViewMut.
-    [[nodiscard]] constexpr View<T, Extent> view() & noexcept {
-        if constexpr (Extent == dynamic_extent) {
-            return View<T>{first_, size()};
-        } else {
-            return View<T, Extent>{first_};
-        }
-    }
+    // The View of the run, for a read, with the extent of the ViewMut.  A View
+    // copies, so a View that writes would be a second writer of the run, and
+    // the View of a ViewMut holds const elements.  The doors that write take
+    // the ViewMut, such as fill(), copy() and write_each().  The View has no
+    // brand, so it proves no difference of two runs.
     [[nodiscard]] constexpr View<T const, Extent> view() const& noexcept {
         if constexpr (Extent == dynamic_extent) {
             return View<T const>{first_, size()};

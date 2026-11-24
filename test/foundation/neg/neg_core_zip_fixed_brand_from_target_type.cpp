@@ -33,7 +33,7 @@ struct StageOf<::foundation::core::Walk<S>> {
 int main() {
     namespace core = ::foundation::core;
     core::FixedArray<int, 4> values{1, 2, 3, 4};
-    using Fixed = ResultOf<decltype(&core::View<int, 4>::walk)>::type;
+    using Fixed = ResultOf<decltype(&core::View<int const, 4>::walk)>::type;
     using Root = StageOf<Fixed>::type;
     using Pairs = core::Walk<core::detail::ZipStage<Root, Root, Held>>;
     using Pick = Pairs (Fixed::*)(Fixed&&) && noexcept;

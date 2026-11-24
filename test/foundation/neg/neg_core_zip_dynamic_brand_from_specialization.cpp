@@ -30,10 +30,10 @@ struct StageOf<::foundation::core::Walk<S>> {
     using type = S;
 };
 
-using Dynamic = ResultOf<decltype(&::foundation::core::View<int>::walk)>::type;
+using Dynamic = ResultOf<decltype(&::foundation::core::View<int const>::walk)>::type;
 // The name is not Fixed: the parameter list of the specialization below is in
 // the scope of foundation::core, where Fixed names the fixed text of a report.
-using FixedWalk = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+using FixedWalk = ResultOf<decltype(&::foundation::core::View<int const, 4>::walk)>::type;
 
 }  // namespace
 
@@ -52,7 +52,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 int main() {
     ::foundation::core::FixedArray<int, 4> values{1, 2, 3, 4};
     return values.with_mut([](auto run) noexcept -> int {
-        ::foundation::core::View<int> const dynamic = run.view();
+        ::foundation::core::View<int const> const dynamic = run.view();
         return dynamic.walk().try_zip(run.view().walk()).is_ok() ? 0 : 1;
     });
 }

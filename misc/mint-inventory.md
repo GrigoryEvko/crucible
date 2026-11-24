@@ -101,7 +101,7 @@ that the axis does not apply to the row.
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
 | `mint_roce_config` | `include/crucible/cntp/RoceConfig.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_sharp_context` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
-| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
+| `mint_sharp_fabric_plan` | `include/crucible/cntp/_wip/Sharp.h` | Y | Y | Y | Y | ctx | Y | HS14: 7 |
 | `mint_tc_flow_class` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_tc_program` | `include/crucible/cntp/dataplane/TcEbpf.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_tcam_table` | `include/crucible/cntp/Tcam.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -153,7 +153,7 @@ that the axis does not apply to the row.
 | `mint_nic_telemetry_snapshot` | `include/crucible/topology/Telemetry.h` | Y | Y | Y | · | token | · | HS14: 2 |
 | `mint_pingmesh` | `include/crucible/topology/Pingmesh.h` | Y | Y | Y | Y | ctx | Y | HS14: 5 |
 | `mint_ptp_handle` | `include/crucible/topology/Ptp.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
+| `mint_topology_graph` | `include/crucible/topology/TopologyGraph.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_topology_health` | `include/crucible/topology/Health.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/crucible/warden/
@@ -360,10 +360,10 @@ that the axis does not apply to the row.
 | `mint_static_text(const char*)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_static_text(const char*, std::size_t)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
-| `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
+| `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 18 |
-| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 10 |
+| `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 
 ## include/foundation/diag/
 

@@ -17,7 +17,10 @@ int main() {
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     Holder const holder{};
     auto by_value = [moved = holder](::foundation::core::LoanKey<HolderBrand>& key) mutable noexcept {
-        moved.array.with_mut(key, [](auto run) noexcept { run.view().at(::foundation::core::index<0>()) += 1; });
+        moved.array.with_mut(key, [](auto run) noexcept {
+            auto element = run.get_mut(0).expect("four elements");
+            *element += 1;
+        });
     };
     return ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, by_value, by_value).is_ok() ? 0 : 1;
 }

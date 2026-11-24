@@ -3246,7 +3246,7 @@ foundation_neg_compile_test(neg_core_protocol_hash_pointer_in_base
   "no matching function for call to .hash\\(const DerivedFromView&\\)."
   "required for the satisfaction of .Hashable<T>. \\[with T = DerivedFromView\\]")
 foundation_neg_compile_test(neg_core_protocol_encode_unmarked_part
-  "no matching function for call to .encode\\(const HoldsUnmarked&, foundation::core::View<std::byte, 4>\\)."
+  "no matching function for call to .encode\\(const HoldsUnmarked&, std::remove_reference<foundation::core::ViewMut<std::byte, main\\(\\)::<lambda\\(\\)>, 4>&>::type\\)."
   "required for the satisfaction of .Encodable<T>. \\[with T = HoldsUnmarked\\]")
 foundation_neg_compile_test(neg_core_protocol_decode_const_member
   "no matching function for call to .decode<HoldsConst>\\(foundation::core::View<const std::byte, 4>\\)."
@@ -3627,7 +3627,7 @@ foundation_neg_compile_test(neg_core_ref_changes_brand
 # The erase door refuses a scope brand, so no Ref of a scope leaves it on the
 # erased brand.
 foundation_neg_compile_test(neg_core_ref_erase_scope_brand
-  "no matching function for call to .erase_brand\\(.*foundation::core::Ref<int, foundation::core::<lambda\\(\\)> >"
+  "no matching function for call to .erase_brand\\(.*foundation::core::Ref<const int, foundation::core::<lambda\\(\\)> >"
   "required for the satisfaction of .ErasableBrand<Brand>.")
 # No conversion drops the brand of a Ref, and a named brand keeps its brand
 # too.  erase_brand(ref) is the one door to the erased brand.
@@ -3686,7 +3686,7 @@ foundation_neg_compile_test(neg_core_run_address_const_bytes
 set_property(TEST neg_core_run_address_const_bytes APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
 foundation_neg_compile_test(neg_core_run_address_int_bytes
-  "no matching function for call to .mint_run_address\\(foundation::core::View<int, 8>, int\\)."
+  "no matching function for call to .mint_run_address\\(foundation::core::ViewMut<int, main\\(\\)::<lambda\\(\\)>, 8>&, int\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = int; _Up = unsigned char\\]. evaluated to .false.")
 set_property(TEST neg_core_run_address_int_bytes APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
@@ -4218,8 +4218,8 @@ foundation_neg_compile_test(neg_core_fill_const
 # element has no bytes view, and the const of the run stays.
 foundation_test(test_byte_view)
 foundation_neg_compile_test(neg_byte_view_of_int
-  "no matching function for call to .byte_view\\(foundation::core::View<int, 4>\\)."
-  "required for the satisfaction of .same_as<typename std::remove_const<_Tp>::type, unsigned char>. \\[with T = int\\]")
+  "no matching function for call to .byte_view\\(foundation::core::View<const int, 4>\\)."
+  "required for the satisfaction of .same_as<typename std::remove_const<_Tp>::type, unsigned char>. \\[with T = const int\\]")
 # GCC elides the extent of a View that the header itself instantiates, as
 # the View of bytes of HexBytes, so the extent part of each type is optional.
 foundation_neg_compile_test(neg_byte_view_drops_const
@@ -4848,6 +4848,15 @@ foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_of_named
 foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_of_const
   "neg_core_view_mut_for_each_chunk_pair_of_const\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk_pair\\(const ViewMut<T, Brand, Extent>&, View<U>, Body\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
+# The View of a ViewMut reads its run, also from a ViewMut that is not const.
+# A copy of it that writes, and two plain Views that write the run and leave
+# the body, do not compile.
+foundation_neg_compile_test(neg_core_view_mut_view_writes_through_copy
+  "neg_core_view_mut_view_writes_through_copy\\.cpp:12:[0-9]+: error: assignment of read-only location .second\\.foundation::core::View<const int, 4>::at<0>"
+  "View<const int, 4>")
+foundation_neg_compile_test(neg_core_view_mut_two_view_writers
+  "neg_core_view_mut_two_view_writers\\.cpp:19:[0-9]+: error: conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
+  "to non-scalar type .View<int,")
 # The bytes of a ViewMut take it by move, so the bytes are the one writer of
 # the run.  The bytes of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named
@@ -4949,7 +4958,7 @@ foundation_neg_compile_test(neg_core_branded_scope_names_brand
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_branded_index_of_other_scope
   "cannot convert .BrandedIndex<foundation::core::<lambda\\(\\)>>. to .BrandedIndex<foundation::core::<lambda\\(\\)>>."
-  "initializing argument 1 of .constexpr T& foundation::core::BrandedView<T, Brand>::at\\(foundation::core::BrandedIndex<Brand>\\) const \\[with T = int; Brand = foundation::core::<lambda\\(\\)>\\].")
+  "initializing argument 1 of .constexpr T& foundation::core::BrandedView<T, Brand>::at\\(foundation::core::BrandedIndex<Brand>\\) const \\[with T = const int; Brand = foundation::core::<lambda\\(\\)>\\].")
 
 # The brand of a branded scope is a scope brand, so no value of it outlives a
 # call of the mint: the rule brand-escape refuses a static local of the body
@@ -4966,10 +4975,10 @@ foundation_neg_compile_test(neg_branded_scope_returns_closure
 # rank.  An int can be negative, and two fixed extents that differ name no
 # rank.
 foundation_neg_compile_test(neg_core_strided_view_sizes_of_int
-  "no matching function for call to .mint_strided_view\\(foundation::core::View<int, 4>, foundation::core::View<const int, 1>"
+  "no matching function for call to .mint_strided_view\\(foundation::core::View<const int, 4>, foundation::core::View<const int, 1>"
   "satisfaction of .CanMintStridedView<S, SizesExtent, D, StridesExtent>.")
 foundation_neg_compile_test(neg_core_strided_view_rank_mismatch
-  "no matching function for call to .mint_strided_view\\(foundation::core::View<int, 6>, foundation::core::View<const long unsigned int, 2>, foundation::core::View<const long unsigned int, 3>"
+  "no matching function for call to .mint_strided_view\\(foundation::core::View<const int, 6>, foundation::core::View<const long unsigned int, 2>, foundation::core::View<const long unsigned int, 3>"
   "satisfaction of .CanMintStridedView<S, SizesExtent, D, StridesExtent>.")
 
 # The scope mint refuses an explicit template argument and a body whose
@@ -4978,7 +4987,7 @@ foundation_neg_compile_test(neg_core_strided_view_rank_mismatch
 # brand-escape refuses a static local that keeps an index for the next call,
 # and a closure that holds an index in a capture.
 foundation_neg_compile_test(neg_core_strided_scope_names_brand
-  "no matching function for call to .mint_strided_scope<int>\\(const foundation::core::StridedView<int, 1>&"
+  "no matching function for call to .mint_strided_scope<int>\\(const foundation::core::StridedView<const int, 1>&"
   "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = \\{int\\}\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_strided_scope_gives_index
   "no matching function for call to .mint_strided_scope\\(const foundation::core::StridedView<const int, 1>&, main\\(\\)::<lambda\\(auto:7\\)>\\)."
@@ -5059,22 +5068,22 @@ foundation_neg_compile_test(neg_simd_register_run_of_const
 # parameters, the sizes of a temporary view, and a dynamic rank as a static
 # rank.
 foundation_neg_compile_test(neg_core_strided_axis_past_rank
-  "no matching function for call to .foundation::core::StridedView<int, 2>::transpose\\(foundation::core::StaticIndex<0>, foundation::core::StaticIndex<2>\\) const."
-  "no known conversion for argument 2 from .foundation::core::StaticIndex<2>. to .foundation::core::StridedView<int, 2>::Axis.")
+  "no matching function for call to .foundation::core::StridedView<const int, 2>::transpose\\(foundation::core::StaticIndex<0>, foundation::core::StaticIndex<2>\\) const."
+  "no known conversion for argument 2 from .foundation::core::StaticIndex<2>. to .foundation::core::StridedView<const int, 2>::Axis.")
 foundation_neg_compile_test(neg_core_strided_broadcast_writes
   "no matching function for call to .walk\\(main\\(\\)::<lambda\\(int&\\)>, const foundation::core::StridedView<const int, 2>&\\)."
   "binding reference of type .int&. to .const int. discards qualifiers")
 foundation_neg_compile_test(neg_core_strided_broadcast_below_rank
-  "no matching function for call to .foundation::core::StridedView<int, 2>::broadcast_to\\(foundation::core::View<const long unsigned int, 1>\\) const."
+  "no matching function for call to .foundation::core::StridedView<const int, 2>::broadcast_to\\(foundation::core::View<const long unsigned int, 1>\\) const."
   "no operand of the disjunction is satisfied")
 foundation_neg_compile_test(neg_core_strided_index_count
-  "no matching function for call to .foundation::core::BrandedStridedView<int, 2, foundation::core::<lambda\\(\\)> >::index\\(std::size_t, std::size_t, std::size_t\\)."
+  "no matching function for call to .foundation::core::BrandedStridedView<const int, 2, foundation::core::<lambda\\(\\)> >::index\\(std::size_t, std::size_t, std::size_t\\)."
   "the expression .sizeof \\.\\.\\. \\(Coordinates \\.\\.\\.\\) == Rank \\[with Coordinates = \\{long unsigned int, long unsigned int, long unsigned int\\}; Rank = 2\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_strided_walk_mixed_ranks
   "no matching function for call to .walk\\(main\\(\\)::<lambda\\(int&, int&\\)>, const foundation::core::StridedView<int, 2>&, const foundation::core::StridedView<int, 18446744073709551615>&\\)."
   "deduced conflicting values for non-type parameter .Rank. \\(.2. and .18446744073709551615.\\)")
 foundation_neg_compile_test(neg_core_strided_sizes_of_temporary
-  "use of deleted function .void foundation::core::StridedView<T, Rank>::sizes\\(\\) const && \\[with T = int; long unsigned int Rank = 2\\]."
+  "use of deleted function .void foundation::core::StridedView<T, Rank>::sizes\\(\\) const && \\[with T = const int; long unsigned int Rank = 2\\]."
   "the sizes of a temporary view dangle at the end of the full expression")
 foundation_neg_compile_test(neg_core_strided_dynamic_to_static
   "conversion from .StridedView<\\[\\.\\.\\.\\],18446744073709551615>."
@@ -5092,8 +5101,8 @@ foundation_neg_compile_test(neg_core_strided_view_mut_forged_through_key
 # The door of a unique strided view takes only the ViewMut of a frame, and a
 # unique view does not copy.
 foundation_neg_compile_test(neg_core_strided_view_mut_of_view
-  "no matching function for call to .mint_strided_view_mut\\(foundation::core::View<int, 6>"
-  ".foundation::core::View<int, 6>. is not derived from .foundation::core::ViewMut<T, Brand, Extent>.")
+  "no matching function for call to .mint_strided_view_mut\\(foundation::core::View<const int, 6>"
+  ".foundation::core::View<const int, 6>. is not derived from .foundation::core::ViewMut<T, Brand, Extent>.")
 foundation_neg_compile_test(neg_core_strided_view_mut_copies
   "use of deleted function"
   "a StridedViewMut is the one writer of its elements: a copy would be a second writer")
@@ -5424,16 +5433,16 @@ foundation_neg_compile_test(neg_core_fixed_list_get_const_brand_from_target_type
   "no matches converting function .get. to type .using Pick = class foundation::core::Option<foundation::core::Ref<const int, \\{anonymous\\}::Held> > \\(class foundation::core::FixedList<int, 4>::\\*\\)\\(std::size_t\\) const & noexcept."
   "typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::FixedList<T, N>::get\\(std::size_t\\) const &")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_target_type
-  "no matches converting function .zip. to type .using Pick = using Pairs = class foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >"
+  "no matches converting function .zip. to type .using Pick = using Pairs = class foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<const int, 4>, foundation::core::detail::ViewStage<const int, 4>, \\{anonymous\\}::Held> >"
   "foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::Walk<Stage>::zip")
 foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_target_type
-  "no matches converting function .try_zip. to type .using Pick = using Pairs = class foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 18446744073709551615>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >"
+  "no matches converting function .try_zip. to type .using Pick = using Pairs = class foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<const int, 18446744073709551615>, foundation::core::detail::ViewStage<const int, 4>, \\{anonymous\\}::Held> >"
   "foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> >, foundation::core::LengthMismatch> foundation::core::Walk<Stage>::try_zip")
 foundation_neg_compile_test(neg_core_zip_fixed_brand_from_specialization
-  "template-id .zip<>. for .constexpr foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 4>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> > foundation::core::Walk<foundation::core::detail::ViewStage<int, 4> >::zip\\([^)]*&&\\) &&. does not match any template declaration"
+  "template-id .zip<>. for .constexpr foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<const int, 4>, foundation::core::detail::ViewStage<const int, 4>, \\{anonymous\\}::Held> > foundation::core::Walk<foundation::core::detail::ViewStage<const int, 4> >::zip\\([^)]*&&\\) &&. does not match any template declaration"
   "foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> > foundation::core::Walk<Stage>::zip")
 foundation_neg_compile_test(neg_core_zip_dynamic_brand_from_specialization
-  "template-id .try_zip<>. for .constexpr foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<int, 18446744073709551615>, foundation::core::detail::ViewStage<int, 4>, \\{anonymous\\}::Held> >, foundation::core::LengthMismatch> foundation::core::Walk<foundation::core::detail::ViewStage<int, 18446744073709551615> >::try_zip\\([^)]*&&\\) &&. does not match any template declaration"
+  "template-id .try_zip<>. for .constexpr foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<foundation::core::detail::ViewStage<const int, 18446744073709551615>, foundation::core::detail::ViewStage<const int, 4>, \\{anonymous\\}::Held> >, foundation::core::LengthMismatch> foundation::core::Walk<foundation::core::detail::ViewStage<const int, 18446744073709551615> >::try_zip\\([^)]*&&\\) &&. does not match any template declaration"
   "foundation::core::Result<foundation::core::Walk<foundation::core::detail::ZipStage<Stage, Other, typename foundation::brand::undeducible_brand<[A-Za-z_][A-Za-z0-9_]*>::type> >, foundation::core::LengthMismatch> foundation::core::Walk<Stage>::try_zip")
 
 # The type of a stage and of a cursor of a walk is a part of the type of the

@@ -32,7 +32,7 @@ struct StageOf<::foundation::core::Walk<S>> {
 
 // The name is not Fixed: the parameter list of the specialization below is in
 // the scope of foundation::core, where Fixed names the fixed text of a report.
-using FixedWalk = ResultOf<decltype(&::foundation::core::View<int, 4>::walk)>::type;
+using FixedWalk = ResultOf<decltype(&::foundation::core::View<int const, 4>::walk)>::type;
 using Root = StageOf<FixedWalk>::type;
 
 }  // namespace

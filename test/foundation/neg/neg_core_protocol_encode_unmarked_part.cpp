@@ -5,6 +5,7 @@
 #include <foundation/core/Protocol.h>
 
 #include <cstddef>
+#include <utility>
 
 struct Unmarked {
     unsigned word = 0;
@@ -19,7 +20,7 @@ int main() {
     HoldsUnmarked const value{};
     ::foundation::core::FixedArray<std::byte, 4> storage{};
     return storage.with_mut([&value](auto image) noexcept -> int {
-        ::foundation::core::encode(value, image.view());
+        ::foundation::core::encode(value, std::move(image));
         return 0;
     });
 }

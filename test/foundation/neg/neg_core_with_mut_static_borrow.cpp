@@ -15,7 +15,7 @@ namespace core = ::foundation::core;
 struct KeepsFirst final {
     template <class Brand, std::size_t Extent>
     void operator()(core::ViewMut<int, Brand, Extent> out) const noexcept {
-        static core::Option<core::Ref<int, Brand>> const kept = out.get(0);
+        static core::Option<core::Ref<int const, Brand>> const kept = out.get(0);
         static_cast<void>(kept.is_some());
     }
 };

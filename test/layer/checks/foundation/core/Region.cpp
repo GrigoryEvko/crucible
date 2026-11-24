@@ -389,8 +389,9 @@ static_assert(!classify_overlap_accepts<View<int>, View<long>>);
 // A ViewMut holds a pointer and a count.  It does not copy, its move and its
 // end are trivial, so the ABI passes it in two registers, and its assignment
 // is not, so std::bit_cast builds none.  Only a frame door builds one: no
-// constructor takes a pointer, a count or a View with no key.  A const
-// ViewMut reads its run, and a ViewMut that is not const writes it.
+// constructor takes a pointer, a count or a View with no key.  Its View and
+// its Refs read the run, also from a ViewMut that is not const, and the loop
+// over a ViewMut that is not const writes it.
 struct UniqueBrand final {};
 static_assert(sizeof(ViewMut<int, UniqueBrand>) == 2 * sizeof(void*));
 static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand>>);
@@ -402,10 +403,10 @@ static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, View<int>>);
 static_assert(std::is_same_v<decltype(*std::declval<ViewMut<int, UniqueBrand>&>().begin()), int&>);
 static_assert(std::is_same_v<decltype(*std::declval<ViewMut<int, UniqueBrand> const&>().begin()), int const&>);
 static_assert(
-    std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().get(0)), Option<Ref<int, UniqueBrand>>>);
+    std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().get(0)), Option<Ref<int const, UniqueBrand>>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().get(0)),
                              Option<Ref<int const, UniqueBrand>>>);
-static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand>&>().view()), View<int const>>);
 static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> const&>().view()), View<int const>>);
 
 // A ViewMut of a fixed extent holds a pointer alone, so the ABI passes it in
@@ -419,7 +420,7 @@ static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand> con
 static_assert(sizeof(ViewMut<int, UniqueBrand, 4>) == sizeof(void*));
 static_assert(!std::is_copy_constructible_v<ViewMut<int, UniqueBrand, 4>>);
 static_assert(std::is_trivially_move_constructible_v<ViewMut<int, UniqueBrand, 4>>);
-static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand, 4>&>().view()), View<int, 4>>);
+static_assert(std::is_same_v<decltype(std::declval<ViewMut<int, UniqueBrand, 4>&>().view()), View<int const, 4>>);
 static_assert(std::is_convertible_v<ViewMut<int, UniqueBrand, 4>&&, ViewMut<int, UniqueBrand>>);
 static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand>, ViewMut<int, UniqueBrand, 4>&>);
 static_assert(!std::is_constructible_v<ViewMut<int, UniqueBrand, 4>, ViewMut<int, UniqueBrand>&&>);

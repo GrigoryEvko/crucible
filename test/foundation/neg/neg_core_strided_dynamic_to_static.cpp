@@ -14,9 +14,9 @@ int main() {
     ::foundation::core::View<std::size_t const> const dynamic_sizes = sizes.view();
     ::foundation::core::View<std::size_t const> const dynamic_strides = strides.view();
     return storage.with_mut([&](auto values) noexcept -> int {
-        ::foundation::core::StridedView<int> const dynamic =
+        ::foundation::core::StridedView<int const> const dynamic =
             ::foundation::core::mint_strided_view(values.view(), dynamic_sizes, dynamic_strides, 0).expect("it fits");
-        ::foundation::core::StridedView<int, 2> const fixed = dynamic;
+        ::foundation::core::StridedView<int const, 2> const fixed = dynamic;
         return static_cast<int>(fixed.count());
     });
 }
