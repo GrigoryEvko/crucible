@@ -11,6 +11,7 @@ format 1
 rule erased-brand
 include/fixy/ScopedView.h | erased-brand | 1 | fixy::ScopedView | erase_brand(view) is the one door that drops the brand of a view, and it names DefaultBrand one time, as erase_brand of a Ref does
 include/fixy/os/OwnedMmap.h | erased-brand | 1 | fixy::OwnedMmap | -
+include/foundation/core/Region.h | erased-brand | 1 | foundation::core::ViewMut | erase_brand of a ViewMut is the one door that drops the brand of the run of a frame, and it names DefaultBrand one time, as erase_brand of a StridedViewMut does
 include/foundation/core/Strided.h | erased-brand | 1 | foundation::core::StridedViewMut | erase_brand of a StridedViewMut is the one door that drops the brand of a unique strided view, and it names DefaultBrand one time, as erase_brand of a Ref does: a fixed kernel ABI cannot name the brand of a frame, and the erased writer stays the one writer of its elements
 include/foundation/permissions/Permission.h | erased-brand | 1 | foundation::permissions::Permission | -
 test/fixy/neg/neg_os_mmap_release_erased_mapping.cpp | erased-brand | 1 | fixy::OwnedMmap | -

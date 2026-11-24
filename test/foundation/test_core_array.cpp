@@ -237,6 +237,27 @@ void test_prefix_up_to_is_total() {
     CRUCIBLE_TEST_ASSERT(kTest, whole == 6);
 }
 
+// erase_brand gives the writer of the same run and extent on the erased
+// identity, and a write through it writes the elements of the array.  The
+// runs of two frames of one element type and extent give one erased type.
+void test_erase_brand_keeps_the_run() {
+    FixedArray<std::uint32_t, 4> first{1, 2, 3, 4};
+    FixedArray<std::uint32_t, 4> second{5, 6, 7, 8};
+    first.with_mut([&second](auto first_run) noexcept {
+        second.with_mut([&first_run](auto second_run) noexcept {
+            auto erased_first = ::foundation::core::erase_brand(std::move(first_run));
+            auto erased_second = ::foundation::core::erase_brand(std::move(second_run));
+            static_assert(std::is_same_v<decltype(erased_first), decltype(erased_second)>);
+            static_assert(decltype(erased_first)::extent == 4);
+            static_assert(!::foundation::brand::IsFreshBrand<typename decltype(erased_first)::brand_type>);
+            CRUCIBLE_TEST_ASSERT(kTest, erased_first.size() == 4 && erased_second.size() == 4);
+            ::foundation::core::copy(std::move(erased_first), erased_second.view());
+        });
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, first.at(index<0>()) == 5 && first.at(index<3>()) == 8);
+    CRUCIBLE_TEST_ASSERT(kTest, second.at(index<0>()) == 5);
+}
+
 // get gives a Ref of the element below the count, and no value at or past
 // the count, for a View of each extent and for a FixedArray.
 void test_get_reads_below_the_count() {
@@ -344,6 +365,7 @@ int main() {
     test_doors_take_a_body_that_borrows_a_linear_value();
     test_fixed_array_view_fill_and_copy();
     test_prefix_up_to_is_total();
+    test_erase_brand_keeps_the_run();
     test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();
     test_fixed_array_view_of_a_static_is_constant();

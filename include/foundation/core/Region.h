@@ -502,15 +502,25 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     requires std::same_as<T, unsigned char>
 [[nodiscard]] ViewMut<std::byte, Brand, Extent> byte_view(ViewMut<T, Brand, Extent>&& run) noexcept;
 
+namespace detail {
+
+// The body of erase_brand of a ViewMut (the definition below).
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr auto erased_run_mut_(ViewMut<T, Brand, Extent>&& view) noexcept;
+
+}  // namespace detail
+
 // The door of the Region family to the key of the frame doors (the doors of
 // the owners above foundation/core/Frame.h).  Its one member is private.  The
 // invariant: each friend holds a ViewMut by move or by a reference, and it
 // builds a ViewMut or a RefMut only over a part of the run of that ViewMut,
-// with its brand.  ViewMut, ViewMutChunks, the two forms of split_at,
-// split_chunks, the two forms of take_window, take_prefix_up_to,
-// for_each_chunk, for_each_chunk_pair, reborrow and the byte_view of a ViewMut
-// are its friends.  A home owner row of utils/rule-table.txt keeps this
-// definition in this header.
+// with its brand.  The body of erase_brand builds the ViewMut of the whole
+// run on the erased identity, and it consumes the source.  ViewMut,
+// ViewMutChunks, the two forms of split_at, split_chunks, the two forms of
+// take_window, take_prefix_up_to, for_each_chunk, for_each_chunk_pair,
+// reborrow, the byte_view of a ViewMut and the body of erase_brand are its
+// friends.  A home owner row of utils/rule-table.txt keeps this definition in
+// this header.
 class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
     template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
         requires ViewElement<T> && (!std::is_const_v<T>) && ViewExtent<T, Extent>
@@ -558,6 +568,8 @@ class RegionFrameKeyDoor final : ::foundation::NoObject<RegionFrameKeyDoor> {
         requires FrameBody<Body, T, Brand, Extent>
     friend constexpr auto ::foundation::core::reborrow(ViewMut<T, Brand, Extent>&& view, Body&& body) noexcept
         -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, ViewMut<T, Brand, Extent>>;
+    template <class T, class Brand, std::size_t Extent>
+    friend constexpr auto detail::erased_run_mut_(ViewMut<T, Brand, Extent>&& view) noexcept;
 
     // The key of the frame doors, for a part of the run of a ViewMut.
     [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
@@ -1482,6 +1494,48 @@ template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
                                                             std::size_t count) noexcept {
     return ViewMut<T, Brand>{RegionFrameKeyDoor::key_(), View<T>{detail::run_of_(whole)}.prefix_up_to(count)};
 }
+
+// The erased writer of a run: the ViewMut of the same run and extent on
+// DefaultBrand, the erased identity of foundation/Brand.h.  The door consumes
+// view, and a ViewMut does not copy, so the erased view stays the one writer
+// of the run.  A door that takes the runs of many frames erases each run at
+// its entry, so its body is one instance for each element type and extent,
+// and not one for each frame.
+//
+// The brand of a run keeps a view of one run out of a door that names the
+// brand of another run, and the erased view loses that proof.  It proves no
+// difference of two runs (the alias proof of foundation/core/Frame.h), and no
+// conversion gives it a brand back.  So a door whose parameter names the brand
+// of a run, such as a body of the frame of that run, refuses an erased view
+// (the fixture neg_core_view_mut_erased_takes_no_brand).  A caller erases a
+// run only after each check that reads its brand: the call of the door checks
+// the brand, and the body of the door then erases it.  The constraint refuses
+// a view that is on DefaultBrand.  The body of detail::erased_run_mut_ names
+// the brand of the result, so the erased brand has one spelling in this door.
+// Complexity: O(1).
+namespace detail {
+
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr auto erased_run_mut_(ViewMut<T, Brand, Extent>&& view) noexcept {
+    return ViewMut<T, ::foundation::brand::DefaultBrand, Extent>{RegionFrameKeyDoor::key_(), run_of_(view)};
+}
+
+}  // namespace detail
+
+template <class T, ::foundation::brand::IsFreshBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr auto erase_brand(ViewMut<T, Brand, Extent>&& view) noexcept {
+    return detail::erased_run_mut_(std::move(view));
+}
+
+// The door consumes the one writer, so a named ViewMut that stays with its
+// holder gives no writer to it.  A const ViewMut writes nothing, so it gives
+// no writer to the door.
+template <class T, ::foundation::brand::IsFreshBrand Brand, std::size_t Extent>
+void erase_brand(ViewMut<T, Brand, Extent>& view) =
+    delete("erase_brand consumes the one writer, and a named ViewMut stays with its holder: pass std::move(view)");
+template <class T, ::foundation::brand::IsFreshBrand Brand, std::size_t Extent>
+void erase_brand(ViewMut<T, Brand, Extent> const& view) =
+    delete("a const ViewMut writes nothing, so it gives no writer to erase_brand");
 
 // Calls body with the ViewMut of each whole part of Width elements of the run
 // of first and the View of the part at the same position of second, from the

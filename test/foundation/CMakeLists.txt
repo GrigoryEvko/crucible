@@ -5318,6 +5318,18 @@ foundation_neg_compile_test(neg_core_strided_erase_brand_named
 foundation_neg_compile_test(neg_core_strided_erase_brand_const
   "use of deleted function .void foundation::core::erase_brand\\(const StridedViewMut<T, Rank, Brand>&\\)"
   "a const StridedViewMut writes nothing, so it gives no writer to erase_brand")
+# erase_brand of a ViewMut consumes the one writer of the run too, so it
+# refuses a named and a const ViewMut.  The erased view takes no brand back,
+# so it enters no door that names the brand of another run.
+foundation_neg_compile_test(neg_core_view_mut_erased_takes_no_brand
+  "conversion from .ViewMut<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand,\\[\\.\\.\\.\\]>. to non-scalar type .ViewMut<\\[\\.\\.\\.\\],main\\(\\)::<lambda\\(\\)>,\\[\\.\\.\\.\\]>. requested"
+  "neg_core_view_mut_erased_takes_no_brand\\.cpp:17:[0-9]+: error: conversion from")
+foundation_neg_compile_test(neg_core_view_mut_erase_brand_named
+  "use of deleted function .void foundation::core::erase_brand\\(ViewMut<T, Brand, Extent>&\\)"
+  "erase_brand consumes the one writer, and a named ViewMut stays with its holder: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_erase_brand_const
+  "use of deleted function .void foundation::core::erase_brand\\(const ViewMut<T, Brand, Extent>&\\)"
+  "a const ViewMut writes nothing, so it gives no writer to erase_brand")
 
 # The offset of a row in one view does not read another view, and the body
 # of a walk of rows gives no value, so no index of the walk leaves it.
