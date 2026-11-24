@@ -189,7 +189,7 @@ struct PlanCombine {
 [[nodiscard]] bool does_parallel_reduce_follow(View<Symbol const> run) noexcept {
     HeapArray<core::TreeStep> const steps = plan_tree_of(run);
     HeapArray<std::uint32_t> step_of_left =
-        ::fixy::mint_heap_array(tree::test_alloc(), run.size() + steps.size(), std::uint32_t{0});
+        ::fixy::mint_heap_array(tree::test_alloc(), ::fixy::strict_add(run.size(), steps.size()), std::uint32_t{0});
     std::uint32_t step = 0;
     step_of_left = ::fixy::with_mut(std::move(step_of_left), [&steps, &step](auto lefts) noexcept {
         for (core::TreeStep const& one : steps) {

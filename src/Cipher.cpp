@@ -1155,7 +1155,7 @@ ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
     std::size_t hi = log_.size();
 
     while (lo < hi) {
-        const std::size_t mid = lo + (hi - lo) / 2;
+        auto const mid = ::fixy::midpoint(lo, hi);
         if (log_[mid].step_id().raw() <= step_id) {
             lo = mid + 1;
         } else {

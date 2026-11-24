@@ -24,9 +24,9 @@ using Sizes = ::fixy::FixedArray<std::size_t, 3>;
 // one part for each row.  The first input reaches at most 40000 elements.
 [[nodiscard]] std::size_t parts_of_rows(Sizes const& sizes, Sizes const& first_strides) noexcept {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    std::size_t const rows = sizes.at(::fixy::index<0>()) * sizes.at(::fixy::index<1>());
+    auto const rows = ::fixy::strict_mul(sizes.at(::fixy::index<0>()), sizes.at(::fixy::index<1>()));
     std::size_t const length = sizes.at(::fixy::index<2>());
-    std::size_t const count = rows * length;
+    auto const count = ::fixy::strict_mul(rows, length);
     std::size_t const reach = (sizes.at(::fixy::index<0>()) - 1) * first_strides.at(::fixy::index<0>())
                             + (sizes.at(::fixy::index<1>()) - 1) * first_strides.at(::fixy::index<1>())
                             + (length - 1) * first_strides.at(::fixy::index<2>()) + 1;

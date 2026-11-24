@@ -471,7 +471,7 @@ void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
     float scale = 1.0f / std::sqrt(static_cast<float>(D));
 
     ::fixy::HeapArray<float> weights =
-        ::fixy::mint_heap_array_zeroed<float>(::foundation::effects::testing::test().alloc, S * S);
+        ::fixy::mint_heap_array_zeroed<float>(::foundation::effects::testing::test().alloc, ::fixy::strict_mul(S, S));
 
     // Each sequence writes the weights again, so one frame of the weights
     // holds the loop over the batch.

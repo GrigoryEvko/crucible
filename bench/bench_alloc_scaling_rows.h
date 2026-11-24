@@ -873,9 +873,9 @@ public:
                 ::foundation::core::Philox4x32::generate(std::uint64_t{block}, key);
             for (::fixy::Index<4> const word : words.indices()) {
                 std::uint32_t const draw = words.at(word);
-                draws_.with_element(
-                    ::fixy::Index<kDraws>::check(block * 4 + word.raw()).expect("a draw lies below kDraws"),
-                    [draw](std::uint32_t& element) noexcept { element = draw; });
+                draws_.with_element(::fixy::Index<kDraws>::check(::fixy::strict_add(block * 4, word.raw()))
+                                        .expect("a draw lies below kDraws"),
+                                    [draw](std::uint32_t& element) noexcept { element = draw; });
             }
         }
     }

@@ -201,7 +201,8 @@ template <std::size_t Threads>
     std::size_t const rows = left.shape.rows;
     std::size_t const columns = right.shape.columns;
     std::size_t const block = (rows + Threads - 1) / Threads;
-    ::fixy::HeapArray<float> out = ::fixy::mint_heap_array(::crucible::test::rig_alloc(), rows * columns, 0.0f);
+    ::fixy::HeapArray<float> out =
+        ::fixy::mint_heap_array(::crucible::test::rig_alloc(), ::fixy::strict_mul(rows, columns), 0.0f);
     out = ::fixy::with_mut(std::move(out), [&](auto run) noexcept {
         auto chunks = ::fixy::split_chunks(std::move(run), block * columns);
         using Chunk = ::fixy::ViewMut<float, typename decltype(run)::brand_type>;

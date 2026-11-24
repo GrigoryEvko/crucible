@@ -121,8 +121,8 @@ void verify_mul_xor_against_scalar_product() {
                 }
                 Bytes<buffer_bytes> expected = target;
                 for (std::size_t i = 0; i < len; ++i) {
-                    auto const position =
-                        ::fixy::Index<buffer_bytes>::check(offset + i).expect("the byte lies inside the buffer");
+                    auto const position = ::fixy::Index<buffer_bytes>::check(::fixy::strict_add(offset, i))
+                                              .expect("the byte lies inside the buffer");
                     const auto source_byte = static_cast<std::uint8_t>(source_seed.at(position));
                     auto const product = static_cast<std::byte>(detail::mul(source_byte, factor));
                     expected.with_element(position, [product](std::byte& element) noexcept { element ^= product; });

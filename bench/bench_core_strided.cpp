@@ -400,7 +400,7 @@ template <class Out>
     auto const test = ::foundation::effects::testing::test();
     std::size_t const rows = level.rows;
     std::size_t const columns = level.columns;
-    std::size_t const count = rows * columns;
+    auto const count = ::fixy::strict_mul(rows, columns);
     auto const fill = [](std::size_t position) noexcept { return value_at(position); };
     Storage out = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);
     Storage left = ::fixy::mint_heap_array_with<float, 64>(test.alloc, count, fill);

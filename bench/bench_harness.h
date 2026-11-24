@@ -2766,12 +2766,13 @@ struct Compare {
     const ::fixy::View<const double> a_samples{a.samples.view()};
     const ::fixy::View<const double> b_samples{b.samples.view()};
     auto const alloc = ::foundation::effects::testing::test().alloc;
+    auto const samples = ::fixy::strict_add(n1, n2);
     ::fixy::HeapArray<Tagged> tagged = ::fixy::mint_heap_array_with<Tagged>(
-        alloc, n1 + n2, [&a_samples, &b_samples, n1](std::size_t position) noexcept {
+        alloc, samples, [&a_samples, &b_samples, n1](std::size_t position) noexcept {
             if (position < n1) return Tagged{.v = *a_samples.get(position).expect("a position of A"), .src = 0};
             return Tagged{.v = *b_samples.get(position - n1).expect("a position of B"), .src = 1};
         });
-    ::fixy::HeapArray<Tagged> scratch = ::fixy::mint_heap_array(alloc, n1 + n2, Tagged{});
+    ::fixy::HeapArray<Tagged> scratch = ::fixy::mint_heap_array(alloc, samples, Tagged{});
     bool is_sorted = false;
     tagged = ::fixy::with_mut(std::move(tagged), [&scratch, &is_sorted](auto elements) noexcept {
         scratch = ::fixy::with_mut(std::move(scratch), [&elements, &is_sorted](auto room) noexcept {

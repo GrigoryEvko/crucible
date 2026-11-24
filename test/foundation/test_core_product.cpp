@@ -422,7 +422,8 @@ void test_a_split_of_the_rows_changes_no_bit() {
     CRUCIBLE_TEST_ASSERT(kTest, multiply_into(whole, left.view(), right.view(), LaneCount::Native).is_ok());
     FixedArray<std::size_t, 5> const block_rows{1, 2, 5, 8, 23};
     for (std::size_t const block : block_rows) {
-        ::fixy::HeapArray<T> parts = ::fixy::mint_heap_array(::crucible::test::rig_alloc(), rows * columns, T{});
+        ::fixy::HeapArray<T> parts =
+            ::fixy::mint_heap_array(::crucible::test::rig_alloc(), ::fixy::strict_mul(rows, columns), T{});
         parts = with_mut(std::move(parts), [&](auto run) noexcept {
             auto chunks = ::fixy::split_chunks(std::move(run), block * columns);
             std::size_t first_row = 0;

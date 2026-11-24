@@ -25,8 +25,8 @@ class EditBuffer {
 public:
     // A buffer that holds the bytes of seed, with room for room more bytes.
     EditBuffer(::fixy::View<std::byte const> seed, ByteCount room) noexcept
-        : front_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), seed.size() + room.raw())},
-          back_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), seed.size() + room.raw())},
+        : front_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), ::fixy::strict_add(seed.size(), room.raw()))},
+          back_{::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), ::fixy::strict_add(seed.size(), room.raw()))},
           count_{seed.size()} {
         front_ = ::fixy::with_mut(std::move(front_), [seed](auto run) noexcept {
             ::fixy::copy(::fixy::take_window(std::move(run), 0, seed.size()).expect("the buffer holds the seed"), seed)
