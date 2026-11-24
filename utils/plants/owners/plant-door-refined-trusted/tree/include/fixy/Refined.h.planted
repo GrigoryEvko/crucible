@@ -1,0 +1,12 @@
+// A base header with the trusted mint of a refinement, as fixy/Refined.h
+// names it.  The mint runs no predicate.
+#pragma once
+
+namespace fixy {
+
+template <int Bound, class T>
+constexpr T mint_refined_trusted(T value) noexcept {
+    return value;
+}
+
+}  // namespace fixy

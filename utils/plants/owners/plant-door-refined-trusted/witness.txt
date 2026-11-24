@@ -1,0 +1,10 @@
+# The trusted mint of a refinement runs no predicate, so it stands only in
+# the files that its owner row names: the header that defines it and the
+# product file whose call states its reason.  A product file that no row
+# names calls the mint, and the call is a use of the kind door-use.  The
+# named caller gives no use.
+
+compile rogue src/rogue.cpp stage=c
+exit rogue pass
+judge rogue
+finding rogue owners door-use src/rogue.cpp:8:46 | planted::forged_lane(): fixy::mint_refined_trusted

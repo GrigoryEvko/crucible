@@ -1,0 +1,12 @@
+// A product file that no row of the trusted mint names.  It mints a value
+// past the bound with no check, so the call is a use of the kind door-use.
+#include <crucible/TensorMeta.h>
+#include <fixy/Refined.h>
+
+namespace planted {
+
+long forged_lane() noexcept { return ::fixy::mint_refined_trusted<16>(99L); }
+
+long named_lane() noexcept { return ::crucible::planted::lane_of(7L); }
+
+}  // namespace planted

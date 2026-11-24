@@ -1,0 +1,10 @@
+// A named caller of the trusted mint: the row of the mint names this file.
+#pragma once
+
+#include <fixy/Refined.h>
+
+namespace crucible::planted {
+
+inline long lane_of(long held) noexcept { return ::fixy::mint_refined_trusted<16>(held); }
+
+}  // namespace crucible::planted
