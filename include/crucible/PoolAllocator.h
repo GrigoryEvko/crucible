@@ -126,7 +126,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
             pool_ = ::foundation::mint_aligned_bytes_zeroed(allocation, layout);
             // The region holds the bytes of the pool, and not the bytes that
             // the round up to the alignment adds after them.
-            crucible::warden::register_hot_region(::fixy::pages::storage_of(pool_.view()), is_huge);
+            crucible::warden::register_hot_region(::fixy::pages::storage_of(pool_.view()),
+                                                  is_huge ? crucible::warden::RegionShape::stable
+                                                          : crucible::warden::RegionShape::resized);
         }
 
         if (plan_slots > 0) {

@@ -123,11 +123,11 @@ void lock_and_unlock_reach_the_kernel() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     core::HeapArray<std::byte, kPageBytes> page =
         core::mint_heap_array<std::byte, kPageBytes>(alloc, kPageBytes, std::byte{0});
-    core::View<std::byte const> const bytes = page.view();
+    pages::PageRange const range = pages::storage_of(page.view());
 
-    pages::lock_pages(kStartup, bytes).expect("a lock of one page fits below the limit");
-    pages::unlock_pages(kStartup, bytes).expect("the unlock of the locked page works");
-    core::Result<core::Unit, os::Errno> const locked_on_fault = pages::lock_pages_on_fault(kStartup, bytes);
+    pages::lock_pages(kStartup, range).expect("a lock of one page fits below the limit");
+    pages::unlock_pages(kStartup, range).expect("the unlock of the locked page works");
+    core::Result<core::Unit, os::Errno> const locked_on_fault = pages::lock_pages_on_fault(kStartup, range);
     bool const has_no_mlock2 = locked_on_fault.match(
         [](core::Unit) noexcept { return false; }, [](os::Errno error) noexcept { return error == os::Errno::enosys; });
     if (has_no_mlock2) {
@@ -135,16 +135,17 @@ void lock_and_unlock_reach_the_kernel() {
         ::fixy::report(::fixy::Sink::Err, "lock_and_unlock_reach_the_kernel: the lock on fault SKIPPED (qemu-user)\n");
     } else {
         CRUCIBLE_FATAL_INVARIANT(locked_on_fault.is_ok());
-        pages::unlock_pages(kStartup, bytes).expect("the unlock of the page locked on fault works");
+        pages::unlock_pages(kStartup, range).expect("the unlock of the page locked on fault works");
     }
 
     core::HeapArray<std::byte, kPageBytes> large =
         core::mint_heap_array<std::byte, kPageBytes>(alloc, kPastTheLockLimit, std::byte{0});
-    core::Result<core::Unit, os::Errno> const locked = pages::lock_pages(kStartup, large.view());
+    pages::PageRange const large_range = pages::storage_of(large.view());
+    core::Result<core::Unit, os::Errno> const locked = pages::lock_pages(kStartup, large_range);
     bool const is_refused = locked.match([](core::Unit) noexcept { return false; },
                                          [](os::Errno error) noexcept { return is_lock_refusal(error); });
     CRUCIBLE_FATAL_INVARIANT(locked.is_ok() || is_refused);
-    pages::unlock_pages(kStartup, large.view()).expect("an unlock of the large range works");
+    pages::unlock_pages(kStartup, large_range).expect("an unlock of the large range works");
 }
 
 // The advice goes to each whole huge page of the range.  An aligned range of
@@ -158,7 +159,7 @@ void huge_page_advice_covers_the_whole_huge_pages() {
         core::mint_heap_array<std::byte, pages::huge_page_bytes>(alloc, 2 * pages::huge_page_bytes, std::byte{0});
     core::View<std::byte const> const bytes = region.view();
 
-    core::Result<std::size_t, os::Errno> const advised = pages::advise_huge_pages(kStartup, bytes);
+    core::Result<std::size_t, os::Errno> const advised = pages::advise_huge_pages(kStartup, pages::storage_of(bytes));
     bool const is_without_thp = advised.match([](std::size_t) noexcept { return false; },
                                               [](os::Errno error) noexcept { return error == os::Errno::einval; });
     CRUCIBLE_FATAL_INVARIANT(advised.is_ok() || is_without_thp);
@@ -169,12 +170,12 @@ void huge_page_advice_covers_the_whole_huge_pages() {
                                                     [](os::Errno) noexcept { return std::size_t{0}; });
     CRUCIBLE_FATAL_INVARIANT(advised_bytes == 2 * pages::huge_page_bytes);
 
-    core::View<std::byte const> const shifted =
-        bytes.window(1, 2 * pages::huge_page_bytes - 1).expect("the window fits in the range");
+    pages::PageRange const shifted =
+        pages::storage_of(bytes.window(1, 2 * pages::huge_page_bytes - 1).expect("the window fits in the range"));
     CRUCIBLE_FATAL_INVARIANT(pages::advise_huge_pages(kStartup, shifted).value_or(0) == pages::huge_page_bytes);
 
-    core::View<std::byte const> const short_range =
-        bytes.window(kPageBytes, pages::huge_page_bytes).expect("the window fits in the range");
+    pages::PageRange const short_range =
+        pages::storage_of(bytes.window(kPageBytes, pages::huge_page_bytes).expect("the window fits in the range"));
     CRUCIBLE_FATAL_INVARIANT(pages::advise_huge_pages(kStartup, short_range).expect("no call, no error") == 0);
     CRUCIBLE_FATAL_INVARIANT(pages::collapse_huge_pages(kStartup, short_range).expect("no call, no error") == 0);
 
@@ -182,7 +183,8 @@ void huge_page_advice_covers_the_whole_huge_pages() {
     // the moment, such as a lack of free huge pages (enomem), a refused charge
     // of the cgroup (ebusy) or a page that another thread holds (eagain).  So
     // the case asserts only that a collapse that works covers the whole range.
-    core::Result<std::size_t, os::Errno> const collapsed = pages::collapse_huge_pages(kStartup, bytes);
+    core::Result<std::size_t, os::Errno> const collapsed =
+        pages::collapse_huge_pages(kStartup, pages::storage_of(bytes));
     std::size_t const collapsed_bytes = collapsed.match([](std::size_t count) noexcept { return count; },
                                                         [](os::Errno) noexcept { return 2 * pages::huge_page_bytes; });
     CRUCIBLE_FATAL_INVARIANT(collapsed_bytes == 2 * pages::huge_page_bytes);
@@ -202,7 +204,7 @@ void populate_faults_in_each_page_of(core::View<std::byte> const fresh) {
     std::size_t const page = page_size();
     core::View<std::byte const> const probe_page = fresh.window(page, page).expect("the page fits in the mapping");
     os::Errno const refusal =
-        pages::populate_pages(kStartup, probe_page)
+        pages::populate_pages(kStartup, pages::storage_of(probe_page))
             .match([](core::Unit) noexcept { return os::Errno{}; }, [](os::Errno error) noexcept { return error; });
     if (refusal == os::Errno::einval) {
         ::fixy::report(::fixy::Sink::Err, "populate_faults_in_each_page_of_the_range: SKIPPED (Linux before 5.14)\n");
@@ -228,20 +230,23 @@ void populate_faults_in_each_page_of(core::View<std::byte> const fresh) {
     };
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 4);
 
-    pages::populate_pages(kStartup, core::View<std::byte const>{}).expect("an empty range makes no call");
+    pages::populate_pages(kStartup, pages::PageRange{}).expect("an empty range makes no call");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 4);
 
-    pages::populate_pages(kStartup, window(3 * page, page)).expect("the kernel faults in the last page");
+    pages::populate_pages(kStartup, pages::storage_of(window(3 * page, page)))
+        .expect("the kernel faults in the last page");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(3 * page, page)) == 0);
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(0, 3 * page)) == 3);
 
-    pages::populate_pages(kStartup, window(page - 1, 2)).expect("the kernel faults in the two pages of the window");
+    pages::populate_pages(kStartup, pages::storage_of(window(page - 1, 2)))
+        .expect("the kernel faults in the two pages of the window");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(0, 2 * page)) == 0);
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(window(2 * page, page)) == 1);
 
     std::size_t const mark_offset = (3 * page) + 7;
     *bytes.get(mark_offset).expect("the mark is inside the mapping") = std::byte{0x5a};
-    pages::populate_pages(kStartup, four_pages).expect("the kernel faults in each page of the four pages");
+    pages::populate_pages(kStartup, pages::storage_of(four_pages))
+        .expect("the kernel faults in each page of the four pages");
     CRUCIBLE_FATAL_INVARIANT(pages_with_no_frame(four_pages) == 0);
     std::size_t position = page;
     for (std::byte const value : four_pages) {
@@ -272,7 +277,7 @@ void populate_refuses_a_range_with_no_write_access() {
         ::fixy::report(::fixy::Sink::Err, "populate_refuses_a_range_with_no_write_access: SKIPPED (qemu-user)\n");
         return;
     }
-    CRUCIBLE_FATAL_INVARIANT(pages::populate_pages(kStartup, core::bytes(kReadOnlyWords)).is_err());
+    CRUCIBLE_FATAL_INVARIANT(pages::populate_pages(kStartup, pages::storage_of(core::bytes(kReadOnlyWords))).is_err());
 }
 
 // A record with padding, which bytes() refuses.
@@ -281,22 +286,24 @@ struct PaddedRecord {
     std::uint64_t value = 0;
 };
 
-// storage_of gives the bytes that hold an object or a run of elements, from
-// the address of the first byte.  An empty run gives no byte.
-void storage_of_gives_the_bytes_of_an_object_and_of_a_run() {
+// storage_of gives the range of the bytes that hold an object or a run of
+// elements, from the address of the first byte.  The range of an array and
+// the range of the run of its elements start at one byte, and a window of the
+// run that starts at its second element starts at another byte.  An empty
+// run gives no byte, and an empty range starts at no byte.
+void storage_of_gives_the_range_of_an_object_and_of_a_run() {
     PaddedRecord const object{};
-    core::View<std::byte const> const storage = pages::storage_of(object);
-    CRUCIBLE_FATAL_INVARIANT(storage.size() == sizeof(PaddedRecord));
-    CRUCIBLE_FATAL_INVARIANT(core::address_of(core::to(object))
-                             == core::address_of(storage.get(0).expect("the storage holds a first byte")));
+    CRUCIBLE_FATAL_INVARIANT(pages::storage_of(object).size() == sizeof(PaddedRecord));
 
     core::FixedArray<PaddedRecord, 4> const records{};
     core::View<PaddedRecord const> const elements = records.view();
-    core::View<std::byte const> const run_storage = pages::storage_of(elements);
-    CRUCIBLE_FATAL_INVARIANT(run_storage.size() == 4 * sizeof(PaddedRecord));
-    CRUCIBLE_FATAL_INVARIANT(core::address_of(elements.get(0).expect("the run holds a first element"))
-                             == core::address_of(run_storage.get(0).expect("the storage holds a first byte")));
-    CRUCIBLE_FATAL_INVARIANT(pages::storage_of(core::View<PaddedRecord const>{}).size() == 0);
+    pages::PageRange const run_range = pages::storage_of(elements);
+    CRUCIBLE_FATAL_INVARIANT(run_range.size() == 4 * sizeof(PaddedRecord));
+    CRUCIBLE_FATAL_INVARIANT(pages::storage_of(records).has_same_start(run_range));
+    pages::PageRange const later_range = pages::storage_of(elements.window(1, 3).expect("the window fits in the run"));
+    CRUCIBLE_FATAL_INVARIANT(later_range.size() == 3 * sizeof(PaddedRecord) && !later_range.has_same_start(run_range));
+    pages::PageRange const empty_range = pages::storage_of(core::View<PaddedRecord const>{});
+    CRUCIBLE_FATAL_INVARIANT(empty_range.size() == 0 && !empty_range.has_same_start(empty_range));
 }
 
 // The exchange gives the setting before the call.  A second exchange with
@@ -338,7 +345,7 @@ int main() {
     huge_page_advice_covers_the_whole_huge_pages();
     populate_faults_in_each_page_of_the_range();
     populate_refuses_a_range_with_no_write_access();
-    storage_of_gives_the_bytes_of_an_object_and_of_a_run();
+    storage_of_gives_the_range_of_an_object_and_of_a_run();
     thp_exchange_reads_and_sets_the_setting();
     return 0;
 }

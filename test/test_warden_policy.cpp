@@ -119,7 +119,9 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
     {
         auto mapping = map_fresh_pages(owner);
         ::fixy::View<std::byte const> const fresh = mapping.view<std::byte const>().expect("a mapping holds bytes");
-        is_populated = ::fixy::pages::populate_pages(kStartup, window_of(fresh, page_size(), page_size())).is_ok();
+        is_populated = ::fixy::pages::populate_pages(
+                           kStartup, ::fixy::pages::storage_of(window_of(fresh, page_size(), page_size())))
+                           .is_ok();
     }
     ::foundation::linear::drop(std::move(owner));
     return is_populated;
@@ -517,23 +519,19 @@ void test_policy_production_degrades_gracefully(crucible::warden::TopologyRef to
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
 }
 
-// The region of a snapshot that starts at the first byte of bytes, or no
+// The region of a snapshot that starts at the first byte of range, or no
 // region.
-[[nodiscard]] ::fixy::Option<crucible::warden::HotRegion> region_at(::fixy::View<std::byte const> bytes) noexcept {
-    auto const first = bytes.get(0).expect("the View holds a first byte");
+[[nodiscard]] ::fixy::Option<crucible::warden::HotRegion> region_at(::fixy::pages::PageRange range) noexcept {
     for (crucible::warden::HotRegion const& region : crucible::warden::HotRegionRegistry::instance().snapshot()) {
-        auto const start = region.bytes.get(0);
-        for (auto const start_byte : start) {
-            if (::fixy::same_object(start_byte, first)) return ::fixy::some(region);
-        }
+        if (region.range.has_same_start(range)) return ::fixy::some(region);
     }
     return ::fixy::none;
 }
 
 // The length of the region of a snapshot that starts at the first byte of
-// bytes, or zero for no region.
-[[nodiscard]] size_t registered_length(::fixy::View<std::byte const> bytes) noexcept {
-    return region_at(bytes).match([](crucible::warden::HotRegion region) noexcept { return region.bytes.size(); },
+// range, or zero for no region.
+[[nodiscard]] size_t registered_length(::fixy::pages::PageRange range) noexcept {
+    return region_at(range).match([](crucible::warden::HotRegion region) noexcept { return region.range.size(); },
                                   []() noexcept { return size_t{0}; });
 }
 
@@ -549,33 +547,37 @@ void test_registry_basic() {
 
     alignas(64)::fixy::FixedArray<std::byte, 4096> buf{};
     ::fixy::View<std::byte const> const bytes = buf.view();
-    register_hot_region(bytes, /*huge_hint=*/false);
+    ::fixy::pages::PageRange const range = ::fixy::pages::storage_of(bytes);
+    register_hot_region(range, RegionShape::resized);
     CHECK(reg.size() == baseline + 1, "one registration bumps size");
 
-    register_hot_region(bytes, /*huge_hint=*/true);
+    register_hot_region(range, RegionShape::stable);
     CHECK(reg.size() == baseline + 1, "re-register same addr is an update, not a new slot");
-    CHECK(registered_length(bytes) == 4096, "len preserved on update");
-    CHECK(region_at(bytes).match([](HotRegion region) noexcept { return region.huge_hint; },
+    CHECK(registered_length(range) == 4096, "len preserved on update");
+    CHECK(region_at(range).match([](HotRegion region) noexcept { return region.shape == RegionShape::stable; },
                                  []() noexcept { return false; }),
-          "huge_hint updated to true");
+          "the shape of the update is stable");
 
-    register_hot_region(bytes.window(0, 1024).expect("the window fits"), /*huge_hint=*/false);
+    register_hot_region(::fixy::pages::storage_of(bytes.window(0, 1024).expect("the window fits")),
+                        RegionShape::resized);
     CHECK(reg.size() == baseline + 1, "a shorter region at the same first byte replaces the region");
-    CHECK(registered_length(bytes) == 1024, "the length of the second registration is the length");
+    CHECK(registered_length(range) == 1024, "the length of the second registration is the length");
 
-    register_hot_region(::fixy::View<std::byte const>{}, /*huge_hint=*/false);
+    register_hot_region(::fixy::pages::PageRange{}, RegionShape::resized);
     CHECK(reg.size() == baseline + 1, "an empty region registers nothing");
 
-    unregister_hot_region(bytes.window(1, 16).expect("the window fits"));
+    unregister_hot_region(::fixy::pages::storage_of(bytes.window(1, 16).expect("the window fits")));
     CHECK(reg.size() == baseline + 1, "a withdrawal at a different first byte changes nothing");
 
-    ::fixy::View<std::byte const> const second = bytes.window(1024, 1024).expect("the window fits");
-    ::fixy::View<std::byte const> const third = bytes.window(2048, 2048).expect("the window fits");
-    register_hot_region(second, /*huge_hint=*/false);
-    register_hot_region(third, /*huge_hint=*/false);
-    unregister_hot_region(bytes);
+    ::fixy::pages::PageRange const second =
+        ::fixy::pages::storage_of(bytes.window(1024, 1024).expect("the window fits"));
+    ::fixy::pages::PageRange const third =
+        ::fixy::pages::storage_of(bytes.window(2048, 2048).expect("the window fits"));
+    register_hot_region(second, RegionShape::resized);
+    register_hot_region(third, RegionShape::resized);
+    unregister_hot_region(range);
     CHECK(reg.size() == baseline + 2, "unregister withdraws one region");
-    CHECK(registered_length(bytes) == 0, "the withdrawn region is not in the snapshot");
+    CHECK(registered_length(range) == 0, "the withdrawn region is not in the snapshot");
     CHECK(registered_length(second) == 1024 && registered_length(third) == 2048,
           "each other region keeps its own length");
 
@@ -583,7 +585,7 @@ void test_registry_basic() {
     unregister_hot_region(third);
     CHECK(reg.size() == baseline, "unregister restores size");
 
-    unregister_hot_region(bytes);
+    unregister_hot_region(range);
     CHECK(reg.size() == baseline, "double-unregister is a no-op");
 }
 
@@ -594,10 +596,10 @@ void test_registry_applies_on_mint_hardening(crucible::warden::TopologyRef topol
     using namespace crucible::warden;
 
     alignas(64)::fixy::FixedArray<std::byte, 4096> buf{};
-    ::fixy::View<std::byte const> const bytes = buf.view();
+    ::fixy::pages::PageRange const range = ::fixy::pages::storage_of(buf.view());
     const size_t baseline = HotRegionRegistry::instance().size();
 
-    register_hot_region(bytes, /*huge_hint=*/false);
+    register_hot_region(range, RegionShape::resized);
     CHECK(HotRegionRegistry::instance().size() == baseline + 1, "buf registered");
 
     // This policy enables the region lock while staying on SCHED_OTHER,
@@ -609,7 +611,7 @@ void test_registry_applies_on_mint_hardening(crucible::warden::TopologyRef topol
         (void)g.regions_locked();
     }
 
-    unregister_hot_region(bytes);
+    unregister_hot_region(range);
     CHECK(HotRegionRegistry::instance().size() == baseline, "registry clean after unregister");
 }
 
@@ -626,18 +628,6 @@ using RaceCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg,
 // two regions.
 constexpr std::uint32_t kRaceTurns = 20000;
 
-// True when the two Views start at one byte.
-[[nodiscard]] bool is_same_start(::fixy::View<std::byte const> first, ::fixy::View<std::byte const> second) noexcept {
-    auto const first_start = first.get(0);
-    auto const second_start = second.get(0);
-    for (auto const first_byte : first_start) {
-        for (auto const second_byte : second_start) {
-            return ::fixy::same_object(first_byte, second_byte);
-        }
-    }
-    return false;
-}
-
 // A snapshot pairs each first byte with the length of its own registration.
 // The writer registers a short region and withdraws it, then a long region at
 // a different first byte, in each turn.  The reader takes snapshots at the
@@ -648,16 +638,18 @@ void test_snapshot_pairs_each_start_with_its_own_length() {
     using namespace crucible::warden;
     alignas(64)::fixy::FixedArray<std::byte, 8192> buf{};
     ::fixy::View<std::byte const> const all = buf.view();
-    ::fixy::View<std::byte const> const short_region = all.window(0, 64).expect("the window fits");
-    ::fixy::View<std::byte const> const long_region = all.window(4096, 4096).expect("the window fits");
+    ::fixy::pages::PageRange const short_region =
+        ::fixy::pages::storage_of(all.window(0, 64).expect("the window fits"));
+    ::fixy::pages::PageRange const long_region =
+        ::fixy::pages::storage_of(all.window(4096, 4096).expect("the window fits"));
     ::fixy::Atomic<bool> is_written{false};
     ::fixy::Atomic<std::uint64_t> torn_reads{0};
 
     auto const write_turns = [&]() noexcept {
         for (std::uint32_t turn = 0; turn < kRaceTurns; ++turn) {
-            register_hot_region(short_region, /*huge_hint=*/false);
+            register_hot_region(short_region, RegionShape::resized);
             unregister_hot_region(short_region);
-            register_hot_region(long_region, /*huge_hint=*/false);
+            register_hot_region(long_region, RegionShape::resized);
             unregister_hot_region(long_region);
         }
         is_written.store_release(true);
@@ -665,8 +657,8 @@ void test_snapshot_pairs_each_start_with_its_own_length() {
     auto const read_snapshots = [&]() noexcept {
         while (!is_written.load_acquire()) {
             for (HotRegion const& region : HotRegionRegistry::instance().snapshot()) {
-                bool const is_torn_short = is_same_start(region.bytes, short_region) && region.bytes.size() != 64;
-                bool const is_torn_long = is_same_start(region.bytes, long_region) && region.bytes.size() != 4096;
+                bool const is_torn_short = region.range.has_same_start(short_region) && region.range.size() != 64;
+                bool const is_torn_long = region.range.has_same_start(long_region) && region.range.size() != 4096;
                 if (is_torn_short || is_torn_long) static_cast<void>(torn_reads.fetch_add_acq_rel(1));
             }
         }
@@ -716,7 +708,7 @@ void test_prefault_faults_in_each_page_of_the_range() {
         ::fixy::View<std::byte const> const fresh = mapping.view<std::byte const>().expect("a mapping holds bytes");
         CHECK(pages_with_no_frame(window_of(fresh, page, 3 * page)) == 3, "no page of a new mapping has a frame");
 
-        CHECK(Hardening::prefault(kStartup, window_of(fresh, (2 * page) - 1, 2)),
+        CHECK(Hardening::prefault(kStartup, ::fixy::pages::storage_of(window_of(fresh, (2 * page) - 1, 2))),
               "the prefault of a writable range works");
         CHECK(pages_with_no_frame(window_of(fresh, page, 2 * page)) == 0,
               "each page that holds a byte of the range has a frame");
@@ -724,7 +716,7 @@ void test_prefault_faults_in_each_page_of_the_range() {
     }
     ::foundation::linear::drop(std::move(owner));
 
-    CHECK(!Hardening::prefault(kStartup, ::foundation::core::bytes(kReadOnlyWords)),
+    CHECK(!Hardening::prefault(kStartup, ::fixy::pages::storage_of(::foundation::core::bytes(kReadOnlyWords))),
           "the prefault of a read-only range gives false");
     static_cast<void>(::fixy::pages::exchange_thp_setting(kStartup, first_thp).expect("the process puts back THP"));
 }
@@ -750,9 +742,9 @@ void test_apply_prefaults_each_registered_region(crucible::warden::TopologyRef t
     {
         auto mapping = map_fresh_pages(owner);
         ::fixy::View<std::byte> const bytes = mapping.view<std::byte>().expect("a mapping holds bytes");
-        ::fixy::View<std::byte const> const region =
-            bytes.window((2 * page) - 1, 2).expect("the region fits in the mapping");
-        register_hot_region(region, /*huge_hint=*/false);
+        ::fixy::pages::PageRange const region =
+            ::fixy::pages::storage_of(bytes.window((2 * page) - 1, 2).expect("the region fits in the mapping"));
+        register_hot_region(region, RegionShape::resized);
 
         Policy policy = Policy::dev_quiet();
         policy.mlock_hot_regions = false;

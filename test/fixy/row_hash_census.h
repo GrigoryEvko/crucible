@@ -431,6 +431,7 @@ inline constexpr std::meta::info kCensusNamespaces[] = {
     ^^::fixy::fs,
     ^^::fixy::os,
     ^^::fixy::mmap,
+    ^^::fixy::pages,
     ^^::fixy::numa,
     ^^::fixy::net,
     ^^::fixy::perf,
@@ -1811,6 +1812,9 @@ inline constexpr StatedZero kZeros[] = {
      "a function of a loaded library: the address of a function of a foreign library, which carries no claim to "
      "fold, and it is never a template argument of a kernel signature"},
     {^^::fixy::os::LoaderDiagnostic, kPayload},
+    {^^::fixy::pages::PageRange,
+     "a range of the pages of an owner: an address word and a count that only the page doors give to the kernel, "
+     "which carries no claim to fold, and it is never a template argument of a kernel signature"},
     {^^::fixy::net::ForeignSocketRef, kDescriptor},
     {^^::fixy::net::SocketIdentityTag,
      "the tag of the identity of a socket: an incomplete class that an Id names, and never a value"},

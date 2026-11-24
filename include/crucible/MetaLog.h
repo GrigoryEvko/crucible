@@ -162,7 +162,8 @@ public:
         // one is not a trade a runtime constructor can make. MADV_COLLAPSE,
         // which puts the stall where the caller chooses, is the shape to
         // reach for if huge pages are wanted later.
-        crucible::warden::register_hot_region(::fixy::pages::storage_of(records_.view()), /*huge_hint=*/true);
+        crucible::warden::register_hot_region(::fixy::pages::storage_of(records_.view()),
+                                              crucible::warden::RegionShape::stable);
     }
 
     ~MetaLog() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(records_.view())); }

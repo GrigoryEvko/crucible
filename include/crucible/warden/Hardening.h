@@ -117,8 +117,8 @@ private:
         std::move(prior_affinity_)
             .match([](::fixy::sched::PriorAffinity prior) noexcept { (void)std::move(prior).restore(); },
                    []() noexcept {});
-        for (::fixy::View<std::byte const> const bytes : locked_) {
-            static_cast<void>(::fixy::pages::unlock_pages(ctx, bytes));
+        for (::fixy::pages::PageRange const range : locked_) {
+            static_cast<void>(::fixy::pages::unlock_pages(ctx, range));
         }
         locked_.clear();
         for (::fixy::pages::ThpSetting const prior : prior_thp_) {
@@ -163,7 +163,7 @@ private:
     ::fixy::Option<::fixy::pages::ThpSetting> prior_thp_{};
     int pinned_cpu_ = -1;
     // Apply locks at most one region for each region of the registry.
-    ::fixy::FixedList<::fixy::View<std::byte const>, HotRegionRegistry::max_regions> locked_{};
+    ::fixy::FixedList<::fixy::pages::PageRange, HotRegionRegistry::max_regions> locked_{};
 };
 
 // A policy changes process-wide state through privileged system calls,
@@ -248,17 +248,18 @@ public:
         if (p.mlock_hot_regions || p.thp_hint_pools || p.prefault_hot_regions || p.thp_collapse_now) {
             const auto regions = HotRegionRegistry::instance().snapshot();
             for (const auto& r : regions) {
-                if (p.thp_hint_pools && r.huge_hint) {
-                    (void)hint_hugepage(ctx, r.bytes);
+                bool const is_stable = r.shape == RegionShape::stable;
+                if (p.thp_hint_pools && is_stable) {
+                    (void)hint_hugepage(ctx, r.range);
                 }
                 if (p.mlock_hot_regions) {
-                    (void)lock_region(ctx, g, r.bytes);
+                    (void)lock_region(ctx, g, r.range);
                 }
                 if (p.prefault_hot_regions) {
-                    (void)prefault(ctx, r.bytes);
+                    (void)prefault(ctx, r.range);
                 }
-                if (p.thp_collapse_now && r.huge_hint) {
-                    (void)collapse_hugepage(ctx, r.bytes);
+                if (p.thp_collapse_now && is_stable) {
+                    (void)collapse_hugepage(ctx, r.range);
                 }
             }
         }
@@ -274,18 +275,17 @@ public:
     // lock instead.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
-    [[nodiscard]] static bool lock_region(Ctx const& ctx, AppliedPolicy& g,
-                                          ::fixy::View<std::byte const> bytes) noexcept {
-        if (bytes.size() == 0) return false;
+    [[nodiscard]] static bool lock_region(Ctx const& ctx, AppliedPolicy& g, ::fixy::pages::PageRange range) noexcept {
+        if (range.size() == 0) return false;
         if (g.locked_.size() == HotRegionRegistry::max_regions) return false;
-        if (::fixy::pages::lock_pages_on_fault(ctx, bytes).is_err()) {
-            ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> const locked = ::fixy::pages::lock_pages(ctx, bytes);
+        if (::fixy::pages::lock_pages_on_fault(ctx, range).is_err()) {
+            ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> const locked = ::fixy::pages::lock_pages(ctx, range);
             for (::foundation::os::Errno const error : locked.err()) {
                 detail::warn("mlock2/mlock", error);
                 return false;
             }
         }
-        static_cast<void>(g.locked_.append(bytes).expect("the test above found a free entry for the region"));
+        static_cast<void>(g.locked_.append(range).expect("the test above found a free entry for the region"));
         return true;
     }
 
@@ -295,9 +295,9 @@ public:
     // whole huge page gives false with no warning.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
-    [[nodiscard]] static bool hint_hugepage(Ctx const& ctx, ::fixy::View<std::byte const> bytes) noexcept {
+    [[nodiscard]] static bool hint_hugepage(Ctx const& ctx, ::fixy::pages::PageRange range) noexcept {
         ::fixy::Result<std::size_t, ::foundation::os::Errno> const advised =
-            ::fixy::pages::advise_huge_pages(ctx, bytes);
+            ::fixy::pages::advise_huge_pages(ctx, range);
         for (::foundation::os::Errno const error : advised.err()) {
             detail::warn("madvise(MADV_HUGEPAGE)", error);
             return false;
@@ -314,9 +314,9 @@ public:
     // the advice, and the knob is then skipped with a warning.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
-    [[nodiscard]] static bool prefault(Ctx const& ctx, ::fixy::View<std::byte const> bytes) noexcept {
+    [[nodiscard]] static bool prefault(Ctx const& ctx, ::fixy::pages::PageRange range) noexcept {
         ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> const populated =
-            ::fixy::pages::populate_pages(ctx, bytes);
+            ::fixy::pages::populate_pages(ctx, range);
         for (::foundation::os::Errno const error : populated.err()) {
             detail::warn("madvise(MADV_POPULATE_WRITE)", error);
             return false;
@@ -328,9 +328,9 @@ public:
     // returns, and the kernel emits a tracepoint an observer can count.
     template <class Ctx>
         requires CtxFitsHardeningMint<Ctx>
-    [[nodiscard]] static bool collapse_hugepage(Ctx const& ctx, ::fixy::View<std::byte const> bytes) noexcept {
+    [[nodiscard]] static bool collapse_hugepage(Ctx const& ctx, ::fixy::pages::PageRange range) noexcept {
         ::fixy::Result<std::size_t, ::foundation::os::Errno> const collapsed =
-            ::fixy::pages::collapse_huge_pages(ctx, bytes);
+            ::fixy::pages::collapse_huge_pages(ctx, range);
         for (::foundation::os::Errno const error : collapsed.err()) {
             // A kernel that does not know the advice reports ENOSYS or
             // EINVAL. That is expected and stays silent.

@@ -1218,6 +1218,10 @@ witness <fixy/os/Loader.h> private | fixy::os::Library<forge::brand> | fixy::os:
 # library.  Its value constructor is private, and the door of find_function is
 # the sole friend.
 witness <fixy/os/Loader.h> private | fixy::os::LibraryFunction<int() noexcept, forge::brand> | fixy::os::LibraryFunction<int() noexcept, forge::brand>{forge::rvalue<fixy::os::detail::SymbolWord>()}
+# A page range claims that storage_of made it from an object or a run that the
+# caller holds.  Its constructor from the bytes of a View is private, and the
+# two forms of storage_of are its makers.
+witness <fixy/os/Pages.h> private | fixy::pages::PageRange | fixy::pages::PageRange{forge::rvalue<foundation::core::View<std::byte const>>()}
 # A proof of quiescence claims that no thread of its owner runs.  Its value
 # constructor is private, and the door of the OwnerThread of the owner, which
 # gives it only while the OwnerThread holds no thread, is the sole friend.

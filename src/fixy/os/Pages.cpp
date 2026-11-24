@@ -39,25 +39,26 @@ constexpr std::uint32_t kRefuseBit = 1;
 
 }  // namespace
 
-UnitResult mlock_sys(void const* first, std::size_t bytes) noexcept {
-    return os::unit_of(os::raw_syscall(os::Syscall::mlock, first, bytes));
+UnitResult mlock_sys(PageRange range) noexcept {
+    return os::unit_of(os::raw_syscall(os::Syscall::mlock, std::to_underlying(range.first_), range.bytes_));
 }
 
-UnitResult mlock2_sys(void const* first, std::size_t bytes, unsigned flags) noexcept {
-    return os::unit_of(os::raw_syscall(os::Syscall::mlock2, first, bytes, flags));
+UnitResult mlock2_sys(PageRange range, unsigned flags) noexcept {
+    return os::unit_of(os::raw_syscall(os::Syscall::mlock2, std::to_underlying(range.first_), range.bytes_, flags));
 }
 
-UnitResult munlock_sys(void const* first, std::size_t bytes) noexcept {
-    return os::unit_of(os::raw_syscall(os::Syscall::munlock, first, bytes));
+UnitResult munlock_sys(PageRange range) noexcept {
+    return os::unit_of(os::raw_syscall(os::Syscall::munlock, std::to_underlying(range.first_), range.bytes_));
 }
 
 // The first huge page boundary at or after the start of the range, and the
 // count of whole huge pages from it.  A start in the last huge page of the
 // address space has no such boundary, and the range then has no whole huge
 // page.
-core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t bytes, int advice) noexcept {
+core::Result<std::size_t, os::Errno> madvise_sys(PageRange range, int advice) noexcept {
     constexpr std::uintptr_t kMask = huge_page_bytes - 1;
-    std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
+    std::uintptr_t const start = std::to_underlying(range.first_);
+    std::size_t const bytes = range.bytes_;
     core::Option<std::uintptr_t> boundary = core::align_up(start, std::uintptr_t{huge_page_bytes});
     if (boundary.is_none()) {
         return std::size_t{0};
@@ -81,7 +82,8 @@ core::Result<std::size_t, os::Errno> madvise_sys(void const* first, std::size_t 
 // size of a page comes from the auxiliary vector, because an aarch64 kernel
 // can use pages of 16 KiB or 64 KiB.  A vector that the door cannot read
 // gives einval, as the census of fixy/os/NumaPlacement.h does.
-UnitResult populate_sys(void const* first, std::size_t bytes) noexcept {
+UnitResult populate_sys(PageRange range) noexcept {
+    std::size_t const bytes = range.bytes_;
     if (bytes == 0) {
         return core::Unit{};
     }
@@ -89,7 +91,7 @@ UnitResult populate_sys(void const* first, std::size_t bytes) noexcept {
     if (page_size == 0) {
         return core::err(os::Errno::einval);
     }
-    std::uintptr_t const start = __builtin_bit_cast(std::uintptr_t, first);
+    std::uintptr_t const start = std::to_underlying(range.first_);
     std::uintptr_t const page_start = start - (start % static_cast<std::uintptr_t>(page_size));
     std::size_t const length = (start - page_start) + bytes;
     UnitResult const advised =

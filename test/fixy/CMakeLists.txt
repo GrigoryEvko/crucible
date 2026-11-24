@@ -6304,11 +6304,19 @@ fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
 # is a row of a closed table, so no class of a caller brings a value of
 # its own, and a specialization of a variable template of advice values
 # names nothing.
-# storage_of of fixy/os/Pages.h refuses a temporary, because the View of its
-# storage dangles at the end of the full expression.
+# storage_of of fixy/os/Pages.h refuses a temporary, because the storage of
+# the temporary ends at the end of the full expression.
 fixy_neg_compile_test(neg_os_pages_storage_of_temporary
   "use of deleted function .void fixy::pages::storage_of\\(const T&&\\) \\[with T = PaddedRecord\\]."
   "the storage of a temporary object ends at the end of the full expression")
+# A page range of fixy/os/Pages.h gives out no View, and no range comes from
+# an address word and a count.
+fixy_neg_compile_test(neg_os_page_range_to_view
+  "conversion from .const fixy::pages::PageRange. to non-scalar type .const foundation::core::View<const std::byte>. requested"
+  "neg_os_page_range_to_view\\.cpp:[0-9]+:[0-9]+: error:")
+fixy_neg_compile_test(neg_os_page_range_from_address
+  "no matching function for call to .fixy::pages::PageRange::PageRange\\(<brace-enclosed initializer list>\\)."
+  "neg_os_page_range_from_address\\.cpp:[0-9]+:[0-9]+: error:")
 fixy_neg_compile_test(neg_os_mmap_free_on_safe_surface
   "no matching function for call to .advise<fixy::mmap::advice::Free>\\("
   "the expression .!\\(DiscardsPages<Advice>\\) \\[with Advice = fixy::mmap::advice::Free\\]. evaluated to .false.")

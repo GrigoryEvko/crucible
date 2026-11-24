@@ -324,7 +324,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
     TraceRing() noexcept {
-        crucible::warden::register_hot_region(::fixy::pages::storage_of(*this), /*huge_hint=*/true);
+        crucible::warden::register_hot_region(::fixy::pages::storage_of(*this), crucible::warden::RegionShape::stable);
     }
     ~TraceRing() { crucible::warden::unregister_hot_region(::fixy::pages::storage_of(*this)); }
     TraceRing(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");

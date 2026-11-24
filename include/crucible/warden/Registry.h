@@ -4,8 +4,10 @@
 // component names its own backing memory when it is constructed and
 // withdraws it when it is destroyed, through the two free functions
 // below, so no component needs to know anything else about this layer.
-// A component gives its memory as a View of bytes, and storage_of of
-// fixy/os/Pages.h gives that View for an object or a run of elements.
+// A component gives its memory as a page range, and storage_of of
+// fixy/os/Pages.h gives that range for an object or a run of elements.  A
+// page range holds no borrow (the page range of fixy/os/Pages.h), so a
+// region and a snapshot of the regions hold none either.
 //
 // The registry decides nothing. It records regions, and applying a
 // policy is what locks, advises or faults them in, if the policy says so.
@@ -16,6 +18,7 @@
 // region with the length of its own registration.
 
 #include <fixy/Core.h>
+#include <fixy/os/Pages.h>
 #include <fixy/os/SpinLock.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -38,20 +41,25 @@ inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
     return ::fixy::align_up(n, kHugePageBytes);
 }
 
-// pad holds the seven bytes after the hint, so a region has no padding
+// The shape of the memory of a region over its life.  A stable region is a
+// large mapping that rarely changes shape, and a policy can give it huge
+// pages.  A resized region is a buffer that is resized often, where a
+// collapse into huge pages would stall the resize.
+enum class RegionShape : std::uint8_t {
+    resized,
+    stable,
+};
+
+// pad holds the seven bytes after the shape, so a region has no padding
 // byte.  A snapshot returns up to 256 regions, and with
 // -ftrivial-auto-var-init=zero GCC writes zero to each padding hole of each
 // region of the returned list, one store for each hole.
 // test/test_warden_policy.cpp makes sure that the region has no padding byte.
 struct HotRegion {
-    // The bytes of the region.  The View borrows the memory of the
-    // component that registered it, and the component keeps that memory
-    // alive until it withdraws the region.
-    ::fixy::View<std::byte const> bytes{};
-    // True for a large mapping that rarely changes shape. False for a
-    // buffer that is resized often, where collapsing it into huge
-    // pages would stall the resize.
-    bool huge_hint = false;
+    // The pages of the region: the memory of the component that registered
+    // it, until the component withdraws the region.
+    ::fixy::pages::PageRange range{};
+    RegionShape shape = RegionShape::resized;
     ::fixy::FixedArray<std::uint8_t, 7> pad{};
 };
 
@@ -78,9 +86,9 @@ public:
     // A registration and a withdrawal are the work of a constructor and of a
     // destructor, so no caller inlines them.  The destructor of an owner
     // then pays one call and keeps its code small.
-    CRUCIBLE_NOINLINE void register_region(::fixy::View<std::byte const> bytes, bool huge_hint) noexcept {
-        if (bytes.size() == 0) return;
-        HotRegion const region{.bytes = bytes, .huge_hint = huge_hint};
+    CRUCIBLE_NOINLINE void register_region(::fixy::pages::PageRange range, RegionShape shape) noexcept {
+        if (range.size() == 0) return;
+        HotRegion const region{.range = range, .shape = shape};
         bool const is_stored = regions_.with_at_owner_start_or_end(
             [&region](Snapshot& regions) noexcept { return store_(regions, region); });
         if (!is_stored) {
@@ -88,25 +96,22 @@ public:
         }
     }
 
-    // Withdraws the region whose first byte is the first byte of bytes.  A
+    // Withdraws the region whose first byte is the first byte of range.  A
     // region that is not registered is ignored, because nothing orders a
     // component's destruction against a policy being undone.
-    CRUCIBLE_NOINLINE void unregister_region(::fixy::View<std::byte const> bytes) noexcept {
-        if (bytes.size() == 0) return;
-        regions_.with_at_owner_start_or_end([bytes](Snapshot& regions) noexcept { remove_(regions, bytes); });
+    CRUCIBLE_NOINLINE void unregister_region(::fixy::pages::PageRange range) noexcept {
+        if (range.size() == 0) return;
+        regions_.with_at_owner_start_or_end([range](Snapshot& regions) noexcept { remove_(regions, range); });
     }
 
     // Returned by value so that a caller can work through the entries
     // without holding the table while it issues system calls. A region
     // registered during that work is picked up the next time a policy
-    // is applied.  The body copies the regions into the list of the call:
-    // each View of a region borrows the memory of its component, not the
-    // table, so the copy outlives the lock.  Complexity: a copy of at most
+    // is applied.  The body gives a copy of the regions: a region holds no
+    // borrow, so the copy leaves the lock.  Complexity: a copy of at most
     // 256 regions.
     [[nodiscard]] Snapshot snapshot() const noexcept {
-        Snapshot copy{};
-        regions_.with_at_owner_start_or_end([&copy](Snapshot const& regions) noexcept { copy = regions; });
-        return copy;
+        return regions_.with_at_owner_start_or_end([](Snapshot const& regions) noexcept { return regions; });
     }
 
     [[nodiscard]] size_t size() const noexcept {
@@ -122,28 +127,14 @@ private:
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
-    // True when the two Views start at one byte.  An empty View starts at
-    // no byte.
-    [[nodiscard]] static bool is_same_start_(::fixy::View<std::byte const> first,
-                                             ::fixy::View<std::byte const> second) noexcept {
-        auto const first_start = first.get(0);
-        auto const second_start = second.get(0);
-        for (auto const first_byte : first_start) {
-            for (auto const second_byte : second_start) {
-                return ::fixy::same_object(first_byte, second_byte);
-            }
-        }
-        return false;
-    }
-
-    // The position of the region that starts at the first byte of bytes.
+    // The position of the region that starts at the first byte of range.
     // The caller holds the lock: it gives the list of the lock.
     // Complexity: O(regions).
     [[nodiscard]] static ::fixy::Option<size_t> position_of_(Snapshot const& regions,
-                                                             ::fixy::View<std::byte const> bytes) noexcept {
+                                                             ::fixy::pages::PageRange range) noexcept {
         size_t position = 0;
         for (HotRegion const& region : regions) {
-            if (is_same_start_(region.bytes, bytes)) return ::fixy::some(position);
+            if (region.range.has_same_start(range)) return ::fixy::some(position);
             ++position;
         }
         return ::fixy::none;
@@ -152,7 +143,7 @@ private:
     // Replaces the region with the first byte of region, or adds region.
     // False when the list is full.  The caller holds the lock.
     [[nodiscard]] static bool store_(Snapshot& regions, HotRegion const& region) noexcept {
-        for (size_t const position : position_of_(regions, region.bytes)) {
+        for (size_t const position : position_of_(regions, region.range)) {
             *regions.get(position).expect("the search found the region at the position") = region;
             return true;
         }
@@ -161,8 +152,8 @@ private:
 
     // Moves the last region into the place of the withdrawn region.  The
     // caller holds the lock.
-    static void remove_(Snapshot& regions, ::fixy::View<std::byte const> bytes) noexcept {
-        for (size_t const position : position_of_(regions, bytes)) {
+    static void remove_(Snapshot& regions, ::fixy::pages::PageRange range) noexcept {
+        for (size_t const position : position_of_(regions, range)) {
             HotRegion const last = regions.take_last().expect("the list holds the region that the search found");
             if (position < regions.size()) {
                 *regions.get(position).expect("the position is below the size of the list") = last;
@@ -186,12 +177,12 @@ private:
     ::fixy::spin::BlockingLocked<Snapshot, RegionsTag> regions_{};
 };
 
-inline void register_hot_region(::fixy::View<std::byte const> bytes, bool huge_hint = false) noexcept {
-    HotRegionRegistry::instance().register_region(bytes, huge_hint);
+inline void register_hot_region(::fixy::pages::PageRange range, RegionShape shape = RegionShape::resized) noexcept {
+    HotRegionRegistry::instance().register_region(range, shape);
 }
 
-inline void unregister_hot_region(::fixy::View<std::byte const> bytes) noexcept {
-    HotRegionRegistry::instance().unregister_region(bytes);
+inline void unregister_hot_region(::fixy::pages::PageRange range) noexcept {
+    HotRegionRegistry::instance().unregister_region(range);
 }
 
 // The registry is a pinned singleton, so nothing can hand out a fresh
@@ -219,12 +210,12 @@ class HotRegionRegistryHandle final : public ::foundation::Pinned<HotRegionRegis
     friend constexpr HotRegionRegistryHandle mint_hot_region_registry_handle(FriendCtx const&) noexcept;
 
 public:
-    void register_region(::fixy::View<std::byte const> bytes, bool huge_hint = false) const noexcept {
-        HotRegionRegistry::instance().register_region(bytes, huge_hint);
+    void register_region(::fixy::pages::PageRange range, RegionShape shape = RegionShape::resized) const noexcept {
+        HotRegionRegistry::instance().register_region(range, shape);
     }
 
-    void unregister_region(::fixy::View<std::byte const> bytes) const noexcept {
-        HotRegionRegistry::instance().unregister_region(bytes);
+    void unregister_region(::fixy::pages::PageRange range) const noexcept {
+        HotRegionRegistry::instance().unregister_region(range);
     }
 
     [[nodiscard]] HotRegionRegistry::Snapshot snapshot() const noexcept {
