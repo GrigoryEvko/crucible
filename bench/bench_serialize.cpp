@@ -100,7 +100,9 @@ int main() {
         // (ser, deser) Runs.
         ::fixy::BumpArena<DagArena> dag_arena =
             ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20});
-        const DagRef<RegionNode> region = synth_region(dag_arena, num_ops);
+        // The bodies below read the region through a Ref of const, so a body
+        // reaches no part of the region that it can write.
+        const DagRef<RegionNode const> region = synth_region(dag_arena, num_ops);
 
         const size_t wire_cap =
             64 + num_ops * (40 + 2 * sizeof(TensorMeta) + sizeof(TensorMeta) + 3 * 3 * sizeof(uint32_t));

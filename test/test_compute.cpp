@@ -282,7 +282,9 @@ int main() {
     // the whole loop.  Passing it to every call costs nothing at run
     // time and makes each call site state, in its own types, that it
     // is only reachable in compiled mode.
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    // The view is const, so a kernel that captures it by reference writes no
+    // part of it.
+    auto const cv = ctx.mint_compiled_view(kVigilForeground);
 
     ctx.register_external_view(SlotId{SL_X}, x_block.view(), cv).expect("the block holds the bytes of its slot");
     ctx.register_external_view(SlotId{SL_W1}, w1_block.view(), cv).expect("the block holds the bytes of its slot");

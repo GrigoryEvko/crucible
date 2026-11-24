@@ -74,7 +74,9 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 20});
     const auto alloc = test_alloc();
     const ::fixy::Option<DagRef<BranchNode>> loaded = deserialize_branch(alloc, input, arena).ok();
-    for (const DagRef<BranchNode> branch : loaded) {
+    // The writer reads each branch through a Ref of const, so its body
+    // reaches no part of the branch that it can write.
+    for (const DagRef<BranchNode const> branch : loaded) {
         CRUCIBLE_FUZZ_CLAIM("branch", branch->num_arms() <= CDAG_MAX_BRANCH_ARMS);
         CRUCIBLE_FUZZ_CLAIM("branch", branch->are_arms_sorted_by_value());
 
