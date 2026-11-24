@@ -460,8 +460,7 @@ inline constexpr ::fixy::TextView kRegionChecksumKeyText{"crucible cdag region c
 // is no constant expression, so a wrong key text does not compile.
 [[nodiscard]] consteval ::foundation::core::KeyedHashKeyBytes key_of_text(::fixy::TextView text) noexcept {
     if (text.size() != 32) ::fixy::unreachable();
-    ::fixy::FixedArray<std::byte, 32> bytes{};
-    bytes.with_mut([text](auto run) noexcept {
+    const auto bytes = ::fixy::build_fixed_array<std::byte, 32>([text](auto run) noexcept {
         auto cursor = run.begin();
         for (char const letter : text) {
             *cursor = static_cast<std::byte>(letter);

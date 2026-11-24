@@ -134,8 +134,7 @@ struct Snapshot {
     [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
         Snapshot r{};
         for (::fixy::Index<NUM_COUNTERS> const i : ::fixy::IndexRange<NUM_COUNTERS>{}) {
-            auto const delta = ::fixy::saturating_sub(counters.at(i), older.counters.at(i));
-            r.counters.with_element(i, [delta](uint64_t& counter) noexcept { counter = delta; });
+            r.counters.set(i, ::fixy::saturating_sub(counters.at(i), older.counters.at(i)));
         }
         return r;
     }

@@ -59,17 +59,12 @@ class IncastController : public ::foundation::Pinned<IncastController<MaxFlows>>
     find_or_insert(cntp::SocketIdentity socket, cntp::PositiveCreditBytes initial_credit) noexcept {
         std::uint32_t const credit = initial_credit.value();
         for (FlowIndex index : find(socket)) {
-            flows_.with_element(index, [credit](FlowSlot& flow) noexcept { flow.credit_bytes = credit; });
+            flows_.update(index, [credit](FlowSlot& flow) noexcept { flow.credit_bytes = credit; });
             return index;
         }
         for (FlowIndex index : flows_.indices()) {
             if (!flows_.at(index).occupied) {
-                flows_.with_element(index, [socket, credit](FlowSlot& flow) noexcept {
-                    flow.occupied = true;
-                    flow.socket = socket;
-                    flow.credit_bytes = credit;
-                    flow.sequence = 0;
-                });
+                flows_.set(index, FlowSlot{.occupied = true, .socket = socket, .credit_bytes = credit, .sequence = 0});
                 return index;
             }
         }
@@ -107,7 +102,7 @@ public:
                  std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
         // The test of the room and the add read one element.
-        return flows_.with_element(
+        return flows_.update(
             index,
             [socket, bytes, sequence](FlowSlot& flow) noexcept -> ::fixy::Result<IncastCreditGrant, cntp::IncastError> {
                 const std::uint32_t room = ::fixy::max_of<std::uint32_t> - flow.credit_bytes;
@@ -134,7 +129,7 @@ public:
     try_consume_credit(Ctx const&, cntp::SocketIdentity socket) noexcept {
         CRUCIBLE_TRY(index, find(socket).ok_or(cntp::IncastError::FlowNotStarted));
         // The test and the exchange read one element, so the optimizer knows that the grant is not zero.
-        return flows_.with_element(
+        return flows_.update(
             index, [](FlowSlot& flow) noexcept -> ::fixy::Result<cntp::PositiveCreditBytes, cntp::IncastError> {
                 if (flow.credit_bytes == 0) {
                     return ::fixy::err(cntp::IncastError::CreditUnavailable);

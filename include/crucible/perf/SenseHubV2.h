@@ -387,8 +387,7 @@ inline CounterDelta CounterSnapshot::operator-(const CounterSnapshot& older) con
         // caller that passed the two readings the wrong way round.
         uint64_t const now = values.at(i);
         uint64_t const before = older.values.at(i);
-        uint64_t const delta = now >= before ? now - before : 0;
-        d.deltas.with_element(i, [delta](uint64_t& held) noexcept { held = delta; });
+        d.deltas.set(i, now >= before ? now - before : 0);
     }
     return d;
 }

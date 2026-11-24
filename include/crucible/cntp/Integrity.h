@@ -111,13 +111,13 @@ inline constexpr std::size_t xxh_stripe_bytes = 32;
 // little-endian (foundation/Platform.h), so the copy of the bytes is the word.
 [[nodiscard, gnu::pure]] inline std::uint64_t load_le64(::fixy::View<std::byte const, 8> word) noexcept {
     ::fixy::FixedArray<std::byte, 8> image{};
-    image.with_mut([word](auto run) noexcept { ::fixy::copy(std::move(run), word); });
+    image.copy_from(word);
     return ::fixy::bit_cast<std::uint64_t>(image);
 }
 
 [[nodiscard, gnu::pure]] inline std::uint32_t load_le32(::fixy::View<std::byte const, 4> word) noexcept {
     ::fixy::FixedArray<std::byte, 4> image{};
-    image.with_mut([word](auto run) noexcept { ::fixy::copy(std::move(run), word); });
+    image.copy_from(word);
     return ::fixy::bit_cast<std::uint32_t>(image);
 }
 
@@ -294,23 +294,15 @@ public:
         std::size_t const held = held_bytes();
         std::size_t const room = detail::xxh_stripe_bytes - held;
         if (data.size() < room) {
-            memory_.with_mut([held, data](auto run) noexcept {
-                ::fixy::copy(::fixy::take_window(std::move(run), held, data.size()).expect("the bytes fit in the room"),
-                             data)
-                    .expect("the window has the count of the bytes");
-            });
+            memory_.copy_window(held, data).expect("the bytes fit in the room");
             memory_size_ = held + data.size();
             return ::fixy::Unit{};
         }
 
         ::fixy::View<std::byte const> rest = data;
         if (held != 0) {
-            memory_.with_mut([held, room, data](auto run) noexcept {
-                ::fixy::copy(
-                    ::fixy::take_window(std::move(run), held, room).expect("the room ends at the end of the stripe"),
-                    data.window(0, room).expect("the bytes fill the room"))
-                    .expect("the two windows have the count of the room");
-            });
+            memory_.copy_window(held, data.window(0, room).expect("the bytes fill the room"))
+                .expect("the room ends at the end of the stripe");
             detail::process_stripe(memory_.view(), v1_, v2_, v3_, v4_);
             rest = data.window(room, data.size() - room).expect("the bytes after the room");
             memory_size_ = 0;
@@ -323,12 +315,7 @@ public:
 
         auto const tail = stripes.rest();
         if (tail.size() != 0) {
-            memory_.with_mut([tail](auto run) noexcept {
-                ::fixy::copy(
-                    ::fixy::take_window(std::move(run), 0, tail.size()).expect("the tail is shorter than one stripe"),
-                    tail)
-                    .expect("the window has the count of the tail");
-            });
+            memory_.copy_window(0, tail).expect("the tail is shorter than one stripe");
             memory_size_ = tail.size();
         }
         return ::fixy::Unit{};

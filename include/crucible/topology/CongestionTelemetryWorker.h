@@ -170,19 +170,16 @@ public:
                 return ::fixy::err(topology::TelemetryError::InvalidNicCog);
             }
         }
-        slots_.with_mut([nics](auto run) noexcept {
-            for (Slot& slot : run) {
-                slot = Slot{};
+        for (SlotIndex const index : slots_.indices()) {
+            Slot slot{};
+            // The slots after the last NIC stay free.
+            for (auto const nic : nics.get(index.raw())) {
+                slot.occupied = true;
+                slot.nic = *nic;
+                slot.last.nic_uuid = nic->uuid;
             }
-            // The count of the NICs is at most MaxLinks, so each NIC finds a slot.
-            auto slot = run.begin();
-            for (cog::CogIdentity const& nic : nics) {
-                (*slot).occupied = true;
-                (*slot).nic = nic;
-                (*slot).last.nic_uuid = nic.uuid;
-                ++slot;
-            }
-        });
+            slots_.set(index, slot);
+        }
         schedule_ = schedule;
         return ::fixy::Unit{};
     }
@@ -196,7 +193,7 @@ public:
                 std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(nic));
         topology::CongestionAggregate const aggregate = topology::aggregate_congestion(nic, samples);
-        slots_.with_element(index, [aggregate, sequence](Slot& slot) noexcept {
+        slots_.update(index, [&aggregate, sequence](Slot& slot) noexcept {
             slot.last = aggregate;
             slot.sequence = sequence;
         });
@@ -210,7 +207,7 @@ public:
               std::uint64_t sequence) noexcept {
         CRUCIBLE_TRY(index, find(nic));
         CRUCIBLE_TRY(aggregate, topology::harvest_per_link(ctx, nic, active_fds));
-        slots_.with_element(index, [&aggregate, sequence](Slot& slot) noexcept {
+        slots_.update(index, [&aggregate, sequence](Slot& slot) noexcept {
             slot.last = aggregate;
             slot.sequence = sequence;
         });

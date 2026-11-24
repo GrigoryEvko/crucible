@@ -56,12 +56,9 @@ Snapshot SenseHub::read(::foundation::effects::cap::Nondet /*nondet*/) const noe
     auto const read_counters = [&snapshot](detail::ReadOnlyMapping<SenseHubCountersTag> const& mapped) noexcept {
         for (::fixy::mmap::SharedView<uint64_t const, NUM_COUNTERS> const counters :
              mapped.template view_at<uint64_t const, NUM_COUNTERS>(0)) {
-            snapshot.counters.with_mut([&counters](auto run) noexcept {
-                for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
-                    auto counter = run.get_mut(i.raw()).expect("an index of the counters is inside the snapshot");
-                    *counter = counters.load_acquire(i);
-                }
-            });
+            for (::fixy::Index<NUM_COUNTERS> const i : counters.indices()) {
+                snapshot.counters.set(i, counters.load_acquire(i));
+            }
         }
     };
     state_.match(

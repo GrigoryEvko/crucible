@@ -118,13 +118,7 @@ inline constexpr std::size_t FEDERATION_DIGEST_BYTES = 32;
 class FederationHashKey final {
 public:
     constexpr explicit FederationHashKey(::fixy::View<std::byte const, FEDERATION_DIGEST_BYTES> bytes) noexcept {
-        bytes_.with_mut([bytes](auto run) noexcept {
-            auto cursor = bytes.begin();
-            for (std::byte& byte : run) {
-                byte = *cursor;
-                ++cursor;
-            }
-        });
+        bytes_.copy_from(bytes);
     }
 
     // The key of the keyed hash.  Complexity: one read of the 32 bytes.
@@ -161,11 +155,7 @@ public:
 
     [[nodiscard]] static constexpr FederationKey sentinel() noexcept {
         FederationKey key{};
-        key.digest_.with_mut([](auto run) noexcept {
-            for (std::byte& byte : run) {
-                byte = std::byte{0xFF};
-            }
-        });
+        key.digest_.fill(std::byte{0xFF});
         return key;
     }
 
@@ -198,8 +188,8 @@ private:
 // image holds no padding and has the same bytes on each target.
 template <::fixy::Encodable T>
 [[nodiscard]] constexpr FederationKey federation_key_of(FederationHashKey const& hash_key, T const& value) noexcept {
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<T>> image{};
-    image.with_mut([&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
+    const auto image = ::fixy::build_fixed_array<std::byte, ::fixy::encoded_size_v<T>>(
+        [&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
     return federation_key_of_bytes(hash_key, ::fixy::View<std::byte const>{image.view()});
 }
 

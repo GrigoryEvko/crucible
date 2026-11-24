@@ -280,10 +280,10 @@ template <::foundation::effects::IsExecCtx Ctx>
     // The scan reads the part that each receive filled, in the frame of the
     // reply.  A failed receive and an empty part end the dump.
     using Answer = ::fixy::Result<Qdisc, PacingError>;
-    ::fixy::FixedArray<std::byte, detail::qdisc_reply_bytes> reply{};
+    auto [reply, reply_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, detail::qdisc_reply_bytes>);
     for (;;) {
         ::fixy::Option<Answer> const answer =
-            reply.with_mut([&ctx, nl, interface_index](auto run) noexcept -> ::fixy::Option<Answer> {
+            reply.with_mut(reply_key, [&ctx, nl, interface_index](auto run) noexcept -> ::fixy::Option<Answer> {
                 auto const received = ::fixy::net::receive_bytes(ctx, nl, std::move(run));
                 return received.match(
                     [interface_index](auto const& part) noexcept -> ::fixy::Option<Answer> {

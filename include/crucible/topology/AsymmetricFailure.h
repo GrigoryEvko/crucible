@@ -163,8 +163,10 @@ class AsymmetricFailureDetector
 
     static constexpr std::size_t kMaxEvents = MaxPeers * 4;
 
+    using WitnessRow = ::fixy::FixedArray<WitnessSlot, MaxWitnesses>;
+
     ::fixy::FixedArray<PeerSlot, MaxPeers> peers_{};
-    ::fixy::FixedArray<::fixy::FixedArray<WitnessSlot, MaxWitnesses>, MaxPeers> witnesses_{};
+    ::fixy::FixedArray<WitnessRow, MaxPeers> witnesses_{};
     ::fixy::FixedArray<AsymmetricFailureEvent, kMaxEvents> events_{};
     ::fixy::Index<kMaxEvents> next_event_ = ::fixy::index<0>();
     std::size_t event_count_ = 0;
@@ -203,7 +205,7 @@ class AsymmetricFailureDetector
         for (::fixy::Index<MaxPeers> const index : peers_.indices()) {
             if (!peers_.at(index).occupied) {
                 cog::Uuid const peer_uuid = peer.uuid;
-                peers_.with_element(index, [peer_uuid](PeerSlot& slot) noexcept {
+                peers_.update(index, [peer_uuid](PeerSlot& slot) noexcept {
                     slot.occupied = true;
                     slot.peer_uuid = peer_uuid;
                 });
@@ -219,17 +221,15 @@ class AsymmetricFailureDetector
                                       bool success) noexcept {
         ::fixy::Index<kRingSlots> const next =
             ::fixy::Index<kRingSlots>::check(window.next).expect("the cursor of a probe window is below its size");
-        // The read of the sample that leaves the window and the write of the new sample take one slot.
-        ring.with_element(next, [&window, success](bool& held) noexcept {
-            if (window.count == Window) {
-                if (held) {
-                    --window.successes;
-                }
-            } else {
-                ++window.count;
+        // The new sample takes the slot of the sample that leaves a full window.
+        bool const left = ring.exchange(next, success);
+        if (window.count == Window) {
+            if (left) {
+                --window.successes;
             }
-            held = success;
-        });
+        } else {
+            ++window.count;
+        }
         if (success) {
             ++window.successes;
         }
@@ -313,13 +313,13 @@ class AsymmetricFailureDetector
             .witness_reachable = summary.witness_reachable,
             .sequence = summary.sequence,
         };
-        events_.with_element(next_event_, [&event](AsymmetricFailureEvent& held) noexcept { held = event; });
+        events_.set(next_event_, event);
         next_event_ = next_event_.next_cyclic();
         if (event_count_ < kMaxEvents) {
             ++event_count_;
         }
         FailureClass const to = summary.with_witnesses;
-        peers_.with_element(index, [to](PeerSlot& slot) noexcept { slot.last_class = to; });
+        peers_.update(index, [to](PeerSlot& slot) noexcept { slot.last_class = to; });
     }
 
     constexpr void record_if_transition(::fixy::Index<MaxPeers> index) noexcept {
@@ -338,7 +338,7 @@ class AsymmetricFailureDetector
             [&](::fixy::Index<MaxPeers> index) {
                 // The advance of the sequence and the push of the sample write one slot in one body.
                 bool const is_advanced =
-                    peers_.with_element(index, [sequence, is_outbound, success](PeerSlot& slot) noexcept {
+                    peers_.update(index, [sequence, is_outbound, success](PeerSlot& slot) noexcept {
                         if (!slot.sequence.try_advance(sequence)) {
                             return false;
                         }
@@ -365,6 +365,39 @@ class AsymmetricFailureDetector
         NoRoom,
     };
 
+    // Writes the vote into the slot of the witness in the row of the peer of
+    // index, or into the first free slot of the row.
+    [[nodiscard]] constexpr VoteWrite write_vote(::fixy::Index<MaxPeers> index, cog::Uuid witness_uuid,
+                                                 bool witness_reaches_target, std::uint64_t sequence) noexcept {
+        return witnesses_.update(index, [witness_uuid, witness_reaches_target, sequence](WitnessRow& row) noexcept {
+            for (auto const slot : row.indices()) {
+                WitnessSlot const& existing = row.at(slot);
+                if (existing.occupied && existing.witness_uuid == witness_uuid) {
+                    if (sequence < existing.sequence.get()) {
+                        return VoteWrite::Stale;
+                    }
+                    row.update(slot, [witness_reaches_target, sequence](WitnessSlot& held) noexcept {
+                        static_cast<void>(held.sequence.try_advance(sequence));
+                        held.reachable = witness_reaches_target;
+                    });
+                    return VoteWrite::Written;
+                }
+            }
+            for (auto const slot : row.indices()) {
+                if (!row.at(slot).occupied) {
+                    row.update(slot, [witness_uuid, witness_reaches_target, sequence](WitnessSlot& held) noexcept {
+                        held.occupied = true;
+                        held.witness_uuid = witness_uuid;
+                        held.reachable = witness_reaches_target;
+                        static_cast<void>(held.sequence.try_advance(sequence));
+                    });
+                    return VoteWrite::Written;
+                }
+            }
+            return VoteWrite::NoRoom;
+        });
+    }
+
     // Records the vote of witness for the peer of index.  A vote older than
     // the last vote of the witness, or a new witness with no free slot, is
     // refused.
@@ -373,39 +406,12 @@ class AsymmetricFailureDetector
         if (sequence < peers_.at(index).sequence.get()) {
             return false;
         }
-        // The search of the witness and the write of its vote take one loop over the row, as one body.
-        cog::Uuid const witness_uuid = witness.uuid;
-        VoteWrite const written =
-            witnesses_.with_element(index, [witness_uuid, witness_reaches_target,
-                                            sequence](::fixy::FixedArray<WitnessSlot, MaxWitnesses>& row) noexcept {
-                return row.with_mut([witness_uuid, witness_reaches_target, sequence](auto run) noexcept {
-                    for (WitnessSlot& existing : run) {
-                        if (existing.occupied && existing.witness_uuid == witness_uuid) {
-                            if (sequence < existing.sequence.get()) {
-                                return VoteWrite::Stale;
-                            }
-                            static_cast<void>(existing.sequence.try_advance(sequence));
-                            existing.reachable = witness_reaches_target;
-                            return VoteWrite::Written;
-                        }
-                    }
-                    for (WitnessSlot& existing : run) {
-                        if (!existing.occupied) {
-                            existing.occupied = true;
-                            existing.witness_uuid = witness_uuid;
-                            existing.reachable = witness_reaches_target;
-                            static_cast<void>(existing.sequence.try_advance(sequence));
-                            return VoteWrite::Written;
-                        }
-                    }
-                    return VoteWrite::NoRoom;
-                });
-            });
+        VoteWrite const written = write_vote(index, witness.uuid, witness_reaches_target, sequence);
         if (written != VoteWrite::Written) {
             return false;
         }
-        peers_.with_element(
-            index, [sequence](PeerSlot& slot) noexcept { static_cast<void>(slot.sequence.try_advance(sequence)); });
+        peers_.update(index,
+                      [sequence](PeerSlot& slot) noexcept { static_cast<void>(slot.sequence.try_advance(sequence)); });
         record_if_transition(index);
         return true;
     }

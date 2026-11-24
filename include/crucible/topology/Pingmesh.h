@@ -233,27 +233,20 @@ private:
         if (find_peer(peer.uuid).is_some()) {
             return PingmeshError::DuplicatePeer;
         }
-        // The body reads the peer through a const reference, so it writes no
-        // borrow of its frame into the peer.
-        cog::CogIdentity const& peer_read = peer;
-        return peers_.with_mut([&peer_read](auto run) noexcept {
-            for (PeerSlot& slot : run) {
-                if (!slot.active) {
-                    slot.peer = peer_read;
-                    slot.active = true;
-                    return PingmeshError::None;
-                }
+        for (PeerIndex const index : peers_.indices()) {
+            if (!peers_.at(index).active) {
+                peers_.set(index, PeerSlot{.peer = peer, .active = true});
+                return PingmeshError::None;
             }
-            return PingmeshError::Full;
-        });
+        }
+        return PingmeshError::Full;
     }
 
     void enable_all_registered_pairs() noexcept {
         for (PeerIndex const src : peers_.indices()) {
             for (PeerIndex const dst : peers_.indices()) {
                 bool const is_enabled = src != dst && peers_.at(src).active && peers_.at(dst).active;
-                enabled_pairs_.with_element(pair_index(src, dst),
-                                            [is_enabled](bool& enabled) noexcept { enabled = is_enabled; });
+                enabled_pairs_.set(pair_index(src, dst), is_enabled);
             }
         }
     }
@@ -329,7 +322,7 @@ public:
     [[nodiscard]] PingmeshError enable_pair(Ctx const&, cog::Uuid src, cog::Uuid dst) noexcept {
         return locate_pair(src, dst).match(
             [&](PairIndex index) {
-                enabled_pairs_.with_element(index, [](bool& enabled) noexcept { enabled = true; });
+                enabled_pairs_.set(index, true);
                 return PingmeshError::None;
             },
             [](PingmeshError error) { return error; });

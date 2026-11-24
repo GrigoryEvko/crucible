@@ -314,7 +314,7 @@ private:
                 event.new_path = plan.new_path().value().raw();
             },
             []() noexcept { ::fixy::fatal("an event of a swap comes after begin_swap, which sets the plan"); });
-        guarded.events.with_element(guarded.next_event, [&event](PathSwapEvent& slot) noexcept { slot = event; });
+        guarded.events.set(guarded.next_event, event);
         guarded.next_event = guarded.next_event.next_cyclic();
         if (guarded.event_count < MaxEvents) {
             ++guarded.event_count;

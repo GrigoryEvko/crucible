@@ -202,8 +202,8 @@ compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
     auto extents = sizes_minus_one * ::foundation::simd::select(valid_mask, strides, i64x8(0));
 
     // The lanes reach the array through the bytes of the register.
-    ::fixy::FixedArray<std::byte, sizeof(i64x8)> extent_bytes{};
-    extent_bytes.with_mut([&extents](auto run) noexcept { ::foundation::simd::store(extents, std::move(run)); });
+    const auto extent_bytes = ::fixy::build_fixed_array<std::byte, sizeof(i64x8)>(
+        [&extents](auto run) noexcept { ::foundation::simd::store(extents, std::move(run)); });
     const auto extents_buf = ::fixy::bit_cast<::fixy::FixedArray<int64_t, 8>>(extent_bytes);
 
     int64_t max_offset = 0;

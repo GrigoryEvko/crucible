@@ -81,9 +81,9 @@ using SdcResultBytes = ::fixy::FixedArray<std::byte, sizeof(T)>;
 template <typename T>
 concept SdcComparableResult = ::fixy::DecodableFrom<SdcResultBytes<T>, T>;
 
-// The result of one replica of a work.
+// The result of one replica of a work.  A work reads the identity of its Cog.
 template <class Work>
-using SdcWorkResult = std::remove_cvref_t<std::invoke_result_t<Work&, cog::CogIdentity&>>;
+using SdcWorkResult = std::remove_cvref_t<std::invoke_result_t<Work&, cog::CogIdentity const&>>;
 
 template <class Ctx>
 concept CtxFitsSdcMint =
@@ -199,8 +199,16 @@ private:
 
     void record_event(SdcEvent event) noexcept {
         event.sequence = ++event_sequence_;
-        events_.with_element(event_cursor_, [event](SdcEvent& entry) noexcept { entry = event; });
+        events_.set(event_cursor_, event);
         event_cursor_ = event_cursor_.next_cyclic();
+    }
+
+    // Adds one mismatch to the Cog at index.  A count that wrapped to zero
+    // would clear a suspect Cog, so the count stays at its maximum.
+    void count_mismatch(CogIndex index) noexcept {
+        cogs_.update(index, [](CogSlot& slot) noexcept {
+            slot.mismatch_count = ::fixy::saturating_add(slot.mismatch_count, std::uint16_t{1});
+        });
     }
 
 public:
@@ -232,12 +240,7 @@ public:
         return CogIndex::check(active_cogs_)
             .match(
                 [&](CogIndex slot) noexcept {
-                    // The body reads the cog through a const reference, so it
-                    // writes no borrow of its frame into the cog.
-                    cog::CogIdentity const& cog_read = cog;
-                    cogs_.with_element(slot, [&cog_read](CogSlot& entry) noexcept {
-                        entry = CogSlot{.cog = cog_read, .mismatch_count = 0, .active = true};
-                    });
+                    cogs_.set(slot, CogSlot{.cog = cog, .mismatch_count = 0, .active = true});
                     ++active_cogs_;
                     return true;
                 },
@@ -249,8 +252,8 @@ public:
     // event of each run, and an error gives its kind.
     template <class Ctx, class Work>
         requires CtxFitsSdcRun<Ctx> && SdcComparableResult<SdcWorkResult<Work>>
-    [[nodiscard]] auto run_with_redundancy(Ctx const&,
-                                           Work&& work) noexcept(std::is_nothrow_invocable_v<Work&, cog::CogIdentity&>)
+    [[nodiscard]] auto
+    run_with_redundancy(Ctx const&, Work&& work) noexcept(std::is_nothrow_invocable_v<Work&, cog::CogIdentity const&>)
         -> ::fixy::Result<SdcVerified<SdcWorkResult<Work>>, SdcEventKind> {
         using Result = SdcWorkResult<Work>;
 
@@ -261,8 +264,7 @@ public:
         }
 
         Work& body = work;
-        Result primary = cogs_.with_element(::fixy::index<0>(),
-                                            [&body](CogSlot& primary_slot) noexcept { return body(primary_slot.cog); });
+        Result primary = body(cogs_.at(::fixy::index<0>()).cog);
         for (CogIndex const slot : cogs_.indices()) {
             if (slot.raw() == 0) {
                 continue;
@@ -270,17 +272,10 @@ public:
             if (slot.raw() >= required) {
                 break;
             }
-            Result replica = cogs_.with_element(
-                slot, [&body](CogSlot& comparison_slot) noexcept { return body(comparison_slot.cog); });
+            Result replica = body(cogs_.at(slot).cog);
             if (!detail::equivalent(primary, replica, config_.strategy, config_.tolerance_units)) {
-                // A count that wrapped to zero would clear a suspect Cog.
-                cogs_.with_element(::fixy::index<0>(), [](CogSlot& primary_slot) noexcept {
-                    primary_slot.mismatch_count = ::fixy::saturating_add(primary_slot.mismatch_count, std::uint16_t{1});
-                });
-                cogs_.with_element(slot, [](CogSlot& comparison_slot) noexcept {
-                    comparison_slot.mismatch_count =
-                        ::fixy::saturating_add(comparison_slot.mismatch_count, std::uint16_t{1});
-                });
+                count_mismatch(::fixy::index<0>());
+                count_mismatch(slot);
                 CogSlot const& primary_slot = cogs_.at(::fixy::index<0>());
                 CogSlot const& comparison_slot = cogs_.at(slot);
 

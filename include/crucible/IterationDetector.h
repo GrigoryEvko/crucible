@@ -232,12 +232,13 @@ struct IterationDetector {
     void restart_after_divergence() {
         const bool diverged_at_this_period = period_ != 0 && current_period_reported_ && periods_reported_ == 1;
         if (diverged_at_this_period && phase_is_unique) break_(period_, period_body_sum_, BREAKS_TO_REFUTE);
-        refuted_.with_mut([this](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
-                if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
-                refuted.broke_since_restart = false;
-            }
-        });
+        for (const RefutedSlot slot : refuted_.indices()) {
+            if (slot.raw() >= refuted_count_) break;
+            RefutedPeriod refuted = refuted_.at(slot);
+            if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
+            refuted.broke_since_restart = false;
+            refuted_.set(slot, refuted);
+        }
         restart_();
     }
 
@@ -252,15 +253,8 @@ struct IterationDetector {
     [[nodiscard]] uint64_t history_capacity() const noexcept { return keys_.size(); }
 
 private:
-    // The refuted periods: the first refuted_count_ slots of the ring, in the
-    // run of a frame of the ring.  The window takes the run, so it is the one
-    // writer of the refuted periods.
-    template <class Brand, std::size_t Extent>
-    [[nodiscard]] ::fixy::ViewMut<RefutedPeriod, Brand>
-    refuted_in_(::fixy::ViewMut<RefutedPeriod, Brand, Extent> run) const noexcept {
-        return ::fixy::take_window(std::move(run), 0, refuted_count_)
-            .expect("at most REFUTED_CAPACITY periods are refuted");
-    }
+    // The refuted periods are the first refuted_count_ slots of the ring.
+    using RefutedSlot = ::fixy::Index<REFUTED_CAPACITY>;
     [[nodiscard]] ::fixy::View<const RefutedPeriod> view_refuted_() const noexcept {
         return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
     }
@@ -499,23 +493,20 @@ private:
     // Records breaks against a period. The ring evicts its oldest entry when
     // it is full.
     void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
-        const bool is_counted = refuted_.with_mut([this, period, body_sum, breaks](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
-                if (refuted.period == period && refuted.body_sum == body_sum) {
-                    refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
-                    return true;
-                }
+        for (const RefutedSlot slot : refuted_.indices()) {
+            if (slot.raw() >= refuted_count_) break;
+            RefutedPeriod refuted = refuted_.at(slot);
+            if (refuted.period == period && refuted.body_sum == body_sum) {
+                refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
+                refuted_.set(slot, refuted);
+                return;
             }
-            return false;
-        });
-        if (is_counted) return;
-        const RefutedPeriod fresh{.period = period,
-                                  .body_sum = body_sum,
-                                  .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
-                                  .broke_since_restart = false};
-        refuted_.with_element(::fixy::Index<REFUTED_CAPACITY>::check(refuted_next_)
-                                  .expect("the next refuted slot is below REFUTED_CAPACITY"),
-                              [fresh](RefutedPeriod& slot) noexcept { slot = fresh; });
+        }
+        refuted_.set(RefutedSlot::check(refuted_next_).expect("the next refuted slot is below REFUTED_CAPACITY"),
+                     RefutedPeriod{.period = period,
+                                   .body_sum = body_sum,
+                                   .breaks = ::fixy::min(BREAKS_TO_REFUTE, breaks),
+                                   .broke_since_restart = false});
         refuted_next_ = (refuted_next_ + 1) % REFUTED_CAPACITY;
         if (refuted_count_ < REFUTED_CAPACITY) ++refuted_count_;
     }
@@ -625,11 +616,14 @@ private:
     }
 
     void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
-        refuted_.with_mut([this, period, body_sum](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
-                if (refuted.period == period && refuted.body_sum == body_sum) refuted.broke_since_restart = true;
+        for (const RefutedSlot slot : refuted_.indices()) {
+            if (slot.raw() >= refuted_count_) break;
+            RefutedPeriod refuted = refuted_.at(slot);
+            if (refuted.period == period && refuted.body_sum == body_sum) {
+                refuted.broke_since_restart = true;
+                refuted_.set(slot, refuted);
             }
-        });
+        }
     }
 
     [[nodiscard]] bool fire_() {

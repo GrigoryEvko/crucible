@@ -612,7 +612,7 @@ private:
                     "the bound of the plan keeps a slot id of the migration below MIGRATION_MAX_SLOTS");
                 const uint64_t bit = uint64_t{1} << (ns % 64);
                 if ((visited.at(word) & bit) != 0) continue;
-                visited.with_element(word, [bit](uint64_t& marks) noexcept { marks |= bit; });
+                visited.set(word, visited.at(word) | bit);
 
                 // The copy takes the bytes of the old slot that the new slot
                 // holds.  A new slot smaller than the old one gets its own

@@ -197,15 +197,15 @@ template <typename Brand>
     using detail::probe_unary;
 
     {
-        ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES + 4> buf{};
         const ::fixy::FixedArray<std::byte, 4> body{std::byte{0x01}, std::byte{0x02}, std::byte{0x03}, std::byte{0x04}};
 
         // The body borrows the permission through a Ref, so no closure holds
         // the linear permission by reference.
-        auto written = buf.with_mut([permission = ::fixy::to(local_permission), &hash_key, &body](auto run) noexcept {
-            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(*permission, hash_key,
-                                                                                           std::move(run), body.view());
-        });
+        auto [written, buf] = ::fixy::build_fixed_array<std::byte, FEDERATION_HEADER_BYTES + 4>(
+            [permission = ::fixy::to(local_permission), &hash_key, &body](auto run) noexcept {
+                return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+                    *permission, hash_key, std::move(run), body.view());
+            });
         // The entry is the part of the buffer that the write filled, and it
         // decodes to the key and the body that the write took.
         const bool is_round_trip = written.match(
@@ -225,16 +225,16 @@ template <typename Brand>
     }
 
     {
-        ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf_empty{};
-        ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf_bg{};
-        auto wa = buf_empty.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
-            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-                *permission, hash_key, std::move(run), ::fixy::View<std::byte const>{});
-        });
-        auto wb = buf_bg.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
-            return serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(
-                *permission, hash_key, std::move(run), ::fixy::View<std::byte const>{});
-        });
+        auto [wa, buf_empty] = ::fixy::build_fixed_array<std::byte, FEDERATION_HEADER_BYTES>(
+            [permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+                return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+                    *permission, hash_key, std::move(run), ::fixy::View<std::byte const>{});
+            });
+        auto [wb, buf_bg] = ::fixy::build_fixed_array<std::byte, FEDERATION_HEADER_BYTES>(
+            [permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+                return serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(
+                    *permission, hash_key, std::move(run), ::fixy::View<std::byte const>{});
+            });
         // The two entries fill their buffers, so the two buffers differ
         // where the two rows differ.
         const bool is_same_size = wa.match(
@@ -249,12 +249,12 @@ template <typename Brand>
     }
 
     {
-        ::fixy::FixedArray<std::byte, FEDERATION_HEADER_BYTES> buf{};
         using Payload = ComputationCacheFederationContentAddressedPayload<&probe_unary, EmptyR, int>;
-        auto written = buf.with_mut([permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
-            return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
-                *permission, hash_key, std::move(run), Payload::hash_only());
-        });
+        auto [written, buf] = ::fixy::build_fixed_array<std::byte, FEDERATION_HEADER_BYTES>(
+            [permission = ::fixy::to(local_permission), &hash_key](auto run) noexcept {
+                return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
+                    *permission, hash_key, std::move(run), Payload::hash_only());
+            });
         const bool is_header_only =
             written.match([](std::size_t written_bytes) noexcept { return written_bytes == FEDERATION_HEADER_BYTES; },
                           [](FederationError) noexcept { return false; });

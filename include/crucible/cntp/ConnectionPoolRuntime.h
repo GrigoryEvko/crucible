@@ -152,15 +152,14 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
 
     // The caller holds the lock and gives its state.
     static void append_event(State& state, PoolEventKind kind, Connection<T> const& connection) noexcept {
-        const PoolEvent event{
-            .kind = kind,
-            .transport = T,
-            .remote_uuid = connection.remote_uuid(),
-            .socket = connection.socket(),
-            .connection_id = connection.connection_id().value(),
-            .sequence = ++state.sequence,
-        };
-        state.events.with_element(state.next_event, [&event](PoolEvent& held) noexcept { held = event; });
+        state.events.set(state.next_event, PoolEvent{
+                                               .kind = kind,
+                                               .transport = T,
+                                               .remote_uuid = connection.remote_uuid(),
+                                               .socket = connection.socket(),
+                                               .connection_id = connection.connection_id().value(),
+                                               .sequence = ++state.sequence,
+                                           });
         state.next_event = state.next_event.next_cyclic();
         if (state.event_count < MaxEvents) {
             ++state.event_count;
@@ -171,7 +170,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
     // lock and gives its state.
     static void drain_slot(State& state, SlotIndex index, PoolEventKind kind) noexcept {
         append_event(state, kind, connection_of(state.slots.at(index)));
-        state.slots.with_element(index, [](Slot& held) noexcept { held = Slot{}; });
+        state.slots.set(index, Slot{});
     }
 
     template <class Ctx>
@@ -181,7 +180,7 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
             if (slot.connection.is_none() || !slot.leased) {
                 return;
             }
-            state.slots.with_element(index, [](Slot& held) noexcept { held.leased = false; });
+            state.slots.update(index, [](Slot& held) noexcept { held.leased = false; });
             if (slot.quarantined || !slot.healthy) {
                 const cog::Uuid drained_uuid = connection_of(slot).remote_uuid();
                 drain_slot(state, index,
@@ -282,13 +281,11 @@ public:
                                }
                                for (SlotIndex index : state.slots.indices()) {
                                    if (state.slots.at(index).connection.is_none()) {
-                                       state.slots.with_element(index, [&raw, now_ns](Slot& slot) noexcept {
-                                           slot.connection = ::fixy::some(raw);
-                                           slot.leased = false;
-                                           slot.quarantined = false;
-                                           slot.healthy = true;
-                                           slot.last_used_ns = now_ns;
-                                       });
+                                       state.slots.set(index, Slot{.connection = ::fixy::some(raw),
+                                                                   .leased = false,
+                                                                   .quarantined = false,
+                                                                   .healthy = true,
+                                                                   .last_used_ns = now_ns});
                                        if (is_new_remote) {
                                            ++state.distinct_remotes;
                                        }
@@ -322,7 +319,7 @@ public:
                         continue;
                     }
                     if (!slot.leased) {
-                        state.slots.with_element(index, [now_ns](Slot& held) noexcept {
+                        state.slots.update(index, [now_ns](Slot& held) noexcept {
                             held.leased = true;
                             held.last_used_ns = now_ns;
                         });
@@ -385,13 +382,12 @@ public:
             return;
         }
         state_.with(ctx, [&remote, socket](State& state) noexcept {
-            state.slots.with_mut([&remote, socket](auto run) noexcept {
-                for (Slot& slot : run) {
-                    if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
-                        slot.healthy = false;
-                    }
+            for (SlotIndex index : state.slots.indices()) {
+                Slot const& slot = state.slots.at(index);
+                if (holds_remote(slot, remote.uuid) && same_socket(connection_of(slot).socket(), socket)) {
+                    state.slots.update(index, [](Slot& held) noexcept { held.healthy = false; });
                 }
-            });
+            }
         });
     }
 
@@ -435,7 +431,7 @@ public:
                 if (!holds_remote(slot, remote.uuid)) {
                     continue;
                 }
-                state.slots.with_element(index, [](Slot& held) noexcept { held.quarantined = true; });
+                state.slots.update(index, [](Slot& held) noexcept { held.quarantined = true; });
                 if (!slot.leased) {
                     drain_slot(state, index, PoolEventKind::DrainedQuarantined);
                 }

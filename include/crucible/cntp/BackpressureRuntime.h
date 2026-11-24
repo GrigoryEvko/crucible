@@ -234,22 +234,21 @@ public:
         requires CtxFitsBackpressureMint<Ctx>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, BackpressureError>
     register_resource_limit(Ctx const&, ResourceLimit limit) noexcept {
-        return limits_.with_mut([limit](auto run) noexcept -> ::fixy::Result<::fixy::Unit, BackpressureError> {
-            for (LimitSlot& slot : run) {
-                if (slot.occupied && slot.limit.kind() == limit.kind()) {
-                    slot.limit = limit;
-                    return ::fixy::Unit{};
-                }
+        const LimitSlot registered{.occupied = true, .limit = limit};
+        for (auto const index : limits_.indices()) {
+            LimitSlot const& slot = limits_.at(index);
+            if (slot.occupied && slot.limit.kind() == limit.kind()) {
+                limits_.set(index, registered);
+                return ::fixy::Unit{};
             }
-            for (LimitSlot& slot : run) {
-                if (!slot.occupied) {
-                    slot.occupied = true;
-                    slot.limit = limit;
-                    return ::fixy::Unit{};
-                }
+        }
+        for (auto const index : limits_.indices()) {
+            if (!limits_.at(index).occupied) {
+                limits_.set(index, registered);
+                return ::fixy::Unit{};
             }
-            return ::fixy::err(BackpressureError::TooManyResourceLimits);
-        });
+        }
+        return ::fixy::err(BackpressureError::TooManyResourceLimits);
     }
 
     template <class Ctx>

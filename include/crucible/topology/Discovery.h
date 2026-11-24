@@ -349,22 +349,17 @@ public:
             fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
-        // The body reads the fact through a const reference, so it writes no
-        // borrow of its frame into the fact.
-        DiscoveryNodeFact const& fact_read = fact;
-        node_facts_.with_element(slot, [&fact_read](DiscoveryNodeFact& held) noexcept { held = fact_read; });
+        node_facts_.set(slot, fact);
         DiscoveryNodeFact const& held = node_facts_.at(slot);
-        nodes_.with_element(slot, [&held](cog::CogIdentity& node) noexcept {
-            node = cog::CogIdentity{
-                .uuid = held.uuid,
-                .level = held.level,
-                .kind = held.kind,
-                .vendor = vendor_view(held.vendor),
-                .model = vendor_view(held.model),
-                .firmware_revision = firmware_claim(held),
-                .bios_revision = {},
-            };
-        });
+        nodes_.set(slot, cog::CogIdentity{
+                             .uuid = held.uuid,
+                             .level = held.level,
+                             .kind = held.kind,
+                             .vendor = vendor_view(held.vendor),
+                             .model = vendor_view(held.model),
+                             .firmware_revision = firmware_claim(held),
+                             .bios_revision = {},
+                         });
         ++node_count_;
         return idx;
     }
@@ -376,11 +371,10 @@ public:
         }
         ::fixy::Index<MaxNodes> const slot =
             ::fixy::Index<MaxNodes>::check(idx).expect("an index below the node count is below the capacity");
-        DiscoveryNodeFact const& fact_read = fact;
-        node_facts_.with_element(slot, [&fact_read](DiscoveryNodeFact& held) noexcept { held = fact_read; });
+        node_facts_.set(slot, fact);
         DiscoveryNodeFact const& held = node_facts_.at(slot);
         auto const firmware_revision = firmware_claim(held);
-        nodes_.with_element(slot, [&held, firmware_revision](cog::CogIdentity& node) noexcept {
+        nodes_.update(slot, [&held, firmware_revision](cog::CogIdentity& node) noexcept {
             node.uuid = held.uuid;
             node.level = held.level;
             node.kind = held.kind;
@@ -401,18 +395,17 @@ public:
         const std::uint16_t idx = static_cast<std::uint16_t>(edge_count_);
         ::fixy::Index<MaxEdges> const slot =
             ::fixy::Index<MaxEdges>::check(edge_count_).expect("a snapshot that is not full has a free edge slot");
-        edge_facts_.with_element(slot, [&fact](DiscoveryEdgeFact& held) noexcept { held = fact; });
-        TopologyEdge const edge{
-            .id = EdgeId{idx},
-            .kind = fact.kind,
-            .peer = NodeId{fact.to_node},
-            .bandwidth_bytes_per_sec =
-                ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
-            .rtt_ns_p50 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p50),
-            .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
-            .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
-        };
-        edges_.with_element(slot, [&edge](TopologyEdge& held) noexcept { held = edge; });
+        edge_facts_.set(slot, fact);
+        edges_.set(slot, TopologyEdge{
+                             .id = EdgeId{idx},
+                             .kind = fact.kind,
+                             .peer = NodeId{fact.to_node},
+                             .bandwidth_bytes_per_sec =
+                                 ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.bandwidth_bytes_per_sec),
+                             .rtt_ns_p50 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p50),
+                             .rtt_ns_p99 = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.rtt_ns_p99),
+                             .drop_rate = ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(fact.drop_rate),
+                         });
         ++edge_count_;
         return idx;
     }

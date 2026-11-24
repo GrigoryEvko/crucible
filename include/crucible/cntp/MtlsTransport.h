@@ -237,9 +237,8 @@ struct MtlsPolicy {
     [[nodiscard]] constexpr ::fixy::Result<::fixy::Unit, MtlsError>
     allow_peer_with_pin(MtlsDnsName name, MtlsCertificateFingerprint fingerprint) noexcept {
         CRUCIBLE_TRY(slot, PeerIndex::check(allowed_peer_count.value()).ok_or(MtlsError::TooManyPeerNames));
-        allowed_peer_dns.with_element(slot, [&name](MtlsDnsName& peer) noexcept { peer = name; });
-        allowed_peer_pins.with_element(
-            slot, [&fingerprint](MtlsSha256Fingerprint& peer_pin) noexcept { peer_pin = fingerprint.value(); });
+        allowed_peer_dns.set(slot, name);
+        allowed_peer_pins.set(slot, fingerprint.value());
         ++allowed_peer_count.value_;
         return ::fixy::Unit{};
     }
@@ -326,10 +325,7 @@ admit_private_key_pem(::fixy::View<std::byte const> pem) noexcept {
     }
 
     MtlsPrivateKeyBytes out{};
-    out.bytes.with_mut([pem](auto run) noexcept {
-        ::fixy::copy(::fixy::take_window(std::move(run), 0, pem.size()).expect("the key is at most max_bytes"), pem)
-            .expect("a window of the size of the key has that size");
-    });
+    out.bytes.copy_window(0, pem).expect("the key is at most max_bytes");
     out.nbytes = static_cast<std::uint16_t>(pem.size());
     out.algorithm = Algorithm;
     return ::fixy::mint_secret<MtlsPrivateKeyBytes>(std::move(out));
