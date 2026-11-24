@@ -27,6 +27,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/algebra/Graded.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Ref.h>
@@ -192,12 +193,15 @@ using frame_result_t = std::invoke_result_t<Body&&, ProofRef<Proof, Brand>>;
 template <class Given>
 using frame_value_t = std::conditional_t<std::is_void_v<Given>, ::foundation::core::Unit, std::remove_cv_t<Given>>;
 
-// A body of a frame: it takes the borrow of the proof, it does not throw,
-// and it holds no linear value by value (HoldsNoLinearValue of
-// foundation/Linear.h).
+// A body of a frame: it takes the borrow of the proof, it does not throw, it
+// holds no linear value by value (HoldsNoLinearValue of foundation/Linear.h),
+// and it stores no borrow outside the frame (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h).  The proof ends with the frame, so a
+// borrow of it in a capture would name an object that no longer exists.
 template <class Body, class Proof, class Brand>
 concept SchedFrameBody =
-    std::is_nothrow_invocable_v<Body&&, ProofRef<Proof, Brand>> && ::foundation::linear::HoldsNoLinearValue<Body>;
+    std::is_nothrow_invocable_v<Body&&, ProofRef<Proof, Brand>> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // A body of a frame that holds a linear value by value: the linear twin of
 // each frame mint binds to it.

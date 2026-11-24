@@ -6250,6 +6250,9 @@ fixy_neg_compile_test(neg_os_sched_frame_moves_proof_out
 fixy_neg_compile_test(neg_os_sched_frame_keeps_borrow
   "use of deleted function"
   "the result of a scheduling frame leaves the frame, so it holds no reference and no address")
+fixy_neg_compile_test(neg_os_sched_frame_stores_borrow
+  "no matching function for call to .mint_priority<0>"
+  "StoresNoBorrowOutside")
 
 # The runtime mask door reads the same gate, and apply_affinity_to_cpu
 # calls it.  The same two contexts.
