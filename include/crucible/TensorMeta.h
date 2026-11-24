@@ -47,8 +47,12 @@ using TensorDim = ::fixy::Refined<::fixy::bounded_above<kMaxTensorDimExtent>, in
 // and it takes a TensorDim, so the bound is an invariant of the block.  No
 // byte door makes a block: no_start_over_bytes refuses decode of the family,
 // decode and bit_cast of the Scalar family, and a lifetime start over bytes.
-// Lanes from outside go through decode_tensor_meta, which checks the bound of
-// each lane once.
+// Lanes from outside take one of two routes, and each route checks the bound
+// of each lane once.  A record of a trace file, the image of a descriptor in
+// the Cipher store and a record of a C caller of the vessel go through
+// decode_tensor_meta.  fill_meta of the vessel reads a tensor of PyTorch,
+// checks its rank and each extent, and then writes each lane through
+// tensor_dim.
 struct[[= ::fixy::derive_protocol{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] TensorDimArray {
     // The index of one lane.
     using LaneIndex = ::fixy::Index<kMaxTensorNDim>;
