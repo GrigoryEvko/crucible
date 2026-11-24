@@ -32,6 +32,22 @@
 // past the unmapped first page.  The failed check calls a function that
 // does not return, and no path reaches the use.
 //
+// The check stays at run time because the compile-time rules do not refuse
+// each route to a moved-from handle.  The rule use-after-move refuses a use
+// of a moved local and of a plain reference to it.  It does not see these
+// shapes, and each one compiles:
+//
+//   - a move through a callee that takes the handle by lvalue reference
+//   - a use through a pointer to the handle
+//   - a use through a reference that a call gives back, such as the Ref of
+//     foundation::core::to(handle), taken before the move
+//   - a try_ call that moves the handle also when it does not succeed
+//
+// The check can go when a place-based borrow checker refuses a borrow of a
+// handle that lives across a move of that handle, and the move of a binding
+// holder through a borrow is an error.  Until then it is the run-time
+// backstop, and the oracle of the test builds.
+//
 // A handle that declares its own move operations defaulted gets this
 // behaviour with no further code.  A handle that turns into a handle of
 // another state, such as a close() that consumes the open handle, moves
