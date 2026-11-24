@@ -23,8 +23,11 @@
 //
 // Shape
 //     ParkedChannel<Channel> holds a wire of fixy/concurrent/
-//     PermissionedChannel.h privately, so no door of the plain channel
-//     reaches its ring.  It has the shape of that header: its claim doors
+//     PermissionedChannel.h or of fixy/concurrent/PermissionedBoxChannel.h
+//     privately, so no door of the plain channel reaches its ring.  A push
+//     door of a wire of Box objects takes the Box by move, and its refusal,
+//     PushRefused, gives the Box back.  The parked form has the shape of
+//     PermissionedChannel.h: its claim doors
 //     take the key of the frame doors, and its handle aliases name the parked
 //     handles below.  So the frame doors of that header open its ends, and
 //     the scope brand and the gate of the result of each door hold for a
@@ -101,13 +104,48 @@ enum class PushRefusal : std::uint8_t {
     ConsumerGone = 1,
 };
 
+// The refusal of a push that moves its item, such as the push of a Box
+// through a parked wire of Box objects: the item that the ring did not take,
+// and why.  The class is linear, so must-consume reads that the caller takes
+// the item back, or ends the refusal at a named door, on each path.  So no
+// refusal loses its item in silence, and a Result of a refusal is a linear
+// sum, which a caller cannot discard.  The checked lifetime start of
+// foundation/Lifetime.h refuses the class, so no start over bytes forges a
+// refusal.
+template <class Item>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]]
+    PushRefused final {
+public:
+    PushRefused(Item&& item, PushRefusal why) noexcept : item_{std::move(item)}, why_{why} {}
+
+    PushRefused(PushRefused&&) noexcept = default;
+    PushRefused(PushRefused const&) = delete("a refusal holds the one item of a push");
+    PushRefused& operator=(PushRefused const&) = delete("a refusal holds the one item of a push");
+    PushRefused& operator=(PushRefused&&) = delete("a refusal holds the one item of a push");
+    ~PushRefused() = default;
+
+    // Why the ring did not take the item.
+    [[nodiscard]] PushRefusal reason() const noexcept { return why_; }
+
+    // The item back, for a later push or for its own end.
+    [[nodiscard]] Item take_item() && noexcept { return std::move(item_); }
+
+private:
+    Item item_;
+    PushRefusal why_ = PushRefusal::Full;
+};
+
 template <class Channel, ::foundation::brand::IsBrand Scope>
 class ParkedProducerHandle;
 template <class Channel, ::foundation::brand::IsBrand Scope>
 class ParkedConsumerHandle;
 
-// The parked form of a wire of values (the shape).  Channel is a wire of
-// fixy/concurrent/PermissionedChannel.h.
+// The parked form of a wire (the shape).  Channel is a wire of fixy/
+// concurrent/PermissionedChannel.h, whose push takes a value by reference to
+// const, or a wire of fixy/concurrent/PermissionedBoxChannel.h, whose push
+// takes a Box by move.  A push door of a wire of values refuses with a
+// PushRefusal, and the caller keeps its value.  A push door of a wire that
+// moves its items refuses with a PushRefused, which gives the item back.
 template <class Channel>
     requires ChannelOfForm<Channel, ChannelForm::wire>
 class ParkedChannel : public ::foundation::Pinned<ParkedChannel<Channel>> {
@@ -119,6 +157,16 @@ public:
     using consumer_tag = typename Channel::consumer_tag;
     static constexpr ChannelForm channel_form = ChannelForm::wire;
     static constexpr std::size_t channel_capacity = Channel::channel_capacity;
+
+    // True when the push of the wire takes its item by move, as the push of a
+    // wire of Box objects does.  Such a push gives a refused item back.
+    static constexpr bool moves_its_items =
+        !requires(typename Channel::ProducerEnd& end, value_type const& item) { end.try_push(item); };
+
+    // The result of each push door.
+    using push_result =
+        ::foundation::core::Result<::foundation::core::Unit,
+                                   std::conditional_t<moves_its_items, PushRefused<value_type>, PushRefusal>>;
 
     // A wire starts with no handle.  The caller keeps the two tokens.
     ParkedChannel() noexcept = default;
@@ -173,18 +221,28 @@ public:
         ~ProducerEnd() = default;
 
         // Pushes item, and notifies items when the ring took it.  The error
-        // tells a full ring from a consumer that ended.
+        // tells a full ring from a consumer that closed.  A wire of values
+        // takes the item by reference to const, so the caller keeps it.
         template <class Ctx>
-            requires ::fixy::futex::CtxMayUseFutex<Ctx>
-        [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, PushRefusal>
-        try_push(Ctx const& ctx, value_type const& item) noexcept {
+            requires ::fixy::futex::CtxMayUseFutex<Ctx> && (!moves_its_items)
+        [[nodiscard]] push_result try_push(Ctx const& ctx, value_type const& item) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            if (inner_.try_push(item)) [[likely]] {
-                channel_->items_.notify_one(ctx);
-                return ::foundation::core::Unit{};
-            }
-            return ::foundation::core::err(channel_->refusal_of_full_());
+            auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
+            return value_result_(push_once_(ctx, attempt));
+        }
+
+        // As try_push of a wire of values, for a wire that moves its items:
+        // the refusal gives the item back.
+        template <class Ctx>
+            requires ::fixy::futex::CtxMayUseFutex<Ctx> && moves_its_items
+        [[nodiscard]] push_result try_push(Ctx const& ctx, value_type&& item) noexcept {
+            this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
+                               __LINE__);
+            ::foundation::core::Option<value_type> pending =
+                ::foundation::core::Option<value_type>::some(std::move(item));
+            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
+            return owner_result_(push_once_(ctx, attempt), pending);
         }
 
         // Pushes item, and waits by Policy while the ring is full: Spin spins,
@@ -192,45 +250,53 @@ public:
         // condition of the wait is a push, or the close of the consumer, so
         // the call ends with ConsumerGone when the consumer closes.
         template <WaitPolicy Policy, class Ctx>
-            requires CtxFitsWaitPolicy<Ctx, Policy> && ::fixy::futex::CtxMayUseFutex<Ctx>
-        [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, PushRefusal>
-        push_waiting(Ctx const& ctx, value_type const& item) noexcept {
+            requires CtxFitsWaitPolicy<Ctx, Policy> && ::fixy::futex::CtxMayUseFutex<Ctx> && (!moves_its_items)
+        [[nodiscard]] push_result push_waiting(Ctx const& ctx, value_type const& item) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            bool is_pushed = false;
-            ParkedChannel& channel = *channel_;
-            wait_for<Policy>(ctx, channel.room_, [this, &item, &is_pushed, &channel]() noexcept {
-                is_pushed = inner_.try_push(item);
-                return is_pushed || channel.is_consumer_gone_();
-            });
-            if (!is_pushed) return ::foundation::core::err(PushRefusal::ConsumerGone);
-            channel.items_.notify_one(ctx);
-            return ::foundation::core::Unit{};
+            auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
+            return value_result_(push_waiting_<Policy>(ctx, attempt));
+        }
+
+        // As push_waiting of a wire of values, for a wire that moves its
+        // items: the refusal gives the item back.
+        template <WaitPolicy Policy, class Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy> && ::fixy::futex::CtxMayUseFutex<Ctx> && moves_its_items
+        [[nodiscard]] push_result push_waiting(Ctx const& ctx, value_type&& item) noexcept {
+            this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
+                               __LINE__);
+            ::foundation::core::Option<value_type> pending =
+                ::foundation::core::Option<value_type>::some(std::move(item));
+            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
+            return owner_result_(push_waiting_<Policy>(ctx, attempt), pending);
         }
 
         // As push_waiting, but the wait ends at deadline with
         // PushRefusal::Full.  A deadline needs the park, so Policy parks.
         template <WaitPolicy Policy, class Ctx>
-            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park) && ::fixy::futex::CtxMayUseFutex<Ctx>
-        [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, PushRefusal>
-        push_waiting_until(Ctx const& ctx, value_type const& item, ::fixy::futex::Deadline const& deadline) noexcept {
+            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park)
+                  && ::fixy::futex::CtxMayUseFutex<Ctx> && (!moves_its_items)
+        [[nodiscard]] push_result push_waiting_until(Ctx const& ctx, value_type const& item,
+                                                     ::fixy::futex::Deadline const& deadline) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            bool is_pushed = false;
-            ParkedChannel& channel = *channel_;
-            EventWaitEnd const end = wait_for<Policy>(
-                ctx, channel.room_,
-                [this, &item, &is_pushed, &channel]() noexcept {
-                    is_pushed = inner_.try_push(item);
-                    return is_pushed || channel.is_consumer_gone_();
-                },
-                deadline);
-            if (is_pushed) {
-                channel.items_.notify_one(ctx);
-                return ::foundation::core::Unit{};
-            }
-            return ::foundation::core::err(end == EventWaitEnd::deadline_passed ? PushRefusal::Full
-                                                                                : PushRefusal::ConsumerGone);
+            auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
+            return value_result_(push_waiting_<Policy>(ctx, attempt, deadline));
+        }
+
+        // As push_waiting_until of a wire of values, for a wire that moves its
+        // items: the refusal gives the item back.
+        template <WaitPolicy Policy, class Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park)
+                  && ::fixy::futex::CtxMayUseFutex<Ctx> && moves_its_items
+        [[nodiscard]] push_result push_waiting_until(Ctx const& ctx, value_type&& item,
+                                                     ::fixy::futex::Deadline const& deadline) noexcept {
+            this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
+                               __LINE__);
+            ::foundation::core::Option<value_type> pending =
+                ::foundation::core::Option<value_type>::some(std::move(item));
+            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
+            return owner_result_(push_waiting_<Policy>(ctx, attempt, deadline), pending);
         }
 
         // Ends the stream, and then notifies items, so a consumer that parks
@@ -248,6 +314,67 @@ public:
         [[nodiscard]] ::foundation::permissions::Permission<producer_tag, brand_type> release() && noexcept {
             this->mark_consumed(__PRETTY_FUNCTION__, __LINE__);
             return std::move(inner_).release();
+        }
+
+    private:
+        // One push of an item that moves: the ring takes the item of pending,
+        // or gives it back into pending.  True when the ring took it.
+        [[nodiscard]] bool push_pending_(::foundation::core::Option<value_type>& pending) noexcept {
+            pending = inner_.try_push(pending.take().expect("a push holds its item until the ring takes it"));
+            return pending.is_none();
+        }
+
+        // The push of each door with no wait: attempt pushes one time, and a
+        // push that the ring took notifies items.  No value when the ring took
+        // the item, and the refusal otherwise.
+        template <class Ctx, class Attempt>
+        [[nodiscard]] ::foundation::core::Option<PushRefusal> push_once_(Ctx const& ctx, Attempt& attempt) noexcept {
+            if (attempt()) [[likely]] {
+                channel_->items_.notify_one(ctx);
+                return ::foundation::core::none;
+            }
+            return ::foundation::core::Option<PushRefusal>::some(channel_->refusal_of_full_());
+        }
+
+        // The wait of each door that waits: attempt pushes, by Policy, until
+        // the ring takes the item, the consumer closes, or the deadline in
+        // bound passes.  A push that the ring took notifies items.  No value
+        // when the ring took the item, and the refusal otherwise:
+        // ConsumerGone at a close, and Full at the deadline.
+        template <WaitPolicy Policy, class Ctx, class Attempt, class... Bound>
+        [[nodiscard]] ::foundation::core::Option<PushRefusal> push_waiting_(Ctx const& ctx, Attempt& attempt,
+                                                                            Bound const&... bound) noexcept {
+            bool is_pushed = false;
+            ParkedChannel& channel = *channel_;
+            auto condition = [&attempt, &is_pushed, &channel]() noexcept {
+                is_pushed = attempt();
+                return is_pushed || channel.is_consumer_gone_();
+            };
+            PushRefusal why = PushRefusal::ConsumerGone;
+            if constexpr (sizeof...(Bound) == 0) {
+                wait_for<Policy>(ctx, channel.room_, condition);
+            } else if (wait_for<Policy>(ctx, channel.room_, condition, bound...) == EventWaitEnd::deadline_passed) {
+                why = PushRefusal::Full;
+            }
+            if (!is_pushed) return ::foundation::core::Option<PushRefusal>::some(why);
+            channel.items_.notify_one(ctx);
+            return ::foundation::core::none;
+        }
+
+        // The result of a push door of a wire of values.
+        [[nodiscard]] static push_result value_result_(::foundation::core::Option<PushRefusal> refused) noexcept {
+            return refused.match([](PushRefusal why) noexcept -> push_result { return ::foundation::core::err(why); },
+                                 []() noexcept -> push_result { return ::foundation::core::Unit{}; });
+        }
+
+        // The result of a push door of a wire that moves its items: a refusal
+        // gives back the item that pending still holds.
+        [[nodiscard]] static push_result owner_result_(::foundation::core::Option<PushRefusal> refused,
+                                                       ::foundation::core::Option<value_type>& pending) noexcept {
+            if (refused.is_none()) return ::foundation::core::Unit{};
+            return ::foundation::core::err(
+                PushRefused<value_type>{pending.take().expect("a refused push keeps its item"),
+                                        std::move(refused).expect("the test above found a refusal")});
         }
     };
 
@@ -466,11 +593,20 @@ public:
     operator=(ParkedProducerHandle&&) = delete("a parked producer handle binds to one channel for its life");
     ~ParkedProducerHandle() = default;
 
+    // The push doors of a wire of values take the item by reference to const,
+    // and the push doors of a wire that moves its items take it by move.
     template <class Ctx>
     [[nodiscard]] auto try_push(Ctx const& ctx, value_type const& item) noexcept
         requires requires(End& end) { end.try_push(ctx, item); }
     {
         return End::try_push(ctx, item);
+    }
+
+    template <class Ctx>
+    [[nodiscard]] auto try_push(Ctx const& ctx, value_type&& item) noexcept
+        requires(Channel::moves_its_items) && requires(End& end) { end.try_push(ctx, std::move(item)); }
+    {
+        return End::try_push(ctx, std::move(item));
     }
 
     template <WaitPolicy Policy, class Ctx>
@@ -481,11 +617,28 @@ public:
     }
 
     template <WaitPolicy Policy, class Ctx>
+    [[nodiscard]] auto push_waiting(Ctx const& ctx, value_type&& item) noexcept
+        requires(Channel::moves_its_items)
+             && requires(End& end) { end.template push_waiting<Policy>(ctx, std::move(item)); }
+    {
+        return End::template push_waiting<Policy>(ctx, std::move(item));
+    }
+
+    template <WaitPolicy Policy, class Ctx>
     [[nodiscard]] auto push_waiting_until(Ctx const& ctx, value_type const& item,
                                           ::fixy::futex::Deadline const& deadline) noexcept
         requires requires(End& end) { end.template push_waiting_until<Policy>(ctx, item, deadline); }
     {
         return End::template push_waiting_until<Policy>(ctx, item, deadline);
+    }
+
+    template <WaitPolicy Policy, class Ctx>
+    [[nodiscard]] auto push_waiting_until(Ctx const& ctx, value_type&& item,
+                                          ::fixy::futex::Deadline const& deadline) noexcept
+        requires(Channel::moves_its_items)
+             && requires(End& end) { end.template push_waiting_until<Policy>(ctx, std::move(item), deadline); }
+    {
+        return End::template push_waiting_until<Policy>(ctx, std::move(item), deadline);
     }
 
     template <class Ctx>

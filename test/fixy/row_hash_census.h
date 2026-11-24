@@ -1503,6 +1503,9 @@ inline constexpr StatedZero kZeros[] = {
      "the producer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
     {^^::fixy::concurrent::ParkedConsumerHandle,
      "the consumer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
+    {^^::fixy::concurrent::PushRefused,
+     "the refusal of a push of a parked wire that moves its items: the item back and the reason, a value that the "
+     "caller takes and never a kernel signature argument"},
     {^^::fixy::concurrent::SpscSplit,
      "the split of an SPSC owner: the Box of the owner and its two ends, which a body borrows through a frame door"},
     {^^::fixy::concurrent::SpscHeldSplit,

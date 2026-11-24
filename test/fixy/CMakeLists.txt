@@ -4974,6 +4974,12 @@ fixy_test(test_channel_wait)
 # door, the end of the consumer ends a parked producer, and a release keeps
 # the stream open.
 fixy_test(test_parked_channel)
+# The parked form of a wire of Box objects: a refused push gives its Box
+# back with the reason, and no parcel leaks.
+fixy_test(test_parked_box_channel)
+fixy_neg_compile_test(neg_parked_box_refusal_dropped
+  "ignoring return value of"
+  "the code discards a temporary linear sum, so its payload can drop")
 # No door of a parked end takes an event count, and a parked handle keeps the
 # scope brand of its frame.
 fixy_neg_compile_test(neg_parked_receive_waiting_with_a_count
