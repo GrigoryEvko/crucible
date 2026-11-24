@@ -112,6 +112,29 @@
 //   local pointer or through a local reference names no such object, so the
 //   rule does not read it.
 //
+// Statics
+//   An object of static or thread storage duration lives past each frame, so
+//   a borrow in it can name an object that ends first, whatever its brand: a
+//   store can come from each function of the program, also through a member
+//   function of the object, which the walk of the stores does not see.  So an
+//   object of static or thread storage duration whose type holds a borrow
+//   type of the base is the kind static-borrow: a variable of namespace
+//   scope, a static data member and a static local, also a thread_local one.
+//   A borrow type is a class that states refers, refers_unique or
+//   refers_deep of foundation/Transfer.h.  The walk reads the bases and the
+//   fields of a class and the type arguments that an owner holds, as the walk
+//   of the borrow does, and it reads no pointer and no reference, which the
+//   rule quarantine counts.  Two borrows name an object of static storage,
+//   and the kind admits them:
+//     * a borrow type whose template arguments name StaticStorageBrand of
+//       foundation/core/Ref.h, such as the Ref of ref_of_static, whose door
+//       proves the static storage of its object
+//     * a borrow in a const object whose constant initializer holds only
+//       addresses of objects of static storage, or no address.  The compiler
+//       fixes such an address, and no store can change a const object.
+//   A const object with a dynamic initializer is a finding: its initializer
+//   runs a function whose body the rule does not read.
+//
 // Retirement
 //   A View with a brand or a lifetime parameter would carry this fact in its
 //   type, as a borrow of Rust carries its lifetime.  C++ gives neither today,
@@ -1233,11 +1256,135 @@ void on_pre_genericize(void* gcc_data, void*) {
     note_borrowed_parameters(function, body);
 }
 
-void on_collection(void*, void*) { borrow_classes.clear(); }
+// The answer of holds_unstatic_borrow for each class of the unit, by
+// TYPE_UID (the statics).  A class that the walk meets again during its walk
+// holds nothing there.
+std::unordered_map<unsigned, bool> unstatic_borrow_classes;
+
+// True when the class TYPE names StaticStorageBrand of foundation/core/Ref.h
+// as a template argument (the statics).
+bool names_static_brand(tree type) {
+    static tree const brand = get_identifier("StaticStorageBrand");
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+        tree argument = TREE_VEC_ELT(arguments, index);
+        if (argument == NULL_TREE || !TYPE_P(argument) || !CLASS_TYPE_P(argument)) {
+            continue;
+        }
+        tree main = TYPE_MAIN_VARIANT(argument);
+        if (TYPE_IDENTIFIER(main) == brand && is_of_base_namespace(main)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True when TYPE holds a borrow type of the base whose template arguments
+// name no StaticStorageBrand (the statics).  Complexity: linear in the
+// distinct classes that the type reaches, one time for each class in a unit.
+bool holds_unstatic_borrow(tree type, int depth) {
+    if (type == NULL_TREE || type == error_mark_node || depth > kEscapeDepth) {
+        return false;
+    }
+    if (TREE_CODE(type) == ARRAY_TYPE) {
+        return holds_unstatic_borrow(TREE_TYPE(type), depth + 1);
+    }
+    type = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+        return false;
+    }
+    auto found = unstatic_borrow_classes.find(TYPE_UID(type));
+    if (found != unstatic_borrow_classes.end()) {
+        return found->second;
+    }
+    unstatic_borrow_classes.emplace(TYPE_UID(type), false);
+    bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
+                        || carries_mark(type, escape_names.refers_deep);
+    bool is_held = is_borrow && !names_static_brand(type);
+    bool const is_first_owner =
+        carries_mark(type, escape_names.by_arguments) || carries_mark(type, escape_names.payload_cell);
+    tree info = CLASSTYPE_TEMPLATE_INFO(type);
+    tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
+    if (!is_borrow && (is_first_owner || is_owner_core_class(type)) && arguments != NULL_TREE) {
+        int const last = is_first_owner ? 1 : TREE_VEC_LENGTH(arguments);
+        for (int index = 0; !is_held && index < last && index < TREE_VEC_LENGTH(arguments); ++index) {
+            tree argument = TREE_VEC_ELT(arguments, index);
+            is_held = argument != NULL_TREE && TYPE_P(argument) && holds_unstatic_borrow(argument, depth + 1);
+        }
+    }
+    tree binfo = TYPE_BINFO(type);
+    for (unsigned index = 0; !is_borrow && !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo);
+         ++index) {
+        is_held = holds_unstatic_borrow(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+    }
+    for (tree field = TYPE_FIELDS(type); !is_borrow && !is_held && field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)) {
+            is_held = holds_unstatic_borrow(TREE_TYPE(field), depth + 1);
+        }
+    }
+    unstatic_borrow_classes[TYPE_UID(type)] = is_held;
+    return is_held;
+}
+
+// The callback of cp_walk_tree that finds an address of an object that has no
+// static storage in an initializer: a local, a parameter, a temporary or a
+// thread_local object (the statics).
+tree find_unstatic_address(tree* node, int* walk_subtrees, void*) {
+    if (TREE_CODE(*node) != ADDR_EXPR) {
+        return NULL_TREE;
+    }
+    *walk_subtrees = 0;
+    tree base = get_base_address(TREE_OPERAND(*node, 0));
+    bool const is_static =
+        base != NULL_TREE
+        && (TREE_CODE(base) == STRING_CST || TREE_CODE(base) == FUNCTION_DECL
+            || (VAR_P(base) && (TREE_STATIC(base) || DECL_EXTERNAL(base)) && !DECL_THREAD_LOCAL_P(base)));
+    return is_static ? NULL_TREE : *node;
+}
+
+// True when DECL is const and its constant initializer holds only addresses of
+// objects of static storage, or no address (the statics).
+bool has_static_constant_initializer(tree decl) {
+    tree initial = DECL_INITIAL(decl);
+    bool const is_const = TREE_READONLY(decl) || CP_TYPE_CONST_P(TREE_TYPE(decl));
+    if (!is_const || initial == NULL_TREE || initial == error_mark_node
+        || !(TREE_CONSTANT(initial) || DECL_INITIALIZED_BY_CONSTANT_EXPRESSION_P(decl))) {
+        return false;
+    }
+    return cp_walk_tree_without_duplicates(&initial, find_unstatic_address, nullptr) == NULL_TREE;
+}
+
+void on_collection(void*, void*) {
+    borrow_classes.clear();
+    unstatic_borrow_classes.clear();
+}
 
 }  // namespace
 
+void check_static_borrow(tree decl, const std::string& entity) {
+    if (!holds_unstatic_borrow(TREE_TYPE(decl), 0) || has_static_constant_initializer(decl)) {
+        return;
+    }
+    Place place = place_of(DECL_SOURCE_LOCATION(decl), Scope::quarantine);
+    if (place.file != nullptr) {
+        add_finding(Kind::static_borrow, nullptr, place, entity);
+    }
+}
+
 void report_view_escape(const Finding& finding) {
+    if (finding.kind == Kind::static_borrow) {
+        error_at(finding.spelling,
+                 "an object of static or thread storage duration holds a borrow that names no object of static "
+                 "storage: %s",
+                 finding.entity.c_str());
+        inform(finding.spelling, "a View, a Ref and a run own nothing, and the object lives past each frame, so its "
+                                 "borrow can name an object that ended, whatever its brand");
+        inform(finding.spelling,
+               "keep the borrow in an object of automatic storage, take a Ref of a static object through "
+               "%<ref_of_static%>, or make the object const with a constant initializer of static objects");
+        return;
+    }
     if (finding.kind == Kind::stored_borrow) {
         error_at(finding.spelling,
                  "this function stores a %s, and the borrowed object ends with the frame of the function",

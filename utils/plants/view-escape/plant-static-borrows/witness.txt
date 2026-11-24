@@ -1,0 +1,37 @@
+# Each object of static or thread storage that holds a borrow type of the base
+# with no brand of static storage is an error in each mode: a View of
+# namespace scope (22), an Option of a View that a function sets (23), a
+# struct of static storage with such a member (30), a static data member
+# (35), a thread_local Option of a Ref (36), a const View whose initializer
+# calls a function (39), and a static local (42).  The opt-out region turns
+# its object into opted-out (47).  The plugin of main gave no line of the rule
+# view-escape.  Each object is also a line of the kind unmarked-static of the
+# rule process-wide-state, which reads each object of static storage.
+
+compile statics src/statics.cpp
+flag statics -freflection
+exit statics fail
+finding statics view-escape static-borrow src/statics.cpp:22:9 | planted::kept_view
+finding statics view-escape static-borrow src/statics.cpp:23:21 | planted::kept_option
+finding statics view-escape static-borrow src/statics.cpp:30:13 | planted::state
+finding statics view-escape static-borrow src/statics.cpp:35:9 | planted::Table::rows
+finding statics view-escape static-borrow src/statics.cpp:36:45 | planted::thread_ref
+finding statics view-escape static-borrow src/statics.cpp:39:15 | planted::dynamic_view
+finding statics view-escape static-borrow src/statics.cpp:42:32 | planted::read_local_static()::local
+finding statics quarantine opted-out src/statics.cpp:47:9 | static-borrow planted::probe_view
+finding statics quarantine region src/statics.cpp:46:1 | PROBE: the test keeps a view in a global
+finding statics process-wide-state unmarked-static src/statics.cpp:22:9 | planted::kept_view
+finding statics process-wide-state unmarked-static src/statics.cpp:23:21 | planted::kept_option
+finding statics process-wide-state unmarked-static src/statics.cpp:30:13 | planted::state
+finding statics process-wide-state unmarked-static src/statics.cpp:35:9 | planted::Table::rows
+finding statics process-wide-state unmarked-static src/statics.cpp:36:45 | planted::thread_ref
+finding statics process-wide-state unmarked-static src/statics.cpp:42:32 | planted::read_local_static()::local
+finding statics process-wide-state unmarked-static src/statics.cpp:47:9 | planted::probe_view
+error statics src/statics.cpp:22 | holds a borrow that names no object of static storage: planted::kept_view
+error statics src/statics.cpp:23 | holds a borrow that names no object of static storage: planted::kept_option
+error statics src/statics.cpp:30 | holds a borrow that names no object of static storage: planted::state
+error statics src/statics.cpp:35 | holds a borrow that names no object of static storage: planted::Table::rows
+error statics src/statics.cpp:36 | holds a borrow that names no object of static storage: planted::thread_ref
+error statics src/statics.cpp:39 | holds a borrow that names no object of static storage: planted::dynamic_view
+error statics src/statics.cpp:42 | holds a borrow that names no object of static storage: planted::read_local_static()::local
+text statics | the object lives past each frame, so its borrow can name an object that ended

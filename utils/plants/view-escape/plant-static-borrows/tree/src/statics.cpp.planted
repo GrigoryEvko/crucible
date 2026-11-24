@@ -1,0 +1,50 @@
+// Each object of static or thread storage that holds a borrow type of the base
+// with no brand of static storage is the kind static-borrow: a View of
+// namespace scope (line 22), an Option of a View that a function sets (23), a
+// struct of static storage with such a member (30), a static data member
+// (35), a thread_local Option of a Ref (36), a const View whose initializer
+// calls a function (39), and a static local (42).  The opt-out region turns
+// its object into opted-out (47).
+#include <foundation/Quarantine.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+using IntList = fc::FixedList<int, 4>;
+
+IntView kept_view{};
+fc::Option<IntView> kept_option{};
+
+void keep(IntView view) noexcept { kept_option = fc::Option<IntView>::some(view); }
+
+struct KernelState {
+    fc::Option<IntView> kept{};
+};
+KernelState state{};
+
+struct Table {
+    static IntView rows;
+};
+IntView Table::rows{};
+thread_local fc::Option<fc::Ref<int const>> thread_ref{};
+
+IntList const& list_of() noexcept;
+IntView const dynamic_view = list_of().view();
+
+int read_local_static() noexcept {
+    static fc::Option<IntView> local{};
+    return local.is_some() ? 1 : 0;
+}
+
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test keeps a view in a global")
+IntView probe_view{};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+}  // namespace planted

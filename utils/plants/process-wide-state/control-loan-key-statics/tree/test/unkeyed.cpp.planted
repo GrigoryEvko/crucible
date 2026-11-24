@@ -20,8 +20,10 @@ struct Plain {
 };
 
 // A const holder lends no writer, and a const Ref of a holder reads it only.
+// The Ref has the brand of static storage, which an object of static storage
+// can hold (the rule view-escape).
 const Holder g_constant{};
-core::Option<core::Ref<Holder const>> g_read_only{};
+core::Option<core::Ref<Holder const, core::StaticStorageBrand>> g_read_only{};
 
 // A static of a class with no keyed part, an unkeyed array, and a
 // thread_local one.

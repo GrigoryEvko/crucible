@@ -2762,6 +2762,7 @@ void check_static_reach(tree decl, const std::string& entity) {
         record_property(Kind::loan_key_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
     }
     check_static_linear_sum(decl, entity);
+    check_static_borrow(decl, entity);
 }
 
 // Each static and thread_local local of the blocks from BLOCK on, and of

@@ -1,0 +1,16 @@
+# No object of static or thread storage holds a borrow that can name an
+# object that ends, and no line names the rule view-escape: a const View whose
+# constant initializer views a static table, a const empty View, a Ref of the
+# brand of static storage that ref_of_static gives, an Option of such a Ref,
+# an owner of static storage, and a View in an object of automatic storage.
+# The plant plant-static-borrows refuses a View, an Option of a View, a member
+# and a static local with no brand of static storage.  Each object that is not
+# const is a line of the kind unmarked-static of the rule process-wide-state,
+# which reads each object of static storage.
+
+compile statics src/statics.cpp
+flag statics -freflection
+exit statics pass
+finding statics process-wide-state unmarked-static src/statics.cpp:22:54 | planted::static_ref
+finding statics process-wide-state unmarked-static src/statics.cpp:23:66 | planted::static_option
+finding statics process-wide-state unmarked-static src/statics.cpp:24:33 | planted::owner

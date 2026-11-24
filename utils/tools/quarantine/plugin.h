@@ -313,6 +313,12 @@
 //                           reference, a member of the object of a member
 //                           function, or an object of static or thread
 //                           storage (the stores)
+//     static-borrow         an object of static or thread storage whose type
+//                           holds a borrow type of the base with a brand other
+//                           than StaticStorageBrand, unless the object is
+//                           const and its constant initializer holds only
+//                           addresses of objects of static storage (the
+//                           statics)
 //     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -1145,6 +1151,7 @@ enum class Kind : std::uint8_t {
     missing_mark,
     escaped_borrow,
     stored_borrow,
+    static_borrow,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1497,6 +1504,8 @@ inline const char* kind_name(Kind kind) {
             return "escaped-borrow";
         case Kind::stored_borrow:
             return "stored-borrow";
+        case Kind::static_borrow:
+            return "static-borrow";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1758,6 +1767,7 @@ inline Rule rule_of(Kind kind) {
             return Rule::lifetime_twin;
         case Kind::escaped_borrow:
         case Kind::stored_borrow:
+        case Kind::static_borrow:
             return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
@@ -1922,6 +1932,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::loan_key_static:
         case Kind::escaped_borrow:
         case Kind::stored_borrow:
+        case Kind::static_borrow:
             return true;
         default:
             return false;
@@ -2082,6 +2093,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"lifetime-twin", "missing-mark"},
     {"view-escape", "escaped-borrow"},
     {"view-escape", "stored-borrow"},
+    {"view-escape", "static-borrow"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -3293,6 +3305,11 @@ void finish_linear_rules();
 // parameter names, which the static walks of declaration.cpp give with its
 // name ENTITY (the sum holders).
 void check_static_linear_sum(tree decl, const std::string& entity);
+
+// An object of static or thread storage duration DECL that holds a borrow
+// type of the base: the kind static-borrow of the rule view-escape (the
+// statics of escape.cpp).  ENTITY names it.
+void check_static_borrow(tree decl, const std::string& entity);
 // linear.cpp: the error of one finding of the kind self-move of the rule
 // must-consume, in each mode (the self-moves).  Its text names the move, so a
 // fixture reads it as an error of the compile and not as a finding.

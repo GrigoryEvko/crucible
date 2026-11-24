@@ -4,7 +4,9 @@
 # each mode: a keyed array and its key in a global, a holder of a keyed array
 # of a named brand in a global, in a thread_local object and in a static local
 # behind a function, and a global Ref of a holder.  The unit of src/ also gives
-# unmarked-static for each object that can change.
+# unmarked-static for each object that can change.  The global Ref of a holder
+# has no brand of static storage, so it is also the kind static-borrow of the
+# rule view-escape.
 compile report src/keyed.cpp errors=report
 flag report -freflection
 exit report fail
@@ -18,3 +20,4 @@ finding report process-wide-state loan-key-static src/keyed.cpp:29:19 | planted:
 finding report process-wide-state unmarked-static src/keyed.cpp:29:19 | planted::reach_holder()::held
 finding report process-wide-state loan-key-static src/keyed.cpp:34:33 | planted::g_holder_ref
 finding report process-wide-state unmarked-static src/keyed.cpp:34:33 | planted::g_holder_ref
+finding report view-escape static-borrow src/keyed.cpp:34:33 | planted::g_holder_ref

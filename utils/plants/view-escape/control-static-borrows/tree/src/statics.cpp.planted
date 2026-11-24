@@ -1,0 +1,34 @@
+// No object of static or thread storage holds a borrow that can name an
+// object that ends, and no line names the rule view-escape: a const View
+// whose constant initializer views a static table (line 19), a const empty
+// View (20), a Ref of the brand of static storage that ref_of_static gives
+// (22), an Option of such a Ref (23), an owner of static storage (24), and a
+// View in an object of automatic storage (26).
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+
+constexpr fc::FixedArray<int, 3> kTable{1, 2, 3};
+constexpr IntView kTableView = kTable.view();
+constexpr IntView kEmpty{};
+constexpr int kValue = 7;
+constinit fc::Ref<int const, fc::StaticStorageBrand> static_ref = fc::ref_of_static<kValue>();
+constinit fc::Option<fc::Ref<int const, fc::StaticStorageBrand>> static_option{};
+constinit fc::FixedList<int, 4> owner{};
+
+int read_local() noexcept {
+    IntView const local = kTable.view();
+    return local.size() == kTableView.size() && kEmpty.size() == 0 && *static_ref == 7 && static_option.is_none()
+                   && owner.size() == 0
+               ? 1
+               : 0;
+}
+
+}  // namespace planted
