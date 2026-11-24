@@ -220,6 +220,71 @@ void test_chains_agree_with_the_index_model() {
     }
 }
 
+// A node of a chain of the tests: a value and the link to the next node.
+struct ChainNode {
+    int value = 0;
+    ::foundation::core::Option<::foundation::core::Ref<ChainNode const>> next{::foundation::core::none};
+};
+
+using NodeLink = ::foundation::core::Option<::foundation::core::Ref<ChainNode const>>;
+
+// The step of a chain of the tests: the next node of a node.
+struct NextChainNode {
+    [[nodiscard]] constexpr NodeLink operator()(::foundation::core::Ref<ChainNode const> const& node) const noexcept {
+        return node->next;
+    }
+};
+
+// The link to a node of a chain of the tests.
+[[nodiscard]] NodeLink link_to(ChainNode const& node) noexcept {
+    return NodeLink::some(::foundation::core::erase_brand(::foundation::core::to(node)));
+}
+
+// A walk of a chain gives each node from the first link to the first node
+// with no next node, in the order of the links, and an empty first link gives
+// no node.  The terminals stop where the walk of the chain stops.
+void test_chain_walk_follows_each_link() {
+    using ::foundation::core::Ref;
+    using ::foundation::core::walk_chain;
+    ChainNode const fourth{.value = 4, .next = ::foundation::core::none};
+    ChainNode const third{.value = 3, .next = link_to(fourth)};
+    ChainNode const second{.value = 2, .next = link_to(third)};
+    ChainNode const first{.value = 1, .next = link_to(second)};
+
+    int const total =
+        walk_chain(link_to(first), NextChainNode{}).fold(0, [](int sum, Ref<ChainNode const> node) noexcept {
+            return sum * 10 + node->value;
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, total == 1234);
+    CRUCIBLE_TEST_ASSERT(kTest, walk_chain(link_to(first), NextChainNode{}).count() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, walk_chain(link_to(third), NextChainNode{}).count() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, walk_chain(NodeLink{::foundation::core::none}, NextChainNode{}).count() == 0);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, walk_chain(link_to(first), NextChainNode{}).any_of([](Ref<ChainNode const> const& node) noexcept {
+            return node->value == 3;
+        }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, !walk_chain(link_to(first), NextChainNode{}).any_of([](Ref<ChainNode const> const& node) noexcept {
+            return node->value == 5;
+        }));
+    CRUCIBLE_TEST_ASSERT(
+        kTest, walk_chain(link_to(first), NextChainNode{}).all_of([](Ref<ChainNode const> const& node) noexcept {
+            return node->value > 0;
+        }));
+
+    // The cursor loop reads the same nodes, and a break leaves the chain.
+    auto const chain = walk_chain(link_to(first), NextChainNode{});
+    int read = 0;
+    for (Ref<ChainNode const> const node : chain) {
+        if (node->value == 3) break;
+        read = read * 10 + node->value;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, read == 12);
+    CRUCIBLE_TEST_ASSERT(kTest, chain.begin() == chain.begin() && !(chain.begin() == chain.end()));
+    auto const empty = walk_chain(NodeLink{::foundation::core::none}, NextChainNode{});
+    CRUCIBLE_TEST_ASSERT(kTest, empty.begin() == empty.end());
+}
+
 // A cursor of a walk never leaves its loop: a read at the end and a step
 // past the end end the process in each build.  Each one runs in a child
 // through expect_dies of the Check family.
@@ -267,6 +332,21 @@ void test_cursors_at_the_end_abort(::fixy::TestRunnerCtx const& test) {
             static_cast<void>(*doubled.end());
         },
         ::fixy::TextView{"foundation: fatal: a read through the end cursor of a View"});
+    expect_dies(
+        test,
+        [] noexcept {
+            auto const chain = ::foundation::core::walk_chain(NodeLink{::foundation::core::none}, NextChainNode{});
+            static_cast<void>(*chain.end());
+        },
+        ::fixy::TextView{"foundation: fatal: a read through the end cursor of a chain walk"});
+    expect_dies(
+        test,
+        [] noexcept {
+            auto const chain = ::foundation::core::walk_chain(NodeLink{::foundation::core::none}, NextChainNode{});
+            auto cursor = chain.end();
+            ++cursor;
+        },
+        ::fixy::TextView{"foundation: fatal: a step past the end cursor of a chain walk"});
 }
 
 }  // namespace
@@ -277,6 +357,7 @@ int main() {
     test_writer_writes_what_the_walk_reads();
     test_try_zip_compares_the_counts();
     test_chains_agree_with_the_index_model();
+    test_chain_walk_follows_each_link();
     test_cursors_at_the_end_abort(test);
     ::fixy::check::pass(kTest, "test_core_walk: all tests passed\n");
     return 0;

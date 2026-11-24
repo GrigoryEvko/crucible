@@ -291,6 +291,7 @@ using ::foundation::core::StridedIndex;
 using ::foundation::core::StridedView;
 using ::foundation::core::StridedViewMut;
 using ::foundation::core::walk;
+using ::foundation::core::walk_chain;
 
 using ::foundation::core::bit_cast;
 using ::foundation::core::BitValid;

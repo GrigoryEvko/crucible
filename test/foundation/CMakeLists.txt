@@ -5194,6 +5194,9 @@ foundation_neg_compile_test(neg_core_sort_less_keeps_an_element
 foundation_neg_compile_test(neg_core_reduce_combine_keeps_an_operand
   "no matching function for call to .reduce_by_tree\\("
   "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_walk_chain_step_keeps_a_link
+  "no matching function for call to .walk_chain\\("
+  "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_seat_step_linear_capture
   "use of deleted function .void foundation::core::Seat<T>::step\\(Fn&&\\) &"
   "the body holds a linear value by value, and the door calls it with no consume")

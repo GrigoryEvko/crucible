@@ -693,6 +693,103 @@ public:
     }
 };
 
+// A link of a chain of walk_chain: a value that copies, such as a Ref of a
+// node, and not a reference.
+template <class Link>
+concept ChainLink = std::is_object_v<Link> && std::is_nothrow_copy_constructible_v<Link>
+                 && std::is_nothrow_copy_assignable_v<Link> && ChoicePayload<Link>;
+
+// A step of walk_chain: it reads a link and gives the next link of the chain,
+// or no link at the end of the chain, with no throw.  It holds no linear
+// value by value and stores no borrow outside the walk, as each function of
+// a walk does: the link that it reads is a value of the walk.
+template <class Fn, class Link>
+concept ChainStep = std::is_nothrow_invocable_v<Fn const&, Link const&>
+                 && std::same_as<std::invoke_result_t<Fn const&, Link const&>, Option<Link>>
+                 && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
+                 && StoresNoBorrowOutside<Fn>;
+
+// The links of a chain: the first link, and then the link that the step gives
+// for each link, up to the first step that gives no link.  The count is not
+// known.  The stage gives each link by value, and it reads the step of a link
+// after the sink took the link.  Each read of a link is the one test of its
+// Option.
+template <class Link, class Step>
+class ChainStage final {
+    Option<Link> first_;
+    [[no_unique_address]] Step step_;
+
+public:
+    using element_reference = Link;
+    static constexpr bool is_exact = false;
+    static constexpr std::size_t extent = dynamic_extent;
+    static constexpr bool cursor_borrows_stage = true;
+
+    constexpr ChainStage(Option<Link> first, Step step) noexcept
+        : first_{static_cast<Option<Link>&&>(first)}, step_{static_cast<Step&&>(step)} {}
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr void for_each_(Sink& sink) const noexcept {
+        Option<Link> at = first_;
+        for (;;) {
+            CRUCIBLE_LET_ELSE(link, static_cast<Option<Link>&&>(at), );
+            sink(Link{link});
+            at = step_(static_cast<Link const&>(link));
+        }
+    }
+
+    template <class Sink>
+    [[gnu::always_inline]] constexpr Flow try_each_(Sink& sink) const noexcept {
+        Option<Link> at = first_;
+        for (;;) {
+            CRUCIBLE_LET_ELSE(link, static_cast<Option<Link>&&>(at), Flow::go);
+            if (sink(Link{link}) == Flow::stop) return Flow::stop;
+            at = step_(static_cast<Link const&>(link));
+        }
+    }
+
+    // The cursor of `for (x : walk)`: the link that the loop reads, or no link
+    // at the end, and the count of the steps that it took.  Two cursors are
+    // equal when the two are at the end, or when the two took one count of
+    // steps.  A read or a step at the end ends the process in each build.  The
+    // check is the compare of the loop with the end cursor, so the optimizer
+    // removes it.
+    class Cursor final {
+        Option<Link> at_;
+        ChainStage const* stage_ = nullptr;
+        std::size_t steps_ = 0;
+
+        friend class ChainStage;
+
+        constexpr Cursor(Option<Link> at, ChainStage const* stage) noexcept
+            : at_{static_cast<Option<Link>&&>(at)}, stage_{stage} {}
+
+    public:
+        [[nodiscard]] constexpr element_reference operator*() const noexcept {
+            return at_.match([](Link const& link) noexcept { return link; },
+                             []() noexcept -> Link { fatal("a read through the end cursor of a chain walk"); });
+        }
+
+        constexpr Cursor& operator++() noexcept {
+            Option<Link> next =
+                at_.match([this](Link const& link) noexcept { return stage_->step_(link); },
+                          []() noexcept -> Option<Link> { fatal("a step past the end cursor of a chain walk"); });
+            at_ = static_cast<Option<Link>&&>(next);
+            ++steps_;
+            return *this;
+        }
+
+        [[nodiscard]] friend constexpr bool operator==(Cursor const& left, Cursor const& right) noexcept {
+            bool const is_left_end = left.at_.is_none();
+            if (is_left_end || right.at_.is_none()) return is_left_end == right.at_.is_none();
+            return left.steps_ == right.steps_;
+        }
+    };
+
+    [[nodiscard]] constexpr Cursor begin_() const noexcept { return Cursor{first_, this}; }
+    [[nodiscard]] constexpr Cursor end_() const noexcept { return Cursor{Option<Link>{none}, this}; }
+};
+
 }  // namespace detail
 
 // A walk: the stages of a chain, with the adapters and the terminals.
@@ -963,5 +1060,23 @@ public:
     = delete(
         "a cursor of a map, a filter or a zip points into its walk, and the full expression ends a temporary walk");
 };
+
+// The walk of a chain of links: the first link, and then the link that step
+// gives for each link, up to the first step that gives no link (ChainStage).
+// No first link gives an empty walk.  The walk reads each link one time, so a
+// loop over a chain holds no test of an Option and no expect.  Complexity: one
+// call of step for each link that the walk reads.
+template <detail::ChainLink Link, class Step>
+    requires detail::ChainStep<Step, Link>
+[[nodiscard]] constexpr Walk<detail::ChainStage<Link, Step>> walk_chain(Option<Link> first, Step step) noexcept {
+    return Walk<detail::ChainStage<Link, Step>>{
+        detail::ChainStage<Link, Step>{static_cast<Option<Link>&&>(first), static_cast<Step&&>(step)}};
+}
+
+// A step that holds a linear value by value binds to this overload, so the
+// refusal gives its reason (LinearWalkFunction).
+template <detail::ChainLink Link, class Step>
+    requires detail::LinearWalkFunction<Step, Link const&>
+void walk_chain(Option<Link> first, Step step) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 }  // namespace foundation::core
