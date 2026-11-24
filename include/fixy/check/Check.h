@@ -179,7 +179,7 @@ void expect_dies(Ctx const& test, Body&& body, ::foundation::core::TextView expe
         detail::report_child_error_(collected.err().value_or(os::Errno::eio), site);
     }
     collected.match(
-        [&expected, &site](process::ChildReport const& report) noexcept {
+        [expected, site](process::ChildReport const& report) noexcept {
             bool const is_abort = report.is_signaled_by(os::kAbortSignal);
             bool const has_text = core::find(report.output(), expected).is_some();
             if (!is_abort || !has_text) [[unlikely]] {
@@ -219,7 +219,7 @@ void expect_dies_by(Ctx const& test, Body&& body, ::fixy::signal::FatalSignal fa
         detail::report_child_error_(collected.err().value_or(os::Errno::eio), site);
     }
     collected.match(
-        [fatal_signal, &site](process::ChildReport const& report) noexcept {
+        [fatal_signal, site](process::ChildReport const& report) noexcept {
             if (!report.is_signaled_by(::fixy::signal::number_of(fatal_signal))) [[unlikely]] {
                 detail::report_unexpected_signal_(report, fatal_signal, site);
             }

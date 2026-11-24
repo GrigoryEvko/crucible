@@ -351,10 +351,8 @@ struct owned_thread_door {
         ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> const started =
             Frame::start_thread(*frame, options);
         return started.match(
-            [frame](std::uint64_t const& handle) noexcept -> Started {
-                return OwnedThread{handle, frame, &Frame::end};
-            },
-            [frame](::foundation::os::Errno const& error) noexcept -> Started {
+            [frame](std::uint64_t handle) noexcept -> Started { return OwnedThread{handle, frame, &Frame::end}; },
+            [frame](::foundation::os::Errno error) noexcept -> Started {
                 if constexpr (holds_linear_part_<Body>) {
                     Body unrun = Frame::take_unrun_body(*frame);
                     Frame::end(frame);

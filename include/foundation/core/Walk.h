@@ -772,7 +772,7 @@ public:
 
         constexpr Cursor& operator++() noexcept {
             Option<Link> next =
-                at_.match([this](Link const& link) noexcept { return step_(link); },
+                at_.match([this](Link link) noexcept { return step_(link); },
                           []() noexcept -> Option<Link> { fatal("a step past the end cursor of a chain walk"); });
             at_ = static_cast<Option<Link>&&>(next);
             ++steps_;
