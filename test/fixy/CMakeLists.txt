@@ -4977,6 +4977,17 @@ fixy_test(test_parked_channel)
 # The parked form of a wire of Box objects: a refused push gives its Box
 # back with the reason, and no parcel leaks.
 fixy_test(test_parked_box_channel)
+# The merge form of the parked channel: three producers through a full merge,
+# and a consumer close that wakes each parked producer.
+fixy_test(test_parked_merge_channel)
+# A pop of a parked merge takes a context that owns Nondet, and a parked
+# producer of a merge has no release.
+fixy_neg_compile_test(neg_parked_merge_pop_without_nondet
+  "no matching function for call to .*try_pop"
+  "pops_with")
+fixy_neg_compile_test(neg_parked_merge_producer_release
+  "no matching function for call to .*release"
+  "is_merge")
 fixy_neg_compile_test(neg_parked_box_refusal_dropped
   "ignoring return value of"
   "the code discards a temporary linear sum, so its payload can drop")

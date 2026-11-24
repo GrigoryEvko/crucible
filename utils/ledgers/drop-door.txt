@@ -12,5 +12,5 @@ bench/ | untracked-assignment | 1 | - | -
 include/fixy/concurrent/ | untracked-assignment | 20 | - | the fork writes the token of a child into the frame of that child.  The entity names the token type, so each child tag of a fork in the tests is its own line
 include/fixy/session/ | untracked-assignment | 5 | - | the hold of a session writes a read loan back through a reference after a read.  The entity names the loan type, so each region of a hold in the tests is its own line
 include/foundation/core/ | destroy | 4 | - | the alternatives of Option and Result end the lifetime of a payload, and in a test build the consume tracker gives the end of a Linear a destructor.  An end in the union of the alternatives names its place and no type, so each form of the union gives one line for its clobber and one for its destructor call
-include/foundation/permissions/ | untracked-assignment | 14 | - | the pool of shared permissions writes its parked token on a deposit.  The entity names the token type, so each tag of a pool in the tests and the benches is its own line
+include/foundation/permissions/ | untracked-assignment | 15 | - | the pool of shared permissions writes its parked token on a deposit.  The entity names the token type, so each tag of a pool in the tests and the benches is its own line
 test/foundation/ | untracked-assignment | 1 | - | -

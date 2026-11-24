@@ -83,6 +83,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
@@ -146,17 +147,41 @@ class ParkedConsumerHandle;
 // takes a Box by move.  A push door of a wire of values refuses with a
 // PushRefusal, and the caller keeps its value.  A push door of a wire that
 // moves its items refuses with a PushRefused, which gives the item back.
+//
+// Channel can also be a merge of the two headers (the merge form).  The pool
+// of the merge holds the producer root, and each producer handle holds one
+// share, which a frame door lends.  The producer end of a merge has close and
+// no release: the close of the last producer ends the stream.  A pop of a
+// merge reads the schedule, so each pop door takes a context that owns
+// Nondet.  Each pop that takes an item notifies room once, because it frees
+// one cell, so it wakes one parked producer.  The close of the consumer wakes
+// each parked producer.
+//
+// The producers and the consumer use the channel on their threads at the same
+// time by design.  Each part is private: the inner channel states
+// synchronized{}, and the two counts and the state of the consumer are atomic
+// cells.  So the parked channel states synchronized{} (foundation/
+// Transfer.h).
 template <class Channel>
-    requires ChannelOfForm<Channel, ChannelForm::wire>
-class ParkedChannel : public ::foundation::Pinned<ParkedChannel<Channel>> {
+    requires ChannelOfForm<Channel, ChannelForm::wire> || ChannelOfForm<Channel, ChannelForm::merge>
+class[[= ::foundation::transfer::synchronized{}]] ParkedChannel : public ::foundation::Pinned<ParkedChannel<Channel>> {
 public:
     using value_type = typename Channel::row_payload;
     using brand_type = typename Channel::brand_type;
     using whole_tag = typename Channel::whole_tag;
     using producer_tag = typename Channel::producer_tag;
     using consumer_tag = typename Channel::consumer_tag;
-    static constexpr ChannelForm channel_form = ChannelForm::wire;
+    static constexpr ChannelForm channel_form = Channel::channel_form;
     static constexpr std::size_t channel_capacity = Channel::channel_capacity;
+
+    // True for the merge form.
+    static constexpr bool is_merge = channel_form == ChannelForm::merge;
+
+    // True when a pop door can take the context: each context for a wire, and
+    // a context that owns Nondet for a merge, whose pop reads the schedule.
+    template <class Ctx>
+    static constexpr bool pops_with =
+        !is_merge || ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::Nondet>;
 
     // True when the push of the wire takes its item by move, as the push of a
     // wire of Box objects does.  Such a push gives a refused item back.
@@ -169,7 +194,15 @@ public:
                                    std::conditional_t<moves_its_items, PushRefused<value_type>, PushRefusal>>;
 
     // A wire starts with no handle.  The caller keeps the two tokens.
-    ParkedChannel() noexcept = default;
+    ParkedChannel() noexcept
+        requires(!is_merge)
+    = default;
+
+    // The pool of the merge parks the producer root, and each producer handle
+    // holds one share of it.
+    explicit ParkedChannel(::foundation::permissions::Permission<producer_tag, brand_type>&& producer_root) noexcept
+        requires is_merge
+        : inner_{std::move(producer_root)} {}
 
     // The key of the constructor of a parked handle (shape).  It holds the
     // end that a claim door opened.  Only the parked channel builds a key, and
@@ -211,7 +244,7 @@ public:
     public:
         using brand_type = typename Channel::brand_type;
         using value_type = typename Channel::row_payload;
-        static constexpr ChannelForm channel_form = ChannelForm::wire;
+        static constexpr ChannelForm channel_form = Channel::channel_form;
         static constexpr std::size_t channel_capacity = Channel::channel_capacity;
 
         ProducerEnd(ProducerEnd const&) = delete("a parked producer end owns the producer token");
@@ -328,8 +361,11 @@ public:
         }
 
         // Gives the token back and keeps the stream open.  No condition of a
-        // wait changes, so the door notifies nothing.
-        [[nodiscard]] ::foundation::permissions::Permission<producer_tag, brand_type> release() && noexcept {
+        // wait changes, so the door notifies nothing.  A producer of a merge
+        // holds a share of the pool and no token, so it has no release.
+        [[nodiscard]] ::foundation::permissions::Permission<producer_tag, brand_type> release() && noexcept
+            requires(!is_merge)
+        {
             this->mark_consumed(__PRETTY_FUNCTION__, __LINE__);
             return std::move(inner_).release();
         }
@@ -411,7 +447,7 @@ public:
     public:
         using brand_type = typename Channel::brand_type;
         using value_type = typename Channel::row_payload;
-        static constexpr ChannelForm channel_form = ChannelForm::wire;
+        static constexpr ChannelForm channel_form = Channel::channel_form;
         static constexpr std::size_t channel_capacity = Channel::channel_capacity;
 
         ConsumerEnd(ConsumerEnd const&) = delete("a parked consumer end owns the consumer token");
@@ -423,11 +459,11 @@ public:
         // The oldest item, or no value when the ring is empty.  A pop that
         // takes an item notifies room.
         template <class Ctx>
-            requires ::fixy::futex::CtxMayUseFutex<Ctx>
+            requires ::fixy::futex::CtxMayUseFutex<Ctx> && pops_with<Ctx>
         [[nodiscard]] ::foundation::core::Option<value_type> try_pop(Ctx const& ctx) noexcept {
             this->require_live("a pop through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Option<value_type> popped = inner_.try_pop();
+            ::foundation::core::Option<value_type> popped = pop_(ctx);
             if (popped.is_some()) channel_->room_.notify_one(ctx);
             return popped;
         }
@@ -436,11 +472,11 @@ public:
         // item of a closed channel.  A receive that takes an item notifies
         // room.
         template <class Ctx>
-            requires ::fixy::futex::CtxMayUseFutex<Ctx>
+            requires ::fixy::futex::CtxMayUseFutex<Ctx> && pops_with<Ctx>
         [[nodiscard]] ::foundation::core::Result<value_type, NoItem> try_receive(Ctx const& ctx) noexcept {
             this->require_live("a receive through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Result<value_type, NoItem> received = inner_.try_receive();
+            ::foundation::core::Result<value_type, NoItem> received = receive_(ctx);
             if (received.is_ok()) channel_->room_.notify_one(ctx);
             return received;
         }
@@ -449,12 +485,12 @@ public:
         // ring is empty and the stream is open, the call waits by Policy on
         // items.  A receive that takes an item notifies room.
         template <WaitPolicy Policy, class Ctx>
-            requires CtxFitsWaitPolicy<Ctx, Policy> && ::fixy::futex::CtxMayUseFutex<Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy> && ::fixy::futex::CtxMayUseFutex<Ctx> && pops_with<Ctx>
         [[nodiscard]] ::foundation::core::Result<value_type, NoItem> receive_waiting(Ctx const& ctx) noexcept {
             this->require_live("a receive through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>> got{::foundation::core::none};
-            wait_for<Policy>(ctx, channel_->items_, [this, &got]() noexcept { return has_received_(got); });
+            wait_for<Policy>(ctx, channel_->items_, [this, &ctx, &got]() noexcept { return has_received_(ctx, got); });
             ::foundation::core::Result<value_type, NoItem> received =
                 std::move(got).expect("the wait ends after a receive that gives an item or the end");
             if (received.is_ok()) channel_->room_.notify_one(ctx);
@@ -464,14 +500,15 @@ public:
         // As receive_waiting, but the wait ends at deadline with
         // NoItem::Empty.  A deadline needs the park, so Policy parks.
         template <WaitPolicy Policy, class Ctx>
-            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park) && ::fixy::futex::CtxMayUseFutex<Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park)
+                  && ::fixy::futex::CtxMayUseFutex<Ctx> && pops_with<Ctx>
         [[nodiscard]] ::foundation::core::Result<value_type, NoItem>
         receive_waiting_until(Ctx const& ctx, ::fixy::futex::Deadline const& deadline) noexcept {
             this->require_live("a receive through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>> got{::foundation::core::none};
             EventWaitEnd const end = wait_for<Policy>(
-                ctx, channel_->items_, [this, &got]() noexcept { return has_received_(got); }, deadline);
+                ctx, channel_->items_, [this, &ctx, &got]() noexcept { return has_received_(ctx, got); }, deadline);
             if (end == EventWaitEnd::deadline_passed || got.is_none()) {
                 return ::foundation::core::err(NoItem::Empty);
             }
@@ -506,11 +543,38 @@ public:
         }
 
     private:
+        // The pop and the receive of the inner end.  The pop of a merge reads
+        // the schedule, so it takes the tag of Nondet from the context, and the
+        // pop of a wire takes none.
+        template <class Ctx>
+        [[nodiscard]] ::foundation::core::Option<value_type> pop_(Ctx const& ctx) noexcept {
+            if constexpr (is_merge) {
+                return inner_.try_pop(
+                    ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
+            } else {
+                static_cast<void>(ctx);
+                return inner_.try_pop();
+            }
+        }
+
+        template <class Ctx>
+        [[nodiscard]] ::foundation::core::Result<value_type, NoItem> receive_(Ctx const& ctx) noexcept {
+            if constexpr (is_merge) {
+                return inner_.try_receive(
+                    ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
+            } else {
+                static_cast<void>(ctx);
+                return inner_.try_receive();
+            }
+        }
+
         // The condition of a wait of the consumer: a receive that gives an
         // item or the end.
+        template <class Ctx>
         [[nodiscard]] bool
-        has_received_(::foundation::core::Option<::foundation::core::Result<value_type, NoItem>>& got) noexcept {
-            ::foundation::core::Result<value_type, NoItem> received = inner_.try_receive();
+        has_received_(Ctx const& ctx,
+                      ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>>& got) noexcept {
+            ::foundation::core::Result<value_type, NoItem> received = receive_(ctx);
             if (received.is_err_and([](NoItem why) noexcept { return why == NoItem::Empty; })) return false;
             got = ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>>::some(std::move(received));
             return true;
@@ -530,8 +594,23 @@ public:
     // builds.
     [[nodiscard]] HandleKey<ProducerEnd>
     producer(ChannelFrameKey const& key,
-             ::foundation::permissions::Permission<producer_tag, brand_type>&& token) noexcept {
+             ::foundation::permissions::Permission<producer_tag, brand_type>&& token) noexcept
+        requires(!is_merge)
+    {
         return HandleKey<ProducerEnd>{ProducerEnd{inner_.producer(key, std::move(token)), *this}};
+    }
+
+    // The producer door of a merge.  It lends a share of the pool, or gives
+    // no value while the producer root is out of the pool.  The lend reads the
+    // schedule, so the door takes the tag of Nondet, as the door of the merge
+    // does.
+    [[nodiscard]] ::foundation::core::Option<HandleKey<ProducerEnd>>
+    producer(ChannelFrameKey const& key, ::foundation::effects::cap::Nondet nondet) noexcept
+        requires is_merge
+    {
+        CRUCIBLE_TRY(lent, inner_.producer(key, nondet));
+        return ::foundation::core::Option<HandleKey<ProducerEnd>>::some(
+            HandleKey<ProducerEnd>{ProducerEnd{std::move(lent), *this}});
     }
 
     // The claim of the consumer role comes first, so a second live consumer
@@ -669,7 +748,13 @@ public:
         static_cast<End&&>(*this).close(ctx);
     }
 
-    [[nodiscard]] auto release() && noexcept { return static_cast<End&&>(*this).release(); }
+    // A producer of a merge holds a share of the pool and no token, so its
+    // handle has no release.
+    [[nodiscard]] auto release() && noexcept
+        requires(!Channel::is_merge)
+    {
+        return static_cast<End&&>(*this).release();
+    }
 };
 
 // The consumer handle of a frame of a parked channel, as ConsumerHandle of
@@ -699,30 +784,33 @@ public:
     operator=(ParkedConsumerHandle&&) = delete("a parked consumer handle binds to one channel for its life");
     ~ParkedConsumerHandle() = default;
 
+    // A pop door of a merge takes a context that owns Nondet.  Each pop door
+    // names that gate first (pops_with), so a refusal of a context names it.
     template <class Ctx>
     [[nodiscard]] auto try_pop(Ctx const& ctx) noexcept
-        requires requires(End& end) { end.try_pop(ctx); }
+        requires(Channel::template pops_with<Ctx>) && requires(End& end) { end.try_pop(ctx); }
     {
         return End::try_pop(ctx);
     }
 
     template <class Ctx>
     [[nodiscard]] auto try_receive(Ctx const& ctx) noexcept
-        requires requires(End& end) { end.try_receive(ctx); }
+        requires(Channel::template pops_with<Ctx>) && requires(End& end) { end.try_receive(ctx); }
     {
         return End::try_receive(ctx);
     }
 
     template <WaitPolicy Policy, class Ctx>
     [[nodiscard]] auto receive_waiting(Ctx const& ctx) noexcept
-        requires requires(End& end) { end.template receive_waiting<Policy>(ctx); }
+        requires(Channel::template pops_with<Ctx>) && requires(End& end) { end.template receive_waiting<Policy>(ctx); }
     {
         return End::template receive_waiting<Policy>(ctx);
     }
 
     template <WaitPolicy Policy, class Ctx>
     [[nodiscard]] auto receive_waiting_until(Ctx const& ctx, ::fixy::futex::Deadline const& deadline) noexcept
-        requires requires(End& end) { end.template receive_waiting_until<Policy>(ctx, deadline); }
+        requires(Channel::template pops_with<Ctx>)
+             && requires(End& end) { end.template receive_waiting_until<Policy>(ctx, deadline); }
     {
         return End::template receive_waiting_until<Policy>(ctx, deadline);
     }
