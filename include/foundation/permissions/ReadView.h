@@ -30,18 +30,21 @@
 // that region and no other region of the same tag.  No door gives a view,
 // a loan or a parked token on the erased identity for a branded source.
 //
-// What stays open, stated rather than implied: a body can store a
-// pointer or a reference to its view in an object outside the frame.
-// That pointer dangles when the door returns, and a read through it is
-// undefined behavior, which no property of a type refuses.  A result
-// that names a view is refused, so the dangling pointer cannot leave
-// through the return value.
+// A body cannot keep its view.  A result that names a view is refused,
+// and the store check of the door (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h) refuses a body that stores a pointer or
+// a reference in an object of the caller, which it captures by reference
+// (neg_read_view_address_kept_past_its_frame).  What stays open, stated
+// rather than implied: a body can store the address in an object of
+// static storage duration, which it does not capture.  That pointer
+// dangles when the door returns.
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Record.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
@@ -245,11 +248,12 @@ struct read_view_door {
 
 // Lends the source to the body and hands it back.  A body that returns
 // nothing gives the source back.  A body that returns a value gives a
-// Record of that value and the source.
+// Record of that value and the source.  The body stores no borrow outside
+// the frame.
 template <typename Source, typename Body>
     requires ReadViewSource<Source> && ReadViewNeedsNoCtx<typename Source::tag_type>
           && ReadViewBody<Body, typename Source::tag_type, typename Source::brand_type>
-          && ::foundation::linear::HoldsNoLinearValue<Body>
+          && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
 [[nodiscard]] constexpr auto with_read_view(Source&& source,
                                             Body&& body) noexcept(detail::read_view_door_nothrow_v<Source, Body>) {
     return detail::read_view_door::lend(std::move(source), std::forward<Body>(body));

@@ -1269,6 +1269,11 @@ foundation_neg_compile_test(neg_read_loan_from_named_token
 foundation_neg_compile_test(neg_read_view_named_source_refused
   "use of deleted function"
   "with_read_view lends its source to the body and hands the source back")
+# A body that keeps a Ref of its view in a capture: the store check of the
+# door refuses it.
+foundation_neg_compile_test(neg_read_view_address_kept_past_its_frame
+  "no matching function for call to .*with_read_view"
+  "StoresNoBorrowOutside")
 # A class that copies a source's member types is not a source.  The door
 # refuses it by family, so the unsatisfied check names is_read_view_source.
 foundation_neg_compile_test(neg_read_view_look_alike_source_refused

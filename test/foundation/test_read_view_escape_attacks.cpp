@@ -34,6 +34,12 @@ struct HoldsUntyped {
 struct HoldsCall {
     void (*call)();
 };
+// A body that stores the address of its view in an object of the caller,
+// which it captures by reference.
+struct KeepsAddress {
+    void const*& kept;
+    void operator()(View const& view) const noexcept { kept = &view; }
+};
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 struct Plain {
     int count;
@@ -64,6 +70,12 @@ static_assert(fp::ReadViewResultStaysInside<int>);
 static_assert(fp::ReadViewResultStaysInside<Plain>);
 static_assert(fp::ReadViewResultStaysInside<::fixy::Record<int, double>>);
 
+// A body that stores the address of its view in an object of the caller,
+// which it captures by reference, is refused by the store check of the door
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  The fixture
+// neg_read_view_address_kept_past_its_frame shows the refusal at the door.
+static_assert(!::foundation::core::StoresNoBorrowOutside<KeepsAddress>);
+
 // ── The ledger ───────────────────────────────────────────────────────
 
 struct KnownLimit {
@@ -72,9 +84,9 @@ struct KnownLimit {
 };
 
 inline constexpr ::fixy::FixedArray<KnownLimit, 1> kLedger{KnownLimit{
-    "a body that captures an outer object by reference stores the address of the view in it",
-    "a body must be able to capture its outer state by reference, and the type of a capture shows the "
-    "reference but not a store through it; every later use of that address reads the released frame of the door"}};
+    "a body stores the address of the view in an object of static storage duration, which it does not capture",
+    "the type of a body shows its captures, and an object of static storage duration is no capture; every later "
+    "use of that address reads the released frame of the door"}};
 static_assert(kLedger.size() <= 1, "the ledger only shrinks");
 
 }  // namespace read_view_escape_attacks
@@ -94,13 +106,14 @@ int main() {
         fp::with_read_view(fp::mint_permission_root<Region>(), [](auto const&) noexcept { return Plain{3, 1.5}; });
     expect(value.count == 3, "the body's value did not leave the door");
 
-    // The ledger entry reproduces: the address escapes through a capture.
-    // It is never used after the door returns.
+    // The ledger entry reproduces: the address escapes through an object of
+    // static storage duration, which the body does not capture.  It is never
+    // used after the door returns.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: an attack carries a view out of its door in a std type or a raw address")
-    void const* leaked = nullptr;
-    auto back = fp::with_read_view(std::move(source), [&leaked](auto const& view) noexcept { leaked = &view; });
+    static void const* leaked = nullptr;
+    auto back = fp::with_read_view(std::move(source), [](auto const& view) noexcept { leaked = &view; });
     expect(leaked != nullptr,
-           "stale ledger entry: a body no longer stores the address of its view through a capture, delete it");
+           "stale ledger entry: a body no longer stores the address of its view in a static object, delete it");
     (void)back;
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
