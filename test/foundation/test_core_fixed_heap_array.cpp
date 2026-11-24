@@ -98,6 +98,11 @@ void test_value_doors() {
     CRUCIBLE_FATAL_INVARIANT(::foundation::core::equal(words.view(), moved.view()));
     words.fill(8);
     CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 8 && words.at(index<5>()) == 8);
+    std::uint64_t const doubled = words.update(index<5>(), [](std::uint64_t& word) noexcept {
+        word |= 16;
+        return word * 2;
+    });
+    CRUCIBLE_FATAL_INVARIANT(doubled == 48 && words.at(index<5>()) == 24 && words.at(index<4>()) == 8);
 }
 
 // The maker of a keyed heap array gives an array of the copies of a value and

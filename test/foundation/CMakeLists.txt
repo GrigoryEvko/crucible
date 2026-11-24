@@ -4662,6 +4662,9 @@ foundation_neg_compile_test(neg_core_fixed_array_owner_no_default
 foundation_neg_compile_test(neg_core_keyed_array_set
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::set\\(Arguments&& ...\\) &"
   "a keyed FixedArray has no value door, because another name of it could write an element")
+foundation_neg_compile_test(neg_core_keyed_array_update
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::update\\(Arguments&& ...\\) &"
+  "a keyed FixedArray has no update door, because another name of it could write an element")
 foundation_neg_compile_test(neg_core_keyed_array_fill
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::fill\\(Arguments&& ...\\) &"
   "a keyed FixedArray has no value door, because another name of it could write the run")
@@ -4679,6 +4682,21 @@ foundation_neg_compile_test(neg_core_fixed_array_set_linear
 foundation_neg_compile_test(neg_core_fixed_array_set_on_const
   "passing .const foundation::core::FixedArray<int, 4>. as .this. argument discards qualifiers"
   "neg_core_fixed_array_set_on_const\\.cpp:[0-9]+:[0-9]+: error")
+# The update door gives its body a copy of the element: the element copies,
+# the result of the body holds no borrow of the copy, the body stores none of
+# it outside, and the body writes the array through no name.
+foundation_neg_compile_test(neg_core_fixed_array_update_move_only
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "update gives the body a copy of the element and moves the copy back")
+foundation_neg_compile_test(neg_core_fixed_array_update_gives_reference
+  "no matching function for call to .foundation::core::FixedArray<int, 2>::update\\("
+  "HoldsNoBorrow")
+foundation_neg_compile_test(neg_core_fixed_array_update_stores_reference
+  "no matching function for call to .foundation::core::FixedArray<.anonymous.::Node, 2>::update\\("
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_fixed_array_nested_update
+  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
+  "the payload that the arm borrows can end while the arm holds its reference")
 # build_fixed_array: the gates of each frame body, and a body that could write
 # the object that the array initializes.
 foundation_neg_compile_test(neg_core_build_fixed_array_gives_view_mut

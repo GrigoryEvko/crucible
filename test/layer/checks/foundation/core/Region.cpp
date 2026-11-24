@@ -480,8 +480,8 @@ inline constexpr TextView region_names{
     "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
     "element_type brand_type extent capacity window split_at prefix prefix_up_to suffix get_mut indices index parallel "
     "check mask raw rest take take_first take_last expect_empty clear with_view with_element with_mut build_at "
-    "append_self freeze is_at_end remaining set exchange fill copy_from copy_window next_cyclic prev_cyclic Ranged lo "
-    "hi constant narrow"};
+    "append_self freeze is_at_end remaining set exchange update fill copy_from copy_window next_cyclic prev_cyclic "
+    "Ranged lo hi constant narrow"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.

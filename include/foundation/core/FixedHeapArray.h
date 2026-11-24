@@ -26,8 +26,9 @@
 //                       check: the type of the index proves the bound
 //
 // Writes
-//   array.set(index, value), array.exchange(index, value), array.fill(value),
-//   array.copy_from(view) and array.copy_window(start, view)
+//   array.set(index, value), array.exchange(index, value),
+//   array.update(index, body), array.fill(value), array.copy_from(view) and
+//   array.copy_window(start, view)
 //                       the value doors, as a FixedArray has them
 //                       (foundation/core/Array.h)
 //   array.with_element(index, body)
@@ -232,6 +233,20 @@ public:
         first_()[index.raw()] = static_cast<T&&>(value);
         return held;
     }
+    template <class Body>
+        requires(!is_keyed_)
+             && UpdatableElement<T> && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]] auto
+        update(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        detail::UpdateFrame<T> frame{first_()[index.raw()]};
+        return frame.run(static_cast<Body&&>(body));
+    }
+    template <class... Arguments>
+        requires is_keyed_
+    void update(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no update door, because another name of it could write an element while a frame "
+        "of it is open: call with_element(key, index, body)");
     void fill(T const& value) & noexcept
         requires(!is_keyed_) && RegionCopyElement<T>
     {

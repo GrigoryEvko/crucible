@@ -587,6 +587,10 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe("fixed_array_set", "set of a FixedArray at a proven index is one store, with no check"),
     Probe(
+        "fixed_array_update",
+        "update of one word of an element writes that word alone, with no copy of the other words",
+    ),
+    Probe(
         "heap_array_copy_window",
         "copy_window of a FixedHeapArray is the two compares of the bound of the window and one memmove",
         branches=True,

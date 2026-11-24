@@ -466,10 +466,28 @@ struct ShapeHeapBrand final {};
     target.with_mut(key, [words](auto run) noexcept { fixy::copy(std::move(run), words); });
 }
 
+// An element of eight words.
+struct SlotOfWords {
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+    std::uint64_t third = 0;
+    std::uint64_t fourth = 0;
+    std::uint64_t fifth = 0;
+    std::uint64_t sixth = 0;
+    std::uint64_t seventh = 0;
+    std::uint64_t eighth = 0;
+};
+
 // One element through the value door set, as the trace ring writes its slot.
 [[gnu::used]] void fixed_array_set(fixy::FixedArray<std::uint64_t, 64>& array, fixy::Index<64> index,
                                    std::uint64_t value) noexcept {
     array.set(index, value);
+}
+
+// One word of an element of eight words through the update door.
+[[gnu::used]] void fixed_array_update(fixy::FixedArray<SlotOfWords, 64>& array, fixy::Index<64> index,
+                                      std::uint64_t word) noexcept {
+    array.update(index, [word](SlotOfWords& slot) noexcept { slot.third += word; });
 }
 
 // A run into a window of a heap array through the value door copy_window, as
@@ -2053,6 +2071,12 @@ struct RawHeapWords final {
 [[gnu::used]] void fixed_array_set_raw(std::array<std::uint64_t, 64>& array, std::uint32_t index,
                                        std::uint64_t value) noexcept {
     array[index] = value;
+}
+
+// One read and one store of the word of the element.
+[[gnu::used]] void fixed_array_update_raw(std::array<SlotOfWords, 64>& array, std::uint32_t index,
+                                          std::uint64_t word) noexcept {
+    array[index].third += word;
 }
 
 // The bound test of a window and one copy.

@@ -225,6 +225,97 @@ void test_fixed_array_value_doors_write_one_element() {
                          taken.size() == 3 && runs.at(index<1>()).size() == 1 && runs.at(index<0>()).size() == 0);
 }
 
+// An element that counts its steps and has no assignment, as an element with
+// a Monotonic part.
+struct Stepped {
+    std::uint32_t steps = 0;
+    std::uint32_t last = 0;
+    constexpr Stepped() noexcept = default;
+    constexpr Stepped(Stepped const&) noexcept = default;
+    Stepped& operator=(Stepped const&) = delete("an element of the test moves only by its own steps");
+    constexpr void step(std::uint32_t value) noexcept {
+        ++steps;
+        last = value;
+    }
+};
+
+// update gives the body a copy of the element and puts the copy back.  It
+// gives the result of the body, each other element keeps its value, and an
+// element with no assignment takes the door too.
+void test_fixed_array_update_changes_one_element() {
+    FixedArray<int, 4> numbers{1, 2, 3, 4};
+    int const doubled = numbers.update(index<1>(), [](int& number) noexcept {
+        number += 18;
+        return number * 2;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, doubled == 40 && (numbers == FixedArray<int, 4>{1, 20, 3, 4}));
+
+    FixedArray<Stepped, 3> counts{};
+    for (std::uint32_t value = 1; value <= 4; ++value) {
+        counts.update(index<2>(), [value](Stepped& count) noexcept { count.step(value); });
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, counts.at(index<2>()).steps == 4 && counts.at(index<2>()).last == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, counts.at(index<0>()).steps == 0 && counts.at(index<1>()).steps == 0);
+
+    // While a body runs, the array holds whole elements, so a read of each
+    // element through the name of the array gives the value before the call.
+    FixedArray<int, 2> pair{5, 6};
+    int const seen = pair.update(index<0>(), [&read = ::fixy::as_const(pair)](int& number) noexcept {
+        number = 50;
+        return read.at(index<0>()) + read.at(index<1>());
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, seen == 11 && (pair == FixedArray<int, 2>{50, 6}));
+}
+
+// An element whose copy is not trivial, so the test oracle of update does not
+// compare its bytes.
+struct Noted {
+    int value = 0;
+    constexpr Noted() noexcept = default;
+    constexpr Noted(Noted const& other) noexcept : value{other.value} {}
+    constexpr Noted& operator=(Noted const& other) noexcept {
+        value = other.value;
+        return *this;
+    }
+};
+
+void add_ten(FixedArray<Noted, 2>& array, Index<2> at) noexcept {
+    array.update(at, [](Noted& element) noexcept { element.value += 10; });
+}
+void add_ten(FixedArray<int, 2>& array, Index<2> at) noexcept {
+    array.update(at, [](int& element) noexcept { element += 10; });
+}
+
+// A nested update of the same element, through a helper that no gate sees,
+// loses its step: the outer door puts back its own copy.  A nested update of
+// another element keeps its step.  A build with the test oracles ends the
+// process on a lost step of a trivially copyable element.
+void test_fixed_array_update_loses_a_nested_step(::fixy::TestRunnerCtx const& test) {
+    FixedArray<Noted, 2> noted{};
+    noted.update(index<0>(), [&noted](Noted& element) noexcept {
+        add_ten(noted, index<0>());
+        add_ten(noted, index<1>());
+        element.value += 1;
+    });
+    CRUCIBLE_TEST_ASSERT(test, noted.at(index<0>()).value == 1 && noted.at(index<1>()).value == 10);
+
+    auto const lose_a_step = [] noexcept {
+        FixedArray<int, 2> numbers{};
+        numbers.update(index<0>(), [&numbers](int& element) noexcept {
+            add_ten(numbers, index<0>());
+            element += 1;
+        });
+        return numbers.at(index<0>());
+    };
+    if constexpr (::foundation::has_test_oracles) {
+        ::fixy::check::expect_dies(
+            test, [&lose_a_step] noexcept { static_cast<void>(lose_a_step()); },
+            ::fixy::TextView{"a body of update wrote the element that the door then puts back"});
+    } else {
+        CRUCIBLE_TEST_ASSERT(test, lose_a_step() == 1);
+    }
+}
+
 // The value doors of the run: fill writes each element, copy_from the N
 // elements of a View, and copy_window a part that fits.  A window that does
 // not fit writes nothing.
@@ -498,6 +589,8 @@ int main() {
     test_fixed_array_element_door_writes_in_place();
     test_fixed_array_value_door_builds_in_place();
     test_fixed_array_value_doors_write_one_element();
+    test_fixed_array_update_changes_one_element();
+    test_fixed_array_update_loses_a_nested_step(test);
     test_fixed_array_value_doors_write_the_run();
     test_fixed_array_copy_doors_take_their_own_run();
     test_build_fixed_array_gives_a_new_array();

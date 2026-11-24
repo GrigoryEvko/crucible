@@ -40,12 +40,14 @@
 // when its element is, so the ABI passes a small array in registers.
 //
 // Value doors
-//   array.set(index, value)   the element at an Index<N> becomes value.  A
-//                       change of a part of an element takes a copy of it
-//                       from at(), changes the copy, and sets it
+//   array.set(index, value)   the element at an Index<N> becomes value
 //   array.exchange(index, value)
 //                       the element becomes value, and the door gives the
 //                       value that the element held
+//   array.update(index, body)
+//                       body changes a copy of the element, and the door
+//                       then puts the copy in the place of the element and
+//                       gives the result of body (the update door)
 //   array.build_at(index, fn, args...)
 //                       the element becomes the value of fn(args...), built
 //                       in its place
@@ -59,7 +61,9 @@
 //                       LengthMismatch, and the door then writes nothing
 // A value door lends no element and no run.  Its value comes to it as an
 // argument, so no code of the caller runs while the door writes, and no second
-// door of the array opens inside it.  So a value door takes no key.  A copy
+// door of the array opens inside it.  So a value door takes no key.  The body
+// of update runs while no door writes: it gets a copy of the element, and no
+// reference of the door names the storage of the array.  A copy
 // gives the array the values that the source held before the copy, also when
 // the source is a View of the same array.  A set ends the old value of the
 // element, so an element that a holder cannot drop, such as a linear value,
@@ -592,6 +596,83 @@ namespace detail {
 
 }  // namespace detail
 
+// The element of the update door: a copy and a move of it do not throw.  The
+// door copies the element out, so the array holds a whole element while the
+// body runs, and it moves the copy back.
+template <class T>
+concept UpdatableElement = std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>;
+
+namespace detail {
+
+[[noreturn]] CRUCIBLE_COLD inline void report_lost_update_() noexcept {
+    fatal("a body of update wrote the element that the door then puts back, so that write is lost: change the element "
+          "only through the argument of the body");
+}
+
+// The test oracle of the update door: the bytes of the element at the start
+// of the call.  A build without the test oracles (has_test_oracles of
+// foundation/Platform.h) has none of it, and neither has an element that is
+// not trivially copyable.
+template <class T, bool Checks = ::foundation::has_test_oracles && std::is_trivially_copyable_v<T>>
+class LostUpdateOracle final {
+public:
+    explicit constexpr LostUpdateOracle(T const& /*slot*/) noexcept {}
+    constexpr void require_unwritten(T const& /*slot*/) const noexcept {}
+};
+
+template <class T>
+class LostUpdateOracle<T, true> final {
+    T entry_;
+
+public:
+    // The copy of the bytes holds the padding too, so the compare reads no
+    // byte that the copy did not write.
+    explicit constexpr LostUpdateOracle(T const& slot) noexcept : entry_(slot) {
+        if !consteval {
+            __builtin_memcpy(static_cast<void*>(__builtin_addressof(entry_)), __builtin_addressof(slot), sizeof(T));
+        }
+    }
+    constexpr void require_unwritten(T const& slot) const noexcept {
+        if !consteval {
+            if (__builtin_memcmp(__builtin_addressof(entry_), __builtin_addressof(slot), sizeof(T)) != 0) [[unlikely]] {
+                report_lost_update_();
+            }
+        }
+    }
+};
+
+// The frame of one call of update: the copy of the element, which the
+// destructor puts back in the place of the element.  The result of the body
+// exists before the destructor runs.
+template <class T>
+class UpdateFrame final {
+    T& slot_;
+    T held_;
+    [[no_unique_address]] LostUpdateOracle<T> oracle_;
+
+public:
+    explicit constexpr UpdateFrame(T& slot) noexcept : slot_{slot}, held_(slot), oracle_{slot} {}
+    UpdateFrame(UpdateFrame const&) = delete("the frame of update puts its copy back one time");
+    UpdateFrame& operator=(UpdateFrame const&) = delete("the frame of update puts its copy back one time");
+    // An element with no assignment ends, and the copy starts in its place.
+    constexpr ~UpdateFrame() {
+        oracle_.require_unwritten(slot_);
+        if constexpr (std::is_nothrow_move_assignable_v<T>) {
+            slot_ = static_cast<T&&>(held_);
+        } else {
+            slot_.~T();
+            ::new(static_cast<void*>(__builtin_launder(__builtin_addressof(slot_)))) T(static_cast<T&&>(held_));
+        }
+    }
+    // The call of the body with the copy.  It gives the result of the body.
+    template <class Body>
+    constexpr auto run(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        return static_cast<Body&&>(body)(held_);
+    }
+};
+
+}  // namespace detail
+
 // The function of the value door build_at of a FixedArray: it holds no
 // state, so the door has no captures to read.  It is a function, a pointer
 // to a function, or a class with no member, such as a lambda with no
@@ -782,6 +863,42 @@ public:
         elements_[index.raw()] = static_cast<T&&>(value);
         return held;
     }
+    // The update door of one element: body gets a copy of the element at a
+    // proven index, and then the door puts the copy in the place of the
+    // element.  The door gives the result of body, which holds no borrow.  No
+    // reference of the door names the storage of the array while body runs, so
+    // a second door of the array, through a helper or an alias, finds whole
+    // elements, and the door takes no key.  A nested update or a nested set of
+    // the same element loses its write when the door puts the copy back.  That
+    // is a wrong value and no memory error, and no type can refuse it.  So a
+    // build with the test oracles ends the process when the bytes of a
+    // trivially copyable element change while body runs.  An element with no
+    // assignment, such as one with a Monotonic part, ends, and the copy starts
+    // in its place, so such a part moves only by its own steps in body.
+    // Complexity: O(1), and the cost of body, of one copy and of one move.
+    template <class Body>
+        requires(!is_keyed_)
+             && UpdatableElement<T> && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto
+        update(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
+        detail::UpdateFrame<T> frame{elements_[index.raw()]};
+        return frame.run(static_cast<Body&&>(body));
+    }
+    template <class Body>
+        requires(!is_keyed_) && LinearElementBody<Body, T>
+    void update(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && (!UpdatableElement<T>)
+                 && std::is_invocable_v<Body, T&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    void update(Index<N> index, Body&& body) & = delete(
+        "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no "
+        "throw: take an element that does not copy with exchange");
+    template <class... Arguments>
+        requires is_keyed_
+    void update(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no update door, because another name of it could write an element while a frame of it "
+        "is open: call with_element(key, index, body)");
     template <class... Arguments>
         requires is_keyed_
     void set(Arguments&&... arguments) & = delete(
@@ -796,17 +913,25 @@ public:
     // The value doors of the run (the value doors): fill, copy_from of a run
     // of N elements, and copy_window of a run that fits from start.  The
     // two copies give the array the values that the source held before the
-    // copy, also when the source is a View of the same array.  Complexity:
-    // O(N), and O(source.size()) for a window.
+    // copy, also when the source is a View of the same array.  A constant
+    // evaluation copies each element, because it takes no copy of bytes.  The
+    // source of a run of N elements of this array is this array, so the order
+    // of the elements does not change the result.  Complexity: O(N), and
+    // O(source.size()) for a window.
     constexpr void fill(T const& value) & noexcept
         requires(!is_keyed_) && RegionCopyElement<T>
     {
         ::foundation::core::fill(detail::view_of_array_<T, N>(elements_), value);
     }
-    CRUCIBLE_INLINE void copy_from(View<T const, N> source) & noexcept
+    CRUCIBLE_INLINE constexpr void copy_from(View<T const, N> source) & noexcept
         requires(!is_keyed_) && RegionCopyElement<T>
     {
-        ::foundation::core::copy(detail::view_of_array_<T, N>(elements_), source);
+        if consteval {
+            for (Index<N> const index : indices())
+                elements_[index.raw()] = source.at(index);
+        } else {
+            ::foundation::core::copy(detail::view_of_array_<T, N>(elements_), source);
+        }
     }
     [[nodiscard]] CRUCIBLE_INLINE Result<Unit, LengthMismatch> copy_window(std::size_t start,
                                                                            View<T const> source) & noexcept

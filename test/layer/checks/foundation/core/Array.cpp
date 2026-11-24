@@ -145,6 +145,9 @@ template <class Array>
 concept ExchangesElement =
     requires(Array&& array) { static_cast<void>(static_cast<Array&&>(array).exchange(index<0>(), 2)); };
 template <class Array>
+concept UpdatesElement =
+    requires(Array&& array) { static_cast<Array&&>(array).update(index<0>(), [](int&) noexcept {}); };
+template <class Array>
 concept FillsRun = requires(Array&& array) { static_cast<Array&&>(array).fill(2); };
 template <class Array>
 concept CopiesRun =
@@ -154,14 +157,37 @@ concept CopiesWindow = requires(Array&& array, View<int const> source) {
     static_cast<void>(static_cast<Array&&>(array).copy_window(0, source));
 };
 template <class Array>
-concept HasValueDoors =
-    SetsElement<Array> && ExchangesElement<Array> && FillsRun<Array> && CopiesRun<Array> && CopiesWindow<Array>;
+concept HasValueDoors = SetsElement<Array> && ExchangesElement<Array> && UpdatesElement<Array> && FillsRun<Array>
+                     && CopiesRun<Array> && CopiesWindow<Array>;
 template <class Array>
-concept HasNoValueDoor =
-    !SetsElement<Array> && !ExchangesElement<Array> && !FillsRun<Array> && !CopiesRun<Array> && !CopiesWindow<Array>;
+concept HasNoValueDoor = !SetsElement<Array> && !ExchangesElement<Array> && !UpdatesElement<Array> && !FillsRun<Array>
+                      && !CopiesRun<Array> && !CopiesWindow<Array>;
 static_assert(HasValueDoors<FixedArray<int, 4>&>);
 static_assert(HasNoValueDoor<FixedArray<int, 4> const&> && HasNoValueDoor<FixedArray<int, 4>>);
 static_assert(HasNoValueDoor<KeyedInts&> && HasNoValueDoor<KeyedInts const&>);
+// The update door takes an element that copies and moves with no throw, also
+// in constant evaluation and for an element with no assignment.  copy_from
+// runs in constant evaluation too.
+struct NoAssignment {
+    int value = 0;
+    constexpr NoAssignment() noexcept = default;
+    constexpr NoAssignment(NoAssignment const&) noexcept = default;
+    NoAssignment& operator=(NoAssignment const&) = delete("an element of the check has no assignment");
+};
+static_assert(UpdatableElement<int> && UpdatableElement<NoAssignment> && !UpdatableElement<HeapArray<int>>);
+[[nodiscard]] consteval int update_and_copy() {
+    FixedArray<int, 4> numbers{1, 2, 3, 4};
+    int const given = numbers.update(index<1>(), [](int& number) noexcept {
+        number *= 10;
+        return number + 1;
+    });
+    FixedArray<NoAssignment, 2> elements{};
+    elements.update(index<1>(), [](NoAssignment& element) noexcept { element.value = 7; });
+    FixedArray<int, 4> copied{};
+    copied.copy_from(numbers.view());
+    return given + copied.at(index<1>()) + elements.at(index<1>()).value;
+}
+static_assert(update_and_copy() == 21 + 20 + 7);
 static_assert(!std::is_copy_assignable_v<KeyedInts> && !std::is_move_assignable_v<KeyedInts>);
 static_assert(std::is_copy_constructible_v<KeyedInts> && std::is_trivially_copyable_v<KeyedInts>);
 static_assert(!std::is_move_constructible_v<FixedArray<HeapArray<int>, 2, ValueDoorBrand>>);

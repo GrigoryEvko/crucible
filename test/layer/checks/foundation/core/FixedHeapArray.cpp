@@ -80,6 +80,10 @@ concept CopiesWindow =
     requires(Array& array, View<int const> window) { static_cast<void>(array.copy_window(0, window)); };
 static_assert(HasValueDoors<FixedHeapArray<int, 8>> && !SetsElement<FixedHeapArray<int, 8> const>);
 static_assert(!SetsElement<KeyedWords> && !CopiesWindow<KeyedWords>);
+template <class Array>
+concept UpdatesElement = requires(Array& array) { array.update(index<0>(), [](int&) noexcept {}); };
+static_assert(UpdatesElement<FixedHeapArray<int, 8>> && !UpdatesElement<FixedHeapArray<int, 8> const>);
+static_assert(!UpdatesElement<KeyedWords>);
 
 static_assert(sizeof(KeyedWords) == sizeof(FixedHeapArray<int, 8>));
 static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^KeyedWords), ^^loan_key_mark));
