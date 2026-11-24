@@ -482,6 +482,11 @@ struct ShapeHeapBrand final {};
     return fixy::Index<16>::check(position);
 }
 
+// The cyclic step of a ring of a power-of-two count and of another count.
+[[gnu::used]] fixy::Index<8> index_next_cyclic(fixy::Index<8> index) noexcept { return index.next_cyclic(); }
+
+[[gnu::used]] fixy::Index<5> index_next_cyclic_odd(fixy::Index<5> index) noexcept { return index.next_cyclic(); }
+
 [[gnu::used]] fixy::Option<fixy::TextView> text_window(fixy::TextView text, std::size_t offset,
                                                        std::size_t count) noexcept {
     return text.window(offset, count);
@@ -2026,6 +2031,11 @@ struct RawWindowStack final {
 [[gnu::used]] std::uint32_t index_check_raw(std::size_t position) noexcept {
     return position < 16 ? static_cast<std::uint32_t>(position) : 16u;
 }
+
+// The raw step of a ring is the remainder of the next position.
+[[gnu::used]] std::uint32_t index_next_cyclic_raw(std::uint32_t index) noexcept { return (index + 1u) % 8u; }
+
+[[gnu::used]] std::uint32_t index_next_cyclic_odd_raw(std::uint32_t index) noexcept { return (index + 1u) % 5u; }
 
 [[gnu::used]] RawText text_window_raw(char const* first, std::size_t size, std::size_t offset,
                                       std::size_t count) noexcept {

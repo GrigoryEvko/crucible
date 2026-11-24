@@ -596,6 +596,15 @@ PROBES: tuple[Probe, ...] = (
         longer=2,
     ),
     Probe("index_check", "the check of an Index is one compare, and the empty Option is the count of the Index"),
+    Probe(
+        "index_next_cyclic",
+        "next_cyclic of an Index of a power-of-two count is the add and the and of the remainder",
+    ),
+    Probe(
+        "index_next_cyclic_odd",
+        "next_cyclic of an Index of another count is one compare and one select, where the remainder of the raw form "
+        "takes a multiply",
+    ),
     Probe("text_window", "window of a TextView gives its Option with no test of the niche of the Option"),
     Probe(
         "text_is_window_of",

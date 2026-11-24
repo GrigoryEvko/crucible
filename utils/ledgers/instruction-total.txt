@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan-v3 | 16259045396647 | fixtures | BumpArena.h holds the branded arena types (BumpArena, EpochArena, Epoch, ArenaRun) and the compile-time capture gate of an epoch, which replace two run-time epoch checks, and the walks of that gate and the new fixtures of the arenas cost compile instructions
-- | x86_64-debug-asan-v3 | 23872445982161 | objects | BumpArena.h holds the branded arena types (BumpArena, EpochArena, Epoch, ArenaRun) and the compile-time capture gate of an epoch, which replace two run-time epoch checks, and the walks of that gate and the new fixtures of the arenas cost compile instructions
+- | x86_64-debug-asan-v3 | 17882356934808 | fixtures | the owner decision of 2026-11-15: a correct change raises the limit
+- | x86_64-debug-asan-v3 | 25486195952586 | objects | the owner decision of 2026-11-15: a correct change raises the limit
