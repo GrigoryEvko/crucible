@@ -448,6 +448,27 @@ struct TraceNode {
     });
 }
 
+// The step of a walk of a chain of the DAG: the continuation of a node, as a
+// link with the constness of the link of the node (walk_chain of
+// foundation/core/Walk.h).
+struct NextNode final {
+    [[nodiscard]] TraceLink operator()(DagRef<TraceNode> const& node) const noexcept { return node->next.option(); }
+    [[nodiscard]] ::fixy::Option<DagRef<TraceNode const>>
+    operator()(DagRef<TraceNode const> const& node) const noexcept {
+        return node->next.option();
+    }
+};
+
+// The nodes of the chain that starts at first, along the continuations, as a
+// walk.  The walk reads each link one time.  Complexity: one step for each
+// node that the walk reads.
+[[nodiscard]] inline auto walk_trace(TraceLink first) noexcept { return ::fixy::walk_chain(first, NextNode{}); }
+
+// The nodes of the chain that starts at first, as const, as walk_trace above.
+[[nodiscard]] inline auto walk_trace(::fixy::Option<DagRef<TraceNode const>> first) noexcept {
+    return ::fixy::walk_chain(first, NextNode{});
+}
+
 // Zero is the "never built" hash.  A TERMINAL node legitimately carries
 // MerkleHash{}, but it is a sentinel leaf, never a root: two unbuilt subtrees
 // both hashing to zero compare equal, so a zero root is accepted as proof of
@@ -768,12 +789,9 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // and the content_hash of each region on it are both fixed at construction.
 [[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode& body) noexcept {
     uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
-    TraceLink walk = make_link(body);
-    while (walk.is_some()) {
-        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+    for (const DagRef<TraceNode> node : walk_trace(make_link(body))) {
         for (const DagRef<RegionNode>& region : node->as_region())
             body_hash_state = ::foundation::reflect::combine_ids(body_hash_state, region->content_hash.raw());
-        walk = node->next.option();
     }
     return ContentHash{::foundation::reflect::fmix64(body_hash_state)};
 }
@@ -1316,10 +1334,9 @@ inline void recompute_merkle(TraceNode& node) {
 template <class Brand, std::size_t Extent>
 [[nodiscard]] inline uint32_t
 collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand, Extent>& out, uint32_t count = 0) {
-    ::fixy::Option<DagRef<TraceNode const>> walk = ::fixy::some(::fixy::to(first));
-    while (walk.is_some() && count < out.size()) {
-        const DagRef<TraceNode const> node =
-            ::fixy::Option<DagRef<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
+    for (const DagRef<TraceNode const> node :
+         walk_trace(::fixy::Option<DagRef<TraceNode const>>::some(::fixy::to(first)))) {
+        if (count >= out.size()) break;
         switch (node->kind) {
             case TraceNodeKind::REGION: {
                 auto element = out.get_mut(count).expect("the count is below the size of out");
@@ -1342,7 +1359,6 @@ collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand
             default:
                 ::fixy::unreachable();
         }
-        walk = node->next.option();
     }
     return count;
 }
@@ -1365,12 +1381,9 @@ collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand
     // a different kind, or up to MAX_REGIONS regions.
     ::fixy::FixedList<DagRef<RegionNode>, MAX_REGIONS> existing_regions{};
 
-    TraceLink walk = existing_continuation;
-    while (walk.is_some()) {
-        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+    for (const DagRef<TraceNode> node : walk_trace(existing_continuation)) {
         if (node->kind != TraceNodeKind::REGION) break;
         if (existing_regions.append(node->expect_region()).is_err()) break;
-        walk = node->next.option();
     }
 
     TraceLink merge{};
@@ -1408,14 +1421,12 @@ collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand
 template <typename GuardEval, typename RegionExec>
 [[nodiscard, gnu::flatten]] inline bool replay(TraceNode const& first, GuardEval&& eval_guard,
                                                RegionExec&& exec_region) {
-    ::fixy::Option<DagRef<TraceNode const>> walk = ::fixy::some(::fixy::to(first));
-    while (walk.is_some()) {
-        const DagRef<TraceNode const> node =
-            ::fixy::Option<DagRef<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
+    // The walk goes to the continuation of each node after its case.
+    for (const DagRef<TraceNode const> node :
+         walk_trace(::fixy::Option<DagRef<TraceNode const>>::some(::fixy::to(first)))) {
         switch (node->kind) {
             case TraceNodeKind::REGION: {
                 exec_region(*node->expect_region());
-                walk = node->next.option();
                 break;
             }
 
@@ -1450,8 +1461,6 @@ template <typename GuardEval, typename RegionExec>
 
                 for (const DagRef<TraceNode const>& target : arm)
                     if (!replay(*target, eval_guard, exec_region)) return false;
-
-                walk = branch->next.option();
                 break;
             }
 
@@ -1487,7 +1496,6 @@ template <typename GuardEval, typename RegionExec>
                     for (const DagRef<TraceNode const>& body : loop->body.option())
                         if (!replay(*body, eval_guard, exec_region)) return false;
                 }
-                walk = node->next.option();
                 break;
             }
 
@@ -1522,9 +1530,16 @@ struct DagDiff {
 // iterative along the next-chain, so a long trace cannot overflow the stack.
 // Only arms and loop bodies recurse, and their depth is bounded.
 [[nodiscard]] inline DagDiff dag_diff(TraceLink a, TraceLink b, uint32_t depth = 0) {
-    while (a.is_some() && b.is_some()) {
-        const DagRef<TraceNode> node_a = TraceLink{a}.expect("the condition of the loop tests the link");
-        const DagRef<TraceNode> node_b = TraceLink{b}.expect("the condition of the loop tests the link");
+    // The diff at the first empty link: IDENTICAL with two empty links when
+    // the two chains end together, and STRUCTURE_MISMATCH with the two links
+    // when one chain goes on.
+    const auto chain_end = [&a, &b, &depth]() noexcept -> DagDiff {
+        if (a.is_none() && b.is_none()) return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
+        return {a, b, depth, DagDiff::Kind::STRUCTURE_MISMATCH};
+    };
+    for (;;) {
+        CRUCIBLE_LET_ELSE(node_a, TraceLink{a}, chain_end());
+        CRUCIBLE_LET_ELSE(node_b, TraceLink{b}, chain_end());
         // Equal hashes mean the whole subtree below is equal.
         if (node_a->merkle_hash == node_b->merkle_hash)
             return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
@@ -1581,19 +1596,13 @@ struct DagDiff {
 
         return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
     }
-
-    // Two empty links: the two chains ended together.
-    if (a.is_none() && b.is_none()) return {::fixy::none, ::fixy::none, depth, DagDiff::Kind::IDENTICAL};
-    return {a, b, depth, DagDiff::Kind::STRUCTURE_MISMATCH};
 }
 
 // The count of the nodes of the chain that starts at the link, with the
 // nodes of each arm and each body on it.
 [[nodiscard]] inline uint32_t dag_node_count(TraceLink first) {
     uint32_t count = 0;
-    TraceLink walk = first;
-    while (walk.is_some()) {
-        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+    for (const DagRef<TraceNode> node : walk_trace(first)) {
         ++count;
         switch (node->kind) {
             case TraceNodeKind::BRANCH: {
@@ -1610,7 +1619,6 @@ struct DagDiff {
             default:
                 ::fixy::unreachable();
         }
-        walk = node->next.option();
     }
     return count;
 }
