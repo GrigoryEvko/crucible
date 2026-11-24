@@ -1261,9 +1261,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::os::LineTooLong,
      "the error of a line longer than the buffer of its reader: it holds nothing, and it is never a value in a "
      "kernel signature"},
-    {^^::fixy::mmap::SharedWords,
-     "a borrow of the words of a shared mapping that another writer stores: it owns nothing and makes no claim "
-     "about what the words hold"},
+    {^^::fixy::mmap::SharedView,
+     "a borrow of the elements of a shared mapping that another writer stores: it owns nothing and makes no claim "
+     "about what the elements hold"},
     {^^::foundation::core::Fixed,
      "an argument of a report: the bits of a float and the layout of its text, and never a value in a kernel "
      "signature"},

@@ -1,8 +1,8 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// fixy::mmap::SharedWords<std::uint64_t, 4> in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::mmap::SharedView<std::uint64_t, 4> in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// fixy::mmap::SharedWords<std::uint64_t, 4> attests to a fact that it cannot see.  The expression below is
+// fixy::mmap::SharedView<std::uint64_t, 4> attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
 // shut: the compiler must refuse the construction with "is private within this context".
 //
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::mmap::SharedWords<std::uint64_t, 4>{forge::lvalue<std::uint64_t const*>()};
+    [[maybe_unused]] auto forged = fixy::mmap::SharedView<std::uint64_t, 4>{forge::lvalue<std::uint64_t*>()};
     return 0;
 }

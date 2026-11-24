@@ -113,7 +113,8 @@ int main() {
 
         // The view spans the whole ring, not just the written prefix.
         const auto view = hub.timeline_view();
-        static_assert(std::is_same_v<decltype(view), const ::fixy::View<const crucible::perf::PmuSampleEvent>>);
+        static_assert(
+            std::is_same_v<decltype(view), const ::fixy::mmap::SharedView<const crucible::perf::PmuSampleEvent>>);
         if (view.size() != crucible::perf::PMU_SAMPLE_CAPACITY) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::PmuSample::timeline_view() — expected "
@@ -133,8 +134,8 @@ int main() {
 
         // The view starts at the events array, one header past a page-aligned
         // mapping.  Its alignment cannot be checked from here without reaching
-        // into the mapping, so only the read of the first event is pinned.
-        if (view.get(0).is_none()) {
+        // into the mapping, so only the window of the first event is pinned.
+        if (view.window<1>(0).is_none()) {
             ::fixy::report(::fixy::Sink::Err, "perf::PmuSample::timeline_view() — the first event "
                                               "cannot be read when the load gave a hub\n");
             return 1;

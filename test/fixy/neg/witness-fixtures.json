@@ -1082,9 +1082,9 @@
       "constructor": "(?<!~)\\bMachine\\("
     },
     {
-      "name": "neg_witness_mmap_sharedwords_direct_construction",
+      "name": "neg_witness_mmap_sharedview_direct_construction",
       "reason": "is private within this context",
-      "constructor": "(?<!~)\\bSharedWords\\("
+      "constructor": "(?<!~)\\bSharedView\\("
     },
     {
       "name": "neg_witness_monotonic_direct_construction",
@@ -1739,7 +1739,7 @@
       "header": "fixy/os/SpinLock.h"
     },
     {
-      "type": "fixy::mmap::SharedWords<std::uint64_t, 4>",
+      "type": "fixy::mmap::SharedView<std::uint64_t, 4>",
       "header": "fixy/os/OwnedMmap.h"
     },
     {

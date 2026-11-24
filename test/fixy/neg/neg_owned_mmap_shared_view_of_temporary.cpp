@@ -1,5 +1,5 @@
-// The shared words borrow the mapping.  A temporary mapping unmaps at the
-// end of the full expression, so the words of a temporary are refused.
+// A shared view borrows the mapping.  A temporary mapping unmaps at the end
+// of the full expression, so the view of a temporary is refused.
 
 #include <fixy/os/OwnedMmap.h>
 
@@ -16,6 +16,5 @@ using Mapping = ::fixy::OwnedMmap<Region, ::fixy::mmap::prot::ReadOnly, ::fixy::
 
 int main() {
     Mapping mapping{};
-    return static_cast<int>(
-        std::move(mapping).shared_words_at<std::uint64_t, 4>(::fixy::mmap::MappingOffset{0}).is_none());
+    return static_cast<int>(std::move(mapping).view_at<std::uint64_t const, 4>(0).is_none());
 }

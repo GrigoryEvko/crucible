@@ -292,8 +292,8 @@ namespace {
         ctx, [&ctx](detail::FacadeDoor::State<PmuSample>& state) noexcept { return fill_state(state, ctx); });
 }
 
-::fixy::View<const PmuSampleEvent> PmuSample::timeline_view() const noexcept {
-    return detail::read_held(state_, ::fixy::View<const PmuSampleEvent>{},
+::fixy::mmap::SharedView<const PmuSampleEvent> PmuSample::timeline_view() const noexcept {
+    return detail::read_held(state_, ::fixy::mmap::SharedView<const PmuSampleEvent>{},
                              [](State const& state) noexcept { return PmuSampleRing::events(state.timeline); });
 }
 

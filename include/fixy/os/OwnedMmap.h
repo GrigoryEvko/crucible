@@ -56,6 +56,8 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
@@ -321,44 +323,283 @@ concept SharedWord = ::foundation::core::UnsignedInteger<T> && (sizeof(T) <= siz
 // The byte offset of the first word of a run in a mapping.
 using MappingOffset = ::foundation::core::Quantity<::foundation::core::unit::Byte, std::size_t>;
 
-// Shared words
-//   Count words of a shared mapping that another writer stores: the kernel,
-//   a BPF program or another process.  Each read is an acquire load, so the
-//   stores that the writer made before its store of a word are visible after
-//   the load that reads that word.  A View of the words would read them with
-//   plain loads, which the compiler can tear, merge or move.
+// A record that another writer of a shared mapping stores: a class of whole
+// words of eight bytes, which a reader copies one word at a time (the shared
+// view below).  Each subobject is an implicit-lifetime type, so a copy of its
+// words makes a record.
+template <typename T>
+concept SharedRecord =
+    std::is_class_v<T> && std::is_trivially_copyable_v<T> && ::foundation::lifetime::ImplicitLifetimeThroughout<T>
+    && (sizeof(T) % sizeof(std::uint64_t) == 0) && (alignof(T) % alignof(std::uint64_t) == 0) && (sizeof(T) <= 256);
+
+// An element of a shared view: a word or a record.
+template <typename T>
+concept SharedElement = SharedWord<T> || SharedRecord<T>;
+
+namespace detail {
+
+// A word of a record, for the copy of a record one word at a time.  The type
+// can alias each other type, as a char can, so a load of a word reads the
+// bytes of the fields of the record with no breach of the type rules.  GCC
+// drops the attribute from a template argument, so each form has its own
+// name and no template takes it.
+using record_word_ [[gnu::may_alias]] = std::uint64_t;
+using const_record_word_ [[gnu::may_alias]] = std::uint64_t const;
+
+// The class and the member type of a pointer to a data member.
+template <class Member>
+struct member_of_;
+template <class Class, class Member>
+struct member_of_<Member Class::*> {
+    using class_type = Class;
+    using member_type = Member;
+};
+
+}  // namespace detail
+
+// A field of the record T: a pointer to a data member of T whose type is a
+// word.
+template <auto Field, typename T>
+concept SharedField = std::is_member_object_pointer_v<decltype(Field)>
+                   && std::same_as<typename detail::member_of_<decltype(Field)>::class_type, T>
+                   && SharedWord<typename detail::member_of_<decltype(Field)>::member_type>;
+
+// The commit word of the record T (the commit word of the shared view): a
+// field of eight bytes, whose alignment puts it on one whole word.
+template <auto Field, typename T>
+concept CommitField =
+    SharedField<Field, T> && sizeof(typename detail::member_of_<decltype(Field)>::member_type) == sizeof(std::uint64_t);
+
+// Shared view
+//   A SharedView is a run of elements of T in a mapping of share::Shared,
+//   which another writer stores: the kernel, a BPF program, another process
+//   or another thread.  A View reads with plain loads, which the compiler can
+//   tear, merge or move, so a reader of such a run gets a data race.  Each
+//   access of a SharedView is atomic:
+//     load_acquire(index)             a word element
+//     load_acquire<Field>(index)      a word field of a record element
+//     read_committed<Commit>(index)   a copy of a record element through its
+//                                     commit word
+//     store_release(index, value), store_release<Field>(index, value) and
+//     write_committed<Commit>(index, record), for a run that can be written.
+//   An acquire load makes visible each store that the writer made before
+//   its store of the word.
 //
-//   The words borrow the mapping, as a View of view_at does.  The one door is
-//   OwnedMmap::shared_words_at, which checks the fit and the alignment and
-//   starts the lifetime of the words, so no pointer of a caller becomes a run
-//   of shared words.
-template <SharedWord T, std::size_t Count>
-    requires(Count != ::foundation::core::dynamic_extent) && ::foundation::core::IndexCount<Count>
-class SharedWords final {
-    T const* first_ = nullptr;
-    // The seal refuses a byte copy into a SharedWords, so no bytes become a
-    // run of shared words.
+// Commit word
+//   The commit word is a field of eight bytes of the record.  The writer of
+//   the commit word exchanges it to zero, stores each other word of the
+//   record, and then stores the commit with a release store, and a commit is
+//   never zero (write_committed).  read_committed loads the commit word, copies
+//   each word of the record with acquire loads, and loads the commit word
+//   again.  A zero commit, or two loads that differ, give no value.  So with
+//   such a writer the copy never mixes two writes.  With a writer that does
+//   not clear the commit word before it writes a record again, each load is
+//   still atomic, and no field is torn, but the copy can mix two writes: the
+//   whole record is consistent only after that writer clears the commit word
+//   first.
+//
+//   A run of a fixed extent takes the indexed doors, and the Index proves the
+//   bound.  A run of the dynamic extent gives size() and window<Count>().
+//   The view states refers{}, so it borrows its mapping as a View does.
+//   view() and view_at() of a mapping of share::Shared give it.
+template <typename T, std::size_t Extent = ::foundation::core::dynamic_extent>
+    requires SharedElement<std::remove_const_t<T>>
+class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
+    using Value = std::remove_const_t<T>;
+    static constexpr std::size_t kWords = (sizeof(Value) + sizeof(std::uint64_t) - 1) / sizeof(std::uint64_t);
+    using Words = ::foundation::core::FixedArray<std::uint64_t, kWords>;
+    using Word = ::foundation::core::Index<kWords>;
+    // The index of an element of a run of a fixed extent, and the range of
+    // them.  A run of the dynamic extent has no indexed door, and the count 1
+    // only gives the names a type.
+    static constexpr std::size_t kIndexCount = Extent != ::foundation::core::dynamic_extent ? Extent : 1;
+    using Position = ::foundation::core::Index<kIndexCount>;
+    using Indices = ::foundation::core::IndexRange<kIndexCount>;
+
+    T* first_ = nullptr;
+    [[no_unique_address]] ::foundation::core::detail::ViewCount<Extent> count_{};
+    // No copy of bytes builds a view (foundation/ByteSeal.h).
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
     template <typename, typename, typename, typename>
     friend class ::fixy::OwnedMmap;
 
-    constexpr explicit SharedWords(T const* first) noexcept : first_{first} {}
+    template <typename U, std::size_t OtherExtent>
+        requires SharedElement<std::remove_const_t<U>>
+    friend class SharedView;
+
+    // The run of count elements from first, which a mapping proves.
+    constexpr SharedView(T* first, std::size_t count) noexcept
+        requires(Extent == ::foundation::core::dynamic_extent)
+        : first_{first}, count_{count} {}
+
+    constexpr explicit SharedView(T* first) noexcept
+        requires(Extent != ::foundation::core::dynamic_extent)
+        : first_{first} {}
+
+    // The index of the word that holds the commit word Commit of record.
+    template <auto Commit>
+    [[nodiscard]] static std::size_t commit_word_of_(T* record) noexcept {
+        using Bytes = std::conditional_t<std::is_const_v<T>, unsigned char const, unsigned char>;
+        using Raw = std::conditional_t<std::is_const_v<T>, void const, void>;
+        Bytes* const start = static_cast<Bytes*>(static_cast<Raw*>(record));
+        Bytes* const field = static_cast<Bytes*>(static_cast<Raw*>(&(record->*Commit)));
+        return static_cast<std::size_t>(field - start) / sizeof(std::uint64_t);
+    }
+
+    // Loads each word of record with an acquire load.  Complexity: one load
+    // for each word, at most 32.
+    static void copy_words_(T* record, Words& words) noexcept {
+        detail::const_record_word_* const first =
+            static_cast<detail::const_record_word_*>(static_cast<void const*>(record));
+        for (Word const word : Words::indices()) {
+            words.with_element(word, [first, word](std::uint64_t& held) noexcept {
+                held = __atomic_load_n(first + word.raw(), __ATOMIC_ACQUIRE);
+            });
+        }
+    }
+
+    // Stores each word of words, other than the word skipped, with a release
+    // store.  Complexity: one store for each word, at most 32.
+    static void store_words_(T* record, Words const& words, std::size_t skipped) noexcept
+        requires(!std::is_const_v<T>)
+    {
+        detail::record_word_* const first = static_cast<detail::record_word_*>(static_cast<void*>(record));
+        for (Word const word : Words::indices()) {
+            if (word.raw() != skipped) __atomic_store_n(first + word.raw(), words.at(word), __ATOMIC_RELEASE);
+        }
+    }
 
 public:
-    // The count of the words.
-    [[nodiscard]] static constexpr std::size_t size() noexcept { return Count; }
+    using element_type = T;
+    static constexpr std::size_t extent = Extent;
 
-    // Each index of a word, in order.
-    [[nodiscard]] static constexpr ::foundation::core::IndexRange<Count> indices() noexcept {
-        return ::foundation::core::IndexRange<Count>{};
+    // The empty run, which names no element.
+    constexpr SharedView() noexcept
+        requires(Extent == ::foundation::core::dynamic_extent)
+    = default;
+
+    // Adds a const to the element, or drops the fixed extent, or both.
+    template <typename U, std::size_t OtherExtent>
+        requires std::same_as<std::remove_const_t<U>, Value> && (std::is_const_v<T> || !std::is_const_v<U>)
+              && (Extent == ::foundation::core::dynamic_extent || Extent == OtherExtent)
+              && (!std::same_as<U, T> || Extent != OtherExtent)
+    constexpr SharedView(SharedView<U, OtherExtent> other) noexcept : first_{other.first_} {
+        if constexpr (Extent == ::foundation::core::dynamic_extent) count_.count = other.size();
     }
 
-    // The word at index, with an acquire load.  The index proves the bound.
-    [[nodiscard]] T load_acquire(::foundation::core::Index<Count> index) const noexcept {
+    // The count of the elements.
+    [[nodiscard]] constexpr std::size_t size() const noexcept { return count_.value(); }
+
+    // Each index of a run of a fixed extent, in order.
+    [[nodiscard]] static constexpr Indices indices() noexcept
+        requires(Extent != ::foundation::core::dynamic_extent)
+    {
+        return Indices{};
+    }
+
+    // The Window elements from offset, as a run of the fixed extent Window,
+    // or no value when they do not fit.
+    template <std::size_t Window>
+        requires(Window != ::foundation::core::dynamic_extent) && (Window > 0)
+    [[nodiscard]] constexpr ::foundation::core::Option<SharedView<T, Window>>
+    window(std::size_t offset) const noexcept {
+        using Result = ::foundation::core::Option<SharedView<T, Window>>;
+        if (offset > size() || Window > size() - offset) [[unlikely]] {
+            return Result{::foundation::core::none};
+        }
+        T* const first = first_ + offset;
+        [[assume(first != nullptr)]];
+        return Result::some(SharedView<T, Window>{first});
+    }
+
+    // The word element at index, with an acquire load.
+    [[nodiscard]] Value load_acquire(Position index) const noexcept
+        requires(Extent != ::foundation::core::dynamic_extent) && SharedWord<Value>
+    {
         return __atomic_load_n(first_ + index.raw(), __ATOMIC_ACQUIRE);
     }
+
+    // The word field Field of the record at index, with an acquire load.
+    template <auto Field>
+        requires(Extent != ::foundation::core::dynamic_extent) && SharedField<Field, Value>
+    [[nodiscard]] auto load_acquire(Position index) const noexcept {
+        return __atomic_load_n(&((first_ + index.raw())->*Field), __ATOMIC_ACQUIRE);
+    }
+
+    // A copy of the record at index through its commit word Commit, or no
+    // value when no write committed the record or a write overlapped the
+    // copy (the commit word).  Complexity: two loads of the commit word and
+    // one acquire load for each word of the record.
+    template <auto Commit>
+        requires(Extent != ::foundation::core::dynamic_extent) && SharedRecord<Value> && CommitField<Commit, Value>
+    [[nodiscard]] ::foundation::core::Option<Value> read_committed(Position index) const noexcept {
+        T* const record = first_ + index.raw();
+        auto const first = __atomic_load_n(&(record->*Commit), __ATOMIC_ACQUIRE);
+        if (first == 0) return ::foundation::core::none;
+        Words words{};
+        copy_words_(record, words);
+        if (__atomic_load_n(&(record->*Commit), __ATOMIC_ACQUIRE) != first) return ::foundation::core::none;
+        Value copy = __builtin_bit_cast(Value, words);
+        copy.*Commit = first;
+        return ::foundation::core::some(copy);
+    }
+
+    // Stores value in the word element at index, with a release store.
+    void store_release(Position index, Value value) const noexcept
+        requires(Extent != ::foundation::core::dynamic_extent) && SharedWord<Value> && (!std::is_const_v<T>)
+    {
+        __atomic_store_n(first_ + index.raw(), value, __ATOMIC_RELEASE);
+    }
+
+    // Stores value in the word field Field of the record at index, with a
+    // release store.
+    template <auto Field>
+        requires(Extent != ::foundation::core::dynamic_extent) && SharedField<Field, Value> && (!std::is_const_v<T>)
+    void store_release(Position index, typename detail::member_of_<decltype(Field)>::member_type value) const noexcept {
+        __atomic_store_n(&((first_ + index.raw())->*Field), value, __ATOMIC_RELEASE);
+    }
+
+    // Writes record at index through its commit word Commit (the commit
+    // word): an exchange of the commit word to zero, a release store of each
+    // other word, and a release store of the commit of record, which is not
+    // zero.  Complexity: one exchange and one store for each word.
+    template <auto Commit>
+        requires(Extent != ::foundation::core::dynamic_extent)
+             && SharedRecord<Value> && CommitField<Commit, Value> && (!std::is_const_v<T>)
+    void write_committed(Position index, Value const& record) const noexcept {
+        CRUCIBLE_PRE(record.*Commit != 0);
+        T* const target = first_ + index.raw();
+        static_cast<void>(__atomic_exchange_n(&(target->*Commit), 0, __ATOMIC_ACQ_REL));
+        Words const words = __builtin_bit_cast(Words, record);
+        store_words_(target, words, commit_word_of_<Commit>(target));
+        __atomic_store_n(&(target->*Commit), record.*Commit, __ATOMIC_RELEASE);
+    }
 };
+
+namespace detail {
+
+// The view of the elements of a mapping of the share Share: a SharedView of
+// share::Shared, and a View of each other share.
+template <bool IsShared, typename T, std::size_t Extent>
+struct mapping_view_ {
+    using type = ::foundation::core::View<T, Extent>;
+};
+template <typename T, std::size_t Extent>
+struct mapping_view_<true, T, Extent> {
+    using type = SharedView<T, Extent>;
+};
+
+}  // namespace detail
+
+template <typename Share, typename T, std::size_t Extent = ::foundation::core::dynamic_extent>
+using mapping_view_t = typename detail::mapping_view_<std::is_same_v<Share, share::Shared>, T, Extent>::type;
+
+// The gate of a view of a mapping of the share Share: a view element of Prot,
+// and a word or a record for share::Shared.
+template <typename Prot, typename Share, typename T>
+concept MappingViewOf =
+    MappingViewElement<Prot, T> && (!std::is_same_v<Share, share::Shared> || SharedElement<std::remove_const_t<T>>);
 
 }  // namespace mmap
 
@@ -491,16 +732,18 @@ public:
     //
     // The View borrows the mapping and must not outlive it.  The overloads
     // for an rvalue are deleted, so no View of a temporary mapping exists.
-    // A const mapping gives only a View of const elements.
+    // A const mapping gives only a View of const elements.  A mapping of
+    // share::Shared gives a SharedView of fixy::mmap in place of a View (the
+    // shared view), because another writer stores its bytes.
     template <typename T>
-        requires mmap::MappingViewElement<Prot, T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view() & noexcept {
+        requires mmap::MappingViewOf<Prot, Share, T>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>> view() & noexcept {
         return view_of_<T>();
     }
 
     template <typename T>
-        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view() const& noexcept {
+        requires mmap::MappingViewOf<Prot, Share, T> && std::is_const_v<T>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>> view() const& noexcept {
         return view_of_<T>();
     }
 
@@ -518,36 +761,37 @@ public:
     // hold a header and then an array of a different type.  A count of zero
     // at an offset inside the mapping gives an empty View.
     //
-    // The View borrows the mapping, as the View of view() does.  The checks
-    // are two compares and one test of the low bits of the offset.
+    // The View borrows the mapping, as the View of view() does, and a mapping
+    // of share::Shared gives a SharedView.  The checks are two compares and
+    // one test of the low bits of the offset.
     template <typename T>
-        requires mmap::MappingViewElement<Prot, T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at(std::size_t offset,
-                                                                                  std::size_t count) & noexcept {
+        requires mmap::MappingViewOf<Prot, Share, T>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>> view_at(std::size_t offset,
+                                                                                     std::size_t count) & noexcept {
         return view_at_<T>(offset, count);
     }
 
     template <typename T>
-        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at(std::size_t offset,
-                                                                                  std::size_t count) const& noexcept {
+        requires mmap::MappingViewOf<Prot, Share, T> && std::is_const_v<T>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>>
+    view_at(std::size_t offset, std::size_t count) const& noexcept {
         return view_at_<T>(offset, count);
     }
 
     // The Count elements of T from the byte offset, as a View of the fixed
     // extent Count, with the checks of view_at(offset, count).
     template <typename T, std::size_t Count>
-        requires mmap::MappingViewElement<Prot, T> && (Count != ::foundation::core::dynamic_extent)
+        requires mmap::MappingViewOf<Prot, Share, T> && (Count != ::foundation::core::dynamic_extent)
               && ::foundation::core::ViewExtent<T, Count>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T, Count>>
     view_at(std::size_t offset) & noexcept {
         return view_at_<T, Count>(offset);
     }
 
     template <typename T, std::size_t Count>
-        requires mmap::MappingViewElement<Prot, T> && std::is_const_v<T>
+        requires mmap::MappingViewOf<Prot, Share, T> && std::is_const_v<T>
               && (Count != ::foundation::core::dynamic_extent) && ::foundation::core::ViewExtent<T, Count>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T, Count>>
     view_at(std::size_t offset) const& noexcept {
         return view_at_<T, Count>(offset);
     }
@@ -561,29 +805,6 @@ public:
     void view_at(std::size_t) && = delete("a View of a temporary mapping dangles when the mapping unmaps");
     template <typename T, std::size_t Count>
     void view_at(std::size_t) const&& = delete("a View of a temporary mapping dangles when the mapping unmaps");
-
-    // The Count words of T from the byte offset of a shared mapping, which
-    // another writer stores (the shared words of fixy::mmap), or no value
-    // when they do not fit in the mapping or when the offset is not a
-    // multiple of the alignment of T.  The checks are those of view_at, and
-    // the call starts the lifetime of the Count words over their bytes.  The
-    // words borrow the mapping, so the overloads of an rvalue are deleted.
-    template <mmap::SharedWord T, std::size_t Count>
-        requires std::is_same_v<Share, mmap::share::Shared> && (Count != ::foundation::core::dynamic_extent)
-              && ::foundation::core::IndexCount<Count>
-    [[nodiscard]] ::foundation::core::Option<mmap::SharedWords<T, Count>>
-    shared_words_at(mmap::MappingOffset offset) const& noexcept {
-        using Result = ::foundation::core::Option<mmap::SharedWords<T, Count>>;
-        if (!fits_at_<T>(offset.raw(), Count)) return Result{::foundation::core::none};
-        return Result::some(mmap::SharedWords<T, Count>{start_at_<T const>(offset.raw(), Count)});
-    }
-
-    template <typename T, std::size_t Count>
-    void shared_words_at(mmap::MappingOffset) && = delete("shared words of a temporary mapping dangle when the "
-                                                          "mapping unmaps");
-    template <typename T, std::size_t Count>
-    void shared_words_at(mmap::MappingOffset) const&& = delete("shared words of a temporary mapping dangle when the "
-                                                               "mapping unmaps");
 
     // Hands the region to something that will unmap it on its own
     // schedule, such as a subsystem the kernel takes over.  Almost
@@ -606,13 +827,35 @@ public:
     }
 
 private:
+    static constexpr bool is_shared_ = std::is_same_v<Share, mmap::share::Shared>;
+
+    // The view of count elements from first, which a fit proved: a
+    // SharedView of a mapping of share::Shared, and a View of each other.
     template <typename T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_of_() const noexcept {
-        using Result = ::foundation::core::Option<::foundation::core::View<T>>;
-        if (!is_mapped()) return Result::some(::foundation::core::View<T>{});
+    [[nodiscard]] mmap::mapping_view_t<Share, T> run_of_(T* first, std::size_t count) const noexcept {
+        if constexpr (is_shared_) {
+            return mmap::SharedView<T>{first, count};
+        } else {
+            return ::foundation::core::View<T>{this->run_key_(), first, count};
+        }
+    }
+
+    template <typename T, std::size_t Count>
+    [[nodiscard]] mmap::mapping_view_t<Share, T, Count> run_of_(T* first) const noexcept {
+        if constexpr (is_shared_) {
+            return mmap::SharedView<T, Count>{first};
+        } else {
+            return ::foundation::core::View<T, Count>{this->run_key_(), first};
+        }
+    }
+
+    template <typename T>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>> view_of_() const noexcept {
+        using Result = ::foundation::core::Option<mmap::mapping_view_t<Share, T>>;
+        if (!is_mapped()) return Result::some(mmap::mapping_view_t<Share, T>{});
         if (this->state_.length % sizeof(T) != 0) return Result{::foundation::core::none};
         std::size_t const count = this->state_.length / sizeof(T);
-        return Result::some(::foundation::core::View<T>{this->run_key_(), start_at_<T>(0, count), count});
+        return Result::some(run_of_<T>(start_at_<T>(0, count), count));
     }
 
     // True when count elements of T from the byte offset lie inside the
@@ -633,21 +876,21 @@ private:
     }
 
     template <typename T>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T>> view_at_(std::size_t offset,
-                                                                                   std::size_t count) const noexcept {
-        using Result = ::foundation::core::Option<::foundation::core::View<T>>;
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T>>
+    view_at_(std::size_t offset, std::size_t count) const noexcept {
+        using Result = ::foundation::core::Option<mmap::mapping_view_t<Share, T>>;
         if (!fits_at_<T>(offset, count)) return Result{::foundation::core::none};
-        return Result::some(::foundation::core::View<T>{this->run_key_(), start_at_<T>(offset, count), count});
+        return Result::some(run_of_<T>(start_at_<T>(offset, count), count));
     }
 
     // A View of a fixed extent holds at least one element, so a fit gives
     // a mapping with an address that is not null.
     template <typename T, std::size_t Count>
-    [[nodiscard]] ::foundation::core::Option<::foundation::core::View<T, Count>>
+    [[nodiscard]] ::foundation::core::Option<mmap::mapping_view_t<Share, T, Count>>
     view_at_(std::size_t offset) const noexcept {
-        using Result = ::foundation::core::Option<::foundation::core::View<T, Count>>;
+        using Result = ::foundation::core::Option<mmap::mapping_view_t<Share, T, Count>>;
         if (!fits_at_<T>(offset, Count)) return Result{::foundation::core::none};
-        return Result::some(::foundation::core::View<T, Count>{this->run_key_(), start_at_<T>(offset, Count)});
+        return Result::some(run_of_<T, Count>(start_at_<T>(offset, Count)));
     }
 };
 

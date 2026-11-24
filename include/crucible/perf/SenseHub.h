@@ -150,7 +150,7 @@ public:
 
     // The live counters in the mapping, each read with an acquire load, or no
     // value for a moved-from hub.  The words borrow the mapping of the hub.
-    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, NUM_COUNTERS>>
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, NUM_COUNTERS>>
     counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     // An unattachable tracepoint drops one program silently, so these

@@ -121,8 +121,8 @@ int main() {
 
         // The view spans the whole ring, not just the written prefix.
         const auto timeline = hub.timeline_view();
-        static_assert(
-            std::is_same_v<decltype(timeline), const ::fixy::View<const crucible::perf::TimelineSyscallEvent>>);
+        static_assert(std::is_same_v<decltype(timeline),
+                                     const ::fixy::mmap::SharedView<const crucible::perf::TimelineSyscallEvent>>);
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::SyscallLatency::timeline_view() — expected "

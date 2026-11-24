@@ -6624,12 +6624,26 @@ fixy_neg_compile_test(neg_owned_mmap_view_at_of_temporary
 fixy_neg_compile_test(neg_owned_mmap_view_at_writes_a_read_only_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view_at<int, 4>\\(int\\)."
   "MappingViewElement<Prot, T>")
-fixy_neg_compile_test(neg_owned_mmap_shared_words_of_private_mapping
-  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::shared_words_at<uint64_t, 4>\\(fixy::mmap::MappingOffset\\) const."
-  "the expression .is_same_v<Share, fixy::mmap::share::Shared> \\[with Share = fixy::mmap::share::Private\\]. evaluated to .false.")
-fixy_neg_compile_test(neg_owned_mmap_shared_words_of_temporary
-  "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::shared_words_at\\("
-  "shared words of a temporary mapping dangle when the mapping unmaps")
+# The shared view of a shared mapping: a writer thread and a reader thread
+# of one slot, and the single-thread cases of each door.  The tsan preset
+# runs the two threads.
+fixy_test(test_os_shared_view)
+
+# A shared mapping gives a SharedView and no plain View, a private mapping
+# gives a View and no SharedView, no door of a SharedView gives a plain
+# reference, and no view of a temporary shared mapping exists.
+fixy_neg_compile_test(neg_owned_mmap_plain_view_of_shared_mapping
+  "conversion from .Option<fixy::mmap::SharedView<const long unsigned int, 18446744073709551615>>."
+  "to non-scalar type .Option<foundation::core::View<const long unsigned int>>. requested")
+fixy_neg_compile_test(neg_owned_mmap_shared_view_of_private_mapping
+  "conversion from .Option<foundation::core::View<const long unsigned int, 18446744073709551615>>."
+  "to non-scalar type .Option<fixy::mmap::SharedView<const long unsigned int>>. requested")
+fixy_neg_compile_test(neg_owned_mmap_shared_view_by_reference
+  "has no member named .at."
+  "fixy::mmap::SharedView<const long unsigned int, 1>")
+fixy_neg_compile_test(neg_owned_mmap_shared_view_of_temporary
+  "use of deleted function .void fixy::OwnedMmap<Tag, Prot, Share, Brand>::view_at\\("
+  "a View of a temporary mapping dangles when the mapping unmaps")
 fixy_neg_compile_test(neg_owned_mmap_view_at_extent_zero
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadWrite, fixy::mmap::share::Anonymous, \\{anonymous\\}::RegionBrand>::view_at<int, 0>\\(int\\)."
   "ViewExtent<T, Count>")

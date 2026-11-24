@@ -351,35 +351,37 @@ struct RingLayout {
     // The mapping starts with the header, and the events follow it, so
     // the view covers only the events.  view_at of the mapping checks the
     // bounds and the alignment, and it starts the lifetime of the events
-    // over their bytes.  A View holds no volatile element, so a consumer
-    // does its own atomic load at each field access.
+    // over their bytes.  The mapping is shared, so the view is a SharedView
+    // of fixy/os/OwnedMmap.h, and each read of an event is atomic.  The BPF
+    // program writes the stamp ts_ns of an event last, but it does not
+    // clear the stamp before it writes a slot again after a wrap.  So a copy
+    // through the stamp as the commit word has no torn field, and the whole
+    // event is consistent only after the program clears the stamp first.
     template <class Tag>
-    [[nodiscard]] static ::fixy::View<const Event>
+    [[nodiscard]] static ::fixy::mmap::SharedView<const Event>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         return mapping.match(
             [](ReadOnlyMapping<Tag> const& mapped) noexcept {
-                for (::fixy::View<const Event, Capacity> const ring :
+                for (::fixy::mmap::SharedView<const Event, Capacity> const ring :
                      mapped.template view_at<const Event, Capacity>(sizeof(Header))) {
-                    return ::fixy::View<const Event>{ring};
+                    return ::fixy::mmap::SharedView<const Event>{ring};
                 }
-                return ::fixy::View<const Event>{};
+                return ::fixy::mmap::SharedView<const Event>{};
             },
-            []() noexcept { return ::fixy::View<const Event>{}; });
+            []() noexcept { return ::fixy::mmap::SharedView<const Event>{}; });
     }
 
-    // The header binds to a reference to volatile, so the read of write_idx
-    // is a volatile load.  The volatile load needs no acquire fence.  The
-    // BPF program advances write_idx with a barriered add, and a timestamp
-    // marks a finished event, so a reader checks it before it trusts the
-    // rest of an event.
+    // The write index of the header, with an acquire load.  The BPF program
+    // advances write_idx with a barriered add, and a stamp marks a written
+    // event, so a reader checks the stamp before it trusts the rest of an
+    // event.
     template <class Tag>
     [[nodiscard]] static uint64_t write_index(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         return mapping.match(
             [](ReadOnlyMapping<Tag> const& mapped) noexcept -> uint64_t {
-                for (::fixy::View<const Header, 1> const headers : mapped.template view_at<const Header, 1>(0)) {
-                    for (const volatile Header& header : headers) {
-                        return header.write_idx;
-                    }
+                for (::fixy::mmap::SharedView<const Header, 1> const headers :
+                     mapped.template view_at<const Header, 1>(0)) {
+                    return headers.template load_acquire<&Header::write_idx>(::fixy::index<0>());
                 }
                 return 0;
             },
@@ -403,7 +405,7 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     // syscall through this fd.  A missing map leaves it at -1.
     Fd counter = ::fixy::mint_tagged<source::BpfMap>(-1);
 
-    [[nodiscard]] ::fixy::View<const Event> events() const noexcept { return layout::events(timeline); }
+    [[nodiscard]] ::fixy::mmap::SharedView<const Event> events() const noexcept { return layout::events(timeline); }
 
     [[nodiscard]] uint64_t write_index() const noexcept { return layout::write_index(timeline); }
 
@@ -479,8 +481,9 @@ template <class State>
 }
 
 template <class State>
-[[nodiscard]] ::fixy::View<const typename State::event_type> ring_events(HeldState<State> const& held) noexcept {
-    return read_held(held, ::fixy::View<const typename State::event_type>{},
+[[nodiscard]] ::fixy::mmap::SharedView<const typename State::event_type>
+ring_events(HeldState<State> const& held) noexcept {
+    return read_held(held, ::fixy::mmap::SharedView<const typename State::event_type>{},
                      [](State const& state) noexcept { return state.events(); });
 }
 

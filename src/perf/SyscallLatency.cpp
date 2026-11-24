@@ -41,7 +41,7 @@ SyscallLatency::~SyscallLatency() = default;
 
 uint64_t SyscallLatency::total_syscalls() const noexcept { return detail::ring_count(state_); }
 
-::fixy::View<const TimelineSyscallEvent> SyscallLatency::timeline_view() const noexcept {
+::fixy::mmap::SharedView<const TimelineSyscallEvent> SyscallLatency::timeline_view() const noexcept {
     return detail::ring_events(state_);
 }
 

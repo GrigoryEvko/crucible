@@ -186,11 +186,19 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
         return 1;
     }
 
-    // A map at an offset shows the bytes of the file from that offset.
+    // A map at an offset shows the bytes of the file from that offset.  The
+    // mapping is shared, so its view is a SharedView, and each read of a
+    // byte is an atomic load.
     auto const second_region = std::move(second).expect("the mint gave a mapping at the offset");
-    fixy::View<std::byte const> const later =
-        fixy::View<std::byte const>{fixy::bytes(pattern)}.window(kPageBytes, kPageBytes).expect("two pages");
-    if (!fixy::equal(second_region.view<std::byte const>().expect("a page is a whole count of bytes"), later)) {
+    fixy::mmap::SharedView<std::uint8_t const> const later =
+        second_region.view<std::uint8_t const>().expect("a page is a whole count of bytes");
+    std::size_t shown = 0;
+    for (fixy::mmap::SharedView<std::uint8_t const, kPageBytes> const page : later.window<kPageBytes>(0)) {
+        for (fixy::Index<kPageBytes> const index : page.indices()) {
+            if (page.load_acquire(index) == pattern[kPageBytes + index.raw()]) ++shown;
+        }
+    }
+    if (shown != kPageBytes) {
         fixy::report(fixy::Sink::Err, "the file mapping at an offset did not show the bytes from that offset\n");
         return 1;
     }
@@ -238,10 +246,9 @@ template <class Brand>
     }
     auto const region = std::move(mapped).expect("the mint gave a mapping");
 
-    using Offset = fixy::mmap::MappingOffset;
     std::size_t loaded = 0;
-    for (fixy::mmap::SharedWords<std::uint64_t, 4> const shared :
-         region.template shared_words_at<std::uint64_t, 4>(Offset{2 * sizeof(std::uint64_t)})) {
+    for (fixy::mmap::SharedView<std::uint64_t const, 4> const shared :
+         region.template view_at<std::uint64_t const, 4>(2 * sizeof(std::uint64_t))) {
         for (fixy::Index<4> const index : shared.indices()) {
             if (shared.load_acquire(index) != (index.raw() + 3) * 0x9E3779B97F4A7C15ULL) {
                 fixy::report(fixy::Sink::Err, "the shared word {} is not the word of the file\n", index.raw());
@@ -254,10 +261,10 @@ template <class Brand>
         fixy::report(fixy::Sink::Err, "the shared words at an offset inside the mapping gave no value\n");
         return 1;
     }
-    bool const is_last_word_given = region.template shared_words_at<std::uint64_t, 1>(Offset{kPageBytes - 8}).is_some();
-    bool const is_past_end_given = region.template shared_words_at<std::uint64_t, 2>(Offset{kPageBytes - 8}).is_some();
-    bool const is_misaligned_given = region.template shared_words_at<std::uint64_t, 1>(Offset{4}).is_some();
-    bool const is_narrow_word_given = region.template shared_words_at<std::uint32_t, 1>(Offset{4}).is_some();
+    bool const is_last_word_given = region.template view_at<std::uint64_t const, 1>(kPageBytes - 8).is_some();
+    bool const is_past_end_given = region.template view_at<std::uint64_t const, 2>(kPageBytes - 8).is_some();
+    bool const is_misaligned_given = region.template view_at<std::uint64_t const, 1>(4).is_some();
+    bool const is_narrow_word_given = region.template view_at<std::uint32_t const, 1>(4).is_some();
     if (!is_last_word_given || is_past_end_given || is_misaligned_given || !is_narrow_word_given) {
         fixy::report(fixy::Sink::Err, "the checks of the shared words gave last {} past {} misaligned {} narrow {}\n",
                      is_last_word_given, is_past_end_given, is_misaligned_given, is_narrow_word_given);

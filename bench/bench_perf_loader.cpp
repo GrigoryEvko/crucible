@@ -132,14 +132,12 @@ namespace {
 template <std::uint64_t Capacity, class Events>
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
 count_live_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
-    constexpr std::uint64_t mask = Capacity - 1;
+    using Event = std::remove_const_t<typename Events::element_type>;
+    using Slot = ::fixy::Index<Capacity>;
     std::uint64_t live = 0;
     for (auto const ring : view.template window<Capacity>(0)) {
         for (std::uint64_t i = 0; i < 64; ++i) {
-            const std::uint64_t slot = (end.value() - 1 - i) & mask;
-            for (auto const event : ring.get(slot)) {
-                if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
-            }
+            if (ring.template load_acquire<&Event::ts_ns>(Slot::mask(end.value() - 1 - i)) != 0) ++live;
         }
     }
     return live;
@@ -156,16 +154,14 @@ template <std::uint64_t Capacity, class Events>
 [[nodiscard]] std::size_t count_live_window(Events const& events,
                                             ::fixy::Side<bench::side::ReadingBefore, std::uint64_t> pre,
                                             ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> post) noexcept {
-    constexpr std::uint64_t mask = Capacity - 1;
+    using Event = std::remove_const_t<typename Events::element_type>;
+    using Slot = ::fixy::Index<Capacity>;
     const std::uint64_t delta = (post.value() >= pre.value()) ? (post.value() - pre.value()) : 0;
     const std::size_t to_walk = (delta > Capacity) ? Capacity : static_cast<std::size_t>(delta);
     std::size_t live = 0;
     for (auto const ring : events.template window<Capacity>(0)) {
         for (std::size_t i = 0; i < to_walk; ++i) {
-            const std::uint64_t slot = (pre.value() + i) & mask;
-            for (auto const event : ring.get(slot)) {
-                if (__atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE) != 0) ++live;
-            }
+            if (ring.template load_acquire<&Event::ts_ns>(Slot::mask(pre.value() + i)) != 0) ++live;
         }
     }
     return live;

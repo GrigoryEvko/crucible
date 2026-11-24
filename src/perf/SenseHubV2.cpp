@@ -24,12 +24,12 @@ v2::GaugeSnapshot SenseHubV2::read_gauges(::foundation::effects::cap::Nondet /*n
     return v2::GaugeSnapshot{};
 }
 
-::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_COUNTERS>>
+::fixy::Option<::fixy::mmap::SharedView<uint64_t const, v2::NUM_COUNTERS>>
 SenseHubV2::counters_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     return ::fixy::none;
 }
 
-::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_GAUGES>>
+::fixy::Option<::fixy::mmap::SharedView<uint64_t const, v2::NUM_GAUGES>>
 SenseHubV2::gauges_view(::foundation::effects::cap::Nondet /*nondet*/) const noexcept {
     return ::fixy::none;
 }

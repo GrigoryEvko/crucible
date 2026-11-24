@@ -713,9 +713,10 @@ witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::
 # so only a Locked builds a guard that lends its data.
 witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuardKey | fixy::spin::LockedGuardKey{}
 witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock> | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock>{forge::lvalue<fixy::spin::LockedGuardKey>(), forge::lvalue<fixy::spin::UnwitnessedBlockingLock>(), forge::lvalue<int>()}
-# The shared words of a mapping come only from shared_words_at of a shared
-# mapping, which checks the fit and the alignment and starts their lifetime.
-witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedWords<std::uint64_t, 4> | fixy::mmap::SharedWords<std::uint64_t, 4>{forge::lvalue<std::uint64_t const*>()}
+# A shared view comes only from view() and view_at() of a shared mapping,
+# which check the fit and the alignment and start the lifetime of the
+# elements.
+witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedView<std::uint64_t, 4> | fixy::mmap::SharedView<std::uint64_t, 4>{forge::lvalue<std::uint64_t*>()}
 # A Saturated value with the flag of a clamp comes only from the three checked
 # doors and the two clamped doors, so no caller states the flag.
 witness <fixy/Saturated.h> no-match | fixy::Saturated<unsigned int> | fixy::Saturated<unsigned int>{forge::rvalue<unsigned int>(), forge::rvalue<bool>()}

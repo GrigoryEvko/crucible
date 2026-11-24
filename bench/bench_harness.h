@@ -1744,15 +1744,19 @@ namespace detail {
 // The longest off-CPU spikes of the events from pre to post of the timeline
 // of SchedSwitch, at most its capacity, newest first, so a window that the
 // ring wrapped reads the newest events.  An event whose stamp reads zero is
-// not written yet, and it does not count.  The acquire load of the stamp
-// pairs with the compiler barrier of the BPF program before its store.  The
-// window of the fixed extent of the ring checks the count of the view one
-// time, and the mask keeps each slot below it, so a read of a slot takes no
-// check.  A view of fewer slots than the ring gives no spike.  Complexity:
-// linear in the events of the window.
-[[nodiscard]] inline OffCpuTop top_offcpu_of(::fixy::View<const ::crucible::perf::TimelineSchedEvent> view,
+// not written yet, and it does not count.  The view is a SharedView, and each
+// event is a copy through its stamp as the commit word, so each field is an
+// atomic load.  The BPF program does not clear the stamp before it writes a
+// slot again, so a copy can still mix two events of one slot.  The window of
+// the fixed extent of the ring checks the count of the view one time, and the
+// mask keeps each slot below it, so a read of a slot takes no check.  A view
+// of fewer slots than the ring gives no spike.  Complexity: linear in the
+// events of the window.
+[[nodiscard]] inline OffCpuTop top_offcpu_of(::fixy::mmap::SharedView<const ::crucible::perf::TimelineSchedEvent> view,
                                              ::fixy::Side<side::ReadingBefore, std::uint64_t> pre,
                                              ::fixy::Side<side::ReadingAfter, std::uint64_t> post) noexcept {
+    using Event = ::crucible::perf::TimelineSchedEvent;
+    using Slot = ::fixy::Index<::crucible::perf::TIMELINE_CAPACITY>;
     OffCpuTop top{};
     if (post.value() <= pre.value()) return top;
     const uint64_t window_size =
@@ -1760,11 +1764,8 @@ namespace detail {
     for (auto const ring : view.window<::crucible::perf::TIMELINE_CAPACITY>(0)) {
         for (uint64_t i = 0; i < window_size; ++i) {
             const uint64_t global_idx = post.value() - 1 - i;
-            const uint32_t slot = static_cast<uint32_t>(global_idx & ::crucible::perf::TIMELINE_MASK);
-            for (auto const event : ring.get(slot)) {
-                const uint64_t ts = __atomic_load_n(&event->ts_ns, __ATOMIC_ACQUIRE);
-                if (ts == 0) continue;
-                top.keep(OffCpuSpike{.off_ns = event->off_cpu_ns, .cpu = event->on_cpu});
+            for (Event const event : ring.template read_committed<&Event::ts_ns>(Slot::mask(global_idx))) {
+                top.keep(OffCpuSpike{.off_ns = event.off_cpu_ns, .cpu = event.on_cpu});
             }
         }
     }
@@ -3394,7 +3395,7 @@ private:
         r.sched_post_idx = sched_post_idx;
         // With no scheduler counter, the view stays empty and both indexes
         // stay zero, so the walk below does nothing.
-        ::fixy::View<const ::crucible::perf::TimelineSchedEvent> view{};
+        ::fixy::mmap::SharedView<const ::crucible::perf::TimelineSchedEvent> view{};
         for (auto const sw : window.sw)
             view = sw->timeline_view();
         r.sched_offcpu = detail::top_offcpu_of(view, ::fixy::side_as<side::ReadingBefore>(sched_pre_idx),

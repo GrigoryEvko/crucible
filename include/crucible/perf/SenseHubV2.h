@@ -451,10 +451,10 @@ public:
     // The live slots in the mapping, each read with an acquire load, as the
     // view of SenseHub gives them.  The stub has no mapping, so each gives no
     // value.
-    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_COUNTERS>>
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, v2::NUM_COUNTERS>>
     counters_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
-    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedWords<uint64_t, v2::NUM_GAUGES>>
+    [[nodiscard]] ::fixy::Option<::fixy::mmap::SharedView<uint64_t const, v2::NUM_GAUGES>>
     gauges_view(::foundation::effects::cap::Nondet nondet) const noexcept;
 
     [[nodiscard]] v2::LoadReport coverage() const noexcept;

@@ -116,7 +116,8 @@ int main() {
         // The view spans the whole ring, not just the written prefix.
         // Readers pick out valid slots from timeline_write_index() and ts_ns.
         const auto timeline = hub.timeline_view();
-        static_assert(std::is_same_v<decltype(timeline), const ::fixy::View<const crucible::perf::TimelineSchedEvent>>);
+        static_assert(std::is_same_v<decltype(timeline),
+                                     const ::fixy::mmap::SharedView<const crucible::perf::TimelineSchedEvent>>);
         if (timeline.size() != crucible::perf::TIMELINE_CAPACITY) {
             ::fixy::report(::fixy::Sink::Err,
                            "perf::SchedSwitch::timeline_view() — expected "
