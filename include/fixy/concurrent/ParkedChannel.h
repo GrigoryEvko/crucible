@@ -229,7 +229,10 @@ public:
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
-            return value_result_(push_once_(ctx, attempt));
+            PushRefusal why = PushRefusal::Full;
+            if (push_once_(ctx, attempt, why)) [[likely]]
+                return ::foundation::core::Unit{};
+            return ::foundation::core::err(why);
         }
 
         // As try_push of a wire of values, for a wire that moves its items:
@@ -242,7 +245,10 @@ public:
             ::foundation::core::Option<value_type> pending =
                 ::foundation::core::Option<value_type>::some(std::move(item));
             auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            return owner_result_(push_once_(ctx, attempt), pending);
+            PushRefusal why = PushRefusal::Full;
+            if (push_once_(ctx, attempt, why)) [[likely]]
+                return ::foundation::core::Unit{};
+            return refuse_owner_(pending, why);
         }
 
         // Pushes item, and waits by Policy while the ring is full: Spin spins,
@@ -255,7 +261,10 @@ public:
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
-            return value_result_(push_waiting_<Policy>(ctx, attempt));
+            PushRefusal why = PushRefusal::Full;
+            if (push_waiting_<Policy>(ctx, attempt, why)) [[likely]]
+                return ::foundation::core::Unit{};
+            return ::foundation::core::err(why);
         }
 
         // As push_waiting of a wire of values, for a wire that moves its
@@ -268,7 +277,10 @@ public:
             ::foundation::core::Option<value_type> pending =
                 ::foundation::core::Option<value_type>::some(std::move(item));
             auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            return owner_result_(push_waiting_<Policy>(ctx, attempt), pending);
+            PushRefusal why = PushRefusal::Full;
+            if (push_waiting_<Policy>(ctx, attempt, why)) [[likely]]
+                return ::foundation::core::Unit{};
+            return refuse_owner_(pending, why);
         }
 
         // As push_waiting, but the wait ends at deadline with
@@ -281,7 +293,10 @@ public:
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             auto attempt = [this, &item]() noexcept { return inner_.try_push(item); };
-            return value_result_(push_waiting_<Policy>(ctx, attempt, deadline));
+            PushRefusal why = PushRefusal::Full;
+            if (push_waiting_<Policy>(ctx, attempt, why, deadline)) [[likely]]
+                return ::foundation::core::Unit{};
+            return ::foundation::core::err(why);
         }
 
         // As push_waiting_until of a wire of values, for a wire that moves its
@@ -296,7 +311,10 @@ public:
             ::foundation::core::Option<value_type> pending =
                 ::foundation::core::Option<value_type>::some(std::move(item));
             auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            return owner_result_(push_waiting_<Policy>(ctx, attempt, deadline), pending);
+            PushRefusal why = PushRefusal::Full;
+            if (push_waiting_<Policy>(ctx, attempt, why, deadline)) [[likely]]
+                return ::foundation::core::Unit{};
+            return refuse_owner_(pending, why);
         }
 
         // Ends the stream, and then notifies items, so a consumer that parks
@@ -324,57 +342,60 @@ public:
             return pending.is_none();
         }
 
+        // The two bodies below hold the one notify of items of the push doors.
+        // A body gives true when the ring took the item, and it writes the
+        // reason of a refusal into why.  Each door then builds its result in
+        // its own two arms, so a push that the ring took returns a constant,
+        // as a door with its own body does.  A body that gives a result or an
+        // optional reason makes GCC build the result at the join of the arms,
+        // which adds instructions to that path.
+
         // The push of each door with no wait: attempt pushes one time, and a
-        // push that the ring took notifies items.  No value when the ring took
-        // the item, and the refusal otherwise.
+        // push that the ring took notifies items.  A refusal writes Full, or
+        // ConsumerGone when the consumer closed.
         template <class Ctx, class Attempt>
-        [[nodiscard]] ::foundation::core::Option<PushRefusal> push_once_(Ctx const& ctx, Attempt& attempt) noexcept {
+        [[nodiscard]] bool push_once_(Ctx const& ctx, Attempt& attempt, PushRefusal& why) noexcept {
             if (attempt()) [[likely]] {
                 channel_->items_.notify_one(ctx);
-                return ::foundation::core::none;
+                return true;
             }
-            return ::foundation::core::Option<PushRefusal>::some(channel_->refusal_of_full_());
+            why = channel_->refusal_of_full_();
+            return false;
         }
 
         // The wait of each door that waits: attempt pushes, by Policy, until
         // the ring takes the item, the consumer closes, or the deadline in
-        // bound passes.  A push that the ring took notifies items.  No value
-        // when the ring took the item, and the refusal otherwise:
-        // ConsumerGone at a close, and Full at the deadline.
+        // bound passes.  A push that the ring took notifies items.  A refusal
+        // writes ConsumerGone at a close, and Full at the deadline.
         template <WaitPolicy Policy, class Ctx, class Attempt, class... Bound>
-        [[nodiscard]] ::foundation::core::Option<PushRefusal> push_waiting_(Ctx const& ctx, Attempt& attempt,
-                                                                            Bound const&... bound) noexcept {
+        [[nodiscard]] bool push_waiting_(Ctx const& ctx, Attempt& attempt, PushRefusal& why,
+                                         Bound const&... bound) noexcept {
             bool is_pushed = false;
             ParkedChannel& channel = *channel_;
             auto condition = [&attempt, &is_pushed, &channel]() noexcept {
                 is_pushed = attempt();
                 return is_pushed || channel.is_consumer_gone_();
             };
-            PushRefusal why = PushRefusal::ConsumerGone;
+            PushRefusal refusal = PushRefusal::ConsumerGone;
             if constexpr (sizeof...(Bound) == 0) {
                 wait_for<Policy>(ctx, channel.room_, condition);
             } else if (wait_for<Policy>(ctx, channel.room_, condition, bound...) == EventWaitEnd::deadline_passed) {
-                why = PushRefusal::Full;
+                refusal = PushRefusal::Full;
             }
-            if (!is_pushed) return ::foundation::core::Option<PushRefusal>::some(why);
+            if (!is_pushed) {
+                why = refusal;
+                return false;
+            }
             channel.items_.notify_one(ctx);
-            return ::foundation::core::none;
+            return true;
         }
 
-        // The result of a push door of a wire of values.
-        [[nodiscard]] static push_result value_result_(::foundation::core::Option<PushRefusal> refused) noexcept {
-            return refused.match([](PushRefusal why) noexcept -> push_result { return ::foundation::core::err(why); },
-                                 []() noexcept -> push_result { return ::foundation::core::Unit{}; });
-        }
-
-        // The result of a push door of a wire that moves its items: a refusal
-        // gives back the item that pending still holds.
-        [[nodiscard]] static push_result owner_result_(::foundation::core::Option<PushRefusal> refused,
-                                                       ::foundation::core::Option<value_type>& pending) noexcept {
-            if (refused.is_none()) return ::foundation::core::Unit{};
+        // The error of a push door of a wire that moves its items: the item
+        // that pending still holds, back to the caller, and the reason.
+        [[nodiscard]] static push_result refuse_owner_(::foundation::core::Option<value_type>& pending,
+                                                       PushRefusal why) noexcept {
             return ::foundation::core::err(
-                PushRefused<value_type>{pending.take().expect("a refused push keeps its item"),
-                                        std::move(refused).expect("the test above found a refusal")});
+                PushRefused<value_type>{pending.take().expect("a refused push keeps its item"), why});
         }
     };
 
