@@ -1276,6 +1276,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::CyclicIndex,
      "the position of a turn over the first live positions of a count, such as the turn of a ring of lanes: a "
      "member of its holder, and it makes no claim about an element"},
+    {^^::foundation::core::Ranged,
+     "an integer whose range is its type: a number, which makes no claim that a grade carries"},
     {^^::foundation::core::FixedArray,
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::HeapArray,

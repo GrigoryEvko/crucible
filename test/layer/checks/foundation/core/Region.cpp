@@ -480,7 +480,7 @@ inline constexpr TextView region_names{
     "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
     "element_type brand_type extent capacity window split_at prefix prefix_up_to suffix get_mut indices index parallel "
     "check mask raw rest take take_first take_last expect_empty clear with_view with_element with_mut append_self "
-    "freeze is_at_end remaining exchange"};
+    "freeze is_at_end remaining exchange next_cyclic prev_cyclic Ranged lo hi constant narrow"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.
@@ -496,6 +496,8 @@ CRUCIBLE_CLOSED_SURFACE(region_names, FixedText<8>);
 CRUCIBLE_CLOSED_SURFACE(region_names, Index<4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, Index<0x100000000ull>);
 CRUCIBLE_CLOSED_SURFACE(region_names, StaticIndex<2>);
+CRUCIBLE_CLOSED_SURFACE(region_names, Ranged<0, 7>);
+CRUCIBLE_CLOSED_SURFACE(region_names, Ranged<-4, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, IndexRange<4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedArray<Record, 1>);

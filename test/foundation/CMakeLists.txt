@@ -4426,6 +4426,20 @@ foundation_neg_compile_test(neg_core_index_static_past_count
 foundation_neg_compile_test(neg_core_index_bit_road_is_private
   "of_bit_of_set_\\(std::size_t\\) \\[with long unsigned int Count = 8; std::size_t = long unsigned int\\]. is private within this context"
   "neg_core_index_bit_road_is_private\\.cpp:10:")
+
+# The cyclic steps of an Index and the ranges of a Ranged.  A sum whose range
+# is past std::int64_t does not compile, a Ranged<0, N> does not convert to an
+# Index<N>, and no number becomes a Ranged with no check.
+foundation_test(test_core_index_steps)
+foundation_neg_compile_test(neg_core_ranged_sum_past_range
+  "no match for .operator\\+. \\(operand types are .foundation::core::Ranged<0, 9223372036854775807>. and .foundation::core::Ranged<0, 1>.\\)"
+  "neg_core_ranged_sum_past_range\\.cpp:11:")
+foundation_neg_compile_test(neg_core_ranged_to_index_past_count
+  "conversion from .foundation::core::Ranged<0, 8>. to non-scalar type .const foundation::core::Index<8>. requested"
+  "neg_core_ranged_to_index_past_count\\.cpp:7:")
+foundation_neg_compile_test(neg_core_ranged_from_number
+  ".constexpr foundation::core::Ranged<Lo, Hi>::Ranged\\(Word\\) \\[with long int Lo = 0; long int Hi = 7; Word = unsigned char\\]. is private within this context"
+  "neg_core_ranged_from_number\\.cpp:9:")
 # A set has no begin(): a cursor that a caller held could outlive the set.
 # The frame door with_keys lends the walk to a body.
 foundation_neg_compile_test(neg_core_bit_set_walk_outside_frame

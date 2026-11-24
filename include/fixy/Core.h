@@ -253,6 +253,7 @@ using ::foundation::core::mint_heap_bit_set;
 using ::foundation::core::mint_masked_array;
 using ::foundation::core::mint_slot_map;
 using ::foundation::core::mint_small_list;
+using ::foundation::core::Ranged;
 using ::foundation::core::reborrow;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunOverlap;
