@@ -940,8 +940,9 @@ public:
     //     tensor, and no frame gives such a value out, so each reads a record
     //     through the view.  Each reads only records between the tail that
     //     only it moves and the head that it acquired.
-    // The flush and the binds read the counters of the ring and of the log
-    // through with_owner frames, and not through a view.
+    // The constructor, the first start and the flush of the background
+    // thread read the counters of the ring and of the log through with_owner
+    // frames, and not through a view.
     //
     // The door ends for the build stage when a built region holds its arena
     // in a form that the store check of with_owner admits: the build stage
