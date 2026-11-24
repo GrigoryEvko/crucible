@@ -30,19 +30,17 @@ constexpr std::size_t kTensorBytes = 4096;
 // two entries resolve to the same pool bytes.  The output of an op comes
 // through with_output_views, and its input through input_view.
 void test_pipeline_data_flow() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                              ::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(*ring, *meta_log, Iteration{0});
-    feed_iteration(*ring, *meta_log, Iteration{1});
-    feed_trigger(*ring, *meta_log, Iteration{2});
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
@@ -104,19 +102,17 @@ void test_pipeline_data_flow() {
 // of the pool (OutsidePool), so each lent output of the tensor bytes is
 // inside it, and each input reads the window of the pool of its slot.
 void test_pipeline_pool_bounds() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                              ::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(*ring, *meta_log, Iteration{0});
-    feed_iteration(*ring, *meta_log, Iteration{1});
-    feed_trigger(*ring, *meta_log, Iteration{2});
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};

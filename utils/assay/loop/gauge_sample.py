@@ -79,7 +79,7 @@ SAMPLE: tuple[tuple[str, bool], ...] = (
     ("test/foundation/neg/neg_core_heap_array_copied.cpp", True),
     ("test/foundation/neg/neg_permission_brand_not_empty.cpp", True),
     ("test/fixy/neg/neg_rule_l003_borrow_raw_clone.cpp", True),
-    ("test/vigil_neg/neg_vigil_ring_other_brand.cpp", True),
+    ("test/vigil_neg/neg_vigil_op_record_stack_other_brand.cpp", True),
 )
 HEADER_REFERENCE = "test/foundation/test_row_hash.cpp"
 DEFAULT_BUILD_DIR = REPO_ROOT / "build"

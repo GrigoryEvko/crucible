@@ -312,16 +312,18 @@ struct HeldRegionsLock {};
 namespace {
 
 // Pops at most BATCH_SIZE entries of the ring into the five arrays of a
-// batch, and gives the count.  Each array lends its run in place through its
-// frame door, so the pop writes the arrays with no copy.
-[[nodiscard]] uint32_t pop_trace_batch(TraceRing& ring, BackgroundThread::BgTraceBatch& batch) noexcept {
+// batch, through the consumer end of the ring, and gives the count.  Each
+// array lends its run in place through its frame door, so the pop writes the
+// arrays with no copy.
+[[nodiscard]] uint32_t pop_trace_batch(TraceRing::Consumer& ring, BackgroundThread::BgTraceBatch& batch) noexcept {
     return batch.entries.with_mut([&](auto entries) noexcept {
         return batch.meta_starts.with_mut([&](auto meta_starts) noexcept {
             return batch.scope_hashes.with_mut([&](auto scope_hashes) noexcept {
                 return batch.callsite_hashes.with_mut([&](auto callsite_hashes) noexcept {
                     return batch.depths.with_mut([&](auto depths) noexcept {
-                        return ring.try_pop_batch(std::move(entries), std::move(meta_starts), std::move(scope_hashes),
-                                                  std::move(callsite_hashes), std::move(depths));
+                        return TraceRing::try_pop_batch(ring, std::move(entries), std::move(meta_starts),
+                                                        std::move(scope_hashes), std::move(callsite_hashes),
+                                                        std::move(depths));
                     });
                 });
             });
@@ -690,11 +692,12 @@ void BackgroundThread::apply_due_reset_() noexcept {
 // published it.  So a floor past the head means that the positions disagree
 // with the log, and a tail past the head would give the producer slots that
 // it did not write.
-void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor) {
-    MetaLog& log = *meta_log_.get();
-    if (meta_floor <= log.tail.get()) return;
-    CRUCIBLE_FATAL_INVARIANT(meta_floor <= log.head.get());
-    log.advance_tail(meta_floor);
+void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta_floor) {
+    meta_log_.get()->with_end(stage, [meta_floor](MetaLog::Consumer& log) noexcept {
+        if (meta_floor <= MetaLog::released(log)) return;
+        CRUCIBLE_FATAL_INVARIANT(meta_floor <= MetaLog::produced(log));
+        MetaLog::advance_tail(log, meta_floor);
+    });
 }
 
 // The node and the plan go into the arena of the parts of the region, and
@@ -874,10 +877,20 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out) {
 
     // A stop request does not wake a sleep of this stage, so the stage reads
     // the request at the end of its sleep, at most RING_MAX_SLEEP_NANOS later.
+    // The stage opens the consumer side of the ring for each pop with its
+    // proof, which lives for the loop on the thread of the stage.
+    TraceRingSide& ring_side = *owner.ring_.get();
+    DrainStage const stage{};
+    auto const pop = [&ring_side, &stage](BgTraceBatch& into) noexcept {
+        return ring_side.with_end(stage, [&into](TraceRing::Consumer& ring) noexcept {
+            return detail::bg_pipeline::pop_trace_batch(ring, into);
+        });
+    };
+
     while (true) {
         if (owner.stop_requested.peek()) break;
 
-        batch->count = detail::bg_pipeline::pop_trace_batch(*owner.ring_.get(), *batch);
+        batch->count = pop(*batch);
 
         if (batch->count == 0) {
             idle.pause_or_sleep(in.ctx());
@@ -889,7 +902,7 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out) {
         batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
-    batch->count = detail::bg_pipeline::pop_trace_batch(*owner.ring_.get(), *batch);
+    batch->count = pop(*batch);
     if (batch->count > 0) {
         push_pipeline(in.ctx(), next, out, std::move(batch));
     }
@@ -1006,10 +1019,17 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
         // The body captures the state of the build, the metadata log by a
         // const reference and the work, and not the owner, so it reaches no
         // arena of the owner.  A work reaches this stage only with a bound
-        // metadata log (the detect stage).
+        // metadata log (the detect stage).  The build reads the log through
+        // the view that the consumer side of the log gives (owner_view of
+        // fixy/concurrent/SpscEnds.h), and it reads only the records that the
+        // meta starts of the drained ops of the work name.  The record path
+        // published each such record before its op, and the publish stage
+        // releases a record only after the build of its work.
         ::fixy::Option<::fixy::Box<BgGraphPublish>> publish{::fixy::none};
         TraceBuildState& build_state = owner.build_state_;
-        MetaLog const& meta_log = *owner.meta_log_.get();
+        ::fixy::Ref<MetaLog const, ::fixy::concurrent::SpscSplitBrand<MetaLog>> const meta_log_view =
+            owner.meta_log_.get()->owner_view();
+        MetaLog const& meta_log = *meta_log_view;
         ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
         owner.build_scratch_.arena.with_epoch([&build_state, &meta_log, alloc, &work,
                                                &publish](TraceScratch::Epoch& epoch) noexcept {
@@ -1122,29 +1142,29 @@ void BackgroundThread::set_numerics(NumericsHash numerics) noexcept {
 // comes before start(), so the door of the thread reads it as defaulted.
 BackgroundThread::~BackgroundThread() = default;
 
-void BackgroundThread::bind_ring(TraceRing& trace_ring) noexcept {
+void BackgroundThread::bind_ring(TraceRingSide& ring_side) noexcept {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring_, trace_ring),
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(ring_, ring_side),
                      "a start after stop names the trace ring of the first start");
     if (!ring_.has_value()) {
-        ring_.set(&trace_ring);
+        ring_.set(&ring_side);
         // No consumer runs at the bind, so the tail holds still.
-        ring_base_ = trace_ring.tail.get();
+        ring_base_ = ring_side.with_owner([](TraceRing const& ring) noexcept { return ring.total_consumed(); });
     }
 }
 
-void BackgroundThread::bind_meta_log(MetaLog& trace_meta_log) noexcept {
+void BackgroundThread::bind_meta_log(MetaLogSide& meta_log_side) noexcept {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a bind while the pipeline thread runs: stop the pipeline first");
-    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log_, trace_meta_log),
+    CRUCIBLE_PRE_MSG(detail::bg_pipeline::is_unset_or_holds(meta_log_, meta_log_side),
                      "a start after stop names the metadata log of the first start");
-    if (!meta_log_.has_value()) meta_log_.set(&trace_meta_log);
+    if (!meta_log_.has_value()) meta_log_.set(&meta_log_side);
 }
 
-void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log,
+void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
                              int32_t rank, int32_t world_size, uint64_t device_cap) {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
-    bind_ring(trace_ring);
-    bind_meta_log(trace_meta_log);
+    bind_ring(ring_side);
+    bind_meta_log(meta_log_side);
     global_schema_table().seal(startup);
     global_ckernel_table().value()->seal(startup);
     rank_ = rank;
@@ -1156,7 +1176,7 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, TraceRing& trac
         // The first op of the ring owns the first record that the log has
         // not released.  A later start keeps the cursor, because the ring
         // keeps the ops that the last pipeline did not read.
-        meta_cursor_ = meta_log_.get()->tail.get();
+        meta_cursor_ = meta_log_.get()->with_owner([](MetaLog const& log) noexcept { return log.total_released(); });
     }
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.  It borrows this

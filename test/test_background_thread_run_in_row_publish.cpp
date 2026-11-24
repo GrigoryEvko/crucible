@@ -2,6 +2,7 @@
 // test_background_thread_run_in_row.
 
 #include "background_thread_run_in_row.h"
+#include "trace_rig.h"
 
 #include <crucible/BackgroundThread.h>
 #include <fixy/Core.h>
@@ -23,8 +24,6 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 }  // namespace
 
 using crucible::BackgroundThread;
-using crucible::TraceRing;
-using crucible::MetaLog;
 namespace eff = ::foundation::effects;
 
 // ── Divergence reset and the publish stage ──────────────────────────────
@@ -102,11 +101,11 @@ void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&
     }
 }
 
-static void push(crucible::TraceRing& ring, uint64_t family, uint32_t op) {
+static void push(crucible::test::TraceRig& rig, uint64_t family, uint32_t op) {
     crucible::TraceRing::Entry e{};
     e.schema_hash = crucible::SchemaHash{family | op};
     e.shape_hash = crucible::ShapeHash{0x5000ULL + op};
-    while (!ring.try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+    while (!rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
         CRUCIBLE_SPIN_PAUSE;
     }
 }
@@ -142,15 +141,14 @@ void test_reset_drops_inflight_regions() {
     Gate gate;
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
 
     // Wait for the publish stage to be parked in the callback with at least
     // two boundaries behind it, so there is work in flight to drop.
@@ -168,12 +166,13 @@ void test_reset_drops_inflight_regions() {
 
     // The foreground's divergence handler does exactly this: each op in the
     // ring was recorded before the divergence.
-    const BackgroundThread::StreamPoint reset_point = BackgroundThread::StreamPoint::restart_at(ring->total_produced());
-    bt.request_restart(ring->total_produced());
+    const BackgroundThread::StreamPoint reset_point =
+        BackgroundThread::StreamPoint::restart_at(rig.ring_total_produced());
+    bt.request_restart(rig.ring_total_produced());
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == reset_point);
 
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-        push(*ring, Gate::FAMILY_B, op);
+        push(rig, Gate::FAMILY_B, op);
 
     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (bt.applied_reset() != reset_point && std::chrono::steady_clock::now() < deadline) {
@@ -190,7 +189,7 @@ void test_reset_drops_inflight_regions() {
     gate.release.store_release(true);
 
     deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-    const uint64_t target = ring->total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -231,26 +230,25 @@ void test_reset_applies_at_its_point() {
     // More regions than the two channels behind the publish stage hold.
     constexpr uint32_t BACKLOG_ITERS = 400;
 
-    const auto test = ::foundation::effects::testing::test();
     Gate gate;
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
 
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    const BackgroundThread::StreamPoint reset_point = BackgroundThread::StreamPoint::restart_at(ring->total_produced());
-    bt.request_restart(ring->total_produced());
+    const BackgroundThread::StreamPoint reset_point =
+        BackgroundThread::StreamPoint::restart_at(rig.ring_total_produced());
+    bt.request_restart(rig.ring_total_produced());
     gate.reset_observed.store_release(true);
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() != reset_point && "the detect stage waits inside the backlog");
 
@@ -260,10 +258,10 @@ void test_reset_applies_at_its_point() {
     CRUCIBLE_TEST_ASSERT(kTest, gate.held_reset_point.load_acquire() != reset_point.ops_before());
 
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-        push(*ring, Gate::FAMILY_B, op);
+        push(rig, Gate::FAMILY_B, op);
     gate.release.store_release(true);
 
-    const uint64_t target = ring->total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -290,48 +288,46 @@ void test_mark_keeps_an_unapplied_restart() {
     constexpr uint32_t BACKLOG_ITERS = 400;
     using StreamPoint = BackgroundThread::StreamPoint;
 
-    const auto test = ::foundation::effects::testing::test();
     Gate gate;
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    const uint64_t restart_ops = ring->total_produced();
+    const uint64_t restart_ops = rig.ring_total_produced();
     bt.request_restart(restart_ops);
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() != StreamPoint::restart_at(restart_ops)
                                     && "the detect stage waits inside the backlog");
     for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-        push(*ring, Gate::FAMILY_B, op);
-    const uint64_t mark_ops = ring->total_produced();
+        push(rig, Gate::FAMILY_B, op);
+    const uint64_t mark_ops = rig.ring_total_produced();
     bt.request_mark(mark_ops);
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == StreamPoint::restart_at(mark_ops)
                                     && "a mark lost an unapplied restart");
 
     gate.release.store_release(true);
-    uint64_t target = ring->total_produced();
+    uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() == StreamPoint::restart_at(mark_ops));
 
-    push(*ring, Gate::FAMILY_B, 0);
-    const uint64_t later_mark_ops = ring->total_produced();
+    push(rig, Gate::FAMILY_B, 0);
+    const uint64_t later_mark_ops = rig.ring_total_produced();
     bt.request_mark(later_mark_ops);
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == StreamPoint::mark_at(later_mark_ops)
                                     && "a mark after an applied reset changed");
-    push(*ring, Gate::FAMILY_B, 0);
-    target = ring->total_produced();
+    push(rig, Gate::FAMILY_B, 0);
+    target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -352,26 +348,24 @@ void test_reset_skips_the_stale_backlog() {
     using namespace publish_rig;
     constexpr uint32_t BACKLOG_ITERS = 400;
 
-    const auto test = ::foundation::effects::testing::test();
     Gate gate;
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    bt.request_restart(ring->total_produced());
+    bt.request_restart(rig.ring_total_produced());
     gate.release.store_release(true);
 
-    const uint64_t target = ring->total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -397,18 +391,17 @@ void test_published_regions_keep_their_hashes() {
     gate.hold_next.store_release(false);
     const BackgroundThread::RegionReadyCall on_ready =
         BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, on_ready};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     for (uint32_t iter = 0; iter < A_ITERS; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(*ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-    const uint64_t target = ring->total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -437,14 +430,14 @@ void test_published_regions_keep_their_hashes() {
 
 // Pushes iters iterations of family A through bt, waits until the pipeline
 // processed each op, and stops bt.  Gives the count of published regions.
-static uint64_t run_family_a(BackgroundThread& bt, TraceRing& ring, MetaLog& metalog, uint32_t iters) {
+static uint64_t run_family_a(BackgroundThread& bt, crucible::test::TraceRig& rig, uint32_t iters) {
     using namespace publish_rig;
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, metalog);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
     for (uint32_t iter = 0; iter < iters; ++iter)
         for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(ring, Gate::FAMILY_A, op);
+            push(rig, Gate::FAMILY_A, op);
 
-    const uint64_t target = ring.total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -463,18 +456,15 @@ void test_long_run_keeps_its_scratch() {
     using namespace publish_rig;
     constexpr uint32_t LONG_RUN_ITERS = 10000;
 
-    auto test = ::foundation::effects::testing::test();
+    crucible::test::TraceRig short_rig{};
     BackgroundThread short_bt{::foundation::effects::testing::test().alloc};
-    ::fixy::Box<TraceRing> short_ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> short_metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
-    const uint64_t short_published = run_family_a(short_bt, *short_ring, *short_metalog, A_ITERS);
+    const uint64_t short_published = run_family_a(short_bt, short_rig, A_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          short_published >= 1 && "the short run published no region, so its arenas witness nothing");
 
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(test.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(test.alloc, test.alloc);
-    const uint64_t published = run_family_a(bt, *ring, *metalog, LONG_RUN_ITERS);
+    const uint64_t published = run_family_a(bt, rig, LONG_RUN_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
     CRUCIBLE_TEST_ASSERT(kTest, bt.scratch_retained_bytes() == short_bt.scratch_retained_bytes()
@@ -510,14 +500,13 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
     crucible::PipelineLimits limits{};
     limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{2};
     limits.scratch_retained = ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096};
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{witness.alloc, limits};
     CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_limit() == limits.scratch_retained);
     CRUCIBLE_TEST_ASSERT(test,
                          bt.uncompiled_regions().capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
 
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(witness.alloc);
-    ::fixy::Box<MetaLog> metalog = ::fixy::mint_box<MetaLog>(witness.alloc, witness.alloc);
-    const uint64_t queued = run_family_a(bt, *ring, *metalog, ITERS);
+    const uint64_t queued = run_family_a(bt, rig, ITERS);
 
     uint32_t stored = 0;
     uint64_t dropped = 0;

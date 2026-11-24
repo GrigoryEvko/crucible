@@ -12,22 +12,26 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "ring_ends.h"
+
 #include <utility>
 
 namespace eff = ::foundation::effects;
 
 namespace {
 
-void drain_from_an_allocating_caller(::fixy::BgDrainCtx const&, crucible::TraceRing& ring) {
+void drain_from_an_allocating_caller(::fixy::BgDrainCtx const&) {
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    out.with_mut([&ring](auto run) noexcept -> void { (void)ring.drain_pure(std::move(run)); });
+    crucible::test::with_ring_consumer([&out](crucible::TraceRing::Consumer& ring) noexcept {
+        out.with_mut(
+            [&ring](auto run) noexcept -> void { (void)crucible::TraceRing::drain_pure(ring, std::move(run)); });
+    });
 }
 
 }  // namespace
 
 int main() {
     const ::fixy::BgDrainCtx bg{eff::testing::bg()};
-    crucible::TraceRing ring;
-    drain_from_an_allocating_caller(bg, ring);
+    drain_from_an_allocating_caller(bg);
     return 0;
 }

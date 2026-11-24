@@ -6,6 +6,8 @@
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
 
+#include "../test/trace_rig.h"
+
 #include <cstdint>
 
 namespace bench {
@@ -15,7 +17,7 @@ namespace bench {
 // LoadedTrace::metas, appends nothing.  build_trace reads the metas at the
 // indices of LoadedTrace::meta_starts, so the function ignores the index that
 // each append returns.  O(number of metas).
-inline void refill_meta_log(crucible::MetaLog& meta_log, const crucible::LoadedTrace& trace) noexcept {
+inline void refill_meta_log(crucible::test::OpenLog& meta_log, const crucible::LoadedTrace& trace) noexcept {
     meta_log.reset();
     uint32_t cursor = 0;
     for (const crucible::TraceRing::Entry& entry : trace.entries) {

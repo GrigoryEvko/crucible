@@ -35,7 +35,7 @@ using Consumer = MetaLogConsumerHandle<WitnessTag, WitnessBrand, CheckScope>;
 static_assert(std::is_same_v<Witness::producer_handle<CheckScope>, Producer>);
 static_assert(std::is_same_v<Witness::consumer_handle<CheckScope>, Consumer>);
 
-// The log binds a MetaLog by reference, so it is not Sendable.  A handle
+// The log holds its MetaLog in a held split, so it is not Sendable.  A handle
 // names the tag and the brand of its log and not the log, so a body can move
 // each handle to the thread of its role.
 static_assert(!::foundation::transfer::Sendable<Witness>);

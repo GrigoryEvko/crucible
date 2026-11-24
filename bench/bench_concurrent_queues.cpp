@@ -39,6 +39,7 @@
 #include <fixy/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 namespace {
 
@@ -214,7 +215,7 @@ int main() {
         // (+reset-on-full, const entry)" — periodic reset on full keeps
         // the bench from saturating; tail samples include reset cost.
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};

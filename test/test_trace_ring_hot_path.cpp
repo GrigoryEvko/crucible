@@ -12,6 +12,9 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
+#include "trace_neg/ring_ends.h"
+#include "trace_rig.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -52,20 +55,23 @@ TraceRing::Entry make_entry(std::uint64_t schema_seed) noexcept {
 }
 
 template <class Ctx>
-concept AppendsToRing = requires(TraceRing& ring, Ctx const& ctx) { ring.try_append_pure(ctx, make_entry(0)); };
+concept AppendsToRing =
+    requires(TraceRing::Producer& ring, Ctx const& ctx) { TraceRing::try_append_pure(ctx, ring, make_entry(0)); };
 
 // The brand of the run of the check below.  The check names only the type
 // of a run, so no run of this brand exists.
 struct DrainRunBrand final {};
 
 template <class Ctx>
-concept DrainsRing = requires(TraceRing& ring, Ctx const& ctx, ::fixy::ViewMut<TraceRing::Entry, DrainRunBrand> out) {
-    ring.drain_pure(ctx, std::move(out));
-};
+concept DrainsRing =
+    requires(TraceRing::Consumer& ring, Ctx const& ctx, ::fixy::ViewMut<TraceRing::Entry, DrainRunBrand> out) {
+        TraceRing::drain_pure(ctx, ring, std::move(out));
+    };
 
 template <class Ctx>
-concept AppendsToLog =
-    requires(MetaLog& log, Ctx const& ctx) { log.try_append_pure(ctx, ::fixy::View<const TensorMeta>{}); };
+concept AppendsToLog = requires(MetaLog::Producer& log, Ctx const& ctx) {
+    MetaLog::try_append_pure(ctx, log, ::fixy::View<const TensorMeta>{});
+};
 
 // The foreground row is hot, and each pure variant takes it.  The row of
 // the test context holds Test and Alloc, so it is cold, and each pure
@@ -83,7 +89,7 @@ static_assert(::fixy::HotPathLattice::leq(HotPathTier_v::Warm, hot_path_tier_v<e
 static_assert(!::fixy::HotPathLattice::leq(HotPathTier_v::Hot, hot_path_tier_v<eff::Row<eff::Effect::Alloc>>));
 
 void test_ring_append_under_the_foreground() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(eff::testing::test().alloc);
+    ::fixy::Box<crucible::test::OpenRing> ring = ::fixy::mint_box<crucible::test::OpenRing>(eff::testing::test().alloc);
     auto const foreground = eff::testing::foreground();
     CRUCIBLE_TEST_ASSERT(
         kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
@@ -97,7 +103,7 @@ void test_ring_append_under_the_foreground() {
 }
 
 void test_log_append_under_the_foreground() {
-    auto log = std::make_unique<MetaLog>(eff::testing::test().alloc);
+    ::fixy::Box<crucible::test::OpenLog> log = ::fixy::mint_box<crucible::test::OpenLog>(eff::testing::test().alloc);
     TensorMeta meta{};
     meta.ndim = 1;
     meta.sizes[0] = ::crucible::tensor_dim(16);
@@ -108,11 +114,34 @@ void test_log_append_under_the_foreground() {
     CRUCIBLE_TEST_ASSERT(kTest, index.raw() == 0);
 }
 
+// The fixtures of the pure gates (test/trace_neg) open their ends through
+// ring_ends.h.  The same ends take each pure call with the foreground row, so
+// a fixture fails only at the gate of the row that it names.
+void test_fixture_ends_take_the_foreground_row() {
+    auto const foreground = eff::testing::foreground();
+    crucible::test::with_ring_producer([&foreground](TraceRing::Producer& ring) noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, TraceRing::try_append_pure(foreground, ring, make_entry(2)));
+    });
+    crucible::test::with_ring_consumer([&foreground](TraceRing::Consumer& ring) noexcept {
+        ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
+        CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
+            return TraceRing::drain_pure(foreground, ring, std::move(run));
+        }) == 0u);
+    });
+    const ::fixy::FixedArray<TensorMeta, 1> record{};
+    ::fixy::View<const TensorMeta> const records = record.view();
+    crucible::test::with_log_producer([&foreground, records](MetaLog::Producer& log) noexcept {
+        MetaIndex const index = MetaLog::try_append_pure(foreground, log, records);
+        CRUCIBLE_TEST_ASSERT(kTest, index.is_valid() && index.raw() == 0);
+    });
+}
+
 }  // namespace
 
 int main() {
     test_ring_append_under_the_foreground();
     test_log_append_under_the_foreground();
+    test_fixture_ends_take_the_foreground_row();
     std::puts("ok");
     return 0;
 }

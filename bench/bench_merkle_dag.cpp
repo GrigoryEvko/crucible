@@ -305,11 +305,11 @@ int run_bench(::fixy::os::Args const& arguments) {
 
         // A TraceRing is 6 MiB and the stack is 8 MiB, so the ring lives
         // on the heap, as it does in Vigil.
-        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(test.alloc);
-        TraceRing& ring = *ring_box;
-        ring.reset();
-        MetaLog meta_log{::foundation::effects::testing::test().alloc};
-        meta_log.reset();
+        // Each door of the ring and of the log of the bench opens the side of
+        // the door for one call (test/trace_rig.h).
+        ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(test.alloc);
+        crucible::test::OpenRing& ring = *ring_box;
+        crucible::test::OpenLog meta_log{};
 
         bench_rng_state = 0x1111222233334444ULL;
         constexpr uint32_t N = 481;
@@ -346,9 +346,9 @@ int run_bench(::fixy::os::Args const& arguments) {
                 abort_full_ring(i, N);
         }
 
+        // The bench drains the ring and builds the trace itself, so no stage
+        // of the BackgroundThread reads the ring or the log.
         BackgroundThread bg{::foundation::effects::testing::test().alloc};
-        bg.bind_ring(ring);
-        bg.bind_meta_log(meta_log);
 
         // The drain buffers have static storage; 4× 4096-element arrays on
         // the stack blow past our 512 kB stack-usage budget.
@@ -415,7 +415,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         // iteration.  The body captures the state of the build and the
         // metadata log by a const reference, and not the BackgroundThread.
         BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
-        MetaLog const& log = meta_log;
+        MetaLog const& log = *meta_log.view();
         NumericsHash const numerics = bg.numerics();
         return bench::run("build_trace (481 ops, full pipeline)", [&] {
             repopulate_meta_log();
@@ -455,11 +455,9 @@ int run_bench(::fixy::os::Args const& arguments) {
             ::fixy::report(::fixy::Sink::Err, "[trace] {}: {} ops, {} metas\n", path_view, trace.num_ops,
                            trace.num_metas);
 
-            MetaLog meta_log{::foundation::effects::testing::test().alloc};
-            meta_log.reset();
+            crucible::test::OpenLog meta_log{};
 
             BackgroundThread bg{::foundation::effects::testing::test().alloc};
-            bg.bind_meta_log(meta_log);
             // The block takes 256 bytes for each op, and at least 1 MiB.  The
             // floor is a constant, and the bytes of the ops above the floor
             // are the part of run time.
@@ -470,7 +468,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             // The body captures the state of the build and the metadata log
             // by a const reference, and not the BackgroundThread.
             BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
-            MetaLog const& log = meta_log;
+            MetaLog const& log = *meta_log.view();
             NumericsHash const numerics = bg.numerics();
 
             return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {

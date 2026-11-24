@@ -29,19 +29,17 @@ namespace test_end_to_end {
 // discarding them.  So the feed here completes that partial iteration
 // before starting a fresh one.
 void test_pipeline_multi_iteration() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                              ::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(*ring, *meta_log, Iteration{0});
-    feed_iteration(*ring, *meta_log, Iteration{1});
-    feed_trigger(*ring, *meta_log, Iteration{2});
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region1 = bt.active_region().expect("BackgroundThread did not produce a region");
     CRUCIBLE_TEST_ASSERT(kTest, region1->num_ops() == NUM_OPS);
 
@@ -56,15 +54,15 @@ void test_pipeline_multi_iteration() {
 
         const ::fixy::FixedArray<TensorMeta, 2> metas{make_meta(fake_ptr(2, i - 1)), make_meta(fake_ptr(2, i))};
 
-        auto ms = meta_log->try_append(metas.view());
+        auto ms = rig.append_metas(metas.view());
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());
-        CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e, ms));
+        CRUCIBLE_TEST_ASSERT(kTest, rig.append_entry(e, ms));
     }
 
-    feed_iteration(*ring, *meta_log, Iteration{3});
-    feed_trigger(*ring, *meta_log, Iteration{4});
+    feed_iteration(rig, Iteration{3});
+    feed_trigger(rig, Iteration{4});
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region2 =
         bt.active_region().expect("BackgroundThread did not produce a second region");
     CRUCIBLE_TEST_ASSERT(kTest, !::fixy::same_object(region2, region1) && "Second boundary did not fire");

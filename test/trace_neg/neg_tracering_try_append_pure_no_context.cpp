@@ -12,20 +12,22 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "ring_ends.h"
+
 namespace eff = ::foundation::effects;
 
 namespace {
 
-void append_from_an_allocating_caller(::fixy::TestRunnerCtx const&, crucible::TraceRing& ring) {
+void append_from_an_allocating_caller(::fixy::TestRunnerCtx const&) {
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure(e);
+    crucible::test::with_ring_producer(
+        [&e](crucible::TraceRing::Producer& ring) noexcept { (void)crucible::TraceRing::try_append_pure(ring, e); });
 }
 
 }  // namespace
 
 int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
-    crucible::TraceRing ring;
-    append_from_an_allocating_caller(test, ring);
+    append_from_an_allocating_caller(test);
     return 0;
 }

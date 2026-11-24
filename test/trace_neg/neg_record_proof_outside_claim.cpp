@@ -2,20 +2,17 @@
 //
 // Only the producer claim of the Vigils makes the proof of the record path
 // (RecordProof of crucible/ForegroundCtx.h).  A caller outside the claim that
-// built the proof itself would publish the head of the trace ring with no
-// check while a second producer writes the same head.
+// built the proof itself would open the producer side of the trace ring of a
+// Vigil while the Vigil records, and two producers would write the same head.
 
 #include <crucible/TraceRing.h>
+#include <crucible/Vigil.h>
 
 namespace neg_fixture {
 
-[[maybe_unused]] static void commit_without_the_claim(crucible::TraceRing& ring,
-                                                      crucible::TraceRing::Reservation reserved,
-                                                      crucible::TraceRing::Entry const& entry) noexcept {
+[[maybe_unused]] static void build_the_proof_outside_the_claim() noexcept {
     const crucible::RecordProof proof{};
-    ring.commit_proven(proof, static_cast<crucible::TraceRing::Reservation&&>(reserved), entry,
-                       crucible::MetaIndex::none(), crucible::ScopeHash{}, crucible::CallsiteHash{},
-                       crucible::OpDepth{});
+    static_cast<void>(proof);
 }
 
 }  // namespace neg_fixture

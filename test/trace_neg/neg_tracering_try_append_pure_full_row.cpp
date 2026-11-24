@@ -11,12 +11,15 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "ring_ends.h"
+
 namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::BgLoadCtx load{eff::testing::bg()};
-    crucible::TraceRing ring;
     crucible::TraceRing::Entry e{};
-    (void)ring.try_append_pure(load, e);
+    crucible::test::with_ring_producer([&](crucible::TraceRing::Producer& ring) noexcept {
+        (void)crucible::TraceRing::try_append_pure(load, ring, e);
+    });
     return 0;
 }

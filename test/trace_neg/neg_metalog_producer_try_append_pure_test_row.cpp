@@ -26,8 +26,7 @@ int main() {
     const ::fixy::TestRunnerCtx test{::foundation::effects::testing::test()};
     auto root = ::foundation::permissions::mint_permission_root<::crucible::metalog_tag::Whole<Tag>>();
     using Log = ::crucible::permissioned_metalog_t<decltype(root)>;
-    ::crucible::MetaLog raw{::foundation::effects::testing::test().alloc};
-    Log log{raw};
+    Log log{::foundation::effects::testing::test().alloc};
     auto tokens =
         ::foundation::permissions::mint_permission_split<Log::producer_tag, Log::consumer_tag>(std::move(root));
     ::foundation::linear::drop(std::move(tokens.at(::foundation::core::index<1>())));

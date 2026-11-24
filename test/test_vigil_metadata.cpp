@@ -90,17 +90,31 @@ void record(crucible::Vigil& vigil, uint32_t iter, uint32_t op_idx) {
     CRUCIBLE_TEST_ASSERT(kTest, was_recorded);
 }
 
-// Appends records until the log is full.  The appends start at the head and
-// pass the end of the buffer.  They write over each slot that the log
-// released, and over no other slot.
-void fill_released_slots(crucible::MetaLog& log) {
-    constexpr uint32_t CHUNK = 4096;
+// Records ops until the log took CAPACITY records more than it held at the
+// call, so the foreground wrote over each slot of the buffer, the slots of
+// the region included.  The log takes a record only into a slot that the
+// publish stage released, so a flush after each batch of ops lets the stage
+// release the records of the ops before it.  The ops have schema hashes that
+// never recur, so no iteration claims them.  A loop of more ops than the
+// bound fails the test and does not hang it.
+void write_over_each_slot(crucible::Vigil& vigil) {
+    constexpr uint16_t kRecords = 16;
+    constexpr uint64_t kBatch = 4096;
+    constexpr uint64_t kMaxOps = uint64_t{4} * crucible::MetaLog::CAPACITY / kRecords;
     const ::fixy::HeapArray<crucible::TensorMeta> chunk =
-        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, CHUNK, meta_at(overwrite_ptr(), 3));
-    for (uint32_t count = CHUNK; count > 0; count /= 2) {
-        while (log.try_append(chunk.view().window(0, count).expect("the run fits the chunk")).is_valid()) {}
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kRecords, meta_at(overwrite_ptr(), 3));
+    const uint64_t first = vigil.meta_log_total_produced();
+    uint64_t op = 0;
+    while (vigil.meta_log_total_produced() - first < crucible::MetaLog::CAPACITY) {
+        CRUCIBLE_TEST_ASSERT(kTest, op < kMaxOps && "the log took too few records over the ops");
+        crucible::TraceRing::Entry entry{};
+        entry.schema_hash = crucible::SchemaHash{0xF000000 + op};
+        entry.shape_hash = crucible::ShapeHash{0xF800000 + op};
+        entry.num_outputs = kRecords;
+        const bool was_recorded = vigil.record_op(crucible::test::certify_synthetic_op(entry, chunk.view()));
+        if (was_recorded) ++op;
+        if (!was_recorded || op % kBatch == 0) CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
     }
-    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == crucible::MetaLog::CAPACITY);
 }
 
 }  // namespace
@@ -143,7 +157,7 @@ void test_region_keeps_its_metadata_after_the_log_wraps() {
         [&region](auto run) noexcept { return crucible::serialize_region(::fixy::to(*region), std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, bytes_before > 0);
 
-    fill_released_slots(vigil.meta_log(fg));
+    write_over_each_slot(vigil);
 
     for (uint32_t op = 0; op < NUM_OPS; ++op) {
         CRUCIBLE_TEST_ASSERT(kTest,

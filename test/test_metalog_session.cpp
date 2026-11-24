@@ -106,7 +106,7 @@ static_assert(std::is_same_v<ConsumerSession::resource_type, PermissionedLog::co
 static_assert(sizeof(PermissionedLog::producer_handle<CheckScope>) == sizeof(void*));
 static_assert(sizeof(PermissionedLog::consumer_handle<CheckScope>) == sizeof(void*));
 
-// The wrapper names one MetaLog for life, so it has no copy and no move.
+// The wrapper holds one MetaLog for life, so it has no copy and no move.
 static_assert(std::is_same_v<PermissionedLog::value_type, ::crucible::TensorMeta>);
 static_assert(std::is_same_v<PermissionedLog::value_type, ms::MetaLogRecord>);
 static_assert(!std::is_copy_constructible_v<PermissionedLog>);
@@ -154,8 +154,7 @@ void run_test(::fixy::TextView name, Body body) {
 // that body, and each handle gives its token back at the end of the body.
 
 void test_permissioned_bulk_drain() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 3> records{
@@ -196,8 +195,7 @@ void test_permissioned_bulk_drain() {
 }
 
 void test_single_append_drain() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     const ::crucible::TensorMeta source = make_meta(42);
@@ -228,8 +226,7 @@ void test_single_append_drain() {
 // A drain with a limit stops at the limit, and the next drain takes the
 // records that stay.
 void test_partial_drain() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 5> source{
@@ -279,8 +276,7 @@ void test_partial_drain() {
 // A bulk append returns the index of the first record it wrote, and copy_at()
 // copies the record at that index.
 void test_metaindex_propagates() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     const ::fixy::FixedArray<::crucible::TensorMeta, 2> first{make_meta(10), make_meta(20)};
@@ -304,8 +300,7 @@ void test_metaindex_propagates() {
 }
 
 void test_empty_drain() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     // The producer appends nothing, and it gives its token back.
@@ -351,8 +346,7 @@ struct ConsumerResult {
 // the value of the call.  The two bodies take the handles of one frame by
 // move, so the thread door runs inside that frame.
 void test_typed_session_round_trip() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     constexpr int kCount = 128;
@@ -407,8 +401,7 @@ void test_typed_session_round_trip() {
 // log, and the moved-from caller variable does not.
 void test_session_gives_the_handle_back() {
     const FgCtx fg = ::foundation::effects::testing::foreground();
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
 
     cc::with_ends(
@@ -442,8 +435,7 @@ template <typename Handle>
 }
 
 void log_producer() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
     cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
         auto moved = std::move(producer);
@@ -454,8 +446,7 @@ void log_producer() {
 }
 
 void log_consumer() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
     cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
         auto moved = std::move(consumer);
@@ -469,8 +460,7 @@ void log_consumer() {
 // claim of each role refuses the second live handle of that role, so the
 // second frame of a role, inside the first, ends the process.
 void second_live_producer() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
     cc::with_producer(log, std::move(first_producer),
@@ -485,8 +475,7 @@ void second_live_producer() {
 }
 
 void second_live_consumer() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [first_producer, first_consumer] = mint_halves();
     auto [second_producer, second_consumer] = mint_halves();
     cc::with_consumer(log, std::move(first_consumer),
@@ -504,8 +493,7 @@ void second_live_consumer() {
 // producer can then write a new record into that slot, so a copy of the
 // record at index 0 ends the process.
 void copy_of_a_released_record() {
-    ::crucible::MetaLog raw_log{::foundation::effects::testing::test().alloc};
-    PermissionedLog log{raw_log};
+    PermissionedLog log{::foundation::effects::testing::test().alloc};
     auto [producer_token, consumer_token] = mint_halves();
     cc::with_ends(log, std::move(producer_token), std::move(consumer_token), [](auto producer, auto consumer) noexcept {
         const ::crucible::TensorMeta record = make_meta(1);
@@ -530,7 +518,7 @@ void test_moved_from_handles_end_the_process(::fixy::TestRunnerCtx const& test) 
                                ::fixy::TextView{"two live consumer handles of one MetaLog"});
     ::fixy::check::expect_dies(
         test, copy_of_a_released_record,
-        ::fixy::TextView{"foundation: fatal invariant failed: index.raw() >= ch_->log_.tail.peek_relaxed()"});
+        ::fixy::TextView{"foundation: fatal invariant failed: index.raw() >= log->total_released()"});
     ::fixy::check::pass(test, "  moved_from_handles_end_the_process ... OK\n");
 }
 

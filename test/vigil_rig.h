@@ -71,10 +71,10 @@ void test_small_region_store_discards_and_counts();
 void test_divergence_leaves_no_stale_active_region();
 void test_same_region_keeps_the_alignment();
 
-// The producer role and its surface (test_vigil_producer.cpp).
+// The producer role and its counters (test_vigil_producer.cpp).
 void test_record_op_claims_the_producer_role();
-void test_producer_surface_takes_the_claim_context();
-void test_two_publishes_keep_one_copy_of_the_head();
+void test_counters_count_the_recorded_op();
+void test_each_record_moves_the_head_by_one_op();
 void test_foreground_reads_the_iteration_count();
 
 // A region keeps the tensor metadata that the foreground recorded, after the

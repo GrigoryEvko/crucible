@@ -11,12 +11,16 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "ring_ends.h"
+
 namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
-    crucible::MetaLog log{eff::testing::test().alloc};
     const ::fixy::FixedArray<crucible::TensorMeta, 1> record{};
-    (void)log.try_append_pure(test.in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>(), record.view());
+    crucible::test::with_log_producer([&](crucible::MetaLog::Producer& log) noexcept {
+        (void)crucible::MetaLog::try_append_pure(test.in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>(), log,
+                                                 record.view());
+    });
     return 0;
 }

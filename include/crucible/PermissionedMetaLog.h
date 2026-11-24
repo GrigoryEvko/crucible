@@ -81,10 +81,13 @@ class MetaLogConsumerHandle;
 // token of every root site open the endpoints.
 //
 // The producer handle appends and the consumer handle drains on their threads
-// at the same time by design.  The log keeps its head and its tail, and each
-// has the one writer that the role claims and the Permissions of the handles
-// name.  Each member is private, and only the handles reach the log, so the
-// wrapper states synchronized{} (foundation/Transfer.h).
+// at the same time by design.  The wrapper holds its log in a held split
+// (fixy/concurrent/SpscEnds.h).  The producer handle opens the producer side
+// with the proof of its role, and the consumer handle opens the consumer side
+// with the proof of its role, so each side has the one writer that the role
+// claims and the Permissions of the handles name.  Each member is private,
+// and only the handles reach the log, so the wrapper states synchronized{}
+// (foundation/Transfer.h).
 template <typename UserTag, ::foundation::brand::IsFreshBrand Brand>
 class[[= ::foundation::transfer::synchronized{}]] PermissionedMetaLog {
 public:
@@ -97,17 +100,47 @@ public:
     // The log has one producer and one consumer, as a wire has.
     static constexpr ::fixy::concurrent::ChannelForm channel_form = ::fixy::concurrent::ChannelForm::wire;
 
-    explicit constexpr PermissionedMetaLog(::crucible::MetaLog& log) noexcept : log_{log} {}
+    // The wrapper builds its log with the allocation capability of the
+    // caller, and the log is empty.
+    explicit PermissionedMetaLog(::foundation::effects::Alloc allocation) noexcept
+        : log_{::fixy::concurrent::mint_held_spsc_split<::crucible::MetaLog, LogSides>(allocation, allocation)} {}
 
     PermissionedMetaLog(const PermissionedMetaLog&) =
-        delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
+        delete("the wrapper holds one MetaLog, and the endpoints it made hold that log");
     PermissionedMetaLog& operator=(const PermissionedMetaLog&) =
-        delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
+        delete("the wrapper holds one MetaLog, and the endpoints it made hold that log");
     PermissionedMetaLog(PermissionedMetaLog&&) =
-        delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
+        delete("the wrapper holds one MetaLog, and the endpoints it made hold that log");
     PermissionedMetaLog&
-    operator=(PermissionedMetaLog&&) = delete("the wrapper names one MetaLog, and the endpoints it made hold that log");
+    operator=(PermissionedMetaLog&&) = delete("the wrapper holds one MetaLog, and the endpoints it made hold that log");
 
+private:
+    // The proof of each role, which opens the side of that role.  Only the
+    // handle of the role builds one, for the frame of one call.  The
+    // destructor is user-provided, so no byte route builds a proof.
+    class ProducerSideProof final {
+        ProducerSideProof() noexcept {}
+        friend class PermissionedMetaLog;
+
+    public:
+        ProducerSideProof(ProducerSideProof const&) = delete("a proof of a side lives for the call that made it");
+        ~ProducerSideProof() {}
+    };
+    class ConsumerSideProof final {
+        ConsumerSideProof() noexcept {}
+        friend class PermissionedMetaLog;
+
+    public:
+        ConsumerSideProof(ConsumerSideProof const&) = delete("a proof of a side lives for the call that made it");
+        ~ConsumerSideProof() {}
+    };
+    // The held brand of the log: the proof of each role opens its side.
+    struct LogSides final {
+        using producer_proof = ProducerSideProof;
+        using consumer_proof = ConsumerSideProof;
+    };
+
+public:
     class[[= ::foundation::linear::linear{}]] ProducerEnd {
         // The move clears the binding, so a moved-from handle cannot
         // append or drain through the Permission it no longer holds.  The
@@ -158,14 +191,17 @@ public:
         // constraint: the row of the context is empty, and its source permits
         // no atom, so a context narrowed with in_row fails it.  The handle has
         // no append with no context, so no caller skips the gate.  The body
-        // calls MetaLog::try_append, so the gate does not depend on the gate
-        // of MetaLog itself.
+        // calls MetaLog::try_append on the producer end, so the gate does not
+        // depend on the gate of MetaLog itself.
         template <::foundation::effects::IsExecCtx Ctx>
             requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
                   && ::foundation::effects::CtxHasPureSource<Ctx>
         [[nodiscard, gnu::hot]] ::crucible::MetaIndex try_append_pure(Ctx const&,
                                                                       ::fixy::View<const value_type> metas) {
-            return ch_->log_.try_append(metas);
+            return ch_->log_.producer_side().with_end(ProducerSideProof{},
+                                                      [metas](::crucible::MetaLog::Producer& end) noexcept {
+                                                          return ::crucible::MetaLog::try_append(end, metas);
+                                                      });
         }
 
         // The append of one record, with the same gate.  The record goes into
@@ -174,15 +210,18 @@ public:
             requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
                   && ::foundation::effects::CtxHasPureSource<Ctx>
         [[nodiscard, gnu::hot]] bool try_append_one_pure(Ctx const&, const value_type& meta) {
-            const ::fixy::FixedArray<value_type, 1> record{meta};
-            return ch_->log_.try_append(record.view()).is_valid();
+            return ch_->log_.producer_side().with_end(
+                ProducerSideProof{}, [&meta](::crucible::MetaLog::Producer& end) noexcept {
+                    const ::fixy::FixedArray<value_type, 1> record{meta};
+                    return ::crucible::MetaLog::try_append(end, record.view()).is_valid();
+                });
         }
 
         // A snapshot reads the index of the consumer, and the schedule decides
         // when the consumer moves it.  So the snapshot takes the bare tag of
         // Nondet.
         [[nodiscard]] std::uint32_t size_approx(::foundation::effects::cap::Nondet) const {
-            return ch_->log_.size().peek();
+            return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.size().peek(); });
         }
     };
 
@@ -229,34 +268,41 @@ public:
             return std::move(perm_);
         }
 
+        // The reads of the consumer go through the view of the consumer side
+        // (owner_view of fixy/concurrent/SpscEnds.h), because a record holds
+        // the data pointer of its tensor, and no frame gives such a value
+        // out.  The consumer reads each record between the tail that only it
+        // moves and the head that it acquired, so each read is of a record
+        // that the producer published and that no release freed.  Only the
+        // move of the tail opens the side.
         [[nodiscard, gnu::hot]] ::fixy::Option<value_type> try_drain_one() {
-            ::crucible::MetaLog& log = ch_->log_;
-            const std::uint64_t t = log.tail.peek_relaxed();
-            if (t == log.head.get()) [[unlikely]] {
+            const auto log = ch_->log_.consumer_side().owner_view();
+            const std::uint64_t t = log->total_released();
+            if (t == log->total_produced()) [[unlikely]] {
                 return ::fixy::none;
             }
 
-            const value_type meta = log.copy_record(t);
-            log.advance_tail(t + 1);
+            const value_type meta = log->copy_record(t);
+            advance_tail(t + 1);
             return ::fixy::some(meta);
         }
 
         template <typename Body>
             requires std::is_invocable_v<Body&, const value_type&>
         [[nodiscard]] std::uint32_t drain(Body&& body, std::uint32_t max_items = ::crucible::MetaLog::CAPACITY) {
-            ::crucible::MetaLog& log = ch_->log_;
-            const std::uint64_t t = log.tail.peek_relaxed();
-            const std::uint64_t available = log.head.get() - t;
+            const auto log = ch_->log_.consumer_side().owner_view();
+            const std::uint64_t t = log->total_released();
+            const std::uint64_t available = log->total_produced() - t;
             const std::uint32_t count = max_items < available ? max_items : static_cast<std::uint32_t>(available);
 
             // The body gets a copy of each record, and no reference into a
             // slot that the producer writes again after the release.
             for (std::uint32_t i = 0; i < count; ++i) {
-                const value_type meta = log.copy_record(t + i);
+                const value_type meta = log->copy_record(t + i);
                 body(meta);
             }
             if (count != 0) {
-                log.advance_tail(t + count);
+                advance_tail(t + count);
             }
             return count;
         }
@@ -269,21 +315,30 @@ public:
         // invariant and checks under each contract semantic.
         [[nodiscard]] value_type copy_at(::crucible::MetaIndex index) const {
             CRUCIBLE_PRE(index.is_valid());
-            CRUCIBLE_FATAL_INVARIANT(index.raw() >= ch_->log_.tail.peek_relaxed()
-                                     && index.raw() < ch_->log_.head.get());
-            return ch_->log_.copy_record(index.raw());
+            const auto log = ch_->log_.consumer_side().owner_view();
+            CRUCIBLE_FATAL_INVARIANT(index.raw() >= log->total_released() && index.raw() < log->total_produced());
+            return log->copy_record(index.raw());
         }
 
-        void advance_tail(std::uint64_t new_tail) { ch_->log_.advance_tail(new_tail); }
+        void advance_tail(std::uint64_t new_tail) {
+            ch_->log_.consumer_side().with_end(ConsumerSideProof{},
+                                               [new_tail](::crucible::MetaLog::Consumer& end) noexcept {
+                                                   ::crucible::MetaLog::advance_tail(end, new_tail);
+                                               });
+        }
 
-        [[nodiscard]] std::uint64_t head_index() const { return ch_->log_.head.get(); }
+        [[nodiscard]] std::uint64_t head_index() const {
+            return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.total_produced(); });
+        }
 
-        [[nodiscard]] std::uint64_t tail_index() const { return ch_->log_.tail.get(); }
+        [[nodiscard]] std::uint64_t tail_index() const {
+            return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.total_released(); });
+        }
 
         // A snapshot reads the index of the producer, so it takes the bare tag
         // of Nondet, as the snapshot of the producer does.
         [[nodiscard]] std::uint32_t size_approx(::foundation::effects::cap::Nondet) const {
-            return ch_->log_.size().peek();
+            return ch_->log_.with_owner([](::crucible::MetaLog const& log) noexcept { return log.size().peek(); });
         }
     };
 
@@ -313,7 +368,7 @@ public:
     [[nodiscard]] static constexpr bool is_exclusive_active() noexcept { return false; }
 
 private:
-    ::crucible::MetaLog& log_;
+    ::fixy::concurrent::SpscHeldSplit<::crucible::MetaLog, LogSides> log_;
     ::foundation::EndpointClaim producer_claim_;
     ::foundation::EndpointClaim consumer_claim_;
 };
@@ -324,8 +379,9 @@ private:
 // and it shows each door of the end.  The constructor is private, and the key
 // of the frame doors is its one friend, so only a frame door builds a handle.
 // The handle takes the tag and the brand of its log, and not the log.  The
-// log binds a MetaLog by reference, so it is not Sendable, and rule 8 of
-// foundation/Transfer.h reads each type argument of a specialization.  The
+// log holds its MetaLog in a held split, which states no transfer fact, so
+// the log is not Sendable, and rule 8 of foundation/Transfer.h reads each
+// type argument of a specialization.  The
 // tag and the brand hold no state, so the handle is Sendable when its end is.
 // No argument is linear, so the handle marks its own end (foundation/
 // Linear.h).

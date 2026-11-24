@@ -5,6 +5,7 @@
 #include <crucible/TraceRing.h>
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 namespace {
 
@@ -27,10 +28,13 @@ int main() {
     // A TraceRing is 6 MiB and the stack is 8 MiB.  Each ring lives on
     // the heap, as it does in Vigil.  The address of the ring has no
     // effect on the timed loop.  Each timed body reads the ring through a
-    // Ref, so no test of the Box is in the timed loop.
+    // Ref, so no test of the Box is in the timed loop.  Each door of the
+    // ring of the bench opens the side of the door for one call
+    // (OpenRing of test/trace_rig.h), as the record path opens the producer
+    // side of the ring of a Vigil.
     ::fixy::FixedArray<bench::Report, 5> reports{
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             crucible::TraceRing::Entry e{};
             std::uint64_t h = 0;
@@ -46,7 +50,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
@@ -59,7 +63,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             return bench::run("ring.size()", [&] {
                 const auto s = ring->size();
@@ -67,7 +71,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             return bench::run("ring.total_produced()", [&] {
                 const auto s = ring->total_produced();
@@ -75,7 +79,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<crucible::TraceRing> ring_box = ::fixy::mint_box<crucible::TraceRing>(kAlloc);
+            ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             return bench::run("ring.reset()", [&] { ring->reset(); });
         }(),

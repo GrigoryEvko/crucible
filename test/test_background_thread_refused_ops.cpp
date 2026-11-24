@@ -20,6 +20,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
+#include "trace_rig.h"
 #include <cstdint>
 
 namespace {
@@ -31,8 +32,8 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
-using crucible::MetaLog;
 using crucible::TraceRing;
+using crucible::test::TraceRig;
 
 namespace {
 
@@ -62,35 +63,27 @@ constexpr uint64_t kIterationsAfterGap = 40;
     return true;
 }
 
-TraceRing& test_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& test_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
-
 // Records the op at position index of the endless loop.  Returns false when
 // the ring refused it.
-bool record(TraceRing& ring, uint64_t index) {
+bool record(TraceRig& rig, uint64_t index) {
     TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{kSchemaBase + index % kPeriod};
     entry.shape_hash = crucible::ShapeHash{0x200 + index % kPeriod};
-    return ring.try_append(entry, MetaIndex::none());
+    return rig.append_entry(entry, MetaIndex::none());
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
+void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
-    while (bt.total_processed.load_acquire() < ring.total_produced())
+    while (bt.total_processed.load_acquire() < rig.ring_total_produced())
         (void)pause.sleep_for(kPollNanos);
 }
 
 void test_refused_ops_give_no_wrong_region() {
-    TraceRing& ring = test_ring();
+    // The ring and the log come before the BackgroundThread, so the thread
+    // ends first.
+    TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // No pipeline runs, so the ring takes CAPACITY ops of the loop and
@@ -99,20 +92,20 @@ void test_refused_ops_give_no_wrong_region() {
     uint64_t index = 0;
     uint64_t refused = 0;
     for (const uint64_t end = TraceRing::CAPACITY + kRefused; index < end; ++index) {
-        if (!record(ring, index)) ++refused;
+        if (!record(rig, index)) ++refused;
     }
     CRUCIBLE_TEST_ASSERT(kTest, refused == kRefused);
 
     // The pipeline publishes the regions of the iterations in the full ring.
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
-    wait_for_pipeline(bt, ring);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
+    wait_for_pipeline(bt, rig);
     const uint64_t regions_before_gap = bt.uncompiled_regions().total();
 
     // The loop goes on after the gap, and the pipeline reads the stream with
     // the gap.
     for (const uint64_t end = index + kIterationsAfterGap * kPeriod; index < end; ++index)
-        CRUCIBLE_TEST_ASSERT(kTest, record(ring, index));
-    wait_for_pipeline(bt, ring);
+        CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
+    wait_for_pipeline(bt, rig);
     bt.stop();
 
     CRUCIBLE_TEST_ASSERT(kTest, regions_before_gap > 0 && "the loop before the gap published no region");

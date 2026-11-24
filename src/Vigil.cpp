@@ -23,18 +23,14 @@ static_assert(Vigil::Config::CIPHER_PATH_MAX == Cipher::MAX_ROOT_PATH_BYTES,
 
 Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     : cfg_(std::move(cfg)),
-      ring_owner_{::fixy::mint_box<TraceRing>(startup.cap().alloc)},
-      ring_{::fixy::erase_brand(ring_owner_.view())},
-      meta_log_owner_{::fixy::mint_box<MetaLog>(startup.cap().alloc, startup.cap().alloc)},
-      meta_log_{::fixy::erase_brand(meta_log_owner_.view())},
+      ring_{::fixy::concurrent::mint_held_spsc_split<TraceRing, VigilRingSides>(startup.cap().alloc)},
+      meta_log_{
+          ::fixy::concurrent::mint_held_spsc_split<MetaLog, VigilLogSides>(startup.cap().alloc, startup.cap().alloc)},
       tx_log_{},
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
       bg_{startup.cap().alloc, region_ready_, cfg_.limits} {
-    ring_->reset();
-    meta_log_->reset();
-
     // An empty path gives no store.  The configured path is operator-supplied,
     // so it crosses the trust boundary here and is declared external until
     // the store's own sanitizer promotes it.  A root that does not open gives
@@ -85,7 +81,8 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
 
     eager_ = cfg_.eager;
     bg_.set_numerics(compute_numerics_hash(cfg_.numerics, cfg_.eager));
-    bg_.start(startup, *ring_, *meta_log_, cfg_.rank, cfg_.world_size, cfg_.device_capability);
+    bg_.start(startup, ring_.consumer_side(), meta_log_.consumer_side(), cfg_.rank, cfg_.world_size,
+              cfg_.device_capability);
 }
 
 Vigil::~Vigil() = default;

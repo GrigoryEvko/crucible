@@ -9,6 +9,8 @@
 
 #include <fixy/os/ThreadTasks.h>
 
+#include "trace_rig.h"
+
 #include <utility>
 
 namespace {
@@ -16,9 +18,10 @@ namespace {
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
-// A ring on the heap: its slots are too large for the stack.
-[[nodiscard]] ::fixy::Box<crucible::TraceRing> mint_ring() noexcept {
-    return ::fixy::mint_box<crucible::TraceRing>(::foundation::effects::testing::test().alloc);
+// A ring on the heap: its slots are too large for the stack.  Each door of
+// the ring of the test opens the side of the door for one call.
+[[nodiscard]] ::fixy::Box<crucible::test::OpenRing> mint_ring() noexcept {
+    return ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
 }
 
 }  // namespace
@@ -42,9 +45,10 @@ using NarrowedTestCtx = ::foundation::effects::ExecCtx<::foundation::effects::Te
 using NarrowedBgCtx = ::foundation::effects::ExecCtx<::foundation::effects::Bg, ::foundation::effects::Row<>>;
 
 template <typename Ctx>
-concept AppendsPure = requires(crucible::TraceRing& ring, Ctx const& ctx, crucible::TraceRing::Entry const& entry) {
-    ring.try_append_pure(ctx, entry);
-};
+concept AppendsPure =
+    requires(crucible::TraceRing::Producer& end, Ctx const& ctx, crucible::TraceRing::Entry const& entry) {
+        crucible::TraceRing::try_append_pure(ctx, end, entry);
+    };
 // The brand of the runs of the checks below.  A check names only the type of
 // a run, so no run of this brand exists.
 struct GateRunBrand final {};
@@ -55,14 +59,25 @@ using CallsiteRun = ::fixy::ViewMut<CallsiteHash, GateRunBrand>;
 using DepthRun = ::fixy::ViewMut<crucible::OpDepth, GateRunBrand>;
 
 template <typename Ctx>
-concept DrainsPure =
-    requires(crucible::TraceRing& ring, Ctx const& ctx, EntryRun out) { ring.drain_pure(ctx, std::move(out)); };
+concept DrainsPure = requires(crucible::TraceRing::Consumer& end, Ctx const& ctx, EntryRun out) {
+    crucible::TraceRing::drain_pure(ctx, end, std::move(out));
+};
 
 // True when a drain takes the runs as its parallel outputs.
 template <typename... Parallel>
-concept DrainsInto = requires(crucible::TraceRing& ring, EntryRun out, Parallel... parallel) {
-    ring.drain(std::move(out), std::move(parallel)...);
+concept DrainsInto = requires(crucible::TraceRing::Consumer& end, EntryRun out, Parallel... parallel) {
+    crucible::TraceRing::drain(end, std::move(out), std::move(parallel)...);
 };
+
+// Each door of a side takes the end of its side: no door of the producer
+// takes the consumer end, and no door of the consumer takes the producer end.
+template <typename End>
+concept AppendsThrough =
+    requires(End& end, crucible::TraceRing::Entry const& entry) { crucible::TraceRing::try_append(end, entry); };
+template <typename End>
+concept DrainsThrough = requires(End& end, EntryRun out) { crucible::TraceRing::drain(end, std::move(out)); };
+static_assert(AppendsThrough<crucible::TraceRing::Producer> && !AppendsThrough<crucible::TraceRing::Consumer>);
+static_assert(DrainsThrough<crucible::TraceRing::Consumer> && !DrainsThrough<crucible::TraceRing::Producer>);
 
 // The parallel outputs of a drain are a prefix of the four arrays, in their
 // order.  A drain that skips a middle output, or that takes two outputs in
@@ -83,7 +98,7 @@ static_assert(!AppendsPure<NarrowedBgCtx> && !DrainsPure<NarrowedBgCtx>);
 // Each function holds one group of cases, so that no function of the test
 // is larger than the limit of the kind function of the rule object-size.
 void single_thread_cases() {
-    ::fixy::Box<crucible::TraceRing> ring = mint_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
@@ -185,7 +200,7 @@ void single_thread_cases() {
 void concurrent_raw_case() {
     {
         constexpr uint32_t N = 200000;
-        ::fixy::Box<crucible::TraceRing> ring = mint_ring();
+        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         ::fixy::Atomic<bool> producer_done{false};
         ::fixy::Atomic<uint32_t, ::fixy::Counter> producer_spins{0};
@@ -273,7 +288,7 @@ void concurrent_raw_case() {
 
 void pure_facade_cases() {
     {
-        ::fixy::Box<crucible::TraceRing> ring = mint_ring();
+        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         crucible::TraceRing::Entry e1{};
         e1.schema_hash = SchemaHash{0xCAFE0001};
@@ -372,7 +387,7 @@ void pure_facade_cases() {
 void concurrent_pure_case() {
     {
         constexpr uint32_t N = 100000;
-        ::fixy::Box<crucible::TraceRing> ring = mint_ring();
+        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         ::fixy::Atomic<bool> producer_done{false};
         ::fixy::Atomic<uint32_t, ::fixy::Counter> producer_spins{0};
@@ -459,7 +474,7 @@ void concurrent_pure_case() {
 void pure_edge_cases() {
     {
         constexpr uint32_t CAP = crucible::TraceRing::CAPACITY;
-        ::fixy::Box<crucible::TraceRing> ring = mint_ring();
+        ::fixy::Box<crucible::test::OpenRing> ring = mint_ring();
 
         {
             crucible::TraceRing::Entry e_bare{};

@@ -9,6 +9,8 @@
 #include <crucible/CrucibleContext.h>
 #include <foundation/effects/Effect.h>
 
+#include "trace_rig.h"
+
 #include <cstdint>
 
 namespace test_end_to_end {
@@ -41,17 +43,17 @@ void* fake_ptr(uint32_t iter, uint32_t op);
 // The position of an iteration of the synthetic workload.
 using Iteration = ::fixy::Id<struct IterationTag, uint32_t>;
 
-void feed_iteration(crucible::TraceRing& ring, crucible::MetaLog& meta_log, Iteration iter);
+void feed_iteration(crucible::test::TraceRig& rig, Iteration iter);
 
 // K is the length of the detector's signature, so feeding exactly the
 // first K ops of an iteration is what presents it with a repeat.
-void feed_trigger(crucible::TraceRing& ring, crucible::MetaLog& meta_log, Iteration iter);
+void feed_trigger(crucible::test::TraceRig& rig, Iteration iter);
 
 // The feeding thread has no other handshake with the background thread,
 // so it spins on the processed counter until the drain has caught up
 // with everything produced so far.  The spin cap turns a stalled
 // background thread into a failed assertion instead of a hang.
-void wait_processed(crucible::BackgroundThread& bt, crucible::TraceRing& ring);
+void wait_processed(crucible::BackgroundThread& bt, crucible::test::TraceRig const& rig);
 
 // A region, its replay and a divergence (test_end_to_end_replay.cpp).
 void test_pipeline_basic();

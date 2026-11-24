@@ -99,8 +99,6 @@ void expect_gate_refuses_the_intruder(::fixy::TestRunnerCtx const& test, Gate ga
 void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx const& test) {
     constexpr ::fixy::TextView kNotTheBrandThread{
         "foundation: fatal invariant failed: ProducerClaim<Brand>::can_caller_use_brand()"};
-    constexpr ::fixy::TextView kNotTheVigilThread{
-        "foundation: fatal invariant failed: producer_claim_.is_claimable_by_caller()"};
     expect_gate_refuses_the_intruder(
         test, [](Vigil& vigil, VigilFgCtx const&) noexcept { static_cast<void>(vigil.mint_producer_context()); },
         kNotTheHolder);
@@ -114,20 +112,12 @@ void test_cold_gates_reject_a_context_on_another_thread(::fixy::TestRunnerCtx co
             static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg));
         },
         kNotTheBrandThread);
-    expect_gate_refuses_the_intruder(
-        test, [](Vigil& vigil, VigilFgCtx const& fg) noexcept { static_cast<void>(vigil.ring(fg)); },
-        kNotTheVigilThread);
-    expect_gate_refuses_the_intruder(
-        test, [](Vigil& vigil, VigilFgCtx const& fg) noexcept { static_cast<void>(vigil.meta_log(fg)); },
-        kNotTheVigilThread);
 
     // The claiming thread passes the same gates.
     Vigil vigil;
     const VigilFgCtx fg = vigil.mint_producer_context();
     static_cast<void>(global_schema_table().mint_mutable_view(fg));
     static_cast<void>(global_ckernel_table().value()->mint_mutable_view(fg));
-    static_cast<void>(vigil.ring(fg));
-    static_cast<void>(vigil.meta_log(fg));
 
     ::fixy::check::pass(test, "  test_cold_gates_reject_a_context_on_another_thread: PASSED\n");
 }

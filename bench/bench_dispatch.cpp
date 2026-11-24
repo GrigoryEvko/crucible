@@ -17,6 +17,7 @@
 //                   setup_compiled_vigil which is milliseconds.
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
@@ -344,9 +345,9 @@ int main() {
         // So the ring lives on the heap, as it does in Vigil.  The timed body
         // reads the ring through a reference that the Box gives one time, so
         // no test of the Box is in the timed loop.
-        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-        TraceRing& ring = *ring_box;
-        ring.reset();
+        ::fixy::Box<crucible::test::OpenRing> ring_box =
+            ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
+        crucible::test::OpenRing& ring = *ring_box;
         TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{0x100};
         entry.shape_hash = ShapeHash{0x200};
@@ -361,8 +362,7 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        MetaLog meta_log{::foundation::effects::testing::test().alloc};
-        meta_log.reset();
+        crucible::test::OpenLog meta_log{};
         ::fixy::FixedArray<TensorMeta, 2> metas{
             make_meta(fake_address(IterationNumber{0}, OpPosition{0})),
             make_meta(fake_address(IterationNumber{0}, OpPosition{1})),

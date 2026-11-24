@@ -11,16 +11,19 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include "ring_ends.h"
+
 #include <utility>
 
 namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::ColdInitCtx init{eff::testing::init()};
-    crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    out.with_mut([&](auto run) noexcept -> void {
-        (void)ring.drain_pure(init.in_row<eff::Row<eff::Effect::Init>>(), std::move(run));
+    crucible::test::with_ring_consumer([&](crucible::TraceRing::Consumer& ring) noexcept {
+        out.with_mut([&](auto run) noexcept -> void {
+            (void)crucible::TraceRing::drain_pure(init.in_row<eff::Row<eff::Effect::Init>>(), ring, std::move(run));
+        });
     });
     return 0;
 }

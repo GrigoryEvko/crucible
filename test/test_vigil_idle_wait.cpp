@@ -27,6 +27,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
+#include "trace_rig.h"
 #include <cstdint>
 
 namespace {
@@ -38,8 +39,8 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
-using crucible::MetaLog;
 using crucible::TraceRing;
+using crucible::test::TraceRig;
 using crucible::Vigil;
 
 namespace {
@@ -101,29 +102,19 @@ void idle_for(uint64_t milliseconds) {
         (void)pause.sleep_for(kMillisecond);
 }
 
-TraceRing& test_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& test_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
-
 // Records the op at position index of the loop, with no tensor.
-[[nodiscard]] bool record(TraceRing& ring, uint64_t index) {
+[[nodiscard]] bool record(TraceRig& rig, uint64_t index) {
     TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{0x100 + index % kPeriod};
     entry.shape_hash = crucible::ShapeHash{0x200 + index % kPeriod};
-    return ring.try_append(entry, MetaIndex::none());
+    return rig.append_entry(entry, MetaIndex::none());
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
+void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kMillisecond>(runner);
-    while (bt.total_processed.load_acquire() < ring.total_produced())
+    while (bt.total_processed.load_acquire() < rig.ring_total_produced())
         (void)pause.sleep_for(kMillisecond);
 }
 
@@ -140,12 +131,14 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
 // of sleeps of the test thread.
 void check_idle_count(fixy::TestRunnerCtx const& runner,
                       fixy::perf::PerfEventRef<fixy::perf::perf_event_rights> counter) {
-    TraceRing& ring = test_ring();
+    // The ring and the log come before the BackgroundThread, so the thread
+    // ends first.
+    TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, test_log());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
     for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
-        CRUCIBLE_TEST_ASSERT(kTest, record(ring, index));
-    wait_for_pipeline(bt, ring);
+        CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
+    wait_for_pipeline(bt, rig);
     idle_for(kSettleSleeps);
     const uint64_t before = fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
     idle_for(kCountedSleeps);

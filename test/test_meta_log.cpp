@@ -8,6 +8,8 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
+#include "trace_rig.h"
+
 #include <cstdint>
 #include <utility>
 
@@ -37,14 +39,14 @@ static TensorMeta make_meta(SyntheticAddress address) {
 }
 
 static void test_empty_state() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
     CRUCIBLE_TEST_ASSERT(kTest, !log.try_append(::fixy::View<const TensorMeta>{}).is_valid());
     ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
 
 static void test_single_append_returns_index_zero() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     TensorMeta m = make_meta(SyntheticAddress{0x1000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
@@ -61,7 +63,7 @@ static void test_single_append_returns_index_zero() {
 }
 
 static void test_batch_append_and_monotonic() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     ::fixy::FixedArray<TensorMeta, 8> batch{};
     for (const auto index : batch.indices()) {
         const TensorMeta meta = make_meta(SyntheticAddress{0x1000 + index.raw() * 16});
@@ -89,7 +91,7 @@ static void test_batch_append_and_monotonic() {
 }
 
 static void test_tail_advance_frees_capacity() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     TensorMeta m = make_meta(SyntheticAddress{0x2000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     auto idx = log.try_append(record.view());
@@ -104,7 +106,7 @@ static void test_tail_advance_frees_capacity() {
 }
 
 static void test_reset_zeroes_both_pointers() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     TensorMeta m = make_meta(SyntheticAddress{0x3000});
     const ::fixy::FixedArray<TensorMeta, 1> record{m};
     for (int i = 0; i < 10; ++i)
@@ -119,14 +121,11 @@ static void test_reset_zeroes_both_pointers() {
 }
 
 static void test_copy_run_across_the_end() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
     // The counters start three slots from the end of the ring.  The
     // next append then passes the end.  A fill and a drain of the ring hold a
-    // second buffer of 176 MB, and the ring holds 176 MB too.  The
-    // reset is correct only when no other thread uses the log, and this test
-    // has one thread.
+    // second buffer of 176 MB, and the ring holds 176 MB too.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
-    log.reset_at(MetaIndex{near_end});
+    crucible::test::OpenLog log{MetaIndex{near_end}};
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
 
     // Five entries into three remaining slots: the batch straddles the
@@ -167,10 +166,9 @@ static void test_copy_run_across_the_end() {
 // In 32 bits the record at 2^32 - 1 takes the index of none, and the append
 // after it moves the head back.
 static void test_counters_pass_two_to_the_32() {
-    MetaLog log{::foundation::effects::testing::test().alloc};
-    // No other thread uses the log, which is the condition of the reset.
+    // The log starts sixteen records before the wrap of 32 bits.
     constexpr uint32_t BELOW_WRAP = 0xFFFFFFF0u;
-    log.reset_at(MetaIndex{BELOW_WRAP});
+    crucible::test::OpenLog log{MetaIndex{BELOW_WRAP}};
 
     ::fixy::FixedArray<TensorMeta, 32> run{};
     for (const auto index : run.indices()) {
@@ -204,7 +202,7 @@ static void test_counters_pass_two_to_the_32() {
 
     log.advance_tail(across.raw() + 16);
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 0);
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == (uint64_t{1} << 32) + 16);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == (uint64_t{1} << 32) + 16);
     ::fixy::check::pass(kTest, "  test_counters_pass_2_to_the_32: PASSED\n");
 }
 
@@ -212,7 +210,7 @@ static void test_counters_pass_two_to_the_32() {
 // The copy refuses such a run before it reads a slot.  The copy runs in a
 // child through expect_dies of the Check family.
 static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunnerCtx const& test) {
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
     ::fixy::HeapArray<TensorMeta> destination =
         ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, MetaLog::CAPACITY + 1, TensorMeta{});
     auto const& log_read = log;
@@ -236,7 +234,7 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
 // duplication from the payload alone.
 static void test_spsc_concurrent_integrity() {
     constexpr uint32_t N = 100000;
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
 
     ::fixy::Atomic<bool> producer_done{false};
     ::fixy::Atomic<uint32_t, ::fixy::Counter> lost_spin{0};  // diagnostic only
@@ -309,8 +307,9 @@ static void test_spsc_concurrent_integrity() {
 constexpr ::fixy::HotFgCtx kPure = ::foundation::effects::testing::foreground();
 
 template <typename Ctx>
-concept AppendsPure =
-    requires(MetaLog& log, Ctx const& ctx, ::fixy::View<const TensorMeta> metas) { log.try_append_pure(ctx, metas); };
+concept AppendsPure = requires(MetaLog::Producer& log, Ctx const& ctx, ::fixy::View<const TensorMeta> metas) {
+    MetaLog::try_append_pure(ctx, log, metas);
+};
 static_assert(AppendsPure<::fixy::HotFgCtx>);
 static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
 static_assert(!AppendsPure<::fixy::BgDrainCtx>);
@@ -321,7 +320,7 @@ static void test_try_append_pure() {
     namespace eff = ::fixy;
 
     {
-        MetaLog log{::foundation::effects::testing::test().alloc};
+        crucible::test::OpenLog log{};
         TensorMeta m = make_meta(SyntheticAddress{0xA0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto idx = log.try_append_pure(kPure, record.view());
@@ -333,7 +332,7 @@ static void test_try_append_pure() {
     }
 
     {
-        MetaLog log{::foundation::effects::testing::test().alloc};
+        crucible::test::OpenLog log{};
         TensorMeta m1 = make_meta(SyntheticAddress{0xB0});
         TensorMeta m2 = make_meta(SyntheticAddress{0xC0});
         const ::fixy::FixedArray<TensorMeta, 1> first_record{m1};
@@ -350,7 +349,7 @@ static void test_try_append_pure() {
     // repeat, which is what shows the facade forwards into the same
     // storage rather than keeping a second one.
     {
-        MetaLog log{::foundation::effects::testing::test().alloc};
+        crucible::test::OpenLog log{};
         TensorMeta m = make_meta(SyntheticAddress{0xD0});
         const ::fixy::FixedArray<TensorMeta, 1> record{m};
         auto i0 = log.try_append(record.view());  // index 0
@@ -384,7 +383,7 @@ static void test_try_append_pure() {
 
 static void test_try_append_pure_concurrent() {
     constexpr uint32_t N = 50000;
-    MetaLog log{::foundation::effects::testing::test().alloc};
+    crucible::test::OpenLog log{};
 
     ::fixy::Atomic<bool> producer_done{false};
     ::fixy::Atomic<uint32_t, ::fixy::Counter> lost_spin{0};

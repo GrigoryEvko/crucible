@@ -10,6 +10,8 @@
 #include <foundation/Platform.h>
 #include <foundation/effects/Effect.h>
 
+#include "trace_rig.h"
+
 #include <cstdint>
 #include <utility>
 
@@ -19,8 +21,8 @@ namespace {
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 // A ring on the heap: its slots are too large for the stack.
-[[nodiscard]] ::fixy::Box<crucible::TraceRing> make_ring() noexcept {
-    return ::fixy::mint_box<crucible::TraceRing>(::foundation::effects::testing::test().alloc);
+[[nodiscard]] ::fixy::Box<crucible::test::OpenRing> make_ring() noexcept {
+    return ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
 }
 
 }  // namespace
@@ -59,14 +61,14 @@ static OpDepth make_depth(uint64_t i) noexcept { return OpDepth{static_cast<uint
 // Each frame gives its runs a brand of their own, so each caller has its own
 // instance.
 template <class Entries, class Metas, class Scopes, class Calls, class Depths>
-[[gnu::noinline]] static uint32_t pop_batch(TraceRing& ring, Entries entries, Metas metas, Scopes scopes, Calls calls,
-                                            Depths depths) noexcept {
+[[gnu::noinline]] static uint32_t pop_batch(crucible::test::OpenRing& ring, Entries entries, Metas metas, Scopes scopes,
+                                            Calls calls, Depths depths) noexcept {
     return ring.try_pop_batch(std::move(entries), std::move(metas), std::move(scopes), std::move(calls),
                               std::move(depths));
 }
 
 static void test_empty_returns_zero() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
     ::fixy::FixedArray<TraceRing::Entry, 8> out_entries{};
     ::fixy::FixedArray<MetaIndex, 8> out_metas{};
@@ -94,7 +96,7 @@ static void test_empty_returns_zero() {
 
 // Five empty outputs return zero and drain nothing.
 static void test_max_count_zero() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
     // The ring is deliberately non-empty: a zero count must win over
     // available entries.
@@ -129,7 +131,7 @@ static void test_max_count_zero() {
 }
 
 static void test_single_thread_fifo() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
     constexpr uint32_t N = 100;
     for (uint64_t i = 0; i < N; ++i) {
@@ -187,7 +189,7 @@ static void test_single_thread_fifo() {
 }
 
 static void test_multi_batch_drain() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
     constexpr uint32_t N = 1000;
     for (uint64_t i = 0; i < N; ++i) {
@@ -250,7 +252,7 @@ static void test_multi_batch_drain() {
 // which is the only way to reach that boundary from an empty ring.
 
 static void test_wrap_around() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
     // The staging buffers have static storage: an array of half the ring's
     // entries would not fit on the stack.
@@ -323,8 +325,8 @@ static void test_wrap_around() {
 // rest of the file only approaches from one side at a time.
 
 static void test_equivalence_with_single_pop() {
-    ::fixy::Box<TraceRing> ring_a = make_ring();
-    ::fixy::Box<TraceRing> ring_b = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring_a = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring_b = make_ring();
 
     constexpr uint32_t N = 5000;
     for (uint64_t i = 0; i < N; ++i) {
@@ -438,7 +440,7 @@ static void test_equivalence_with_single_pop() {
 // exposes an index that one path advances differently from the other.
 
 static void test_spsc_stress() {
-    ::fixy::Box<TraceRing> ring = make_ring();
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
     constexpr uint64_t N = 100000;
 
     ::fixy::report(::fixy::Sink::Out, "  test_spsc_stress: 1 producer + 1 consumer, N={}...\n",

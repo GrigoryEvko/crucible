@@ -2,6 +2,7 @@
 // smoke run, a concurrent drain, a large batch, and a second spawn.
 
 #include "background_thread_run_in_row.h"
+#include "trace_rig.h"
 
 #include <crucible/BackgroundThread.h>
 #include <fixy/Core.h>
@@ -24,8 +25,6 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 }  // namespace
 
 using crucible::BackgroundThread;
-using crucible::TraceRing;
-using crucible::MetaLog;
 
 namespace test_background_thread_run_in_row {
 
@@ -33,12 +32,11 @@ namespace test_background_thread_run_in_row {
 // the call falls straight through to the trailing drain, which is empty.
 // What is under test is that the entry point forwards at all.
 void test_t04_runtime_smoke() {
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
 
-    bt.bind_ring(*ring);
-    bt.bind_meta_log(*metalog);
+    bt.bind_ring(rig.ring_side());
+    bt.bind_meta_log(rig.log_side());
     bt.stop_requested.signal();
 
     bool done = false;
@@ -62,11 +60,10 @@ void test_t04_runtime_smoke() {
 // iteration detector advances but never closes anything, which leaves plain
 // drain motion to observe.
 void test_concurrent_spsc_drain() {
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.bind_ring(*ring);
-    bt.bind_meta_log(*metalog);
+    bt.bind_ring(rig.ring_side());
+    bt.bind_meta_log(rig.log_side());
     bt.rearm_stop();
 
     ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
@@ -81,7 +78,7 @@ void test_concurrent_spsc_drain() {
         e.shape_hash = crucible::ShapeHash{0x2000ULL + i};
         // The push side has a fence of its own, which is not what is under
         // test here, so this goes through the untyped append.
-        while (!ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+        while (!rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -108,11 +105,10 @@ void test_concurrent_spsc_drain() {
 // which the normal start sequence does and this test deliberately bypasses in
 // order to reach the entry point directly.
 void test_large_batch_drain() {
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.bind_ring(*ring);
-    bt.bind_meta_log(*metalog);
+    bt.bind_ring(rig.ring_side());
+    bt.bind_meta_log(rig.log_side());
     bt.rearm_stop();
 
     ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
@@ -123,7 +119,7 @@ void test_large_batch_drain() {
         crucible::TraceRing::Entry e{};
         e.schema_hash = crucible::SchemaHash{0xABCD0001ULL + i};
         e.shape_hash = crucible::ShapeHash{0xDEAD0001ULL + i};
-        while (!ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+        while (!rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -152,11 +148,10 @@ void test_large_batch_drain() {
 // instantiation, or a destructor that failed to run would leave the second
 // invocation dead, and the second cycle would then drain nothing.
 void test_rearm_cycle() {
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    bt.bind_ring(*ring);
-    bt.bind_meta_log(*metalog);
+    bt.bind_ring(rig.ring_side());
+    bt.bind_meta_log(rig.log_side());
 
     constexpr uint32_t PER_CYCLE = 4;
 
@@ -175,7 +170,7 @@ void test_rearm_cycle() {
             e.schema_hash = crucible::SchemaHash{0x10000ULL + (cycle << 16) + i};
             e.shape_hash = crucible::ShapeHash{0x20000ULL + i};
             while (
-                !ring->try_append(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+                !rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
@@ -212,11 +207,10 @@ void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] {
-            static TraceRing ring{};
-            static MetaLog metalog{::foundation::effects::testing::test().alloc};
+            crucible::test::TraceRig rig{};
             BackgroundThread bt{::foundation::effects::testing::test().alloc};
-            bt.bind_ring(ring);
-            bt.bind_meta_log(metalog);
+            bt.bind_ring(rig.ring_side());
+            bt.bind_meta_log(rig.log_side());
             bt.rearm_stop();
             auto first = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
             auto second = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };

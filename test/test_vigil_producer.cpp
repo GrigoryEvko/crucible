@@ -49,56 +49,45 @@ void test_record_op_claims_the_producer_role() {
     ::fixy::check::pass(kTest, "  test_record_op_claims_the_producer_role: PASSED\n");
 }
 
-// The producer surface of the ring and of the metadata log takes the context
-// of the producer claim.  The counters take no context, and they agree with
-// the surface that the context opens.
-void test_producer_surface_takes_the_claim_context() {
+// The counters of the ring and of the metadata log take no context, and they
+// count the op and the records that record_op put into them.
+void test_counters_count_the_recorded_op() {
     crucible::Vigil vigil;
+    const uint64_t ring_before = vigil.ring_total_produced();
+    const uint64_t log_before = vigil.meta_log_total_produced();
     auto first = divrig::op_at(0, 0);
     CRUCIBLE_TEST_ASSERT(
         kTest, vigil.record_op(crucible::test::certify_synthetic_op(first.entry, first.metas, first.n_metas)));
 
-    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-    const crucible::TraceRing& ring = vigil.ring(fg);
-    const crucible::MetaLog& meta_log = vigil.meta_log(fg);
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == vigil.ring_total_produced());
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() >= 1 && "the recorded op reached the ring");
-    CRUCIBLE_TEST_ASSERT(kTest, meta_log.size().peek() == vigil.meta_log_size().peek());
-    CRUCIBLE_TEST_ASSERT(kTest, &vigil.ring(fg) == &ring && "every call opens the same ring");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == ring_before + 1 && "the recorded op reached the ring");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.meta_log_total_produced() == log_before + first.n_metas
+                                    && "the records of the op reached the log");
 
-    ::fixy::check::pass(kTest, "  test_producer_surface_takes_the_claim_context: PASSED\n");
+    ::fixy::check::pass(kTest, "  test_counters_count_the_recorded_op: PASSED\n");
 }
 
-// record_op publishes the heads of the ring and of the log with the proof of
-// the claim, and the producer surface publishes them with the checked form
-// (the two publishes of crucible/TraceRing.h).  The two forms keep one copy
-// of each head on the line of the producer, and the checked publish compares
-// the head with that copy.  A proven publish that left the copy behind ends the
-// process at the next checked publish, and the count of the ring shows a lost
-// or a doubled op.
-void test_two_publishes_keep_one_copy_of_the_head() {
+// record_op publishes the heads of the ring and of the log through the
+// producer ends of the two held splits (the two publishes of
+// crucible/TraceRing.h).  Each end keeps one copy of its head on the line of
+// the producer, and the step check of each publish compares the new head with
+// that copy.  A publish that left the copy behind ends the process at the next
+// publish, and the count of the ring shows a lost or a doubled op.
+void test_each_record_moves_the_head_by_one_op() {
     crucible::Vigil vigil;
-    const crucible::VigilFgCtx fg = vigil.mint_producer_context();
-    crucible::TraceRing& ring = vigil.ring(fg);
-    crucible::MetaLog& meta_log = vigil.meta_log(fg);
-    const uint64_t first_produced = ring.total_produced();
+    const uint64_t first_produced = vigil.ring_total_produced();
 
     constexpr uint32_t kRounds = 64;
     for (uint32_t round = 0; round < kRounds; ++round) {
-        auto proven = divrig::op_at(round, 0);
-        CRUCIBLE_TEST_ASSERT(
-            kTest, vigil.record_op(crucible::test::certify_synthetic_op(proven.entry, proven.metas, proven.n_metas)));
-        auto checked = divrig::op_at(round, 1);
-        const crucible::MetaIndex meta_start =
-            meta_log.try_append(crucible::test::records_of(checked.metas, checked.n_metas));
-        CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && "the log has room for the records of the checked append");
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             ring.try_append(checked.entry, meta_start) && "the ring has room for the checked append");
+        for (uint32_t op = 0; op < 2; ++op) {
+            auto recorded = divrig::op_at(round, op);
+            CRUCIBLE_TEST_ASSERT(kTest, vigil.record_op(crucible::test::certify_synthetic_op(
+                                            recorded.entry, recorded.metas, recorded.n_metas)));
+        }
     }
 
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == first_produced + 2 * kRounds
-                                    && "each proven and each checked publish moved the head by one op");
-    ::fixy::check::pass(kTest, "  test_two_publishes_keep_one_copy_of_the_head: PASSED\n");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.ring_total_produced() == first_produced + 2 * kRounds
+                                    && "each publish moved the head by one op");
+    ::fixy::check::pass(kTest, "  test_each_record_moves_the_head_by_one_op: PASSED\n");
 }
 
 // The foreground reads the count of iterations while the detect stage writes

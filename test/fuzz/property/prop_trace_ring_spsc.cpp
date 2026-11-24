@@ -47,6 +47,7 @@
 
 #include "property_runner.h"
 #include "random_input.h"
+#include "../../trace_rig.h"
 
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
@@ -158,7 +159,10 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     // reset() restores all three cursors (head, tail, cached_tail_)
     // between iterations; payload bytes in entries[] remain but are
     // invisible because size() == 0 after reset.
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
+    // Each door of the ring of the harness opens the side of the door for one
+    // call (OpenRing of test/trace_rig.h).
+    ::fixy::Box<crucible::test::OpenRing> ring =
+        ::fixy::mint_box<crucible::test::OpenRing>(::foundation::effects::testing::test().alloc);
 
     // ── One-shot stress: fill-to-capacity + (CAP+1)-th rejects ─────
     //

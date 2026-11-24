@@ -135,12 +135,28 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
     using DeviceCapability = ::fixy::Tagged<uint64_t, ::fixy::tags::source::Meridian>;
 
-    // Binds the trace ring and the metadata log of a pipeline that the caller
-    // runs with run_in_row, before it starts the thread of that run.  start()
-    // binds the two itself.  A later bind names the same object, and a bind
-    // while the pipeline thread runs breaks the contract.
-    void bind_ring(TraceRing& trace_ring) noexcept CRUCIBLE_NO_THREAD_SAFETY;
-    void bind_meta_log(MetaLog& trace_meta_log) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    // The proofs of the drain stage and of the publish stage (their
+    // definitions below).
+    class DrainStage;
+    class PublishStage;
+
+    // The consumer side of the trace ring, which the drain stage opens with
+    // its proof, and the consumer side of the metadata log, which the publish
+    // stage opens with its proof (the held split of
+    // fixy/concurrent/SpscEnds.h).  The holder of a held split of each brand
+    // whose consumer proof is that stage gives such a side.
+    using TraceRingSide =
+        ::fixy::concurrent::SpscHeldSide<TraceRing, ::fixy::concurrent::SpscSide::consumer, DrainStage>;
+    using MetaLogSide = ::fixy::concurrent::SpscHeldSide<MetaLog, ::fixy::concurrent::SpscSide::consumer, PublishStage>;
+
+    // Binds the consumer sides of the trace ring and of the metadata log of a
+    // pipeline that the caller runs with run_in_row, before it starts the
+    // thread of that run.  start() binds the two itself.  A later bind names
+    // the same side, and a bind while the pipeline thread runs breaks the
+    // contract.  The holder of the two splits keeps them alive while this
+    // object lives, as the Vigil does with bg_ as its last member.
+    void bind_ring(TraceRingSide& ring_side) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    void bind_meta_log(MetaLogSide& meta_log_side) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
     // The last published region, or an empty reference before the first
     // publication.  The acquire load sees each write of the region before
@@ -154,10 +170,12 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
 
 private:
     // The first start() or bind sets each pointer, and never to null.  Each
-    // later start() names the same ring and the same log, so no start sets a
-    // pointer again.  The stages read the two through the pipeline.
-    ::fixy::WriteOnceNonNull<TraceRing*> ring_ = ::fixy::mint_write_once_non_null<TraceRing*>();
-    ::fixy::WriteOnceNonNull<MetaLog*> meta_log_ = ::fixy::mint_write_once_non_null<MetaLog*>();
+    // later start() names the same two sides, so no start sets a pointer
+    // again.  The drain stage opens the side of the ring, the publish stage
+    // opens the side of the log, and the build stage and a flush read the
+    // owner of each side through a const frame.
+    ::fixy::WriteOnceNonNull<TraceRingSide*> ring_ = ::fixy::mint_write_once_non_null<TraceRingSide*>();
+    ::fixy::WriteOnceNonNull<MetaLogSide*> meta_log_ = ::fixy::mint_write_once_non_null<MetaLogSide*>();
 
     // start() writes the three before it starts the pipeline thread.
     int32_t rank_ = -1;
@@ -284,6 +302,33 @@ public:
     static_assert(!std::is_copy_constructible_v<PublishStage> && !std::is_move_constructible_v<PublishStage>);
     static_assert(!std::is_trivially_copyable_v<PublishStage>, "a trivially copyable proof is forgeable by bit_cast");
     static_assert(!std::is_implicit_lifetime_v<PublishStage>,
+                  "an implicit-lifetime proof is forgeable by a lifetime start over bytes");
+
+    // Proof that the caller is the drain stage, the one consumer of the
+    // trace ring.  It opens the consumer side of the ring (TraceRingSide).
+    // Only this class builds one, in the drain stage, for the frame of each
+    // pop.  It has the shape of PublishStage and the same reasons: it stays
+    // on the thread of the stage, no two threads read one proof, and no
+    // copy, move, bit_cast or lifetime start over bytes makes one.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] DrainStage {
+        DrainStage() noexcept {}
+        friend struct BackgroundThread;
+
+    public:
+        DrainStage(const DrainStage&) = delete("the drain-stage proof stays on the thread of the drain stage");
+        DrainStage(DrainStage&&) = delete("the drain-stage proof stays on the thread of the drain stage");
+        DrainStage&
+        operator=(const DrainStage&) = delete("the drain-stage proof stays on the thread of the drain stage");
+        DrainStage& operator=(DrainStage&&) = delete("the drain-stage proof stays on the thread of the drain stage");
+        // User-provided, for the reason of the destructor of PublishStage.
+        ~DrainStage() {}
+    };
+
+    static_assert(std::is_empty_v<DrainStage>);
+    static_assert(!std::is_default_constructible_v<DrainStage>);
+    static_assert(!std::is_copy_constructible_v<DrainStage> && !std::is_move_constructible_v<DrainStage>);
+    static_assert(!std::is_trivially_copyable_v<DrainStage>, "a trivially copyable proof is forgeable by bit_cast");
+    static_assert(!std::is_implicit_lifetime_v<DrainStage>,
                   "an implicit-lifetime proof is forgeable by a lifetime start over bytes");
 
     // The call of the callback of each published region.
@@ -1014,7 +1059,8 @@ public:
     [[nodiscard]] FlushResult flush(Ctx const& ctx) const noexcept {
         CRUCIBLE_PRE(!holds_stage_on_this_thread_());
         if (!ring_.has_value()) return ::fixy::Unit{};
-        const uint64_t target_produced = ring_.get()->total_produced();
+        const uint64_t target_produced =
+            ring_.get()->with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
         const auto is_settled = [this, target_produced]() noexcept {
             return count_processed_ring_ops() >= target_produced
                 || pipeline_run_.load_acquire() == PipelineRun::stopped;
@@ -1383,18 +1429,18 @@ public:
     // complete before the background thread starts" into a load-bearing
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
-    // The ring and the metadata log are references, so no caller can give
-    // a null pointer.  The init context is the authority to start the
-    // thread.  A start while a pipeline thread runs breaks the contract:
-    // call stop() first.
+    // The two consumer sides are references, so no caller can give a null
+    // pointer.  The init context is the authority to start the thread.  A
+    // start while a pipeline thread runs breaks the contract: call stop()
+    // first.
     //
     // A start after stop() continues the stream of the last pipeline.  The
     // ring keeps the ops that the last pipeline did not read, and the detect
     // stage keeps its held ops, its detector and its cursor of the log.  So
-    // a later start names the ring and the log of the first start, and a
-    // start that names a different ring or log breaks the contract.
-    void start(::fixy::InitLoadCtx const& startup, TraceRing& trace_ring, MetaLog& trace_meta_log, int32_t rank = -1,
-               int32_t world_size = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
+    // a later start names the two sides of the first start, and a start that
+    // names a different side breaks the contract.
+    void start(::fixy::InitLoadCtx const& startup, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
+               int32_t rank = -1, int32_t world_size = 0, uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Sets the numerics hash of the start of the run, which the build folds
     // into each region until a request_numerics.  The owner calls it before

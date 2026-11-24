@@ -21,6 +21,7 @@
 #include <foundation/effects/Effect.h>
 
 #include "test_harness.h"
+#include "trace_rig.h"
 #include <cstdint>
 
 namespace {
@@ -32,8 +33,8 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 using crucible::BackgroundThread;
 using crucible::MetaIndex;
-using crucible::MetaLog;
 using crucible::TraceRing;
+using crucible::test::TraceRig;
 
 namespace {
 
@@ -42,38 +43,28 @@ constexpr uint64_t kSchemaBase = 0x300;
 constexpr uint64_t kPollNanos = 100000;
 constexpr uint64_t kIterations = 8;
 
-TraceRing& test_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& test_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
-
 [[nodiscard]] ::fixy::InitLoadCtx startup() noexcept {
     return ::fixy::InitLoadCtx{::foundation::effects::testing::init()};
 }
 
 // Records kIterations iterations of a loop of kPeriod ops, from the op at
 // index first.  Returns the index after the last op.
-uint64_t record_loop(TraceRing& ring, uint64_t first) {
+uint64_t record_loop(TraceRig& rig, uint64_t first) {
     uint64_t index = first;
     for (const uint64_t end = first + kIterations * kPeriod; index < end; ++index) {
         TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{kSchemaBase + index % kPeriod};
         entry.shape_hash = crucible::ShapeHash{0x400 + index % kPeriod};
-        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry, MetaIndex::none()));
+        CRUCIBLE_TEST_ASSERT(kTest, rig.append_entry(entry, MetaIndex::none()));
     }
     return index;
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRing& ring) {
+void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
-    while (bt.total_processed.load_acquire() < ring.total_produced())
+    while (bt.total_processed.load_acquire() < rig.ring_total_produced())
         (void)pause.sleep_for(kPollNanos);
 }
 
@@ -99,14 +90,16 @@ QueuedHashes queued_hashes(BackgroundThread& bt) {
 }
 
 void test_start_and_stop() {
-    TraceRing& ring = test_ring();
+    // Each test holds its own ring and log, declared before its
+    // BackgroundThread, so the thread ends first.
+    TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    bt.start(startup(), ring, test_log());
-    static_cast<void>(record_loop(ring, 0));
-    wait_for_pipeline(bt, ring);
+    bt.start(startup(), rig.ring_side(), rig.log_side());
+    static_cast<void>(record_loop(rig, 0));
+    wait_for_pipeline(bt, rig);
     bt.stop();
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == rig.ring_total_produced());
 
     // A stop with no pipeline thread joins nothing.
     bt.stop();
@@ -118,19 +111,19 @@ void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& t
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            TraceRing& ring = test_ring();
+            TraceRig rig{};
             BackgroundThread bt{::foundation::effects::testing::test().alloc};
-            bt.start(startup(), ring, test_log());
-            bt.start(startup(), ring, test_log());
+            bt.start(startup(), rig.ring_side(), rig.log_side());
+            bt.start(startup(), rig.ring_side(), rig.log_side());
         },
         ::fixy::TextView{"foundation: contract violation: !thread_.holds_thread(), \"a start while the pipeline "
                          "thread runs: stop the pipeline first\""});
 }
 
 void test_end_joins_a_running_pipeline() {
-    TraceRing& ring = test_ring();
+    TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(startup(), ring, test_log());
+    bt.start(startup(), rig.ring_side(), rig.log_side());
     // The end of bt stops the pipeline and joins its thread.
 }
 
@@ -141,28 +134,6 @@ constexpr uint64_t kOpsBeforeStop = 8 * kPeriod + 2;
 constexpr uint64_t kOpsWhileStopped = 3 * kPeriod;
 constexpr uint64_t kOpsAfterRestart = 8 * kPeriod;
 constexpr uint64_t kStreamOps = kOpsBeforeStop + kOpsWhileStopped + kOpsAfterRestart;
-
-// The ring, the log and the second ring and log of the restart tests.  Each
-// test reads the counts of its own ring and log.
-TraceRing& restart_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& restart_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
-
-TraceRing& control_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& control_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
 
 // The metadata of the output tensor of the op at index.  The op has no data
 // pointer, so the build gives it no slot of the memory plan.
@@ -182,7 +153,7 @@ MetaLog& control_log() {
 // index end.  Each op before kOpsBeforeStop has one output tensor and a
 // record in the log.  Each later op has no tensor and no record, so the
 // detect stage takes its position in the log from its cursor.
-void record_stream(TraceRing& ring, MetaLog& log, uint64_t first, uint64_t end) {
+void record_stream(TraceRig& rig, uint64_t first, uint64_t end) {
     for (uint64_t index = first; index < end; ++index) {
         TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{kSchemaBase + index % kPeriod};
@@ -191,10 +162,10 @@ void record_stream(TraceRing& ring, MetaLog& log, uint64_t first, uint64_t end) 
         if (index < kOpsBeforeStop) {
             entry.num_outputs = 1;
             const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(index)};
-            meta_start = log.try_append(record.view());
+            meta_start = rig.append_metas(record.view());
             CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid());
         }
-        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry, meta_start));
+        CRUCIBLE_TEST_ASSERT(kTest, rig.append_entry(entry, meta_start));
     }
 }
 
@@ -207,31 +178,29 @@ void record_stream(TraceRing& ring, MetaLog& log, uint64_t first, uint64_t end) 
 // cursor to the tail of the log again would hold the floor at that tail.
 void test_start_again_continues_the_stream() {
     const auto alloc = ::foundation::effects::testing::test().alloc;
-    TraceRing& ring = restart_ring();
-    MetaLog& log = restart_log();
+    TraceRig rig{};
+    TraceRig one_rig{};
     BackgroundThread bt{alloc};
-    bt.start(startup(), ring, log);
-    record_stream(ring, log, 0, kOpsBeforeStop);
-    wait_for_pipeline(bt, ring);
+    bt.start(startup(), rig.ring_side(), rig.log_side());
+    record_stream(rig, 0, kOpsBeforeStop);
+    wait_for_pipeline(bt, rig);
     bt.stop();
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         log.tail.get() < log.head.get() && "the first pipeline holds no op with a record of the log");
+    CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() < rig.log_total_produced()
+                                    && "the first pipeline holds no op with a record of the log");
 
-    record_stream(ring, log, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
-    bt.start(startup(), ring, log);
-    record_stream(ring, log, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
-    wait_for_pipeline(bt, ring);
+    record_stream(rig, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
+    bt.start(startup(), rig.ring_side(), rig.log_side());
+    record_stream(rig, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
+    wait_for_pipeline(bt, rig);
     bt.stop();
 
-    TraceRing& one_ring = control_ring();
-    MetaLog& one_log = control_log();
     BackgroundThread control{alloc};
-    control.start(startup(), one_ring, one_log);
-    record_stream(one_ring, one_log, 0, kStreamOps);
-    wait_for_pipeline(control, one_ring);
+    control.start(startup(), one_rig.ring_side(), one_rig.log_side());
+    record_stream(one_rig, 0, kStreamOps);
+    wait_for_pipeline(control, one_rig);
     control.stop();
 
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == kStreamOps && one_ring.total_produced() == kStreamOps);
+    CRUCIBLE_TEST_ASSERT(kTest, rig.ring_total_produced() == kStreamOps && one_rig.ring_total_produced() == kStreamOps);
     CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == kStreamOps
                                     && "the second pipeline read an op twice or lost one");
     CRUCIBLE_TEST_ASSERT(kTest, control.total_processed.load_acquire() == kStreamOps);
@@ -247,8 +216,9 @@ void test_start_again_continues_the_stream() {
                                      == *control_hashes.get(age).expect("the queue holds at most its default capacity")
                                  && "the second pipeline gave a region that a pipeline with no stop does not give");
     }
-    CRUCIBLE_TEST_ASSERT(kTest, one_log.tail.get() == one_log.head.get());
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == one_log.tail.get() && "the second start moved the cursor of the log");
+    CRUCIBLE_TEST_ASSERT(kTest, one_rig.log_total_released() == one_rig.log_total_produced());
+    CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() == one_rig.log_total_released()
+                                    && "the second start moved the cursor of the log");
 }
 
 // A start after stop() that names a different ring or a different log breaks
@@ -256,17 +226,18 @@ void test_start_again_continues_the_stream() {
 // Each refused start ends its child process.  A start with the first ring and
 // log then runs a pipeline in the test process.
 void test_start_again_with_another_ring_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
-    TraceRing& ring = test_ring();
+    TraceRig rig{};
+    TraceRig other{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    bt.start(startup(), ring, test_log());
+    bt.start(startup(), rig.ring_side(), rig.log_side());
     bt.stop();
     ::fixy::check::expect_dies(
-        test, [&bt] noexcept { bt.start(startup(), control_ring(), test_log()); },
+        test, [&bt, &rig, &other] noexcept { bt.start(startup(), other.ring_side(), rig.log_side()); },
         ::fixy::TextView{"a start after stop names the trace ring of the first start"});
     ::fixy::check::expect_dies(
-        test, [&bt, &ring] noexcept { bt.start(startup(), ring, control_log()); },
+        test, [&bt, &rig, &other] noexcept { bt.start(startup(), rig.ring_side(), other.log_side()); },
         ::fixy::TextView{"a start after stop names the metadata log of the first start"});
-    bt.start(startup(), ring, test_log());
+    bt.start(startup(), rig.ring_side(), rig.log_side());
     bt.stop();
 }
 

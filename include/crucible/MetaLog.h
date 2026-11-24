@@ -8,10 +8,10 @@
 // write over each other. A ring entry then names a metadata index whose
 // contents belong to a different op.
 //
-// Vigil owns the enforcement, and TraceRing.h states the rule in full.  The
-// log has the two publishes of the ring (the two publishes of TraceRing.h):
-// try_append checks the head at each publish, and try_append_proven takes the
-// proof of the record path and loads nothing from the head.
+// So the log splits into two ends, as the ring does, and TraceRing.h states
+// the rule in full.  Each door of a side takes the end of its side, and the
+// end proves the one writer, so no publish loads the counter that its own
+// side writes (the two publishes of TraceRing.h).
 
 #include <atomic>
 #include <cstdint>
@@ -19,7 +19,6 @@
 #include <cstring>
 #include <utility>
 
-#include <crucible/ForegroundCtx.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
@@ -30,6 +29,7 @@
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <fixy/Stale.h>
+#include <fixy/concurrent/SpscEnds.h>
 #include <fixy/os/Pages.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -55,22 +55,35 @@ struct CRUCIBLE_OWNER MetaLog {
     static constexpr uint32_t MASK = CAPACITY - 1;
 
     // The writers of the two counters (the writer of a counter of
-    // fixy/Mutation.h): the producer writes head, and the consumer writes
-    // tail.  The log is the owner of each proof, so only the doors of the log
-    // publish a counter.
+    // fixy/Mutation.h): the producer end writes head, and the consumer end
+    // writes tail.  The log is the owner of each proof, so only the side
+    // doors of the log publish a counter.
     struct HeadWriter final {};
     struct TailWriter final {};
     using head_writer = ::fixy::SoleWriterProof<MetaLog, HeadWriter>;
     using tail_writer = ::fixy::SoleWriterProof<MetaLog, TailWriter>;
 
+    // The ends of a log (fixy/concurrent/SpscEnds.h) hold no state.  The log
+    // keeps the private line of the producer, and only the doors of the
+    // producer, which take its end, write the line.  The consumer reads its
+    // own last store to tail.  So one pointer reaches each part of a side.
+    struct producer_state {};
+    struct consumer_state {};
+
+    // The two ends of a log.  The side doors below are the only doors that
+    // write a side of the log, and each takes the end of its side.
+    using Producer = ::fixy::concurrent::ProducerEnd<MetaLog>;
+    using Consumer = ::fixy::concurrent::ConsumerEnd<MetaLog>;
+
+private:
     // AtomicMonotonic carries its own alignas(64) and is 64 bytes wide, so
     // head fills bytes 0 through 63 by itself. An append therefore touches
     // two of the producer's lines, not one: head's, and the line after it
     // that holds cached_tail_, own_head_ and the buffer owner with its base.
-    // The consumer's counter starts at byte 128 and sits alone, which is the
-    // part that matters — neither thread ever invalidates a line the other
-    // is reading.  The producer reads its position from own_head_, so an
-    // append with the proof only stores to the line of head.
+    // The consumer's counter sits alone on a later line, which is the part
+    // that matters — neither thread ever invalidates a line the other is
+    // reading.  The producer reads its position from own_head_, so an append
+    // only stores to the line of head.
     //
     // A thread reading its own counter needs no ordering, because coherence
     // already orders its own accesses. Publishing the counter with a release
@@ -84,9 +97,7 @@ struct CRUCIBLE_OWNER MetaLog {
     // 64 bits.  At 2^32 records a 32-bit counter wraps to zero, and the
     // contract of the counter stops the process.  A large model reaches that
     // count in hours.  The slot of a record is its count masked by MASK.
-    // The producer is the one writer of head, and the consumer is the one
-    // writer of tail.
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head =
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head_ =
         ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
     // The producer's private view of the consumer's counter, refreshed only
     // when it claims the buffer is full. A stale value can only under-report
@@ -97,7 +108,6 @@ struct CRUCIBLE_OWNER MetaLog {
     // after each publish.
     ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
-private:
     // The buffer of the CAPACITY records, at the alignment of a huge page.
     // Its count is in its type, so a masked slot and the window of a run of
     // an append have no check that the optimizer keeps.  An indexed access on
@@ -107,15 +117,26 @@ private:
     // not move, and it holds its storage until the end of the log.
     ::fixy::FixedHeapArray<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes> records_;
 
-public:
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail =
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail_ =
         ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
 
+public:
     // The caller gives the allocation capability of its context for the
-    // buffer of the records.
-    explicit MetaLog(::foundation::effects::Alloc allocation)
-        : records_{::fixy::mint_fixed_heap_array<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes>(
-              allocation, TensorMeta{})} {
+    // buffer of the records.  The log is empty, and its first record takes
+    // the index zero.
+    explicit MetaLog(::foundation::effects::Alloc allocation) : MetaLog{allocation, MetaIndex{0}} {}
+
+    // The log is empty, and its first record takes the index start.  A test
+    // puts the counters near the end of the buffer, or near the wrap of 32
+    // bits, with it.
+    MetaLog(::foundation::effects::Alloc allocation, MetaIndex start)
+        : head_{::fixy::mint_atomic_monotonic<uint64_t, head_writer>(start.raw())},
+          cached_tail_{::fixy::mint_monotonic<uint64_t>(start.raw())},
+          own_head_{::fixy::mint_monotonic<uint64_t>(start.raw())},
+          records_{::fixy::mint_fixed_heap_array<TensorMeta, CAPACITY, crucible::warden::kHugePageBytes>(allocation,
+                                                                                                         TensorMeta{})},
+          tail_{::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(start.raw())} {
+        CRUCIBLE_PRE(start.is_valid());
         // The allocation faults the whole buffer in here rather than one page
         // at a time under the recording thread.
         //
@@ -174,31 +195,17 @@ public:
     MetaLog& operator=(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
 
     // Appends a run of metadata records and returns the index of the first,
-    // or no index if the buffer is full or the run is empty. Only the
-    // producing thread writes the counter or the slots it is about to fill,
-    // which the thread-safety analysis cannot express, so it is suppressed
-    // here.  The check of the publish loads the head.
-    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(::fixy::View<const TensorMeta> metas) CRUCIBLE_NO_THREAD_SAFETY {
-        return fill_run_(metas).match(
-            [&](MetaIndex start) noexcept {
-                // This release publishes the copy of fill_run_ to the consumer,
-                // and the copy of the head steps from the checked value.
-                const uint64_t h = start.raw();
-                head.advance_sole_writer_from(prove_head_writer_(), h, h + metas.size(), own_head_);
-                return start;
-            },
-            [] noexcept { return MetaIndex::none(); });
-    }
-
-    // The append of the producer of the Vigils, which holds the proof of the
-    // record path.  The type proves the one writer, so the publish loads
-    // nothing from the head.
-    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_proven(RecordProof const& /*proof*/,
-                                                              ::fixy::View<const TensorMeta> metas)
+    // or no index if the buffer is full or the run is empty.  The producer
+    // end proves the one writer of the counter and of the slots it is about
+    // to fill, which the thread-safety analysis cannot express, so it is
+    // suppressed here.  The publish loads nothing from the head.
+    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append(Producer& producer, ::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
-        return fill_run_(metas).match(
+        MetaLog& log = *producer.owner_;
+        return log.fill_run_(metas).match(
             [&](MetaIndex start) noexcept {
-                head.advance_sole_writer_by_proof(prove_head_writer_(), own_head_, start.raw() + metas.size());
+                // This release publishes the copy of fill_run_ to the consumer.
+                log.head_.advance_sole_writer_by_proof(prove_head_writer_(), log.own_head_, start.raw() + metas.size());
                 return start;
             },
             [] noexcept { return MetaIndex::none(); });
@@ -211,9 +218,49 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
               && ::foundation::effects::CtxHasPureSource<Ctx>
-    [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append_pure(Ctx const&, ::fixy::View<const TensorMeta> metas)
+    [[nodiscard]] CRUCIBLE_INLINE static MetaIndex try_append_pure(Ctx const&, Producer& producer,
+                                                                   ::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
-        return try_append(metas);
+        return try_append(producer, metas);
+    }
+
+    // The tail as the consumer end last stored it.  The consumer is the one
+    // writer of tail, so its relaxed load reads its own last store.
+    [[nodiscard]] static uint64_t released(Consumer const& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return consumer.owner_->tail_.peek_relaxed();
+    }
+
+    // The head that the producer published, with the acquire that makes each
+    // record before it visible to the consumer.
+    [[nodiscard]] static uint64_t produced(Consumer const& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return consumer.owner_->head_.get();
+    }
+
+    // Releases each record before new_tail, so the producer can write new
+    // records over their slots.  The consumer end proves the one writer of
+    // tail, so the publish loads nothing from tail, and the step check of the
+    // publish refuses a tail that does not move forward.
+    static void advance_tail(Consumer& consumer, uint64_t new_tail) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        MetaLog& log = *consumer.owner_;
+        log.tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), log.tail_.peek_relaxed(), new_tail);
+    }
+
+    // Empties the log: each counter and each copy of a counter go back to
+    // zero.  Every counter here moves backwards, which the monotonicity
+    // contract otherwise forbids.  The door takes the two ends of the log,
+    // which only the frame door of the two ends of a split lends to one
+    // thread, so no other thread is in a frame of the log.
+    static void reset(Producer& producer, Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::fixy::same_object(producer.owner_, consumer.owner_));
+        MetaLog& log = *producer.owner_;
+        log.head_.reset_under_quiescence();
+        log.tail_.reset_under_quiescence();
+        log.cached_tail_.reset_under_quiescence();
+        log.own_head_.reset_under_quiescence();
+        CRUCIBLE_POST(0, log.head_.get() == 0);
+        CRUCIBLE_POST(0, log.tail_.get() == 0);
+        CRUCIBLE_POST(0, log.cached_tail_.get() == 0);
+        CRUCIBLE_POST(0, log.own_head_.get() == 0);
     }
 
     // Copies the run of records that starts at index start into dst, one
@@ -280,12 +327,6 @@ public:
         return ::foundation::core::offset_of(ring, record).is_some();
     }
 
-    // The consumer is the one writer of tail, so its relaxed load reads its
-    // own last store.  The callers give only the new tail.
-    void advance_tail(uint64_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
-        tail.advance_sole_writer_from(prove_tail_writer_(), tail.peek_relaxed(), new_tail);
-    }
-
     // The two counters are read at different instants while both threads run,
     // so the difference is a snapshot of a value that was never simultaneously
     // true. The return type says so and forces the caller to acknowledge it.
@@ -295,48 +336,31 @@ public:
     // between the two reads, and the difference is then larger than the log
     // holds.  The result stops at CAPACITY.
     [[nodiscard]] ::fixy::Stale<uint32_t> size() const CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t tail_seen = tail.get();
-        const uint64_t live = head.get() - tail_seen;
+        const uint64_t tail_seen = tail_.get();
+        const uint64_t live = head_.get() - tail_seen;
         return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(live < CAPACITY ? live : CAPACITY));
     }
 
-    // Valid only once both threads have stopped. Every counter here moves
-    // backwards, which the monotonicity contract otherwise forbids, so the
-    // caller must have joined the producer and the consumer first.
-    void reset() CRUCIBLE_NO_THREAD_SAFETY { reset_at(MetaIndex{0}); }
+    // The count of the records that the producer published, with the acquire
+    // that makes each of them visible.
+    [[nodiscard]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return head_.get(); }
 
-    // reset with each counter at the index: the log is empty, and the next
-    // record takes the index.  The same condition holds.  The copy of the head
-    // of the producer takes the index too, so the next publish finds the head
-    // and the copy equal.  A test puts the counters near the end of the
-    // buffer, or near the wrap of 32 bits, with it.
-    void reset_at(MetaIndex position) CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(position.is_valid());
-        head.reset_under_quiescence(position.raw());
-        tail.reset_under_quiescence(position.raw());
-        cached_tail_.reset_under_quiescence(position.raw());
-        own_head_.reset_under_quiescence(position.raw());
-        CRUCIBLE_POST(0, head.get() == position.raw());
-        CRUCIBLE_POST(0, tail.get() == position.raw());
-        CRUCIBLE_POST(0, cached_tail_.get() == position.raw());
-        CRUCIBLE_POST(0, own_head_.get() == position.raw());
-    }
+    // The count of the records that the consumer released.
+    [[nodiscard]] uint64_t total_released() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return tail_.get(); }
 
 private:
-    // The proofs of the writers of the two counters.  Each door of a side
-    // makes the proof of its side: the proven append after the record proof
-    // of its caller, and each checked publish, which still compares the
-    // counter with the value of the writer, so a second writer ends the
-    // process at the next publish of the first one.
+    // The proofs of the writers of the two counters.  The doors of a side
+    // make the proof of its side, and the end of the side that each door
+    // takes proves the one writer.
     [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
 
     [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
 
     // Writes the run of records at the head, and gives the index of its first
-    // record, or no value if the buffer is full or the run is empty.  The two
-    // appends share this body and then publish the head past the run.  An
-    // Option and not the index none, so the optimizer folds the test of each
-    // append into the branch that wrote the run.
+    // record, or no value if the buffer is full or the run is empty.  The
+    // append then publishes the head past the run.  An Option and not the
+    // index none, so the optimizer folds the test of the append into the
+    // branch that wrote the run.
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::Option<MetaIndex> fill_run_(::fixy::View<const TensorMeta> metas)
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(metas.size() <= CAPACITY);
@@ -357,7 +381,7 @@ private:
         // real counter only ever frees more. Only the other answer needs the
         // cross-core read.
         if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
-            cached_tail_.advance(tail.get());
+            cached_tail_.advance(tail_.get());
             if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
                 return ::fixy::none;
             }

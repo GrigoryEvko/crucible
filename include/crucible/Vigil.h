@@ -75,9 +75,12 @@ class DeadlineWatchdog;
 
 namespace crucible {
 
-// Records one op into a trace ring and its metadata log.  The function has no
-// thread gate: Vigil::record_op is the gated door, and a test drives a ring
-// and a log that it owns.
+// Records one op through the producer ends of a trace ring and of its
+// metadata log.  The ends prove the one producer, so the function has no
+// thread gate, and the two publishes load nothing from the heads (the two
+// publishes of crucible/TraceRing.h).  Vigil::record_op opens the two ends of
+// its own ring and log, and a test opens the ends of a ring and a log that it
+// owns.
 //
 // The ring slot is reserved first.  A full ring then refuses the op before
 // the log takes a record, so the log holds no record of an op that the ring
@@ -87,35 +90,35 @@ namespace crucible {
 //
 // The function flattens, so the match and its arms inline, and the record of
 // an op makes no call apart from the copy of the records.
-[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,
-                                                                       const ValidatedOp& op, ScopeHash scope_hash,
-                                                                       CallsiteHash callsite_hash,
+[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing::Producer& ring,
+                                                                       MetaLog::Producer& log, const ValidatedOp& op,
+                                                                       ScopeHash scope_hash, CallsiteHash callsite_hash,
                                                                        OpDepth depth) noexcept {
-    return ring.try_reserve().match(
+    return TraceRing::try_reserve(ring).match(
         [&](TraceRing::Reservation reserved) noexcept {
-            const MetaIndex meta_start = log.try_append(op.metas());
-            ring.commit(std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
+            const MetaIndex meta_start = MetaLog::try_append(log, op.metas());
+            TraceRing::commit(ring, std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
             return true;
         },
         [] noexcept { return false; });
 }
 
-// Records one op as record_into above does, with the proof of the record path.
-// The two publishes load nothing from the heads (the two publishes of
-// crucible/TraceRing.h).  Only the producer claim of the Vigils makes the
-// proof, so Vigil is the one caller.
-[[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool record_into(TraceRing& ring, MetaLog& log,
-                                                                       RecordProof const& proof, const ValidatedOp& op,
-                                                                       ScopeHash scope_hash, CallsiteHash callsite_hash,
-                                                                       OpDepth depth) noexcept {
-    return ring.try_reserve().match(
-        [&](TraceRing::Reservation reserved) noexcept {
-            const MetaIndex meta_start = log.try_append_proven(proof, op.metas());
-            ring.commit_proven(proof, std::move(reserved), op.entry(), meta_start, scope_hash, callsite_hash, depth);
-            return true;
-        },
-        [] noexcept { return false; });
-}
+// The two sides of the trace ring of a Vigil: the proof of the record path
+// (RecordProof of crucible/ForegroundCtx.h), which only the producer claim of
+// the Vigils makes, opens the producer side, and the proof of the drain stage
+// of the background thread opens the consumer side.
+struct VigilRingSides final {
+    using producer_proof = RecordProof;
+    using consumer_proof = BackgroundThread::DrainStage;
+};
+
+// The two sides of the metadata log of a Vigil: the proof of the record path
+// opens the producer side, and the proof of the publish stage, which releases
+// the records, opens the consumer side.
+struct VigilLogSides final {
+    using producer_proof = RecordProof;
+    using consumer_proof = BackgroundThread::PublishStage;
+};
 
 class Vigil {
 public:
@@ -517,7 +520,7 @@ public:
         return bg_.flush(ctx);
     }
 
-    [[nodiscard]] bool flush_complete() const { return bg_.count_processed_ring_ops() >= ring_->total_produced(); }
+    [[nodiscard]] bool flush_complete() const { return bg_.count_processed_ring_ops() >= ring_total_produced(); }
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.
@@ -705,24 +708,6 @@ public:
     const RegionCache& region_cache() const&& =
         delete("a temporary Vigil releases its cache at the end of the statement. Use a Vigil that has a name");
 
-    // These two hand out the producer surface of the ring and of the
-    // metadata log.  A caller that appends through one of them is the
-    // producer, so each asks for the context of this Vigil's producer claim,
-    // as record_op and dispatch_op do.  No op path calls them, so each also
-    // checks the calling thread against the claim at run time.
-    [[nodiscard]] TraceRing& ring(VigilFgCtx const&) & {
-        CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
-        return *ring_;
-    }
-    TraceRing& ring(VigilFgCtx const&) && =
-        delete("a temporary Vigil releases its ring at the end of the statement. Use a Vigil that has a name");
-    [[nodiscard]] MetaLog& meta_log(VigilFgCtx const&) & {
-        CRUCIBLE_FATAL_INVARIANT(producer_claim_.is_claimable_by_caller());
-        return *meta_log_;
-    }
-    MetaLog& meta_log(VigilFgCtx const&) && =
-        delete("a temporary Vigil releases its log at the end of the statement. Use a Vigil that has a name");
-
     // The stack of the slots into which an adapter writes the records of an
     // op before it builds the op.  The thread that holds the producer claim
     // owns it, as it owns the producer surfaces of the ring and of the
@@ -760,9 +745,20 @@ public:
 
     // Counters that any thread can read with no context.  Each value is a
     // snapshot, and it can be stale by the time the caller reads it.
-    [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept { return ring_->size(); }
-    [[nodiscard]] uint64_t ring_total_produced() const noexcept { return ring_->total_produced(); }
-    [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept { return meta_log_->size(); }
+    [[nodiscard]] ::fixy::Stale<uint32_t> ring_size() const noexcept {
+        return ring_.with_owner([](TraceRing const& ring) noexcept { return ring.size(); });
+    }
+    [[nodiscard]] uint64_t ring_total_produced() const noexcept {
+        return ring_.with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
+    }
+    [[nodiscard]] ::fixy::Stale<uint32_t> meta_log_size() const noexcept {
+        return meta_log_.with_owner([](MetaLog const& log) noexcept { return log.size(); });
+    }
+    // The count of the records that the record path put into the metadata
+    // log, from the first record of the log.
+    [[nodiscard]] uint64_t meta_log_total_produced() const noexcept {
+        return meta_log_.with_owner([](MetaLog const& log) noexcept { return log.total_produced(); });
+    }
 
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     // The count of iteration boundaries that the detector reported, and true
@@ -845,7 +841,15 @@ private:
                                                                 ScopeHash scope_hash, CallsiteHash callsite_hash,
                                                                 OpDepth depth) noexcept {
         const RecordProof proof = producer_claim_.prove_sole_writer<RecordProducerRole>(fg);
-        return record_into(*ring_, *meta_log_, proof, op, scope_hash, callsite_hash, depth);
+        // One frame opens the two producer sides, and the body inlines into
+        // the record, so it takes its captures in registers and puts no stack
+        // canary on the hot path.
+        return ::fixy::concurrent::with_held_ends(ring_.producer_side(), proof, meta_log_.producer_side(), proof,
+                                                  [&op, scope_hash, callsite_hash, depth] [[gnu::always_inline]] (
+                                                      TraceRing::Producer & ring, MetaLog::Producer & log) noexcept {
+                                                      return record_into(ring, log, op, scope_hash, callsite_hash,
+                                                                         depth);
+                                                  });
     }
 
     // The body of active_region.  The producer thread is the one writer of
@@ -1553,14 +1557,15 @@ private:
     // the background thread before anything that thread touches goes away.
 
     Config cfg_;
-    // The owners of the ring and of the metadata log, and a borrow of each
-    // that the record path reads.  A borrow has no test, so the record path
-    // pays no branch for its owner.  Each owner is declared before its
-    // borrow, so the constructor makes the borrow from a built owner.
-    ::fixy::Box<TraceRing> ring_owner_;
-    ::fixy::Ref<TraceRing> ring_;
-    ::fixy::Box<MetaLog> meta_log_owner_;
-    ::fixy::Ref<MetaLog> meta_log_;
+    // The ring and the metadata log, each in a held split with its two ends
+    // (fixy/concurrent/SpscEnds.h).  The record path opens the two producer
+    // sides with the proof of the producer claim.  The background thread
+    // holds a reference to each consumer side, and it opens the side of the
+    // ring with the proof of its drain stage and the side of the log with
+    // the proof of its publish stage.  bg_ is the last member, so it joins
+    // the pipeline thread before the two splits end.
+    ::fixy::concurrent::SpscHeldSplit<TraceRing, VigilRingSides> ring_;
+    ::fixy::concurrent::SpscHeldSplit<MetaLog, VigilLogSides> meta_log_;
     // Owned by the publish stage: each member takes that stage's proof, and
     // the foreground reaches the log only through run_on_publish_stage.
     TransactionLog<16, BackgroundThread::PublishStage> tx_log_;

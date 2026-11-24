@@ -6,7 +6,7 @@
 // then hold no record of it: a record with no op in the ring is a record that
 // no op names.  A reservation that the producer drops leaves the ring as it
 // was.  A full log gives the op no metadata index, and the ring still takes
-// the op.
+// the op.  Each test holds a ring and a log of its own.
 
 #include <crucible/MetaLog.h>
 #include <crucible/TraceRing.h>
@@ -17,6 +17,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
+#include "trace_rig.h"
 
 #include <cstdint>
 #include <utility>
@@ -31,28 +32,16 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 using crucible::MetaIndex;
 using crucible::MetaLog;
 using crucible::TraceRing;
+using crucible::test::LocalLog;
+using crucible::test::LocalRing;
 
 namespace {
-
-TraceRing& test_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& test_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
-}
 
 // The records of one op with one input and one output.
 using OpMetas = ::fixy::FixedArray<crucible::TensorMeta, 2>;
 
-// The records of a log that fills.  A static object keeps them off the stack.
-using FillRun = ::fixy::FixedArray<crucible::TensorMeta, 4096>;
-FillRun& fill_run() {
-    static FillRun run{};
-    return run;
-}
+// The records of a log that fills.  The run is on the heap, off the stack.
+constexpr uint32_t kFillRecords = 4096;
 
 [[nodiscard]] TraceRing::Entry entry_with_two_tensors(uint64_t schema) {
     TraceRing::Entry entry{};
@@ -63,69 +52,75 @@ FillRun& fill_run() {
     return entry;
 }
 
-[[nodiscard]] bool record(TraceRing& ring, MetaLog& log, const TraceRing::Entry& entry, OpMetas const& metas) {
-    return crucible::record_into(ring, log, crucible::test::certify_synthetic_op(entry, metas.view()),
-                                 crucible::ScopeHash{}, crucible::CallsiteHash{}, crucible::OpDepth{});
+[[nodiscard]] bool record(LocalRing& ring, LocalLog& log, const TraceRing::Entry& entry, OpMetas const& metas) {
+    return crucible::test::record_local(ring, log, crucible::test::certify_synthetic_op(entry, metas.view()));
 }
 
 // Drains one entry and its metadata index.  The ring holds at least one.
-[[nodiscard]] MetaIndex drain_meta_start(TraceRing& ring, TraceRing::Entry& out_entry) {
+[[nodiscard]] MetaIndex drain_meta_start(LocalRing& ring, TraceRing::Entry& out_entry) {
     ::fixy::FixedArray<TraceRing::Entry, 1> entries{};
     ::fixy::FixedArray<MetaIndex, 1> meta_starts{};
-    uint32_t const drained = entries.with_mut([&](auto entry_run) noexcept {
-        return meta_starts.with_mut(
-            [&](auto meta_run) noexcept { return ring.drain(std::move(entry_run), std::move(meta_run)); });
+    uint32_t const drained = ring.with_consumer([&entries, &meta_starts](TraceRing::Consumer& end) noexcept {
+        return entries.with_mut([&end, &meta_starts](auto entry_run) noexcept {
+            return meta_starts.with_mut([&end, &entry_run](auto meta_run) noexcept {
+                return TraceRing::drain(end, std::move(entry_run), std::move(meta_run));
+            });
+        });
     });
     CRUCIBLE_TEST_ASSERT(kTest, drained == 1);
     out_entry = entries.at(::fixy::index<0>());
     return meta_starts.at(::fixy::index<0>());
 }
 
+[[nodiscard]] uint64_t ring_produced(LocalRing const& ring) {
+    return ring.with_owner([](TraceRing const& owner) noexcept { return owner.total_produced(); });
+}
+
+[[nodiscard]] uint64_t log_produced(LocalLog const& log) {
+    return log.with_owner([](MetaLog const& owner) noexcept { return owner.total_produced(); });
+}
+
 void test_full_ring_leaves_no_record_in_the_log() {
-    TraceRing& ring = test_ring();
-    MetaLog& log = test_log();
-    ring.reset();
-    log.reset();
+    LocalRing ring{};
+    LocalLog log{::foundation::effects::testing::test().alloc};
     const OpMetas metas{};
 
     // No consumer drains the ring, so CAPACITY entries fill it.
-    for (uint32_t i = 0; i < TraceRing::CAPACITY; ++i)
-        CRUCIBLE_TEST_ASSERT(kTest, ring.try_append(entry_with_two_tensors(0x100)));
+    ring.with_producer([](TraceRing::Producer& end) noexcept {
+        for (uint32_t i = 0; i < TraceRing::CAPACITY; ++i)
+            CRUCIBLE_TEST_ASSERT(kTest, TraceRing::try_append(end, entry_with_two_tensors(0x100)));
+    });
 
     CRUCIBLE_TEST_ASSERT(kTest, !record(ring, log, entry_with_two_tensors(0x200), metas) && "a full ring took an op");
-    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == 0 && "the full ring refused the op, and the log took its records");
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == TraceRing::CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, log_produced(log) == 0 && "the full ring refused the op, and the log took its records");
+    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == TraceRing::CAPACITY);
 }
 
 void test_dropped_reservation_leaves_the_ring() {
-    TraceRing& ring = test_ring();
-    MetaLog& log = test_log();
-    ring.reset();
-    log.reset();
+    LocalRing ring{};
+    LocalLog log{::foundation::effects::testing::test().alloc};
 
-    {
-        const ::fixy::Option<TraceRing::Reservation> reserved = ring.try_reserve();
+    ring.with_producer([](TraceRing::Producer& end) noexcept {
+        const ::fixy::Option<TraceRing::Reservation> reserved = TraceRing::try_reserve(end);
         CRUCIBLE_TEST_ASSERT(kTest, reserved.is_some() && "an empty ring refused a reservation");
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == 0 && "a dropped reservation moved the head");
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 0 && "a dropped reservation moved the head");
 
     // The slot of the dropped reservation takes the next op.
     const OpMetas metas{};
     const TraceRing::Entry entry = entry_with_two_tensors(0x300);
     CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry, metas));
-    CRUCIBLE_TEST_ASSERT(kTest, ring.total_produced() == 1);
+    CRUCIBLE_TEST_ASSERT(kTest, ring_produced(ring) == 1);
     TraceRing::Entry drained{};
     const MetaIndex meta_start = drain_meta_start(ring, drained);
     CRUCIBLE_TEST_ASSERT(kTest, drained.schema_hash == entry.schema_hash);
     CRUCIBLE_TEST_ASSERT(kTest, meta_start.is_valid() && meta_start.raw() == 0 && "the op did not name its records");
-    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, log_produced(log) == 2);
 }
 
 void test_op_names_the_records_it_appended() {
-    TraceRing& ring = test_ring();
-    MetaLog& log = test_log();
-    ring.reset();
-    log.reset();
+    LocalRing ring{};
+    LocalLog log{::foundation::effects::testing::test().alloc};
     const OpMetas metas{};
 
     for (uint64_t op = 0; op < 3; ++op)
@@ -140,16 +135,19 @@ void test_op_names_the_records_it_appended() {
 }
 
 void test_full_log_records_the_op_with_no_index() {
-    TraceRing& ring = test_ring();
-    MetaLog& log = test_log();
-    ring.reset();
-    log.reset();
+    LocalRing ring{};
+    LocalLog log{::foundation::effects::testing::test().alloc};
 
     // No consumer releases the log, so the appends fill it.
-    FillRun& run = fill_run();
-    for (uint32_t i = 0; i < MetaLog::CAPACITY / FillRun::size(); ++i)
-        CRUCIBLE_TEST_ASSERT(kTest, log.try_append(run.view()).is_valid());
-    CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == MetaLog::CAPACITY);
+    const ::fixy::HeapArray<crucible::TensorMeta> run =
+        ::fixy::mint_heap_array(::foundation::effects::testing::test().alloc, kFillRecords, crucible::TensorMeta{});
+    ::fixy::View<const crucible::TensorMeta> const records = run.view();
+    log.with_producer([records](MetaLog::Producer& end) noexcept {
+        for (uint32_t i = 0; i < MetaLog::CAPACITY / kFillRecords; ++i)
+            CRUCIBLE_TEST_ASSERT(kTest, MetaLog::try_append(end, records).is_valid());
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, log.with_owner([](MetaLog const& owner) noexcept { return owner.size().peek(); })
+                                    == MetaLog::CAPACITY);
 
     const OpMetas metas{};
     CRUCIBLE_TEST_ASSERT(kTest, record(ring, log, entry_with_two_tensors(0x500), metas)

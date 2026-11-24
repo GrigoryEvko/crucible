@@ -19,6 +19,7 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
+#include "trace_rig.h"
 #include <bit>
 #include <cstdint>
 
@@ -92,10 +93,9 @@ bool record_wide(Vigil& vigil, uint64_t schema, uint64_t shape, uint64_t address
     for (auto const index : metas.indices())
         metas.with_element(index, [value = make_meta(address + uint64_t{index.raw()} * 0x40)](
                                       crucible::TensorMeta& meta) noexcept { meta = value; });
-    const crucible::MetaLog& log = vigil.meta_log(vigil.mint_producer_context());
-    const uint64_t head_before = log.head.get();
+    const uint64_t head_before = vigil.meta_log_total_produced();
     (void)vigil.record_op(crucible::test::certify_synthetic_op(entry, metas, kWideRecords));
-    return log.head.get() == head_before;
+    return vigil.meta_log_total_produced() == head_before;
 }
 
 // Records the eight-op loop until it publishes a region or until 400
@@ -160,31 +160,19 @@ void test_log_that_fills_is_released_again() {
     CRUCIBLE_TEST_ASSERT(kTest, refused_ops > 0 && "the prefix did not fill the metadata log");
     const uint32_t iterations = iterations_of_loop_to_region(vigil);
     CRUCIBLE_TEST_ASSERT(kTest, iterations != 0 && "the loop after a full metadata log published no region");
-    const crucible::MetaLog& log = vigil.meta_log(vigil.mint_producer_context());
-    CRUCIBLE_TEST_ASSERT(kTest, log.head.get() - log.tail.get() < MetaLog::CAPACITY / 2
-                                    && "the log stayed full after the loop");
-}
-
-// The trace ring and the metadata log of the pipeline test.  Each is a
-// function-local object, made at the first call.
-TraceRing& pipeline_ring() {
-    static TraceRing ring{};
-    return ring;
-}
-
-MetaLog& pipeline_log() {
-    static MetaLog log{::foundation::effects::testing::test().alloc};
-    return log;
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         vigil.meta_log_size().peek() < MetaLog::CAPACITY / 2 && "the log stayed full after the loop");
 }
 
 void test_detect_stage_holds_a_bounded_trace() {
     // Ops that never occur again give no period.  The detect stage holds
     // only the ops that a future iteration can claim: at most half of the
     // history of the detector and K ops more.  The stream fills the largest
-    // history, and then it moves through a second full history.
+    // history, and then it moves through a second full history.  The ring and
+    // the log come before the BackgroundThread, so the thread ends first.
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    TraceRing& ring = pipeline_ring();
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring, pipeline_log());
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
     constexpr uint64_t kOps = uint64_t{2} * IterationDetector::HISTORY_MAX_CAPACITY;
@@ -192,10 +180,10 @@ void test_detect_stage_holds_a_bounded_trace() {
         TraceRing::Entry entry{};
         entry.schema_hash = crucible::SchemaHash{0x3000000 + i};
         entry.shape_hash = crucible::ShapeHash{0x4000000 + i};
-        while (!ring.try_append(entry, MetaIndex::none()))
+        while (!rig.append_entry(entry, MetaIndex::none()))
             (void)pause.sleep_for(kPollNanos);
     }
-    const uint64_t target = ring.total_produced();
+    const uint64_t target = rig.ring_total_produced();
     while (bt.total_processed.load_acquire() < target)
         (void)pause.sleep_for(kPollNanos);
     // The detect stage keeps its ops and its detector after the stop, and

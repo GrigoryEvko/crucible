@@ -21,6 +21,7 @@
 #include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
+#include "trace_rig.h"
 
 #include <bit>
 #include <chrono>
@@ -207,10 +208,9 @@ std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
 // After stop() the stage has closed the mailbox, and a job runs on its
 // caller again.
 void job_runs_on_the_stage_while_it_runs() {
-    auto ring = std::make_unique<crucible::TraceRing>();
-    auto meta_log = std::make_unique<crucible::MetaLog>(::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
     crucible::BackgroundThread background{::foundation::effects::testing::test().alloc};
-    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     const std::thread::id caller = std::this_thread::get_id();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};

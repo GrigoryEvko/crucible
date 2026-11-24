@@ -24,6 +24,8 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
+#include "trace_rig.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <utility>
@@ -98,7 +100,7 @@ struct Work {
 
     // An op of the depth that reads the inputs and writes the outputs.  Its
     // records go to the log, the inputs first.
-    void push_op(MetaLog& log, uint32_t op, ::fixy::View<const TensorMeta> inputs,
+    void push_op(crucible::test::RigLog& log, uint32_t op, ::fixy::View<const TensorMeta> inputs,
                  ::fixy::View<const TensorMeta> outputs, crucible::OpDepth depth = {}) {
         CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         ::fixy::FixedArray<TensorMeta, 4> records{};
@@ -113,7 +115,7 @@ struct Work {
                                  [&meta](TensorMeta& record) noexcept { record = meta; });
             ++filled;
         }
-        const MetaIndex index = log.try_append(
+        const MetaIndex index = log.append_metas(
             ::fixy::View<const TensorMeta>{records.view()}.window(0, filled).expect("the records fit the array"));
         CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
         const ::fixy::Index<CAPACITY> slot =
@@ -131,13 +133,13 @@ struct Work {
     }
 
     // An op that writes the tensor output and reads no tensor.
-    void push_source(MetaLog& log, uint32_t op, const TensorMeta& output) {
+    void push_source(crucible::test::RigLog& log, uint32_t op, const TensorMeta& output) {
         const ::fixy::FixedArray<TensorMeta, 1> outputs{output};
         push_op(log, op, {}, outputs.view());
     }
 
     // An op that reads the tensor input and writes the tensor output.
-    void push_unary(MetaLog& log, uint32_t op, const TensorMeta& input, const TensorMeta& output,
+    void push_unary(crucible::test::RigLog& log, uint32_t op, const TensorMeta& input, const TensorMeta& output,
                     crucible::OpDepth depth = {}) {
         const ::fixy::FixedArray<TensorMeta, 1> inputs{input};
         const ::fixy::FixedArray<TensorMeta, 1> outputs{output};
@@ -180,16 +182,16 @@ constexpr uint32_t kZ = 2048;
 
 // The thread, the log and the work of one build.
 struct Rig {
+    // The log comes before the thread, so the thread ends first.
+    crucible::test::RigLog log{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    ::fixy::Box<MetaLog> log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                         ::foundation::effects::testing::test().alloc);
     Work work;
 
-    Rig() { bt.bind_meta_log(*log); }
+    Rig() { bt.bind_meta_log(log.side()); }
     Rig(const Rig&) = delete("the thread holds the address of the log");
     Rig& operator=(const Rig&) = delete("the thread holds the address of the log");
 
-    [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt, *log); }
+    [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt, *log.view()); }
 };
 
 [[nodiscard]] crucible::SlotId input_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {
@@ -225,9 +227,9 @@ struct Rig {
 
 [[nodiscard]] BackgroundThread::BuiltRegion build_three_ops(uint32_t last_output) {
     Rig rig;
-    rig.work.push_source(*rig.log, 0, vector_at(kX));
-    rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY));
-    rig.work.push_unary(*rig.log, 2, vector_at(kY), vector_at(last_output));
+    rig.work.push_source(rig.log, 0, vector_at(kX));
+    rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY));
+    rig.work.push_unary(rig.log, 2, vector_at(kY), vector_at(last_output));
     return rig.build();
 }
 
@@ -295,10 +297,10 @@ void test_reused_address_gets_a_new_slot() {
 // Each view has the slot of B and the producer of the last write of B.
 void test_view_at_an_offset_reads_its_base() {
     Rig rig;
-    rig.work.push_source(*rig.log, 0, vector_at(kX));
-    rig.work.push_unary(*rig.log, 1, vector_at(kX, 16, 48), vector_at(kY));
-    rig.work.push_unary(*rig.log, 2, vector_at(kX), vector_at(kX, 32, 32));
-    rig.work.push_unary(*rig.log, 3, vector_at(kX, 32, 32), vector_at(kZ));
+    rig.work.push_source(rig.log, 0, vector_at(kX));
+    rig.work.push_unary(rig.log, 1, vector_at(kX, 16, 48), vector_at(kY));
+    rig.work.push_unary(rig.log, 2, vector_at(kX), vector_at(kX, 32, 32));
+    rig.work.push_unary(rig.log, 3, vector_at(kX, 32, 32), vector_at(kZ));
     const BackgroundThread::BuiltRegion region = rig.build();
 
     const crucible::SlotId base = output_slot(region, 0, 0);
@@ -322,9 +324,9 @@ void test_view_at_an_offset_reads_its_base() {
 // new storage at a reused address.
 void test_return_of_the_nest_keeps_the_slot() {
     Rig rig;
-    rig.work.push_unary(*rig.log, 0, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
-    rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
-    rig.work.push_unary(*rig.log, 2, vector_at(kZ), vector_at(kY), crucible::OpDepth{0});
+    rig.work.push_unary(rig.log, 0, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
+    rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
+    rig.work.push_unary(rig.log, 2, vector_at(kZ), vector_at(kY), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion region = rig.build();
 
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(region, 1, 0) == output_slot(region, 0, 0)
@@ -338,9 +340,9 @@ void test_return_of_the_nest_keeps_the_slot() {
     Rig chain;
     const ::fixy::FixedArray<TensorMeta, 2> copy_inputs{vector_at(kY), vector_at(kZ)};
     const ::fixy::FixedArray<TensorMeta, 1> result{vector_at(kY)};
-    chain.work.push_op(*chain.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
-    chain.work.push_unary(*chain.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
-    chain.work.push_unary(*chain.log, 2, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
+    chain.work.push_op(chain.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
+    chain.work.push_unary(chain.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
+    chain.work.push_unary(chain.log, 2, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion nested = chain.build();
     const crucible::SlotId copied = output_slot(nested, 0, 0);
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(nested, 1, 0) == copied && output_slot(nested, 2, 0) == copied);
@@ -361,10 +363,10 @@ void test_result_of_a_nest_is_internal() {
     const ::fixy::FixedArray<TensorMeta, 2> addmm_inputs{vector_at(kZ), vector_at(kX)};
     const ::fixy::FixedArray<TensorMeta, 2> linear_inputs{vector_at(kX), vector_at(kZ)};
     const ::fixy::FixedArray<TensorMeta, 1> result{vector_at(kY)};
-    mlp.work.push_op(*mlp.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
-    mlp.work.push_op(*mlp.log, 1, addmm_inputs.view(), result.view(), crucible::OpDepth{1});
-    mlp.work.push_op(*mlp.log, 2, linear_inputs.view(), result.view(), crucible::OpDepth{0});
-    mlp.work.push_unary(*mlp.log, 3, vector_at(kY), vector_at(kW));
+    mlp.work.push_op(mlp.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
+    mlp.work.push_op(mlp.log, 1, addmm_inputs.view(), result.view(), crucible::OpDepth{1});
+    mlp.work.push_op(mlp.log, 2, linear_inputs.view(), result.view(), crucible::OpDepth{0});
+    mlp.work.push_unary(mlp.log, 3, vector_at(kY), vector_at(kW));
     const BackgroundThread::BuiltRegion layer = mlp.build();
 
     const crucible::SlotId made = output_slot(layer, 2, 0);
@@ -379,8 +381,8 @@ void test_result_of_a_nest_is_internal() {
                          slot_of(layer, input_slot(layer, 1, 1)).is_external && "the input x lives before the region");
 
     Rig param;
-    param.work.push_unary(*param.log, 0, vector_at(kX), vector_at(kX), crucible::OpDepth{1});
-    param.work.push_unary(*param.log, 1, vector_at(kX), vector_at(kX), crucible::OpDepth{0});
+    param.work.push_unary(param.log, 0, vector_at(kX), vector_at(kX), crucible::OpDepth{1});
+    param.work.push_unary(param.log, 1, vector_at(kX), vector_at(kX), crucible::OpDepth{0});
     const BackgroundThread::BuiltRegion returned = param.build();
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(returned, output_slot(returned, 1, 0)).is_external
                                     && "a storage that the parent reads lives before it");
@@ -407,9 +409,9 @@ void test_numerics_policy_moves_the_hash() {
     for (const crucible::NumericsHash numerics : others) {
         Rig rig;
         rig.bt.set_numerics(numerics);
-        rig.work.push_source(*rig.log, 0, vector_at(kX));
-        rig.work.push_unary(*rig.log, 1, vector_at(kX), vector_at(kY));
-        rig.work.push_unary(*rig.log, 2, vector_at(kY), vector_at(kZ));
+        rig.work.push_source(rig.log, 0, vector_at(kX));
+        rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY));
+        rig.work.push_unary(rig.log, 2, vector_at(kY), vector_at(kZ));
         const BackgroundThread::BuiltRegion region = rig.build();
         CRUCIBLE_TEST_ASSERT(kTest, region.numerics() == numerics);
         CRUCIBLE_TEST_ASSERT(kTest, region.content_hash() != ordered.content_hash()
@@ -426,8 +428,8 @@ void test_numerics_policy_moves_the_hash() {
 // no producer.
 void test_reads_of_an_external_take_one_slot() {
     Rig rig;
-    rig.work.push_unary(*rig.log, 0, vector_at(kX), vector_at(kY));
-    rig.work.push_unary(*rig.log, 1, vector_at(kX, 8, 56), vector_at(kZ));
+    rig.work.push_unary(rig.log, 0, vector_at(kX), vector_at(kY));
+    rig.work.push_unary(rig.log, 1, vector_at(kX, 8, 56), vector_at(kZ));
     const BackgroundThread::BuiltRegion region = rig.build();
 
     const crucible::SlotId external = input_slot(region, 0, 0);
@@ -448,9 +450,9 @@ void test_reads_of_an_external_take_one_slot() {
 // apart, and the read of op 2 reads the slot that op 0 wrote.
 void test_new_storage_at_a_dead_address_is_a_new_input() {
     Rig known;
-    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
-    known.work.push_unary(*known.log, 1, vector_at(kX, 0, 64, kKnownFirst), vector_at(kY, 0, 64, kKnownSecond));
-    known.work.push_unary(*known.log, 2, vector_at(kX, 0, 64, kKnownThird), vector_at(kZ, 0, 64, kKnownFourth));
+    known.work.push_source(known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
+    known.work.push_unary(known.log, 1, vector_at(kX, 0, 64, kKnownFirst), vector_at(kY, 0, 64, kKnownSecond));
+    known.work.push_unary(known.log, 2, vector_at(kX, 0, 64, kKnownThird), vector_at(kZ, 0, 64, kKnownFourth));
     const BackgroundThread::BuiltRegion fresh = known.build();
     const crucible::SlotId written = output_slot(fresh, 0, 0);
     const crucible::SlotId read = input_slot(fresh, 2, 0);
@@ -462,9 +464,9 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
     CRUCIBLE_TEST_ASSERT(kTest, fresh.slots().size() == 4);
 
     Rig unknown;
-    unknown.work.push_source(*unknown.log, 0, vector_at(kX));
-    unknown.work.push_unary(*unknown.log, 1, vector_at(kX), vector_at(kY));
-    unknown.work.push_unary(*unknown.log, 2, vector_at(kX), vector_at(kZ));
+    unknown.work.push_source(unknown.log, 0, vector_at(kX));
+    unknown.work.push_unary(unknown.log, 1, vector_at(kX), vector_at(kY));
+    unknown.work.push_unary(unknown.log, 2, vector_at(kX), vector_at(kZ));
     const BackgroundThread::BuiltRegion merged = unknown.build();
     CRUCIBLE_TEST_ASSERT(kTest, input_slot(merged, 2, 0) == output_slot(merged, 0, 0)
                                     && producer(merged, 2, 0) == crucible::OpIndex{0}
@@ -480,15 +482,15 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
 // its own.
 void test_output_with_the_same_generation_keeps_the_slot() {
     Rig known;
-    known.work.push_source(*known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
-    known.work.push_unary(*known.log, 1, vector_at(kY, 0, 64, kKnownSecond), vector_at(kX, 0, 64, kKnownFirst));
+    known.work.push_source(known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
+    known.work.push_unary(known.log, 1, vector_at(kY, 0, 64, kKnownSecond), vector_at(kX, 0, 64, kKnownFirst));
     const BackgroundThread::BuiltRegion same = known.build();
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
 
     Rig unknown;
-    unknown.work.push_source(*unknown.log, 0, vector_at(kX));
-    unknown.work.push_unary(*unknown.log, 1, vector_at(kY), vector_at(kX));
+    unknown.work.push_source(unknown.log, 0, vector_at(kX));
+    unknown.work.push_unary(unknown.log, 1, vector_at(kY), vector_at(kX));
     const BackgroundThread::BuiltRegion split = unknown.build();
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(split, 1, 0) != output_slot(split, 0, 0)
                                     && "with no generation, an output that the op does not read is a new storage");
@@ -506,11 +508,11 @@ void test_output_with_the_same_generation_keeps_the_slot() {
 // the slot that op 0 wrote.
 void test_unknown_storage_of_another_period_is_a_new_input() {
     Rig periods;
-    periods.work.push_unary(*periods.log, 0, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
+    periods.work.push_unary(periods.log, 0, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
                             vector_at(kX, 0, 64, kUnknownInFirstPeriod));
-    periods.work.push_unary(*periods.log, 1, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
+    periods.work.push_unary(periods.log, 1, vector_at(kX, 0, 64, kUnknownInFirstPeriod),
                             vector_at(kY, 0, 64, kKnownFirst));
-    periods.work.push_unary(*periods.log, 2, vector_at(kX, 0, 64, kUnknownInSecondPeriod),
+    periods.work.push_unary(periods.log, 2, vector_at(kX, 0, 64, kUnknownInSecondPeriod),
                             vector_at(kZ, 0, 64, kKnownSecond));
     const BackgroundThread::BuiltRegion region = periods.build();
 

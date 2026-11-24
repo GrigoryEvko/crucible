@@ -5,30 +5,28 @@
 // the recording is re-taken on the next iteration, so a drop costs one
 // iteration of trace, never a stall on the recorded thread.
 //
-// Single-producer is a requirement on the caller, not a property this class
-// defends. try_append reads the head, writes the slot it names and then
-// advances it, and those three steps are not one atomic operation. Two
-// threads running them at once name the same slot, write over each other and
-// advance the head once, so one entry is lost and the surviving one can be
-// half of each. Nothing reports it.
+// The ring splits into two ends (fixy/concurrent/SpscEnds.h).  try_append
+// reads the head, writes the slot it names and then advances it, and those
+// three steps are not one atomic operation.  Two threads that run them at
+// once name the same slot, write over each other and advance the head once.
+// So each door of a side takes the end of its side, and only a frame door of
+// the split lends an end: the producer token or the held side opens the
+// producer end, and the consumer token or the held side opens the consumer
+// end.  The type then proves the one producer and the one consumer.
 //
-// Vigil owns the enforcement. Its record_op and dispatch_op give the producer
-// role to the first thread that arrives and end the process on the second,
-// and Vigil::is_producer_thread() lets an adapter ask before it arrives. A
-// caller that reaches this class through Vigil::ring() instead carries the
-// obligation itself.
+// The Vigil holds its ring in a held split.  Its record_op and dispatch_op
+// give the producer role to the first thread that arrives and end the
+// process on the second, and only that claim makes the proof that opens the
+// producer side (RecordProof of crucible/ForegroundCtx.h).  The drain stage
+// of the background thread opens the consumer side with its own proof.  A
+// test and a bench drive a keyed split of their own.
 //
 // Two publishes
-//   The producer keeps its own copy of the head on its private line, and it
-//   reads its position there.  The consumer polls the head, so a load of the
-//   head by the producer can wait for a transfer of its line.  commit checks
-//   the head against the copy at each publish, so a second producer ends the
-//   process at the next publish of the first one.  That check loads the head
-//   one time.  commit_proven takes the proof of the record path (RecordProof
-//   of crucible/ForegroundCtx.h), which only the producer claim of the Vigils
-//   makes.  The type proves the one writer, so that publish loads nothing
-//   from the head.  The Vigil records each op with the proof.  A test and a
-//   bench drive a ring of their own with the checked form.
+//   The producer keeps its own copy of the head on the private line of its
+//   end, and it reads its position there.  The consumer polls the head, so a
+//   load of the head by the producer can wait for a transfer of its line.
+//   The end proves the one writer, so the publish of the head loads nothing
+//   from the head, and the publish of the tail loads nothing from the tail.
 //
 // Single-producer is also what makes the recorded op order reproducible. The
 // order is the trace's identity: it fixes the region content hash, the memory
@@ -52,7 +50,6 @@
 #include <type_traits>
 #include <utility>
 
-#include <crucible/ForegroundCtx.h>
 #include <crucible/Types.h>
 #include <crucible/warden/Registry.h>
 
@@ -64,6 +61,7 @@
 #include <fixy/Stale.h>
 #include <fixy/Tagged.h>
 #include <fixy/atoms/Hw.h>
+#include <fixy/concurrent/SpscEnds.h>
 #include <fixy/os/Pages.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Decide.h>
@@ -158,6 +156,9 @@ inline constexpr bool is_drain_prefix_v<Metas, Scopes, Callsites, Depths> =
 
 // 2 MB alignment so the allocation lands on a PMD-aligned region and the
 // huge-page advice is not rejected.
+//
+// Each data member is private.  Each public member function is const or
+// static, and each static door that writes takes the end of its side.
 struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Entry is bit-copied into the trace file, so its layout is a persisted
     // format, not an implementation detail: reordering or resizing a field
@@ -261,31 +262,42 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     static constexpr uint32_t MASK = CAPACITY - 1;
     static_assert((CAPACITY & MASK) == 0, "CAPACITY must be a power of two");
 
-    // head and tail are each written by one thread and read by the other, so
-    // they sit on separate cache lines: sharing one line would make every
-    // producer write invalidate the consumer's copy and back again.  The
-    // publish of the head (advance_sole_writer_from or
-    // advance_sole_writer_by_proof) releases and get() acquires, which is the
-    // edge that makes the slot writes visible across the pair.  The producer
-    // reads its own position from own_head_ (the two publishes).
-    //
-    // The type of each counter names its writer (the writer of a counter of
-    // fixy/Mutation.h).  The ring is the owner of each proof, so only the
+    // The writers of the two counters (the writer of a counter of
+    // fixy/Mutation.h): the producer end writes head, and the consumer end
+    // writes tail.  The ring is the owner of each proof, so only the side
     // doors of the ring publish a counter.
     struct HeadWriter final {};
     struct TailWriter final {};
     using head_writer = ::fixy::SoleWriterProof<TraceRing, HeadWriter>;
     using tail_writer = ::fixy::SoleWriterProof<TraceRing, TailWriter>;
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head =
+    // The ends of a ring (fixy/concurrent/SpscEnds.h) hold no state.  The
+    // ring keeps the private line of each side, and only the doors of that
+    // side, which take its end, write the line.  So one pointer reaches each
+    // part of a side, as on the record path before the split.
+    struct producer_state {};
+    struct consumer_state {};
+
+    // The two ends of a ring.  The side doors below are the only doors that
+    // write a side of the ring, and each takes the end of its side.
+    using Producer = ::fixy::concurrent::ProducerEnd<TraceRing>;
+    using Consumer = ::fixy::concurrent::ConsumerEnd<TraceRing>;
+
+private:
+    // head and tail are each written by one end and read by the other, so
+    // they sit on separate cache lines: sharing one line would make every
+    // producer write invalidate the consumer's copy and back again.  The
+    // publish of the head releases and get() acquires, which is the edge that
+    // makes the slot writes visible across the pair.
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, head_writer> head_ =
         ::fixy::mint_atomic_monotonic<uint64_t, head_writer>(0);
 
-    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail =
+    alignas(64)::fixy::AtomicMonotonic<uint64_t, tail_writer> tail_ =
         ::fixy::mint_atomic_monotonic<uint64_t, tail_writer>(0);
 
-    // The consumer is the only party that reads or writes this, so drains
-    // track their position here and publish to tail only once the copies are
-    // complete.
+    // The copy of the tail of the consumer.  Only the doors of the consumer
+    // read or write it, so the drains track their position here and publish
+    // to tail only once the copies are complete.
     //
     // It does not share a line with tail, although sharing one would be
     // harmless: AtomicMonotonic carries its own alignas(64) and is 64 bytes
@@ -310,11 +322,13 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // publishes).  It holds the value of the head after each publish.
     ::fixy::Monotonic<uint64_t> own_head_ = ::fixy::mint_monotonic<uint64_t>(0);
 
-    alignas(64)::fixy::FixedArray<Entry, CAPACITY> entries{};
-    ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts{};
-    ::fixy::FixedArray<ScopeHash, CAPACITY> scope_hashes{};
-    ::fixy::FixedArray<CallsiteHash, CAPACITY> callsite_hashes{};
-    ::fixy::FixedArray<OpDepth, CAPACITY> depths{};
+    // The five parallel arrays of the slots.  The producer end writes a slot,
+    // and the consumer end copies it out after the publish of the head.
+    alignas(64)::fixy::FixedArray<Entry, CAPACITY> entries_{};
+    ::fixy::FixedArray<MetaIndex, CAPACITY> meta_starts_{};
+    ::fixy::FixedArray<ScopeHash, CAPACITY> scope_hashes_{};
+    ::fixy::FixedArray<CallsiteHash, CAPACITY> callsite_hashes_{};
+    ::fixy::FixedArray<OpDepth, CAPACITY> depths_{};
 
     // The slot of a counter of the ring: its low bits.  The mask keeps the
     // slot below CAPACITY, so the optimizer removes the check.
@@ -323,6 +337,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         return RingSlot::check(counter & MASK).expect("a masked counter of the ring is below CAPACITY");
     }
 
+public:
     TraceRing() noexcept {
         crucible::warden::register_hot_region(::fixy::pages::storage_of(*this), crucible::warden::RegionShape::stable);
     }
@@ -359,21 +374,25 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         uint64_t head_ = 0;
     };
 
-    // The thread-safety analysis is suppressed throughout: this thread is the
-    // sole writer of head and of the slot it is about to fill, which the
-    // analysis cannot express.
+    // The doors of the two sides.  Each door takes the end of its side, and
+    // only a frame door of a split lends an end (fixy/concurrent/SpscEnds.h).
+    // So the type proves the one producer and the one consumer, and no
+    // publish loads the counter that its own side writes.  The thread-safety
+    // analysis cannot express the one writer of a side, so each door
+    // suppresses it.
     //
     // Reserves the slot at the head, or gives no token when the ring is full.
     // The ring does not change: the head moves in commit.
-    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE ::fixy::Option<Reservation> try_reserve() noexcept
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE static ::fixy::Option<Reservation> try_reserve(Producer& producer) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t h = own_head_.get();
+        TraceRing& ring = *producer.owner_;
+        const uint64_t h = ring.own_head_.get();
 
         // Refreshing from the consumer's atomic is the slow path, taken only
         // once the private view says the ring is full.
-        if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] {
-            cached_tail_.advance(tail.get());
-            if (h - cached_tail_.get() >= CAPACITY) [[unlikely]]
+        if (h - ring.cached_tail_.get() >= CAPACITY) [[unlikely]] {
+            ring.cached_tail_.advance(ring.tail_.get());
+            if (h - ring.cached_tail_.get() >= CAPACITY) [[unlikely]]
                 return ::fixy::none;
         }
         return ::fixy::Option<Reservation>::some(Reservation{h});
@@ -382,12 +401,12 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Appends one entry, or returns false when the ring is full.  The append
     // is a reservation and its commit.  A caller that names no depth records
     // an op that no recorded op runs.
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
-    try_append(const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static bool
+    try_append(Producer& producer, const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
                CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return try_reserve().match(
+        return try_reserve(producer).match(
             [&](Reservation reserved) noexcept {
-                commit(std::move(reserved), e, meta_start, scope_hash, callsite_hash, depth);
+                commit(producer, std::move(reserved), e, meta_start, scope_hash, callsite_hash, depth);
                 return true;
             },
             [] noexcept { return false; });
@@ -396,25 +415,17 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Writes the entry into the reserved slot, and moves the head past it.
     // The consumer then sees the entry.  Each argument has no default, so a
     // caller cannot drop a field of the slot.  The release of the publish
-    // carries the five slot writes to the consumer, and its check loads the
-    // head (the two publishes).
-    [[gnu::hot]] CRUCIBLE_INLINE void commit(Reservation reserved, const Entry& e, MetaIndex meta_start,
-                                             ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_from(prove_head_writer_(), h, h + 1, own_head_);
-    }
-
-    // The commit of the producer of the Vigils, which holds the proof of the
-    // record path.  The type proves the one writer, so the publish loads
-    // nothing from the head (the two publishes).  A token that names an old
-    // head fails the step check of the publish in each build.
-    [[gnu::hot]] CRUCIBLE_INLINE void commit_proven(RecordProof const& /*proof*/, Reservation reserved, const Entry& e,
+    // carries the five slot writes to the consumer.  The producer end is the
+    // proof of the one writer, so the publish loads nothing from the head
+    // (the two publishes).  A token that names an old head fails the step
+    // check of the publish in each build.
+    [[gnu::hot]] CRUCIBLE_INLINE static void commit(Producer& producer, Reservation reserved, const Entry& e,
                                                     MetaIndex meta_start, ScopeHash scope_hash,
                                                     CallsiteHash callsite_hash, OpDepth depth) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        const uint64_t h = fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
-        head.advance_sole_writer_by_proof(prove_head_writer_(), own_head_, h + 1);
+        TraceRing& ring = *producer.owner_;
+        const uint64_t h = ring.fill_slot_(reserved, e, meta_start, scope_hash, callsite_hash, depth);
+        ring.head_.advance_sole_writer_by_proof(prove_head_writer_(), ring.own_head_, h + 1);
     }
 
     // The append of a pure caller.  The gate reads the row of the context of
@@ -427,26 +438,114 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
               && ::foundation::effects::CtxHasPureSource<Ctx>
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool
-    try_append_pure(Ctx const&, const Entry& e, MetaIndex meta_start = MetaIndex::none(), ScopeHash scope_hash = {},
-                    CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return try_append(e, meta_start, scope_hash, callsite_hash, depth);
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static bool
+    try_append_pure(Ctx const&, Producer& producer, const Entry& e, MetaIndex meta_start = MetaIndex::none(),
+                    ScopeHash scope_hash = {}, CallsiteHash callsite_hash = {}, OpDepth depth = {}) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        return try_append(producer, e, meta_start, scope_hash, callsite_hash, depth);
     }
+
+    // Drains at most out.size() entries into out.  The parallel outputs are
+    // a prefix of the four parallel arrays, in their order: the meta starts,
+    // the scope hashes, the callsite hashes and the depths.  Each one holds
+    // out.size() elements.  Each output is the run of a frame, which the drain
+    // takes by move, so the drain is the one writer of each run.
+    template <class Brand, std::size_t Extent, class... Parallel>
+        requires detail::is_drain_prefix_v<Parallel...>
+    [[nodiscard, gnu::hot]] static uint32_t drain(Consumer& consumer, ::fixy::ViewMut<Entry, Brand, Extent> out,
+                                                  Parallel... parallel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return drain_into_(consumer, std::move(out), std::move(parallel)...);
+    }
+
+    // The consumer counterpart of try_append_pure, with the same gate: the
+    // row of the context of the caller is empty, and its source permits no
+    // atom.  A background stage holds a source that permits atoms, so it
+    // drains with try_pop_batch, and not here.
+    template <::foundation::effects::IsExecCtx Ctx, class Brand, std::size_t Extent, class... Parallel>
+        requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
+              && ::foundation::effects::CtxHasPureSource<Ctx> && detail::is_drain_prefix_v<Parallel...>
+    [[nodiscard, gnu::hot]] static uint32_t drain_pure(Ctx const&, Consumer& consumer,
+                                                       ::fixy::ViewMut<Entry, Brand, Extent> out,
+                                                       Parallel... parallel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return drain(consumer, std::move(out), std::move(parallel)...);
+    }
+
+    // drain with each of the four parallel outputs, and the five outputs of
+    // one size.  A batch consumer can rely on each popped entry having all
+    // five arrays populated.  The drain stage of the background thread calls
+    // it, and the forced inline with its copies keeps that stage free of a
+    // call and of a window check.
+    template <class Brand, std::size_t Extent, class Metas, class Scopes, class Callsites, class Depths>
+        requires detail::is_drain_prefix_v<Metas, Scopes, Callsites, Depths>
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE static uint32_t
+    try_pop_batch(Consumer& consumer, ::fixy::ViewMut<Entry, Brand, Extent> out_entries, Metas out_meta_starts,
+                  Scopes out_scope_hashes, Callsites out_callsite_hashes, Depths out_depths) noexcept
+        CRUCIBLE_NO_THREAD_SAFETY {
+        return drain_into_(consumer, std::move(out_entries), std::move(out_meta_starts), std::move(out_scope_hashes),
+                           std::move(out_callsite_hashes), std::move(out_depths));
+    }
+
+    // Empties the ring: each counter and each copy of a counter go back to
+    // zero.  Every counter here moves backwards, which the monotonicity
+    // contract otherwise forbids.  The door takes the two ends of the ring,
+    // which only the frame door of the two ends of a split lends to one
+    // thread, so no other thread is in a frame of the ring.
+    static void reset(Producer& producer, Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(::fixy::same_object(producer.owner_, consumer.owner_));
+        TraceRing& ring = *producer.owner_;
+        ring.head_.reset_under_quiescence();
+        ring.tail_.reset_under_quiescence();
+        ring.consumer_tail_ = 0;
+        ring.cached_tail_.reset_under_quiescence();
+        ring.own_head_.reset_under_quiescence();
+        CRUCIBLE_POST(0, ring.head_.get() == 0);
+        CRUCIBLE_POST(0, ring.tail_.get() == 0);
+        CRUCIBLE_POST(0, ring.consumer_tail_ == 0);
+        CRUCIBLE_POST(0, ring.cached_tail_.get() == 0);
+        CRUCIBLE_POST(0, ring.own_head_.get() == 0);
+    }
+
+    // head and tail are read at different instants while both threads run, so
+    // the difference is a snapshot of a value that was never simultaneously
+    // true. The return type says so and forces the caller to acknowledge it.
+    //
+    // Neither read is gnu::pure.  The other thread moves head and tail, and a
+    // pure read lets the compiler fold the reads of a wait loop into one.
+    [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(head_.get() - tail_.get()));
+    }
+
+    // The acquire in get() means the returned bound also implies visibility of
+    // every entry produced up to it, which is what makes it usable as a
+    // catch-up target.
+    [[nodiscard]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return head_.get(); }
+
+    // The count of the entries that the consumer took, such as for a new
+    // consumer that counts only its own entries.
+    [[nodiscard]] uint64_t total_consumed() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return tail_.get(); }
+
+private:
+    // The proofs of the writers of the two counters.  The doors of a side
+    // make the proof of its side, and the end of the side that each door
+    // takes proves the one writer.
+    [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
+
+    [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
 
     // The ring array of the elements T: the entries, the meta starts, the
     // scope hashes, the callsite hashes or the depths.
     template <class T>
     [[nodiscard]] CRUCIBLE_INLINE ::fixy::FixedArray<T, CAPACITY> const& slots_of_() const noexcept {
         if constexpr (std::is_same_v<T, Entry>) {
-            return entries;
+            return entries_;
         } else if constexpr (std::is_same_v<T, MetaIndex>) {
-            return meta_starts;
+            return meta_starts_;
         } else if constexpr (std::is_same_v<T, ScopeHash>) {
-            return scope_hashes;
+            return scope_hashes_;
         } else if constexpr (std::is_same_v<T, CallsiteHash>) {
-            return callsite_hashes;
+            return callsite_hashes_;
         } else {
-            return depths;
+            return depths_;
         }
     }
 
@@ -488,16 +587,17 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // the new tail.  Each parallel output holds out.size() elements, and the
     // requires clause of each caller orders the parallel outputs.
     template <class Brand, std::size_t Extent, class... Parallel>
-    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE uint32_t drain_into_(::fixy::ViewMut<Entry, Brand, Extent> out,
-                                                                 Parallel... parallel) noexcept
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE static uint32_t
+    drain_into_(Consumer& consumer, ::fixy::ViewMut<Entry, Brand, Extent> out, Parallel... parallel) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         const std::size_t room = out.size();
         CRUCIBLE_PRE(((parallel.size() == room) && ...));
         if (room == 0) [[unlikely]]
             return 0;
 
-        const uint64_t h = head.get();
-        const uint64_t t = consumer_tail_;
+        TraceRing& ring = *consumer.owner_;
+        const uint64_t h = ring.head_.get();
+        const uint64_t t = ring.consumer_tail_;
 
         // The clamp is an assignment and a conditional assignment.  GCC 16
         // at -O1 with -fsanitize=bounds-strict does not keep the bound
@@ -512,123 +612,44 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         // test below proves each window of the two arms.
         const std::size_t start = t & MASK;
         if (count <= CAPACITY - start) [[likely]] {
-            copy_run_(std::move(out), start, count);
-            (copy_run_(std::move(parallel), start, count), ...);
+            ring.copy_run_(std::move(out), start, count);
+            (ring.copy_run_(std::move(parallel), start, count), ...);
         } else {
             const std::size_t first = CAPACITY - start;
             const std::size_t second = count - first;
             // first is at least one, so the second run is shorter than the
             // count, and the bound of the count bounds the run of the ring.
             [[assume(second < count)]];
-            copy_wrapped_run_(std::move(out), start, first, count);
-            (copy_wrapped_run_(std::move(parallel), start, first, count), ...);
+            ring.copy_wrapped_run_(std::move(out), start, first, count);
+            (ring.copy_wrapped_run_(std::move(parallel), start, first, count), ...);
         }
 
         // Publishing the new tail declares slots [t, t + count) free. The
         // producer only reads tail after finding the ring full, so it sees
-        // this before it can overwrite any of them.
+        // this before it can overwrite any of them.  t is the copy of the
+        // consumer of its last store to tail, and the consumer end proves the
+        // one writer, so the publish loads nothing from tail.
         const uint64_t next_tail = t + count;
-        consumer_tail_ = next_tail;
-        // t is the consumer's own copy of its last store to tail.
-        tail.advance_sole_writer_from(prove_tail_writer_(), t, next_tail);
+        ring.consumer_tail_ = next_tail;
+        ring.tail_.advance_sole_writer_by_proof_from(prove_tail_writer_(), t, next_tail);
         CRUCIBLE_POST(count, count <= room);
         // The count came from a 32-bit difference, so it fits the result.
         return static_cast<uint32_t>(count);
     }
 
-    // Drains at most out.size() entries into out.  The parallel outputs are
-    // a prefix of the four parallel arrays, in their order: the meta starts,
-    // the scope hashes, the callsite hashes and the depths.  Each one holds
-    // out.size() elements.  Each output is the run of a frame, which the drain
-    // takes by move, so the drain is the one writer of each run.
-    template <class Brand, std::size_t Extent, class... Parallel>
-        requires detail::is_drain_prefix_v<Parallel...>
-    [[nodiscard, gnu::hot]] uint32_t drain(::fixy::ViewMut<Entry, Brand, Extent> out, Parallel... parallel) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        return drain_into_(std::move(out), std::move(parallel)...);
-    }
-
-    // The consumer counterpart of try_append_pure, with the same gate: the
-    // row of the context of the caller is empty, and its source permits no
-    // atom.  A background stage holds a source that permits atoms, so it
-    // drains with try_pop_batch, and not here.
-    template <::foundation::effects::IsExecCtx Ctx, class Brand, std::size_t Extent, class... Parallel>
-        requires ::fixy::IsPure<::foundation::effects::row_type_of_t<Ctx>>
-              && ::foundation::effects::CtxHasPureSource<Ctx> && detail::is_drain_prefix_v<Parallel...>
-    [[nodiscard, gnu::hot]] uint32_t drain_pure(Ctx const&, ::fixy::ViewMut<Entry, Brand, Extent> out,
-                                                Parallel... parallel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return drain(std::move(out), std::move(parallel)...);
-    }
-
-    // drain with each of the four parallel outputs, and the five outputs of
-    // one size.  A batch consumer can rely on each popped entry having all
-    // five arrays populated.  The drain stage of the background thread calls
-    // it, and the forced inline with its copies keeps that stage free of a
-    // call and of a window check.
-    template <class Brand, std::size_t Extent, class Metas, class Scopes, class Callsites, class Depths>
-        requires detail::is_drain_prefix_v<Metas, Scopes, Callsites, Depths>
-    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE uint32_t
-    try_pop_batch(::fixy::ViewMut<Entry, Brand, Extent> out_entries, Metas out_meta_starts, Scopes out_scope_hashes,
-                  Callsites out_callsite_hashes, Depths out_depths) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return drain_into_(std::move(out_entries), std::move(out_meta_starts), std::move(out_scope_hashes),
-                           std::move(out_callsite_hashes), std::move(out_depths));
-    }
-
-    // head and tail are read at different instants while both threads run, so
-    // the difference is a snapshot of a value that was never simultaneously
-    // true. The return type says so and forces the caller to acknowledge it.
-    //
-    // Neither read is gnu::pure.  The other thread moves head and tail, and a
-    // pure read lets the compiler fold the reads of a wait loop into one.
-    [[nodiscard]] ::fixy::Stale<uint32_t> size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return ::fixy::Stale<uint32_t>::at_infinity(static_cast<uint32_t>(head.get() - tail.get()));
-    }
-
-    // The acquire in get() means the returned bound also implies visibility of
-    // every entry produced up to it, which is what makes it usable as a
-    // catch-up target.
-    [[nodiscard]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY { return head.get(); }
-
-    // Valid only once both threads have stopped. Every counter here moves
-    // backwards, which the monotonicity contract otherwise forbids, so the
-    // caller must have joined the producer and the consumer first.
-    void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        head.reset_under_quiescence();
-        tail.reset_under_quiescence();
-        consumer_tail_ = 0;
-        cached_tail_.reset_under_quiescence();
-        own_head_.reset_under_quiescence();
-        CRUCIBLE_POST(0, head.get() == 0);
-        CRUCIBLE_POST(0, tail.get() == 0);
-        CRUCIBLE_POST(0, consumer_tail_ == 0);
-        CRUCIBLE_POST(0, cached_tail_.get() == 0);
-        CRUCIBLE_POST(0, own_head_.get() == 0);
-    }
-
-private:
-    // The proofs of the writers of the two counters.  Each door of a side
-    // makes the proof of its side: the proven commit after the record proof
-    // of its caller, and each checked publish, which still compares the
-    // counter with the copy of the writer, so a second writer ends the
-    // process at the next publish of the first one.
-    [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
-
-    [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
-
     // Writes the entry and its four parallel slots into the reserved slot,
     // and warms the slot of the next append.  Gives the head of the
-    // reservation, which each commit publishes.  The two commits share this
-    // body, so they write the same slot.
+    // reservation, which the commit publishes.
     [[gnu::hot]] CRUCIBLE_INLINE uint64_t fill_slot_(Reservation const& reserved, const Entry& e, MetaIndex meta_start,
                                                      ScopeHash scope_hash, CallsiteHash callsite_hash,
                                                      OpDepth depth) noexcept CRUCIBLE_NO_THREAD_SAFETY {
         const uint64_t h = reserved.head_;
         const RingSlot slot = mask_slot_(h);
-        entries.with_element(slot, [&e](Entry& target) noexcept { target = e; });
-        meta_starts.with_element(slot, [meta_start](MetaIndex& target) noexcept { target = meta_start; });
-        scope_hashes.with_element(slot, [scope_hash](ScopeHash& target) noexcept { target = scope_hash; });
-        callsite_hashes.with_element(slot, [callsite_hash](CallsiteHash& target) noexcept { target = callsite_hash; });
-        depths.with_element(slot, [depth](OpDepth& target) noexcept { target = depth; });
+        entries_.with_element(slot, [&e](Entry& target) noexcept { target = e; });
+        meta_starts_.with_element(slot, [meta_start](MetaIndex& target) noexcept { target = meta_start; });
+        scope_hashes_.with_element(slot, [scope_hash](ScopeHash& target) noexcept { target = scope_hash; });
+        callsite_hashes_.with_element(slot, [callsite_hash](CallsiteHash& target) noexcept { target = callsite_hash; });
+        depths_.with_element(slot, [depth](OpDepth& target) noexcept { target = depth; });
 
         // Warm the destination of the following append while the caller is
         // still busy with its own post-append work.  One line of the depths
@@ -636,11 +657,11 @@ private:
         // the next 31 appends too.
         const RingSlot next_slot = mask_slot_(h + 1);
         constexpr ::fixy::PrefetchAccess write_access = ::fixy::PrefetchAccess::write;
-        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries.at(next_slot));
-        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts.at(next_slot));
-        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes.at(next_slot));
-        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes.at(next_slot));
-        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(entries_.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(meta_starts_.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(scope_hashes_.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(callsite_hashes_.at(next_slot));
+        ::fixy::prefetch<write_access, tracering_hw::kPrefetchLocality>(depths_.at(next_slot));
         return h;
     }
 };

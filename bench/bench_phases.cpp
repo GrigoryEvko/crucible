@@ -181,10 +181,10 @@ BackgroundThread::TraceBuild build_recorded(BackgroundThread::TraceBuildState& s
 // refills the MetaLog every call, then opens an epoch of the scratch arena,
 // runs the build, and ends the epoch. The build does not write the arrays
 // of the trace, so each sample measures the same work.
-bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace) {
+bench::Report run_fullpipeline(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace) {
     TraceScratch scratch{compute_trace_block(trace)};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
-    MetaLog const& log = meta_log;
+    MetaLog const& log = *meta_log.view();
     NumericsHash const numerics = bg.numerics();
 
     bench::Run r{bench::format_name("build_trace (full pipeline, {} ops)", trace.num_ops)};
@@ -205,7 +205,8 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log, const Lo
 // Each phase's rdtsc_start/end pair reads the TSC with LFENCE bracketing
 // (Intel "How to Benchmark..." 2010 §3.2.1, via bench::rdtsc_start/end).
 
-void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
+void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace,
+                           uint32_t iters) {
     bench::print("\n=== Top-level phase breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
     const ::fixy::ArenaBlockSize arena_block = compute_trace_block(trace);
@@ -214,7 +215,7 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // The sweep of each plan takes its arrays from this scratch.
     PlanScratch plan_scratch{arena_block};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
-    MetaLog const& log = meta_log;
+    MetaLog const& log = *meta_log.view();
     NumericsHash const numerics = bg.numerics();
 
     // Warmup: 5 full pipeline runs to hit the cache.
@@ -329,7 +330,8 @@ void bench_phases_toplevel(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     }
 }
 
-void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const LoadedTrace& trace, uint32_t iters) {
+void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace,
+                           uint32_t iters) {
     bench::print("\n=== Phase 2 sub-part breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
     const uint32_t count = trace.num_ops;
@@ -339,7 +341,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
     // build_scratch.
     TraceScratch build_scratch{compute_trace_block(trace)};
     BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
-    MetaLog const& log = meta_log;
+    MetaLog const& log = *meta_log.view();
     NumericsHash const numerics = bg.numerics();
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
@@ -472,7 +474,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
-        const MetaLog& meta_log_read = meta_log;
+        const crucible::test::OpenLog& meta_log_read = meta_log;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             // The buffer is new in each iteration, so its frame is in the
@@ -906,11 +908,11 @@ int run_bench(::fixy::os::Args const& arguments) {
         },
         []() noexcept { return kDefaultIters; });
 
-    MetaLog meta_log{::foundation::effects::testing::test().alloc};
-    meta_log.reset();
+    // The bench builds each trace from its own log, so no stage of the
+    // BackgroundThread reads the log.
+    crucible::test::OpenLog meta_log{};
 
     BackgroundThread bg{::foundation::effects::testing::test().alloc};
-    bg.bind_meta_log(meta_log);
 
     bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};

@@ -39,6 +39,7 @@
 // on those two are floors, not estimates.
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 #include <foundation/effects/Effect.h>
 #include <crucible/Vigil.h>
@@ -490,12 +491,13 @@ int main() {
     // reads each ring through a Ref, so no test of a Box is in the timed loop.
     bench::add_report(reports, [&] {
         const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
-        ::fixy::Box<TraceRing> ring_box = ::fixy::mint_box<TraceRing>(alloc);
-        ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(alloc, alloc);
+        // Each door of the ring and of the log of the bench opens the side
+        // of the door for one call (test/trace_rig.h), as record_op opens
+        // the two producer sides of a Vigil.
+        ::fixy::Box<crucible::test::OpenRing> ring_box = ::fixy::mint_box<crucible::test::OpenRing>(alloc);
+        ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(alloc);
         auto const ring = ::fixy::to(*ring_box);
         auto const log = ::fixy::to(*log_box);
-        ring->reset();
-        log->reset();
 
         auto d = make_op(0, 1);
         const ::fixy::View<const TensorMeta> records = records_of(d);

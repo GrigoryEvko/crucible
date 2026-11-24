@@ -24,6 +24,7 @@
 #include <crucible/MetaLog.h>
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 using crucible::DeviceType;
 using crucible::external_data_ptr;
@@ -181,7 +182,7 @@ int main() {
     // would blow the stack.
     ::fixy::FixedArray<bench::Report, 10> reports{
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(1 meta  = 168B)", [&] {
                 auto idx = log->try_append(meta1.view());
@@ -190,7 +191,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(2 metas = 336B)", [&] {
                 auto idx = log->try_append(meta2.view());
@@ -199,7 +200,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(3 metas = 504B)", [&] {
                 auto idx = log->try_append(meta3.view());
@@ -208,7 +209,7 @@ int main() {
             });
         }(),
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             return bench::run("try_append(8 metas = 1344B)", [&] {
                 auto idx = log->try_append(meta8.view());
@@ -224,7 +225,7 @@ int main() {
         // Inner counter stays a local to avoid atomic-store pollution
         // of the measurement.
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
+            ::fixy::Box<crucible::test::OpenLog> log_box = ::fixy::mint_box<crucible::test::OpenLog>(kAlloc);
             auto const log = ::fixy::to(*log_box);
             uint32_t since_drain = 0;
             constexpr uint32_t kD = 50000;
@@ -232,18 +233,19 @@ int main() {
                 auto idx = log->try_append(meta3.view());
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
-                    log->advance_tail(log->head.peek_relaxed());
+                    log->advance_tail(log->total_produced());
                     since_drain = 0;
                 }
             });
         }(),
 
         // ── Raw atomics (floor for ordering cost) ─────────────────────
+        // The head of the log is private, so the row reads a counter of the
+        // same type.
         [&] {
-            ::fixy::Box<MetaLog> log_box = ::fixy::mint_box<MetaLog>(kAlloc, kAlloc);
-            auto const log = ::fixy::to(*log_box);
+            auto counter = ::fixy::mint_atomic_monotonic<uint64_t, PublishOwner::Proof>(0);
             return bench::run("head.peek_relaxed", [&] {
-                auto h = log->head.peek_relaxed();
+                auto h = counter.peek_relaxed();
                 bench::do_not_optimize(h);
             });
         }(),

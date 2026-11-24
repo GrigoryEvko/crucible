@@ -28,22 +28,20 @@ namespace test_end_to_end {
 // the second produces a candidate match, and the third's K-th matching
 // op confirms the boundary.
 void test_pipeline_basic() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                              ::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Everything is queued before the background thread starts, so the
     // drain sees one complete stream and the outcome does not depend on
     // how the two threads interleave.
-    feed_iteration(*ring, *meta_log, Iteration{0});
-    feed_iteration(*ring, *meta_log, Iteration{1});
-    feed_trigger(*ring, *meta_log, Iteration{2});
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CRUCIBLE_TEST_ASSERT(kTest, region->kind == TraceNodeKind::REGION);
@@ -115,19 +113,17 @@ void test_pipeline_basic() {
 }
 
 void test_pipeline_divergence() {
-    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<MetaLog> meta_log = ::fixy::mint_box<MetaLog>(::foundation::effects::testing::test().alloc,
-                                                              ::foundation::effects::testing::test().alloc);
+    crucible::test::TraceRig rig{};
 
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    feed_iteration(*ring, *meta_log, Iteration{0});
-    feed_iteration(*ring, *meta_log, Iteration{1});
-    feed_trigger(*ring, *meta_log, Iteration{2});
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
 
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, *meta_log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
-    wait_processed(bt, *ring);
+    wait_processed(bt, rig);
     const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};

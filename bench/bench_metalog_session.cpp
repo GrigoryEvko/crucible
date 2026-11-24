@@ -20,6 +20,7 @@
 #include <foundation/permissions/Permission.h>
 
 #include "bench_harness.h"
+#include "../test/trace_rig.h"
 
 namespace {
 
@@ -48,9 +49,13 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
     return meta;
 }
 
-[[nodiscard]] ::fixy::Option<::crucible::TensorMeta> raw_drain_one(::crucible::MetaLog& log) {
-    const std::uint64_t t = log.tail.peek_relaxed();
-    if (t == log.head.get()) {
+// The raw log of the bench: each door opens the side of the door for one call
+// (OpenLog of test/trace_rig.h).
+using RawLog = ::crucible::test::OpenLog;
+
+[[nodiscard]] ::fixy::Option<::crucible::TensorMeta> raw_drain_one(RawLog& log) {
+    const std::uint64_t t = log.total_released();
+    if (t == log.total_produced()) {
         return ::fixy::none;
     }
     const ::crucible::TensorMeta meta = log.copy_record(t);
@@ -58,9 +63,9 @@ using PermissionedLog = ::crucible::permissioned_metalog_t<decltype(log_root())>
     return ::fixy::some(meta);
 }
 
-void reset_log(::crucible::MetaLog& log) { log.reset(); }
+void reset_log(RawLog& log) { log.reset(); }
 
-bench::Report bench_raw_append_raw_drain(::crucible::MetaLog& log) {
+bench::Report bench_raw_append_raw_drain(RawLog& log) {
     reset_log(log);
     std::uint32_t i = 0;
     auto report = bench::run("round-trip: raw MetaLog append + raw drain", [&] {
@@ -75,10 +80,10 @@ bench::Report bench_raw_append_raw_drain(::crucible::MetaLog& log) {
 }
 
 // The row reaches the two linear handles through a Ref of each, so no closure
-// holds a reference to a handle.
+// holds a reference to a handle.  The log of the handles is a held split, so
+// the row does not reset it: each sample drains the record that it appends.
 template <class Producer, class Consumer>
-bench::Report bench_permissioned_append_drain(Producer& producer, Consumer& consumer, ::crucible::MetaLog& log) {
-    reset_log(log);
+bench::Report bench_permissioned_append_drain(Producer& producer, Consumer& consumer) {
     std::uint32_t i = 0;
     const auto pure = ::foundation::effects::testing::foreground();
     auto report = bench::run("round-trip: permissioned append + drain",
@@ -89,7 +94,6 @@ bench::Report bench_permissioned_append_drain(Producer& producer, Consumer& cons
                                  const auto drained = drainer->try_drain_one().value_or(::crucible::TensorMeta{});
                                  bench::do_not_optimize(drained.version);
                              });
-    reset_log(log);
     return report;
 }
 
@@ -100,11 +104,10 @@ bench::Report bench_permissioned_append_drain(Producer& producer, Consumer& cons
 // Seat and puts the next session there.  The steps take generic lambdas, so
 // the brand of each session stays in the template parameter of its lambda.
 template <class Producer, class Consumer>
-bench::Report bench_typed_send_recv(Producer producer, Consumer consumer, ::crucible::MetaLog& log) {
+bench::Report bench_typed_send_recv(Producer producer, Consumer consumer) {
     namespace ses = ::crucible::metalog_session;
     const auto ctx = ::foundation::effects::testing::foreground();
 
-    reset_log(log);
     std::uint32_t i = 0;
     auto [report, seats] = bench::run_with(
         "round-trip: typed session send + recv",
@@ -127,7 +130,6 @@ bench::Report bench_typed_send_recv(Producer producer, Consumer consumer, ::cruc
     auto [prod, cons] = std::move(seats);
     static_cast<void>(std::move(prod).take().template select<1>(::fixy::session::no_label).close());
     static_cast<void>(std::move(cons).take().template select<1>(::fixy::session::no_label).close());
-    reset_log(log);
     return std::move(report);
 }
 
@@ -137,9 +139,9 @@ int main() {
     static_assert(sizeof(PermissionedLog::ProducerEnd) == sizeof(void*));
     static_assert(sizeof(PermissionedLog::ConsumerEnd) == sizeof(void*));
 
-    ::fixy::Box<::crucible::MetaLog> raw_owner = ::fixy::mint_box<::crucible::MetaLog>(kAlloc, kAlloc);
-    ::crucible::MetaLog& raw = *raw_owner;
-    PermissionedLog log{raw};
+    ::fixy::Box<RawLog> raw_owner = ::fixy::mint_box<RawLog>(kAlloc);
+    RawLog& raw = *raw_owner;
+    PermissionedLog log{kAlloc};
 
     namespace fp = ::foundation::permissions;
     auto [pp, cp] = fp::mint_permission_split<PermissionedLog::producer_tag, PermissionedLog::consumer_tag>(log_root());
@@ -155,8 +157,8 @@ int main() {
         // the handles only after the permissioned run is done with them.
         ::fixy::FixedArray<bench::Report, 3> reports{
             bench_raw_append_raw_drain(raw),
-            bench_permissioned_append_drain(producer, consumer, raw),
-            bench_typed_send_recv(std::move(producer), std::move(consumer), raw),
+            bench_permissioned_append_drain(producer, consumer),
+            bench_typed_send_recv(std::move(producer), std::move(consumer)),
         };
 
         bench::emit_reports_text(reports.view());

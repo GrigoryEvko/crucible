@@ -8,6 +8,7 @@
 // publish of a region and a build that meets an overflow move no tail.
 
 #include "background_thread_run_in_row.h"
+#include "trace_rig.h"
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CKernel.h>
@@ -93,10 +94,10 @@ struct Work {
 
     // An op with one output tensor, whose metadata goes to the log.  Returns
     // the end of that metadata in the log.
-    uint64_t push_op_with_meta(MetaLog& log, uint32_t op) {
+    uint64_t push_op_with_meta(crucible::test::RigLog& log, uint32_t op) {
         CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
-        const MetaIndex index = log.try_append(record.view());
+        const MetaIndex index = log.append_metas(record.view());
         CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
         ::fixy::Index<CAPACITY> const position =
             ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
@@ -210,14 +211,14 @@ void test_overflow_build_leaves_tail() {
     using namespace meta_rig;
     seal_global_tables();
 
+    crucible::test::RigLog metalog{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    MetaLog metalog{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog);
+    bt.bind_meta_log(metalog.side());
     const auto test = ::foundation::effects::testing::test();
     // The bodies of the epochs capture the state of the build and the log by
     // a const reference, and not the thread.
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
-    MetaLog const& log = metalog;
+    MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
 
     Work overflowing;
@@ -232,7 +233,7 @@ void test_overflow_build_leaves_tail() {
             CRUCIBLE_TEST_ASSERT(kTest, built.err().expect("the overflow refuses the build")
                                             == BackgroundThread::BuildRefusal::MetaLogOverflow);
         });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.tail.get() == 0u && "the build stage moved the tail of the metadata log");
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
@@ -245,7 +246,7 @@ void test_overflow_build_leaves_tail() {
         CRUCIBLE_TEST_ASSERT(kTest, built_at_start.err().expect("the overflow refuses the build")
                                         == BackgroundThread::BuildRefusal::MetaLogOverflow);
     });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.tail.get() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u);
 
     ::fixy::check::pass(kTest, "  overflow_build_leaves_tail:                PASSED\n");
 }
@@ -301,10 +302,9 @@ void test_publish_stage_releases_in_order() {
     using namespace meta_rig;
     seal_global_tables();
 
+    crucible::test::RigLog log{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    MetaLog& log = *metalog;
-    bt.bind_meta_log(log);
+    bt.bind_meta_log(log.side());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -324,7 +324,7 @@ void test_publish_stage_releases_in_order() {
     // the tail after each one.
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
-    MetaLog const& read_log = log;
+    MetaLog const& read_log = *log.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> first_built{};
     scratch.arena.with_epoch([&first, &state, &read_log, numerics, alloc = test.alloc,
@@ -339,14 +339,14 @@ void test_publish_stage_releases_in_order() {
             const BackgroundThread::TraceBuild overflowed = overflowing.build(state, read_log, numerics, alloc, epoch);
             CRUCIBLE_TEST_ASSERT(kTest, overflowed.is_err());
         });
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == 0u);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u);
 
     BackgroundThread::BuiltRegion first_region = std::move(first_built).expect("the first epoch built the region");
     bt.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
             owner.publish_region(bg, stage, std::move(first_region), BackgroundThread::StreamPoint{});
         });
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == 0u && "the publish of a region moved the tail");
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u && "the publish of a region moved the tail");
     const auto release_to = [&bt](uint64_t meta_floor) {
         bt.run_on_publish_stage([meta_floor](BackgroundThread::PublishStageView& owner,
                                              BackgroundThread::PublishStage const& stage) noexcept {
@@ -354,11 +354,11 @@ void test_publish_stage_releases_in_order() {
         });
     };
     release_to(first_end);
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == first_end);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == first_end);
     release_to(1);
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == first_end && "a floor before the tail moved the tail");
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == first_end && "a floor before the tail moved the tail");
     release_to(overflow_end);
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == overflow_end);
+    CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == overflow_end);
 
     ::fixy::check::pass(kTest, "  publish_stage_releases_in_order:           PASSED\n");
 }
@@ -371,11 +371,9 @@ void test_publish_stage_releases_in_order() {
 void test_pipeline_releases_after_overflow() {
     using namespace meta_rig;
 
+    crucible::test::TraceRig rig{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    auto ring = std::make_unique<TraceRing>();
-    auto metalog = std::make_unique<MetaLog>(::foundation::effects::testing::test().alloc);
-    MetaLog& log = *metalog;
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, *ring, log);
+    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, rig.ring_side(), rig.log_side());
 
     // The detector accepts the period of one iteration and then cuts each
     // iteration after it.  The last iteration below meets the overflow at
@@ -388,7 +386,7 @@ void test_pipeline_releases_after_overflow() {
         entry.schema_hash = crucible::SchemaHash{0x9000ULL + op};
         entry.shape_hash = crucible::ShapeHash{0xA000ULL + op};
         entry.num_outputs = num_outputs;
-        while (!ring->try_append(entry, index, crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+        while (!rig.append_entry(entry, index, crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
             CRUCIBLE_SPIN_PAUSE;
         }
     };
@@ -402,7 +400,7 @@ void test_pipeline_releases_after_overflow() {
                 continue;
             }
             const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
-            const MetaIndex index = log.try_append(record.view());
+            const MetaIndex index = rig.append_metas(record.view());
             CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
             if (is_last && op + 1 == OVERFLOW_OP) overflow_end = index.raw() + 1;
             push(op, index, 1);
@@ -413,7 +411,7 @@ void test_pipeline_releases_after_overflow() {
     for (uint32_t op = 0; op < crucible::IterationDetector::K; ++op)
         push(op, MetaIndex::none(), 0);
 
-    const uint64_t target = ring->total_produced();
+    const uint64_t target = rig.ring_total_produced();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
         CRUCIBLE_SPIN_PAUSE;
@@ -423,11 +421,11 @@ void test_pipeline_releases_after_overflow() {
     bt.stop();
 
     CRUCIBLE_TEST_ASSERT(kTest, overflow_end != 0u);
-    CRUCIBLE_TEST_ASSERT(kTest, log.tail.get() == log.head.get()
+    CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() == rig.log_total_produced()
                                     && "the floor of the last commit marker did not release each record");
 
     ::fixy::check::pass(kTest, "  pipeline_releases_after_overflow:          PASSED (tail={})\n",
-                        static_cast<unsigned long long>(log.tail.get()));
+                        static_cast<unsigned long long>(rig.log_total_released()));
 }
 
 // The ops of a built graph hold a copy of the run of the metadata log that
@@ -438,9 +436,9 @@ void test_built_graph_owns_its_metadata() {
     using namespace meta_rig;
     seal_global_tables();
 
+    crucible::test::RigLog metalog{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    MetaLog metalog{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog);
+    bt.bind_meta_log(metalog.side());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -451,7 +449,7 @@ void test_built_graph_owns_its_metadata() {
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
-    MetaLog const& log = metalog;
+    MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
     scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
@@ -490,7 +488,7 @@ void test_built_graph_owns_its_metadata() {
     const crucible::DagRef<const crucible::RegionNode> region =
         bt.active_region().expect("the publish gives the active region");
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(region->op_at(0))) == first_op_address);
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.tail.get() == OPS);
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == OPS);
 
     ::fixy::check::pass(kTest, "  built_graph_owns_its_metadata:             PASSED\n");
 }
@@ -502,15 +500,13 @@ void test_build_and_release_pass_two_to_the_32() {
     using namespace meta_rig;
     seal_global_tables();
 
+    // The log starts two records before the wrap of 32 bits.
+    constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
+    crucible::test::RigLog metalog{MetaIndex{BELOW_WRAP}};
     BackgroundThread bt{::foundation::effects::testing::test().alloc};
-    MetaLog metalog{::foundation::effects::testing::test().alloc};
-    bt.bind_meta_log(metalog);
+    bt.bind_meta_log(metalog.side());
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
-
-    // No other thread uses the log, which is the condition of the reset.
-    constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
-    metalog.reset_at(MetaIndex{BELOW_WRAP});
 
     constexpr uint32_t OPS = 4;
     Work work;
@@ -521,7 +517,7 @@ void test_build_and_release_pass_two_to_the_32() {
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
-    MetaLog const& log = metalog;
+    MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
     scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
@@ -544,7 +540,7 @@ void test_build_and_release_pass_two_to_the_32() {
             owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
             owner.release_meta_log(stage, run_end);
         });
-    CRUCIBLE_TEST_ASSERT(kTest, metalog.tail.get() == run_end && "the release did not move the tail past 2^32");
+    CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == run_end && "the release did not move the tail past 2^32");
 
     ::fixy::check::pass(kTest, "  build_and_release_pass_two_to_the_32:      PASSED\n");
 }
@@ -609,7 +605,7 @@ void test_publish_adds_no_block_to_the_region_arena() {
     using namespace meta_rig;
     seal_global_tables();
 
-    MetaLog metalog{::foundation::effects::testing::test().alloc};
+    crucible::test::RigLog metalog{};
     constexpr uint32_t OPS = 4;
     Work slotted;
     for (uint32_t op = 0; op < OPS; ++op)
@@ -617,7 +613,7 @@ void test_publish_adds_no_block_to_the_region_arena() {
     Work unslotted;
     unslotted.push_op_with_scalars(0, 5, 6);
 
-    MetaLog const& log = metalog;
+    MetaLog const& log = *metalog.view();
     const PublishedBytes with_plan = publish_one_region(slotted, log);
     const PublishedBytes with_no_plan = publish_one_region(unslotted, log);
     CRUCIBLE_TEST_ASSERT(kTest, with_plan.built > Bytes{size_t{0}} && with_no_plan.built > Bytes{size_t{0}});
