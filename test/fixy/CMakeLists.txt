@@ -269,9 +269,9 @@ fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal
   "required for the satisfaction of .same_as<decltype \\(Grade\\), foundation::algebra::lattices::QttGrade>. \\[with Grade = <unnamed>::LookalikeGrade\\{\\}\\]")
 
 # A body CRUCIBLE_PRE reaches its consteval trap when a constant
-# expression steps a Monotonic backward, sets a WriteOnce or a
-# WriteOnceNonNull twice, or sets a WriteOnceNonNull to null.  The set of a
-# temporary WriteOnce is deleted.
+# expression steps a Monotonic backward, or sets a WriteOnce or a
+# WriteOnceNonNull twice.  The set of a WriteOnceNonNull takes a Ref, so no
+# set of null compiles, and the set of a temporary WriteOnce is deleted.
 fixy_neg_compile_test(neg_mutation_monotonic_step_backward
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)."
@@ -282,12 +282,11 @@ fixy_neg_compile_test(neg_mutation_write_once_twice
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_mutation_write_once_non_null_twice
   "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set\\(\\(& second\\)\\)."
+  "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set<"
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_mutation_write_once_non_null_null
-  "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set\\(0\\)."
-  "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+  "no matching function for call to .fixy::WriteOnceNonNull<int\\*>::set\\(std::nullptr_t\\)."
+  "neg_mutation_write_once_non_null_null.cpp:9")
 fixy_neg_compile_test(neg_mutation_write_once_view_of_temporary
   "use of deleted function .void fixy::WriteOnce<T>::set\\(Rest&& \\.\\.\\.\\) &&"
   "a temporary slot ends at the end of the statement")
@@ -442,6 +441,9 @@ fixy_neg_compile_test(neg_mutation_write_once_non_null_not_pointer
 fixy_neg_compile_test(neg_mutation_write_once_non_null_member_pointer
   "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = int .[a-z]+.::Holder::\\*\\]"
   "the expression .is_pointer_v<Ptr> \\[with Ptr = int .[a-z]+.::Holder::\\*\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_mutation_write_once_non_null_void_pointee
+  "required for the satisfaction of .SlotPointer<Ptr>. \\[with Ptr = void\\*\\]"
+  "the expression .is_object_v<typename std::remove_pointer<_Tp>::type> \\[with Ptr = void\\*\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_mutation_monotonic_comparator_not_ordering
   "required for the satisfaction of .MonotoneCarrier<T, Cmp>. \\[with T = unsigned int. Cmp = int\\]"
   ".int. is not invocable by .const unsigned int&, const unsigned int&.")

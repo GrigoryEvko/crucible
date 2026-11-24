@@ -57,7 +57,8 @@ static_assert(!Bumps<AtomicMonotonic<uint32_t, void, ByLowBit>>);
 }  // namespace detail::mutation_checks
 
 static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
-static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
+// The pointee of a slot is an object type, so the mint refuses a void pointee.
+static_assert(!SlotPointer<void*>);
 
 static_assert(alignof(AtomicMonotonic<uint64_t>) >= 64, "AtomicMonotonic must be cache-line aligned: repeated "
                                                         "advance/bump/CAS traffic invalidates the consumer's "

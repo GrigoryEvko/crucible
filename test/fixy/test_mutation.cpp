@@ -91,7 +91,6 @@ static_assert(!std::is_copy_assignable_v<WideMonotonic<1>> && !std::is_move_assi
 static_assert(sizeof(WriteOnce<int>) == sizeof(std::optional<int>));
 static_assert(sizeof(WriteOnceNonNull<int*>) == sizeof(int*));
 static_assert(sizeof(WriteOnceNonNull<double*>) == sizeof(double*));
-static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 
 // AtomicMonotonic owns a cache line.
 static_assert(alignof(AtomicMonotonic<std::uint64_t>) >= 64);
@@ -157,7 +156,7 @@ static_assert(!::fixy::BoundedMonotoneCarrier<std::uint32_t, -1, std::less<std::
 static_assert(!::fixy::BoundedMonotoneCarrier<double, 5, std::less<double>>, "the bound is compared as an integer");
 static_assert(!::fixy::BoundedMonotoneCarrier<bool, true, std::less<bool>>);
 static_assert(::fixy::SlotPointer<int*>);
-static_assert(::fixy::SlotPointer<void*>);
+static_assert(!::fixy::SlotPointer<void*>, "a slot gives a Ref of its pointee, and no Ref of void exists");
 static_assert(!::fixy::SlotPointer<int>);
 
 // Monotonic is neither assignable from nor convertible to the raw T.
@@ -442,43 +441,33 @@ int check_write_once() {
 int check_write_once_non_null() {
     // nullptr is the unset sentinel here, which costs nothing. Wrapping the
     // pointer in an optional instead would add a tag byte and its padding.
+    // A set takes a Ref, so no set writes the sentinel.
     int payload = 7;
 
     WriteOnceNonNull<int*> slot = ::fixy::mint_write_once_non_null<int*>();
     if (slot.has_value()) return 70;
     if (static_cast<bool>(slot)) return 71;
+    // A read before the set gives no object.
+    if (slot.get().is_some()) return 72;
 
-    // Setting nullptr writes the sentinel, so it is refused and the slot
-    // stays unset.
-    if (slot.try_set(nullptr)) return 72;
-    if (slot.has_value()) return 73;
-
-    if (!slot.try_set(&payload)) return 74;
+    if (&*slot.try_set(::fixy::to(payload)).expect("the first try_set fills the slot") != &payload) return 74;
     if (!slot.has_value()) return 75;
     if (!static_cast<bool>(slot)) return 76;
-    if (slot.get() != &payload) return 77;
-    if (*slot != 7) return 78;
+    if (&value_of(slot) != &payload) return 77;
+    if (value_of(slot) != 7) return 78;
 
-    // A second try_set is refused even with a valid pointer.
+    // A second try_set is refused, and the slot keeps its object.
     int other = 13;
-    if (slot.try_set(&other)) return 79;
-    if (slot.get() != &payload) return 80;
+    if (slot.try_set(::fixy::to(other)).is_some()) return 79;
+    if (&value_of(slot) != &payload) return 80;
 
     struct Thing {
         int x;
     };
     Thing t{42};
     WriteOnceNonNull<Thing*> thing_slot = ::fixy::mint_write_once_non_null<Thing*>();
-    thing_slot.set(&t);
-    if (thing_slot->x != 42) return 81;
-
-    // A void pointee has no dereference operators, so this path only
-    // checks that the rest of the interface still compiles.
-    int raw = 99;
-    WriteOnceNonNull<void*> vslot = ::fixy::mint_write_once_non_null<void*>();
-    vslot.set(&raw);
-    if (!vslot.has_value()) return 82;
-    if (vslot.get() != &raw) return 83;
+    if (thing_slot.set(::fixy::to(t))->x != 42) return 81;
+    if (value_of(thing_slot).x != 42) return 82;
     return 0;
 }
 
@@ -844,15 +833,10 @@ int check_contracts_abort() {
 
     int target = 0;
     WriteOnceNonNull<int*> slot = ::fixy::mint_write_once_non_null<int*>();
+    if (slot.get().is_some()) return 171;
+    static_cast<void>(slot.set(::fixy::to(target)));
     expect_dies(
-        test, [&slot] noexcept { slot.set(nullptr); },
-        ::fixy::TextView{"foundation: contract violation: p != nullptr"});
-    expect_dies(
-        test, [&slot] noexcept { (void)slot.get(); },
-        ::fixy::TextView{"foundation: contract violation: ptr_ != nullptr"});
-    slot.set(&target);
-    expect_dies(
-        test, [&slot, &target] noexcept { slot.set(&target); },
+        test, [&slot, &target] noexcept { static_cast<void>(slot.set(::fixy::to(target))); },
         ::fixy::TextView{"foundation: contract violation: ptr_ == nullptr"});
 
     OrderedAppendOnly<int> ordered = ::fixy::mint_ordered_append_only<int>();

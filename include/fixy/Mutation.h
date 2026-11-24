@@ -163,9 +163,11 @@ template <typename T, auto Max, typename Cmp>
 concept BoundedMonotoneCarrier =
     MonotoneCarrier<T, Cmp> && ComparableInteger<T> && ComparableInteger<decltype(Max)> && (std::in_range<T>(Max));
 
-// The nullptr sentinel exists only for a pointer.
+// The nullptr sentinel exists only for a pointer.  The slot takes and gives
+// a Ref of its pointee, so the pointee is an object type: a foreign handle
+// uses a declared opaque class, not void.
 template <typename Ptr>
-concept SlotPointer = std::is_pointer_v<Ptr>;
+concept SlotPointer = std::is_pointer_v<Ptr> && std::is_object_v<std::remove_pointer_t<Ptr>>;
 
 template <typename T, template <typename...> class Storage = std::vector>
 class AppendOnly;
@@ -833,51 +835,51 @@ public:
     WriteOnceNonNull& operator=(WriteOnceNonNull&&) =
         delete("WriteOnceNonNull is set at most once. An assignment would empty or overwrite a set slot.");
 
-    constexpr void set(T* p) noexcept {
-        CRUCIBLE_PRE(p != nullptr);
+    // Sets the slot to the object of the Ref one time, and gives the Ref back
+    // as the view of the object.  A Ref names an object, so no set writes the
+    // null sentinel.  A second set ends the process.
+    template <::foundation::brand::IsBrand Brand>
+    constexpr ::foundation::core::Ref<T, Brand> set(::foundation::core::Ref<T, Brand> object) & noexcept {
         CRUCIBLE_PRE(ptr_ == nullptr);
-        ptr_ = p;
-        CRUCIBLE_POST(0, ptr_ == p);
+        ptr_ = __builtin_addressof(*object);
+        CRUCIBLE_POST(0, ptr_ != nullptr);
+        return object;
     }
+    template <class... Rest>
+    void set(Rest&&...) && = delete("a temporary slot ends at the end of the statement: set a slot that has a name");
 
-    // The disjunction covers every path. A null argument leaves the
-    // slot untouched. A non-null argument leaves it set, either by this
-    // call or by an earlier one.
-    [[nodiscard]] constexpr bool try_set(T* p) noexcept {
-        bool const claimed = (ptr_ == nullptr) && (p != nullptr);
-        if (claimed) {
-            ptr_ = p;
-        }
-        CRUCIBLE_POST(claimed, p == nullptr || ptr_ != nullptr);
-        return claimed;
+    // Sets the slot when it is empty, and gives the Ref back.  A slot that
+    // holds an object gives none and keeps its object.
+    template <::foundation::brand::IsBrand Brand>
+    constexpr ::foundation::core::Option<::foundation::core::Ref<T, Brand>>
+    try_set(::foundation::core::Ref<T, Brand> object) & noexcept {
+        using Held = ::foundation::core::Ref<T, Brand>;
+        if (ptr_ != nullptr) return ::foundation::core::Option<Held>{::foundation::core::none};
+        ptr_ = __builtin_addressof(*object);
+        return ::foundation::core::Option<Held>::some(object);
     }
+    template <class... Rest>
+    void try_set(Rest&&...) && = delete("a temporary slot ends at the end of the statement: set a slot that has a "
+                                        "name");
 
-    [[nodiscard]] constexpr T* get() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return ptr_;
+    // The object as a Ref with the fresh brand of the call, or none before
+    // the set.  The pack refuses each explicit argument.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr ::foundation::core::Option<
+        ::foundation::core::Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get() const& noexcept {
+        using Held = ::foundation::core::Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>>;
+        if (ptr_ == nullptr) return ::foundation::core::Option<Held>{::foundation::core::none};
+        return ::foundation::core::Option<Held>::some(::foundation::core::WriteOnceRefDoor::lend_<Fresh>(*ptr_));
     }
+    template <class... Rest>
+    void get(Rest&&...) const&& = delete("a temporary slot ends at the end of the statement: read a slot that has a "
+                                         "name");
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return ptr_ != nullptr; }
 
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return ptr_ != nullptr; }
-
-    // The defaulted U=T parameter delays instantiation of the return
-    // type until the operator is called, so a void pointee can still
-    // use the other members without forming a reference to void at
-    // class-instantiation time.
-    template <typename U = T>
-        requires(!std::is_void_v<U>)
-    [[nodiscard]] constexpr U& operator*() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return *ptr_;
-    }
-
-    template <typename U = T>
-        requires(!std::is_void_v<U>)
-    [[nodiscard]] constexpr U* operator->() const noexcept {
-        CRUCIBLE_PRE(ptr_ != nullptr);
-        return ptr_;
-    }
 };
 
 template <typename Ptr>

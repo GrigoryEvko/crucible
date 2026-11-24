@@ -1,9 +1,10 @@
 // WriteOnceNonNull::set carries CRUCIBLE_PRE(ptr_ == nullptr).  A second
-// set would overwrite the first pointer while its readers still hold it.
+// set would overwrite the first object while its readers still hold it.
 // A second set in a constant expression reaches the consteval trap of the
 // macro, so the static_assert below has a non-constant condition, and the
 // expansion note names WriteOnceNonNull::set.
 
+#include <fixy/Core.h>
 #include <fixy/Mutation.h>
 
 namespace {
@@ -12,8 +13,8 @@ namespace {
     int first = 1;
     int second = 2;
     fixy::WriteOnceNonNull<int*> slot = fixy::mint_write_once_non_null<int*>();
-    slot.set(&first);
-    slot.set(&second);
+    static_cast<void>(slot.set(fixy::to(first)));
+    static_cast<void>(slot.set(fixy::to(second)));
     return 0;
 }
 
