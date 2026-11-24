@@ -203,6 +203,101 @@ void test_fixed_array_value_door_builds_in_place() {
     CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).value == 4 && one.at(index<0>()).calls == 4);
 }
 
+// set writes one element, and exchange writes one element and gives back the
+// value that it held.  Each other element keeps its value.  An element that
+// only moves, such as a HeapArray, takes the two doors.
+void test_fixed_array_value_doors_write_one_element() {
+    FixedArray<int, 4> numbers{1, 2, 3, 4};
+    numbers.set(index<1>(), 20);
+    int const seven = 7;
+    numbers.set(Index<4>::check(3).expect("3 is below 4"), seven);
+    int const held = numbers.exchange(index<0>(), 10);
+    CRUCIBLE_TEST_ASSERT(kTest, held == 1 && (numbers == FixedArray<int, 4>{10, 20, 3, 7}));
+    numbers.set(index<2>(), numbers.at(index<0>()));
+    CRUCIBLE_TEST_ASSERT(kTest, (numbers == FixedArray<int, 4>{10, 20, 10, 7}));
+
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    FixedArray<::foundation::core::HeapArray<int>, 2> runs{};
+    runs.set(index<1>(), ::foundation::core::mint_heap_array(alloc, 3, 5));
+    ::foundation::core::HeapArray<int> const taken =
+        runs.exchange(index<1>(), ::foundation::core::mint_heap_array(alloc, 1, 6));
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         taken.size() == 3 && runs.at(index<1>()).size() == 1 && runs.at(index<0>()).size() == 0);
+}
+
+// The value doors of the run: fill writes each element, copy_from the N
+// elements of a View, and copy_window a part that fits.  A window that does
+// not fit writes nothing.
+void test_fixed_array_value_doors_write_the_run() {
+    FixedArray<std::uint32_t, 8> target;
+    FixedArray<std::uint32_t, 8> const source{1, 2, 3, 4, 5, 6, 7, 8};
+    target.fill(0xAB);
+    CRUCIBLE_TEST_ASSERT(
+        kTest, target.view().walk().all_of([](std::uint32_t const& value) noexcept { return value == 0xAB; }));
+    target.copy_from(source.view());
+    CRUCIBLE_TEST_ASSERT(kTest, target == source);
+
+    View<std::uint32_t const> const two = source.view().window(0, 2).expect("two elements fit");
+    CRUCIBLE_TEST_ASSERT(kTest, target.copy_window(6, two).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, (target == FixedArray<std::uint32_t, 8>{1, 2, 3, 4, 5, 6, 1, 2}));
+    CRUCIBLE_TEST_ASSERT(kTest, target.copy_window(7, two).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, target.copy_window(9, View<std::uint32_t const>{}).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, target.copy_window(8, View<std::uint32_t const>{}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, (target == FixedArray<std::uint32_t, 8>{1, 2, 3, 4, 5, 6, 1, 2}));
+}
+
+// A copy from a View of the same array gives the array the values that the
+// View held before the copy, for each direction of the overlap.
+void test_fixed_array_copy_doors_take_their_own_run() {
+    FixedArray<std::uint32_t, 8> up{1, 2, 3, 4, 5, 6, 7, 8};
+    CRUCIBLE_TEST_ASSERT(kTest, up.copy_window(2, up.view().window(0, 6).expect("six elements fit")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, (up == FixedArray<std::uint32_t, 8>{1, 2, 1, 2, 3, 4, 5, 6}));
+    FixedArray<std::uint32_t, 8> down{1, 2, 3, 4, 5, 6, 7, 8};
+    CRUCIBLE_TEST_ASSERT(kTest, down.copy_window(0, down.view().window(2, 6).expect("six elements fit")).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, (down == FixedArray<std::uint32_t, 8>{3, 4, 5, 6, 7, 8, 7, 8}));
+    down.copy_from(down.view());
+    CRUCIBLE_TEST_ASSERT(kTest, (down == FixedArray<std::uint32_t, 8>{3, 4, 5, 6, 7, 8, 7, 8}));
+}
+
+// The build door gives the array that its body wrote, alone for a body that
+// gives void, and after the result for each other body.  Each element that
+// the body does not write keeps its value initialization.  A constant
+// evaluation takes the door too.
+void test_build_fixed_array_gives_a_new_array() {
+    FixedArray<int, 4> const squares = ::foundation::core::build_fixed_array<int, 4>([](auto run) noexcept {
+        int next = 0;
+        for (int& element : run) {
+            element = next * next;
+            ++next;
+        }
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, (squares == FixedArray<int, 4>{0, 1, 4, 9}));
+
+    FixedArray<std::uint32_t, 2> const words{5, 6};
+    auto [count, head] = ::foundation::core::build_fixed_array<std::uint32_t, 3>([&words](auto run) noexcept {
+        ::foundation::core::copy(::foundation::core::take_window<2>(std::move(run), 0).expect("two elements fit"),
+                                 words.view());
+        return words.size();
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, count == 2 && (head == FixedArray<std::uint32_t, 3>{5, 6, 0}));
+
+    // A body that writes another array of the same type through a capture
+    // by value of its View reads it, and the two frames have two brands.
+    FixedArray<std::uint32_t, 3> const doubled =
+        ::foundation::core::build_fixed_array<std::uint32_t, 3>([from = head.view()](auto run) noexcept {
+            for (Index<3> const at : from.indices()) {
+                auto element = run.get_mut(at.raw()).expect("an index of the View is an index of the run");
+                *element = from.at(at) * 2;
+            }
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, (doubled == FixedArray<std::uint32_t, 3>{10, 12, 0}));
+    static constexpr FixedArray<int, 2> threes = ::foundation::core::build_fixed_array<int, 2>([](auto run) noexcept {
+        for (int& element : run)
+            element = 3;
+    });
+    static_assert(threes.at(index<1>()) == 3);
+}
+
 // A body of the element door and of the frame door reads a linear local of
 // the caller through a capture by const reference, and a body of the frame
 // door of a list of linear ends takes the ends as its parameter.  The linear
@@ -402,6 +497,10 @@ int main() {
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_element_door_writes_in_place();
     test_fixed_array_value_door_builds_in_place();
+    test_fixed_array_value_doors_write_one_element();
+    test_fixed_array_value_doors_write_the_run();
+    test_fixed_array_copy_doors_take_their_own_run();
+    test_build_fixed_array_gives_a_new_array();
     test_doors_take_a_body_that_borrows_a_linear_value();
     test_fixed_array_view_fill_and_copy();
     test_prefix_up_to_is_total();

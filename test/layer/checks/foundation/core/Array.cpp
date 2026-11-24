@@ -133,6 +133,78 @@ static_assert(!ArrayFrameOwner<FixedArray<int, 4>> && ArrayFrameOwner<HeapArray<
 static_assert(LendsElement<FixedArray<int, 4>&> && LendsElement<FixedArray<int, 4> const&>
               && !LendsElement<FixedArray<int, 4>>);
 
+// The value doors: an array of Unkeyed has them as an lvalue that is not
+// const, and a keyed array has none.  set and exchange take the element, and
+// the doors of the run take an element that copies as its bytes.  A keyed
+// array does not take an assignment, and it has the size of the plain array.
+struct ValueDoorBrand final {};
+using KeyedInts = FixedArray<int, 4, ValueDoorBrand>;
+template <class Array>
+concept SetsElement = requires(Array&& array) { static_cast<Array&&>(array).set(index<0>(), 2); };
+template <class Array>
+concept ExchangesElement =
+    requires(Array&& array) { static_cast<void>(static_cast<Array&&>(array).exchange(index<0>(), 2)); };
+template <class Array>
+concept FillsRun = requires(Array&& array) { static_cast<Array&&>(array).fill(2); };
+template <class Array>
+concept CopiesRun =
+    requires(Array&& array, View<int const, 4> source) { static_cast<Array&&>(array).copy_from(source); };
+template <class Array>
+concept CopiesWindow = requires(Array&& array, View<int const> source) {
+    static_cast<void>(static_cast<Array&&>(array).copy_window(0, source));
+};
+template <class Array>
+concept HasValueDoors =
+    SetsElement<Array> && ExchangesElement<Array> && FillsRun<Array> && CopiesRun<Array> && CopiesWindow<Array>;
+template <class Array>
+concept HasNoValueDoor =
+    !SetsElement<Array> && !ExchangesElement<Array> && !FillsRun<Array> && !CopiesRun<Array> && !CopiesWindow<Array>;
+static_assert(HasValueDoors<FixedArray<int, 4>&>);
+static_assert(HasNoValueDoor<FixedArray<int, 4> const&> && HasNoValueDoor<FixedArray<int, 4>>);
+static_assert(HasNoValueDoor<KeyedInts&> && HasNoValueDoor<KeyedInts const&>);
+static_assert(!std::is_copy_assignable_v<KeyedInts> && !std::is_move_assignable_v<KeyedInts>);
+static_assert(std::is_copy_constructible_v<KeyedInts> && std::is_trivially_copyable_v<KeyedInts>);
+static_assert(!std::is_move_constructible_v<FixedArray<HeapArray<int>, 2, ValueDoorBrand>>);
+static_assert(std::is_move_constructible_v<FixedArray<HeapArray<int>, 2>>);
+static_assert(sizeof(KeyedInts) == sizeof(FixedArray<int, 4>) && std::is_standard_layout_v<KeyedInts>);
+
+// build_fixed_array gives the array alone for a body that gives void, and a
+// Record of the result and the array for each other body.
+using GivesNoResult = decltype([](auto) noexcept {});
+using GivesRunSize = decltype([](auto run) noexcept { return run.size(); });
+static_assert(std::is_same_v<decltype(build_fixed_array<int, 4>(std::declval<GivesNoResult>())), FixedArray<int, 4>>);
+static_assert(std::is_same_v<decltype(build_fixed_array<int, 4>(std::declval<GivesRunSize>())),
+                             ::foundation::core::Record<std::size_t, FixedArray<int, 4>>>);
+
+// The body of build_fixed_array could write the array through a reference, a
+// pointer, a Ref or a View to an object that is not const and that holds the
+// array by value, at each depth of its own parts.  A const borrow, an array of
+// another type and a borrow of an element pass.
+struct Nested {
+    int first = 0;
+    Option<FixedArray<int, 4>> part{};
+};
+struct OtherArray {
+    FixedArray<int, 5> five{};
+};
+template <class Part>
+struct BodyWith {
+    Part part;
+    void operator()(auto) const noexcept {}
+};
+template <class Part>
+struct BodyInBody {
+    BodyWith<Part> inner;
+    void operator()(auto) const noexcept {}
+};
+template <class Part>
+concept MayBuild = BuildsUnnamedArray<BodyWith<Part>, int, 4>;
+static_assert(!MayBuild<FixedArray<int, 4>&> && !MayBuild<FixedArray<int, 4>*> && !MayBuild<Nested&>);
+static_assert(!MayBuild<Ref<FixedArray<int, 4>, ValueDoorBrand>> && !MayBuild<View<FixedArray<int, 4>>>);
+static_assert(!BuildsUnnamedArray<BodyInBody<Nested&>, int, 4>);
+static_assert(MayBuild<FixedArray<int, 4> const&> && MayBuild<FixedArray<int, 4>> && MayBuild<Nested const&>);
+static_assert(MayBuild<OtherArray&> && MayBuild<int&> && MayBuild<View<int>> && MayBuild<FixedArray<int, 4> const*>);
+
 // The value door build_at: the element at a proven index becomes the value
 // of fn(args...), built in its place.  fn holds no state: a function, a
 // pointer to a function, or a lambda with no capture.  No argument names

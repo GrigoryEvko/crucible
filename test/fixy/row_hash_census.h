@@ -1301,6 +1301,8 @@ inline constexpr StatedZero kZeros[] = {
      "an inline array of elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::FixedArrayOwner,
      "the maker of a keyed FixedArray: it is empty and is only an argument of the mint of a keyed owner"},
+    {^^::foundation::core::FixedHeapArrayOwner,
+     "the maker of a keyed FixedHeapArray: it is empty and is only an argument of the mint of a keyed owner"},
     {^^::foundation::core::HeapArray,
      "an array of elements on the heap: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::FixedHeapArray,

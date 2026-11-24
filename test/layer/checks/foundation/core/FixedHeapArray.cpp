@@ -64,6 +64,23 @@ concept OpensWithNoKey = requires(Array& array, Body const& body) { array.with_m
 template <class Array, class Key, class Body>
 concept OpensWithKey = requires(Array& array, Key& key, Body const& body) { array.with_mut(key, body); };
 
+// The value doors of an array with no key, and none of a keyed array.
+template <class Array>
+concept HasValueDoors = requires(Array& array, View<int const, 8> run, View<int const> window) {
+    array.set(index<0>(), 2);
+    static_cast<void>(array.exchange(index<0>(), 2));
+    array.fill(2);
+    array.copy_from(run);
+    static_cast<void>(array.copy_window(0, window));
+};
+template <class Array>
+concept SetsElement = requires(Array& array) { array.set(index<0>(), 2); };
+template <class Array>
+concept CopiesWindow =
+    requires(Array& array, View<int const> window) { static_cast<void>(array.copy_window(0, window)); };
+static_assert(HasValueDoors<FixedHeapArray<int, 8>> && !SetsElement<FixedHeapArray<int, 8> const>);
+static_assert(!SetsElement<KeyedWords> && !CopiesWindow<KeyedWords>);
+
 static_assert(sizeof(KeyedWords) == sizeof(FixedHeapArray<int, 8>));
 static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^KeyedWords), ^^loan_key_mark));
 static_assert(!::foundation::linear::carries_annotation(^^FixedHeapArray<int, 8>, ^^loan_key_mark));

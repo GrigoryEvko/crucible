@@ -4156,7 +4156,7 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_no_ctx
 # checks of the trust ladder change.
 crucible_neg_compile_test(neg_validated_op_built_outside_mint
   "is private within this context"
-  "crucible::ValidatedOp::ValidatedOp\\(crucible::TraceRing::ValidatedEntryPtr, foundation::core::View<const crucible::TensorMeta>\\)")
+  "crucible::ValidatedOp::ValidatedOp\\(crucible::TraceRing::ValidatedEntryPtr, foundation::core::View<const crucible::TensorMeta(, 18446744073709551615)?>\\)")
 crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "could not convert .crucible::mint_ffi_entry\\(entry\\). from .Tagged<"
   "fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")

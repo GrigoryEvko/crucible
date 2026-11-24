@@ -26,6 +26,10 @@
 //                       check: the type of the index proves the bound
 //
 // Writes
+//   array.set(index, value), array.exchange(index, value), array.fill(value),
+//   array.copy_from(view) and array.copy_window(start, view)
+//                       the value doors, as a FixedArray has them
+//                       (foundation/core/Array.h)
 //   array.with_element(index, body)
 //                       body gets the element at an Index<N> in place, as
 //                       T&, and the door gives the result of body
@@ -47,10 +51,13 @@
 //     array.with_mut(key, body)
 //     key = array.with_element(std::move(key), index, body)
 //     array.with_element(key, index, body)
-//   The doors with no key are refused on such an array.  The array is a
-//   member of a class, so its key comes from a root door, and the mint takes
-//   the brand with no key.  The spelling with no key brand has the brand
-//   Unkeyed and the doors above with no key.
+//   The doors with no key are refused on such an array, and so are the value
+//   doors.  The key of an array that is a member of a class comes from a root
+//   door, and the mint above takes the brand with no key.  The key of a local
+//   array comes from the mint of foundation/core/KeyedMint.h:
+//     auto [array, key] = mint_keyed_owner(fixed_heap_array_owner<T, N>, alloc, fill)
+//   The spelling with no key brand has the brand Unkeyed and the doors above
+//   with no key.
 //
 // Owner
 //   The array does not copy and does not move.  The mint gives a prvalue, so
@@ -202,6 +209,70 @@ public:
                                       "expression");
     T const& at(Index<N>) const&& = delete("an element of a temporary FixedHeapArray dangles at the end of the full "
                                            "expression");
+
+    // The value doors of one element and of the run, as a FixedArray gives
+    // them (foundation/core/Array.h): no body runs while a door writes, so no
+    // door takes a key, and a keyed array has none of them.  A window copy
+    // always inlines, so an append of a ring costs no call.  Complexity: O(1)
+    // for one element, O(N) for the run, and O(source.size()) for a window.
+    void set(Index<N> index, T const& value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_copy_assignable_v<T>
+    {
+        first_()[index.raw()] = value;
+    }
+    void set(Index<N> index, T&& value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_move_assignable_v<T>
+    {
+        first_()[index.raw()] = static_cast<T&&>(value);
+    }
+    [[nodiscard]] T exchange(Index<N> index, T value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>
+    {
+        T held = static_cast<T&&>(first_()[index.raw()]);
+        first_()[index.raw()] = static_cast<T&&>(value);
+        return held;
+    }
+    void fill(T const& value) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        ::foundation::core::fill(FixedHeapArrayCountDoor::held_run_<N>(first_()), value);
+    }
+    CRUCIBLE_INLINE void copy_from(View<T const, N> source) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        ::foundation::core::copy(FixedHeapArrayCountDoor::held_run_<N>(first_()), source);
+    }
+    [[nodiscard]] CRUCIBLE_INLINE Result<Unit, LengthMismatch> copy_window(std::size_t start,
+                                                                           View<T const> source) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        return detail::copy_into_window_(FixedHeapArrayCountDoor::held_run_<N>(first_()), start, source);
+    }
+    template <class... Arguments>
+        requires is_keyed_
+    void set(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no value door, because another name of it could write an element while a frame of "
+        "it is open: call with_element(key, index, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void exchange(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no value door, because another name of it could write an element while a frame of "
+        "it is open: call with_element(key, index, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void fill(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no value door, because another name of it could write the run while a frame of it "
+        "is open: call with_mut(key, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void copy_from(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no value door, because another name of it could write the run while a frame of it "
+        "is open: call with_mut(key, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void copy_window(Arguments&&... arguments) & = delete(
+        "a keyed FixedHeapArray has no value door, because another name of it could write the run while a frame of it "
+        "is open: call with_mut(key, body)");
 
     // The frame door of one element: body gets the element at a proven index
     // in place, for the time of the call, and the door gives the result of
@@ -383,5 +454,29 @@ template <class T, std::size_t N, std::size_t Align = alignof(T), ::foundation::
                                                                           T const& fill) noexcept {
     return FixedHeapArray<T, N, Align, KeyBrand>{detail::HeapArrayDoor::key(), fill};
 }
+
+// The maker of a keyed FixedHeapArray of N copies of a value, for the mint of
+// foundation/core/KeyedMint.h (the loan key of foundation/core/Frame.h):
+// auto [array, key] = mint_keyed_owner(fixed_heap_array_owner<T, N>, alloc, fill).
+// The maker takes the proof of the brand of the mint, so it builds an array
+// only inside a mint.  The allocation capability comes first of the arguments,
+// so the allocation shows at the call.  Complexity: one allocation and N
+// copies.
+template <class T, std::size_t N, std::size_t Align = alignof(T)>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
+          && DroppablePayload<T>
+struct FixedHeapArrayOwner final {
+    template <IsKeyBrand Brand, class Marker>
+        requires CanMintFixedHeapArray<T, N, Align, Marker>
+    [[nodiscard]] FixedHeapArray<T, N, Align, Brand> operator()(MintedBrand<Brand> /*proof*/, Marker /*allocation*/,
+                                                                T const& fill) const noexcept {
+        return FixedHeapArray<T, N, Align, Brand>{detail::HeapArrayDoor::key(), fill};
+    }
+};
+
+template <class T, std::size_t N, std::size_t Align = alignof(T)>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && detail::HeapArrayAlignment<T, Align>
+          && DroppablePayload<T>
+inline constexpr FixedHeapArrayOwner<T, N, Align> fixed_heap_array_owner{};
 
 }  // namespace foundation::core

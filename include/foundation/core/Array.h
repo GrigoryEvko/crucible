@@ -30,15 +30,56 @@
 // A FixedArray has no operator[], no data() and no pointer to its
 // elements, so no read takes an index that no check proved.  An index from
 // data goes through Index<N>::check(raw), which gives an Option.  Each read
-// gives a const element.  with_element writes one element (the element
-// door), build_at(index, fn, args...) makes one element the value of
-// fn(args...), built in its place (the value door), and fill(view, value) and
-// copy(destination, source) of the Region
-// family write the elements through the ViewMut of with_mut (the frame door).
+// gives a const element.  The value doors write the elements with no body,
+// with_element writes one element in a body (the element door), and fill and
+// copy of the Region family write the elements through the ViewMut of
+// with_mut (the frame door) or of build_fixed_array (the build door).
 // So no two Views of one array write the same elements.
 //
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
+//
+// Value doors
+//   array.set(index, value)   the element at an Index<N> becomes value.  A
+//                       change of a part of an element takes a copy of it
+//                       from at(), changes the copy, and sets it
+//   array.exchange(index, value)
+//                       the element becomes value, and the door gives the
+//                       value that the element held
+//   array.build_at(index, fn, args...)
+//                       the element becomes the value of fn(args...), built
+//                       in its place
+//   array.fill(value)   each element becomes value
+//   array.copy_from(view)
+//                       each element becomes the element of a
+//                       View<T const, N> at its position
+//   array.copy_window(start, view)
+//                       the elements from the position start become the
+//                       elements of a View.  A View that does not fit gives
+//                       LengthMismatch, and the door then writes nothing
+// A value door lends no element and no run.  Its value comes to it as an
+// argument, so no code of the caller runs while the door writes, and no second
+// door of the array opens inside it.  So a value door takes no key.  A copy
+// gives the array the values that the source held before the copy, also when
+// the source is a View of the same array.  A set ends the old value of the
+// element, so an element that a holder cannot drop, such as a linear value,
+// takes exchange, which gives the old value back.
+//
+// A keyed array (the loan key of foundation/core/Frame.h) has no value door:
+// another name of the array could write an element while a frame of the array
+// is open.  It writes one element through with_element(key, index, body).
+//
+// Build door
+//   build_fixed_array<T, N>(body)
+//                       a new array of N value-initialized elements: body gets
+//                       the ViewMut<T, Fresh, N> of the elements, and the door
+//                       gives the array, alone for a body that gives void, and
+//                       after the result in a Record for each other body.  The
+//                       array has no name until the door gives it, so no code
+//                       opens a second frame of it, and the door takes no key.
+//                       The door refuses a body that could write the object
+//                       that the array initializes, such as the name of the
+//                       variable in its own initializer
 //
 // Heap array
 //   The five mints put count elements in storage from the allocation door of
@@ -273,14 +314,106 @@ template <class... Refused, class Owner, class Body, ::foundation::brand::IsBran
     detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>, Owner>
 with_mut(Owner&& owner, Body&& body) noexcept;
 
+namespace detail {
+
+// True when an object of the node holds the array by value: the node itself,
+// and each base, each member and each element of an array that it holds by
+// value, at each depth.  A class that the unit does not complete holds no
+// array that the unit knows.  It is a function that is no template, so no
+// unit can specialize what it admits.  Complexity: linear in the parts that
+// the node holds by value, at compile time only.
+[[nodiscard]] consteval bool holds_array_by_value_(::foundation::reflect::TypeNode root, std::meta::info array) {
+    namespace refl = ::foundation::reflect;
+    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
+    refl::TypeNodeList listed;
+    listed.push_back(root);
+    for (std::size_t next = 0; next < listed.size(); ++next) {
+        refl::TypeNode const node = listed.begin()[next];
+        if (node.type == array) return true;
+        if (std::meta::is_array_type(node.type)) {
+            for (refl::TypeNode const& element : refl::argument_components_of(node, read))
+                listed.push_back(element);
+            continue;
+        }
+        for (refl::TypeNode const& part : refl::member_components_of(node, read)) {
+            if (part.is_held_by_value) listed.push_back(part);
+        }
+    }
+    return false;
+}
+
+// True when a value of the body could write an object that holds the array: a
+// part that the body holds by value, at each depth, is a reference or a
+// pointer to an object that is not const, or a Ref or a View of one, and that
+// object holds the array by value.  The target of a borrow is one step away.
+// An object whose address is older than the array holds no address of it.  It
+// is a function that is no template, so no unit can specialize what it admits.
+// Complexity: linear in the parts of the body and of each target, at compile
+// time only.
+[[nodiscard]] consteval bool could_write_array_(std::meta::info body, std::meta::info array) {
+    namespace refl = ::foundation::reflect;
+    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
+    refl::TypeNodeList held;
+    held.push_back(refl::TypeNode{refl::bare_type(body), true});
+    for (std::size_t next = 0; next < held.size(); ++next) {
+        for (refl::TypeNode const& part : refl::member_components_of(held.begin()[next], read)) {
+            bool const is_borrow =
+                std::meta::is_pointer_type(part.type)
+                || (std::meta::has_template_arguments(part.type)
+                    && (std::meta::template_of(part.type) == ^^View || std::meta::template_of(part.type) == ^^Ref));
+            if (part.was_reference) {
+                if (!part.was_const && holds_array_by_value_(part, array)) return true;
+            } else if (is_borrow) {
+                refl::TypeNode const target = refl::argument_components_of(part, read).begin()[0];
+                if (!target.was_const && holds_array_by_value_(target, array)) return true;
+            } else {
+                held.push_back(part);
+            }
+        }
+    }
+    return false;
+}
+
+}  // namespace detail
+
+// The element of an array that build_fixed_array builds: an element of a
+// FixedArray of N with a default constructor that does not throw.
+template <class T, std::size_t N>
+concept BuildableElement =
+    OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_default_constructible_v<T>;
+
+// A body of build_fixed_array that could write no object that holds an array
+// of the type that the door builds (could_write_array_).
+template <class Body, class T, std::size_t N>
+concept BuildsUnnamedArray =
+    BuildableElement<T, N>
+    && !detail::could_write_array_(^^std::remove_reference_t<Body>, std::meta::dealias(^^FixedArray<T, N, Unkeyed>));
+
+// The body of build_fixed_array: a body of each frame door that names no
+// object that the array could initialize.
+template <class Body, class T, std::size_t N, class Fresh>
+concept BuildsFixedArray = BuildableElement<T, N> && FrameBody<Body, T, Fresh, N> && BuildsUnnamedArray<Body, T, N>;
+
+// The build door of a FixedArray (the definition below).  ArrayFrameKeyDoor
+// names it as a friend, so this declaration stands before the door, and the
+// default argument of the brand belongs to it.
+template <class T, std::size_t N, class... Refused, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
+                                               FixedArray<T, N, Unkeyed>>
+build_fixed_array(Body&& body) noexcept;
+
 // The door of the arrays of this header to the key of the frame doors (the
 // doors of the owners above foundation/core/Frame.h).  Its one member is
 // private.  The invariant: a FixedArray lends its own elements in place, in
 // the frame of a door of the array, with the scope brand of the call of the
 // door.  The free frame door holds a HeapArray or a MaskedArray by move in its
-// frame, and lends its run with the scope brand of its call.  FixedArray and
-// the free frame door are its friends.  A home owner row of
-// utils/rule-table.txt keeps this definition in this header.
+// frame, and lends its run with the scope brand of its call.  The build door
+// lends the run of an array that it holds as a local with no other name, with
+// the scope brand of its call.  FixedArray, the free frame door and the build
+// door are its friends.  A home owner row of utils/rule-table.txt keeps this
+// definition in this header.
 class ArrayFrameKeyDoor final : ::foundation::NoObject<ArrayFrameKeyDoor> {
     template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
         requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
@@ -292,6 +425,10 @@ class ArrayFrameKeyDoor final : ::foundation::NoObject<ArrayFrameKeyDoor> {
     friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept -> detail::frame_return_t<
         detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh, detail::frame_extent_v<Owner>>>,
         Owner>;
+    template <class T, std::size_t N, class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
+        requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+    friend constexpr auto ::foundation::core::build_fixed_array(Body&& body) noexcept
+        -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>, FixedArray<T, N, Unkeyed>>;
 
     // The key of the frame doors, for the run of an array that a friend holds.
     [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
@@ -345,6 +482,41 @@ public:
         requires(N <= max_listed_array_count) && std::is_nothrow_move_constructible_v<T>
         : elements_{static_cast<T&&>(values)...} {}
 };
+
+// The storage of a keyed FixedArray (the loan key of
+// foundation/core/Frame.h).  The body of a frame of the array can still reach
+// the array by a name, and only its writers need the key.  So a keyed array
+// has no assignment, and it moves only when a move reads its elements and
+// writes none of them: a write through the name would change the elements
+// under the ViewMut of the frame.  A copy only reads the elements.
+template <class T, std::size_t N>
+class KeyedArrayStorage : public ArrayStorage<T, N> {
+protected:
+    constexpr KeyedArrayStorage() noexcept = default;
+
+public:
+    using ArrayStorage<T, N>::ArrayStorage;
+
+    KeyedArrayStorage(KeyedArrayStorage const&) = default;
+    KeyedArrayStorage(KeyedArrayStorage&&)
+        requires std::is_trivially_copyable_v<T>
+    = default;
+    KeyedArrayStorage(KeyedArrayStorage&&)
+        requires(!std::is_trivially_copyable_v<T>)
+    = delete("a move of a keyed array writes its elements, and a frame of the array could be open: build the array in "
+             "its place");
+    KeyedArrayStorage& operator=(KeyedArrayStorage const&) = delete(
+        "an assignment of a keyed array writes its elements with no LoanKey, and a frame of the array could be "
+        "open: write them through with_mut(key, body)");
+    KeyedArrayStorage& operator=(KeyedArrayStorage&&) = delete(
+        "an assignment of a keyed array writes its elements with no LoanKey, and a frame of the array could be "
+        "open: write them through with_mut(key, body)");
+    ~KeyedArrayStorage() = default;
+};
+
+// The storage of a FixedArray of the brand.
+template <class T, std::size_t N, class KeyBrand>
+using array_storage_t = std::conditional_t<IsKeyBrand<KeyBrand>, KeyedArrayStorage<T, N>, ArrayStorage<T, N>>;
 
 }  // namespace detail
 
@@ -450,6 +622,25 @@ template <class... Args>
 concept ArgumentsHoldNoLinearValue =
     ((std::is_lvalue_reference_v<Args> || ::foundation::linear::HoldsNoLinearValue<Args>) && ...);
 
+namespace detail {
+
+// Copies the elements of source into run from the position start, as the
+// value door copy_window of an array does.  A source that does not fit gives
+// LengthMismatch, and the function then writes nothing.  A View has no brand,
+// so the source can be a View of run, and the copy is one memmove.
+// Complexity: O(source.size()).
+template <class T, std::size_t N>
+    requires RegionCopyElement<T> && (N != dynamic_extent)
+[[nodiscard]] CRUCIBLE_INLINE Result<Unit, LengthMismatch> copy_into_window_(View<T, N> run, std::size_t start,
+                                                                             View<T const> source) noexcept {
+    if (start > N || source.size() > N - start) return err(LengthMismatch{});
+    __builtin_memmove(first_of_(BaseLayerRead{}, run) + start, first_of_(BaseLayerRead{}, source),
+                      source.size() * sizeof(T));
+    return Unit{};
+}
+
+}  // namespace detail
+
 // The body of a keyed element door: it takes the element with no throw, its
 // result holds no borrow and fits a Record, it reaches no key of the brand,
 // and it holds no linear value by value.
@@ -470,8 +661,8 @@ concept KeyedLinearElementBody = LinearElementBody<Body, T> && ReachesNoLoanKey<
 template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
 class[[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]][[= equal_parts{}]] FixedArray final
-    : private detail::ArrayStorage<T, N> {
-    using Storage = detail::ArrayStorage<T, N>;
+    : private detail::array_storage_t<T, N, KeyBrand> {
+    using Storage = detail::array_storage_t<T, N, KeyBrand>;
     using Storage::elements_;
 
     // An array of a key brand opens its frames only with its LoanKey (the
@@ -568,6 +759,76 @@ public:
     template <class Body>
     void with_element(Index<N> index, Body&& body) const&& =
         delete("a frame door of a temporary FixedArray lends an element that the full expression ends");
+
+    // The value doors of one element (the value doors): the element at a
+    // proven index becomes value.  Each door takes the value as an argument,
+    // so no code of the caller runs while it writes.  set ends the old value,
+    // so the element is one that a holder can drop.  exchange gives the old
+    // value back.  Complexity: O(1), and the cost of the assignment.
+    constexpr void set(Index<N> index, T const& value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_copy_assignable_v<T> && DroppablePayload<T>
+    {
+        elements_[index.raw()] = value;
+    }
+    constexpr void set(Index<N> index, T&& value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_move_assignable_v<T> && DroppablePayload<T>
+    {
+        elements_[index.raw()] = static_cast<T&&>(value);
+    }
+    [[nodiscard]] constexpr T exchange(Index<N> index, T value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>
+    {
+        T held = static_cast<T&&>(elements_[index.raw()]);
+        elements_[index.raw()] = static_cast<T&&>(value);
+        return held;
+    }
+    template <class... Arguments>
+        requires is_keyed_
+    void set(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no value door, because another name of it could write an element while a frame of it "
+        "is open: call with_element(key, index, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void exchange(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no value door, because another name of it could write an element while a frame of it "
+        "is open: call with_element(key, index, body)");
+
+    // The value doors of the run (the value doors): fill, copy_from of a run
+    // of N elements, and copy_window of a run that fits from start.  The
+    // two copies give the array the values that the source held before the
+    // copy, also when the source is a View of the same array.  Complexity:
+    // O(N), and O(source.size()) for a window.
+    constexpr void fill(T const& value) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        ::foundation::core::fill(detail::view_of_array_<T, N>(elements_), value);
+    }
+    CRUCIBLE_INLINE void copy_from(View<T const, N> source) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        ::foundation::core::copy(detail::view_of_array_<T, N>(elements_), source);
+    }
+    [[nodiscard]] CRUCIBLE_INLINE Result<Unit, LengthMismatch> copy_window(std::size_t start,
+                                                                           View<T const> source) & noexcept
+        requires(!is_keyed_) && RegionCopyElement<T>
+    {
+        return detail::copy_into_window_(detail::view_of_array_<T, N>(elements_), start, source);
+    }
+    template <class... Arguments>
+        requires is_keyed_
+    void fill(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no value door, because another name of it could write the run while a frame of it is "
+        "open: call with_mut(key, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void copy_from(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no value door, because another name of it could write the run while a frame of it is "
+        "open: call with_mut(key, body)");
+    template <class... Arguments>
+        requires is_keyed_
+    void copy_window(Arguments&&... arguments) & = delete(
+        "a keyed FixedArray has no value door, because another name of it could write the run while a frame of it is "
+        "open: call with_mut(key, body)");
 
     // The value door of one element: the element at a proven index becomes
     // the value that fn(args...) gives, built in its place, and the door
@@ -842,16 +1103,92 @@ public:
     }
 };
 
-// The maker of a keyed FixedArray of N value-initialized elements, for the
-// mint of foundation/core/KeyedMint.h (the loan key of
-// foundation/core/Frame.h): auto [array, key] =
-// mint_keyed_owner(fixed_array_owner<T, N>).  The maker takes the proof of the
-// brand of the mint, so it builds an array only inside a mint.  The array
-// comes back as a prvalue, so no element moves.  Complexity: O(N) for the
-// value-initialization.
+// The build door (the build door): a new array of N value-initialized
+// elements.  body gets the ViewMut<T, Fresh, N> of the elements, with the
+// scope brand of the call, and the door gives the array: alone for a body
+// that gives void, and after the result in a Record for each other body.  The
+// array is a local of the door until the door gives it, so no name of it is
+// in the scope of the caller, and its frame needs no LoanKey.  The compiler
+// builds a result of the array alone in the object that the call
+// initializes.  So the gate BuildsUnnamedArray refuses a body that could write
+// that object.  The other gates are those of each frame body.  The pack
+// refuses each explicit argument after N, so no caller names the brand.
+// Complexity: O(N) for the value-initialization, and the cost of body.
+template <class T, std::size_t N, class... Refused, class Body, ::foundation::brand::IsBrand Fresh>
+    requires(sizeof...(Refused) == 0) && BuildsFixedArray<Body, T, N, Fresh>
+[[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
+                                               FixedArray<T, N, Unkeyed>>
+build_fixed_array(Body&& body) noexcept {
+    FixedArray<T, N, Unkeyed> held{};
+    View<T, N> const run = frame_run_(ArrayFrameKeyDoor::key_(), held);
+    if constexpr (std::is_void_v<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>>) {
+        static_cast<Body&&>(body)(ViewMut<T, Fresh, N>{ArrayFrameKeyDoor::key_(), run});
+        return held;
+    } else {
+        return detail::give_run_back_<Fresh>(ArrayFrameKeyDoor::key_(), static_cast<FixedArray<T, N, Unkeyed>&&>(held),
+                                             run, static_cast<Body&&>(body));
+    }
+}
+
+// A body whose result holds a borrow or names the brand of the frame, a body
+// that holds a linear value, a body that stores a borrow outside the frame,
+// and a body that could write the object that the array initializes bind to
+// these overloads, so each refusal gives its reason.
+template <class T, std::size_t N, class... Refused, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && RefusedFrameBody<Body, T, Fresh, N>
+void build_fixed_array(Body&& body) = delete(
+    "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
+    "the frame: give a plain value");
+template <class T, std::size_t N, class... Refused, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && LinearFrameBody<Body, T, Fresh, N>
+void build_fixed_array(Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+template <class T, std::size_t N, class... Refused, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && BuildableElement<T, N> && StoringFrameBody<Body, T, Fresh, N>
+void build_fixed_array(Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+template <class T, std::size_t N, class... Refused, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+             && BuildableElement<T, N> && FrameBody<Body, T, Fresh, N> && (!BuildsUnnamedArray<Body, T, N>)
+void build_fixed_array(Body&& body) = delete(
+    "a body of build_fixed_array reaches an object that holds an array of the type that it builds, through a "
+    "reference or a pointer that is not const, so it could write the object that the array initializes: capture the "
+    "object by a const reference, or capture only the part that the body reads");
+
+namespace detail {
+
+// The maker of a keyed FixedArray from a plain array of the same elements,
+// which FixedArrayOwner holds as its base.
+template <class T, std::size_t N, class Positions = std::make_index_sequence<(N <= max_listed_array_count) ? N : 0>>
+struct CopiedArrayMaker_;
+template <class T, std::size_t N, std::size_t... Positions>
+struct CopiedArrayMaker_<T, N, std::index_sequence<Positions...>> {
+    template <IsKeyBrand Brand>
+        requires(sizeof...(Positions) == N) && std::is_nothrow_copy_constructible_v<T>
+    [[nodiscard]] constexpr FixedArray<T, N, Brand> operator()(MintedBrand<Brand> /*proof*/,
+                                                               FixedArray<T, N, Unkeyed> const& values) const noexcept {
+        return FixedArray<T, N, Brand>(values.at(index<Positions>())...);
+    }
+};
+
+}  // namespace detail
+
+// The maker of a keyed FixedArray, for the mint of foundation/core/KeyedMint.h
+// (the loan key of foundation/core/Frame.h).  Each element is
+// value-initialized, or it is a copy of the element of a plain array of at
+// most max_listed_array_count elements:
+//   auto [array, key] = mint_keyed_owner(fixed_array_owner<T, N>);
+//   auto [array, key] = mint_keyed_owner(fixed_array_owner<int, 3>, FixedArray<int, 3>{1, 2, 3});
+// The maker takes the proof of the brand of the mint, so it builds an array
+// only inside a mint.  The array comes back as a prvalue, so no element
+// moves.  Complexity: O(N) for the initialization.
 template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
-struct FixedArrayOwner final {
+struct FixedArrayOwner final : detail::CopiedArrayMaker_<T, N> {
+    using detail::CopiedArrayMaker_<T, N>::operator();
+
     template <IsKeyBrand Brand>
         requires std::is_nothrow_default_constructible_v<T>
     [[nodiscard]] constexpr FixedArray<T, N, Brand> operator()(MintedBrand<Brand> /*proof*/) const noexcept {

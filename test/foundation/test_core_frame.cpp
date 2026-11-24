@@ -143,6 +143,19 @@ void test_keyed_array() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, third == 31 && array.at(::foundation::core::index<2>()) == 31);
 
+    // A keyed array copies its elements out with no key, and it moves only as a
+    // read of its elements.  It takes no assignment, also from its own type.
+    auto const copied = array;
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(copied.view(), array.view()));
+    static_assert(!std::is_copy_assignable_v<decltype(array)> && !std::is_move_assignable_v<decltype(array)>);
+    static_assert(std::is_trivially_move_constructible_v<decltype(array)>);
+
+    // The maker copies the elements of a plain array.
+    auto [listed, listed_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 3>,
+                                                                     ::foundation::core::FixedArray<int, 3>{7, 8, 9});
+    int const listed_sum = listed.with_mut(listed_key, [](auto out) noexcept { return sum_of(out); });
+    CRUCIBLE_TEST_ASSERT(kTest, listed_sum == 24);
+
     auto [target, target_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
     auto& lent_key = target_key;
     auto& lent_target = target;

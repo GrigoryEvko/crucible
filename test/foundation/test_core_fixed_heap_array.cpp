@@ -79,6 +79,44 @@ void test_doors_write_in_place() {
     CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 10 && words.at(index<3>()) == 13);
 }
 
+// The value doors write one element and the run in place.  A copy from a View
+// of the same array gives the values that the View held before the copy, and a
+// window that does not fit writes nothing.
+void test_value_doors() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    FixedHeapArray<std::uint64_t, 6> words = mint_fixed_heap_array<std::uint64_t, 6>(alloc, std::uint64_t{1});
+    words.set(index<1>(), 4);
+    std::uint64_t const held = words.exchange(index<2>(), 9);
+    CRUCIBLE_FATAL_INVARIANT(held == 1 && words.at(index<1>()) == 4 && words.at(index<2>()) == 9);
+    ::foundation::core::FixedArray<std::uint64_t, 6> const source{1, 2, 3, 4, 5, 6};
+    words.copy_from(source.view());
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::equal(words.view(), source.view()));
+    CRUCIBLE_FATAL_INVARIANT(words.copy_window(2, words.view().window(0, 4).expect("four elements fit")).is_ok());
+    ::foundation::core::FixedArray<std::uint64_t, 6> const moved{1, 2, 1, 2, 3, 4};
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::equal(words.view(), moved.view()));
+    CRUCIBLE_FATAL_INVARIANT(words.copy_window(3, words.view().window(0, 4).expect("four elements fit")).is_err());
+    CRUCIBLE_FATAL_INVARIANT(::foundation::core::equal(words.view(), moved.view()));
+    words.fill(8);
+    CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 8 && words.at(index<5>()) == 8);
+}
+
+// The maker of a keyed heap array gives an array of the copies of a value and
+// the key of the brand of the mint.
+void test_keyed_maker() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    auto [words, key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_heap_array_owner<std::uint64_t, 5>, alloc, std::uint64_t{3});
+    std::uint64_t const total = words.with_mut(key, [](auto run) noexcept {
+        std::uint64_t sum = 0;
+        for (std::uint64_t& word : run) {
+            sum += word;
+            word = sum;
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 15 && words.at(index<0>()) == 3 && words.at(index<4>()) == 15);
+}
+
 // A keyed array opens its frames with the key of its brand: by move, and by a
 // borrow of the key.  The key comes from the mint of a keyed FixedArray, which
 // gives a key of the brand of its call site, and the heap array takes that
@@ -152,6 +190,8 @@ void test_large_ring() {
 int main() {
     test_fill_and_reads();
     test_doors_write_in_place();
+    test_value_doors();
+    test_keyed_maker();
     test_keyed_doors();
     test_alignment();
     test_destruction_counts();

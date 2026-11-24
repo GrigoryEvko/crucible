@@ -3804,7 +3804,7 @@ foundation_neg_compile_test(neg_core_data_address_wide_device
   "template constraint failure for .template<class Device>  requires  DeviceIdentity<Device> class foundation::core::DataAddress."
   "the expression .sizeof \\(Device\\) < sizeof \\(void\\*\\) \\[with Device = WideDevice\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_run_address_const_bytes
-  "no matching function for call to .mint_run_address\\(const foundation::core::View<const unsigned char>&, int\\)."
+  "no matching function for call to .mint_run_address\\(const foundation::core::View<const unsigned char(, 18446744073709551615)?>&, int\\)."
   "the expression .is_same_v<_Tp, _Up> \\[with _Tp = const unsigned char; _Up = unsigned char\\]. evaluated to .false.")
 set_property(TEST neg_core_run_address_const_bytes APPEND PROPERTY ENVIRONMENT
   "CRUCIBLE_NEG_EXTRA_FLAGS=-fconcepts-diagnostics-depth=3")
@@ -4643,6 +4643,50 @@ foundation_neg_compile_test(neg_core_keyed_mint_proof_private
 foundation_neg_compile_test(neg_core_fixed_array_owner_no_default
   "no matching function for call to .mint_keyed_owner\\(const foundation::core::FixedArrayOwner<.anonymous.::NoDefault, 4>&\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::NoDefault\\]. evaluated to .false.")
+# A keyed array has no value door, no assignment, and no move that writes its
+# elements: a body of a frame of the array reaches the array by a name, and
+# each of them would write the elements under the ViewMut of the frame with no
+# key.
+foundation_neg_compile_test(neg_core_keyed_array_set
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::set\\(Arguments&& ...\\) &"
+  "a keyed FixedArray has no value door, because another name of it could write an element")
+foundation_neg_compile_test(neg_core_keyed_array_fill
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::fill\\(Arguments&& ...\\) &"
+  "a keyed FixedArray has no value door, because another name of it could write the run")
+foundation_neg_compile_test(neg_core_keyed_array_assigned
+  "use of deleted function .foundation::core::FixedArray<int, 4, foundation::core::<lambda\\(\\)> >& foundation::core::FixedArray<int, 4, foundation::core::<lambda\\(\\)> >::operator=\\("
+  "an assignment of a keyed array writes its elements with no LoanKey")
+foundation_neg_compile_test(neg_core_keyed_array_moved_elements
+  "use of deleted function .foundation::core::FixedArray<foundation::core::HeapArray<int>, 2, foundation::core::<lambda\\(\\)> >::FixedArray\\("
+  "a move of a keyed array writes its elements, and a frame of the array could be open")
+# The value doors of a FixedArray: set ends the old value, so it takes no
+# linear element, and a const array has no writer.
+foundation_neg_compile_test(neg_core_fixed_array_set_linear
+  "no matching function for call to .foundation::core::FixedArray<.anonymous.::End, 2>::set\\("
+  "DroppablePayload")
+foundation_neg_compile_test(neg_core_fixed_array_set_on_const
+  "passing .const foundation::core::FixedArray<int, 4>. as .this. argument discards qualifiers"
+  "neg_core_fixed_array_set_on_const\\.cpp:[0-9]+:[0-9]+: error")
+# build_fixed_array: the gates of each frame body, and a body that could write
+# the object that the array initializes.
+foundation_neg_compile_test(neg_core_build_fixed_array_gives_view_mut
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_build_fixed_array_linear_capture
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_build_fixed_array_view_kept
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_build_fixed_array_names_array
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "a body of build_fixed_array reaches an object that holds an array of the type that it builds")
+foundation_neg_compile_test(neg_core_build_fixed_array_names_holder
+  "use of deleted function .void foundation::core::build_fixed_array\\(Body&&\\)"
+  "a body of build_fixed_array reaches an object that holds an array of the type that it builds")
+foundation_neg_compile_test(neg_core_build_fixed_array_names_brand
+  "no matching function for call to .build_fixed_array<int, 4, .anonymous.::HeldBrand>\\("
+  "Refused = .<unnamed>::HeldBrand.")
 # A window stack does not copy, because each open window points into it.  Only
 # the window doors of a stack make a loan: the witness fixture of WindowLoan
 # in test/fixy/neg refuses a loan outside them.
@@ -5551,7 +5595,14 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_nested_frame_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
 # A keyed FixedHeapArray opens a frame only with the LoanKey of its brand, and
-# its gate refuses a body that reaches the key.
+# its gate refuses a body that reaches the key.  It has no value door, and its
+# maker takes the allocation capability.
+foundation_neg_compile_test(neg_core_keyed_heap_array_copy_window
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::copy_window\\(Arguments&& ...\\) &"
+  "a keyed FixedHeapArray has no value door, because another name of it could write the run")
+foundation_neg_compile_test(neg_core_keyed_heap_owner_without_allocation
+  "no matching function for call to .mint_keyed_owner\\(const foundation::core::FixedHeapArrayOwner<int, 4, 4>&, foundation::effects::cap::IO, int\\)."
+  "CanMintFixedHeapArray")
 foundation_neg_compile_test(neg_core_keyed_heap_array_without_key
   "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(Body&&\\) &"
   "a keyed FixedHeapArray opens a frame only with its LoanKey")
@@ -5826,7 +5877,7 @@ foundation_neg_compile_test(neg_core_walk_limit_cursor_forged
 # extent has none.  zip of two Views of different fixed extents is refused
 # at compile time, and the loop of a temporary array is refused.
 foundation_neg_compile_test(neg_core_view_enumerate_dynamic_extent
-  "no matching function for call to .foundation::core::View<const int>::enumerate\\(\\) const."
+  "no matching function for call to .foundation::core::View<const int(, 18446744073709551615)?>::enumerate\\(\\) const."
   "the expression .Extent != foundation::core::dynamic_extent \\[with Extent = 18446744073709551615\\]. evaluated to .false.")
 foundation_neg_compile_test(neg_core_zip_different_fixed_extents
   "use of deleted function .void foundation::core::Walk<Stage>::zip\\(foundation::core::Walk<Other>&&\\) &&"
