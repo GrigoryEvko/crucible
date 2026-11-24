@@ -705,7 +705,8 @@ void append_number(char* bytes, std::size_t capacity, std::size_t& at, std::uint
         digits[count] = static_cast<char>('0' + number % 10U);
         ++count;
         number = static_cast<std::uint16_t>(number / 10U);
-    } while (number != 0U);
+        // The second test states the bound of count to the compiler.
+    } while (number != 0U && count < sizeof digits);
     while (count > 0 && at < capacity) {
         --count;
         bytes[at] = digits[count];

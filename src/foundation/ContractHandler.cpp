@@ -129,7 +129,8 @@ public:
             digits[count] = static_cast<char>('0' + value % 10U);
             ++count;
             value /= 10U;
-        } while (value != 0U);
+            // The second test states the bound of count to the compiler.
+        } while (value != 0U && count < sizeof digits);
         while (count > 0) {
             --count;
             append_bytes(&digits[count], 1);

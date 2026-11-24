@@ -60,7 +60,8 @@ void put_unsigned(Window& window, std::uint64_t value) noexcept {
         digits[count] = static_cast<char>('0' + value % 10U);
         ++count;
         value /= 10U;
-    } while (value != 0U);
+        // The second test states the bound of count to the compiler.
+    } while (value != 0U && count < sizeof digits);
     while (count > 0) {
         --count;
         window.put(digits[count]);
@@ -655,13 +656,17 @@ void put_padded_integer(Window& window, std::uint64_t bits, FmtArgKind kind, Lay
         ++length;
         magnitude = 0U - bits;
     }
+    // A 64-bit magnitude has at most 20 digits, so the second test of the loop
+    // never stops it early.  The test states the bound of count to the
+    // compiler, which the trap checks of a Release build otherwise hide from
+    // the bound of the copy below.
     char digits[20] = {};
     std::size_t count = 0;
     do {
         digits[count] = static_cast<char>('0' + magnitude % 10U);
         ++count;
         magnitude /= 10U;
-    } while (magnitude != 0U);
+    } while (magnitude != 0U && count < sizeof digits);
     while (count > 0) {
         --count;
         text[length] = digits[count];
