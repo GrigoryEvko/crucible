@@ -1145,6 +1145,11 @@ foundation_test(test_permission_shared_xor_exclusive)
 # The reader of a loan runs on the thread door of fixy.
 foundation_test(test_read_view)
 target_link_libraries(test_read_view PRIVATE fixy)
+# The identity check of a loan holds under the ignore semantic, where a
+# CRUCIBLE_PRE is only an assumption.
+foundation_test(test_read_view_ignore test_read_view.cpp)
+target_link_libraries(test_read_view_ignore PRIVATE fixy)
+crucible_contract_ignore_target(test_read_view_ignore)
 # Legal C++ that tries to carry a view out of the door.  An attack that
 # still succeeds is a row of the shrink-only ledger in the file.
 foundation_test(test_read_view_escape_attacks)

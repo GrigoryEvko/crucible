@@ -2,8 +2,8 @@
 //
 // HS14 fixture 1 of 2 for foundation::permissions::mint_permission_after_loan.
 //
-// Two roots of one tag are two regions, and each has its own brand.  The
-// loan of the second region cannot end the loan of the first, or the
+// Two mint sites give two roots of one tag, and each root has its own brand.
+// The loan of the second region cannot end the loan of the first, or the
 // first token comes back while its loan is still out.  The brands of
 // the parked token and of the loan fail to unify.
 //

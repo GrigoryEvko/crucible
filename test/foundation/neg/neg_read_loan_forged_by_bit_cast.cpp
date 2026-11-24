@@ -1,7 +1,7 @@
 // Negative-compile test. This file must fail to compile.
 //
-// A read loan built from a byte would be a read right that no parked
-// token waits for.  std::bit_cast needs a trivially copyable type, and
+// A read loan built from a word of its size would be a read right that no
+// parked token waits for.  std::bit_cast needs a trivially copyable type, and
 // ReadLoan has a user-provided move assignment, so it is not one.
 //
 // Expected diagnostic: no matching function for std::bit_cast, whose
@@ -23,7 +23,7 @@ struct Region {
 }  // namespace
 
 int main() {
-    auto forged = std::bit_cast<fp::ReadLoan<Region>>(char{0});
+    auto forged = std::bit_cast<fp::ReadLoan<Region>>(1UL);
     (void)forged;
     return 0;
 }

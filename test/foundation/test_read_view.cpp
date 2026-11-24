@@ -2,6 +2,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Brand.h>
+#include <foundation/core/Identity.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -42,8 +44,9 @@ struct WorkerSlice {
 void test_compile_time_properties() {
     // One byte, which is the minimum an empty class can occupy on its own.
     static_assert(sizeof(ReadView<ConfigData>) == 1);
-    static_assert(sizeof(ReadLoan<ConfigData>) == 1);
-    static_assert(sizeof(LentPermission<ConfigData>) == 1);
+    // The Identity of the mint, and nothing more.
+    static_assert(sizeof(ReadLoan<ConfigData>) == sizeof(::foundation::core::Identity));
+    static_assert(sizeof(LentPermission<ConfigData>) == sizeof(::foundation::core::Identity));
 
     static_assert(!std::is_trivially_copyable_v<ReadView<ConfigData>>);
     static_assert(!std::is_implicit_lifetime_v<ReadView<ConfigData>>);
@@ -290,8 +293,114 @@ void test_loan_across_threads(::fixy::TestRunnerCtx const& test) {
     ::foundation::linear::drop(std::move(back));
 }
 
+// A loan opens a view of the brand of its token, and the token comes back
+// with that brand when the loan ends.
+void test_loan_round_trip(::fixy::TestRunnerCtx const& test) {
+    auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+    using Brand = ::foundation::brand::brand_of_t<decltype(loan)>;
+    static_assert(::foundation::brand::IsFreshBrand<Brand>);
+    auto [value, loan_back] =
+        with_read_view(std::move(loan), [](ReadView<ConfigData, Brand> const&) noexcept { return 7; });
+    auto token = mint_permission_after_loan(std::move(lent), std::move(loan_back));
+    static_assert(std::is_same_v<::foundation::brand::brand_of_t<decltype(token)>, Brand>);
+    CRUCIBLE_TEST_ASSERT(test, value == 7);
+    ::foundation::linear::drop(std::move(token));
+}
+
+// Runs body with two loans of one root mint site that are alive at one time,
+// and their parked tokens, which the body takes by value.  The template calls
+// itself one time, so its two instantiations run one call of the root mint,
+// and the two loans have one brand and one type.
+template <class Body, class... First>
+auto with_two_loans(Body& body, First&&... first) noexcept {
+    auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+    if constexpr (sizeof...(First) == 0) {
+        return with_two_loans(body, std::move(loan), std::move(lent));
+    } else {
+        return body(std::forward<First>(first)..., std::move(loan), std::move(lent));
+    }
+}
+
+// Each of two live loans of one site opens its own view, and each ends only
+// its own parked token, in any order.  A loan keeps its Identity through a
+// door and through a move assignment.
+void test_two_live_loans_end_their_own_tokens(::fixy::TestRunnerCtx const& test) {
+    auto body = [](auto first_loan, auto first_lent, auto loan, auto lent) noexcept {
+        static_assert(std::is_same_v<decltype(first_loan), decltype(loan)>, "the two loans have one type");
+        static_assert(std::is_same_v<decltype(first_lent), decltype(lent)>, "the two parked tokens have one type");
+        auto [first_seen, first_open] = with_read_view(std::move(first_loan), [](auto const&) noexcept { return 1; });
+        auto [seen, open] = with_read_view(std::move(loan), [](auto const&) noexcept { return 2; });
+        first_loan = std::move(first_open);
+        auto first_token = mint_permission_after_loan(std::move(first_lent), std::move(first_loan));
+        // The second loan still reads while the first region has its token.
+        auto [again, still_open] = with_read_view(std::move(open), [](auto const&) noexcept { return 4; });
+        auto token = mint_permission_after_loan(std::move(lent), std::move(still_open));
+        ::foundation::linear::drop(std::move(first_token));
+        ::foundation::linear::drop(std::move(token));
+        return first_seen + seen + again;
+    };
+    CRUCIBLE_TEST_ASSERT(test, with_two_loans(body) == 7);
+}
+
+// The text of the fatal invariant that a loan of a second mint breaks.
+constexpr ::fixy::TextView kForeignLoan{"fatal invariant failed: lent.identity_ == loan.identity_"};
+
+// Two loans of one site have one type, so the types do not tell the parked
+// token of one from the loan of the other.  With the loan of the second run,
+// the token of the first run would come back while the first loan still
+// reads, so a writer and a reader of one region would live at one time.  The
+// Identity of the mint refuses it: the end of a loan ends the process for a
+// loan of another mint.  Each violation runs in a child process, which ends
+// by the abort of the fatal invariant.
+void test_loan_of_a_second_mint_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto body = [](auto first_loan, auto first_lent, auto loan, auto lent) noexcept {
+                auto first_token = mint_permission_after_loan(std::move(first_lent), std::move(loan));
+                // The first loan still opens a view beside the first token.
+                auto first_open = with_read_view(std::move(first_loan), [](auto const&) noexcept {});
+                ::foundation::linear::drop(std::move(first_token));
+                ::foundation::linear::drop(std::move(first_open));
+                ::foundation::linear::drop(std::move(lent));
+            };
+            with_two_loans(body);
+        },
+        kForeignLoan);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto body = [](auto first_loan, auto first_lent, auto loan, auto lent) noexcept {
+                // The loan of the first run ends the parked token of the second.
+                auto token = mint_permission_after_loan(std::move(lent), std::move(first_loan));
+                ::foundation::linear::drop(std::move(token));
+                ::foundation::linear::drop(std::move(first_lent));
+                ::foundation::linear::drop(std::move(loan));
+            };
+            with_two_loans(body);
+        },
+        kForeignLoan);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto body = [](auto first_loan, auto first_lent, auto loan, auto lent) noexcept {
+                auto first_token = mint_permission_after_loan(std::move(first_lent), std::move(first_loan));
+                // The move assignment takes the Identity of the second loan.
+                first_loan = std::move(loan);
+                auto [again, again_lent] = mint_read_loan(std::move(first_token));
+                auto back = mint_permission_after_loan(std::move(again_lent), std::move(first_loan));
+                ::foundation::linear::drop(std::move(back));
+                ::foundation::linear::drop(std::move(again));
+                ::foundation::linear::drop(std::move(lent));
+            };
+            with_two_loans(body);
+        },
+        kForeignLoan);
+}
+
 // A handle keeps a write token and a read loan, each with the brand of its
-// region.  Both are empty and collapse, so the handle carries no payload.
+// region.  The token is empty and collapses, so the handle holds only the
+// Identity of the loan.
 template <typename SliceBrand, typename ConfigBrand>
 struct WorkerHandle {
     [[no_unique_address]] Permission<WorkerSlice, SliceBrand> write_perm;
@@ -301,10 +410,11 @@ struct WorkerHandle {
         : write_perm{std::move(wp)}, config_loan{std::move(loan)} {}
 };
 
-void test_handle_composition_zero_cost() {
+void test_handle_composition() {
     auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
     WorkerHandle handle{mint_permission_root<WorkerSlice>(), std::move(loan)};
-    static_assert(sizeof(handle) <= 2, "a handle of two empty proof tokens must be at most 2 bytes");
+    static_assert(sizeof(handle) == sizeof(::foundation::core::Identity),
+                  "a handle of a token and a loan holds only the Identity of the loan");
     auto config = mint_permission_after_loan(std::move(lent), std::move(handle.config_loan));
     ::foundation::linear::drop(std::move(config));
     ::foundation::linear::drop(std::move(handle.write_perm));
@@ -334,8 +444,12 @@ int main() {
     pass(test, "  test_door_over_a_share_guard: PASSED\n");
     test_loan_across_threads(test);
     pass(test, "  test_loan_across_threads: PASSED\n");
-    test_handle_composition_zero_cost();
-    pass(test, "  test_handle_composition_zero_cost: PASSED\n");
+    test_loan_round_trip(test);
+    test_two_live_loans_end_their_own_tokens(test);
+    test_loan_of_a_second_mint_ends_the_process(test);
+    pass(test, "  test_loan_of_a_second_mint_ends_the_process: PASSED\n");
+    test_handle_composition();
+    pass(test, "  test_handle_composition: PASSED\n");
     pass(test, "test_read_view: ALL PASSED\n");
     return 0;
 }

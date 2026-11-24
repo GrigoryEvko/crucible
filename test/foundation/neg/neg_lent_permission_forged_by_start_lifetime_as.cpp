@@ -18,8 +18,9 @@ struct Region {
 }  // namespace
 
 int main() {
-    alignas(fp::LentPermission<Region>) unsigned char storage[1]{};
-    auto* forged = std::start_lifetime_as<fp::LentPermission<Region>>(storage);
+    using Parked = fp::LentPermission<Region>;
+    alignas(Parked) unsigned char storage[sizeof(Parked)]{};
+    auto* forged = std::start_lifetime_as<Parked>(storage);
     (void)forged;
     return 0;
 }

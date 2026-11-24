@@ -26,9 +26,25 @@
 // Krebbers and Dreyer, POPL 2018): the loan is the borrow, and the
 // parked token comes back when the loan ends.
 //
-// A view carries the brand of its source, so it proves something about
-// that region and no other region of the same tag.  No door gives a view,
-// a loan or a parked token on the erased identity for a branded source.
+// A view carries the brand of its source, so it proves something about a
+// region of that brand.  The brand names a mint site and not one region: two
+// runs of one site, such as two turns of a loop, give two regions of one
+// brand (fact 2 of foundation/Brand.h).  No door gives a view, a loan or a
+// parked token on the erased identity for a branded source.
+//
+// Identity of a loan
+//   Two loans of one tag and one brand have one type, and the types do not
+//   tell them apart.  So mint_read_loan makes an Identity
+//   (foundation/core/Identity.h), and the loan and its parked token hold it.
+//   mint_permission_after_loan compares the two, so a loan ends only the
+//   parked token of its own mint.  A loan of another mint ends the process
+//   in each build, also under the ignore semantic, because the token would
+//   come back beside a live reader of its region.  A loan and a parked token
+//   take 8 bytes each, for the Identity.
+//
+//   A view holds no Identity.  It is a proof for the body of its door, and
+//   no door takes a view as the key of memory.  A door that takes a view as
+//   such a key needs the Identity of the source of the view too.
 //
 // A body cannot keep its view.  A result that names a view is refused,
 // and the store check of the door (StoresNoBorrowOutside of
@@ -45,6 +61,7 @@
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/CaptureStore.h>
+#include <foundation/core/Identity.h>
 #include <foundation/core/Record.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/permissions/Permission.h>
@@ -83,9 +100,10 @@ concept ReadViewNeedsNoCtx = permission_row_empty(^^Tag);
 
 // Parks the token and gives the read loan of its region.  The token
 // comes back only with the loan, through mint_permission_after_loan.
+// Complexity: O(1), one atomic add for the Identity of the loan.
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
+[[nodiscard]] ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
 mint_read_loan(Permission<Tag, Brand>&& token) noexcept;
 
 // A named token stays with the caller, so a loan of it would exist
@@ -97,14 +115,14 @@ constexpr void mint_read_loan(Permission<Tag, Brand> const&) =
 
 // Ends a loan: consumes the loan and gives back the parked token.  The tags
 // and the brands of the two must agree, so a loan of one tag or one brand
-// cannot end the loan of another.  Two loans of one tag and one brand, such
-// as the loans of two runs of one site (fact 2 of foundation/Brand.h), have
-// one type, and the types do not tell them apart.  It carries the row gate
-// of mint_read_loan, because no loan of another tag exists to end.
+// cannot end the loan of another.  The Identities of the two must agree too
+// (identity of a loan), so a loan of another mint of the same site ends the
+// process.  It carries the row gate of mint_read_loan, because no loan of
+// another tag exists to end.  Complexity: O(1), one compare of a word.
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
-                                                                          ReadLoan<Tag, Brand>&& loan) noexcept;
+[[nodiscard]] Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
+                                                                ReadLoan<Tag, Brand>&& loan) noexcept;
 
 namespace detail {
 
@@ -353,22 +371,34 @@ public:
                                        "token does not wait for");
     ReadLoan& operator=(const ReadLoan&) = delete("a ReadLoan is one read right. A copy is a second right that "
                                                   "the parked token does not wait for");
-    // The shape of Permission.  The move constructor and the destructor
-    // are trivial, so the ABI passes a loan in a register.  The move
-    // assignment is user-provided, so std::bit_cast refuses the loan, and
-    // an assignment stays a call in the tree of GCC.  The annotation
+    // The shape of Permission, around the Identity of the mint.  The move
+    // constructor and the destructor are trivial, so the ABI passes a loan
+    // in a register.  The move assignment is user-provided, so std::bit_cast
+    // refuses the loan, and an assignment stays a call in the tree of GCC.
+    // It takes the Identity of the loan that moves in.  The annotation
     // no_start_over_bytes refuses the checked lifetime start.
     constexpr ReadLoan(ReadLoan&&) noexcept = default;
-    constexpr ReadLoan& operator=(ReadLoan&&) noexcept { return *this; }
+    constexpr ReadLoan& operator=(ReadLoan&& other) noexcept {
+        identity_ = other.identity_;
+        return *this;
+    }
     ~ReadLoan() = default;
 
 private:
-    constexpr ReadLoan() noexcept {}
+    constexpr explicit ReadLoan(::foundation::core::Identity identity) noexcept : identity_{identity} {}
+
+    // The Identity of the mint, which no code builds from bytes (its seal).
+    ::foundation::core::Identity identity_;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
-    friend constexpr ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
+    friend ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
     mint_read_loan(Permission<Tag_, Brand_>&& token) noexcept;
+
+    template <typename Tag_, typename Brand_>
+        requires ReadViewNeedsNoCtx<Tag_>
+    friend Permission<Tag_, Brand_> mint_permission_after_loan(LentPermission<Tag_, Brand_>&& lent,
+                                                               ReadLoan<Tag_, Brand_>&& loan) noexcept;
 };
 
 // The token of a region while its read loan is out.  It holds the token
@@ -387,38 +417,44 @@ public:
     LentPermission(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
     LentPermission&
     operator=(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
-    constexpr LentPermission(LentPermission&& other) noexcept : parked_{std::move(other.parked_)} {}
+    constexpr LentPermission(LentPermission&& other) noexcept
+        : parked_{std::move(other.parked_)}, identity_{other.identity_} {}
     LentPermission&
     operator=(LentPermission&&) = delete("a LentPermission binds one loan. Assignment would drop the token it holds");
     ~LentPermission() = default;
 
 private:
-    constexpr explicit LentPermission(Permission<Tag, Brand>&& token) noexcept : parked_{std::move(token)} {}
+    constexpr LentPermission(Permission<Tag, Brand>&& token, ::foundation::core::Identity identity) noexcept
+        : parked_{std::move(token)}, identity_{identity} {}
 
     [[no_unique_address]] Permission<Tag, Brand> parked_;
+    // The Identity of the mint, which the loan of the mint holds too.
+    ::foundation::core::Identity identity_;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
-    friend constexpr ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
+    friend ::foundation::core::Record<ReadLoan<Tag_, Brand_>, LentPermission<Tag_, Brand_>>
     mint_read_loan(Permission<Tag_, Brand_>&& token) noexcept;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
-    friend constexpr Permission<Tag_, Brand_> mint_permission_after_loan(LentPermission<Tag_, Brand_>&& lent,
-                                                                         ReadLoan<Tag_, Brand_>&& loan) noexcept;
+    friend Permission<Tag_, Brand_> mint_permission_after_loan(LentPermission<Tag_, Brand_>&& lent,
+                                                               ReadLoan<Tag_, Brand_>&& loan) noexcept;
 };
 
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
+[[nodiscard]] ::foundation::core::Record<ReadLoan<Tag, Brand>, LentPermission<Tag, Brand>>
 mint_read_loan(Permission<Tag, Brand>&& token) noexcept {
-    return {ReadLoan<Tag, Brand>{}, LentPermission<Tag, Brand>{std::move(token)}};
+    ::foundation::core::Identity const identity = ::foundation::core::mint_identity();
+    return {ReadLoan<Tag, Brand>{identity}, LentPermission<Tag, Brand>{std::move(token), identity}};
 }
 
 template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
-[[nodiscard]] constexpr Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
-                                                                          ReadLoan<Tag, Brand>&& loan) noexcept {
+[[nodiscard]] Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
+                                                                ReadLoan<Tag, Brand>&& loan) noexcept {
+    CRUCIBLE_FATAL_INVARIANT(lent.identity_ == loan.identity_);
     ReadLoan<Tag, Brand> ended{std::move(loan)};
     (void)ended;
     return std::move(lent.parked_);

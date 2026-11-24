@@ -1,7 +1,7 @@
 // Negative-compile test. This file must fail to compile.
 //
-// A parked token built from a byte would give a token back through
-// mint_permission_after_loan without a token ever being parked.
+// A parked token built from a word of its size would give a token back
+// through mint_permission_after_loan without a token ever being parked.
 // std::bit_cast needs a trivially copyable type, and LentPermission has
 // a user-provided move constructor, so it is not one.
 //
@@ -24,7 +24,7 @@ struct Region {
 }  // namespace
 
 int main() {
-    auto forged = std::bit_cast<fp::LentPermission<Region>>(char{0});
+    auto forged = std::bit_cast<fp::LentPermission<Region>>(1UL);
     (void)forged;
     return 0;
 }

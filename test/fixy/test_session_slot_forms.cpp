@@ -251,6 +251,52 @@ struct LoanWire {
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 
+// Puts a loan into the wire of its lender, and takes it out of the wire of
+// its borrower.
+template <class Brand>
+struct PutLend {
+    [[nodiscard]] ::fixy::Option<s::Borrowed<int, Region, Brand>>
+    operator()(LoanWire<Brand>& wire, s::Borrowed<int, Region, Brand>&& lend) const noexcept {
+        return PutMessage<s::Borrowed<int, Region, Brand>>{}(wire.lent, std::move(lend));
+    }
+};
+template <class Brand>
+struct TakeLend {
+    [[nodiscard]] ::fixy::Option<s::Borrowed<int, Region, Brand>> operator()(LoanWire<Brand>& wire) const noexcept {
+        return take_message(wire.lent);
+    }
+};
+
+// The same for the release of a loan.
+template <class Brand>
+struct PutRelease {
+    [[nodiscard]] ::fixy::Option<s::Released<int, Region, Brand>>
+    operator()(LoanWire<Brand>& wire, s::Released<int, Region, Brand>&& release) const noexcept {
+        return PutMessage<s::Released<int, Region, Brand>>{}(wire.released, std::move(release));
+    }
+};
+template <class Brand>
+struct TakeRelease {
+    [[nodiscard]] ::fixy::Option<s::Released<int, Region, Brand>> operator()(LoanWire<Brand>& wire) const noexcept {
+        return take_message(wire.released);
+    }
+};
+
+// Ends a borrower that sent its release, and a lender that received it.
+template <class Handle>
+void end_borrower(Handle borrower_done) noexcept {
+    auto wire = std::move(borrower_done).close();
+    std::move(wire.lent.held).expect_empty("the borrower takes the loan out of its mailbox");
+    std::move(wire.released.held).expect_empty("the carry moves the release to the lender");
+}
+template <class Handle>
+void end_lender(Handle lender_done) noexcept {
+    auto [wire, token] = std::move(lender_done).close();
+    ::foundation::linear::drop(std::move(token));
+    std::move(wire.lent.held).expect_empty("the carry moves the loan to the borrower");
+    std::move(wire.released.held).expect_empty("the lender takes the release out of its mailbox");
+}
+
 [[nodiscard]] int lend_and_release() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto root = fp::mint_permission_root<Region>();
@@ -261,15 +307,14 @@ struct LoanWire {
     using Borrows = s::Recv<Lend, s::Send<Release, s::End>>;
     using Wire = LoanWire<Brand>;
     auto lender = s::mint_permissioned_session<Lends>(ctx, Wire{.region_value = 40}, std::move(root));
-    auto lender_waits = std::move(lender).send(
-        1, [](Wire& wire, Lend&& lend) noexcept { return PutMessage<Lend>{}(wire.lent, std::move(lend)); });
+    auto lender_waits = std::move(lender).send(1, PutLend<Brand>{});
     static_assert(
         fp::perm_set_equal(^^typename decltype(lender_waits)::perm_set, ^^fp::PermSet<s::LentOut<Region, Brand>>),
         "the token of the lender is parked in the LentOut slot");
 
     auto borrower = s::mint_session<Borrows>(ctx, Wire{});
     carry(lender_waits.resource().lent, borrower.resource().lent);
-    auto [ticket, borrowing] = std::move(borrower).recv([](Wire& wire) noexcept { return take_message(wire.lent); });
+    auto [ticket, borrowing] = std::move(borrower).recv(TakeLend<Brand>{});
     static_assert(
         fp::perm_set_equal(^^typename decltype(borrowing)::perm_set, ^^fp::PermSet<s::BorrowedIn<Region, Brand>>));
     const int region_value = lender_waits.resource().region_value;
@@ -280,39 +325,127 @@ struct LoanWire {
     static_assert(CanReadRegionWith<decltype(borrowing), HoldsNoTokenBody>);
     auto [seen, reading] = std::move(borrowing).template read<Region>(
         [region_value](fp::ReadView<Region, Brand> const&) noexcept { return region_value; });
-    auto borrower_done = std::move(reading).send(seen + ticket, [](Wire& wire, Release&& release) noexcept {
-        return PutMessage<Release>{}(wire.released, std::move(release));
-    });
+    auto borrower_done = std::move(reading).send(seen + ticket, PutRelease<Brand>{});
     static_assert(std::is_same_v<typename decltype(borrower_done)::perm_set, NoTags>,
                   "the release carries the loan back out of the slots of the borrower");
 
     carry(borrower_done.resource().released, lender_waits.resource().released);
-    auto [answer, lender_done] =
-        std::move(lender_waits).recv([](Wire& wire) noexcept { return take_message(wire.released); });
+    auto [answer, lender_done] = std::move(lender_waits).recv(TakeRelease<Brand>{});
     static_assert(std::is_same_v<typename decltype(lender_done)::perm_set, HoldsRegion<Brand>>,
                   "the release unparks the token of the lender");
-    Wire borrower_wire = std::move(borrower_done).close();
-    std::move(borrower_wire.lent.held).expect_empty("the borrower takes the loan out of its mailbox");
-    std::move(borrower_wire.released.held).expect_empty("the carry moves the release to the lender");
-    auto [wire, token] = std::move(lender_done).close();
-    ::foundation::linear::drop(std::move(token));
-    std::move(wire.lent.held).expect_empty("the carry moves the loan to the borrower");
-    std::move(wire.released.held).expect_empty("the lender takes the release out of its mailbox");
+    end_borrower(std::move(borrower_done));
+    end_lender(std::move(lender_done));
     if (answer != 41) return fail("the release did not carry the value that the borrower read");
     return 0;
 }
 
-// ── The slots take no byte ───────────────────────────────────────────
+// ── Release of another run ───────────────────────────────────────────
+//
+// Two sessions of one root mint site have one type, and so do the loans of
+// the two.  The release of the second borrower in the mailbox of the first
+// lender has the type that this lender waits for.  With that release, the
+// token of the first lender would come back while the first borrower still
+// reads the region.  The Identity of the loan refuses it: the receive of the
+// first lender ends the process.
+
+// The lender receives the release of the borrower.  The two can belong to
+// two sessions.
+template <class Brand, class Lender, class Borrower>
+[[nodiscard]] int receive_release(Lender lender, Borrower borrower) noexcept {
+    auto borrower_done = std::move(borrower).send(2, PutRelease<Brand>{});
+    carry(borrower_done.resource().released, lender.resource().released);
+    auto [answer, lender_done] = std::move(lender).recv(TakeRelease<Brand>{});
+    end_borrower(std::move(borrower_done));
+    end_lender(std::move(lender_done));
+    return answer;
+}
+
+// Which borrower sends its release to which lender, of two sessions.
+enum class ReleaseOrder : bool {
+    own,
+    crossed
+};
+
+// Opens a loan between two sides of one session.  The template calls itself
+// one time, so its two instantiations run one call of the root mint, and the
+// two sessions have one brand and one type.  The second call gives each
+// release to the lender that the order names.
+template <ReleaseOrder order, class... First>
+[[nodiscard]] int close_two_loans(First&&... first) noexcept {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto root = fp::mint_permission_root<Region>();
+    using Brand = ::foundation::brand::brand_of_t<decltype(root)>;
+    using Lend = s::Borrowed<int, Region, Brand>;
+    using Release = s::Released<int, Region, Brand>;
+    auto lender =
+        s::mint_permissioned_session<s::Send<Lend, s::Recv<Release, s::End>>>(ctx, LoanWire<Brand>{}, std::move(root));
+    auto lender_waits = std::move(lender).send(1, PutLend<Brand>{});
+    auto borrower = s::mint_session<s::Recv<Lend, s::Send<Release, s::End>>>(ctx, LoanWire<Brand>{});
+    carry(lender_waits.resource().lent, borrower.resource().lent);
+    auto [ticket, borrowing] = std::move(borrower).recv(TakeLend<Brand>{});
+    if constexpr (sizeof...(First) == 0) {
+        return ticket + close_two_loans<order>(std::move(lender_waits), std::move(borrowing));
+    } else {
+        // The first borrower reads its region while the second loan is open.
+        return [ticket](auto first_lender, auto first_borrower, auto second_lender, auto second_borrower) noexcept {
+            static_assert(std::is_same_v<decltype(first_lender), decltype(second_lender)>);
+            static_assert(std::is_same_v<decltype(first_borrower), decltype(second_borrower)>);
+            auto first_reading = std::move(first_borrower).template read<Region>([](auto const&) noexcept {});
+            if constexpr (order == ReleaseOrder::own) {
+                const int first_answer = receive_release<Brand>(std::move(first_lender), std::move(first_reading));
+                return ticket + first_answer
+                     + receive_release<Brand>(std::move(second_lender), std::move(second_borrower));
+            } else {
+                const int first_answer = receive_release<Brand>(std::move(first_lender), std::move(second_borrower));
+                return ticket + first_answer
+                     + receive_release<Brand>(std::move(second_lender), std::move(first_reading));
+            }
+        }(std::forward<First>(first)..., std::move(lender_waits), std::move(borrowing));
+    }
+}
+
+[[nodiscard]] int release_ends_only_its_own_loan() {
+    if (close_two_loans<ReleaseOrder::own>() != 6) return fail("two sessions of one site did not close their loans");
+    ::fixy::check::expect_dies(
+        kTest, [] noexcept { static_cast<void>(close_two_loans<ReleaseOrder::crossed>()); },
+        ::fixy::TextView{"fatal invariant failed: lent.identity_ == loan.identity_"});
+    return 0;
+}
+
+// ── Bytes of the slots ───────────────────────────────────────────────
+//
+// A token slot is empty, so it takes no byte.  A loan slot, the parked token
+// of a LentOut or the loan of a BorrowedIn, takes the 8 bytes of the Identity
+// of its loan.  A handle with no open loan takes no byte for its slots.  The
+// Resource is one word, so no padding joins a loan slot.
+struct WordWire {
+    unsigned long word = 0;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
 template <class PS, class Policy>
-using SendsPing = s::Handle<s::Send<int, s::End>, PS, Mailbox<int>, void, Policy>;
+using SendsPing = s::Handle<s::Send<int, s::End>, PS, WordWire, void, Policy>;
+struct OtherRegion {
+    using permission_row = ::foundation::effects::Row<>;
+};
+using OneLent = fp::PermSet<s::LentOut<Region, LayoutBrand>>;
+using OneBorrowed = fp::PermSet<s::BorrowedIn<Region, LayoutBrand>>;
+using TwoLoans = fp::PermSet<s::LentOut<Region, LayoutBrand>, s::BorrowedIn<OtherRegion, LayoutBrand>>;
+inline constexpr std::size_t kLoanSlotBytes = sizeof(::foundation::core::Identity);
 
 static_assert(sizeof(SendsPing<HoldsRegion<LayoutBrand>, s::check::Off>) == sizeof(SendsPing<NoTags, s::check::Off>));
 static_assert(sizeof(SendsPing<HoldsRegion<LayoutBrand>, s::check::Enforced>)
               == sizeof(SendsPing<NoTags, s::check::Enforced>));
-static_assert(sizeof(SendsPing<fp::PermSet<s::LentOut<Region, LayoutBrand>>, s::check::Enforced>)
-              == sizeof(SendsPing<NoTags, s::check::Enforced>));
-static_assert(sizeof(SendsPing<fp::PermSet<s::BorrowedIn<Region, LayoutBrand>>, s::check::Off>)
-              == sizeof(SendsPing<NoTags, s::check::Off>));
+static_assert(sizeof(SendsPing<OneLent, s::check::Off>) == sizeof(SendsPing<NoTags, s::check::Off>) + kLoanSlotBytes);
+static_assert(sizeof(SendsPing<OneLent, s::check::Enforced>)
+              == sizeof(SendsPing<NoTags, s::check::Enforced>) + kLoanSlotBytes);
+static_assert(sizeof(SendsPing<OneBorrowed, s::check::Off>)
+              == sizeof(SendsPing<NoTags, s::check::Off>) + kLoanSlotBytes);
+static_assert(sizeof(SendsPing<OneBorrowed, s::check::Enforced>)
+              == sizeof(SendsPing<NoTags, s::check::Enforced>) + kLoanSlotBytes);
+static_assert(sizeof(SendsPing<TwoLoans, s::check::Off>)
+              == sizeof(SendsPing<NoTags, s::check::Off>) + 2 * kLoanSlotBytes);
+static_assert(sizeof(SendsPing<TwoLoans, s::check::Enforced>)
+              == sizeof(SendsPing<NoTags, s::check::Enforced>) + 2 * kLoanSlotBytes);
 
 // ── Each slot form travels on a session ──────────────────────────────
 //
@@ -342,6 +475,7 @@ int main() {
     if (const int rc = refused_marker_is_taken_with_a_stop_test(); rc != 0) return rc;
     if (const int rc = refused_marker_comes_back_at_a_stop(); rc != 0) return rc;
     if (const int rc = lend_and_release(); rc != 0) return rc;
+    if (const int rc = release_ends_only_its_own_loan(); rc != 0) return rc;
     ::fixy::check::pass(kTest, "test_session_slot_forms: OK\n");
     return 0;
 }

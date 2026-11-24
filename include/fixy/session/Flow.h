@@ -222,8 +222,10 @@ private:
 
 // The end of a read loan carries the loan back.  The lender gets its
 // token only from the parked token and this loan together, so a release
-// that no borrower sent cannot reopen the region.  The type-level check
-// makes the send sound too: the sender must hold BorrowedIn<Tag, Brand>.
+// that no borrower sent cannot reopen the region.  A release of another loan
+// of the same type ends the process at the receive of the lender (identity of
+// a loan, foundation/permissions/ReadView.h).  The type-level check makes the
+// send sound too: the sender must hold BorrowedIn<Tag, Brand>.
 template <class T, class Tag, class Brand>
 struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     using payload_type = T;
@@ -234,7 +236,7 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Released {
     Released& operator=(const Released&) = delete("Released ends one read loan. A copy ends it a second time");
     // The move has the shape of the move of Borrowed.  An assignment would
     // write over the loan of the target, and the move assignment of a loan
-    // does nothing.  So the loan of the target would leave through no door,
+    // ends no loan.  So the loan of the target would leave through no door,
     // and its lender would wait for it with no end.
     constexpr Released(Released&&) noexcept = default;
     Released& operator=(Released&&) =
@@ -1180,7 +1182,8 @@ struct hold_from_slots {};
 // slots of the empty set hold nothing, and any code can build them.  The
 // slots carry no flag of state: the PermHold around them, or the handle that
 // keeps them, knows whether they are live.  A set of empty token types has
-// empty slots, so a [[no_unique_address]] member of slots adds no byte.
+// empty slots, so a [[no_unique_address]] member of slots adds no byte.  A
+// parked token and a loan each add the 8 bytes of the Identity of the loan.
 template <class Set>
 class HoldSlots;
 

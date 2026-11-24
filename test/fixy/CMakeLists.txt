@@ -2506,7 +2506,9 @@ fixy_test(test_session_endpoint_transfer)
 
 # The slots of a handle: each step that moves a token or a loan takes it out
 # of the slots of the sender and puts it into the slots of the receiver, for
-# each slot form, and the slots take no byte.
+# each slot form.  A token slot takes no byte, and a loan slot takes the 8
+# bytes of the Identity of its loan.  A release of another run of one mint site
+# ends the process.
 fixy_test(test_session_slot_forms)
 
 # The handle factory builds a handle at a position that its caller names,
@@ -4544,11 +4546,13 @@ fixy_test(test_session_ownership_attacks)
 # walk changes no verdict of the session layer.
 fixy_test(test_session_payload_seal)
 
-# A hold used after a move, and a hold dropped with a loan open, each
-# abort with a named diagnostic.  Each attack runs in a child process
-# through expect_dies, and each test passes only on its diagnostic.
+# A hold used after a move, a hold dropped with a loan open, and a hold that
+# ends its loan with the release of another hold of its site each abort with a
+# named diagnostic.  Each attack runs in a child process through expect_dies,
+# and each test passes only on its diagnostic.
 fixy_test(test_session_hold_consumed_aborts)
 fixy_test(test_session_hold_open_loan_aborts)
+fixy_test(test_session_hold_loan_of_another_run_aborts)
 # A hold keeps the brand of each token, so a token leaves the hold with the
 # brand of its root, and a singleton root leaves as the same root.
 fixy_test(test_session_hold_keeps_the_brand)

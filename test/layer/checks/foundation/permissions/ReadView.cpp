@@ -10,8 +10,10 @@ namespace foundation::permissions {
 static_assert(sizeof(ReadView<detail::read_view_test_tag>) == 1, "ReadView<Tag> must be a 1-byte empty class");
 static_assert(sizeof(ReadView<detail::read_view_test_tag, detail::read_view_brand_a>) == 1,
               "a branded view keeps the layout of an erased one");
-static_assert(sizeof(ReadLoan<detail::read_view_test_tag>) == 1, "a loan carries no runtime state");
-static_assert(sizeof(LentPermission<detail::read_view_test_tag>) == 1, "a parked token carries no runtime state");
+static_assert(sizeof(ReadLoan<detail::read_view_test_tag>) == sizeof(::foundation::core::Identity),
+              "a loan holds the Identity of its mint and nothing more");
+static_assert(sizeof(LentPermission<detail::read_view_test_tag>) == sizeof(::foundation::core::Identity),
+              "a parked token holds the Identity of its mint, and its token adds no byte");
 
 // No route builds a view, a loan or a parked token without a
 // constructor.  std::bit_cast needs a trivially copyable type, and
@@ -87,28 +89,27 @@ namespace detail::read_view_self_test {
 }
 static_assert(door_hands_the_source_back());
 
-// A loan opens a view of the brand of its token, and the token comes back
-// only with the loan.
-[[nodiscard]] consteval bool loan_round_trip() noexcept {
-    auto [loan, lent] = mint_read_loan(mint_permission_root<read_view_test_tag>());
-    using Brand = ::foundation::brand::brand_of_t<decltype(loan)>;
-    auto [value, loan_back] =
-        with_read_view(std::move(loan), [](ReadView<read_view_test_tag, Brand> const&) noexcept { return 7; });
-    auto token = mint_permission_after_loan(std::move(lent), std::move(loan_back));
-    constexpr bool keeps_the_brand = std::is_same_v<::foundation::brand::brand_of_t<decltype(token)>, Brand>;
-    ::foundation::linear::drop(std::move(token));
-    return value == 7 && keeps_the_brand && ::foundation::brand::IsFreshBrand<Brand>;
-}
-static_assert(loan_round_trip());
-
-// The loan mint gives the loan and the parked token in a Record of one
-// byte, as the two empty classes are.  Each keeps the brand of the token.
+// The loan mint gives the loan and the parked token in a Record of two
+// words, one Identity for each.  Each keeps the brand of the token.
 using branded_loan_record = ::foundation::core::Record<ReadLoan<read_view_test_tag, read_view_brand_a>,
                                                        LentPermission<read_view_test_tag, read_view_brand_a>>;
 static_assert(
     std::is_same_v<decltype(mint_read_loan(std::declval<Permission<read_view_test_tag, read_view_brand_a>>())),
                    branded_loan_record>);
-static_assert(sizeof(branded_loan_record) == 1);
+static_assert(sizeof(branded_loan_record) == 2 * sizeof(::foundation::core::Identity));
+
+// A loan opens a view of the brand of its token, and the parked token and
+// the loan give the token back with that brand.  No loan exists in a constant
+// expression, because the mint of an Identity is not constant, so these lines
+// read the types only.  test/foundation/test_read_view.cpp runs the round trip.
+using LoanOfA = ReadLoan<read_view_test_tag, read_view_brand_a>;
+using LentOfA = LentPermission<read_view_test_tag, read_view_brand_a>;
+static_assert(std::is_same_v<decltype(with_read_view(
+                                 std::declval<LoanOfA>(),
+                                 [](ReadView<read_view_test_tag, read_view_brand_a> const&) noexcept { return 7; })),
+                             ::foundation::core::Record<int, LoanOfA>>);
+static_assert(std::is_same_v<decltype(mint_permission_after_loan(std::declval<LentOfA>(), std::declval<LoanOfA>())),
+                             Permission<read_view_test_tag, read_view_brand_a>>);
 
 // A body that returns a value gives a Record of the value and the source.
 // A const result goes into the Record with no const.  A body that returns

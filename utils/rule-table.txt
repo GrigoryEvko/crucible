@@ -807,8 +807,8 @@ witness <foundation/permissions/SharedPermission.h> private | foundation::permis
 witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadView<foundation::permissions::tag::HugePageTag>{}
 # A read loan comes only from mint_read_loan, which parks the token, and
 # the parked token comes back only with its loan.
-witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag>{}
-witness <foundation/permissions/ReadView.h> private | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()}
+witness <foundation/permissions/ReadView.h> private | foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag> | foundation::permissions::ReadLoan<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::core::Identity>()}
+witness <foundation/permissions/ReadView.h> private | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag> | foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>(), forge::rvalue<foundation::core::Identity>()}
 # The pool's only constructor consumes the exclusive permission it
 # parks: there is no pool without the evidence.
 witness <foundation/permissions/SharedPermission.h> no-match | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag> | foundation::permissions::SharedPermissionPool<foundation::permissions::tag::HugePageTag>{}

@@ -19,7 +19,8 @@
 // PS is the last template parameter.  The handle keeps the token or the
 // loan of each element of PS in its slots (HoldSlots of
 // fixy/session/Flow.h), so the set and the tokens are one ledger.  A token
-// type is empty, so the slots cost no byte.
+// type is empty, so a token slot costs no byte.  A loan slot costs the 8
+// bytes of the Identity of its loan.
 // `Handle<Proto, PS, Resource, LoopCtx, Policy>` is the same class with
 // the parameters in the order the design names them.
 //
@@ -1778,9 +1779,9 @@ private:
     // The token or the loan of each element of PS (HoldSlots of
     // fixy/session/Flow.h).  Each step that moves a token takes it out of
     // these slots or puts it into them, so the set of the handle and its
-    // tokens are one ledger.  A token type is empty, so the slots take no
-    // byte.  They carry no flag of state: the handle is linear, and its policy
-    // knows whether it is live.
+    // tokens are one ledger.  A token type is empty, so a token slot takes no
+    // byte, and a loan slot takes 8 bytes.  The slots carry no flag of state:
+    // the handle is linear, and its policy knows whether it is live.
     [[no_unique_address]] HoldSlots<PS> slots_;
 
     constexpr void cancel_if_owed_() noexcept {

@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>()};
+    [[maybe_unused]] auto forged = foundation::permissions::LentPermission<foundation::permissions::tag::HugePageTag>{forge::rvalue<foundation::permissions::Permission<foundation::permissions::tag::HugePageTag>>(), forge::rvalue<foundation::core::Identity>()};
     return 0;
 }
