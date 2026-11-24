@@ -768,7 +768,8 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
                 r.read_gated<uint8_t>([](uint8_t byte) noexcept { return (byte & ~kWrittenFlags) == 0; });
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
             te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-            te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+            te.training_phase =
+                ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
             te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         }
         // The explicit bound is what rejects an out-of-range byte in every

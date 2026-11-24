@@ -180,9 +180,9 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept {
             CRUCIBLE_PRE(::foundation::decide::in_range<uint32_t>(i, 0u, 4u));
             if (i < 4) {
-                return static_cast<ScalarType2>((scalar_types >> (i * 2)) & 0x3);
+                return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(scalar_types >> (i * 2));
             }
-            return static_cast<ScalarType2>((op_flags & op_flag::SCALAR4_TYPE_MASK) >> op_flag::SCALAR4_TYPE_SHIFT);
+            return ::fixy::enum_from_field<ScalarType2, kScalarTypeBits>(op_flags >> op_flag::SCALAR4_TYPE_SHIFT);
         }
 
         void set_scalar_type(uint32_t i, ScalarType2 t) noexcept {
@@ -195,7 +195,7 @@ struct alignas(crucible::warden::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
                 op_flags = static_cast<uint8_t>((op_flags & ~op_flag::SCALAR4_TYPE_MASK)
                                                 | (bits << op_flag::SCALAR4_TYPE_SHIFT));
             }
-            CRUCIBLE_POST(0, get_scalar_type(i) == static_cast<ScalarType2>(bits));
+            CRUCIBLE_POST(0, get_scalar_type(i) == t);
         }
 
         // The tags of the five slots, two bits for each slot, slot 0 in the

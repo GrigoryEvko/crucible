@@ -573,7 +573,8 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
                 const uint8_t flags = re.op_flags;
                 te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
                 te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-                te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+                te.training_phase =
+                    ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
                 te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
                 te.kernel_id = CKernelId::OPAQUE;
                 const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);

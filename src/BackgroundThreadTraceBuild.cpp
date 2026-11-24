@@ -264,7 +264,8 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         const uint8_t flags = re.op_flags;
         te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;
         te.is_mutable = (flags & op_flag::IS_MUTABLE) != 0;
-        te.training_phase = static_cast<TrainingPhase>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+        te.training_phase =
+            ::fixy::enum_from_field<TrainingPhase, 2>((flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
         te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
         // The scalar array is fixed at five entries, so a larger count
         // means the recorder wrote past it or a stored count is corrupt.
