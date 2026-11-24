@@ -208,23 +208,18 @@ inline constexpr std::size_t slot_map_alignment_ =
     alignof(T) < alignof(std::uint32_t) ? alignof(std::uint32_t) : alignof(T);
 
 // The layout of capacity slots.  A count of bytes that does not fit in
-// size_t ends the process before the allocation.  Complexity: O(1).
+// size_t ends the process before the allocation, and the strict forms report
+// the operands.  Complexity: O(1).
 template <class T, class Generation>
 [[nodiscard]] constexpr SlotMapLayout slot_map_layout_(std::uint32_t capacity) noexcept {
     std::size_t const slots = capacity;
-    std::size_t const value_bytes =
-        checked_mul(slots, sizeof(T)).expect("the bytes of the values of a SlotMap fit in size_t");
-    std::size_t const stack_offset =
-        align_up(value_bytes, alignof(std::uint32_t)).expect("the bytes of a SlotMap at its alignment fit in size_t");
-    std::size_t const generation_offset = checked_add(stack_offset, slots * sizeof(std::uint32_t))
-                                              .expect("the bytes of the free stack of a SlotMap fit in size_t");
-    std::size_t const used_bytes = checked_add(generation_offset, slots * sizeof(Generation))
-                                       .expect("the bytes of the generations of a SlotMap fit in size_t");
+    std::size_t const stack_offset = strict_align_up(strict_mul(slots, sizeof(T)), alignof(std::uint32_t));
+    std::size_t const generation_offset = strict_add(stack_offset, strict_mul(slots, sizeof(std::uint32_t)));
+    std::size_t const used_bytes = strict_add(generation_offset, strict_mul(slots, sizeof(Generation)));
     // The allocator of an alignment past 16 takes a count of bytes that is a
     // multiple of the alignment, so the bytes round up to it, as the bytes of
     // a HeapArray do.
-    std::size_t const bytes = align_up(used_bytes, slot_map_alignment_<T>)
-                                  .expect("the bytes of a SlotMap at the alignment of its value fit in size_t");
+    std::size_t const bytes = strict_align_up(used_bytes, slot_map_alignment_<T>);
     return SlotMapLayout{stack_offset, generation_offset, bytes};
 }
 

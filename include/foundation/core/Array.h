@@ -740,16 +740,14 @@ namespace detail {
 // The layout of the storage of count elements of T: their bytes rounded up
 // to the alignment, at the alignment.  count is above zero.  A count past the
 // largest count of a View, or with bytes that do not fit in size_t, ends the
-// process.  Complexity: O(1).
+// process.  The strict forms report the operands of a product or a rounding
+// that does not fit.  Complexity: O(1).
 template <class T, std::size_t Align>
 [[nodiscard]] constexpr ::foundation::alloc::Layout heap_array_layout_(std::size_t count) noexcept {
     if (count > max_view_count(sizeof(T))) [[unlikely]] {
         fatal("a HeapArray of {} elements of {} bytes is longer than the largest View", count, sizeof(T));
     }
-    std::size_t const element_bytes =
-        checked_mul(count, sizeof(T)).expect("the bytes of the elements of a HeapArray fit in size_t");
-    std::size_t const bytes =
-        align_up(element_bytes, Align).expect("the bytes of a HeapArray at its alignment fit in size_t");
+    std::size_t const bytes = strict_align_up(strict_mul(count, sizeof(T)), Align);
     return ::foundation::alloc::mint_layout(ByteCount{bytes}, ::foundation::alloc::Alignment{Align})
         .expect("the storage of at least one element of a HeapArray is a layout");
 }
