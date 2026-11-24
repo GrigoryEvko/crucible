@@ -56,20 +56,35 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
     return true;
 };
 
+using channels::LazyChannelRefusal;
+using Refusal = ::fixy::Option<LazyChannelRefusal>;
+
+// The session that the mint of the channel gives.
+using Head = decltype(s::mint_session<DispatchProto, s::DefaultAbandonmentPolicy, BgCtx, VesselChannel&>(
+    std::declval<BgCtx const&>(), std::declval<VesselChannel&>()));
+
+// Why the mint gave no session, or no value.  A session that it gave
+// detaches.
+[[nodiscard]] Refusal refusal_of(::fixy::Result<Head, LazyChannelRefusal>&& minted) noexcept {
+    return std::move(minted).match(
+        [](Head head) noexcept -> Refusal {
+            std::move(head).detach(s::detach_reason::TestInstrumentation{});
+            return ::fixy::none;
+        },
+        [](LazyChannelRefusal refusal) noexcept -> Refusal { return ::fixy::some(refusal); });
+}
+
 [[nodiscard]] int refuses_before_establish() {
     const BgCtx ctx{eff::testing::bg()};
     Channel channel;
     if (channel.is_established()) return 1;
-    auto first = channel.mint_established_session(ctx);
-    if (first.has_value() || first.error() != channels::LazyChannelRefusal::NotEstablished) return 2;
+    if (refusal_of(channel.mint_established_session(ctx)) != ::fixy::some(LazyChannelRefusal::NotEstablished)) return 2;
 
     // A request before establish claims nothing, so the session is
     // still there after the publish.
     VesselChannel storage{};
     channel.establish(storage);
-    auto second = channel.mint_established_session(ctx);
-    if (!second.has_value()) return 3;
-    std::move(*second).detach(s::detach_reason::TestInstrumentation{});
+    if (refusal_of(channel.mint_established_session(ctx)).is_some()) return 3;
     return 0;
 }
 
@@ -81,15 +96,18 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
     channel.establish(storage);
     if (!channel.is_established()) return 1;
 
-    auto head = channel.mint_established_session(ctx);
-    if (!head.has_value()) return 2;
-    if (&head->resource() != &storage || head->resource().sentinel != 42) return 3;
-
-    auto next = std::move(*head).select<0>(s::no_label).send(99, write_value);
-    if (storage.sentinel != 99 || storage.call_count != 1) return 4;
-    VesselChannel& back = std::move(next).select<1>(s::no_label).close();
-    if (&back != &storage) return 5;
-    return 0;
+    return channel.mint_established_session(ctx).match(
+        [&storage](Head head) noexcept -> int {
+            const bool is_storage = &head.resource() == &storage && head.resource().sentinel == 42;
+            auto next = std::move(head).select<0>(s::no_label).send(99, write_value);
+            const bool is_sent = storage.sentinel == 99 && storage.call_count == 1;
+            VesselChannel& back = std::move(next).select<1>(s::no_label).close();
+            if (!is_storage) return 3;
+            if (!is_sent) return 4;
+            if (&back != &storage) return 5;
+            return 0;
+        },
+        [](LazyChannelRefusal) noexcept -> int { return 2; });
 }
 
 [[nodiscard]] int refuses_a_second_session() {
@@ -98,19 +116,21 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
     VesselChannel storage{};
     channel.establish(storage);
 
-    auto first = channel.mint_established_session(ctx);
-    if (!first.has_value()) return 1;
-    for (int attempt = 0; attempt < 3; ++attempt) {
-        auto later = channel.mint_established_session(ctx);
-        if (later.has_value() || later.error() != channels::LazyChannelRefusal::AlreadyClaimed) return 2;
-    }
-    std::move(*first).detach(s::detach_reason::TestInstrumentation{});
+    return channel.mint_established_session(ctx).match(
+        [&channel, &ctx](Head first) noexcept -> int {
+            int refused = 0;
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                const Refusal later = refusal_of(channel.mint_established_session(ctx));
+                if (later == ::fixy::some(LazyChannelRefusal::AlreadyClaimed)) ++refused;
+            }
+            std::move(first).detach(s::detach_reason::TestInstrumentation{});
+            if (refused != 3) return 2;
 
-    // A detached session does not give the claim back.  The protocol
-    // position it held is abandoned, not returned.
-    auto after_detach = channel.mint_established_session(ctx);
-    if (after_detach.has_value()) return 3;
-    return 0;
+            // A detached session does not give the claim back.  The protocol
+            // position it held is abandoned, not returned.
+            return refusal_of(channel.mint_established_session(ctx)).is_some() ? 0 : 3;
+        },
+        [](LazyChannelRefusal) noexcept -> int { return 1; });
 }
 
 [[nodiscard]] int names_the_protocol() {
@@ -135,11 +155,10 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
         const BgCtx ctx{eff::testing::bg()};
         while (!go.load(std::memory_order_acquire))
             CRUCIBLE_SPIN_PAUSE;
-        auto head = channel.mint_established_session(ctx);
-        if (head.has_value()) {
+        const Refusal refusal = refusal_of(channel.mint_established_session(ctx));
+        if (refusal.is_none()) {
             sessions.fetch_add(1, std::memory_order_acq_rel);
-            std::move(*head).detach(s::detach_reason::TestInstrumentation{});
-        } else if (head.error() == channels::LazyChannelRefusal::AlreadyClaimed) {
+        } else if (refusal == ::fixy::some(LazyChannelRefusal::AlreadyClaimed)) {
             refusals.fetch_add(1, std::memory_order_acq_rel);
         }
     };
@@ -167,16 +186,16 @@ constexpr auto write_value = [](VesselChannel& channel, int& value) noexcept {
         // unconditionally and then joins, so the loop ends.  A budget
         // would be a timeout that fails under scheduler pressure.
         for (;;) {
-            auto head = channel.mint_established_session(ctx);
-            if (!head.has_value()) {
-                if (head.error() != channels::LazyChannelRefusal::NotEstablished) return;
-                CRUCIBLE_SPIN_PAUSE;
-                continue;
-            }
-            auto next = std::move(*head).select<0>(s::no_label).send(1, write_value);
-            static_cast<void>(std::move(next).select<1>(s::no_label).close());
-            processed.fetch_add(1, std::memory_order_release);
-            return;
+            const Refusal refusal = channel.mint_established_session(ctx).match(
+                [&processed](Head head) noexcept -> Refusal {
+                    auto next = std::move(head).select<0>(s::no_label).send(1, write_value);
+                    static_cast<void>(std::move(next).select<1>(s::no_label).close());
+                    processed.fetch_add(1, std::memory_order_release);
+                    return ::fixy::none;
+                },
+                [](LazyChannelRefusal refused) noexcept -> Refusal { return ::fixy::some(refused); });
+            if (refusal != ::fixy::some(LazyChannelRefusal::NotEstablished)) return;
+            CRUCIBLE_SPIN_PAUSE;
         }
     }};
 

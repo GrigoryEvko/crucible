@@ -18,9 +18,10 @@
 //   * The mint takes an execution context.  The gate of
 //     fixy::session::mint_session decides if the context can run the
 //     protocol.
-//   * The mint returns std::expected.  The refusal tells why no handle
-//     came out: the resource is not published, or a different observer
-//     holds the session.
+//   * The mint returns a Result of the handle.  The Result is a linear sum,
+//     so no caller discards the handle in silence.  The refusal tells why
+//     no handle came out: the resource is not published, or a different
+//     observer holds the session.
 //   * The claim flag sits beside the publication slot, so the channel is
 //     two words and not one.
 
@@ -31,12 +32,12 @@
 #include <fixy/session/Stepping.h>
 
 #include <foundation/Pinned.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 
 #include <atomic>
 #include <concepts>
 #include <cstdint>
-#include <expected>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -102,13 +103,14 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires ::fixy::session::CtxFitsSession<Ctx, Proto, Resource&>
     [[nodiscard]] auto mint_established_session(Ctx const& ctx, ::fixy::session::MintSite site = {}) noexcept
-        -> std::expected<decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx,
-                                                                Resource&>(ctx, std::declval<Resource&>())),
-                         LazyChannelRefusal> {
+        -> ::foundation::core::Result<
+            decltype(::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx, Resource&>(
+                ctx, std::declval<Resource&>())),
+            LazyChannelRefusal> {
         Resource* const published = resource_.observe();
-        if (published == nullptr) return std::unexpected(LazyChannelRefusal::NotEstablished);
+        if (published == nullptr) return ::foundation::core::err(LazyChannelRefusal::NotEstablished);
         if (claimed_.exchange(true, std::memory_order_acq_rel)) {
-            return std::unexpected(LazyChannelRefusal::AlreadyClaimed);
+            return ::foundation::core::err(LazyChannelRefusal::AlreadyClaimed);
         }
         return ::fixy::session::mint_session<Proto, ::fixy::session::DefaultAbandonmentPolicy, Ctx, Resource&>(
             ctx, *published, site);
