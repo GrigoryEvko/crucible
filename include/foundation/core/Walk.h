@@ -706,8 +706,8 @@ concept ChainLink = std::is_object_v<Link> && std::is_nothrow_copy_constructible
 template <class Fn, class Link>
 concept ChainStep = std::is_nothrow_invocable_v<Fn const&, Link const&>
                  && std::same_as<std::invoke_result_t<Fn const&, Link const&>, Option<Link>>
-                 && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
-                 && StoresNoBorrowOutside<Fn>;
+                 && std::is_nothrow_copy_constructible_v<Fn> && std::is_nothrow_move_constructible_v<Fn>
+                 && ::foundation::linear::HoldsNoLinearValue<Fn> && StoresNoBorrowOutside<Fn>;
 
 // The links of a chain: the first link, and then the link that the step gives
 // for each link, up to the first step that gives no link.  The count is not
@@ -723,7 +723,7 @@ public:
     using element_reference = Link;
     static constexpr bool is_exact = false;
     static constexpr std::size_t extent = dynamic_extent;
-    static constexpr bool cursor_borrows_stage = true;
+    static constexpr bool cursor_borrows_stage = false;
 
     constexpr ChainStage(Option<Link> first, Step step) noexcept
         : first_{static_cast<Option<Link>&&>(first)}, step_{static_cast<Step&&>(step)} {}
@@ -749,22 +749,22 @@ public:
     }
 
     // The cursor of `for (x : walk)`: the link that the loop reads, or no link
-    // at the end, and the count of the steps that it took.  Two cursors are
+    // at the end, a copy of the step, and the count of the steps that it took.
+    // The cursor holds no place of its stage, so each cursor is a walk of the
+    // chain from its link, and its constructor needs no door.  Two cursors are
     // equal when the two are at the end, or when the two took one count of
     // steps.  A read or a step at the end ends the process in each build.  The
     // check is the compare of the loop with the end cursor, so the optimizer
     // removes it.
     class Cursor final {
         Option<Link> at_;
-        ChainStage const* stage_ = nullptr;
+        [[no_unique_address]] Step step_;
         std::size_t steps_ = 0;
 
-        friend class ChainStage;
-
-        constexpr Cursor(Option<Link> at, ChainStage const* stage) noexcept
-            : at_{static_cast<Option<Link>&&>(at)}, stage_{stage} {}
-
     public:
+        constexpr Cursor(Option<Link> at, Step step) noexcept
+            : at_{static_cast<Option<Link>&&>(at)}, step_{static_cast<Step&&>(step)} {}
+
         [[nodiscard]] constexpr element_reference operator*() const noexcept {
             return at_.match([](Link const& link) noexcept { return link; },
                              []() noexcept -> Link { fatal("a read through the end cursor of a chain walk"); });
@@ -772,7 +772,7 @@ public:
 
         constexpr Cursor& operator++() noexcept {
             Option<Link> next =
-                at_.match([this](Link const& link) noexcept { return stage_->step_(link); },
+                at_.match([this](Link const& link) noexcept { return step_(link); },
                           []() noexcept -> Option<Link> { fatal("a step past the end cursor of a chain walk"); });
             at_ = static_cast<Option<Link>&&>(next);
             ++steps_;
@@ -786,8 +786,8 @@ public:
         }
     };
 
-    [[nodiscard]] constexpr Cursor begin_() const noexcept { return Cursor{first_, this}; }
-    [[nodiscard]] constexpr Cursor end_() const noexcept { return Cursor{Option<Link>{none}, this}; }
+    [[nodiscard]] constexpr Cursor begin_() const noexcept { return Cursor{first_, Step{step_}}; }
+    [[nodiscard]] constexpr Cursor end_() const noexcept { return Cursor{Option<Link>{none}, Step{step_}}; }
 };
 
 }  // namespace detail
