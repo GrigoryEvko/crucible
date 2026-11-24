@@ -144,12 +144,13 @@ struct StreamTag {};
 
 // The producer of the stream, on a thread of its own.  It pushes the values
 // of a Philox stream, with a pause of some turns before each push.  The end
-// of its handle ends the stream.
+// of its handle ends the stream.  The thread calls it one time as an rvalue,
+// so the call operator gives up its handle.
 template <class Producer>
 struct StreamFeed {
     Producer handle;
 
-    void operator()() noexcept {
+    void operator()() && noexcept {
         Producer local = std::move(handle);
         ::crucible::test::PhiloxStream stream{kSeed};
         ::crucible::test::PhiloxStream delays{kSeed + 1};

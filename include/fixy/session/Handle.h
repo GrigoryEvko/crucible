@@ -926,13 +926,15 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         auto& core = core_(pinned);
         core.require_live_();
         const detail::step_origin origin = core.turn_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
+        auto [resource, slots] = std::move(core).release_parts_();
         if constexpr (std::is_same_v<Proto, End>) {
-            auto back = make_<Proto, Resource, LoopCtx, Tracked, PS>(core.take_resource_(), std::move(slots), origin);
+            auto back = make_<Proto, Resource, LoopCtx, Tracked, PS>(std::forward<Resource>(resource), std::move(slots),
+                                                                     origin);
             back.mark_ = pinned.mark_;
             return back;
         } else {
-            return make_<Proto, Resource, LoopCtx, Tracked, PS>(core.take_resource_(), std::move(slots), origin);
+            return make_<Proto, Resource, LoopCtx, Tracked, PS>(std::forward<Resource>(resource), std::move(slots),
+                                                                origin);
         }
     }
 
@@ -1020,32 +1022,32 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
                       "Hold each permission that the payload moves or lends before the send.");
         using Next = detail::perm_set_after_send_t<PS, T>;
         auto& core = core_(handle);
+        core.require_live_();
+        const watch::endpoint_id endpoint = core.session_().endpoint;
+        const detail::step_origin origin = core.step_origin_();
+        auto [resource, held_slots] = std::move(core).release_parts_();
         if constexpr (slot_form_v<T> != SlotForm::Plain) {
-            Resource& resource = core.live_resource_();
-            auto [message, next_slots] = HoldFactory::message_from_slots<T>(core.take_slots_(), std::move(value));
+            auto [message, next_slots] = HoldFactory::message_from_slots<T>(std::move(held_slots), std::move(value));
             if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-                detail::write_through<T>(transport, resource, message, core.session_().endpoint);
-                const detail::step_origin origin = core.step_origin_();
-                return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
+                detail::write_through<T>(transport, resource, message, endpoint);
+                return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
+                                                                 std::move(next_slots), origin);
             } else {
-                ::fixy::Option<T> kept =
-                    detail::write_unless<T>(transport, stop, resource, message, core.session_().endpoint);
-                const detail::step_origin origin = core.step_origin_();
-                auto next =
-                    step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
+                ::fixy::Option<T> kept = detail::write_unless<T>(transport, stop, resource, message, endpoint);
+                auto next = step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
+                                                                      std::move(next_slots), origin);
                 return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
             }
         } else if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
-            detail::write_through<T>(transport, core.live_resource_(), value, core.session_().endpoint);
-            const detail::step_origin origin = core.step_origin_();
-            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
+            detail::write_through<T>(transport, resource, value, endpoint);
+            HoldSlots<Next> slots = HoldFactory::as_set<Next>(std::move(held_slots));
+            return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots),
+                                                             origin);
         } else {
-            ::fixy::Option<T> kept =
-                detail::write_unless<T>(transport, stop, core.live_resource_(), value, core.session_().endpoint);
-            const detail::step_origin origin = core.step_origin_();
-            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
+            ::fixy::Option<T> kept = detail::write_unless<T>(transport, stop, resource, value, endpoint);
+            HoldSlots<Next> slots = HoldFactory::as_set<Next>(std::move(held_slots));
+            auto next =
+                step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots), origin);
             return StoppedSend<decltype(next), T>{std::move(next), std::move(kept)};
         }
     }
@@ -1165,9 +1167,9 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots),
-                                                                            origin);
+        auto [resource, slots] = std::move(core).release_parts_();
+        return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
+                                                                            std::move(slots), origin);
     }
 
     // ── The pin ───────────────────────────────────────────────────────
@@ -1249,9 +1251,9 @@ public:
         core.require_live_();
         core.hold_on_this_thread_();
         const detail::step_origin origin = core.turn_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(core.take_resource_(),
-                                                                                         std::move(slots), origin);
+        auto [resource, slots] = std::move(core).release_parts_();
+        return make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(
+            std::forward<Resource>(resource), std::move(slots), origin);
     }
 
     // Gives a bound or a pinned handle back to the tracked policy of the same
@@ -1355,11 +1357,13 @@ public:
                       "that the message moves.");
         using Next = detail::perm_set_after_send_t<PS, T>;
         auto& core = core_(handle);
-        Resource& resource = core.live_resource_();
-        auto [token, rest] = HoldFactory::take_slot<detail::token_tag_t<T>>(core.take_slots_());
-        detail::write_through<T>(transport, resource, token, core.session_().endpoint);
+        core.require_live_();
+        const watch::endpoint_id endpoint = core.session_().endpoint;
         const detail::step_origin origin = core.step_origin_();
-        return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(),
+        auto [resource, held_slots] = std::move(core).release_parts_();
+        auto [token, rest] = HoldFactory::take_slot<detail::token_tag_t<T>>(std::move(held_slots));
+        detail::write_through<T>(transport, resource, token, endpoint);
+        return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
                                                          HoldFactory::as_set<Next>(std::move(rest)), origin);
     }
 
@@ -1395,8 +1399,8 @@ public:
         std::size_t word = step_word;
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(),
+        auto [resource, slots] = std::move(core).release_parts_();
+        return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
                                                                                  std::move(slots), origin);
     }
 
@@ -1444,20 +1448,25 @@ public:
                       "of fixy/session/Classification.h refuses the message.");
         using Next = detail::perm_set_after_recv_t<PS, T>;
         auto& core = core_(handle);
-        T value =
-            read_value_<T, Resource>(core.live_resource_(), std::forward<Source>(source), core.session_().endpoint);
+        core.require_live_();
+        const watch::endpoint_id endpoint = core.session_().endpoint;
         const detail::step_origin origin = core.step_origin_();
+        auto [resource, held_slots] = std::move(core).release_parts_();
+        T value = read_value_<T, Resource>(resource, std::forward<Source>(source), endpoint);
         if constexpr (slot_form_v<T> == SlotForm::Token) {
             HoldSlots<Next> slots =
-                HoldFactory::as_set<Next>(HoldFactory::put_slot(core.take_slots_(), std::move(value)));
-            return step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
+                HoldFactory::as_set<Next>(HoldFactory::put_slot(std::move(held_slots), std::move(value)));
+            return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots),
+                                                             origin);
         } else if constexpr (slot_form_v<T> != SlotForm::Plain) {
-            auto [payload, next_slots] = HoldFactory::value_into_slots(core.take_slots_(), std::move(value));
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(next_slots), origin);
+            auto [payload, next_slots] = HoldFactory::value_into_slots(std::move(held_slots), std::move(value));
+            auto next = step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
+                                                                  std::move(next_slots), origin);
             return ::foundation::core::Record{std::move(payload), std::move(next)};
         } else {
-            HoldSlots<Next> slots = HoldFactory::as_set<Next>(core.take_slots_());
-            auto next = step_<R, Resource, LoopCtx, Policy, Next>(core.take_resource_(), std::move(slots), origin);
+            HoldSlots<Next> slots = HoldFactory::as_set<Next>(std::move(held_slots));
+            auto next =
+                step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource), std::move(slots), origin);
             return ::foundation::core::Record{std::move(value), std::move(next)};
         }
     }
@@ -1496,8 +1505,8 @@ public:
             detail::report_foreign_label_word(word, step_word, type_display_text_v<Recv<T, R>>);
         }
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(core.take_resource_(),
+        auto [resource, slots] = std::move(core).release_parts_();
+        return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
                                                                                  std::move(slots), origin);
     }
 
@@ -1544,8 +1553,9 @@ public:
         std::size_t word = detail::branch_wire_word_of<Choice, I>();
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
+        auto [resource, slots] = std::move(core).release_parts_();
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
+                                                                origin);
     }
 
     template <std::size_t I, typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
@@ -1573,8 +1583,9 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
+        auto [resource, slots] = std::move(core).release_parts_();
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
+                                                                origin);
     }
 
     // Receives the peer's wire word through Transport, a read of a
@@ -1596,9 +1607,9 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
+        auto [resource, slots] = std::move(core).release_parts_();
         return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
-            word, core.take_resource_(), std::move(slots), origin, std::move(handler),
+            word, std::forward<Resource>(resource), std::move(slots), origin, std::move(handler),
             std::make_index_sequence<Choice::branch_count>{});
     }
 
@@ -1622,9 +1633,9 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(word, core.take_resource_(), std::move(slots),
-                                                                      origin, std::move(handler),
+        auto [resource, slots] = std::move(core).release_parts_();
+        return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(word, std::forward<Resource>(resource),
+                                                                      std::move(slots), origin, std::move(handler),
                                                                       std::make_index_sequence<Choice::branch_count>{});
     }
 
@@ -1656,8 +1667,9 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        HoldSlots<PS> slots = core.take_slots_();
-        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(core.take_resource_(), std::move(slots), origin);
+        auto [resource, slots] = std::move(core).release_parts_();
+        return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
+                                                                origin);
     }
 
     // Runs the body with a read view of a region that the handle borrows,
@@ -1754,16 +1766,24 @@ private:
     }
 
 protected:
-    // Hands the Resource to the next handle, and marks this one consumed.
-    // Each consumer method calls it exactly once, after the transport.
-    [[nodiscard]] constexpr Resource take_resource_() noexcept(std::is_nothrow_move_constructible_v<Resource>) {
-        this->mark_consumed_();
-        return std::forward<Resource>(resource_);
-    }
+    // The two parts of a core that its end gives: the Resource and the slots.
+    // A Resource can be a reference, so the parts are a plain class and not a
+    // Record.  The end gives each member, so no initializer runs.
+    struct released_parts {
+        Resource resource{};
+        [[no_unique_address]] HoldSlots<PS> slots{};
+    };
 
-    // Hands the slots to the next handle, or to the step that moves a token
-    // out of them.  Each consumer method calls it exactly once.
-    [[nodiscard]] constexpr HoldSlots<PS> take_slots_() noexcept { return std::move(slots_); }
+    // Ends the core.  It marks the core consumed and gives the Resource and
+    // the slots together to the next handle, or to the step that moves a
+    // token out of the slots.  A consumer reads the record, the endpoint and
+    // the count of the core first, because the mark clears the endpoint.
+    // Then it calls this door one time.
+    [[nodiscard]] constexpr released_parts
+    release_parts_() && noexcept(std::is_nothrow_move_constructible_v<Resource>) {
+        this->mark_consumed_();
+        return released_parts{std::forward<Resource>(resource_), std::move(slots_)};
+    }
 
     [[nodiscard]] constexpr Resource& live_resource_() noexcept {
         this->require_live_();
@@ -1985,12 +2005,14 @@ public:
     // End, so a caller can recover the Resource only after the protocol
     // has run to completion.  A handle whose set holds tags gives back the
     // token of each tag from its slots too, in a Record after the Resource,
-    // in the order of the set.
+    // in the order of the set.  The slots of an empty set hold nothing, so the
+    // close of an empty set drops them.
     [[nodiscard]] constexpr Resource close() && noexcept(std::is_nothrow_move_constructible_v<Resource>)
         requires(detail::perm_set_is_empty(^^PS))
     {
         this->require_live_();
-        return this->take_resource_();
+        auto [resource, slots] = std::move(*this).release_parts_();
+        return std::forward<Resource>(resource);
     }
 
     [[nodiscard]] constexpr typename detail::closed_of<Resource, PS>::type
@@ -1998,7 +2020,8 @@ public:
         requires(!detail::perm_set_is_empty(^^PS) && !std::is_reference_v<Resource>)
     {
         this->require_live_();
-        return HoldFactory::close_slots(this->take_resource_(), this->take_slots_());
+        auto [resource, slots] = std::move(*this).release_parts_();
+        return HoldFactory::close_slots(std::forward<Resource>(resource), std::move(slots));
     }
 
     void close() &&

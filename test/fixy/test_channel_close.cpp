@@ -263,8 +263,9 @@ struct RoundFeeder {
         : handle{std::move(producer)}, ended_producers{ended}, base{first_item} {}
 
     // A linear handle ends at the drop door, and an MPSC producer handle,
-    // which is not linear, ends with its scope.
-    void operator()() noexcept {
+    // which is not linear, ends with its scope.  The thread calls the feeder
+    // one time as an rvalue, so the call operator gives up its handle.
+    void operator()() && noexcept {
         {
             Producer local = std::move(handle);
             for (int item = 0; item < kItemsOfProducer; ++item) {
