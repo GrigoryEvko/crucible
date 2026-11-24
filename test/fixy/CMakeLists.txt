@@ -4877,6 +4877,14 @@ fixy_neg_compile_test(neg_spsc_ends_held_split_that_moves
 fixy_neg_compile_test(neg_spsc_ends_frame_door_on_a_held_split
   "no matching function for call to .with_producer\\(fixy::concurrent::SpscHeldSplit<.anonymous.::Owner, .anonymous.::HeldBrand>&"
   "neg_spsc_ends_frame_door_on_a_held_split\\.cpp:[0-9]+:[0-9]+: error")
+# The door of two held sides takes two sides of two types, and it refuses a
+# body that reaches a side of either proof, also through the holder.
+fixy_neg_compile_test(neg_spsc_ends_held_ends_of_one_side_type
+  "use of deleted function .void fixy::concurrent::with_held_ends\\("
+  "the door of two held sides takes two sides of one type, so the two can be one side")
+fixy_neg_compile_test(neg_spsc_ends_held_ends_body_reaches_a_side
+  "no matching function for call to .with_held_ends\\(fixy::concurrent::SpscHeldSplit<.anonymous.::Owner, .anonymous.::HeldBrand>::producer_side_type&"
+  "SpscReachesHeldSide")
 # The end of the channel ends each object that its ring holds, so the channel
 # holds no linear payload.
 fixy_neg_compile_test(neg_spsc_box_channel_of_linear_payload

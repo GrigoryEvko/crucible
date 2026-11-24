@@ -375,6 +375,89 @@ private:
     ::fixy::concurrent::SpscHeldSplit<CountLog, HeldBrand> split_;
 };
 
+// A tally with one producer and one consumer: a second owner type for the
+// door of two held sides.
+class TallyLog final {
+public:
+    struct producer_state {
+        std::uint64_t added = 0;
+    };
+    struct consumer_state {};
+
+    TallyLog() noexcept = default;
+    TallyLog(TallyLog const&) = delete("a tally is pinned to its two ends");
+    TallyLog(TallyLog&&) = delete("a tally is pinned to its two ends");
+
+    // Adds one to the tally.
+    static void add(ProducerEnd<TallyLog>& end) noexcept {
+        end.state_.added += 1;
+        end.owner_->published_ = end.state_.added;
+    }
+
+    [[nodiscard]] std::uint64_t total() const noexcept { return published_; }
+
+private:
+    std::uint64_t published_ = 0;
+};
+
+// A class that holds two held splits of two owner types, whose brands name
+// one producer proof, as the ring and the log of a Vigil do.  One door
+// writes the two owners in one frame.
+class PairHolder final {
+public:
+    PairHolder() noexcept
+        : log_{::fixy::concurrent::mint_held_spsc_split<CountLog, HeldBrand>(
+              ::foundation::effects::testing::test().alloc, std::uint64_t{4})},
+          tally_{::fixy::concurrent::mint_held_spsc_split<TallyLog, HeldBrand>(
+              ::foundation::effects::testing::test().alloc)} {}
+
+    // Writes one item into the log and adds one to the tally, in one frame.
+    [[nodiscard]] bool write_both(ProducerProof const& proof) noexcept {
+        return with_held_ends(log_.producer_side(), proof, tally_.producer_side(), proof,
+                              [](ProducerEnd<CountLog>& log, ProducerEnd<TallyLog>& tally) noexcept {
+                                  if (!CountLog::try_write(log)) return false;
+                                  TallyLog::add(tally);
+                                  return true;
+                              });
+    }
+
+    // Writes count items and reads each item of the log, with the producer
+    // side and the consumer side of the one split open in one frame.
+    [[nodiscard]] std::uint64_t write_and_read(ProducerProof const& producer, ConsumerProof const& consumer,
+                                               std::uint64_t count) noexcept {
+        return with_held_ends(log_.producer_side(), producer, log_.consumer_side(), consumer,
+                              [count](ProducerEnd<CountLog>& writer, ConsumerEnd<CountLog>& reader) noexcept {
+                                  for (std::uint64_t item = 0; item < count; ++item)
+                                      static_cast<void>(CountLog::try_write(writer));
+                                  return read_all(reader);
+                              });
+    }
+
+    [[nodiscard]] std::uint64_t log_held() const noexcept {
+        return log_.with_owner([](CountLog const& log) noexcept { return log.held(); });
+    }
+    [[nodiscard]] std::uint64_t tally() const noexcept {
+        return tally_.with_owner([](TallyLog const& tally) noexcept { return tally.total(); });
+    }
+
+private:
+    ::fixy::concurrent::SpscHeldSplit<CountLog, HeldBrand> log_;
+    ::fixy::concurrent::SpscHeldSplit<TallyLog, HeldBrand> tally_;
+};
+
+int check_held_ends() {
+    PairHolder holder{};
+    ProducerProof const producer = ProofDoor::producer();
+    if (!holder.write_both(producer) || !holder.write_both(producer)) return 1;
+    if (holder.log_held() != 2 || holder.tally() != 2) return 2;
+
+    // The two sides of one split open together on one thread: the reader
+    // reads the two items from before the frame and the two of the frame.
+    if (holder.write_and_read(producer, ProofDoor::consumer(), 2) != 4) return 3;
+    if (holder.log_held() != 0) return 4;
+    return 0;
+}
+
 int check_held_split() {
     LogHolder holder{std::uint64_t{2}};
     if (holder.write_all(ProofDoor::producer()) != 2) return 1;
@@ -509,5 +592,6 @@ int main() {
     if (int rc = check_first_states(); rc != 0) return 30 + rc;
     if (int rc = check_two_threads(); rc != 0) return 40 + rc;
     if (int rc = check_held_two_threads(); rc != 0) return 50 + rc;
+    if (int rc = check_held_ends(); rc != 0) return 60 + rc;
     return 0;
 }

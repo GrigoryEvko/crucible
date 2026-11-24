@@ -90,6 +90,9 @@
 //   - The door of a side refuses a body that reaches a side of the same
 //     proof through a borrow, also through the split that holds it, so no
 //     code inside the body opens a second frame of that side.
+//   - with_held_ends(first, first_proof, second, second_proof, body) opens
+//     two sides of two types in one frame, for a producer that writes two
+//     owners in one step, or for the two sides of one split on one thread.
 //   - The proofs prove a thread for each side, not one holder of a split.  A
 //     proof of type P opens each side of proof P that its code reaches.  So a
 //     thread that holds the proof of one holder opens the side of a second
@@ -422,6 +425,34 @@ concept SpscHeldEndBody =
 // borrow: the refused twin of the door binds to it.
 template <class Body, class End, class Proof>
 concept SpscHeldSideReachingBody = std::is_nothrow_invocable_v<Body&&, End&> && SpscReachesHeldSide<Body, Proof>;
+
+// The body of the door of two held sides: it takes the two ends with no
+// throw, its result holds no borrow and fits a Record, it reaches no side of
+// either proof through a borrow, it holds no linear value by value, and it
+// stores no borrow outside the frame.
+template <class Body, class FirstEnd, class SecondEnd, class FirstProof, class SecondProof>
+concept SpscHeldEndsBody =
+    std::is_nothrow_invocable_v<Body&&, FirstEnd&, SecondEnd&>
+    && SpscFrameValue<std::invoke_result_t<Body&&, FirstEnd&, SecondEnd&>> && !SpscReachesHeldSide<Body, FirstProof>
+    && !SpscReachesHeldSide<Body, SecondProof> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// Two held sides of two types.  One type names one owner type, one side and
+// one proof, so two sides of two types are two objects.
+template <class FirstSide, class SecondSide>
+concept SpscTwoSideTypes = !std::is_same_v<FirstSide, SecondSide>;
+
+// The door of two held sides (the definition follows the side).
+template <class FirstOwner, SpscSide FirstSide, class FirstProof, class SecondOwner, SpscSide SecondSide,
+          class SecondProof, class Body>
+    requires SpscTwoSideTypes<SpscHeldSide<FirstOwner, FirstSide, FirstProof>,
+                              SpscHeldSide<SecondOwner, SecondSide, SecondProof>>
+          && SpscHeldEndsBody<Body, SpscEnd<FirstOwner, FirstSide>, SpscEnd<SecondOwner, SecondSide>, FirstProof,
+                              SecondProof>
+constexpr auto with_held_ends(SpscHeldSide<FirstOwner, FirstSide, FirstProof>& first, FirstProof const& first_proof,
+                              SpscHeldSide<SecondOwner, SecondSide, SecondProof>& second,
+                              SecondProof const& second_proof, Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, SpscEnd<FirstOwner, FirstSide>&, SpscEnd<SecondOwner, SecondSide>&>;
 
 // The key of the build of a split.  Only the door of the mint builds one, so
 // only mint_spsc_split builds a split.  The door is no friend of the split:
@@ -903,10 +934,59 @@ private:
     template <class, class>
     friend class SpscHeldSplit;
 
+    template <class FirstOwner, SpscSide FirstSide, class FirstProof, class SecondOwner, SpscSide SecondSide,
+              class SecondProof, class Body>
+        requires SpscTwoSideTypes<SpscHeldSide<FirstOwner, FirstSide, FirstProof>,
+                                  SpscHeldSide<SecondOwner, SecondSide, SecondProof>>
+              && SpscHeldEndsBody<Body, SpscEnd<FirstOwner, FirstSide>, SpscEnd<SecondOwner, SecondSide>, FirstProof,
+                                  SecondProof>
+    friend constexpr auto with_held_ends(SpscHeldSide<FirstOwner, FirstSide, FirstProof>& first,
+                                         FirstProof const& first_proof,
+                                         SpscHeldSide<SecondOwner, SecondSide, SecondProof>& second,
+                                         SecondProof const& second_proof, Body&& body) noexcept
+        -> std::invoke_result_t<Body&&, SpscEnd<FirstOwner, FirstSide>&, SpscEnd<SecondOwner, SecondSide>&>;
+
     constexpr SpscHeldSide(SpscEndKey<Owner> const& key, owner_ref ref) noexcept : end_{key, ref} {}
 
     end_type end_;
 };
+
+// Door of two held sides: body gets the end of each side in place, for the
+// caller that gives the proof of each side.  The door reads no byte of a
+// proof.  A producer that writes two owners in one step, such as the trace
+// ring and its metadata log, opens the two sides in one frame, because a
+// body of the door of one side cannot reach the other side: the store check
+// refuses a capture of a side by a reference that is not const.  The two
+// sides of one held split open together too, as the two ends of one owner
+// on one thread.
+//
+// The two sides have two types.  One side type given two times could name one
+// side two times, and the body would then hold two writers of one end, so
+// the deleted twin below refuses it.  The body reaches no side of either
+// proof through a borrow, so no code inside it opens a second frame of a
+// side.  A proof is not tied to one holder, as for the door of one side: the
+// proof of one holder opens the sides of a second holder of one class that
+// its code reaches.  Complexity: O(1), and the cost of body.
+template <class FirstOwner, SpscSide FirstSide, class FirstProof, class SecondOwner, SpscSide SecondSide,
+          class SecondProof, class Body>
+    requires SpscTwoSideTypes<SpscHeldSide<FirstOwner, FirstSide, FirstProof>,
+                              SpscHeldSide<SecondOwner, SecondSide, SecondProof>>
+          && SpscHeldEndsBody<Body, SpscEnd<FirstOwner, FirstSide>, SpscEnd<SecondOwner, SecondSide>, FirstProof,
+                              SecondProof>
+constexpr auto with_held_ends(SpscHeldSide<FirstOwner, FirstSide, FirstProof>& first, FirstProof const& /*first_proof*/,
+                              SpscHeldSide<SecondOwner, SecondSide, SecondProof>& second,
+                              SecondProof const& /*second_proof*/, Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, SpscEnd<FirstOwner, FirstSide>&, SpscEnd<SecondOwner, SecondSide>&> {
+    return static_cast<Body&&>(body)(first.end_, second.end_);
+}
+
+// One side type given two times binds to this overload, so the refusal gives
+// its reason.
+template <class Owner, SpscSide Side, class Proof, class Body>
+void with_held_ends(SpscHeldSide<Owner, Side, Proof>& first, Proof const& first_proof,
+                    SpscHeldSide<Owner, Side, Proof>& second, Proof const& second_proof, Body&& body) =
+    delete("the door of two held sides takes two sides of one type, so the two can be one side, and the body would "
+           "hold two writers of one end: give two sides of two types");
 
 // The held split of an owner (the held split): the owner in a Box and its two
 // sides.  The Box is the first member, so the two sides end before it.  The

@@ -134,6 +134,11 @@ static_assert(opens_side<HeldProducerSide, ProducerProof const>);
 static_assert(!opens_side<HeldProducerSide, ConsumerProof const>);
 static_assert(!::foundation::transfer::Synchronized<HeldSplit>);
 
+// The door of two held sides takes two sides of two types, such as the two
+// sides of one held split, and refuses one side type given two times.
+static_assert(SpscTwoSideTypes<HeldSplit::producer_side_type, HeldSplit::consumer_side_type>);
+static_assert(!SpscTwoSideTypes<HeldProducerSide, HeldProducerSide>);
+
 // The door of a side refuses a body that reaches a side of its proof through a
 // borrow, also through the held split that holds it.  A body that reaches a
 // held split of other proofs passes.
