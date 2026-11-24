@@ -141,18 +141,14 @@ static void test_name_past_the_bound_is_refused() {
     // A name of MAX_NAME_CHARS characters fits, and one character more does
     // not.  A refused insert keeps neither the hash nor an entry.
     CallSiteTable t;
-    ::fixy::GrowText longest = ::fixy::mint_grow_text(CallSiteTable::MAX_NAME_CHARS + 1);
+    ::fixy::FixedText<CallSiteTable::MAX_NAME_CHARS + 1> longest{};
     for (std::size_t index = 0; index < CallSiteTable::MAX_NAME_CHARS; ++index) {
-        CRUCIBLE_TEST_ASSERT(kTest, longest.append(alloc_cap(), 'a').is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, longest.append('a').is_ok());
     }
-    CRUCIBLE_TEST_ASSERT(
-        kTest, longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(11), name, "f", 1); }));
-    CRUCIBLE_TEST_ASSERT(kTest, longest.append(alloc_cap(), 'a').is_ok());
-    CRUCIBLE_TEST_ASSERT(
-        kTest, !longest.with_view([&t](::fixy::TextView name) { return t.insert(alloc_cap(), NZ(12), name, "f", 2); }));
-    CRUCIBLE_TEST_ASSERT(kTest, !longest.with_view([&t](::fixy::TextView name) {
-        return t.insert(alloc_cap(), NZ(13), "f.py", name, 3);
-    }));
+    CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(11), longest.view(), "f", 1));
+    CRUCIBLE_TEST_ASSERT(kTest, longest.append('a').is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, !t.insert(alloc_cap(), NZ(12), longest.view(), "f", 2));
+    CRUCIBLE_TEST_ASSERT(kTest, !t.insert(alloc_cap(), NZ(13), "f.py", longest.view(), 3));
     CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1 && t.has(H(11)) && !t.has(H(12)) && !t.has(H(13)));
     ::fixy::check::pass(kTest, "  test_name_bound:                PASSED\n");
 }

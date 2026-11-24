@@ -498,6 +498,53 @@ void test_written_aborts(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_FATAL_INVARIANT(exact.size() == 2);
 }
 
+// An element that only moves, as the memory of a region of the store of the
+// background thread does.  The move leaves the source with label zero.
+class MoveOnly {
+public:
+    explicit MoveOnly(int label) noexcept : label_{label} {}
+    MoveOnly(MoveOnly&& other) noexcept : label_{other.label_} { other.label_ = 0; }
+    MoveOnly& operator=(MoveOnly&& other) noexcept {
+        label_ = other.label_;
+        other.label_ = 0;
+        return *this;
+    }
+    MoveOnly(MoveOnly const&) = delete("an element of the test only moves");
+    MoveOnly& operator=(MoveOnly const&) = delete("an element of the test only moves");
+
+    [[nodiscard]] int label() const noexcept { return label_; }
+
+private:
+    int label_ = 0;
+};
+
+// exchange moves a value into the element at its position and gives back the
+// element that the position held.  The other elements stay, and the count of
+// the array stays.
+void test_exchange_moves_in_and_gives_back() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    HeapArray<MoveOnly> array = mint_heap_array_with<MoveOnly>(
+        alloc, 3, [](std::size_t position) noexcept { return MoveOnly{static_cast<int>(position) + 1}; });
+    MoveOnly const held = array.exchange(1, MoveOnly{7});
+    CRUCIBLE_FATAL_INVARIANT(held.label() == 2);
+    CRUCIBLE_FATAL_INVARIANT(array.size() == 3);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(0).expect("the array holds three elements")->label() == 1);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(1).expect("the array holds three elements")->label() == 7);
+    CRUCIBLE_FATAL_INVARIANT(array.view().get(2).expect("the array holds three elements")->label() == 3);
+}
+
+// An exchange at or past the count ends the process.  The exchange runs in a
+// child through expect_dies of the Check family.
+void test_exchange_past_the_count_aborts(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            HeapArray<int> array = mint_heap_array(::foundation::effects::testing::test().alloc, 2, 0);
+            static_cast<void>(array.exchange(2, 5));
+        },
+        ::foundation::core::TextView{"foundation: fatal: an exchange at the position 2 of a HeapArray of 2 elements"});
+}
+
 }  // namespace
 
 int main() {
@@ -517,5 +564,7 @@ int main() {
     test_zeroed();
     test_written();
     test_written_aborts(test);
+    test_exchange_moves_in_and_gives_back();
+    test_exchange_past_the_count_aborts(test);
     return 0;
 }

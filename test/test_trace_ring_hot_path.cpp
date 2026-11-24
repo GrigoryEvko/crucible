@@ -83,7 +83,7 @@ static_assert(::fixy::HotPathLattice::leq(HotPathTier_v::Warm, hot_path_tier_v<e
 static_assert(!::fixy::HotPathLattice::leq(HotPathTier_v::Hot, hot_path_tier_v<eff::Row<eff::Effect::Alloc>>));
 
 void test_ring_append_under_the_foreground() {
-    auto ring = std::make_unique<TraceRing>();
+    ::fixy::Box<TraceRing> ring = ::fixy::mint_box<TraceRing>(eff::testing::test().alloc);
     auto const foreground = eff::testing::foreground();
     CRUCIBLE_TEST_ASSERT(
         kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));

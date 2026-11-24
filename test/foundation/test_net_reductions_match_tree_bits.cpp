@@ -130,8 +130,10 @@ template <class T, std::size_t Runs>
             ++index;
         }
         core::FixedArray<T, 37> sums{};
-        bool const is_summed = sums.with_mut([&views](auto out) noexcept {
-            return core::sum_runs_by_tree(core::View<core::View<T const> const>{views.view()}, std::move(out)).is_ok();
+        auto const& views_read = views;
+        bool const is_summed = sums.with_mut([&views_read](auto out) noexcept {
+            return core::sum_runs_by_tree(core::View<core::View<T const> const>{views_read.view()}, std::move(out))
+                .is_ok();
         });
         is_each = is_each && is_summed;
         for (std::size_t position = 0; position < 37; ++position) {

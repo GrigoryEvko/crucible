@@ -391,12 +391,12 @@ concept LinearElementBody = (!::foundation::linear::HoldsNoLinearValue<Body>) &&
 // result holds no borrow and fits a Record, it reaches no key of the brand,
 // and it holds no linear value by value.
 template <class Body, class T, class Brand>
-concept KeyedElementBody =
-    std::is_nothrow_invocable_v<Body&&, T&>
-    && (std::is_void_v<detail::body_result_t<Body&&, T&>>
-        || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
-            && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>))
-    && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+concept KeyedElementBody = std::is_nothrow_invocable_v<Body&&, T&>
+                        && (std::is_void_v<detail::body_result_t<Body&&, T&>>
+                            || (HoldsNoBorrow<detail::body_result_t<Body&&, T&>>
+                                && RecordElement<std::remove_cv_t<detail::body_result_t<Body&&, T&>>>))
+                        && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>
+                        && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
 // A body of a keyed element door that reaches no key of the brand and holds
 // a linear value by value: the linear twin of each keyed element door binds
@@ -475,7 +475,7 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
@@ -490,7 +490,7 @@ public:
         "body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
@@ -530,6 +530,11 @@ public:
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && LinearFrameBody<Body, T, Fresh, N>
     void with_mut(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    // A body that stores a borrow outside the frame binds to this overload,
+    // and not to the const twin, so the refusal gives its own reason.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && StoringFrameBody<Body, T, Fresh, N>
+    void with_mut(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // A keyed array opens a frame only with its key, so a body with no key
     // binds to this overload, and the refusal gives its reason.
@@ -1167,7 +1172,7 @@ public:
         requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
               && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
@@ -1181,7 +1186,7 @@ public:
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
               && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
@@ -1209,6 +1214,26 @@ public:
     template <class OnSome, class OnNone>
     void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const&& =
         delete("a frame door of a temporary HeapArray lends an element of storage that the full expression frees");
+
+    // Moves value into the element at position, and gives back the element
+    // that it held.  The door takes no body.  A body of the element door
+    // that moves a value with a borrow into the element must capture that
+    // value, and the store check of the door refuses such a capture.  The
+    // position is below size(): no type holds the count of a HeapArray, so a
+    // position at or past it ends the process.  Complexity: O(1).
+    [[nodiscard]] constexpr T exchange(std::size_t position, T value) & noexcept
+        requires std::is_nothrow_move_constructible_v<T> && std::is_nothrow_move_assignable_v<T>
+    {
+        if (position >= this->state_.count) [[unlikely]] {
+            fatal("an exchange at the position {} of a HeapArray of {} elements", position, this->state_.count);
+        }
+        T held = std::move(this->state_.first[position]);
+        this->state_.first[position] = std::move(value);
+        return held;
+    }
+    void exchange(std::size_t position, T value) && =
+        delete("an exchange in a temporary HeapArray writes storage that the full expression frees");
+    void exchange(std::size_t position, T value) const& = delete("a const HeapArray has no writer of its elements");
 
     // The iteration verbs of the View of the const elements.
     [[nodiscard]] constexpr auto reverse() const& noexcept { return view().reverse(); }
@@ -1457,14 +1482,14 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires std::is_invocable_v<Body, T&> && HoldsNoBorrow<std::invoke_result_t<Body, T&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T&>
         with_masked(std::uint64_t key, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(held_()[key & this->state_.mask]);
     }
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<std::invoke_result_t<Body, T const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, T const&>
         with_masked(std::uint64_t key, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(static_cast<T const*>(held_())[key & this->state_.mask]);

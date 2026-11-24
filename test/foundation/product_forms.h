@@ -73,12 +73,13 @@ template <class T>
     ::fixy::FixedArray<std::size_t, 2> const sizes{out.shape.rows, out.shape.columns};
     ::fixy::FixedArray<std::size_t, 2> const strides{out.place.row_stride, out.place.column_stride};
     std::size_t const offset = out.place.offset;
-    auto [result, back] = ::fixy::with_mut(std::move(out.values), [&](auto run) noexcept {
-        auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
-                          .expect("the output fits its array");
-        return multiply_with_lanes<T>(target, ::fixy::side_as<::fixy::side::LeftFactor>(left),
-                                      ::fixy::side_as<::fixy::side::RightFactor>(right), lanes);
-    });
+    auto [result, back] =
+        ::fixy::with_mut(std::move(out.values), [&sizes, &strides, offset, left, right, lanes](auto run) noexcept {
+            auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
+                              .expect("the output fits its array");
+            return multiply_with_lanes<T>(target, ::fixy::side_as<::fixy::side::LeftFactor>(left),
+                                          ::fixy::side_as<::fixy::side::RightFactor>(right), lanes);
+        });
     out.values = std::move(back);
     return result;
 }
@@ -112,11 +113,12 @@ template <class T>
     ::fixy::FixedArray<std::size_t, 1> const sizes{out.shape.columns};
     ::fixy::FixedArray<std::size_t, 1> const strides{out.place.column_stride};
     std::size_t const offset = out.place.offset;
-    auto [result, back] = ::fixy::with_mut(std::move(out.values), [&](auto run) noexcept {
-        auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
-                          .expect("the output fits its array");
-        return sum_runs_with_lanes<T>(target, runs, lanes);
-    });
+    auto [result, back] =
+        ::fixy::with_mut(std::move(out.values), [&sizes, &strides, offset, runs, lanes](auto run) noexcept {
+            auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
+                              .expect("the output fits its array");
+            return sum_runs_with_lanes<T>(target, runs, lanes);
+        });
     out.values = std::move(back);
     return result;
 }

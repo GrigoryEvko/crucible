@@ -323,7 +323,10 @@ public:
             fact.uuid = cog::Uuid{0xD15C0111ull, lo};
         }
         fact.level = fact.level == cog::CogLevel::L0_Atomic ? default_level_for(fact.kind) : fact.level;
-        node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
+        // The body reads the fact through a const reference, so it writes no
+        // borrow of its frame into the fact.
+        DiscoveryNodeFact const& fact_read = fact;
+        node_facts_.with_element(slot, [&fact_read](DiscoveryNodeFact& held) noexcept { held = fact_read; });
         DiscoveryNodeFact const& held = node_facts_.at(slot);
         nodes_.with_element(slot, [&held](cog::CogIdentity& node) noexcept {
             node = cog::CogIdentity{
@@ -347,7 +350,8 @@ public:
         }
         ::fixy::Index<MaxNodes> const slot =
             ::fixy::Index<MaxNodes>::check(idx).expect("an index below the node count is below the capacity");
-        node_facts_.with_element(slot, [&fact](DiscoveryNodeFact& held) noexcept { held = fact; });
+        DiscoveryNodeFact const& fact_read = fact;
+        node_facts_.with_element(slot, [&fact_read](DiscoveryNodeFact& held) noexcept { held = fact_read; });
         DiscoveryNodeFact const& held = node_facts_.at(slot);
         auto const firmware_revision = firmware_claim(held);
         nodes_.with_element(slot, [&held, firmware_revision](cog::CogIdentity& node) noexcept {

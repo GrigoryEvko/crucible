@@ -1316,15 +1316,17 @@ inline void recompute_merkle(TraceNode& node) {
 
 // Writes the region of each node of the chain that starts at first, and of
 // the arms and the bodies on it, after the first count entries of out, the
-// ViewMut of a frame.  The walk recurses into the arms and the bodies, so it
-// takes out by reference.  Returns the count of entries, at most the size of
-// out.
+// ViewMut of a frame.  The walk only reads the chain, so a frame body can
+// give it a node through a const reference and store no borrow outside its
+// frame.  The walk recurses into the arms and the bodies, so it takes out by
+// reference.  Returns the count of entries, at most the size of out.
 template <class Brand, std::size_t Extent>
-[[nodiscard]] inline uint32_t collect_regions(TraceNode& first, ::fixy::ViewMut<RegionNode*, Brand, Extent>& out,
-                                              uint32_t count = 0) {
-    TraceLink walk = make_link(first);
+[[nodiscard]] inline uint32_t
+collect_regions(TraceNode const& first, ::fixy::ViewMut<RegionNode const*, Brand, Extent>& out, uint32_t count = 0) {
+    ::fixy::Option<DagRef<TraceNode const>> walk = ::fixy::some(::fixy::to(first));
     while (walk.is_some() && count < out.size()) {
-        const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
+        const DagRef<TraceNode const> node =
+            ::fixy::Option<DagRef<TraceNode const>>{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
             case TraceNodeKind::REGION: {
                 auto element = out.get_mut(count).expect("the count is below the size of out");
@@ -1333,13 +1335,13 @@ template <class Brand, std::size_t Extent>
                 break;
             }
             case TraceNodeKind::BRANCH: {
-                for (BranchNode::Arm& arm : node->expect_branch()->arms())
-                    for (const DagRef<TraceNode>& target : arm.target())
+                for (BranchNode::Arm const& arm : node->expect_branch()->arms())
+                    for (const DagRef<TraceNode const>& target : arm.target())
                         count = collect_regions(*target, out, count);
                 break;
             }
             case TraceNodeKind::LOOP:
-                for (const DagRef<TraceNode>& body : node->expect_loop()->body)
+                for (const DagRef<TraceNode const>& body : node->expect_loop()->body)
                     count = collect_regions(*body, out, count);
                 break;
             case TraceNodeKind::TERMINAL:

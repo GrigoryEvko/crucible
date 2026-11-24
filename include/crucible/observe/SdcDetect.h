@@ -245,8 +245,11 @@ public:
         return CogIndex::check(active_cogs_)
             .match(
                 [&](CogIndex slot) noexcept {
-                    cogs_.with_element(slot, [&cog](CogSlot& entry) noexcept {
-                        entry = CogSlot{.cog = cog, .mismatch_count = 0, .active = true};
+                    // The body reads the cog through a const reference, so it
+                    // writes no borrow of its frame into the cog.
+                    cog::CogIdentity const& cog_read = cog;
+                    cogs_.with_element(slot, [&cog_read](CogSlot& entry) noexcept {
+                        entry = CogSlot{.cog = cog_read, .mismatch_count = 0, .active = true};
                     });
                     ++active_cogs_;
                     return true;

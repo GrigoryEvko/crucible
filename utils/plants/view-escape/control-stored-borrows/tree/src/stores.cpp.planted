@@ -3,10 +3,9 @@
 // of a parameter by reference and into a member, a View into a local, a View
 // that a parameter by value holds into a member, a member that a constructor
 // builds from a list of its caller, and an assignment operator of namespace
-// scope.  Two more stores are the forms of src/Vigil.cpp and of
-// fixy/SharedRegion.h: a Ref of the object of a Box that a member holds
-// already, and a View of the run of a region that a constructor consumes.
-// The run lives in the storage of the arena, not in the region.
+// scope.  One more store is the form of fixy/SharedRegion.h: a View of the
+// run of a region that a constructor consumes.  The run lives in the storage
+// of the arena, not in the region.
 #include <fixy/OwnedRegion.h>
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
@@ -63,26 +62,6 @@ constexpr Bits& operator^=(Bits& left, Bits right) noexcept {
 }
 
 void flip(Bits& held, Bits mask) noexcept { held ^= mask; }
-
-struct Probe {
-    int value = 0;
-};
-
-class SenseKeeper {
-public:
-    void attach(fc::Box<Probe>&& box) noexcept {
-        held_ = fc::Option<fc::Box<Probe>>::some(std::move(box));
-        held_.with_mut(
-            [this](auto held) noexcept {
-                view_ = fc::Option<fc::Ref<Probe const>>::some(fc::erase_brand(std::as_const(*held).view()));
-            },
-            [] noexcept {});
-    }
-
-private:
-    fc::Option<fc::Box<Probe>> held_{};
-    fc::Option<fc::Ref<Probe const>> view_{};
-};
 
 struct RegionTag {};
 

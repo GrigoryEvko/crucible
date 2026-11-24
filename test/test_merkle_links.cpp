@@ -147,9 +147,10 @@ namespace {
     // An image of the branch holds the merkle hash of each target.  A
     // resolver that knows only the first target gives the second arm no
     // target, and the image of the loaded branch writes zero for it.
+    auto const& branch_read = branch;
     auto [written, image] =
-        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&branch](auto run) noexcept {
-            return crucible::serialize_branch(::fixy::to(branch), std::move(run));
+        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&branch_read](auto run) noexcept {
+            return crucible::serialize_branch(::fixy::to(branch_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written > 0);
     crucible::BranchNode& loaded =
@@ -164,9 +165,10 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, crucible::is_link_to(loaded_first.target(), region_a));
     CRUCIBLE_TEST_ASSERT(kTest, loaded_second.target().is_none());
 
+    auto const& loaded_read = loaded;
     auto [written_again, image_again] =
-        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&loaded](auto run) noexcept {
-            return crucible::serialize_branch(::fixy::to(loaded), std::move(run));
+        ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&loaded_read](auto run) noexcept {
+            return crucible::serialize_branch(::fixy::to(loaded_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written_again == written);
     // The hash of the second target is the last eight bytes of the image.
@@ -212,9 +214,9 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_node_count(crucible::TraceLink{}) == 0);
 
     // collect_regions reads the region of each arm.
-    ::foundation::core::FixedArray<crucible::RegionNode*, 4> collected{};
-    CRUCIBLE_TEST_ASSERT(kTest, collected.with_mut([&branch](auto run) noexcept {
-        return crucible::collect_regions(branch, run);
+    ::foundation::core::FixedArray<crucible::RegionNode const*, 4> collected{};
+    CRUCIBLE_TEST_ASSERT(kTest, collected.with_mut([&branch_read](auto run) noexcept {
+        return crucible::collect_regions(branch_read, run);
     }) == 2);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_merkle_hash(branch) == branch.merkle_hash);
 

@@ -34,11 +34,11 @@ using ::foundation::core::View;
 template <spawn::BodyCoupling Coupling, std::size_t Shards>
 void scan_both(tree::BgCtx const& ctx, ::foundation::core::ScanKind kind, View<float const> part,
                HeapArray<float>& parallel, HeapArray<float>& single) noexcept {
-    parallel = ::foundation::core::with_mut(std::move(parallel), [&](auto out) noexcept {
+    parallel = ::foundation::core::with_mut(std::move(parallel), [&ctx, kind, part](auto out) noexcept {
         ::fixy::concurrent::scan_sums_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), kind, part,
                                                                     std::move(out));
     });
-    single = ::foundation::core::with_mut(std::move(single), [&](auto out) noexcept {
+    single = ::foundation::core::with_mut(std::move(single), [kind, part](auto out) noexcept {
         if (kind == ::foundation::core::ScanKind::Inclusive) {
             CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::scan_inclusive_sums(part, std::move(out)).is_ok());
         } else {

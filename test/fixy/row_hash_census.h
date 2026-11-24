@@ -1109,6 +1109,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Epoch,
      "the handle of one epoch of an arena: it lives in the frame of with_epoch and holds a borrow of the arena"},
     {^^::foundation::core::ArenaRun, "a run of elements of an arena: a borrow, as a View is"},
+    {^^::foundation::core::ArenaPosition,
+     "the position of one object in its arena: an identity, a block and an offset, and never a value in a kernel "
+     "signature"},
     {^^::foundation::core::ArenaBlockSize,
      "the size of the blocks of an arena: a count of bytes above zero, and never a value in a kernel signature"},
     {^^::foundation::core::EpochOf, "the brand of the epochs of an arena: an empty tag that holds nothing"},

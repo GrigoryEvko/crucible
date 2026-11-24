@@ -574,9 +574,10 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
 
     crucible::RegionNode& variant = *make_test_region(writers_dag, 0x62);
     variant.variant_id.advance(7);
+    auto const& variant_read = variant;
     auto [variant_bytes, variant_image] =
-        ::fixy::with_mut(::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&variant](auto run) noexcept {
-            return crucible::serialize_region(::fixy::to(variant), std::move(run));
+        ::fixy::with_mut(::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&variant_read](auto run) noexcept {
+            return crucible::serialize_region(::fixy::to(variant_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
     write_object_file(cipher.root(), variant.content_hash,

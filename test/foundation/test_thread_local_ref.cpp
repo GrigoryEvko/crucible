@@ -153,8 +153,8 @@ void the_key_after_the_last_cell_ends_the_process(::fixy::TestRunnerCtx const& t
 [[nodiscard]] constexpr std::uint64_t second_word_of_name(::foundation::core::TextView name) noexcept {
     constexpr ::foundation::core::TextView key_text{"ThreadLocalRef 2"};
     ::foundation::core::SipKeyBytes key{};
-    auto letter = key_text.begin();
-    key.with_mut([&letter](auto run) noexcept {
+    key.with_mut([key_text](auto run) noexcept {
+        auto letter = key_text.begin();
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(*letter);
             ++letter;

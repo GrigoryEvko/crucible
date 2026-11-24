@@ -876,9 +876,11 @@ public:
         void push(RegionNode& region) noexcept {
             const uint64_t capacity = slots_.size();
             if (capacity != 0) {
+                // The body reads the link through a const reference, so it
+                // writes no borrow of its frame into the region.
+                RegionLink const link = ::fixy::some(::fixy::to(region));
                 slots_.with_element(
-                    total_.peek_relaxed() % capacity,
-                    [&region](RegionLink& slot) noexcept { slot = ::fixy::some(::fixy::to(region)); },
+                    total_.peek_relaxed() % capacity, [&link](RegionLink& slot) noexcept { slot = link; },
                     [] noexcept { ::fixy::fatal("a count modulo the capacity is below it"); });
             }
             (void)total_.bump();

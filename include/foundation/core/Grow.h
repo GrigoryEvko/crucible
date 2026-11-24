@@ -476,7 +476,7 @@ public:
     // elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
@@ -524,7 +524,7 @@ public:
         requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
               && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
@@ -539,7 +539,7 @@ public:
         requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
               && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
               && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone>
+              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
         with_element(std::size_t position, OnSome&& on_some,
                      OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
@@ -838,7 +838,7 @@ public:
     // returns.  The result of body holds no borrow.
     template <class Body>
         requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, TextView>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, TextView>) {
         [[maybe_unused]] detail::OwnerLend const lend{state_.lend_count};

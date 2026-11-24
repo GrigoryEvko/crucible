@@ -33,9 +33,9 @@ namespace crucible::fuzz::boundary {
     ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
     // The body takes the node by reference, and the serializer reads it as
     // const.
-    const auto [written, image] = ::fixy::with_mut(std::move(blank), [&node = *branch](auto run) noexcept {
-        return serialize_branch(::fixy::to(node), std::move(run));
-    });
+    auto const& node = *branch;
+    const auto [written, image] = ::fixy::with_mut(
+        std::move(blank), [&node](auto run) noexcept { return serialize_branch(::fixy::to(node), std::move(run)); });
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }

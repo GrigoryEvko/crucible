@@ -458,11 +458,14 @@ void bytes(Buffer const&&) =
 // through byte_view.
 template <MutableByteContiguousBuffer Buffer, class Body>
 [[nodiscard]] constexpr auto with_mutable_bytes(Buffer& buffer, Body&& body) noexcept {
-    return buffer.with_mut([&body](auto run) noexcept {
+    // The frame body calls body through a const reference, so it writes no
+    // borrow of its frame into a capture of body.
+    auto const& body_read = body;
+    return buffer.with_mut([&body_read](auto run) noexcept {
         if constexpr (std::same_as<typename decltype(run)::element_type, unsigned char>) {
-            return static_cast<Body&&>(body)(::foundation::core::byte_view(std::move(run)));
+            return body_read(::foundation::core::byte_view(std::move(run)));
         } else {
-            return static_cast<Body&&>(body)(std::move(run));
+            return body_read(std::move(run));
         }
     });
 }

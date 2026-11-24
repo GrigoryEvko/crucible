@@ -980,6 +980,7 @@ witness <foundation/core/RunSet.h> deleted | foundation::core::RunSetLayoutDoor 
 witness <foundation/AlignedBytes.h> deleted | foundation::core::TestedWindowDoor | foundation::core::TestedWindowDoor{}
 witness <foundation/core/BumpArena.h> deleted | foundation::core::ArenaArrayDoor | foundation::core::ArenaArrayDoor{}
 witness <foundation/core/BumpArena.h> private | foundation::core::ArenaRun<int, forge::brand> | foundation::core::ArenaRun<int, forge::brand>{forge::rvalue<foundation::core::View<int>>()}
+witness <foundation/core/BumpArena.h> private | foundation::core::ArenaPosition<int, forge::arena> | foundation::core::ArenaPosition<int, forge::arena>{forge::rvalue<foundation::core::Identity>(), forge::rvalue<foundation::core::Index<64>>(), forge::rvalue<foundation::core::ByteCount>()}
 witness <foundation/os/PageSource.h> deleted | foundation::core::CommittedRangeDoor | foundation::core::CommittedRangeDoor{}
 witness <foundation/core/Sort.h> deleted | foundation::core::SortRunDoor | foundation::core::SortRunDoor{}
 witness <foundation/core/Region.h> deleted | foundation::core::ForeignTextDoor | foundation::core::ForeignTextDoor{}

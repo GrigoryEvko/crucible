@@ -274,14 +274,17 @@ template <typename Race>
             rounds.with_element(round, [&ctx, round, writer](Round<typename Race::Table>& state) noexcept {
                 state.start.arrive_and_wait(ctx);
                 // The four writers share the flags of the round, and each writer writes only its own flags.
-                state.registered.with_element(writer, [&state, round, writer](WriterFlags& registered) noexcept {
-                    run_writer(
-                        round, writer,
-                        [&state](crucible::SchemaHash hash) {
-                            return Race::register_one(state.table, state.view, hash);
-                        },
-                        registered);
-                });
+                auto& table = state.table;
+                auto const& view_read = state.view;
+                state.registered.with_element(writer,
+                                              [&table, &view_read, round, writer](WriterFlags& registered) noexcept {
+                                                  run_writer(
+                                                      round, writer,
+                                                      [&table, &view_read](crucible::SchemaHash hash) {
+                                                          return Race::register_one(table, view_read, hash);
+                                                      },
+                                                      registered);
+                                              });
             });
         }
     };

@@ -337,45 +337,51 @@ public:
             Placed,
             Next,
         };
+        // The body reads the kernel through a const reference: its type is
+        // not complete here, so the store check of the door cannot read what
+        // a write through a Ref of it could store.
         const std::size_t slots = table_.size();
+        KernelRef const& kernel_read = kernel;
         for (std::size_t probe = 0; probe < slots; probe++) {
-            const ProbeStep step = table_.with_masked(lookup_hash + probe, [&](KernelCacheSlot& entry) noexcept {
-                uint64_t expected = 0;
-                // A successful CAS claims the slot for this thread.  The
-                // writer token keeps the brand of its root.  Two inserts can
-                // run at one time, so each takes a root of its own, and the
-                // claim gives each token its one slot.
-                if (entry.try_claim_content_hash(expected, lookup_hash)) {
+            const ProbeStep step =
+                table_.with_masked(lookup_hash + probe, [&size = size_, &kernel_read, nondet, lookup_hash,
+                                                         lookup_row](KernelCacheSlot& entry) noexcept {
+                    uint64_t expected = 0;
+                    // A successful CAS claims the slot for this thread.  The
+                    // writer token keeps the brand of its root.  Two inserts can
+                    // run at one time, so each takes a root of its own, and the
+                    // claim gives each token its one slot.
+                    if (entry.try_claim_content_hash(expected, lookup_hash)) {
+                        auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
+                        writer.publish(KernelCacheSlotSnapshot{
+                            .content_hash = lookup_hash,
+                            .row_hash = lookup_row,
+                            .kernel = ::fixy::some(kernel_read),
+                        });
+                        ::foundation::linear::drop(std::move(writer).release());
+                        // Nothing branches on the exact count.  The content hash
+                        // CAS carries the real synchronization.
+                        (void)size.fetch_add_acq_rel(1);
+                        return ProbeStep::Placed;
+                    }
+                    if (expected != lookup_hash) return ProbeStep::Next;
+                    // The content matches, so the row decides.  Spin on the
+                    // kernel, never on the row: a CLAIMED slot reads row 0, which
+                    // is indistinguishable from a published row of 0.
+                    bool is_published = entry.kernel_.load_acquire().is_some();
+                    if (!is_published) [[unlikely]] {
+                        is_published = await_claimed_(nondet, entry).is_some();
+                    }
+                    // A published kernel makes the row visible too.
+                    if (!is_published || entry.row_hash() != lookup_row) return ProbeStep::Next;
+                    // Variant update: the row stays pinned and only the kernel
+                    // changes, so a concurrent reader observes one kernel or the
+                    // other and both are valid.
                     auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                    writer.publish(KernelCacheSlotSnapshot{
-                        .content_hash = lookup_hash,
-                        .row_hash = lookup_row,
-                        .kernel = ::fixy::some(kernel),
-                    });
+                    writer.publish_kernel_variant(kernel_read);
                     ::foundation::linear::drop(std::move(writer).release());
-                    // Nothing branches on the exact count.  The content hash
-                    // CAS carries the real synchronization.
-                    (void)size_.fetch_add_acq_rel(1);
                     return ProbeStep::Placed;
-                }
-                if (expected != lookup_hash) return ProbeStep::Next;
-                // The content matches, so the row decides.  Spin on the
-                // kernel, never on the row: a CLAIMED slot reads row 0, which
-                // is indistinguishable from a published row of 0.
-                bool is_published = entry.kernel_.load_acquire().is_some();
-                if (!is_published) [[unlikely]] {
-                    is_published = await_claimed_(nondet, entry).is_some();
-                }
-                // A published kernel makes the row visible too.
-                if (!is_published || entry.row_hash() != lookup_row) return ProbeStep::Next;
-                // Variant update: the row stays pinned and only the kernel
-                // changes, so a concurrent reader observes one kernel or the
-                // other and both are valid.
-                auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                writer.publish_kernel_variant(kernel);
-                ::foundation::linear::drop(std::move(writer).release());
-                return ProbeStep::Placed;
-            });
+                });
             if (step == ProbeStep::Placed) return ::fixy::Unit{};
         }
         return ::fixy::err(InsertError::TableFull);

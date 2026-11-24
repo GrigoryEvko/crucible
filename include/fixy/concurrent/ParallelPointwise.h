@@ -160,8 +160,9 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
             if (count == 0) continue;
             core::Option<Rows> rows = core::Option<Rows>::some(
                 whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out"));
-            parts.with_element(core::Index<Shards>::check(shard).expect("each shard has a part"),
-                               [&rows](core::Option<Rows>& part) noexcept { part = std::move(rows); });
+            parts.with_element(
+                core::Index<Shards>::check(shard).expect("each shard has a part"),
+                [rows = std::move(rows)](core::Option<Rows>& part) mutable noexcept { part = std::move(rows); });
         }
         auto const ruled = core::detail::ruled_op_<T>(op);
         auto const shard_body = [&ruled, &apart, ... reads = detail::read_only_(core::detail::plain_view_of_(inputs)),

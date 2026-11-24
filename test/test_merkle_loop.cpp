@@ -112,14 +112,15 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature({}) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(loop.feedback_edges.view()) != 0);
 
-    ::foundation::core::FixedArray<crucible::RegionNode*, 16> collected{};
+    ::foundation::core::FixedArray<crucible::RegionNode const*, 16> collected{};
+    auto const& loop_read = loop;
     uint32_t n_collected =
-        collected.with_mut([&loop](auto run) noexcept { return crucible::collect_regions(loop, run); });
+        collected.with_mut([&loop_read](auto run) noexcept { return crucible::collect_regions(loop_read, run); });
     // Two body regions, counted once, plus the region after the loop.
     CRUCIBLE_TEST_ASSERT(kTest, n_collected == 3);
-    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<0>()) == &body_r1);
-    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<1>()) == &body_r2);
-    CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<2>()) == &final_region);
+    CRUCIBLE_TEST_ASSERT(kTest, *collected.view().get(0).expect("the run holds 16 regions") == &body_r1);
+    CRUCIBLE_TEST_ASSERT(kTest, *collected.view().get(1).expect("the run holds 16 regions") == &body_r2);
+    CRUCIBLE_TEST_ASSERT(kTest, *collected.view().get(2).expect("the run holds 16 regions") == &final_region);
 
     // The replays of this test share one guard callback.  The replays that
     // count regions share one closure type of counter_of, so the unit

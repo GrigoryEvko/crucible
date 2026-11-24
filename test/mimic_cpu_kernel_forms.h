@@ -87,11 +87,12 @@ void run_into(KernelCtx const& ctx, Matrix<float>& out, Kernel const& kernel, In
     ::fixy::FixedArray<std::size_t, 2> const sizes{out.shape.rows, out.shape.columns};
     ::fixy::FixedArray<std::size_t, 2> const strides{out.place.row_stride, out.place.column_stride};
     std::size_t const offset = out.place.offset;
-    out.values = ::fixy::with_mut(std::move(out.values), [&](auto run) noexcept {
-        auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
-                          .expect("the output fits its array");
-        ::fixy::run_kernel(ctx, kernel, target, static_cast<Inputs&&>(inputs)...);
-    });
+    out.values = ::fixy::with_mut(
+        std::move(out.values), [&ctx, &kernel, &sizes, &strides, offset, inputs...](auto run) noexcept {
+            auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
+                              .expect("the output fits its array");
+            ::fixy::run_kernel(ctx, kernel, target, inputs...);
+        });
 }
 
 // Runs the kernel into the one row of out as a view of rank 1.
@@ -100,11 +101,12 @@ void run_into_row(KernelCtx const& ctx, Matrix<float>& out, Kernel const& kernel
     ::fixy::FixedArray<std::size_t, 1> const sizes{out.shape.columns};
     ::fixy::FixedArray<std::size_t, 1> const strides{out.place.column_stride};
     std::size_t const offset = out.place.offset;
-    out.values = ::fixy::with_mut(std::move(out.values), [&](auto run) noexcept {
-        auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
-                          .expect("the output fits its array");
-        ::fixy::run_kernel(ctx, kernel, target, static_cast<Inputs&&>(inputs)...);
-    });
+    out.values = ::fixy::with_mut(
+        std::move(out.values), [&ctx, &kernel, &sizes, &strides, offset, inputs...](auto run) noexcept {
+            auto target = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), offset)
+                              .expect("the output fits its array");
+            ::fixy::run_kernel(ctx, kernel, target, inputs...);
+        });
 }
 
 // The kernel scale_product_of_difference into out under ctx, with the body of

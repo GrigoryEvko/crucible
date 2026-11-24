@@ -80,8 +80,9 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/Frame.h>
 #include <foundation/core/Owner.h>
-#include <foundation/core/Ref.h>
+#include <foundation/reflect/Members.h>
 #include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
@@ -96,7 +97,7 @@ namespace foundation::core {
 namespace detail {
 
 // The three regions of the walk.  The test of a scope brand is
-// detail::names_scope_brand of foundation/core/Ref.h.
+// detail::names_scope_brand of foundation/core/Frame.h.
 enum class StoreRegion : unsigned char {
     owned,
     read_only,
@@ -162,10 +163,30 @@ enum class Annotated : unsigned char {
     return element == ^^unsigned char || element == ^^char || element == ^^signed char || element == ^^std::byte;
 }
 
-// True for an owner of the walk.  A class with no annotation states nothing,
-// so the test reads the annotations only of a class that has some.
+// True for a class whose outermost namespace is foundation or fixy.  The walk
+// goes up through each enclosing class and function, so a local class and a
+// closure of a function of the base are classes of the base too.  The layer
+// foundation declares no namespace fixy, so the test reads the name of the
+// namespace.  Complexity: linear in the depth of the scopes of the class.
+[[nodiscard]] consteval bool is_base_class_(std::meta::info type) {
+    std::meta::info scope = std::meta::parent_of(type);
+    std::meta::info outermost = ^^::;
+    while (scope != ^^::) {
+        if (std::meta::is_namespace(scope)) outermost = scope;
+        scope = std::meta::parent_of(scope);
+    }
+    return ::foundation::reflect::has_identifier_named(outermost, "foundation")
+        || ::foundation::reflect::has_identifier_named(outermost, "fixy");
+}
+
+// True for an owner of the walk: a class of the base that states an owner
+// mark or derives from OwnerCore.  No rule keeps the marks in the base, so the
+// walk reads the members of a marked class outside the base.  A class with no
+// annotation states nothing, so the test reads the annotations only of a
+// class that has some.
 [[nodiscard]] consteval bool is_storage_owner_(std::meta::info type, Annotated annotated) {
     namespace tr = ::foundation::transfer;
+    if (!is_base_class_(type)) return false;
     if (annotated == Annotated::yes
         && (tr::detail::states(type, ^^tr::by_arguments) || tr::detail::states(type, ^^tr::synchronized)
             || tr::detail::states(type, ^^tr::payload_cell) || tr::detail::states(type, ^^owns_its_storage))) {
@@ -173,11 +194,9 @@ enum class Annotated : unsigned char {
     }
     // Each owner of the base derives from OwnerCore in public, so the public
     // read of the bases sees it.
-    std::meta::access_context const context = std::meta::access_context::current();
-    std::size_t const base_count = std::meta::bases_of(type, context).size();
-    for (std::size_t index = 0; index < base_count; ++index) {
-        std::meta::info const base_type =
-            std::meta::dealias(std::meta::type_of(std::meta::bases_of(type, context)[index]));
+    std::vector<std::meta::info> const bases = std::meta::bases_of(type, std::meta::access_context::current());
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        std::meta::info const base_type = std::meta::dealias(std::meta::type_of(bases[index]));
         if (std::meta::has_template_arguments(base_type) && std::meta::template_of(base_type) == ^^OwnerCore) {
             return true;
         }
@@ -372,5 +391,17 @@ concept StoresNoBorrowOutside =
     !detail::stores_borrow_outside_(^^std::remove_reference_t<Body>, std::is_lvalue_reference_v<Body>
                                                                          ? detail::BodyForm::named
                                                                          : detail::BodyForm::unnamed);
+
+// The arms of a frame door of a sum, each of which stores no borrow outside
+// the frame.
+template <class... Arms>
+concept ArmsStoreNoBorrowOutside = (StoresNoBorrowOutside<Arms> && ...);
+
+// The reason of the refused twin of a frame door whose body stores a borrow
+// outside the frame.
+#define CRUCIBLE_STORING_BODY_REFUSAL                                                                            \
+    "a body of a frame door stores no borrow outside the frame: capture a View or a Ref by value or by a const " \
+    "reference, and capture only the part of an object that the body writes (StoresNoBorrowOutside of "          \
+    "foundation/core/CaptureStore.h)"
 
 }  // namespace foundation::core

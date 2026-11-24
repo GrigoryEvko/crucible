@@ -64,9 +64,10 @@ static_assert(ArenaBlockSize{Bytes{64}}.plus(Bytes{64}).bytes() == Bytes{128});
 
 // The core of an arena keeps its fields first, in one cache line, and the
 // table of blocks follows them.  Each bump reads only the first three
-// fields.  An arena of each kind is its core and nothing more.
+// fields.  A BumpArena is its core and the identity that its positions
+// carry, and an epoch arena is its core and nothing more.
 static_assert(sizeof(BumpArenaCore) <= 64 + BumpArenaCore::max_blocks * (sizeof(std::byte*) + sizeof(std::size_t)));
-static_assert(sizeof(BumpArena<Family>) == sizeof(BumpArenaCore));
+static_assert(sizeof(BumpArena<Family>) == sizeof(BumpArenaCore) + sizeof(Identity));
 static_assert(sizeof(EpochArena<Owner::Member>) == sizeof(BumpArenaCore));
 static_assert(sizeof(Epoch<EpochOf<Owner::Member>>) == sizeof(void*));
 static_assert(sizeof(ArenaRun<int, Family>) == sizeof(View<int>));
@@ -206,7 +207,8 @@ static_assert(!EpochResult<RefResult, Member> && !EpochResult<ArenaRun<int, Epoc
 static_assert(EpochResult<int, Member> && EpochResult<void, Member>);
 
 // The closed surface of each arena.
-inline constexpr TextView bump_arena_names{"BumpArena make array retained_bytes max_blocks block_alignment brand_type"};
+inline constexpr TextView bump_arena_names{
+    "BumpArena make array retained_bytes max_blocks block_alignment brand_type position_of"};
 CRUCIBLE_CLOSED_SURFACE(bump_arena_names, BumpArena<Family>);
 inline constexpr TextView epoch_arena_names{"EpochArena with_epoch retained_bytes set_retained_limit retained_limit "
                                             "default_retained_bytes_limit max_blocks block_alignment brand_type"};

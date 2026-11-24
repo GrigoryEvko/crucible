@@ -404,16 +404,23 @@ public:
         if (installed_ >= rule_limit()) {
             return ::fixy::err(TcamError::TableFull);
         }
-        return slots_.with_mut([this, &rule](auto run) noexcept -> ::fixy::Result<OwnedTcamRule, TcamError> {
+        // The body captures the count that it writes and reads the rest
+        // through const references, so it writes no borrow of its frame into
+        // the table or the rule.
+        DeclaredTcamFlowRule const& rule_read = rule;
+        auto const target_uuid = plan_.value().target().uuid;
+        ::foundation::core::Identity const& identity = identity_;
+        return slots_.with_mut([&installed = installed_, &identity, target_uuid,
+                                &rule_read](auto run) noexcept -> ::fixy::Result<OwnedTcamRule, TcamError> {
             auto const slots = run.view();
             for (SlotIndex index : slots.indices()) {
                 auto slot = run.get_mut(index.raw()).expect("an index of the run is below its count");
                 if (!slot->occupied && !slot->retired) {
-                    slot->rule = rule.value();
+                    slot->rule = rule_read.value();
                     slot->counter = 0;
                     slot->occupied = true;
-                    ++installed_;
-                    TcamRuleHandle handle{identity_, plan_.value().target().uuid, slot->rule.rule_id, index.raw(),
+                    ++installed;
+                    TcamRuleHandle handle{identity, target_uuid, slot->rule.rule_id, index.raw(),
                                           ::fixy::widen<std::uint64_t>(slot->generation)};
                     return ::fixy::mint_linear<TcamRuleHandle>(std::move(handle));
                 }

@@ -79,7 +79,7 @@ template <class Owner, class Scan>
 // through a frame of the owner and two splits of its ViewMut.
 template <class Owner, class Write>
 void write_window(Owner& owner, std::size_t offset, std::size_t count, Write write) noexcept {
-    owner = ::foundation::core::with_mut(std::move(owner), [&](auto whole) noexcept {
+    owner = ::foundation::core::with_mut(std::move(owner), [offset, count, write](auto whole) noexcept {
         auto [low, rest] = ::foundation::core::split_at(std::move(whole), offset).expect("the offset fits the owner");
         auto [window, high] = ::foundation::core::split_at(std::move(rest), count).expect("the window fits the owner");
         static_cast<void>(low.size() + high.size());
@@ -352,7 +352,7 @@ template <std::size_t Grain>
     View<float const> const carry_slots{carries.view()};
     HeapArray<std::size_t> const first_order = draw_order(grains, stream);
     for (std::size_t const grain : first_order) {
-        write_window(carries, grain, 1, [&](auto slot) noexcept {
+        write_window(carries, grain, 1, [run, grain](auto slot) noexcept {
             ::foundation::core::sum_grains_by_tree<Grain>(run, grain, std::move(slot));
         });
     }
@@ -373,7 +373,7 @@ template <std::size_t Grain>
             std::size_t const start = grain * Grain;
             std::size_t const size = run.size() - start < Grain ? run.size() - start : Grain;
             bool const is_inclusive = kind == ::foundation::core::ScanKind::Inclusive;
-            write_window(out, start, size, [&](auto part) noexcept {
+            write_window(out, start, size, [run, grain, carry, form, is_inclusive, add](auto part) noexcept {
                 if (form == GrainForm::Sum && is_inclusive) {
                     ::foundation::core::scan_inclusive_sum_grains<Grain>(run, grain, carry, std::move(part));
                 } else if (form == GrainForm::Sum) {

@@ -146,6 +146,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Index.h>
@@ -417,14 +418,23 @@ concept FrameCallable = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Ex
 // callable that holds no linear value by value (HoldsNoLinearValue of
 // foundation/Linear.h).  Extent is the extent of the run of the owner.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
-concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>;
+concept FrameBody = FrameCallable<Body, T, Brand, Extent> && ::foundation::linear::HoldsNoLinearValue<Body>
+                 && StoresNoBorrowOutside<Body>;
 
 // A body whose result does not leave the frame: the refused twin of each
 // door binds to it.
 template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
 concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand, Extent>>
                         && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
-                        && ::foundation::linear::HoldsNoLinearValue<Body>;
+                        && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
+
+// A body of a frame door that stores a borrow outside the frame: the store
+// twin of a door that has a const twin binds to it, so the refusal gives its
+// own reason.  The store test comes first, so the twin reads no call of an
+// admitted body.
+template <class Body, class T, class Brand, std::size_t Extent = dynamic_extent>
+concept StoringFrameBody = (!StoresNoBorrowOutside<Body>) && ::foundation::linear::HoldsNoLinearValue<Body>
+                        && std::is_invocable_v<Body&&, ViewMut<T, Brand, Extent>>;
 
 // A body of a frame door that holds a linear value by value: the linear
 // twin of each door binds to it.

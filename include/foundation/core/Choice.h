@@ -102,6 +102,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/OpenExtension.h>
 #include <foundation/Platform.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Record.h>
@@ -1773,7 +1774,8 @@ concept OptionFrameCallables =
 // The arms of the frame door of an Option: callables of OptionFrameCallables
 // that hold no linear value by value (ArmsHoldNoLinearValue).
 template <class T, class OnSome, class OnNone, class Brand>
-concept OptionFrameArms = OptionFrameCallables<T, OnSome, OnNone, Brand> && ArmsHoldNoLinearValue<OnSome, OnNone>;
+concept OptionFrameArms = OptionFrameCallables<T, OnSome, OnNone, Brand> && ArmsHoldNoLinearValue<OnSome, OnNone>
+                       && ArmsStoreNoBorrowOutside<OnSome, OnNone>;
 
 // Callables of OptionFrameCallables of which one holds a linear value by
 // value: the linear twin of the frame door binds to them.
@@ -1794,7 +1796,8 @@ concept ResultFrameCallables =
 // The arms of the frame door of a Result: callables of ResultFrameCallables
 // that hold no linear value by value (ArmsHoldNoLinearValue).
 template <class T, class E, class OnOk, class OnErr, class Brand>
-concept ResultFrameArms = ResultFrameCallables<T, E, OnOk, OnErr, Brand> && ArmsHoldNoLinearValue<OnOk, OnErr>;
+concept ResultFrameArms = ResultFrameCallables<T, E, OnOk, OnErr, Brand> && ArmsHoldNoLinearValue<OnOk, OnErr>
+                       && ArmsStoreNoBorrowOutside<OnOk, OnErr>;
 
 // Callables of ResultFrameCallables of which one holds a linear value by
 // value: the linear twin of the frame door binds to them.

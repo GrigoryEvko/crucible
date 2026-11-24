@@ -174,7 +174,7 @@ void test_networks_agree_with_the_naive_sort() {
 // The stable sort of owner with the scratch of scratch, through a frame of
 // each.  True when the sort gave no error.
 template <class Owner, class... Less>
-[[nodiscard]] bool sort_through_frames(Owner& owner, Owner& scratch, Less... less) noexcept {
+[[nodiscard]] bool sort_through_frames(Owner& owner, Owner& scratch, Less const&... less) noexcept {
     bool is_sorted = false;
     owner = ::foundation::core::with_mut(std::move(owner), [&](auto elements) noexcept {
         scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto room) noexcept {

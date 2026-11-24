@@ -197,8 +197,9 @@ void test_fixed_list() {
             static_cast<void>(list.append(Element{counter, label}).expect("the list has room"));
         }
         ends = 0;
-        auto taken = with_mut(std::move(through(list)), [&list](auto out) noexcept {
-            CRUCIBLE_TEST_ASSERT(kTest, through(list).size() == 0 && out.size() == 3);
+        auto const& list_read = list;
+        auto taken = with_mut(std::move(through(list)), [&list_read](auto out) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, through(list_read).size() == 0 && out.size() == 3);
             for (Element& element : out) {
                 element.label *= 2;
             }

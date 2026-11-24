@@ -34,7 +34,7 @@ int main() {
     ::foundation::core::FixedArray<float, 1> output{};
     const crucible::NumericalRecipe recipe{};
     shp::SharpReducer reducer{std::move(context)};
-    return output.with_mut([&](auto run) noexcept -> int {
+    return output.with_mut([&reducer, &init, &input, &recipe, plan](auto run) noexcept -> int {
         auto result = reducer.allreduce_via_sharp(init, input.view(), std::move(run), recipe,
                                                   shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
         return result.is_ok() ? 0 : 1;

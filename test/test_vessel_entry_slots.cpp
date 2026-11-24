@@ -220,10 +220,12 @@ void test_input_past_the_limit_reaches_the_digest() {
     const auto producers = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
     const auto slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.with_element(::fixy::index<0>(), [metas, producers, slot_ids](crucible::TraceEntry& op) noexcept {
-        op.schema_hash = crucible::SchemaHash{42};
-        op.set_inputs(metas, producers, slot_ids);
-    });
+    ops.with_element(::fixy::index<0>(),
+                     [metas = ::fixy::ArenaRun<crucible::TensorMeta const, crucible::DagArena>{metas}, producers,
+                      slot_ids](crucible::TraceEntry& op) noexcept {
+                         op.schema_hash = crucible::SchemaHash{42};
+                         op.set_inputs(metas, producers, slot_ids);
+                     });
     return crucible::compute_content_hash(ops.view());
 }
 

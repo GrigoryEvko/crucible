@@ -186,18 +186,6 @@ Box<BoxNode> make_chain(int first, int last) {
     return head;
 }
 
-// The Box of the next node, which the node of head holds.  The frame door of
-// the Option lends the link, and a Ref of the link leaves the frame through a
-// capture.  The link lives in the node of head on the heap, so the Ref names
-// it until the node ends.
-Box<BoxNode>& next_of(Box<BoxNode>& head) {
-    Option<Ref<NextLink, NextLinkBrand>> found{::foundation::core::none};
-    head->next.with_mut(
-        [&found](auto link) noexcept { found = ::foundation::core::some(::foundation::core::to(*link)); },
-        [] noexcept {});
-    return std::move(found).expect("the node of the probe holds a next node")->box;
-}
-
 struct BoxProbe {
     using Owner = Box<BoxNode>;
 
@@ -211,16 +199,12 @@ struct BoxProbe {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    static void child_move() {
-        {
-            Box<BoxNode> head = make_chain(1, 3);
-            head = static_cast<Box<BoxNode>&&>(next_of(head));
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
-            CRUCIBLE_FATAL_INVARIANT(head->label == 2);
-            CRUCIBLE_FATAL_INVARIANT(next_of(head)->label == 3);
-        }
-        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
-    }
+    // Child move: no door gives the next Box of a node outside a frame.  The
+    // frame door of the Option of the link lends it only to its arm, and the
+    // store check of the door refuses an arm that keeps a Ref of the link
+    // (neg_core_box_chain_ref_kept_past_its_frame).  So head = move(next)
+    // cannot name a source that head owns.
+    static void child_move() {}
 
     // Moved-from: a new value in the source ends no node of the target.
     static void moved_from() {
@@ -337,41 +321,13 @@ struct Inner<SlotMapTag> {
         ::foundation::core::mint_member_slot_map<Elem<SlotMapTag>, ProbeHandleTag, ChildTag>(kAlloc, SlotCapacity{8});
 };
 
-// The Inner that an element holds.  The frame door of the Option lends the
-// Box, and a Ref of the Inner leaves the frame through a capture.  The Inner
-// lives in its Box on the heap, so the Ref names it until the Box ends.
-template <class Tag>
-Inner<Tag>& inner_of(Elem<Tag>& element) {
-    Option<Ref<Inner<Tag>, InnerBrand<Tag>>> found{::foundation::core::none};
-    element.inner.with_mut(
-        [&found](auto inner) noexcept { found = ::foundation::core::some(::foundation::core::to(**inner)); },
-        [] noexcept {});
-    return *std::move(found).expect("the element of the probe holds a child owner");
-}
-
-// Gives element a new Inner in a Box, and gives that Inner.  The Inner lives
-// in its Box, so no move of the owner of the element moves it.
-template <class Tag>
-Inner<Tag>& give_an_inner(Elem<Tag>& element) {
-    element.inner = ::foundation::core::some(::foundation::core::mint_box<Inner<Tag>>(kAlloc));
-    return inner_of(element);
-}
-
 // The hazards of a container of elements.  The probe derives from this
-// class, and it gives the types Owner and Tag, make(count), which builds an
-// owner of count elements, and give_first_an_inner(owner), which gives the
-// first element a new Inner and gives that Inner.  The count of each make is
-// a power of two, as a MaskedArray needs.  The probe is incomplete where it
-// names this base, so only the bodies read it.
+// class, and it gives the types Owner and Tag, and make(count), which builds
+// an owner of count elements.  The count of each make is a power of two, as a
+// MaskedArray needs.  The probe is incomplete where it names this base, so
+// only the bodies read it.
 template <class Probe>
 struct ElementArms {
-    // Gives the first element of parent a child owner of count elements.
-    static auto& put_child(auto& parent, unsigned count) {
-        auto& inner = Probe::give_first_an_inner(parent);
-        inner.child = Probe::make(count);
-        return inner.child;
-    }
-
     static void self_move() {
         using Owner = Probe::Owner;
         {
@@ -383,18 +339,16 @@ struct ElementArms {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    static void child_move() {
-        using Owner = Probe::Owner;
-        {
-            Owner parent = Probe::make(1);
-            Owner& child = put_child(parent, 2);
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
-            parent = static_cast<Owner&&>(child);
-            CRUCIBLE_FATAL_INVARIANT(parent.size() == 2);
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
-        }
-        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
-    }
+    // Child move: no door gives a child owner that an element holds outside a
+    // frame.  The element door of the owner and the frame door of the Option
+    // of the Inner lend them only to their bodies, and the store check of the
+    // doors refuses a body that keeps a Ref of either
+    // (neg_core_heap_array_element_ref_kept_past_its_frame,
+    // neg_core_masked_array_element_ref_kept_past_its_frame,
+    // neg_core_grow_list_element_ref_kept_past_its_frame and
+    // neg_core_option_frame_ref_kept_past_its_frame).  So parent = move(child)
+    // cannot name a source that parent owns.
+    static void child_move() {}
 
     // Moved-from: a new value in the source ends no element of the target.
     static void moved_from() {
@@ -447,25 +401,6 @@ struct HeapArrayProbe : ElementArms<HeapArrayProbe> {
 
     static Owner make(unsigned count) { return ::foundation::core::mint_heap_array(kAlloc, count, Elem<Tag>{}); }
 
-    // The element door with_element lends the first element, and a Ref of the
-    // new Inner leaves the door through a capture.  The Inner lives in its Box
-    // and not in the storage of the array, so no move of the array ends the
-    // Ref.
-    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
-
-    static Inner<Tag>& give_first_an_inner(Owner& owner) {
-        Option<InnerRef> given{::foundation::core::none};
-        bool const is_given = owner.with_element(
-            0,
-            [&given](Elem<Tag>& first) noexcept {
-                given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
-                return true;
-            },
-            [] noexcept { return false; });
-        if (!is_given) ::foundation::core::fatal("the HeapArray of the probe holds no element");
-        return *static_cast<Option<InnerRef>&&>(given).expect("the frame of the first element gave its Inner");
-    }
-
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<HeapArray<LinearElement>>()); }
 
     // Empty: a moved-from HeapArray gives no element and an empty View.
@@ -487,20 +422,6 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
     using Owner = MaskedArray<Elem<Tag>>;
 
     static Owner make(unsigned count) { return ::foundation::core::mint_masked_array<Elem<Tag>>(kAlloc, count); }
-
-    // The element door with_masked lends the first element, and a Ref of the
-    // new Inner leaves the door through a capture.  The Inner lives in its Box
-    // and not in the storage of the array, so no move of the array ends the
-    // Ref.
-    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
-
-    static Inner<Tag>& give_first_an_inner(Owner& owner) {
-        Option<InnerRef> given{::foundation::core::none};
-        owner.with_masked(0, [&given](Elem<Tag>& first) noexcept {
-            given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
-        });
-        return *static_cast<Option<InnerRef>&&>(given).expect("the door of the first element gave its Inner");
-    }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<MaskedArray<LinearElement>>()); }
 
@@ -539,24 +460,6 @@ struct GrowListProbe : ElementArms<GrowListProbe> {
             list.append(kAlloc, Elem<Tag>{}).expect("the list of the probe has room below its maximum");
         }
         return list;
-    }
-
-    // The frame door with_element lends the first element, and a Ref of the
-    // new Inner leaves the frame through a capture.  The Inner lives in its
-    // Box and not in the storage of the list, so no growth ends the Ref.
-    using InnerRef = Ref<Inner<Tag>, InnerBrand<Tag>>;
-
-    static Inner<Tag>& give_first_an_inner(Owner& owner) {
-        Option<InnerRef> given{::foundation::core::none};
-        bool const is_given = owner.with_element(
-            0,
-            [&given](Elem<Tag>& first) noexcept {
-                given = Option<InnerRef>::some(::foundation::core::to(give_an_inner(first)));
-                return true;
-            },
-            [] noexcept { return false; });
-        if (!is_given) ::foundation::core::fatal("the GrowList of the probe holds no element");
-        return *static_cast<Option<InnerRef>&&>(given).expect("the frame of the first element gave its Inner");
     }
 
     static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<GrowList<LinearElement>>()); }
@@ -615,23 +518,12 @@ struct SlotMapProbe {
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
 
-    // Child move: the map that the first value of a parent map holds takes the
-    // place of the parent map.  The assignment ends the values of the parent
-    // only after it takes the slots of the child, which a value of the parent
-    // holds.
-    static void child_move() {
-        {
-            Holder parent{};
-            auto const first = parent.child.insert(Elem<Tag>{}).expect("the map of the probe has a free slot");
-            Holder& inner = give_an_inner(*parent.child.get(first).expect("the first value of the probe is live"));
-            fill_probe_map(inner.child, 2);
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 3);
-            parent.child = static_cast<Owner&&>(inner.child);
-            CRUCIBLE_FATAL_INVARIANT(parent.child.size() == 2);
-            CRUCIBLE_FATAL_INVARIANT(live_nodes == 2);
-        }
-        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
-    }
+    // Child move: a value of the map holds its Inner in an Option, and no door
+    // gives that Inner outside the frame door of the Option.  The store check
+    // of the door refuses an arm that keeps a Ref of it
+    // (neg_core_option_frame_ref_kept_past_its_frame).  So parent.child =
+    // move(child) cannot name a source that the parent map owns.
+    static void child_move() {}
 
     // Moved-from: a new value in the source ends no value of the target.
     static void moved_from() {

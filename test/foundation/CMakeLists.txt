@@ -3491,6 +3491,59 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
     set_tests_properties(${_poison_test} PROPERTIES PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
   endforeach()
 endif()
+# The store check of a frame body (StoresNoBorrowOutside of
+# foundation/core/CaptureStore.h): a body that keeps a View or a Ref of its
+# frame in a variable that it captures by reference does not compile, at
+# each kind of frame door.  The element, Option and Box chain forms are the
+# routes of the child move of test_core_owner_probe.cpp, and the view forms
+# are the routes of the poison tests above, so these fixtures prove that the
+# routes are closed.
+foundation_neg_compile_test(neg_core_heap_array_frame_view_kept_past_its_frame
+  "no matching function for call to .with_mut\\(std::remove_reference<foundation::core::HeapArray<int>&>::type"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_fixed_array_frame_view_kept_past_its_frame
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_heap_array_element_ref_kept_past_its_frame
+  "no matching function for call to .foundation::core::HeapArray<.anonymous.::Node>::with_element"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_masked_array_element_ref_kept_past_its_frame
+  "no matching function for call to .foundation::core::MaskedArray<.anonymous.::Node>::with_masked"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_grow_list_element_ref_kept_past_its_frame
+  "no matching function for call to .foundation::core::GrowList<.anonymous.::Node>::with_element"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_option_frame_ref_kept_past_its_frame
+  "no matching function for call to .foundation::core::Option<foundation::core::Box<.anonymous.::Node> >::with_mut"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_box_chain_ref_kept_past_its_frame
+  "no matching function for call to .foundation::core::Option<.anonymous.::Link>::with_mut"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_small_list_view_kept_past_its_frame
+  "no matching function for call to .foundation::core::SmallList<long unsigned int, 2>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_grow_list_view_kept_past_its_frame
+  "no matching function for call to .foundation::core::GrowList<long unsigned int>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_grow_text_view_kept_past_its_frame
+  "no matching function for call to .foundation::core::GrowText::with_view"
+  "StoresNoBorrowOutside")
+# The exchange of a HeapArray moves a value into an element with no body.
+# A temporary array and a const array have no exchange.
+foundation_neg_compile_test(neg_core_heap_array_exchange_on_temporary
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::exchange\\(std::size_t, T\\) &&"
+  "an exchange in a temporary HeapArray writes storage that the full expression frees")
+foundation_neg_compile_test(neg_core_heap_array_exchange_on_const
+  "use of deleted function .void foundation::core::HeapArray<T, Align>::exchange\\(std::size_t, T\\) const &"
+  "a const HeapArray has no writer of its elements")
+# The position of an object of a BumpArena: only position_of builds one, and
+# a temporary arena gives no object of a position.
+foundation_neg_compile_test(neg_core_arena_position_built_by_hand
+  "constexpr foundation::core::ArenaPosition<T, Brand>::ArenaPosition"
+  "is private within this context")
+foundation_neg_compile_test(neg_core_arena_position_at_on_temporary
+  "use of deleted function .void foundation::core::BumpArena<Brand>::at\\(this foundation::core::BumpArena<Brand>&&"
+  "a temporary arena gives back its blocks at the end of the statement")
 foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
   "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&&, Rest&& ...\\) \\[with T = int; Rest = \\{foundation::core::Alloc, int\\}; Brand = Family\\]."
   "a temporary arena gives back its blocks at the end of the statement")
@@ -4602,8 +4655,8 @@ foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
 # The frame door with_view gives a View of the const elements, so no two
 # copies of its View write the elements of one list.
 foundation_neg_compile_test(neg_core_grow_list_two_mutable_views
-  "no match for .operator=. .operand types are .foundation::core::View<int>. and .foundation::core::View<const int, 18446744073709551615>.."
-  "neg_core_grow_list_two_mutable_views\\.cpp:18:")
+  "binding reference of type .int&. to .const int. discards qualifiers"
+  "neg_core_grow_list_two_mutable_views\\.cpp:17:")
 
 # A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
 # in their order, and agree with a model of plain flags at counts that end

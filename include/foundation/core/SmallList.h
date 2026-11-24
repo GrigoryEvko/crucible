@@ -308,7 +308,7 @@ public:
     // elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
         with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
@@ -316,7 +316,7 @@ public:
     }
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
         [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};

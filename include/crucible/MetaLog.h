@@ -410,7 +410,7 @@ private:
     // a stack canary on the hot path of each record.
     CRUCIBLE_INLINE void write_records_(uint64_t at, ::fixy::View<TensorMeta const> src, uint64_t src_at,
                                         uint64_t count) noexcept {
-        records_.with_mut([&] [[gnu::always_inline]] (auto ring) noexcept {
+        records_.with_mut([at, src, src_at, count] [[gnu::always_inline]] (auto ring) noexcept {
             ::fixy::copy(::fixy::take_window(std::move(ring), at, count).expect("the records fit in the buffer"),
                          src.window(src_at, count).expect("the records of the copy are records of the run"))
                 .expect("the two windows of the copy hold the same count");

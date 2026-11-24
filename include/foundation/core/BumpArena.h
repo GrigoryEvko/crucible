@@ -21,6 +21,12 @@
 //   epoch.make<T>(...), epoch.array(...)
 //                                      as above, with the brand EpochOf<Tag>
 //   retained_bytes()                   the bytes of each block of the arena
+//   arena.position_of(object)          the ArenaPosition of an object that the
+//                                      arena made, or no value for an object
+//                                      of another arena
+//   arena.at(position)                 the object of a position of this arena,
+//                                      as a Ref of the brand, or no value for
+//                                      a position of another arena
 //   ArenaBlockSize                     the block_size of each door: a constant
 //                                      Quantity above zero, or such a size
 //                                      plus(more) bytes.  A constant of zero
@@ -118,6 +124,7 @@
 #include <foundation/core/Bits.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/Identity.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
@@ -501,6 +508,33 @@ struct BumpArenaDoor final : ::foundation::NoObject<BumpArenaDoor> {
 
 }  // namespace detail
 
+// The position of one object of T in one BumpArena of the brand: the
+// identity of the arena, the block of the object and its offset in that
+// block.  It holds no address, so the body of a frame door can give it out
+// as plain data (FrameResult of foundation/core/Choice.h), and the arena
+// gives the object back after the frame.  Two arenas of one family tag share
+// the brand, so the identity tells them apart.  Only the arena that holds the
+// object makes a position of it (position_of), and only that arena gives the
+// object of a position (at).
+template <RefTarget T, ArenaBrand Brand>
+class ArenaPosition final {
+public:
+    [[nodiscard]] friend constexpr bool operator==(ArenaPosition const& left, ArenaPosition const& right) noexcept {
+        return left.arena_ == right.arena_ && left.block_ == right.block_ && left.offset_ == right.offset_;
+    }
+
+private:
+    friend class BumpArena<Brand>;
+
+    constexpr ArenaPosition(Identity arena, Index<detail::BumpArenaCore::max_blocks> block,
+                            Quantity<unit::Byte, std::size_t> offset) noexcept
+        : arena_{arena}, block_{block}, offset_{offset} {}
+
+    Identity arena_;
+    Index<detail::BumpArenaCore::max_blocks> block_;
+    Quantity<unit::Byte, std::size_t> offset_;
+};
+
 // An arena of the brand (brands of an arena above).  It cannot copy or move,
 // because each Ref of it names its blocks.  Only the door builds it.
 template <ArenaBrand Brand>
@@ -550,12 +584,51 @@ public:
     // The bytes of each block that the arena holds.
     [[nodiscard]] std::size_t retained_bytes() const noexcept { return core_.retained_bytes_; }
 
+    // The position of object in this arena, or no value when object lies in
+    // no block of this arena.  A Ref of the brand comes only from an arena of
+    // the brand, so an object in a block of this arena is an object that
+    // this arena made.  Complexity: O(blocks), at most max_blocks.
+    template <RefTarget T>
+    [[nodiscard]] Option<ArenaPosition<T, Brand>> position_of(Ref<T, Brand> const& object) const noexcept {
+        std::uintptr_t const address = __builtin_bit_cast(std::uintptr_t, object.operator->());
+        for (std::uint32_t block = 0; block != core_.block_count_; ++block) {
+            std::uintptr_t const first = __builtin_bit_cast(std::uintptr_t, core_.blocks_[block]);
+            if (address >= first && address - first < core_.block_bytes_[block]) {
+                return Option<ArenaPosition<T, Brand>>::some(ArenaPosition<T, Brand>{
+                    identity_, Index<max_blocks>::check(block).expect("a block of the arena is below max_blocks"),
+                    Quantity<unit::Byte, std::size_t>{address - first}});
+            }
+        }
+        return Option<ArenaPosition<T, Brand>>{none};
+    }
+
+    // The object at position, as a Ref of the brand, or no value for a
+    // position of another arena.  The arena keeps each block for its life,
+    // so a position of this arena names the object that position_of read.
+    // Complexity: O(1).
+    template <RefTarget T>
+    [[nodiscard]] Option<Ref<T, Brand>> at(this BumpArena& self CRUCIBLE_LIFETIMEBOUND,
+                                           ArenaPosition<T, Brand> const& position) noexcept {
+        if (!(position.arena_ == self.identity_)) [[unlikely]] {
+            return Option<Ref<T, Brand>>{none};
+        }
+        std::byte* const bytes = self.core_.blocks_[position.block_.raw()] + position.offset_.raw();
+        T& object = *__builtin_launder(static_cast<T*>(static_cast<void*>(bytes)));
+        return Option<Ref<T, Brand>>::some(ArenaRefDoor::lend_<Brand>(object));
+    }
+
+    template <class T>
+    void at(this BumpArena&& self, ArenaPosition<T, Brand> const&) =
+        delete("a temporary arena gives back its blocks at the end of the statement");
+
 private:
     friend struct detail::BumpArenaDoor;
 
-    explicit BumpArena(ArenaBlockSize block_size) noexcept : core_{block_size} {}
+    explicit BumpArena(ArenaBlockSize block_size) noexcept : core_{block_size}, identity_{mint_identity()} {}
 
     detail::BumpArenaCore core_;
+    // The identity of this arena, which each position of it carries.
+    Identity identity_;
 };
 
 // The epoch of an EpochArena (epochs above): the one door of make and array

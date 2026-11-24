@@ -108,7 +108,7 @@ template <class T>
     HeapArray<core::TreeStep> const steps = plan_tree_of(run);
     HeapArray<T> scratch = ::fixy::mint_heap_array(tree::test_alloc(), steps.size(), T{});
     T sum{};
-    scratch = ::fixy::with_mut(std::move(scratch), [&](auto values) noexcept {
+    scratch = ::fixy::with_mut(std::move(scratch), [&sum, &steps, run](auto values) noexcept {
         sum = core::evaluate_tree_plan(View<core::TreeStep const>{steps.view()}, run, std::move(values), AddValues{})
                   .expect("a plan of the count of its leaves");
     });
@@ -131,14 +131,16 @@ template <class T>
     HeapArray<T> scratch = ::fixy::mint_heap_array(tree::test_alloc(), step_count, T{});
     HeapArray<T> scanned = ::fixy::mint_heap_array(tree::test_alloc(), run.size(), T{});
     bool is_evaluated = false;
-    scratch = ::fixy::with_mut(std::move(scratch), [&](auto values) noexcept {
-        scanned = ::fixy::with_mut(std::move(scanned), [&](auto out) noexcept {
-            is_evaluated = core::evaluate_scan_plan(View<core::TreeStep const>{steps.view()},
-                                                    View<core::PlanNode const>{outputs.view()}, run, std::move(values),
-                                                    std::move(out), T{}, AddValues{})
-                               .is_ok();
+    scratch =
+        ::fixy::with_mut(std::move(scratch), [&scanned, &is_evaluated, &steps, &outputs, run](auto values) noexcept {
+            scanned = ::fixy::with_mut(
+                std::move(scanned), [&values, &is_evaluated, &steps, &outputs, run](auto out) noexcept {
+                    is_evaluated = core::evaluate_scan_plan(View<core::TreeStep const>{steps.view()},
+                                                            View<core::PlanNode const>{outputs.view()}, run,
+                                                            std::move(values), std::move(out), T{}, AddValues{})
+                                       .is_ok();
+                });
         });
-    });
     CRUCIBLE_TEST_ASSERT(kTest, is_written && is_evaluated);
     return scanned;
 }
@@ -209,17 +211,19 @@ struct PlanCombine {
         // The combine keeps a View of each table of counts, so each call of
         // the combine runs in the frames of the two tables.
         Symbol result{};
-        fired = ::fixy::with_mut(std::move(fired), [&](auto fired_counts) noexcept {
-            strays = ::fixy::with_mut(std::move(strays), [&](auto stray_counts) noexcept {
-                PlanCombine const combine{View<core::TreeStep const>{steps.view()},
-                                          View<std::uint32_t const>{step_of_left.view()},
-                                          ::foundation::core::share_atomic_cells(fired_counts),
-                                          ::foundation::core::share_atomic_cells(stray_counts), leaves};
-                result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run,
-                                                                                          combine)
-                             .expect("the run has leaves");
+        fired = ::fixy::with_mut(
+            std::move(fired), [&strays, &result, &steps, &step_of_left, &ctx, leaves, run](auto fired_counts) noexcept {
+                strays = ::fixy::with_mut(std::move(strays), [&fired_counts, &result, &steps, &step_of_left, &ctx,
+                                                              leaves, run](auto stray_counts) noexcept {
+                    PlanCombine const combine{View<core::TreeStep const>{steps.view()},
+                                              View<std::uint32_t const>{step_of_left.view()},
+                                              ::foundation::core::share_atomic_cells(fired_counts),
+                                              ::foundation::core::share_atomic_cells(stray_counts), leaves};
+                    result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(),
+                                                                                              run, combine)
+                                 .expect("the run has leaves");
+                });
             });
-        });
         bool is_each_fired =
             strays.view().get(0).expect("a test reads an element at or past the count of its View")->load_acquire()
             == 0;
@@ -269,7 +273,7 @@ template <class T>
     return is_each_coupling([&]<spawn::BodyCoupling Coupling, std::size_t Shards>() noexcept {
         tree::BgCtx const ctx{tree::eff::testing::bg()};
         HeapArray<T> scanned = ::fixy::mint_heap_array(tree::test_alloc(), run.size(), T{});
-        scanned = ::fixy::with_mut(std::move(scanned), [&](auto out) noexcept {
+        scanned = ::fixy::with_mut(std::move(scanned), [&ctx, kind, run](auto out) noexcept {
             ::fixy::concurrent::scan_sums_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), kind, run,
                                                                         std::move(out));
         });

@@ -702,8 +702,9 @@ void BackgroundThread::release_meta_log(PublishStage const&, uint64_t meta_floor
 //
 // The arena moves out of the parts for the build of the node and the plan,
 // and back in before the parts move to the store.  The Box holds the arena on
-// the heap, so neither move moves a node.  Then one element door of the store
-// writes the region memory, and the region becomes visible after it.
+// the heap, so neither move moves a node.  Then one exchange of the store
+// moves the region memory into the slot, and the region becomes visible
+// after it.
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
     ::fixy::Option<size_t> free_slot = ::fixy::find_if(
@@ -737,15 +738,13 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     parts.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(arena));
     const ConstRegionLink const_published = ConstRegionLink::some(region);
 
-    region_store_.with_element(
-        free_position,
-        [&parts, region, const_published, reset_point](RegionMemory& memory) noexcept {
-            memory = RegionMemory{.parts = std::move(parts),
-                                  .node = RegionLink::some(region),
-                                  .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
-                                  .left_generation = NOT_LEFT};
-        },
-        [] noexcept { ::fixy::fatal("the search above found a free slot of the region store"); });
+    // The free slot holds no region, so the memory that the exchange gives
+    // back holds nothing.
+    static_cast<void>(region_store_.exchange(
+        free_position, RegionMemory{.parts = std::move(parts),
+                                    .node = RegionLink::some(region),
+                                    .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
+                                    .left_generation = NOT_LEFT}));
     last_published_ = const_published;
 
     uncompiled_regions_.push(*region);

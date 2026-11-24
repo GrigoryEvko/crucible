@@ -307,8 +307,11 @@ public:
         }
         for (PeerIndex const index : peers_.indices()) {
             if (!peers_.at(index).active) {
-                peers_.with_element(index, [&peer, kinds](PeerSlot& slot) noexcept {
-                    slot.peer = peer;
+                // The body reads the peer through a const reference, so it
+                // writes no borrow of its frame into the peer.
+                cog::CogIdentity const& peer_read = peer;
+                peers_.with_element(index, [&peer_read, kinds](PeerSlot& slot) noexcept {
+                    slot.peer = peer_read;
                     slot.enabled_kinds = kinds;
                     slot.active = true;
                 });

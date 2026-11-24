@@ -209,7 +209,7 @@ public:
     // Complexity: O(1), and the cost of body.
     template <class Body>
         requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(first_()[index.raw()]);
@@ -224,7 +224,7 @@ public:
         "index, body)");
     template <class Body>
         requires std::is_invocable_v<Body, T const&> && HoldsNoBorrow<detail::body_result_t<Body, T const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, T const&>) {
         return static_cast<Body&&>(body)(first_()[index.raw()]);
@@ -262,6 +262,11 @@ public:
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && (!is_keyed_) && LinearFrameBody<Body, T, Fresh, N>
     void with_mut(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    // A body that stores a borrow outside the frame binds to this overload,
+    // and not to the const twin, so the refusal gives its own reason.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && (!is_keyed_) && StoringFrameBody<Body, T, Fresh, N>
+    void with_mut(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // A keyed array opens a frame only with its key, so a body with no key
     // binds to this overload, and the refusal gives its reason.

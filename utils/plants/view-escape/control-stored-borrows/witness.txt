@@ -5,10 +5,9 @@
 # builds from a list of its caller, and an assignment operator of namespace
 # scope on the object of a parameter by reference.  A first form of the walk
 # of the stores read the class of such an operator, which is a namespace, and
-# the compile ended with a segmentation fault.  The forms of src/Vigil.cpp and
-# of fixy/SharedRegion.h give no line: a Ref of the object of a Box that a
-# member holds already, and a View of the run of a region that a constructor
-# consumes, because the run lives outside the region.
+# the compile ended with a segmentation fault.  The form of
+# fixy/SharedRegion.h gives no line: a View of the run of a region that a
+# constructor consumes, because the run lives outside the region.
 
 compile stores src/stores.cpp
 flag stores -freflection

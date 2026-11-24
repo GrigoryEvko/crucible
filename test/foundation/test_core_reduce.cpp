@@ -198,7 +198,7 @@ template <std::size_t Grain>
     std::size_t const grains = ::foundation::core::count_tree_grains<Grain>(run.size());
     HeapArray<float> partials = ::foundation::core::mint_heap_array(test_alloc(), grains, 0.0f);
     HeapArray<std::size_t> const shard_order = draw_order(shards, stream);
-    partials = with_mut(std::move(partials), [&](auto slots) noexcept {
+    partials = with_mut(std::move(partials), [run, grains, shards, &shard_order, &stream](auto slots) noexcept {
         for (std::size_t const shard : shard_order) {
             std::size_t const first = shard_start(grains, shards, shard);
             std::size_t const count = shard_start(grains, shards, shard + 1) - first;
@@ -389,7 +389,7 @@ is_refused_with(::foundation::core::Result<::foundation::core::Unit, ::foundatio
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::RunsError>
 sum_runs_into(HeapArray<float>& buffer, View<View<float const> const> runs, std::size_t offset,
               std::size_t count) noexcept {
-    auto [result, back] = with_mut(std::move(buffer), [&](auto whole) noexcept {
+    auto [result, back] = with_mut(std::move(buffer), [runs, offset, count](auto whole) noexcept {
         auto [low, rest] = ::foundation::core::split_at(std::move(whole), offset).expect("the offset fits");
         auto [window, high] = ::foundation::core::split_at(std::move(rest), count).expect("the window fits");
         static_cast<void>(low.size() + high.size());

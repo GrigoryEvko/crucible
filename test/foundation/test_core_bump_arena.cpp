@@ -175,6 +175,36 @@ void test_family_arena_lives_in_a_box() {
     CRUCIBLE_FATAL_INVARIANT(*eight == 8 && moved->retained_bytes() == 4096);
 }
 
+// A position of an object names the same object in its arena, in the first
+// block and in a later block.  A position gives no object in another arena
+// of the same family, and an object of another arena has no position in
+// this arena.
+void test_position_names_its_object_in_its_arena() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    ::foundation::core::Box<BumpArena<TestFamily>> held =
+        ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
+    ::foundation::core::Box<BumpArena<TestFamily>> other =
+        ::foundation::core::mint_box<BumpArena<TestFamily>>(alloc, Bytes{4096});
+    Ref<Pair, TestFamily> const first = held->make<Pair>(alloc, Pair{.key = 7, .count = 3, .flags = 1});
+    static_cast<void>(take(*held, 20000));
+    Ref<Pair, TestFamily> const later = held->make<Pair>(alloc, Pair{.key = 9, .count = 4, .flags = 2});
+    Ref<Pair, TestFamily> const stranger = other->make<Pair>(alloc, Pair{.key = 5, .count = 1, .flags = 0});
+
+    auto const first_position = held->position_of(first).expect("the arena made the first object");
+    auto const later_position = held->position_of(later).expect("the arena made the later object");
+    CRUCIBLE_FATAL_INVARIANT(!(first_position == later_position));
+    CRUCIBLE_FATAL_INVARIANT(held->position_of(stranger).is_none());
+
+    // The Box moves, and the position names the same object, because the
+    // arena keeps its blocks and its identity.
+    ::foundation::core::Box<BumpArena<TestFamily>> moved = std::move(held);
+    Ref<Pair, TestFamily> const first_again = moved->at(first_position).expect("the position is of this arena");
+    Ref<Pair, TestFamily> const later_again = moved->at(later_position).expect("the position is of this arena");
+    CRUCIBLE_FATAL_INVARIANT(address_of(first_again) == address_of(first) && first_again->key == 7);
+    CRUCIBLE_FATAL_INVARIANT(address_of(later_again) == address_of(later) && later_again->key == 9);
+    CRUCIBLE_FATAL_INVARIANT(other->at(first_position).is_none());
+}
+
 // The second epoch gets the addresses of the first epoch, and the arena
 // takes no block for it.
 void test_end_keeps_the_blocks() {
@@ -345,6 +375,7 @@ int main() {
     test_empty_array_takes_no_bytes();
     test_large_request_takes_its_own_block();
     test_family_arena_lives_in_a_box();
+    test_position_names_its_object_in_its_arena();
     test_end_keeps_the_blocks();
     test_end_above_the_limit_keeps_one_block();
     test_set_limit_refuses_the_blocks_above_it();

@@ -174,7 +174,8 @@ static void check_descriptor_images_agree() {
 
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>> meta_image{};
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> fields_image{};
-    meta_image.with_mut([&meta](auto run) noexcept { ::fixy::encode(meta, std::move(run)); });
+    auto const& meta_read = meta;
+    meta_image.with_mut([&meta_read](auto run) noexcept { ::fixy::encode(meta_read, std::move(run)); });
     fields_image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, meta_image == fields_image && "the image of a descriptor is the image of its fields");
 
@@ -485,9 +486,10 @@ static void check_descriptor_images_agree() {
         branch.set_arms(arms_run);
         branch.arms().get(0).expect("the branch holds two arms")->value = 2;
         branch.arms().get(1).expect("the branch holds two arms")->value = 1;
+        auto const& branch_read = branch;
         auto [branch_bytes, branch_buf] =
-            ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 256, std::byte{0}), [&branch](auto run) noexcept {
-                return crucible::serialize_branch(::fixy::to(branch), std::move(run));
+            ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 256, std::byte{0}), [&branch_read](auto run) noexcept {
+                return crucible::serialize_branch(::fixy::to(branch_read), std::move(run));
             });
         CRUCIBLE_TEST_ASSERT(kTest, branch_bytes > 0);
         const ::fixy::View<const std::byte> branch_image =
@@ -769,9 +771,10 @@ static void check_descriptor_images_agree() {
         crucible::init_region_node(policy_region, policy_ops_run, crucible::compute_content_hash(policy_ops, numerics),
                                    numerics);
 
+        auto const& policy_region_read = policy_region;
         auto [policy_bytes, policy_buf] = ::fixy::with_mut(
-            ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&policy_region](auto run) noexcept {
-                return crucible::serialize_region(::fixy::to(policy_region), std::move(run));
+            ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&policy_region_read](auto run) noexcept {
+                return crucible::serialize_region(::fixy::to(policy_region_read), std::move(run));
             });
         CRUCIBLE_TEST_ASSERT(kTest, policy_bytes > 0);
         ::fixy::BumpArena<DagArena> policy_load = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
@@ -844,9 +847,10 @@ static void check_descriptor_images_agree() {
         flip_plan->slots = flip_slots_run;
         flip_region.plan = crucible::make_plan_link(flip_plan);
 
+        auto const& flip_region_read = flip_region;
         auto [flip_bytes, flip_buf] = ::fixy::with_mut(
-            ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&flip_region](auto run) noexcept {
-                return crucible::serialize_region(::fixy::to(flip_region), std::move(run));
+            ::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&flip_region_read](auto run) noexcept {
+                return crucible::serialize_region(::fixy::to(flip_region_read), std::move(run));
             });
         CRUCIBLE_TEST_ASSERT(kTest, flip_bytes > 0);
         const ::fixy::View<const std::byte> flip_image =

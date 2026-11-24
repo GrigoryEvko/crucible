@@ -554,15 +554,17 @@ namespace detail {
 // The body of a keyed frame of the windows of the form of a list: the body
 // of the door of a block, which reaches no key of the brand (the gate).
 template <class Body, class T, class Brand, class Fresh, std::size_t N>
-concept KeyedListedWindowBody = std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
-                             && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh>
-                             && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+concept KeyedListedWindowBody =
+    std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
+    && core::FrameResult<listed_body_result_t<Body, T, Fresh, N>, Fresh> && core::ReachesNoLoanKey<Body, Brand>
+    && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>;
 
 // The body of a keyed frame of a static count of windows.
 template <class Body, class T, class Brand, class Fresh, std::size_t N>
 concept KeyedFixedWindowBody = WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
                             && core::FrameResult<window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
-                            && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+                            && core::ReachesNoLoanKey<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>
+                            && core::StoresNoBorrowOutside<Body>;
 
 // The element of the windows of a keyed frame.
 template <class T, std::size_t N>
@@ -581,7 +583,7 @@ template <class T, class... Refused, std::size_t N, class Body,
          && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
          && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
-         && ::foundation::linear::HoldsNoLinearValue<Body>
+         && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
     WindowRefusal>
@@ -592,7 +594,7 @@ template <class T, class... Refused, std::size_t N, class Body,
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
-         && ::foundation::linear::HoldsNoLinearValue<Body>
+         && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept;
@@ -694,7 +696,7 @@ class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameK
              && UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
              && std::is_nothrow_invocable_v<Body&&, FixedList<ViewMut<T, Fresh>, N>&>
              && FrameResult<std::invoke_result_t<Body&&, FixedList<ViewMut<T, Fresh>, N>&>, Fresh>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows,
                                                Body&& body) noexcept
         -> core::Result<
@@ -705,7 +707,7 @@ class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameK
              && UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
              && ::foundation::detail::WindowBody<Body&&, ViewMut<T, Fresh>, N>
              && FrameResult<::foundation::detail::window_body_result_t<Body&&, ViewMut<T, Fresh>, N>, Fresh>
-             && ::foundation::linear::HoldsNoLinearValue<Body>
+             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows,
                                                Body&& body) noexcept
         -> core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
@@ -835,7 +837,7 @@ template <class T, class... Refused, std::size_t N, class Body, ::foundation::br
          && core::UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
          && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
-         && ::foundation::linear::HoldsNoLinearValue<Body>
+         && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
     WindowRefusal>
@@ -1021,7 +1023,7 @@ template <class T, class... Refused, std::size_t N, class Body, ::foundation::br
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
-         && ::foundation::linear::HoldsNoLinearValue<Body>
+         && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {

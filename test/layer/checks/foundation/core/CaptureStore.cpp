@@ -164,6 +164,88 @@ static_assert(!stores_borrow_outside_(^^NamedBody, BodyForm::unnamed));
 static_assert(!stores_borrow_outside_(^^NamedBody const, BodyForm::named));
 static_assert(!StoresNoBorrowOutside<NamedBody&> && StoresNoBorrowOutside<NamedBody&&>);
 
+// The stash shapes of the frame doors: a body that keeps a Ref of an element
+// or of the object of a Box, a Ref of the link of a chain, a View of the
+// elements of a list or a TextView of a text, in a variable that it captures
+// by reference.  The negative fixtures neg_core_*_kept_past_its_frame give
+// one door of each shape.
+struct InnerBrand {};
+struct Inner {
+    using brand_type = InnerBrand;
+    int child = 0;
+};
+struct LinkBrand {};
+struct Link {
+    using brand_type = LinkBrand;
+    Box<int> box;
+};
+consteval bool are_stash_shapes_refused() {
+    Option<Ref<Inner, InnerBrand>> inner{none};
+    Option<Ref<Link, LinkBrand>> link{none};
+    View<unsigned long const> elements{};
+    TextView characters{};
+    auto keeps_an_element = [&inner](Inner& first) noexcept { static_cast<void>(first); };
+    auto keeps_a_link = [&link](auto run) noexcept { static_cast<void>(run); };
+    auto keeps_elements = [&elements](View<unsigned long const> run) noexcept { elements = run; };
+    auto keeps_characters = [&characters](TextView run) noexcept { characters = run; };
+    return is_refused<decltype(keeps_an_element)>() && is_refused<decltype(keeps_a_link)>()
+        && is_refused<decltype(keeps_elements)>() && is_refused<decltype(keeps_characters)>();
+}
+static_assert(are_stash_shapes_refused());
+
+// An owner of the base that states owns_its_storage gives its type arguments
+// and no member: a capture of it by reference passes, also with a member that
+// would be a borrow slot.  A class outside the base with the same mark is
+// read member by member below.
+struct[[= owns_its_storage{}]] MarkedOwnerOfTheBase {
+    Option<View<int>> held{};
+};
+struct CapturesMarkedOwnerOfTheBase {
+    MarkedOwnerOfTheBase& owner;
+};
+static_assert(!is_refused<CapturesMarkedOwnerOfTheBase>());
+
 }  // namespace detail::capture_store_checks
 
 }  // namespace foundation::core
+
+// A class outside the base that states an owner mark (owns_its_storage,
+// by_arguments, payload_cell or synchronized) or derives from OwnerCore: the
+// walk trusts no such mark outside foundation and fixy, so it reads the
+// members, and an Option of a View in one is a borrow slot.
+namespace capture_store_outside_checks {
+
+namespace core = ::foundation::core;
+namespace transfer = ::foundation::transfer;
+
+struct[[= core::owns_its_storage{}]] OwnerStash {
+    core::Option<core::View<int>> held{};
+};
+struct[[= transfer::by_arguments{}]] ArgumentsStash {
+    core::Option<core::View<int>> held{};
+};
+struct[[= transfer::payload_cell{}]] CellStash {
+    core::Option<core::View<int>> held{};
+};
+struct[[= transfer::synchronized{}]] SynchronizedStash {
+    core::Option<core::View<int>> held{};
+};
+template <class Stash>
+struct CapturesStash {
+    Stash& stash;
+};
+template <class Stash>
+consteval bool is_stash_refused() {
+    return core::detail::stores_borrow_outside_(^^CapturesStash<Stash>, core::detail::BodyForm::unnamed);
+}
+static_assert(is_stash_refused<OwnerStash>() && is_stash_refused<ArgumentsStash>());
+static_assert(is_stash_refused<CellStash>() && is_stash_refused<SynchronizedStash>());
+
+// The test of the namespace walks up through each enclosing class and
+// function, and an unnamed namespace and the global namespace are outside the
+// base.
+static_assert(!core::detail::is_base_class_(^^OwnerStash));
+static_assert(core::detail::is_base_class_(^^core::detail::capture_store_checks::MarkedOwnerOfTheBase));
+static_assert(core::detail::is_base_class_(^^core::HeapArray<int>));
+
+}  // namespace capture_store_outside_checks

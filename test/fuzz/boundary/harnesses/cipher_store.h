@@ -116,9 +116,12 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
     const std::size_t event_count = cursor.take<std::uint8_t>() % 9;
     ::fixy::HeapArray<std::byte> records =
         ::fixy::mint_heap_array(test_alloc(), event_count * sizeof(SessionEvent), std::byte{0});
-    records = ::fixy::with_mut(std::move(records), [&cursor, event_count, first_step, session_raw](auto run) noexcept {
+    const ::fixy::View<std::byte const> event_bytes = cursor.take_bytes(event_count * sizeof(SessionEvent));
+    records = ::fixy::with_mut(std::move(records), [event_bytes, event_count, first_step,
+                                                    session_raw](auto run) noexcept {
+        InputCursor events{event_bytes};
         for (std::size_t i = 0; i < event_count; ++i) {
-            const ::fixy::View<std::byte const> input = cursor.take_bytes(sizeof(SessionEvent));
+            const ::fixy::View<std::byte const> input = events.take_bytes(sizeof(SessionEvent));
             const std::uint64_t step = std::uint64_t{first_step} + i;
             run = ::fixy::reborrow(std::move(run), [input, step, session_raw, i](auto lent) noexcept {
                 auto record = ::fixy::take_window<sizeof(SessionEvent)>(std::move(lent), i * sizeof(SessionEvent))

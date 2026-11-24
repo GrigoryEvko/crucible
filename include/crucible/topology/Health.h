@@ -513,21 +513,13 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
                 [&] { return ::fixy::Stale<HealthSnapshot>::at_infinity(slot.last_snapshot); });
     }
 
-    constexpr void append_event(Slot& slot, HealthState from, HealthState to, HealthSnapshot const& snapshot) noexcept {
-        HealthDeltaEvent const event{
-            .cog_uuid = slot.peer.uuid,
-            .from = from,
-            .to = to,
-            .score = snapshot.score,
-            .issues = snapshot.issues,
-            .sequence = snapshot.sequence,
-        };
+    // Puts a transition event in the next slot of the ring of events.
+    constexpr void push_event(HealthDeltaEvent const& event) noexcept {
         events_.with_element(next_event_, [event](HealthDeltaEvent& held) noexcept { held = event; });
         next_event_ = detail::next_ring_index(next_event_);
         if (event_count_ < MaxEvents) {
             ++event_count_;
         }
-        slot.transition_count.bump();
     }
 
     [[nodiscard]] constexpr std::uint32_t thermal_risk(Slot const& slot,
@@ -736,9 +728,16 @@ public:
                                                                   ::fixy::SequenceSource const& sequences) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [this, &peer, now_ns, &sequences](Slot& slot) noexcept {
-                    return compute_in(slot, peer, now_ns, sequences);
-                });
+                // The body reads the scorer through a const reference and
+                // gives out the step.  The scorer writes its ring of events
+                // after the frame.
+                CompositeHealthScorer const& scorer = *this;
+                HealthStep const step =
+                    slots_.with_element(index, [&scorer, &peer, now_ns, &sequences](Slot& slot) noexcept {
+                        return scorer.compute_in(slot, peer, now_ns, sequences);
+                    });
+                step.event.match([this](HealthDeltaEvent const& event) noexcept { push_event(event); }, [] noexcept {});
+                return step.graded;
             },
             [&] { return missing_snapshot(peer, sequences); });
     }
@@ -758,11 +757,17 @@ public:
     [[nodiscard]] constexpr std::uint16_t transition_event_count() const noexcept { return event_count_; }
 
 private:
-    // The score of the peer of slot at now_ns.  A change of state appends a
-    // transition event.
-    [[nodiscard]] constexpr ::fixy::Stale<HealthSnapshot> compute_in(Slot& slot, cog::CogIdentity const& peer,
-                                                                     std::uint64_t now_ns,
-                                                                     ::fixy::SequenceSource const& sequences) noexcept {
+    // One step of the score of a peer: the graded snapshot, and the
+    // transition event of a change of state.
+    struct HealthStep {
+        ::fixy::Stale<HealthSnapshot> graded;
+        ::fixy::Option<HealthDeltaEvent> event;
+    };
+
+    // The score of the peer of slot at now_ns.  A change of state gives a
+    // transition event, which the caller puts in the ring.
+    [[nodiscard]] constexpr HealthStep compute_in(Slot& slot, cog::CogIdentity const& peer, std::uint64_t now_ns,
+                                                  ::fixy::SequenceSource const& sequences) const noexcept {
         std::uint64_t const sequence = sequences.stamp().position();
         ::fixy::Bits<HealthIssue> issues{};
         PhiMilli const phi = phi_.suspicion_phi(peer, now_ns);
@@ -801,13 +806,22 @@ private:
         };
         HealthState const new_state = next_state(slot.state, snapshot);
         snapshot.state = new_state;
+        ::fixy::Option<HealthDeltaEvent> event{::fixy::none};
         if (new_state != slot.state) {
-            append_event(slot, slot.state, new_state, snapshot);
+            event = ::fixy::Option<HealthDeltaEvent>::some(HealthDeltaEvent{
+                .cog_uuid = slot.peer.uuid,
+                .from = slot.state,
+                .to = new_state,
+                .score = snapshot.score,
+                .issues = snapshot.issues,
+                .sequence = snapshot.sequence,
+            });
+            slot.transition_count.bump();
             slot.state = new_state;
         }
         slot.last_snapshot = snapshot;
         static_cast<void>(slot.sequence.try_advance(sequence));
-        return graded_last_snapshot(slot, sequences);
+        return HealthStep{.graded = graded_last_snapshot(slot, sequences), .event = event};
     }
 };
 

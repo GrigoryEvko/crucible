@@ -558,10 +558,13 @@ public:
     template <class Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
+        // The body reads the Vigil through a const reference, so it writes
+        // no borrow of its frame into the Vigil.
+        Vigil const& vigil = *this;
         return cipher_.with_mut(
-            [this, &ctx](auto cipher) noexcept {
-                for (const DagRef<const RegionNode> region : active_region()) {
-                    return persist_into_(ctx, **cipher, region);
+            [&vigil, &ctx](auto cipher) noexcept {
+                for (const DagRef<const RegionNode> region : vigil.active_region()) {
+                    return vigil.persist_into_(ctx, **cipher, region);
                 }
                 return false;
             },
@@ -580,26 +583,40 @@ public:
     // Vigil ends the arena of each earlier load whose region no holder of the
     // foreground names (release_unheld_loads_).  So repeated loads keep only
     // the regions that the foreground can still read.
+    //
+    // The frame of the store only reads the store into a new arena, and gives
+    // out owned data: the arena moves into an Option of the caller, and the
+    // position of its head region in it is the result of the frame.  The
+    // Vigil takes the region from the arena after the frame, and writes its
+    // own members there.  So no borrow of the frame reaches the Vigil.
     template <class Ctx>
         requires ::foundation::effects::CtxAdmits<Ctx, ::crucible::CipherSessionEventPersistenceRow>
     [[nodiscard, gnu::cold]] bool load(Ctx const& ctx, ::foundation::effects::Alloc a) {
-        return cipher_.with_mut(
-            [this, &ctx, a](auto cipher) noexcept {
-                const VigilFgCtx fg = assert_producer_thread_();
-                release_unheld_loads_();
-                ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
-                    ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, LOAD_BLOCK_BYTES);
-                const ::fixy::Option<DagRef<RegionNode>> loaded = load_head_(ctx, a, **cipher, *arena);
-                for (const DagRef<RegionNode> region : loaded) {
-                    // Each region cut before the load holds ops that ran before it.
-                    bg_.request_mark(ring_total_produced());
-                    adopt_region_(fg, *region);
-                    keep_load_(std::move(arena), ConstRegionLink::some(region));
-                    return true;
-                }
-                return false;
+        if (cipher_.is_none()) return false;
+        const VigilFgCtx fg = assert_producer_thread_();
+        release_unheld_loads_();
+        ::fixy::Option<LoadArena> loaded_arena{::fixy::none};
+        ::fixy::Option<HeadPosition> head_position = cipher_.with_mut(
+            [&ctx, a, &loaded_arena](auto cipher) noexcept -> ::fixy::Option<HeadPosition> {
+                LoadArena arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(a, LOAD_BLOCK_BYTES);
+                ::fixy::Option<DagRef<RegionNode>> head = load_head_(ctx, a, **cipher, *arena);
+                if (head.is_none()) return ::fixy::none;
+                const DagRef<RegionNode> region = std::move(head).expect("the test above found the head region");
+                HeadPosition const position = arena->position_of(region).expect("the arena of the load made its head");
+                loaded_arena = ::fixy::Option<LoadArena>::some(std::move(arena));
+                return ::fixy::Option<HeadPosition>::some(position);
             },
-            [] noexcept { return false; });
+            [] noexcept -> ::fixy::Option<HeadPosition> { return ::fixy::none; });
+        if (head_position.is_none()) return false;
+        LoadArena arena = std::move(loaded_arena).expect("the frame that gave a position gave its arena");
+        const DagRef<RegionNode> region =
+            arena->at(std::move(head_position).expect("the test above found the position of the head"))
+                .expect("a position of the arena of the load names its head region");
+        // Each region cut before the load holds ops that ran before it.
+        bg_.request_mark(ring_total_produced());
+        adopt_region_(fg, *region);
+        keep_load_(std::move(arena), ConstRegionLink::some(region));
+        return true;
     }
 
     // The pre-allocated address of the slot of output j of the current op.
@@ -844,7 +861,7 @@ private:
     // The store is only ever made from open(), so holding one already
     // proves it is open.  One mint of the open view serves both calls.
     template <class Ctx, class Store>
-    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, DagRef<const RegionNode> region) {
+    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, DagRef<const RegionNode> region) const {
         auto open_view = store.mint_open_view(ctx);
         const ContentHash hash = store.store(ctx, open_view, Store::content_addressed(region));
         if (!hash) return false;
@@ -852,8 +869,8 @@ private:
     }
 
     template <class Ctx, class Store>
-    [[nodiscard]] ::fixy::Option<DagRef<RegionNode>> load_head_(Ctx const& ctx, ::foundation::effects::Alloc a,
-                                                                Store& store, ::fixy::BumpArena<DagArena>& arena) {
+    [[nodiscard]] static ::fixy::Option<DagRef<RegionNode>>
+    load_head_(Ctx const& ctx, ::foundation::effects::Alloc a, Store& store, ::fixy::BumpArena<DagArena>& arena) {
         if (store.empty()) return ::fixy::none;
         auto open_view = store.mint_open_view(ctx);
         // A refusal gives no region, and the report tells the person why the
@@ -952,10 +969,13 @@ private:
     // names.  Runs on the producer thread before each load.  Complexity:
     // O(LOAD_SLOTS * HeldRegions::CAP).
     [[gnu::cold]] void release_unheld_loads_() noexcept {
-        loads_.with_mut([this](auto slots) noexcept {
+        // The body reads the Vigil through a const reference, so it writes
+        // no borrow of its frame into the Vigil.
+        Vigil const& vigil = *this;
+        loads_.with_mut([&vigil](auto slots) noexcept {
             for (::fixy::Option<LoadedRegion>& load : slots) {
                 const bool is_unheld = load.is_some_and(
-                    [this](const LoadedRegion& kept) noexcept { return !is_held_by_foreground_(kept.region); });
+                    [&vigil](const LoadedRegion& kept) noexcept { return !vigil.is_held_by_foreground_(kept.region); });
                 if (is_unheld) load = ::fixy::none;
             }
         });
@@ -1496,11 +1516,14 @@ private:
         ::fixy::HeapArray<BoundScalar> listed = ::fixy::mint_heap_array(allocation_, count, BoundScalar{});
         uint32_t filled = 0;
         next_bound_scalar_ = count;
-        listed = ::fixy::with_mut(std::move(listed), [&](auto scalars) noexcept {
+        // The body captures the counter that it writes, and not the Vigil, so
+        // it writes no borrow of its frame into the Vigil.
+        listed = ::fixy::with_mut(std::move(listed), [&each_slot, &filled, &next_bound = next_bound_scalar_, count,
+                                                      resume_op](auto scalars) noexcept {
             each_slot([&](const BoundScalar& bound) noexcept {
                 auto slot = scalars.get_mut(filled).expect("the first pass counted each slot");
                 *slot = bound;
-                if (next_bound_scalar_ == count && bound.op.raw() >= resume_op) next_bound_scalar_ = filled;
+                if (next_bound == count && bound.op.raw() >= resume_op) next_bound = filled;
                 ++filled;
             });
         });
@@ -1577,6 +1600,10 @@ private:
         ::fixy::Box<::fixy::BumpArena<DagArena>> arena;
         ConstRegionLink region{};
     };
+    // The arena of a load, and the position of its head region in it: the
+    // owned data that the frame of the store gives out (load).
+    using LoadArena = ::fixy::Box<::fixy::BumpArena<DagArena>>;
+    using HeadPosition = ::fixy::ArenaPosition<RegionNode, DagArena>;
     // The bytes of the first block of the arena of a load.  A larger region
     // takes a block of its own size.
     static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> LOAD_BLOCK_BYTES{size_t{1} << 16};

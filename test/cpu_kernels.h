@@ -475,7 +475,7 @@ void sdpa(::fixy::TestRunnerCtx const& test, ::fixy::View<float const> Q,
 
     // Each sequence writes the weights again, so one frame of the weights
     // holds the loop over the batch.
-    weights = ::fixy::with_mut(std::move(weights), [&](auto attn) noexcept {
+    weights = ::fixy::with_mut(std::move(weights), [B, S, D, Q, K, V, &Y, scale](auto attn) noexcept {
         for (std::size_t b = 0; b < B; b++) {
             std::size_t const base = b * S * D;
 

@@ -139,7 +139,7 @@ template <class T>
 [[nodiscard]] T sum_by_grains(View<T const> part) noexcept {
     HeapArray<T> partials =
         ::fixy::mint_heap_array(test_alloc(), ::foundation::core::count_tree_grains<kGrain>(part.size()), T{});
-    partials = with_mut(std::move(partials), [&](auto out) noexcept {
+    partials = with_mut(std::move(partials), [part](auto out) noexcept {
         ::foundation::core::sum_grains_by_tree<kGrain>(part, 0, std::move(out));
     });
     return ::foundation::core::sum_by_tree(View<T const>{partials.view()});
@@ -244,10 +244,10 @@ template <class T>
 [[nodiscard]] std::uint64_t digest_sum_scans(View<T const> in) noexcept {
     HeapArray<T> inclusive = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
     HeapArray<T> exclusive = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
-    auto [is_inclusive, inclusive_back] = with_mut(std::move(inclusive), [&](auto out) noexcept {
+    auto [is_inclusive, inclusive_back] = with_mut(std::move(inclusive), [in](auto out) noexcept {
         return ::foundation::core::scan_inclusive_sums(in, std::move(out)).is_ok();
     });
-    auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [&](auto out) noexcept {
+    auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [in](auto out) noexcept {
         return ::foundation::core::scan_exclusive_sums(in, std::move(out)).is_ok();
     });
     CRUCIBLE_TEST_ASSERT(kTest, is_inclusive && is_exclusive);
@@ -260,10 +260,10 @@ template <class T>
 [[nodiscard]] std::uint64_t digest_mix_scans(View<std::uint64_t const> words) noexcept {
     HeapArray<std::uint64_t> inclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
     HeapArray<std::uint64_t> exclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
-    auto [is_inclusive, inclusive_back] = with_mut(std::move(inclusive), [&](auto out) noexcept {
+    auto [is_inclusive, inclusive_back] = with_mut(std::move(inclusive), [words](auto out) noexcept {
         return ::foundation::core::scan_inclusive(words, std::move(out), Mix{}).is_ok();
     });
-    auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [&](auto out) noexcept {
+    auto [is_exclusive, exclusive_back] = with_mut(std::move(exclusive), [words](auto out) noexcept {
         return ::foundation::core::scan_exclusive(words, std::move(out), std::uint64_t{0x5CA9u}, Mix{}).is_ok();
     });
     CRUCIBLE_TEST_ASSERT(kTest, is_inclusive && is_exclusive);
@@ -307,8 +307,10 @@ template <class T, class Inclusive, class Exclusive>
 [[nodiscard]] std::uint64_t digest_sum_scans_by(View<T const> in, Inclusive inclusive, Exclusive exclusive) noexcept {
     HeapArray<T> inclusive_out = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
     HeapArray<T> exclusive_out = ::fixy::mint_heap_array(test_alloc(), in.size(), T{});
-    inclusive_out = with_mut(std::move(inclusive_out), [&](auto out) noexcept { inclusive(in, std::move(out)); });
-    exclusive_out = with_mut(std::move(exclusive_out), [&](auto out) noexcept { exclusive(in, std::move(out)); });
+    inclusive_out =
+        with_mut(std::move(inclusive_out), [in, inclusive](auto out) noexcept { inclusive(in, std::move(out)); });
+    exclusive_out =
+        with_mut(std::move(exclusive_out), [in, exclusive](auto out) noexcept { exclusive(in, std::move(out)); });
     std::uint64_t const digest = fold_outputs(kFnvOffset, View<T const>{inclusive_out.view()});
     return fold_outputs(digest, View<T const>{exclusive_out.view()});
 }
@@ -320,7 +322,7 @@ template <class T>
     std::size_t const grains = ::foundation::core::count_tree_grains<kGrain>(in.size());
     HeapArray<T> sums = ::fixy::mint_heap_array(test_alloc(), grains, T{});
     sums = with_mut(std::move(sums),
-                    [&](auto out) noexcept { ::foundation::core::sum_grains_by_tree<kGrain>(in, 0, std::move(out)); });
+                    [in](auto out) noexcept { ::foundation::core::sum_grains_by_tree<kGrain>(in, 0, std::move(out)); });
     HeapArray<T> carries = ::fixy::mint_heap_array(test_alloc(), grains, T{});
     bool is_scanned = false;
     carries = with_mut(std::move(carries), [&](auto out) noexcept {
@@ -336,7 +338,7 @@ template <class T>
 [[nodiscard]] std::uint64_t digest_mix_grain_scans(View<std::uint64_t const> words) noexcept {
     std::size_t const grains = ::foundation::core::count_tree_grains<kGrain>(words.size());
     HeapArray<std::uint64_t> reduces = ::fixy::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
-    reduces = with_mut(std::move(reduces), [&](auto out) noexcept {
+    reduces = with_mut(std::move(reduces), [words](auto out) noexcept {
         ::foundation::core::reduce_grains_by_tree<kGrain>(words, 0, std::move(out), Mix{});
     });
     HeapArray<std::uint64_t> carries = ::fixy::mint_heap_array(test_alloc(), grains, std::uint64_t{0});
@@ -350,10 +352,10 @@ template <class T>
     View<std::uint64_t const> const carried{carries.view()};
     HeapArray<std::uint64_t> inclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
     HeapArray<std::uint64_t> exclusive = ::fixy::mint_heap_array(test_alloc(), words.size(), std::uint64_t{0});
-    inclusive = with_mut(std::move(inclusive), [&](auto out) noexcept {
+    inclusive = with_mut(std::move(inclusive), [words, carried](auto out) noexcept {
         ::foundation::core::scan_inclusive_grains<kGrain>(words, 0, carried, std::move(out), Mix{});
     });
-    exclusive = with_mut(std::move(exclusive), [&](auto out) noexcept {
+    exclusive = with_mut(std::move(exclusive), [words, carried](auto out) noexcept {
         ::foundation::core::scan_exclusive_grains<kGrain>(words, 0, carried, std::move(out), std::uint64_t{0x5CA9u},
                                                           Mix{});
     });

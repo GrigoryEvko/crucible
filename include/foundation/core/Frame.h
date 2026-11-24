@@ -323,6 +323,37 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
 template <class Body, class Argument>
 using body_result_t = decltype(::std::declval<Body>()(::std::declval<Argument>()));
 
+// True when type is a scope brand or names one: the closure type of
+// CRUCIBLE_SCOPE_BRAND, whose call operator holds the mark
+// foundation::brand::scope_brand, or a class template specialization with
+// such a type argument at each depth, such as the brand of a view of a walk
+// of rows.  A value of a scope brand does not outlive the call of its mint
+// (foundation/Brand.h).  The call operator of a closure is public, so the
+// current access context reads it.  Each loop reads its list one time, so a
+// class with many template arguments, such as an index sequence of 256
+// positions, costs one read of the list.  Complexity: linear in the members
+// of the type, and linear in the type arguments at each depth.  An
+// incomplete class, such as a tag that a unit only declares, is no brand.
+[[nodiscard]] consteval bool names_scope_brand(std::meta::info type) {
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    std::vector<std::meta::info> const members = std::meta::members_of(type, std::meta::access_context::current());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        if (std::meta::is_function(member) && std::meta::is_operator_function(member)
+            && std::meta::operator_of(member) == std::meta::operators::op_parentheses
+            && !std::meta::annotations_of_with_type(member, ^^::foundation::brand::scope_brand).empty()) {
+            return true;
+        }
+    }
+    if (!std::meta::has_template_arguments(type)) return false;
+    std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
+    for (std::size_t index = 0; index < arguments.size(); ++index) {
+        if (std::meta::is_type(arguments[index]) && names_scope_brand(std::meta::dealias(arguments[index])))
+            return true;
+    }
+    return false;
+}
+
 }  // namespace detail
 
 // The object of a unique borrow: an object type that is not an array, not

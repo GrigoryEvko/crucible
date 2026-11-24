@@ -7,6 +7,5 @@ admit foundation::core | the owners, the Ref and the View whose borrows the plan
 admit foundation::linear | the end of the permission that the region gives back
 admit fixy | the region and its borrow
 admit std::move | a cast to an rvalue reference
-admit std::as_const | a read through a const reference
 
 quarantine src/

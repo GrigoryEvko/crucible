@@ -364,7 +364,8 @@ public:
     // alternative.
     template <class... Arms, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Arms) == sizeof...(Ts)) && (DroppablePayload<Ts> && ...)
-             && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...) && ArmsHoldNoLinearValue<Arms...>
+             && (std::is_nothrow_invocable_v<Arms &&, RefMut<Ts, Fresh>> && ...)
+             && ArmsHoldNoLinearValue<Arms...> && ArmsStoreNoBorrowOutside<Arms...>
              && (std::same_as<std::invoke_result_t<Arms &&, RefMut<Ts, Fresh>>,
                               std::invoke_result_t<Arms...[0] &&, RefMut<Ts...[0], Fresh>>>
                  && ...)

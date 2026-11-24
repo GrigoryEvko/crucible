@@ -39,26 +39,33 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     // so it crosses the trust boundary here and is declared external until
     // the store's own sanitizer promotes it.  A root that does not open gives
     // no store, and the report tells the operator the reason.
+    // The frame of the configured path only copies the path into an owned
+    // text, and the store opens after the frame.  So the body writes no member
+    // of the Vigil, and no borrow of its frame reaches the Vigil.
     if (cfg_.cipher_path.size() != 0) {
-        cfg_.cipher_path.with_view([&](::fixy::TextView path) {
-            Cipher::open(startup, startup.cap().alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(path))
-                .match(
-                    [&](Cipher opened) {
-                        // A store of an earlier run holds its steps, and each
-                        // commit of this run must come at or after them.  So
-                        // the step starts after the last commit.  The
-                        // background thread is the one writer of the step,
-                        // and it starts below, so this write comes first.
-                        for (const ::fixy::session::StepId last : opened.last_committed_step()) {
-                            step_.advance(last.raw() + 1);
-                        }
-                        cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(startup.cap().alloc, std::move(opened)));
-                    },
-                    [&](Cipher::OpenError reason) {
-                        ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store at {} does not open: {}\n", path,
-                                       Cipher::open_error_text(reason));
-                    });
+        ::fixy::GrowText path_copy = ::fixy::mint_grow_text(Config::CIPHER_PATH_MAX);
+        cfg_.cipher_path.with_view([&path_copy, alloc = startup.cap().alloc](::fixy::TextView path) noexcept {
+            path_copy.append(alloc, path).expect("the copy of the path has the bound of the path");
         });
+        ::fixy::HeapText const path_text = ::fixy::freeze(std::move(path_copy));
+        ::fixy::TextView const path = path_text.view();
+        Cipher::open(startup, startup.cap().alloc, ::fixy::mint_tagged<::fixy::tags::source::External>(path))
+            .match(
+                [&](Cipher opened) {
+                    // A store of an earlier run holds its steps, and each
+                    // commit of this run must come at or after them.  So
+                    // the step starts after the last commit.  The
+                    // background thread is the one writer of the step, and
+                    // it starts below, so this write comes first.
+                    for (const ::fixy::session::StepId last : opened.last_committed_step()) {
+                        step_.advance(last.raw() + 1);
+                    }
+                    cipher_ = ::fixy::some(::fixy::mint_box<Cipher>(startup.cap().alloc, std::move(opened)));
+                },
+                [&](Cipher::OpenError reason) {
+                    ::fixy::report(::fixy::Sink::Err, "[crucible] the Cipher store at {} does not open: {}\n", path,
+                                   Cipher::open_error_text(reason));
+                });
     }
 
     // The watchdog is constructed before the background thread starts,
@@ -195,20 +202,22 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // because this runs on the region-publishing thread, not the
     // foreground, and a watchdog reads a clock.  The frame door writes the
     // watchdog in place and writes no byte of wd_, which the foreground can
-    // read.
+    // read.  The body captures the four atomic cells that it writes, and not
+    // the Vigil, so it writes no borrow of its frame into the Vigil.
     wd_.with_mut(
-        [this, &bg](auto watchdog) noexcept {
+        [&bg, &last_verdict = wd_last_verdict_, &healthy_count = wd_healthy_count_,
+         &downgrade_count = wd_downgrade_count_, &insufficient_count = wd_insufficient_count_](auto watchdog) noexcept {
             const auto v = (*watchdog)->observe(::fixy::BgObserveCtx{bg});
-            wd_last_verdict_.store_release(v);
+            last_verdict.store_release(v);
             switch (v) {
                 case ::crucible::warden::WatchdogVerdict::Healthy:
-                    (void)wd_healthy_count_.fetch_add_acq_rel(1);
+                    (void)healthy_count.fetch_add_acq_rel(1);
                     break;
                 case ::crucible::warden::WatchdogVerdict::Downgrade:
-                    (void)wd_downgrade_count_.fetch_add_acq_rel(1);
+                    (void)downgrade_count.fetch_add_acq_rel(1);
                     break;
                 case ::crucible::warden::WatchdogVerdict::InsufficientData:
-                    (void)wd_insufficient_count_.fetch_add_acq_rel(1);
+                    (void)insufficient_count.fetch_add_acq_rel(1);
                     break;
                 default:
                     // The verdict enum has exactly the three values above.  A

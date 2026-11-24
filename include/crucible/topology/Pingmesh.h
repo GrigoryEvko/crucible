@@ -233,10 +233,13 @@ private:
         if (find_peer(peer.uuid).is_some()) {
             return PingmeshError::DuplicatePeer;
         }
-        return peers_.with_mut([&peer](auto run) noexcept {
+        // The body reads the peer through a const reference, so it writes no
+        // borrow of its frame into the peer.
+        cog::CogIdentity const& peer_read = peer;
+        return peers_.with_mut([&peer_read](auto run) noexcept {
             for (PeerSlot& slot : run) {
                 if (!slot.active) {
-                    slot.peer = peer;
+                    slot.peer = peer_read;
                     slot.active = true;
                     return PingmeshError::None;
                 }
@@ -341,32 +344,32 @@ public:
             .match(
                 [&](PairIndex index) {
                     // The counters of a pair are tallies and atomics, so two probe workers write them at the same time.
-                    return counters_.with_element(
-                        index, [this, value, index](detail::AtomicPingmeshPairCounters& counters) noexcept {
-                            counters.sent.add(1);
-                            counters.last_sequence.store_release(value.sequence);
+                    return counters_.with_element(index, [&latency_of_pairs = latency_, value, index](
+                                                             detail::AtomicPingmeshPairCounters& counters) noexcept {
+                        counters.sent.add(1);
+                        counters.last_sequence.store_release(value.sequence);
 
-                            if (value.status == PingmeshProbeStatus::Lost) {
-                                counters.lost.add(1);
-                                return PingmeshError::None;
-                            }
-                            if (value.status == PingmeshProbeStatus::Rejected) {
-                                counters.rejected.add(1);
-                                return PingmeshError::None;
-                            }
-
-                            std::uint64_t const latency_ns = value.latency_ns.value();
-                            if (latency_ns > MaxLatencyNs) {
-                                counters.rejected.add(1);
-                                return PingmeshError::LatencyOutOfRange;
-                            }
-                            auto const latency = histogram_type::checked_value(latency_ns);
-                            // A histogram holds Atomic counts, so two probe workers record into one at the same time.
-                            latency_.with_element(index,
-                                                  [latency](histogram_type& hist) noexcept { hist.record(latency); });
-                            counters.delivered.add(1);
+                        if (value.status == PingmeshProbeStatus::Lost) {
+                            counters.lost.add(1);
                             return PingmeshError::None;
-                        });
+                        }
+                        if (value.status == PingmeshProbeStatus::Rejected) {
+                            counters.rejected.add(1);
+                            return PingmeshError::None;
+                        }
+
+                        std::uint64_t const latency_ns = value.latency_ns.value();
+                        if (latency_ns > MaxLatencyNs) {
+                            counters.rejected.add(1);
+                            return PingmeshError::LatencyOutOfRange;
+                        }
+                        auto const latency = histogram_type::checked_value(latency_ns);
+                        // A histogram holds Atomic counts, so two probe workers record into one at the same time.
+                        latency_of_pairs.with_element(
+                            index, [latency](histogram_type& hist) noexcept { hist.record(latency); });
+                        counters.delivered.add(1);
+                        return PingmeshError::None;
+                    });
                 },
                 [](PingmeshError error) { return error; });
     }
