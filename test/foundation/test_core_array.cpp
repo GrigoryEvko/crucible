@@ -122,7 +122,7 @@ void test_large_fixed_array_value_initializes() {
         if (element == 0) ++zeros_seen;
     }
     CRUCIBLE_TEST_ASSERT(kTest, sevens_seen == 65536 && zeros_seen == 65536);
-    sevens.with_element(index<65535>(), [](Seven& element) noexcept { element.value = 8; });
+    sevens.set(index<65535>(), Seven{.value = 8});
     CRUCIBLE_TEST_ASSERT(kTest, sevens.at(Index<65536>::check(65535).expect("65535 is below 65536")).value == 8);
 }
 
@@ -130,7 +130,7 @@ void test_fixed_array_reads_at_proven_indexes() {
     FixedArray<int, 4> numbers{4, 8, 15, 16};
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<0>()) == 4);
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<3>()) == 16);
-    numbers.with_element(index<1>(), [](int& element) noexcept { element = 9; });
+    numbers.set(index<1>(), 9);
     int total = 0;
     for (Index<4> const position : numbers.indices()) {
         total += numbers.at(position);

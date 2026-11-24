@@ -154,8 +154,8 @@ static void check_descriptor_images_agree() {
     for (const auto lane : decltype(fields.sizes)::indices()) {
         const int64_t size = crucible::raw_tensor_dim(meta.sizes[lane.raw()]);
         const int64_t stride = crucible::raw_tensor_dim(meta.strides[lane.raw()]);
-        fields.sizes.with_element(lane, [size](int64_t& element) noexcept { element = size; });
-        fields.strides.with_element(lane, [stride](int64_t& element) noexcept { element = stride; });
+        fields.sizes.set(lane, size);
+        fields.strides.set(lane, stride);
     }
     fields.ndim = meta.ndim;
     fields.dtype = std::to_underlying(meta.dtype);

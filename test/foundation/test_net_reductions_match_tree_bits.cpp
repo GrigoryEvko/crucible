@@ -78,7 +78,7 @@ template <std::size_t Count, std::size_t First, class T, std::size_t Leaves>
     core::FixedArray<T, Count> part{};
     for (std::size_t index = 0; index < Count; ++index) {
         T const element = slot_at(leaves, First + index);
-        part.with_element(slot_index(part, index), [element](T& held) noexcept { held = element; });
+        part.set(slot_index(part, index), element);
     }
     return slot_at(evaluate_net<1>(tree_net_of<Count, false>, part, T{}, AddValues{}, core::Ascending{}), 0);
 }
@@ -125,8 +125,7 @@ template <class T, std::size_t Runs>
         std::size_t index = 0;
         for (core::FixedArray<T, 37> const& run : runs) {
             core::View<T const> const run_view{run.view()};
-            views.with_element(slot_index(views, index),
-                               [run_view](core::View<T const>& held) noexcept { held = run_view; });
+            views.set(slot_index(views, index), run_view);
             ++index;
         }
         core::FixedArray<T, 37> sums{};
@@ -140,7 +139,7 @@ template <class T, std::size_t Runs>
             core::FixedArray<T, Runs> column{};
             for (std::size_t run = 0; run < Runs; ++run) {
                 T const element = slot_at(slot_at(runs, run), position);
-                column.with_element(slot_index(column, run), [element](T& held) noexcept { held = element; });
+                column.set(slot_index(column, run), element);
             }
             T const from_net =
                 slot_at(evaluate_net<1>(tree_net_of<Runs, false>, column, T{}, AddValues{}, core::Ascending{}), 0);

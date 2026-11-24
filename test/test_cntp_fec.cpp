@@ -35,7 +35,7 @@ template <std::size_t N>
     for (auto index : bytes.indices()) {
         auto const i = index.raw();
         auto const byte = static_cast<std::byte>((i * 37U + (i >> 1U) + 0x5AU) & 0xFFU);
-        bytes.with_element(index, [byte](std::byte& element) noexcept { element = byte; });
+        bytes.set(index, byte);
     }
     return bytes;
 }
@@ -86,7 +86,7 @@ void verify_all_recoverable_erasures(Codec const& codec, Bytes<InputBytes> const
             if ((bits & bit) == 0) {
                 continue;
             }
-            erasures.with_element(shard, [](bool& is_erased) noexcept { is_erased = true; });
+            erasures.set(shard, true);
             ++erased;
             poison_shard(damaged, shard.raw(), shard_bytes, std::byte{0xA5});
         }
@@ -119,7 +119,7 @@ void verify_mul_xor_against_scalar_product() {
                 Bytes<buffer_bytes> target{};
                 for (auto index : target.indices()) {
                     auto const byte = static_cast<std::byte>((index.raw() * 11U + coeff) & 0xFFU);
-                    target.with_element(index, [byte](std::byte& element) noexcept { element = byte; });
+                    target.set(index, byte);
                 }
                 Bytes<buffer_bytes> expected = target;
                 for (std::size_t i = 0; i < len; ++i) {
@@ -127,7 +127,7 @@ void verify_mul_xor_against_scalar_product() {
                                               .expect("the byte lies inside the buffer");
                     const auto source_byte = static_cast<std::uint8_t>(source_seed.at(position));
                     auto const product = static_cast<std::byte>(detail::mul(source_byte, factor));
-                    expected.with_element(position, [product](std::byte& element) noexcept { element ^= product; });
+                    expected.set(position, expected.at(position) ^ product);
                 }
                 auto const source = source_seed.view().window(offset, len).expect("the run lies inside the source");
                 target.with_mut([offset, len, source, factor](auto run) noexcept {
@@ -201,8 +201,8 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, encode_into(rs42, payload.view(), encoded).is_ok());
 
         Flags<Rs42::total_shards> erasures{};
-        erasures.with_element(::fixy::index<0>(), [](bool& is_erased) noexcept { is_erased = true; });
-        erasures.with_element(::fixy::index<2>(), [](bool& is_erased) noexcept { is_erased = true; });
+        erasures.set(::fixy::index<0>(), true);
+        erasures.set(::fixy::index<2>(), true);
         poison_shard(encoded, 0, shard_bytes, std::byte{0xEE});
         poison_shard(encoded, 2, shard_bytes, std::byte{0xEE});
 
@@ -218,8 +218,8 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, encode_into(rs42, payload.view(), encoded).is_ok());
 
         Flags<Rs42::total_shards> erasures{};
-        erasures.with_element(::fixy::index<1>(), [](bool& is_erased) noexcept { is_erased = true; });
-        erasures.with_element(::fixy::index<5>(), [](bool& is_erased) noexcept { is_erased = true; });
+        erasures.set(::fixy::index<1>(), true);
+        erasures.set(::fixy::index<5>(), true);
         poison_shard(encoded, 1, shard_bytes, std::byte{0xEE});
         poison_shard(encoded, 5, shard_bytes, std::byte{0xEE});
 
@@ -234,9 +234,9 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, encode_into(rs42, payload.view(), encoded).is_ok());
 
         Flags<Rs42::total_shards> too_many{};
-        too_many.with_element(::fixy::index<0>(), [](bool& is_erased) noexcept { is_erased = true; });
-        too_many.with_element(::fixy::index<1>(), [](bool& is_erased) noexcept { is_erased = true; });
-        too_many.with_element(::fixy::index<4>(), [](bool& is_erased) noexcept { is_erased = true; });
+        too_many.set(::fixy::index<0>(), true);
+        too_many.set(::fixy::index<1>(), true);
+        too_many.set(::fixy::index<4>(), true);
 
         Bytes<payload.size()> decoded{};
         auto rejected = decode_into(rs42, encoded.view(), too_many.view(), decoded);
@@ -295,8 +295,8 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, encode_into(rs102, payload.view(), encoded).is_ok());
 
         Flags<Rs102::total_shards> erasures{};
-        erasures.with_element(::fixy::index<3>(), [](bool& is_erased) noexcept { is_erased = true; });
-        erasures.with_element(::fixy::index<10>(), [](bool& is_erased) noexcept { is_erased = true; });
+        erasures.set(::fixy::index<3>(), true);
+        erasures.set(::fixy::index<10>(), true);
         poison_shard(encoded, 3, shard_bytes, std::byte{0xEE});
         poison_shard(encoded, 10, shard_bytes, std::byte{0xEE});
 

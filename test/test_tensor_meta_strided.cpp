@@ -50,8 +50,7 @@ using Elements = ::fixy::FixedArray<std::int32_t, 6>;
     bool const is_walked =
         ::fixy::walk(
             [&order, &visits](std::int32_t const& element) noexcept {
-                order.with_element(::fixy::Index<Elements::size()>::check(visits).expect("at most six elements"),
-                                   [element](std::int32_t& cell) noexcept { cell = element; });
+                order.set(::fixy::Index<Elements::size()>::check(visits).expect("at most six elements"), element);
                 ++visits;
             },
             view)

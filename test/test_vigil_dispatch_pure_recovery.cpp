@@ -53,10 +53,8 @@ void test_dispatch_pure_divergence_and_recovery() {
         bad_entry.num_inputs = 1;
         bad_entry.num_outputs = 1;
         ::fixy::FixedArray<TensorMeta, 2> bad_metas{};
-        bad_metas.with_element(::fixy::index<0>(),
-                               [meta = make_meta(fake_ptr(4, 2))](TensorMeta& record) noexcept { record = meta; });
-        bad_metas.with_element(::fixy::index<1>(),
-                               [meta = make_meta(fake_ptr(4, 3))](TensorMeta& record) noexcept { record = meta; });
+        bad_metas.set(::fixy::index<0>(), make_meta(fake_ptr(4, 2)));
+        bad_metas.set(::fixy::index<1>(), make_meta(fake_ptr(4, 3)));
 
         auto rdiv = crucible::test::dispatch_pure_synthetic(vigil, fg, bad_entry, bad_metas, 2);
         CRUCIBLE_TEST_ASSERT(kTest, rdiv.action == DispatchResult::Action::RECORD);

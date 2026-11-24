@@ -67,7 +67,7 @@ static void test_batch_append_and_monotonic() {
     ::fixy::FixedArray<TensorMeta, 8> batch{};
     for (const auto index : batch.indices()) {
         const TensorMeta meta = make_meta(SyntheticAddress{0x1000 + index.raw() * 16});
-        batch.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
+        batch.set(index, meta);
     }
     const ::fixy::View<const TensorMeta> records{batch.view()};
     auto idx1 = log.try_append(records.window(0, 3).expect("the first run fits the batch"));
@@ -133,7 +133,7 @@ static void test_copy_run_across_the_end() {
     ::fixy::FixedArray<TensorMeta, 5> tail5{};
     for (const auto index : tail5.indices()) {
         const TensorMeta meta = make_meta(SyntheticAddress{0x5000 + index.raw() * 0x100});
-        tail5.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
+        tail5.set(index, meta);
     }
     auto idx = log.try_append(tail5.view());
     CRUCIBLE_TEST_ASSERT(kTest, idx.is_valid());
@@ -173,7 +173,7 @@ static void test_counters_pass_two_to_the_32() {
     ::fixy::FixedArray<TensorMeta, 32> run{};
     for (const auto index : run.indices()) {
         const TensorMeta meta = make_meta(SyntheticAddress{0x6000 + index.raw() * 0x100});
-        run.with_element(index, [meta](TensorMeta& element) noexcept { element = meta; });
+        run.set(index, meta);
     }
     const ::fixy::View<const TensorMeta> records{run.view()};
     const MetaIndex first = log.try_append(records.window(0, 15).expect("the first run fits the array"));

@@ -74,13 +74,13 @@ using Lanes = ::fixy::FixedArray<std::int64_t, kMaxTensorNDim>;
     fields.device_type = std::to_underlying(::crucible::DeviceType::CPU);
     fields.device_idx = -1;
     fields.layout = std::to_underlying(::crucible::Layout::Strided);
-    fields.sizes.with_element(::fixy::index<0>(), [](std::int64_t& lane) noexcept { lane = 4; });
-    fields.sizes.with_element(::fixy::index<1>(), [](std::int64_t& lane) noexcept { lane = 3; });
-    fields.strides.with_element(::fixy::index<0>(), [](std::int64_t& lane) noexcept { lane = 3; });
-    fields.strides.with_element(::fixy::index<1>(), [](std::int64_t& lane) noexcept { lane = 1; });
+    fields.sizes.set(::fixy::index<0>(), 4);
+    fields.sizes.set(::fixy::index<1>(), 3);
+    fields.strides.set(::fixy::index<0>(), 3);
+    fields.strides.set(::fixy::index<1>(), 1);
     std::int64_t const extent = extent_of(value);
     Lanes& lanes = block == DimBlock::Sizes ? fields.sizes : fields.strides;
-    lanes.with_element(::fixy::index<1>(), [extent](std::int64_t& lane) noexcept { lane = extent; });
+    lanes.set(::fixy::index<1>(), extent);
     return fields;
 }
 

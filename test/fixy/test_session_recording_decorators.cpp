@@ -75,9 +75,9 @@ int check_crash_recording() {
     for (const s::SessionEvent& event : log_p) {
         auto const record = event.encode();
         for (const std::byte byte : record) {
-            block.with_element(::foundation::core::Index<5 * s::session_event_size>::check(position).expect(
-                                   "the block holds five records"),
-                               [byte](std::byte& held) noexcept { held = byte; });
+            block.set(::foundation::core::Index<5 * s::session_event_size>::check(position).expect(
+                          "the block holds five records"),
+                      byte);
             ++position;
         }
     }

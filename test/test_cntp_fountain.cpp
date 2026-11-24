@@ -31,7 +31,7 @@ template <std::size_t N>
     for (auto index : bytes.indices()) {
         auto const i = index.raw();
         auto const value = static_cast<std::byte>((i * 29U + (i >> 2U) + 0xC3U) & 0xFFU);
-        bytes.with_element(index, [value](std::byte& element) noexcept { element = value; });
+        bytes.set(index, value);
     }
     return bytes;
 }
@@ -129,10 +129,10 @@ int main() {
         ::foundation::core::FixedArray<std::uint64_t, 256> masks_a{};
         for (auto index : masks_a.indices()) {
             auto packet = probe.next_packet().expect("the encoder is started");
-            masks_a.with_element(index, [mask = packet.mask](std::uint64_t& held) noexcept { held = mask; });
+            masks_a.set(index, packet.mask);
             for (auto bit : inclusion.indices()) {
                 if ((packet.mask >> bit.raw()) & 1ULL) {
-                    inclusion.with_element(bit, [](std::uint32_t& count) noexcept { count += 1; });
+                    inclusion.set(bit, inclusion.at(bit) + 1);
                 }
             }
         }
@@ -206,7 +206,7 @@ int main() {
         SmallDecoder small = ci::mint_fountain_decoder<4, 4, 4>(init);
         auto first = equation_packet<SmallPacket>(0b0011, std::byte{0x11});
         auto second = first;
-        second.payload.with_element(::fixy::index<0>(), [](std::byte& element) noexcept { element = std::byte{0x22}; });
+        second.payload.set(::fixy::index<0>(), std::byte{0x22});
 
         CRUCIBLE_TEST_ASSERT(kTest, small.add_packet(first).is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(small.add_packet(second)) == ci::FountainError::InconsistentEquation);

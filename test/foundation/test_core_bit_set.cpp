@@ -268,8 +268,7 @@ struct Model {
         return held.at(Index<kModelCapacity>::check(raw).expect("the model holds the index"));
     }
     void put(std::size_t raw, bool value) noexcept {
-        held.with_element(Index<kModelCapacity>::check(raw).expect("the model holds the index"),
-                          [value](bool& element) noexcept { element = value; });
+        held.set(Index<kModelCapacity>::check(raw).expect("the model holds the index"), value);
     }
 
     // The relations of this model and other: subset and disjoint.

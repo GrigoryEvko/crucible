@@ -107,14 +107,15 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Outputs>
 count_uses(CombinePlan<Leaves, Steps, Outputs> const& plan) noexcept {
     core::FixedArray<std::uint32_t, Leaves + Steps + 1> uses{};
     for (core::TreeStep const& step : plan.steps) {
-        uses.with_element(slot_index(uses, static_cast<std::size_t>(step.left)),
-                          [](std::uint32_t& count) noexcept { ++count; });
-        uses.with_element(slot_index(uses, static_cast<std::size_t>(step.right)),
-                          [](std::uint32_t& count) noexcept { ++count; });
+        auto const left_slot = slot_index(uses, static_cast<std::size_t>(step.left));
+        uses.set(left_slot, uses.at(left_slot) + 1);
+        auto const right_slot = slot_index(uses, static_cast<std::size_t>(step.right));
+        uses.set(right_slot, uses.at(right_slot) + 1);
     }
     for (core::PlanNode const output : plan.outputs) {
         std::size_t const node = output == core::empty_plan_node ? Leaves + Steps : static_cast<std::size_t>(output);
-        uses.with_element(slot_index(uses, node), [](std::uint32_t& count) noexcept { ++count; });
+        auto const slot = slot_index(uses, node);
+        uses.set(slot, uses.at(slot) + 1);
     }
     return uses;
 }
@@ -314,10 +315,8 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Agents, std::size_t
     for (std::uint32_t step = 0; step < Steps; ++step) {
         std::uint32_t const left_node = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 0));
         std::uint32_t const right_node = source_of(graph, port_of(static_cast<std::uint32_t>(Leaves) + step, 1));
-        matcher.left.with_element(slot_index(matcher.left, step),
-                                  [left_node](std::uint32_t& node) noexcept { node = left_node; });
-        matcher.right.with_element(slot_index(matcher.right, step),
-                                   [right_node](std::uint32_t& node) noexcept { node = right_node; });
+        matcher.left.set(slot_index(matcher.left, step), left_node);
+        matcher.right.set(slot_index(matcher.right, step), right_node);
     }
     return matcher;
 }
@@ -462,8 +461,8 @@ template <class T, std::size_t Agents, std::size_t Wires, std::size_t Leaves, cl
             computed = is_swapped ? left : right;
         }
     }
-    values.value.with_element(slot_index(values.value, slot), [computed](T& held) noexcept { held = computed; });
-    values.is_known.with_element(slot_index(values.is_known, slot), [](bool& is_known) noexcept { is_known = true; });
+    values.value.set(slot_index(values.value, slot), computed);
+    values.is_known.set(slot_index(values.is_known, slot), true);
     return computed;
 }
 
@@ -480,15 +479,14 @@ evaluate_net(net::Net<1, 6, Agents, Wires> const& graph, core::FixedArray<T, Lea
             graph.signature.kinds[net::index_of(graph.agents[net::index_of(wire.left.agent)])];
         bool const is_left_giver = left_kind.port_types[wire.left.port].polarity == net::Polarity::Give;
         net::PortRef const giver = is_left_giver ? wire.left : wire.right;
-        values.giver.with_element(slot_index(values.giver, slot_of(is_left_giver ? wire.right : wire.left)),
-                                  [giver](net::PortRef& held) noexcept { held = giver; });
+        values.giver.set(slot_index(values.giver, slot_of(is_left_giver ? wire.right : wire.left)), giver);
     }
     core::FixedArray<T, Outputs> outputs{};
     std::size_t output = 0;
     for (std::uint32_t agent = 0; agent < Agents; ++agent) {
         if (graph.agents[agent] != result_kind) continue;
         T const result = value_at(graph, leaves, empty, combine, less, values, port_of(agent, 0));
-        outputs.with_element(slot_index(outputs, output), [result](T& held) noexcept { held = result; });
+        outputs.set(slot_index(outputs, output), result);
         ++output;
     }
     return outputs;

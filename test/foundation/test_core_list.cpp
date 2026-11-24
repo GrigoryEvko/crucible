@@ -173,8 +173,7 @@ void test_list_agrees_with_the_model() {
             bool const is_appended = list.append(value).is_ok();
             CRUCIBLE_FATAL_INVARIANT(is_appended == (count < capacity));
             if (is_appended) {
-                model.with_element(Index<capacity>::check(count).expect("the count is below the capacity"),
-                                   [value](std::uint64_t& held) noexcept { held = value; });
+                model.set(Index<capacity>::check(count).expect("the count is below the capacity"), value);
                 ++count;
             }
         } else {

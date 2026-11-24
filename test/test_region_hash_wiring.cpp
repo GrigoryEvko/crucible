@@ -74,23 +74,23 @@ struct Region {
         *out_a.view().get(0).expect("the run holds one output") = vector_meta(extent_a);
         producers_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, OpIndex{first_read}, OpIndex{second_read});
         slots_c = ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{first_read}, SlotId{second_read});
-        ops.with_element(::fixy::index<0>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_a},
-                                              output_slots = slot_a, depth_a](TraceEntry& op_a) mutable noexcept {
+        ops.update(::fixy::index<0>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_a},
+                                        output_slots = slot_a, depth_a](TraceEntry& op_a) mutable noexcept {
             op_a.schema_hash = SchemaHash{0xA};
             op_a.set_outputs(outputs, output_slots);
             op_a.depth = depth_a;
         });
-        ops.with_element(::fixy::index<1>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_b},
-                                              output_slots = slot_b](TraceEntry& op_b) mutable noexcept {
+        ops.update(::fixy::index<1>(), [outputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{out_b},
+                                        output_slots = slot_b](TraceEntry& op_b) mutable noexcept {
             op_b.schema_hash = SchemaHash{0xB};
             op_b.set_outputs(outputs, output_slots);
         });
-        ops.with_element(::fixy::index<2>(),
-                         [inputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{in_c},
-                          producers = producers_c, input_slots = slots_c](TraceEntry& op_c) mutable noexcept {
-                             op_c.schema_hash = SchemaHash{0xC};
-                             op_c.set_inputs(inputs, producers, input_slots);
-                         });
+        ops.update(::fixy::index<2>(),
+                   [inputs = ::fixy::ArenaRun<TensorMeta const, crucible::DagArena>{in_c}, producers = producers_c,
+                    input_slots = slots_c](TraceEntry& op_c) mutable noexcept {
+                       op_c.schema_hash = SchemaHash{0xC};
+                       op_c.set_inputs(inputs, producers, input_slots);
+                   });
     }
 
     Region(const Region&) = delete("the ops of a region point into its arrays");

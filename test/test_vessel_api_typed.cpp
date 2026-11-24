@@ -274,13 +274,13 @@ void test_data_ptr_typed() {
     const CrucibleMeta& second = arr.at(::fixy::index<1>());
     const CrucibleMeta& third = arr.at(::fixy::index<2>());
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the case writes the data pointers of the CrucibleMeta records of vessel_api.h")
-    arr.with_element(::fixy::index<0>(), [](CrucibleMeta& record) noexcept {
+    arr.update(::fixy::index<0>(), [](CrucibleMeta& record) noexcept {
         record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
     });
-    arr.with_element(::fixy::index<1>(), [](CrucibleMeta& record) noexcept {
+    arr.update(::fixy::index<1>(), [](CrucibleMeta& record) noexcept {
         record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
     });
-    arr.with_element(::fixy::index<2>(), [](CrucibleMeta& record) noexcept {
+    arr.update(::fixy::index<2>(), [](CrucibleMeta& record) noexcept {
         record.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
     });
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
@@ -338,9 +338,9 @@ template <std::size_t Count>
 void test_ffi_records_copy() {
     // Each record has a different rank, which names it.
     ::fixy::FixedArray<CrucibleMeta, 3> sources{};
-    sources.with_element(::fixy::index<0>(), [](CrucibleMeta& source) noexcept { source.ndim = 1; });
-    sources.with_element(::fixy::index<1>(), [](CrucibleMeta& source) noexcept { source.ndim = 2; });
-    sources.with_element(::fixy::index<2>(), [](CrucibleMeta& source) noexcept { source.ndim = 3; });
+    sources.update(::fixy::index<0>(), [](CrucibleMeta& source) noexcept { source.ndim = 1; });
+    sources.update(::fixy::index<1>(), [](CrucibleMeta& source) noexcept { source.ndim = 2; });
+    sources.update(::fixy::index<2>(), [](CrucibleMeta& source) noexcept { source.ndim = 3; });
     const TypedMeta typed = typed_records(&sources.at(::fixy::index<0>()), 3);
 
     ::fixy::FixedArray<crucible::TensorMeta, 3> slots{};
@@ -366,8 +366,8 @@ void test_ffi_records_read_the_c_records() {
     written.storage_nbytes = 444;
     written.grad_fn_hash = 0xABC2U;
     ::fixy::FixedArray<CrucibleMeta, 2> callers{};
-    callers.with_element(::fixy::index<0>(), [written](CrucibleMeta& caller) noexcept { caller = written; });
-    callers.with_element(::fixy::index<1>(), [written](CrucibleMeta& caller) noexcept { caller = written; });
+    callers.set(::fixy::index<0>(), written);
+    callers.set(::fixy::index<1>(), written);
 
     // The View of the records borrows the slots, so the reads stay in the
     // frame of the slots.
@@ -502,7 +502,7 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
             ++rank;
         }
     });
-    sources.with_element(::fixy::index<5>(), [](CrucibleMeta& source) noexcept { source.requires_grad = 2; });
+    sources.update(::fixy::index<5>(), [](CrucibleMeta& source) noexcept { source.requires_grad = 2; });
     const CrucibleMeta& first = sources.at(::fixy::index<0>());
     const CrucibleMeta& fourth = sources.at(::fixy::index<3>());
     const auto typed_at = [](const CrucibleMeta& record, uint32_t count) noexcept {

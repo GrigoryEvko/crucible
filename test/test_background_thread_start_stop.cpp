@@ -84,7 +84,7 @@ QueuedHashes queued_hashes(BackgroundThread& bt) {
                 queue.at(stage, age).expect("a queued slot holds a region")->content_hash;
             ::fixy::Index<QueuedHashes::size()> const position =
                 ::fixy::Index<QueuedHashes::size()>::check(age).expect("the queue holds at most its default capacity");
-            hashes.with_element(position, [hash](crucible::ContentHash& held) noexcept { held = hash; });
+            hashes.set(position, hash);
         }
     });
     return hashes;

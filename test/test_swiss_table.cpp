@@ -89,7 +89,7 @@ static void test_group_match_empty() {
     // No empty slot: every byte is set to a non-empty tag.
     for (const auto index : ctrl.indices()) {
         int8_t const tag = static_cast<int8_t>(index.raw() & 0x7F);
-        ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
+        ctrl.set(index, tag);
     }
     g = CtrlGroup::load(ctrl.view());
     CRUCIBLE_TEST_ASSERT(kTest, !static_cast<bool>(g.match_empty()));
@@ -101,7 +101,7 @@ static void test_group_match_tag() {
     // Sparse pattern: set tag 0x42 at every 3rd position, empty elsewhere.
     for (const auto index : ctrl.indices()) {
         int8_t const tag = (index.raw() % 3 == 0) ? int8_t{0x42} : kEmpty;
-        ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
+        ctrl.set(index, tag);
     }
     auto g = CtrlGroup::load(ctrl.view());
     auto hits = g.match(0x42);
@@ -128,7 +128,7 @@ static void test_match_single_position() {
         alignas(64)::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         for (const auto index : ctrl.indices()) {
             int8_t const tag = (index.raw() == pos) ? int8_t{0x3A} : kEmpty;
-            ctrl.with_element(index, [tag](int8_t& element) noexcept { element = tag; });
+            ctrl.set(index, tag);
         }
         auto g = CtrlGroup::load(ctrl.view());
         auto hits = g.match(0x3A);

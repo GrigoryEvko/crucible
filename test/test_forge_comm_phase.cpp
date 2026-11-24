@@ -74,7 +74,7 @@ crucible::NumericalRecipe recipe(crucible::ReductionDeterminism det) {
     ::foundation::core::FixedArray<crucible::cog::CogIdentity, 4> out{};
     for (auto const index : out.indices()) {
         crucible::cog::Uuid const uuid{7, index.raw() + 1};
-        out.with_element(index, [uuid](crucible::cog::CogIdentity& peer) noexcept {
+        out.update(index, [uuid](crucible::cog::CogIdentity& peer) noexcept {
             peer.uuid = uuid;
             peer.kind = crucible::cog::CogKind::Gpu;
         });

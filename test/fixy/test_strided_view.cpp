@@ -47,7 +47,7 @@ using SharedView = ::fixy::StridedView<std::uint32_t const>;
     Run run{};
     for (::fixy::Index<kRun> const position : run.indices()) {
         std::uint32_t const value = static_cast<std::uint32_t>(position.raw());
-        run.with_element(position, [value](std::uint32_t& held) noexcept { held = value; });
+        run.set(position, value);
     }
     return run;
 }
@@ -59,8 +59,7 @@ using SharedView = ::fixy::StridedView<std::uint32_t const>;
 
 // Writes value into the lane of an axis below the lane count.
 void set_lane(Lanes& lanes, std::size_t axis, std::size_t value) noexcept {
-    lanes.with_element(::fixy::Index<kLanes>::check(axis).expect("an axis is below the lane count"),
-                       [value](std::size_t& held) noexcept { held = value; });
+    lanes.set(::fixy::Index<kLanes>::check(axis).expect("an axis is below the lane count"), value);
 }
 
 // The offsets of the visits of a walk, in order.
@@ -71,9 +70,8 @@ struct Sequence {
 
 void push(Sequence& sequence, std::size_t offset) noexcept {
     std::uint32_t const value = static_cast<std::uint32_t>(offset);
-    sequence.offsets.with_element(
-        ::fixy::Index<kMaxCount>::check(sequence.count).expect("a sequence holds at most kMaxCount offsets"),
-        [value](std::uint32_t& held) noexcept { held = value; });
+    sequence.offsets.set(
+        ::fixy::Index<kMaxCount>::check(sequence.count).expect("a sequence holds at most kMaxCount offsets"), value);
     ++sequence.count;
 }
 
@@ -241,8 +239,7 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
     std::size_t visits = 0;
     bool const is_walked = ::fixy::walk(
                                [&order, &visits](int const& element) noexcept {
-                                   order.with_element(::fixy::Index<12>::check(visits).expect("twelve elements"),
-                                                      [element](int& held) noexcept { held = element; });
+                                   order.set(::fixy::Index<12>::check(visits).expect("twelve elements"), element);
                                    ++visits;
                                },
                                ::fixy::StridedView<int const, 2>{columns})
@@ -278,10 +275,8 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
     for (std::size_t position = 0; position < 16; ++position) {
         int const left_value = static_cast<int>(position);
         int const right_value = static_cast<int>(100 * position);
-        left.with_element(::fixy::Index<16>::check(position).expect("sixteen elements"),
-                          [left_value](int& held) noexcept { held = left_value; });
-        right.with_element(::fixy::Index<16>::check(position).expect("sixteen elements"),
-                           [right_value](int& held) noexcept { held = right_value; });
+        left.set(::fixy::Index<16>::check(position).expect("sixteen elements"), left_value);
+        right.set(::fixy::Index<16>::check(position).expect("sixteen elements"), right_value);
     }
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 4};
     auto const view_of = [&sizes](auto run, std::size_t step) noexcept {
@@ -546,8 +541,7 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
             ::fixy::walk(
                 [&order, &visited](int& sum, int const& first, int const& second) noexcept {
                     sum = first + second;
-                    order.with_element(::fixy::Index<6>::check(visited).expect("six elements"),
-                                       [first](int& held) noexcept { held = first; });
+                    order.set(::fixy::Index<6>::check(visited).expect("six elements"), first);
                     ++visited;
                 },
                 target, lefts, others);

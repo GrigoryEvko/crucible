@@ -1137,9 +1137,9 @@ int main() {
             }
             crucible::ContentHash const stored = cipher.store(
                 store_ctx(), ov, crucible::Cipher::content_addressed(make_test_region(cache_dag_arena, i + 1)));
-            hashes.with_element(::fixy::Index<kStoreCount>::check(i).expect(
-                                    "a test reads an element at or past the count of its array"),
-                                [stored](crucible::ContentHash& held) noexcept { held = stored; });
+            hashes.set(::fixy::Index<kStoreCount>::check(i).expect(
+                           "a test reads an element at or past the count of its array"),
+                       stored);
             CRUCIBLE_TEST_ASSERT(kTest, static_cast<bool>(stored));
         }
         for (const crucible::ContentHash hash : hashes) {

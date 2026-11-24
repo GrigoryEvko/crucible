@@ -208,7 +208,7 @@ public:
     Entry& operator=(Entry const&) = delete("an entry ends one time, so it has one owner");
     ~Entry() {
         for (auto const slot : fixy::Index<kLogCapacity>::check(end_count)) {
-            end_log.with_element(slot, [label = label_](std::uint64_t& held) noexcept { held = label; });
+            end_log.set(slot, label_);
         }
         ++end_count;
     }
@@ -372,7 +372,7 @@ struct ParcelDrain {
             bool is_known_producer = false;
             for (auto const producer : fixy::Index<kProducers>::check(label >> 32)) {
                 if (next_place.at(producer) != place) ++count.out_of_order;
-                next_place.with_element(producer, [place](std::uint64_t& expected) noexcept { expected = place + 1; });
+                next_place.set(producer, place + 1);
                 is_known_producer = true;
             }
             if (!is_known_producer) ++count.out_of_order;

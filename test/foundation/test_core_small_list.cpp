@@ -342,8 +342,7 @@ void test_list_agrees_with_the_model() {
                         capacity = capacity * 2 < maximum ? capacity * 2 : maximum;
                         ++expected_takes;
                     }
-                    model.with_element(Index<maximum>::check(count).expect("the count is below the maximum"),
-                                       [value](std::uint64_t& held) noexcept { held = value; });
+                    model.set(Index<maximum>::check(count).expect("the count is below the maximum"), value);
                     ++count;
                 }
             } else if (choice < 15) {

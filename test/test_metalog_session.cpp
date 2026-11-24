@@ -175,9 +175,8 @@ void test_permissioned_bulk_drain() {
             ::fixy::FixedArray<::crucible::TensorMeta, 3> drained{};
             std::size_t next = 0;
             const std::uint32_t count = consumer.drain([&](const ::crucible::TensorMeta& meta) {
-                drained.with_element(
-                    ::fixy::Index<3>::check(next++).expect("the drain gives at most the appended records"),
-                    [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+                drained.set(::fixy::Index<3>::check(next++).expect("the drain gives at most the appended records"),
+                            meta);
             });
 
             CRUCIBLE_TEST_ASSERT(kTest, count == records.size());
@@ -242,9 +241,8 @@ void test_partial_drain() {
             std::size_t next = 0;
             const std::uint32_t drained_count = consumer.drain(
                 [&](const ::crucible::TensorMeta& meta) {
-                    first_three.with_element(
-                        ::fixy::Index<3>::check(next++).expect("the drain gives at most its limit of records"),
-                        [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+                    first_three.set(
+                        ::fixy::Index<3>::check(next++).expect("the drain gives at most its limit of records"), meta);
                 },
                 /*max_items=*/3);
             CRUCIBLE_TEST_ASSERT(kTest, drained_count == 3);
@@ -261,8 +259,7 @@ void test_partial_drain() {
             ::fixy::FixedArray<::crucible::TensorMeta, 2> rest{};
             std::size_t rest_next = 0;
             const std::uint32_t remaining = consumer.drain([&](const ::crucible::TensorMeta& meta) {
-                rest.with_element(::fixy::Index<2>::check(rest_next++).expect("the drain gives the records that stay"),
-                                  [meta](::crucible::TensorMeta& element) noexcept { element = meta; });
+                rest.set(::fixy::Index<2>::check(rest_next++).expect("the drain gives the records that stay"), meta);
             });
             CRUCIBLE_TEST_ASSERT(kTest, remaining == 2);
             CRUCIBLE_TEST_ASSERT(kTest, same_meta(rest.at(::fixy::index<0>()), source.at(::fixy::index<3>())));

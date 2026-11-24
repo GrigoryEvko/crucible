@@ -220,7 +220,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     const auto producers = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
     const auto slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.with_element(::fixy::index<0>(), [&metas, &producers, &slot_ids](crucible::TraceEntry& op) noexcept {
+    ops.update(::fixy::index<0>(), [&metas, &producers, &slot_ids](crucible::TraceEntry& op) noexcept {
         op.schema_hash = crucible::SchemaHash{42};
         op.set_inputs(metas, producers, slot_ids);
     });
@@ -237,7 +237,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     const crucible::ScalarSlotKinds kinds =
         crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.with_element(::fixy::index<0>(), [&scalars, kinds](crucible::TraceEntry& op) noexcept {
+    ops.update(::fixy::index<0>(), [&scalars, kinds](crucible::TraceEntry& op) noexcept {
         op.schema_hash = crucible::SchemaHash{42};
         op.set_scalar_args(scalars);
         op.scalar_kinds = kinds;
@@ -297,8 +297,8 @@ void test_content_hash_reads_no_data_value() {
 [[nodiscard]] crucible::UncheckedTensorMeta fields_on(crucible::DeviceType type, int8_t index) {
     crucible::UncheckedTensorMeta fields{};
     fields.ndim = 1;
-    fields.sizes.with_element(::fixy::index<0>(), [](int64_t& element) noexcept { element = 4; });
-    fields.strides.with_element(::fixy::index<0>(), [](int64_t& element) noexcept { element = 1; });
+    fields.sizes.set(::fixy::index<0>(), 4);
+    fields.strides.set(::fixy::index<0>(), 1);
     fields.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
     fields.device_type = static_cast<int8_t>(type);
     fields.device_idx = index;

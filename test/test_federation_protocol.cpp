@@ -363,9 +363,9 @@ static void test_deserialize_rejects_version_one() {
     HeaderSpec spec{};
     spec.protocol_version = 1u;
     Bytes<kHeader> buf = header_bytes(spec);
-    buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{0xEF}; });
-    buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{0xBE}; });
-    buf.with_element(index<46>(), [](std::byte& element) noexcept { element = std::byte{0xAD}; });
+    buf.set(index<12>(), std::byte{0xEF});
+    buf.set(index<13>(), std::byte{0xBE});
+    buf.set(index<46>(), std::byte{0xAD});
 
     auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
     ASSERT_TRUE(!view.is_ok());
@@ -381,7 +381,7 @@ static void test_deserialize_rejects_version_one() {
 static void test_deserialize_rejects_kind_and_width() {
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+        buf.set(index<12>(), std::byte{2});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -389,7 +389,7 @@ static void test_deserialize_rejects_kind_and_width() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{0}; });
+        buf.set(index<12>(), std::byte{0});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -398,7 +398,7 @@ static void test_deserialize_rejects_kind_and_width() {
     // A width of 16 bytes is the width that version 1 had in its two words.
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{16}; });
+        buf.set(index<13>(), std::byte{16});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedKeyWidth);
@@ -408,8 +408,8 @@ static void test_deserialize_rejects_kind_and_width() {
     // the fault of the kind.
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{9}; });
-        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{64}; });
+        buf.set(index<12>(), std::byte{9});
+        buf.set(index<13>(), std::byte{64});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::UnsupportedHashKind);
@@ -425,7 +425,7 @@ static void test_deserialize_rejects_kind_and_width() {
 static void test_deserialize_rejects_reserved_nonzero() {
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<46>(), [](std::byte& element) noexcept { element = std::byte{0x01}; });
+        buf.set(index<46>(), std::byte{0x01});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
@@ -433,7 +433,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<47>(), [](std::byte& element) noexcept { element = std::byte{0x80}; });
+        buf.set(index<47>(), std::byte{0x80});
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         ASSERT_TRUE(!view.is_ok());
         CRUCIBLE_TEST_ASSERT(kTest, error_of(view) == fed::FederationError::ReservedNonZero);
@@ -594,7 +594,7 @@ static void test_header_overload_agreement() {
 
     {
         Bytes<kHeader> buf = header_bytes(HeaderSpec{});
-        buf.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{31}; });
+        buf.set(index<13>(), std::byte{31});
         auto h = fed::deserialize_federation_header(buf.view(), 6);
         auto e = fed::deserialize_untrusted_federation_entry(buf.view(), 6);
         CRUCIBLE_TEST_ASSERT(kTest, error_of(h) == error_of(e));
@@ -967,7 +967,7 @@ static void test_one_id_two_keys() {
 static void test_key_and_content_take_part() {
     const auto content = bytes_of(1, 2, 3, 4, 5, 6, 7, 8);
     Bytes<32> other_key_bytes{};
-    other_key_bytes.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    other_key_bytes.set(index<0>(), std::byte{1});
     const fed::FederationHashKey other_hash_key{::fixy::View<std::byte const, 32>{other_key_bytes.view()}};
 
     const fed::FederationKey key = fed::federation_key_of_bytes(test_hash_key(), content.view());

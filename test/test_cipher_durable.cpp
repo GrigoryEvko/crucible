@@ -58,7 +58,7 @@ using Payload = ::fixy::FixedArray<std::byte, kPayloadBytes>;
     Payload pattern{};
     for (::fixy::Index<kPayloadBytes> const index : pattern.indices()) {
         std::byte const value{static_cast<std::uint8_t>((index.raw() * 7u + salt) & 0xFFu)};
-        pattern.with_element(index, [value](std::byte& element) noexcept { element = value; });
+        pattern.set(index, value);
     }
     return pattern;
 }

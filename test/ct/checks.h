@@ -142,15 +142,12 @@ void check_eq_length(::fixy::check::Tally& tally) noexcept {
         Bytes b{};
         for (::fixy::Index<N> const index : a.indices()) {
             auto const value = static_cast<std::byte>(opaque(static_cast<unsigned>(index.raw() * 37u + 11u)));
-            a.with_element(index, [value](std::byte& element) noexcept { element = value; });
-            std::byte const copied = a.at(index);
-            b.with_element(index, [copied](std::byte& element) noexcept { element = copied; });
+            a.set(index, value);
+            b.set(index, a.at(index));
         }
         ::fixy::Index<N>::check(diff_at).match(
             [&b](::fixy::Index<N> const at) noexcept {
-                b.with_element(at, [](std::byte& element) noexcept {
-                    element = static_cast<std::byte>(static_cast<unsigned char>(element) ^ 0x40u);
-                });
+                b.set(at, static_cast<std::byte>(static_cast<unsigned char>(b.at(at)) ^ 0x40u));
             },
             [] noexcept {});
         make_secret(a);

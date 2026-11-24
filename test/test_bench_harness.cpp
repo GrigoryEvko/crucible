@@ -368,9 +368,9 @@ void test_snapshot_subtract() {
         Snapshot post{};
         for (Slot const i : Slots{}) {
             std::uint64_t const before = i.raw() * 10u;
-            pre.counters.with_element(i, [before](std::uint64_t& counter) noexcept { counter = before; });
+            pre.counters.set(i, before);
             std::uint64_t const after = pre.counters.at(i) + i.raw() + 1u;
-            post.counters.with_element(i, [after](std::uint64_t& counter) noexcept { counter = after; });
+            post.counters.set(i, after);
         }
         const Snapshot d = post - pre;
         for (Slot const i : Slots{}) {
@@ -384,14 +384,14 @@ void test_snapshot_subtract() {
         Snapshot pre{};
         Snapshot post{};
         for (Slot const i : Slots{}) {
-            pre.counters.with_element(i, [](std::uint64_t& counter) noexcept { counter = 100u; });
-            post.counters.with_element(i, [](std::uint64_t& counter) noexcept { counter = 150u; });
+            pre.counters.set(i, 100u);
+            post.counters.set(i, 150u);
         }
         // A slot in the middle rather than at either end, so that an
         // off-by-one in the clamp cannot be mistaken for correct.
         constexpr Slot k = ::fixy::index<17>();
-        pre.counters.with_element(k, [](std::uint64_t& counter) noexcept { counter = 200u; });
-        post.counters.with_element(k, [](std::uint64_t& counter) noexcept { counter = 50u; });
+        pre.counters.set(k, 200u);
+        post.counters.set(k, 50u);
 
         const Snapshot d = post - pre;
         for (Slot const i : Slots{}) {
@@ -408,8 +408,8 @@ void test_snapshot_subtract() {
         Snapshot pre{};
         Snapshot post{};
         for (Slot const i : Slots{}) {
-            pre.counters.with_element(i, [](std::uint64_t& counter) noexcept { counter = UINT64_MAX; });
-            post.counters.with_element(i, [](std::uint64_t& counter) noexcept { counter = 0u; });
+            pre.counters.set(i, UINT64_MAX);
+            post.counters.set(i, 0u);
         }
         const Snapshot d = post - pre;
         for (Slot const i : Slots{}) {
@@ -428,10 +428,8 @@ void test_snapshot_subtract() {
 
     {
         Snapshot s{};
-        s.counters.with_element(::fixy::index<::crucible::perf::SCHED_CTX_VOL>(),
-                                [](std::uint64_t& counter) noexcept { counter = 12345u; });
-        s.counters.with_element(::fixy::index<::crucible::perf::MEM_PAGE_FAULTS_MIN>(),
-                                [](std::uint64_t& counter) noexcept { counter = 67u; });
+        s.counters.set(::fixy::index<::crucible::perf::SCHED_CTX_VOL>(), 12345u);
+        s.counters.set(::fixy::index<::crucible::perf::MEM_PAGE_FAULTS_MIN>(), 67u);
         CHECK(s[::crucible::perf::SCHED_CTX_VOL] == 12345u);
         CHECK(s[::crucible::perf::MEM_PAGE_FAULTS_MIN] == 67u);
     }
@@ -497,8 +495,7 @@ void test_clobber_array_various_types() {
     // The element type a benchmark's timestamp buffer actually uses.
     ::fixy::FixedArray<std::uint64_t, 8> cycles{};
     for (::fixy::Index<8> const index : cycles.indices()) {
-        std::uint64_t const value = index.raw() * 100;
-        cycles.with_element(index, [value](std::uint64_t& cycle) noexcept { cycle = value; });
+        cycles.set(index, index.raw() * 100);
     }
     bench::clobber_array(cycles.view());
     for (::fixy::Index<8> const index : cycles.indices()) {
@@ -618,7 +615,7 @@ void test_sink_keeps_each_value() {
 
     ::fixy::FixedArray<std::uint64_t, 64> words{};
     for (::fixy::Index<64> const index : words.indices())
-        words.with_element(index, [index](std::uint64_t& element) noexcept { element = index.raw() * 3; });
+        words.set(index, index.raw() * 3);
     bench::do_not_optimize(words);
     ::fixy::FixedArray<std::uint64_t, 64> const& read = words;
     bench::do_not_optimize(read);

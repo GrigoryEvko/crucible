@@ -57,7 +57,7 @@ int main() {
     PayloadBytes payload{};
     for (auto index : payload.indices()) {
         auto const value = static_cast<std::byte>((index.raw() * 17U + 3U) & 0xFFU);
-        payload.with_element(index, [value](std::byte& element) noexcept { element = value; });
+        payload.set(index, value);
     }
 
     std::uint64_t const one_shot = ci::xxhash64(payload.view()).expect("the hash of the payload is not zero").value();
@@ -81,8 +81,7 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, restored_payload.at(::fixy::index<95>()) == payload.at(::fixy::index<95>()));
 
     auto tampered = ci::wrap(payload).expect("the hash of the payload is not zero");
-    tampered.payload.peek_mut().with_element(::fixy::index<5>(),
-                                             [](std::byte& element) noexcept { element = std::byte{0xEE}; });
+    tampered.payload.peek_mut().set(::fixy::index<5>(), std::byte{0xEE});
     CRUCIBLE_TEST_ASSERT(kTest, unwrap_error(std::move(tampered)).expect("the unwrap refuses a changed payload")
                                     == ci::IntegrityError::HashMismatch);
 

@@ -198,9 +198,9 @@ inline constexpr std::size_t kRunCount = 61;
     FixedArray<View<float const>, kRuns> runs{};
     for (std::size_t run = 0; run < kRuns; ++run) {
         View<float const> const window = elements.window(run * kRunCount, kRunCount).expect("the run fits");
-        runs.with_element(::foundation::core::Index<kRuns>::check(run).expect(
-                              "a test reads an element at or past the count of its array"),
-                          [window](View<float const>& cell) noexcept { cell = window; });
+        runs.set(::foundation::core::Index<kRuns>::check(run).expect(
+                     "a test reads an element at or past the count of its array"),
+                 window);
     }
     std::uint64_t digest = kFnvOffset;
     for (std::size_t first_runs = 1; first_runs <= kRuns; ++first_runs) {

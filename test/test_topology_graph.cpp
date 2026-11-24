@@ -139,15 +139,15 @@ static void test_mint_topology_graph_round_trip() {
     // four edges come from.
     using ::fixy::index;
     ::foundation::core::FixedArray<cog::CogIdentity, 3> nodes{};
-    nodes.with_element(index<0>(), [](cog::CogIdentity& node) noexcept {
+    nodes.update(index<0>(), [](cog::CogIdentity& node) noexcept {
         node.uuid = cog::Uuid{0x1ULL, 0x1ULL};
         node.kind = cog::CogKind::Gpu;
     });
-    nodes.with_element(index<1>(), [](cog::CogIdentity& node) noexcept {
+    nodes.update(index<1>(), [](cog::CogIdentity& node) noexcept {
         node.uuid = cog::Uuid{0x2ULL, 0x2ULL};
         node.kind = cog::CogKind::NicPort;
     });
-    nodes.with_element(index<2>(), [](cog::CogIdentity& node) noexcept {
+    nodes.update(index<2>(), [](cog::CogIdentity& node) noexcept {
         node.uuid = cog::Uuid{0x3ULL, 0x3ULL};
         node.kind = cog::CogKind::NvSwitch;
     });
@@ -155,26 +155,26 @@ static void test_mint_topology_graph_round_trip() {
     ::foundation::core::FixedArray<topology::TopologyEdge, 4> edges{};
     auto const bandwidth =
         ::fixy::mint_tagged<::fixy::tags::source::Calibrated>(std::uint64_t{32} * 1024 * 1024 * 1024);
-    edges.with_element(index<0>(), [bandwidth](topology::TopologyEdge& edge) noexcept {
+    edges.update(index<0>(), [bandwidth](topology::TopologyEdge& edge) noexcept {
         edge.id = topology::EdgeId{0};
         edge.kind = topology::LinkKind::PciE;
         edge.peer = topology::NodeId{1};
         edge.bandwidth_bytes_per_sec = bandwidth;
     });
 
-    edges.with_element(index<1>(), [](topology::TopologyEdge& edge) noexcept {
+    edges.update(index<1>(), [](topology::TopologyEdge& edge) noexcept {
         edge.id = topology::EdgeId{1};
         edge.kind = topology::LinkKind::PciE;
         edge.peer = topology::NodeId{0};  // reverse half-edge
     });
 
-    edges.with_element(index<2>(), [](topology::TopologyEdge& edge) noexcept {
+    edges.update(index<2>(), [](topology::TopologyEdge& edge) noexcept {
         edge.id = topology::EdgeId{2};
         edge.kind = topology::LinkKind::Ethernet;
         edge.peer = topology::NodeId{2};
     });
 
-    edges.with_element(index<3>(), [](topology::TopologyEdge& edge) noexcept {
+    edges.update(index<3>(), [](topology::TopologyEdge& edge) noexcept {
         edge.id = topology::EdgeId{3};
         edge.kind = topology::LinkKind::Ethernet;
         edge.peer = topology::NodeId{1};

@@ -115,7 +115,7 @@ template <class Policy, class Consumer, typename... PopTag>
         Item const expected = next.at(lane);
         result.is_ordered = result.is_ordered && (value >> 1) == expected;
         result.is_in_turn = result.is_in_turn && value == result.count;
-        next.with_element(lane, [](Item& held) noexcept { ++held; });
+        next.set(lane, next.at(lane) + 1);
         ++result.count;
     }
     return result;

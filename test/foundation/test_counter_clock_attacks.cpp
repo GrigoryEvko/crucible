@@ -366,9 +366,7 @@ void attack_clock_against_the_causal_order() {
 
     // Record that the event before precedes the event after.
     auto mark_precedes = [&precedes](Event const before, Event const after) noexcept {
-        precedes.with_element(before, [after](::fixy::FixedArray<bool, kEvents>& row) noexcept {
-            row.with_element(after, [](bool& element) noexcept { element = true; });
-        });
+        precedes.update(before, [after](::fixy::FixedArray<bool, kEvents>& row) noexcept { row.set(after, true); });
     };
 
     std::uint64_t state = g_seed * 0x9E3779B97F4A7C15ULL + 1;
@@ -390,9 +388,9 @@ void attack_clock_against_the_causal_order() {
                 Message const& message = mailbox.at(m);
                 if (message.in_flight && message.to == p.raw()) {
                     HB::element_type const merged = HB::causal_merge(now.at(p), message.clock, p.raw());
-                    now.with_element(p, [merged](HB::element_type& clock) noexcept { clock = merged; });
+                    now.set(p, merged);
                     mark_precedes(event_at(message.send_event), e);
-                    mailbox.with_element(m, [](Message& held) noexcept { held.in_flight = false; });
+                    mailbox.update(m, [](Message& held) noexcept { held.in_flight = false; });
                     received = true;
                     ++receive_count;
                     break;
@@ -401,19 +399,18 @@ void attack_clock_against_the_causal_order() {
         }
         if (!received) {
             HB::element_type const advanced = HB::successor_at(now.at(p), p.raw());
-            now.with_element(p, [advanced](HB::element_type& clock) noexcept { clock = advanced; });
+            now.set(p, advanced);
         }
 
         // A send is a local event whose clock travels with the message.
         if (kind == 1) {
             std::size_t const to = (p.raw() + 1 + next_random() % (kProcesses - 1)) % kProcesses;
             Event const slot = event_at(mailbox_used++);
-            mailbox.with_element(
-                slot, [sent = Message{now.at(p), e.raw(), to, true}](Message& held) noexcept { held = sent; });
+            mailbox.set(slot, Message{now.at(p), e.raw(), to, true});
         }
-        clock_of.with_element(e, [clock = now.at(p)](HB::element_type& held) noexcept { held = clock; });
-        last_event.with_element(p, [event = e.raw()](std::size_t& held) noexcept { held = event; });
-        has_event.with_element(p, [](bool& held) noexcept { held = true; });
+        clock_of.set(e, now.at(p));
+        last_event.set(p, e.raw());
+        has_event.set(p, true);
     }
 
     for (Event const k : Events{}) {

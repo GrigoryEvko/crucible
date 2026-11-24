@@ -144,9 +144,9 @@ using Record = ::foundation::core::FixedArray<std::byte, s::session_event_size>;
 
 constexpr Record with_byte(Record bytes, std::size_t offset, std::uint8_t value) {
     std::byte const written = static_cast<std::byte>(value);
-    bytes.with_element(
+    bytes.set(
         ::foundation::core::Index<s::session_event_size>::check(offset).expect("the offset lies inside the record"),
-        [written](std::byte& held) noexcept { held = written; });
+        written);
     return bytes;
 }
 
@@ -209,8 +209,7 @@ int check_log_decode() {
     std::size_t position = 0;
     for (const auto& bytes : {kSendBytes, kCloseBytes, kStopBytes}) {
         for (const std::byte byte : bytes) {
-            block.with_element(BlockIndex::check(position).expect("the block holds three records"),
-                               [byte](std::byte& held) noexcept { held = byte; });
+            block.set(BlockIndex::check(position).expect("the block holds three records"), byte);
             ++position;
         }
     }
@@ -226,8 +225,7 @@ int check_log_decode() {
     if (short_block.is_ok() || short_block.err().expect("the block is short").index != 2)
         return fail("a truncated block did not name its last record");
 
-    block.with_element(BlockIndex::check(72 + kOpOffset).expect("the offset is inside the block"),
-                       [](std::byte& held) noexcept { held = std::byte{0}; });
+    block.set(BlockIndex::check(72 + kOpOffset).expect("the offset is inside the block"), std::byte{0});
     const auto corrupt = s::decode_session_log(alloc, block.view());
     if (corrupt.is_ok() || corrupt.err().expect("the block is corrupt").index != 1
         || corrupt.err().expect("the block is corrupt").error != s::EventDecodeError::UnknownOperation)

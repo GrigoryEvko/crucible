@@ -18,9 +18,7 @@ int main() {
     ::foundation::core::FixedArray<int, 2> limits{};
     ::foundation::core::FixedArray<int, 2> const& read_limits = limits;
     auto body = [reads = read_limits.view()]() noexcept { return reads.size(); };
-    auto continuation = [&limits]() noexcept {
-        limits.with_element(::foundation::core::index<0>(), [](int& limit) noexcept { limit = 6; });
-    };
+    auto continuation = [&limits]() noexcept { limits.set(::foundation::core::index<0>(), 6); };
     [[maybe_unused]] auto started =
         ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(body), continuation);
     return 0;

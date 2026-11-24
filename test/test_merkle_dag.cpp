@@ -346,10 +346,10 @@ template <class Fake>
         CRUCIBLE_TEST_ASSERT(kTest, !recipe_strict.hash.is_sentinel());
 
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> recipe_ops{};
-        recipe_ops.with_element(::fixy::index<0>(),
-                                [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xDEAD}; });
-        recipe_ops.with_element(::fixy::index<1>(),
-                                [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
+        recipe_ops.update(::fixy::index<0>(),
+                          [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xDEAD}; });
+        recipe_ops.update(::fixy::index<1>(),
+                          [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
         const ::fixy::View<const crucible::TraceEntry> ops_span = recipe_ops.view();
 
         const ContentHash h_null = crucible::compute_content_hash(ops_span);
@@ -366,10 +366,10 @@ template <class Fake>
         // The recipe contribution is additive: ops still disambiguate
         // under a fixed recipe.
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> alt_recipe_ops{};
-        alt_recipe_ops.with_element(::fixy::index<0>(),
-                                    [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xFACE}; });
-        alt_recipe_ops.with_element(::fixy::index<1>(),
-                                    [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
+        alt_recipe_ops.update(::fixy::index<0>(),
+                              [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xFACE}; });
+        alt_recipe_ops.update(::fixy::index<1>(),
+                              [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xBEEF}; });
         const ::fixy::View<const crucible::TraceEntry> alt_ops_span = alt_recipe_ops.view();
         const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, recipe_tc);
         CRUCIBLE_TEST_ASSERT(kTest, h_alt_tc != h_tc);
@@ -747,10 +747,10 @@ template <class Fake>
     // producer from reaching the first case by saying nothing at all.
     {
         ::foundation::core::FixedArray<crucible::TraceEntry, 2> numerics_ops{};
-        numerics_ops.with_element(::fixy::index<0>(),
-                                  [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC01}; });
-        numerics_ops.with_element(::fixy::index<1>(),
-                                  [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC02}; });
+        numerics_ops.update(::fixy::index<0>(),
+                            [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC01}; });
+        numerics_ops.update(::fixy::index<1>(),
+                            [](crucible::TraceEntry& op) noexcept { op.schema_hash = SchemaHash{0xAC02}; });
         const ::fixy::View<const crucible::TraceEntry> numerics_sp = numerics_ops.view();
 
         constexpr auto unordered = crucible::hashed(crucible::NumericalRecipe{

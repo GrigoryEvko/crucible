@@ -92,7 +92,7 @@ template <class T, core::ScanKind Kind>
         core::FixedArray<T, 5> sums{};
         for (std::size_t grain = 0; grain < 4; ++grain) {
             T const element = slot_at(heads, grain);
-            sums.with_element(slot_index(sums, grain), [element](T& held) noexcept { held = element; });
+            sums.set(slot_index(sums, grain), element);
         }
         core::FixedArray<T, 5> carries{};
         bool is_written = carries.with_mut([&sums](auto out) noexcept {

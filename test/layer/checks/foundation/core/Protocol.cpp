@@ -113,7 +113,7 @@ static_assert(writes_the_image());
     bool const is_back = decode<Leaves>(read.view())
                              .match([&leaves](Leaves back) noexcept { return equal(back, leaves); },
                                     [](DecodeFault) noexcept { return false; });
-    image.with_element(index<3>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+    image.set(index<3>(), std::byte{2});
     bool const is_refused =
         decode<Leaves>(read.view())
             .match([](Leaves) noexcept { return false; },
@@ -193,7 +193,7 @@ static_assert(Encodable<HoldsPart<Option<Sealed>>> && !Decodable<HoldsPart<Optio
                                     [](DecodeFault) noexcept { return false; });
     bool const has_tags = image.at(index<0>()) == std::byte{1} && image.at(index<5>()) == std::byte{1}
                        && image.at(index<6>()) == std::byte{1} && image.at(index<8>()) == std::byte{1};
-    image.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+    image.set(index<8>(), std::byte{2});
     bool const is_refused =
         decode<HoldsSums>(read.view())
             .match([](HoldsSums) noexcept { return false; },
@@ -235,13 +235,13 @@ static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
     bool const has_counts = image.at(index<0>()) == std::byte{1} && image.at(index<1>()) == std::byte{0x02}
                          && image.at(index<7>()) == std::byte{2} && image.at(index<8>()) == std::byte{0}
                          && image.at(index<9>()) == std::byte{'a'} && image.at(index<11>()) == std::byte{0};
-    image.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{4}; });
+    image.set(index<0>(), std::byte{4});
     bool const is_count_refused =
         decode<HoldsLists>(read.view())
             .match([](HoldsLists) noexcept { return false; },
                    [](DecodeFault fault) noexcept { return fault == DecodeFault{DecodeRefusal::list_count, 0}; });
-    image.with_element(index<0>(), [](std::byte& element) noexcept { element = std::byte{1}; });
-    image.with_element(index<4>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    image.set(index<0>(), std::byte{1});
+    image.set(index<4>(), std::byte{1});
     bool const is_tail_refused =
         decode<HoldsLists>(read.view())
             .match([](HoldsLists) noexcept { return false; },

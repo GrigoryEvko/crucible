@@ -82,10 +82,10 @@ int main() {
     alignas(64)::fixy::FixedArray<std::int8_t, 64> ctrl{};
     for (const auto index : ctrl.indices()) {
         const auto tag = static_cast<std::int8_t>(index.raw() & 0x7F);  // H2 tags 0x00..0x7F
-        ctrl.with_element(index, [tag](std::int8_t& element) noexcept { element = tag; });
+        ctrl.set(index, tag);
     }
     // the sole empty slot
-    ctrl.with_element(::fixy::index<3>(), [](std::int8_t& element) noexcept { element = ::crucible::detail::kEmpty; });
+    ctrl.set(::fixy::index<3>(), ::crucible::detail::kEmpty);
 
     const auto group = ::crucible::detail::CtrlGroup::load(
         ctrl.view().template window<::crucible::detail::group_width()>(0).expect("the first group of the bytes"));

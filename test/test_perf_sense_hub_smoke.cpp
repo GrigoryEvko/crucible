@@ -78,10 +78,8 @@ int main() {
     // rather than wrapping.
     crucible::perf::Snapshot older{};
     crucible::perf::Snapshot newer{};
-    older.counters.with_element(::fixy::index<crucible::perf::FD_CURRENT>(),
-                                [](uint64_t& counter) noexcept { counter = 1024; });
-    newer.counters.with_element(::fixy::index<crucible::perf::FD_CURRENT>(),
-                                [](uint64_t& counter) noexcept { counter = 7; });  // closed FDs
+    older.counters.set(::fixy::index<crucible::perf::FD_CURRENT>(), 1024);
+    newer.counters.set(::fixy::index<crucible::perf::FD_CURRENT>(), 7);  // closed FDs
     auto gauge_delta = newer - older;
     if (gauge_delta[crucible::perf::FD_CURRENT] != 0u) {
         ::fixy::report(::fixy::Sink::Err,
@@ -97,14 +95,10 @@ int main() {
     // both directions breaks here.
     crucible::perf::Snapshot run_pre{};
     crucible::perf::Snapshot run_post{};
-    run_pre.counters.with_element(::fixy::index<crucible::perf::SCHED_CTX_INVOL>(),
-                                  [](uint64_t& counter) noexcept { counter = 1000; });
-    run_post.counters.with_element(::fixy::index<crucible::perf::SCHED_CTX_INVOL>(),
-                                   [](uint64_t& counter) noexcept { counter = 1042; });
-    run_pre.counters.with_element(::fixy::index<crucible::perf::NET_TX_BYTES>(),
-                                  [](uint64_t& counter) noexcept { counter = 8000000; });
-    run_post.counters.with_element(::fixy::index<crucible::perf::NET_TX_BYTES>(),
-                                   [](uint64_t& counter) noexcept { counter = 8000064; });
+    run_pre.counters.set(::fixy::index<crucible::perf::SCHED_CTX_INVOL>(), 1000);
+    run_post.counters.set(::fixy::index<crucible::perf::SCHED_CTX_INVOL>(), 1042);
+    run_pre.counters.set(::fixy::index<crucible::perf::NET_TX_BYTES>(), 8000000);
+    run_post.counters.set(::fixy::index<crucible::perf::NET_TX_BYTES>(), 8000064);
     auto run_delta = run_post - run_pre;
     if (run_delta[crucible::perf::SCHED_CTX_INVOL] != 42u || run_delta[crucible::perf::NET_TX_BYTES] != 64u) {
         ::fixy::report(::fixy::Sink::Err,

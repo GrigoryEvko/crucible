@@ -234,15 +234,12 @@ private:
         std::uint64_t const low_part = low << shift;
         std::uint64_t const middle_part = shift == 0 ? high : (high << shift) | (low >> (64 - shift));
         std::uint64_t const high_part = shift == 0 ? 0 : high >> (64 - shift);
-        part.with_element(
-            ::fixy::Index<3>::check(0).expect("a test reads an element at or past the count of its array"),
-            [low_part](std::uint64_t& held) noexcept { held = low_part; });
-        part.with_element(
-            ::fixy::Index<3>::check(1).expect("a test reads an element at or past the count of its array"),
-            [middle_part](std::uint64_t& held) noexcept { held = middle_part; });
-        part.with_element(
-            ::fixy::Index<3>::check(2).expect("a test reads an element at or past the count of its array"),
-            [high_part](std::uint64_t& held) noexcept { held = high_part; });
+        part.set(::fixy::Index<3>::check(0).expect("a test reads an element at or past the count of its array"),
+                 low_part);
+        part.set(::fixy::Index<3>::check(1).expect("a test reads an element at or past the count of its array"),
+                 middle_part);
+        part.set(::fixy::Index<3>::check(2).expect("a test reads an element at or past the count of its array"),
+                 high_part);
         std::uint64_t carry = 0;
         for (std::size_t word = first; word < words; ++word) {
             std::size_t const offset = word - first;
@@ -255,16 +252,16 @@ private:
                 std::uint64_t const partial = current - value;
                 std::uint64_t const total = partial - carry;
                 carry = (current < value ? 1u : 0u) + (partial < carry ? 1u : 0u);
-                words_.with_element(::fixy::Index<words>::check(word).expect(
-                                        "a test reads an element at or past the count of its array"),
-                                    [total](std::uint64_t& held) noexcept { held = total; });
+                words_.set(::fixy::Index<words>::check(word).expect(
+                               "a test reads an element at or past the count of its array"),
+                           total);
             } else {
                 std::uint64_t const partial = current + value;
                 std::uint64_t const total = partial + carry;
                 carry = (partial < current ? 1u : 0u) + (total < partial ? 1u : 0u);
-                words_.with_element(::fixy::Index<words>::check(word).expect(
-                                        "a test reads an element at or past the count of its array"),
-                                    [total](std::uint64_t& held) noexcept { held = total; });
+                words_.set(::fixy::Index<words>::check(word).expect(
+                               "a test reads an element at or past the count of its array"),
+                           total);
             }
         }
     }

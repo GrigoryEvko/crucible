@@ -68,9 +68,7 @@ public:
     }
 
     // Writes value into the cell at position.
-    void set(::fixy::Index<N> position, T value) noexcept {
-        cells_.with_element(position, [&value](T& cell) noexcept { cell = value; });
-    }
+    void set(::fixy::Index<N> position, T value) noexcept { cells_.set(position, value); }
 
     // The first count cells, for a push.
     [[nodiscard]] ::fixy::View<T const> first(std::size_t count) const noexcept {

@@ -701,7 +701,7 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
     for (const ::fixy::Index<kRunSteps> slot : stamps.indices()) {
         ::fixy::Option<Log::Committed> held = txs.at(slot);
         const uint64_t stamp = facts_of(log, owner, std::move(held).expect("each step holds a transaction")).stamp;
-        stamps.with_element(slot, [stamp](uint64_t& element) noexcept { element = stamp; });
+        stamps.set(slot, stamp);
     }
     return stamps;
 }

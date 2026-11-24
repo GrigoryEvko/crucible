@@ -111,7 +111,7 @@ template <core::FpMode Mode>
     ::fixy::FixedArray<std::uint32_t, kElements> bits{};
     for (::fixy::Index<kElements> const index : output.indices()) {
         std::uint32_t const word = ::fixy::bit_cast<std::uint32_t>(output.at(index));
-        bits.with_element(index, [word](std::uint32_t& held) noexcept { held = word; });
+        bits.set(index, word);
     }
     return bits;
 }

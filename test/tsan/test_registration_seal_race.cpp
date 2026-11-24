@@ -137,16 +137,18 @@ private:
 };
 
 // Keeps the writes of one writer in order and checks that a refusal is final.
+// Gives the flag of each write.
 template <typename Register>
-void run_writer(RoundIndex round, WriterIndex writer, Register&& register_one, WriterFlags& registered) {
+[[nodiscard]] WriterFlags run_writer(RoundIndex round, WriterIndex writer, Register&& register_one) {
+    WriterFlags registered{};
     bool was_refused_before = false;
     for (WriteIndex const index : registered.indices()) {
         const bool was_registered = register_one(hash_of(round, writer, index));
         CRUCIBLE_TEST_ASSERT(kTest, !(was_refused_before && was_registered));
         was_refused_before = was_refused_before || !was_registered;
-        registered.with_element(index,
-                                [was_registered](bool& is_registered) noexcept { is_registered = was_registered; });
+        registered.set(index, was_registered);
     }
+    return registered;
 }
 
 [[nodiscard]] uint32_t count_true(RegisteredFlags const& registered) {
@@ -221,8 +223,25 @@ struct Round {
     uint32_t count_seen_by_reader = 0;
 };
 
+// The ROUND_COUNT rounds of one race.  They are too large for the stack.
 template <typename Race>
-using Rounds = ::fixy::FixedArray<Round<typename Race::Table>, ROUND_COUNT>;
+using Rounds = ::fixy::HeapArray<Round<typename Race::Table>>;
+
+// Each round of a race, built in its place.
+template <typename Race>
+[[nodiscard]] Rounds<Race> make_rounds() {
+    return ::fixy::mint_heap_array_with<Round<typename Race::Table>>(
+        ::foundation::effects::testing::test().alloc, ROUND_COUNT,
+        [](std::size_t) noexcept { return Round<typename Race::Table>{}; });
+}
+
+// Lends the state of a round to body in place.  Six threads share the state:
+// the latch is atomic, and each thread writes its own part.
+template <typename Race, typename Body>
+void with_round(Rounds<Race>& rounds, RoundIndex round, Body&& body) noexcept {
+    rounds.with_element(round.raw(), static_cast<Body&&>(body),
+                        [] noexcept { ::fixy::fatal("each round is an element of the rounds"); });
+}
 
 // The threads of one chain of one table.  Each thread runs the rounds of the
 // chain in order.  A writer or the sealer that ends a round waits at the
@@ -236,10 +255,10 @@ using Rounds = ::fixy::FixedArray<Round<typename Race::Table>, ROUND_COUNT>;
 template <typename Race>
 [[nodiscard]] auto reader_of(Rounds<Race>& rounds, ChainIndex chain) noexcept {
     return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
-        for (RoundIndex const round : rounds.indices()) {
+        for (RoundIndex const round : ::fixy::IndexRange<ROUND_COUNT>{}) {
             if (!is_round_of(round, chain)) continue;
-            // Six threads share the round: the latch is atomic, and the reader writes only count_seen_by_reader.
-            rounds.with_element(round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
+            // The reader writes only count_seen_by_reader.
+            with_round<Race>(rounds, round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
                 state.start.wait(ctx);
                 while (!state.table.is_sealed())
                     CRUCIBLE_SPIN_PAUSE;
@@ -252,10 +271,10 @@ template <typename Race>
 template <typename Race>
 [[nodiscard]] auto sealer_of(Rounds<Race>& rounds, ChainIndex chain) noexcept {
     return [&rounds, chain](::fixy::BgLoadCtx const& ctx) noexcept {
-        for (RoundIndex const round : rounds.indices()) {
+        for (RoundIndex const round : ::fixy::IndexRange<ROUND_COUNT>{}) {
             if (!is_round_of(round, chain)) continue;
-            // Six threads share the round: the latch is atomic, and the sealer writes only the seal and count_at_seal.
-            rounds.with_element(round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
+            // The sealer writes only the seal and count_at_seal.
+            with_round<Race>(rounds, round, [&ctx, round](Round<typename Race::Table>& state) noexcept {
                 state.start.arrive_and_wait(ctx);
                 pause_for(seal_delay_of(round));
                 state.table.seal(kTest);
@@ -268,23 +287,16 @@ template <typename Race>
 template <typename Race>
 [[nodiscard]] auto writer_of(Rounds<Race>& rounds, ChainIndex chain, WriterIndex writer) noexcept {
     return [&rounds, chain, writer](::fixy::BgLoadCtx const& ctx) noexcept {
-        for (RoundIndex const round : rounds.indices()) {
+        for (RoundIndex const round : ::fixy::IndexRange<ROUND_COUNT>{}) {
             if (!is_round_of(round, chain)) continue;
-            // Six threads share the round: the latch is atomic, and a writer writes only its own flags and the table.
-            rounds.with_element(round, [&ctx, round, writer](Round<typename Race::Table>& state) noexcept {
+            // A writer writes only its own flags and the table.
+            with_round<Race>(rounds, round, [&ctx, round, writer](Round<typename Race::Table>& state) noexcept {
                 state.start.arrive_and_wait(ctx);
-                // The four writers share the flags of the round, and each writer writes only its own flags.
                 auto& table = state.table;
                 auto const& view_read = state.view;
-                state.registered.with_element(writer,
-                                              [&table, &view_read, round, writer](WriterFlags& registered) noexcept {
-                                                  run_writer(
-                                                      round, writer,
-                                                      [&table, &view_read](crucible::SchemaHash hash) {
-                                                          return Race::register_one(table, view_read, hash);
-                                                      },
-                                                      registered);
-                                              });
+                state.registered.set(writer, run_writer(round, writer, [&table, &view_read](crucible::SchemaHash hash) {
+                                         return Race::register_one(table, view_read, hash);
+                                     }));
             });
         }
     };
@@ -313,8 +325,8 @@ struct RaceCounts {
 template <typename Race>
 [[nodiscard]] RaceCounts check_rounds(Rounds<Race> const& rounds) {
     RaceCounts counts{};
-    for (RoundIndex const round : rounds.indices()) {
-        auto const& state = rounds.at(round);
+    for (RoundIndex const round : ::fixy::IndexRange<ROUND_COUNT>{}) {
+        auto const& state = *rounds.get(round.raw()).expect("each round is an element of the rounds");
         const uint32_t final_count = state.table.count();
         CRUCIBLE_TEST_ASSERT(kTest, state.count_at_seal == final_count);
         CRUCIBLE_TEST_ASSERT(kTest, state.count_seen_by_reader == final_count);
@@ -337,11 +349,9 @@ template <typename Race>
 
 int main() {
     // The main thread mints each view, so the tables are made before any
-    // thread starts.  They are too large for the stack.
-    ::fixy::Box<Rounds<SchemaRace>> schema_rounds =
-        ::fixy::mint_box<Rounds<SchemaRace>>(::foundation::effects::testing::test().alloc);
-    ::fixy::Box<Rounds<KernelRace>> kernel_rounds =
-        ::fixy::mint_box<Rounds<KernelRace>>(::foundation::effects::testing::test().alloc);
+    // thread starts.
+    Rounds<SchemaRace> schema_rounds = make_rounds<SchemaRace>();
+    Rounds<KernelRace> kernel_rounds = make_rounds<KernelRace>();
 
     // The bodies of the four chains, each of THREAD_COUNT threads.  The door
     // starts each thread before the first round, and it joins each thread
@@ -349,13 +359,13 @@ int main() {
     static_assert(CHAIN_COUNT == 2 && WRITER_COUNT == 4 && THREAD_COUNT == 6,
                   "the bodies below name two chains of each table, each of a reader, a sealer and four writers");
     auto [schema_reader_0, schema_sealer_0, schema_writer_00, schema_writer_01, schema_writer_02, schema_writer_03] =
-        chain_of<SchemaRace>(*schema_rounds, ::fixy::index<0>());
+        chain_of<SchemaRace>(schema_rounds, ::fixy::index<0>());
     auto [schema_reader_1, schema_sealer_1, schema_writer_10, schema_writer_11, schema_writer_12, schema_writer_13] =
-        chain_of<SchemaRace>(*schema_rounds, ::fixy::index<1>());
+        chain_of<SchemaRace>(schema_rounds, ::fixy::index<1>());
     auto [kernel_reader_0, kernel_sealer_0, kernel_writer_00, kernel_writer_01, kernel_writer_02, kernel_writer_03] =
-        chain_of<KernelRace>(*kernel_rounds, ::fixy::index<0>());
+        chain_of<KernelRace>(kernel_rounds, ::fixy::index<0>());
     auto [kernel_reader_1, kernel_sealer_1, kernel_writer_10, kernel_writer_11, kernel_writer_12, kernel_writer_13] =
-        chain_of<KernelRace>(*kernel_rounds, ::fixy::index<1>());
+        chain_of<KernelRace>(kernel_rounds, ::fixy::index<1>());
     ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
     ::fixy::thread::run_joined_raw_probe(
         ctx, kTest, "the race of a registration and the seal shares the rounds of each table on purpose",
@@ -372,8 +382,8 @@ int main() {
 
     // The split between refused and admitted writes depends on the
     // scheduler, so the test reports it and does not assert it.
-    const RaceCounts schema_counts = check_rounds<SchemaRace>(*schema_rounds);
-    const RaceCounts kernel_counts = check_rounds<KernelRace>(*kernel_rounds);
+    const RaceCounts schema_counts = check_rounds<SchemaRace>(schema_rounds);
+    const RaceCounts kernel_counts = check_rounds<KernelRace>(kernel_rounds);
     ::fixy::report(::fixy::Sink::Out,
                    "test_registration_seal_race: {} races, {} with a refused write, {} with an admitted write\n",
                    2 * ROUND_COUNT, schema_counts.with_a_refusal + kernel_counts.with_a_refusal,

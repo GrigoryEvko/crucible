@@ -205,8 +205,7 @@ void pinned_stage(PinConsumer&&, PinProducer&&) noexcept {
     const ::fixy::BgDrainCtx bg{eff::testing::bg()};
     AffinityMask const mask = ::fixy::sched::read_affinity(bg).expect("a thread reads its own affinity mask");
     // Each stage has its own arrival, so no other thread writes this element at the same time.
-    stage_masks.with_element(Index<kStagesOfTwoRuns>::check(arrival).expect("each stage arrives one time"),
-                             [&mask](AffinityMask& held) noexcept { held = mask; });
+    stage_masks.set(Index<kStagesOfTwoRuns>::check(arrival).expect("each stage arrives one time"), mask);
 }
 
 // One run of twelve pinned stages.

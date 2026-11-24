@@ -94,10 +94,8 @@ void test_all_ones() {
     Counters counters{};
     Keys keys{};
     for (::fixy::Index<8> const i : counters.indices()) {
-        counters.with_element(i, [](Counter& element) noexcept {
-            element = Counter{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu};
-        });
-        keys.with_element(i, [](Key& element) noexcept { element = Key{0xFFFFFFFFu, 0xFFFFFFFFu}; });
+        counters.set(i, Counter{0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu});
+        keys.set(i, Key{0xFFFFFFFFu, 0xFFFFFFFFu});
     }
     check_equivalence(counters, keys, "all-ones");
     ::fixy::check::pass(kTest, "  test_all_ones: PASSED\n");
@@ -112,8 +110,8 @@ void test_streaming_counters() {
     constexpr Key shared_key{0xCAFEBABEu, 0xDEADBEEFu};
     for (::fixy::Index<8> const i : counters.indices()) {
         Counter const counter{static_cast<uint32_t>(i.raw()), 0, 0, 0};
-        counters.with_element(i, [counter](Counter& element) noexcept { element = counter; });
-        keys.with_element(i, [shared_key](Key& element) noexcept { element = shared_key; });
+        counters.set(i, counter);
+        keys.set(i, shared_key);
     }
     check_equivalence(counters, keys, "streaming-counters");
     ::fixy::check::pass(kTest, "  test_streaming_counters: PASSED\n");
@@ -127,9 +125,9 @@ void test_heterogeneous_keys() {
     Keys keys{};
     for (::fixy::Index<8> const i : counters.indices()) {
         const uint32_t iu = static_cast<uint32_t>(i.raw());
-        counters.with_element(i, [](Counter& element) noexcept { element = Counter{0x12345678u, 0xAABBCCDDu, 0, 0}; });
+        counters.set(i, Counter{0x12345678u, 0xAABBCCDDu, 0, 0});
         Key const key{0x10000000u + iu * 0x11111111u, 0xFEDCBA98u + iu};
-        keys.with_element(i, [key](Key& element) noexcept { element = key; });
+        keys.set(i, key);
     }
     check_equivalence(counters, keys, "heterogeneous-keys");
     ::fixy::check::pass(kTest, "  test_heterogeneous_keys: PASSED\n");
@@ -176,20 +174,20 @@ void test_per_lane_independence() {
     Counters counters_b{};
     Keys keys{};
 
-    counters_a.with_element(::fixy::index<0>(), [](Counter& element) noexcept { element = Counter{0, 0, 0, 0}; });
+    counters_a.set(::fixy::index<0>(), Counter{0, 0, 0, 0});
     // ← only difference
-    counters_b.with_element(::fixy::index<0>(), [](Counter& element) noexcept { element = Counter{1, 0, 0, 0}; });
-    keys.with_element(::fixy::index<0>(), [](Key& element) noexcept { element = Key{0, 0}; });
+    counters_b.set(::fixy::index<0>(), Counter{1, 0, 0, 0});
+    keys.set(::fixy::index<0>(), Key{0, 0});
 
     for (::fixy::Index<8> const i : counters_a.indices()) {
         if (i.raw() == 0) continue;
         const uint32_t iu = static_cast<uint32_t>(i.raw());
         Counter const counter{iu * 100u, iu * 200u, iu * 300u, iu * 400u};
-        counters_a.with_element(i, [counter](Counter& element) noexcept { element = counter; });
+        counters_a.set(i, counter);
         Counter const copied = counters_a.at(i);  // ← identical for lanes 1-7
-        counters_b.with_element(i, [copied](Counter& element) noexcept { element = copied; });
+        counters_b.set(i, copied);
         Key const key{iu * 11u, iu * 13u};
-        keys.with_element(i, [key](Key& element) noexcept { element = key; });
+        keys.set(i, key);
     }
 
     auto a = batch_of(counters_a, keys);
@@ -222,9 +220,9 @@ void test_known_vector_lane0() {
         if (i.raw() == 0) continue;
         const uint32_t iu = static_cast<uint32_t>(i.raw());
         Counter const counter{0xDEADBEEFu * iu, 0xCAFEBABEu * iu, 0xFEEDFACEu * iu, 0xBADC0DEDu * iu};
-        counters.with_element(i, [counter](Counter& element) noexcept { element = counter; });
+        counters.set(i, counter);
         Key const key{0xA5A5A5A5u * iu, 0x5A5A5A5Au * iu};
-        keys.with_element(i, [key](Key& element) noexcept { element = key; });
+        keys.set(i, key);
     }
 
     auto batch = batch_of(counters, keys);

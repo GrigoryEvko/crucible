@@ -73,9 +73,9 @@ template <std::size_t Count>
     std::size_t position = 0;
     for (char const character : name) {
         std::byte const written = static_cast<std::byte>(static_cast<unsigned char>(character));
-        bytes.with_element(
+        bytes.set(
             ::fixy::Index<Count>::check(position).expect("a test reads an element at or past the count of its array"),
-            [written](std::byte& byte) noexcept { byte = written; });
+            written);
         ++position;
     }
     ::fixy::View<std::byte const> const run = std::as_const(bytes).view();

@@ -101,12 +101,12 @@ struct Work {
         CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
         ::fixy::Index<CAPACITY> const position =
             ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
-        trace.with_element(position, [op](TraceRing::Entry& entry) noexcept {
+        trace.update(position, [op](TraceRing::Entry& entry) noexcept {
             entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
             entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
             entry.num_outputs = 1;
         });
-        meta_starts.with_element(position, [index](MetaIndex& start) noexcept { start = index; });
+        meta_starts.set(position, index);
         ++count;
         return index.raw() + 1;
     }
@@ -117,14 +117,14 @@ struct Work {
         CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         ::fixy::Index<CAPACITY> const position =
             ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
-        trace.with_element(position, [op, first, second](TraceRing::Entry& entry) noexcept {
+        trace.update(position, [op, first, second](TraceRing::Entry& entry) noexcept {
             entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
             entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
             entry.num_scalar_args = 2;
-            entry.scalar_values.with_element(::fixy::index<0>(), [first](int64_t& value) noexcept { value = first; });
-            entry.scalar_values.with_element(::fixy::index<1>(), [second](int64_t& value) noexcept { value = second; });
+            entry.scalar_values.set(::fixy::index<0>(), first);
+            entry.scalar_values.set(::fixy::index<1>(), second);
         });
-        meta_starts.with_element(position, [](MetaIndex& start) noexcept { start = MetaIndex::none(); });
+        meta_starts.set(position, MetaIndex::none());
         ++count;
     }
 
@@ -134,12 +134,12 @@ struct Work {
         CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         ::fixy::Index<CAPACITY> const position =
             ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
-        trace.with_element(position, [op](TraceRing::Entry& entry) noexcept {
+        trace.update(position, [op](TraceRing::Entry& entry) noexcept {
             entry.schema_hash = crucible::SchemaHash{0x7000ULL + op};
             entry.shape_hash = crucible::ShapeHash{0x8000ULL + op};
             entry.num_outputs = 1;
         });
-        meta_starts.with_element(position, [](MetaIndex& start) noexcept { start = MetaIndex::none(); });
+        meta_starts.set(position, MetaIndex::none());
         ++count;
     }
 
@@ -149,12 +149,12 @@ struct Work {
         CRUCIBLE_TEST_ASSERT(kTest, count < CAPACITY);
         ::fixy::Index<CAPACITY> const position =
             ::fixy::Index<CAPACITY>::check(count).expect("a test reads an element at or past the count of its array");
-        trace.with_element(position, [](TraceRing::Entry& entry) noexcept {
+        trace.update(position, [](TraceRing::Entry& entry) noexcept {
             entry.schema_hash = crucible::kUnrecordedNestSchema;
             entry.shape_hash = crucible::ShapeHash{0x8100ULL};
         });
-        meta_starts.with_element(position, [](MetaIndex& start) noexcept { start = MetaIndex::none(); });
-        depths.with_element(position, [depth](crucible::OpDepth& held) noexcept { held = depth; });
+        meta_starts.set(position, MetaIndex::none());
+        depths.set(position, depth);
         ++count;
     }
 };
@@ -273,8 +273,7 @@ void test_unrecorded_nest_refuses_the_build() {
 
     Work raised;
     raised.push_op_with_scalars(0, 1, 2);
-    raised.depths.with_element(::fixy::index<0>(),
-                               [](crucible::OpDepth& depth) noexcept { depth = crucible::OpDepth{1}; });
+    raised.depths.set(::fixy::index<0>(), crucible::OpDepth{1});
     raised.push_closing_entry(crucible::OpDepth{0});
     raised.push_op_with_scalars(1, 3, 4);
     scratch.arena.with_epoch(
@@ -286,8 +285,7 @@ void test_unrecorded_nest_refuses_the_build() {
 
     Work recorded;
     recorded.push_op_with_scalars(0, 1, 2);
-    recorded.depths.with_element(::fixy::index<0>(),
-                                 [](crucible::OpDepth& depth) noexcept { depth = crucible::OpDepth{1}; });
+    recorded.depths.set(::fixy::index<0>(), crucible::OpDepth{1});
     recorded.push_op_with_scalars(1, 3, 4);
     scratch.arena.with_epoch(
         [&recorded, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {

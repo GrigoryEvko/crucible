@@ -150,9 +150,9 @@ void corrupt_event_bytes() {
     for (std::size_t index = 0; index < bytes.size(); ++index) {
         for (unsigned value = 0; value < 256; ++value) {
             auto corrupt = bytes;
-            corrupt.with_element(::foundation::core::Index<s::session_event_size>::check(index).expect(
-                                     "the index lies inside the record"),
-                                 [byte = static_cast<std::byte>(value)](std::byte& held) noexcept { held = byte; });
+            corrupt.set(::foundation::core::Index<s::session_event_size>::check(index).expect(
+                            "the index lies inside the record"),
+                        static_cast<std::byte>(value));
             const auto decoded = s::decode_session_event(corrupt.view());
             if (!decoded) {
                 ++refused;
@@ -170,9 +170,9 @@ void corrupt_event_bytes() {
     ::foundation::core::FixedArray<std::byte, 2 * s::session_event_size - 1> torn{};
     std::size_t position = 0;
     for (const std::byte byte : bytes) {
-        torn.with_element(::foundation::core::Index<2 * s::session_event_size - 1>::check(position).expect(
-                              "the torn block holds the first record"),
-                          [byte](std::byte& held) noexcept { held = byte; });
+        torn.set(::foundation::core::Index<2 * s::session_event_size - 1>::check(position).expect(
+                     "the torn block holds the first record"),
+                 byte);
         ++position;
     }
     const auto torn_log = s::decode_session_log(::foundation::effects::testing::test().alloc, torn.view());

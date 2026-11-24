@@ -334,7 +334,7 @@ struct RoundDrain {
                 if (producer >= producers) ++failures;
                 for (auto const slot : ::fixy::Index<kMpscProducers>::check(static_cast<std::size_t>(producer))) {
                     if (next_of_producer.at(slot) != code % kItemsOfProducer) ++failures;
-                    next_of_producer.with_element(slot, [](int& next) noexcept { ++next; });
+                    next_of_producer.set(slot, next_of_producer.at(slot) + 1);
                 }
                 ++received;
             }

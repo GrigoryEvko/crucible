@@ -162,8 +162,8 @@ int check_each_forged_bit() {
     for (std::size_t bit = 0; bit < fc::sip_tag_bytes * 8; ++bit) {
         SipTag forged = good;
         std::byte const flip = static_cast<std::byte>(1U << (bit % 8));
-        forged.with_element(fc::Index<fc::sip_tag_bytes>::check(bit / 8).expect("a byte of the tag"),
-                            [flip](std::byte& held) noexcept { held ^= flip; });
+        auto const slot = fc::Index<fc::sip_tag_bytes>::check(bit / 8).expect("a byte of the tag");
+        forged.set(slot, forged.at(slot) ^ flip);
         auto [kept, accepted] = sh::verify(std::move(key), longest, forged);
         if (accepted) return 20;
         key = std::move(kept);
@@ -175,7 +175,7 @@ int check_each_forged_bit() {
 // authenticate the message under a different key.
 int check_other_message_and_key() {
     fc::FixedArray<std::byte, kVectorCount> changed = reference_message();
-    changed.with_element(fc::index<0>(), [](std::byte& held) noexcept { held ^= std::byte{1}; });
+    changed.set(fc::index<0>(), changed.at(fc::index<0>()) ^ std::byte{1});
     SipTag const good = expected_tag(kVectorCount - 1);
 
     auto [kept, accepted_changed] =
@@ -184,7 +184,7 @@ int check_other_message_and_key() {
 
     fc::FixedArray<std::byte, kVectorCount> const message = reference_message();
     SipKeyBytes other = reference_key();
-    other.with_element(fc::index<0>(), [](std::byte& held) noexcept { held ^= std::byte{1}; });
+    other.set(fc::index<0>(), other.at(fc::index<0>()) ^ std::byte{1});
     auto [other_kept, accepted_other_key] =
         sh::verify(mint_secret<SipKeyBytes>(other), prefix(message, kVectorCount - 1), good);
     if (accepted_other_key) return 31;

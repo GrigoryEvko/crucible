@@ -76,9 +76,9 @@ divrig::OpData op_with_parameter(uint32_t iter, uint32_t op_idx) {
     made.entry.num_outputs = 1;
     const crucible::TensorMeta input =
         meta_at((op_idx == 0) ? parameter_ptr() : activation_ptr(iter, op_idx - 1), 1024);
-    made.metas.with_element(::fixy::index<0>(), [input](crucible::TensorMeta& record) noexcept { record = input; });
+    made.metas.set(::fixy::index<0>(), input);
     const crucible::TensorMeta output = meta_at(activation_ptr(iter, op_idx), 1024);
-    made.metas.with_element(::fixy::index<1>(), [output](crucible::TensorMeta& record) noexcept { record = output; });
+    made.metas.set(::fixy::index<1>(), output);
     made.n_metas = 2;
     return made;
 }

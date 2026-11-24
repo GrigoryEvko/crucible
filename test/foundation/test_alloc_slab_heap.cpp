@@ -101,9 +101,7 @@ struct Oracle {
     std::size_t count = 0;
 
     // Sets the slab at SLOT to the state STATE.
-    void mark(SlabSlot slot, Holding state) noexcept {
-        held.with_element(slot, [state](bool& is_held) noexcept { is_held = state == Holding::held; });
-    }
+    void mark(SlabSlot slot, Holding state) noexcept { held.set(slot, state == Holding::held); }
 
     // The lowest held slab, or none.
     [[nodiscard]] alloc::SlabLink lowest() const noexcept {
@@ -137,19 +135,19 @@ struct Oracle {
     core::FixedArray<bool, kSlabs> seen{};
     std::size_t depth = 0;
     std::size_t visited = 0;
-    pending.with_element(slot_of(depth++), [root](alloc::SlabLink& link) noexcept { link = root; });
+    pending.set(slot_of(depth++), root);
     while (depth != 0) {
         alloc::SlabLink const node = pending.at(slot_of(--depth));
         SlabSlot const node_slot = slot_of(raw_of(node));
         if (!oracle.held.at(node_slot) || seen.at(node_slot)) return false;
-        seen.with_element(node_slot, [](bool& is_seen) noexcept { is_seen = true; });
+        seen.set(node_slot, true);
         ++visited;
         alloc::SlabLink expected_prev = node;
         for (alloc::SlabLink child = records.child_of(node); child != alloc::SlabLink::none;
              child = records.next_of(child)) {
             if (!(node < child) || records.prev_of(child) != expected_prev) return false;
             if (depth == kSlabs) return false;
-            pending.with_element(slot_of(depth++), [child](alloc::SlabLink& link) noexcept { link = child; });
+            pending.set(slot_of(depth++), child);
             expected_prev = child;
         }
     }

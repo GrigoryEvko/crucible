@@ -119,11 +119,11 @@ using Image = FixedArray<std::byte, encoded_size_v<Sample>>;
     sample.scale = bit_cast<double>(stream.next_wide());
     for (auto const index : decltype(sample.lanes)::indices()) {
         auto const lane = static_cast<std::uint16_t>(stream.next_word());
-        sample.lanes.with_element(index, [lane](std::uint16_t& element) noexcept { element = lane; });
+        sample.lanes.set(index, lane);
     }
     for (auto const index : decltype(sample.pairs)::indices()) {
         auto const pair = static_cast<std::int32_t>(stream.next_word());
-        sample.pairs.with_element(index, [pair](std::int32_t& element) noexcept { element = pair; });
+        sample.pairs.set(index, pair);
     }
     sample.ticket = Ticket{stream.next_word()};
     sample.address = stream.next_wide();
@@ -223,8 +223,7 @@ template <std::size_t N>
 
 // Writes the byte at an offset of an image.
 void put_byte(Image& image, std::size_t at, std::byte byte) noexcept {
-    image.with_element(Index<encoded_size_v<Sample>>::check(at).expect("the offset is inside the image"),
-                       [byte](std::byte& element) noexcept { element = byte; });
+    image.set(Index<encoded_size_v<Sample>>::check(at).expect("the offset is inside the image"), byte);
 }
 
 // The hand image: each field in declaration order, the low byte first.
@@ -314,8 +313,8 @@ void test_hash_agrees_with_the_hand_fold() {
     pinned.wide = -0x0123456789ABCDEFLL;
     pinned.ratio = -0.0f;
     pinned.scale = 1.5;
-    pinned.lanes.with_element(index<1>(), [](std::uint16_t& lane) noexcept { lane = 0xCDEF; });
-    pinned.pairs.with_element(index<1>(), [](std::int32_t& pair) noexcept { pair = -7; });
+    pinned.lanes.set(index<1>(), 0xCDEF);
+    pinned.pairs.set(index<1>(), -7);
     pinned.ticket = Ticket{42};
     CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == hand_hash(pinned));
     CRUCIBLE_FATAL_INVARIANT(hash(pinned).raw() == kPinnedSampleHash);
@@ -591,8 +590,7 @@ template <class T, std::size_t N>
         auto const image = encoded(elements.at(Index<N>::check(index).expect("the index is below the count")));
         for (std::size_t at = 0; at < step; ++at) {
             std::byte const byte = image.at(Index<step>::check(at).expect("the byte is in the image"));
-            bytes.with_element(Index<N * step>::check(index * step + at).expect("the byte is in the run"),
-                               [byte](std::byte& element) noexcept { element = byte; });
+            bytes.set(Index<N * step>::check(index * step + at).expect("the byte is in the run"), byte);
         }
     }
     std::uint64_t accumulator = kStartSeed;
@@ -718,7 +716,7 @@ void test_format_names_each_part() {
     sample.flag = true;
     sample.phase = Phase::other;
     sample.ratio = 0.5f;
-    sample.lanes.with_element(index<2>(), [](std::uint16_t& lane) noexcept { lane = 9; });
+    sample.lanes.set(index<2>(), 9);
     sample.ticket = Ticket{7};
     sample.address = 1;
     FixedText<512> out{};
@@ -799,8 +797,7 @@ void test_c_array_and_pointer_parts() {
         for (std::size_t lane = 0; lane < 3; ++lane) {
             c_array.lanes[lane] = static_cast<std::uint16_t>(stream.next_word());
             std::uint16_t const lane_value = c_array.lanes[lane];
-            fixed_array.lanes.with_element(Index<3>::check(lane).expect("three lanes"),
-                                           [lane_value](std::uint16_t& element) noexcept { element = lane_value; });
+            fixed_array.lanes.set(Index<3>::check(lane).expect("three lanes"), lane_value);
         }
         CRUCIBLE_FATAL_INVARIANT(hash(c_array).raw() == hash(fixed_array).raw());
         FixedArray<std::byte, 6> c_image{};
@@ -967,31 +964,31 @@ void test_sums_refuse_each_byte_that_names_no_value() {
     SumImage const clean = encoded(sample_with_sums());
 
     SumImage bad_option_tag = clean;
-    bad_option_tag.with_element(index<2>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+    bad_option_tag.set(index<2>(), std::byte{2});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_option_tag) == DecodeFault{DecodeRefusal::sum_tag, 2}));
 
     SumImage none_with_payload = encoded(WithSums{});
-    none_with_payload.with_element(index<4>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    none_with_payload.set(index<4>(), std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(none_with_payload) == DecodeFault{DecodeRefusal::tail_byte, 3}));
 
     SumImage bad_result_tag = clean;
-    bad_result_tag.with_element(index<7>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+    bad_result_tag.set(index<7>(), std::byte{2});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_result_tag) == DecodeFault{DecodeRefusal::sum_tag, 7}));
 
     SumImage error_with_tail = clean;
-    error_with_tail.with_element(index<9>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    error_with_tail.set(index<9>(), std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(error_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 9}));
 
     SumImage bad_error = clean;
-    bad_error.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{3}; });
+    bad_error.set(index<8>(), std::byte{3});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_error) == DecodeFault{DecodeRefusal::enumerator, 8}));
 
     SumImage bad_one_of_tag = clean;
-    bad_one_of_tag.with_element(index<10>(), [](std::byte& element) noexcept { element = std::byte{2}; });
+    bad_one_of_tag.set(index<10>(), std::byte{2});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(bad_one_of_tag) == DecodeFault{DecodeRefusal::sum_tag, 10}));
 
     SumImage narrow_with_tail = encoded(WithSums{});
-    narrow_with_tail.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    narrow_with_tail.set(index<13>(), std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((sum_fault_of(narrow_with_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
 }
 
@@ -1101,26 +1098,26 @@ void test_lists_refuse_each_byte_that_names_no_value() {
     ListImage const clean = encoded(sample_with_lists());
 
     ListImage too_many_words = clean;
-    too_many_words.with_element(index<1>(), [](std::byte& element) noexcept { element = std::byte{4}; });
+    too_many_words.set(index<1>(), std::byte{4});
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_many_words) == DecodeFault{DecodeRefusal::list_count, 1}));
 
     ListImage word_tail = clean;
-    word_tail.with_element(index<7>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    word_tail.set(index<7>(), std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(word_tail) == DecodeFault{DecodeRefusal::tail_byte, 6}));
 
     ListImage too_long_name = clean;
-    too_long_name.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{6}; });
+    too_long_name.set(index<8>(), std::byte{6});
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(too_long_name) == DecodeFault{DecodeRefusal::list_count, 8}));
 
     ListImage name_tail = clean;
-    name_tail.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{1}; });
+    name_tail.set(index<13>(), std::byte{1});
     CRUCIBLE_FATAL_INVARIANT((list_fault_of(name_tail) == DecodeFault{DecodeRefusal::tail_byte, 12}));
 
     // A count at the capacity takes each room, so no byte is a tail.
     ListImage full_name = clean;
-    full_name.with_element(index<8>(), [](std::byte& element) noexcept { element = std::byte{5}; });
-    full_name.with_element(index<12>(), [](std::byte& element) noexcept { element = std::byte{'c'}; });
-    full_name.with_element(index<13>(), [](std::byte& element) noexcept { element = std::byte{'d'}; });
+    full_name.set(index<8>(), std::byte{5});
+    full_name.set(index<12>(), std::byte{'c'});
+    full_name.set(index<13>(), std::byte{'d'});
     CRUCIBLE_FATAL_INVARIANT(decode<WithLists>(full_name.view()).is_ok());
 }
 
@@ -1154,7 +1151,7 @@ void test_lists_hash_as_array_elements_at_each_offset() {
             std::uint64_t const count = (letters >> (2 * index.raw())) % 4;
             for (std::uint64_t letter = 0; letter < count; ++letter) {
                 char const character = static_cast<char>('a' + letter + index.raw());
-                is_built = is_built && value.names.with_element(index, [character](FixedText<3>& name) noexcept {
+                is_built = is_built && value.names.update(index, [character](FixedText<3>& name) noexcept {
                     return name.append(character).is_ok();
                 });
             }
@@ -1286,9 +1283,7 @@ void test_decode_of_sums_and_lists_agrees_with_an_oracle() {
             std::uint64_t const change = stream.next_word();
             std::uint64_t const raw = (change & 1U) != 0 ? (change >> 8) % 4 : (change >> 8) & 0xFFU;
             std::byte const byte = static_cast<std::byte>(raw);
-            image.with_element(
-                Index<kOracleBytes>::check((change >> 16) % kOracleBytes).expect("an offset of the image"),
-                [byte](std::byte& element) noexcept { element = byte; });
+            image.set(Index<kOracleBytes>::check((change >> 16) % kOracleBytes).expect("an offset of the image"), byte);
         }
         OracleImage const& read = image;
         DecodeFault const expected = first_oracle_fault(read);
@@ -1338,7 +1333,7 @@ void test_open_enumeration_part() {
         CRUCIBLE_FATAL_INVARIANT(decodes_back(value));
     }
     FixedArray<std::byte, encoded_size_v<HoldsCode>> bad_phase = encoded(HoldsCode{});
-    bad_phase.with_element(index<2>(), [](std::byte& element) noexcept { element = std::byte{3}; });
+    bad_phase.set(index<2>(), std::byte{3});
     bool const is_refused =
         decode<HoldsCode>(bad_phase.view())
             .match([](HoldsCode) noexcept { return false; },

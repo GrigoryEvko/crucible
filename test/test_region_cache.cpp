@@ -73,16 +73,12 @@ OpData make_op(const ShapeHash* shapes, uint32_t variant, uint32_t iter, uint32_
     uint16_t idx = 0;
     if (op_idx > 0) {
         int64_t in_sz = tensor_size(variant, op_idx - 1);
-        d.metas.with_element(
-            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-            [meta = make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz)](TensorMeta& element) noexcept {
-                element = meta;
-            });
+        d.metas.set(::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                    make_meta(fake_ptr(variant, iter, op_idx - 1), in_sz));
     }
     int64_t out_sz = tensor_size(variant, op_idx);
-    d.metas.with_element(
-        ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-        [meta = make_meta(fake_ptr(variant, iter, op_idx), out_sz)](TensorMeta& element) noexcept { element = meta; });
+    d.metas.set(::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                make_meta(fake_ptr(variant, iter, op_idx), out_sz));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }

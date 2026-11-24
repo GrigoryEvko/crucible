@@ -266,7 +266,7 @@ static void test_encoders_round_trip_through_the_loader() {
     record.shape_hash = ShapeHash{0x1122334455667788ULL};
     record.scope_hash = ScopeHash{0xDEADBEEFCAFEBABEULL};
     record.callsite_hash = CallsiteHash{0xFEEDFACE000000ADULL};
-    record.scalar_values.with_element(::fixy::index<0>(), [](int64_t& value) noexcept { value = -9; });
+    record.scalar_values.set(::fixy::index<0>(), -9);
     record.num_inputs = 1;
     record.num_scalars = 1;
     record.grad_enabled = 1;

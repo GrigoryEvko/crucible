@@ -248,18 +248,16 @@ void test_format_writes_hex_bytes() {
     using ::foundation::core::HexBytes;
     using ::foundation::core::View;
     ::foundation::core::FixedArray<std::byte, 4> four{};
-    four.with_element(::foundation::core::index<1>(), [](std::byte& element) noexcept { element = std::byte{0x01}; });
-    four.with_element(::foundation::core::index<2>(), [](std::byte& element) noexcept { element = std::byte{0xAB}; });
-    four.with_element(::foundation::core::index<3>(), [](std::byte& element) noexcept { element = std::byte{0xFF}; });
+    four.set(::foundation::core::index<1>(), std::byte{0x01});
+    four.set(::foundation::core::index<2>(), std::byte{0xAB});
+    four.set(::foundation::core::index<3>(), std::byte{0xFF});
     FixedText<16> small;
     CRUCIBLE_TEST_ASSERT(kTest, text_of(format(small, "[{}]", HexBytes{four.view()})) == TextView{"[0001abff]"});
     CRUCIBLE_TEST_ASSERT(kTest, text_of(format(small, "[{}]", HexBytes{View<std::byte const>{}})) == TextView{"[]"});
 
     ::foundation::core::FixedArray<std::byte, 300> many{};
     for (::foundation::core::Index<300> const index : many.indices())
-        many.with_element(index, [value = static_cast<std::byte>(index.raw() & 0xFFU)](std::byte& element) noexcept {
-            element = value;
-        });
+        many.set(index, static_cast<std::byte>(index.raw() & 0xFFU));
     FixedText<700> text;
     TextView const digits = text_of(format(text, "{}", HexBytes{many.view()}));
     CRUCIBLE_TEST_ASSERT(kTest, digits.size() == 600);

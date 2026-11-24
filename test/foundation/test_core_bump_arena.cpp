@@ -409,7 +409,7 @@ void test_agrees_with_plain_model() {
                 }
                 auto const lines_run = epoch.array(alloc, count, Wide{.first = fill});
                 View<Wide const> const lines = lines_run.view();
-                arrays.with_element(position, [lines](View<Wide const>& slot) noexcept { slot = lines; });
+                arrays.set(position, lines);
                 CRUCIBLE_FATAL_INVARIANT(first_address(arrays.at(position)).is_aligned<64>());
             }
             for (auto [position, slot] : arrays.enumerate()) {

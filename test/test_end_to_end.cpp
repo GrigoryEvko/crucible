@@ -61,12 +61,11 @@ void feed_iteration(crucible::test::TraceRig& rig, Iteration iteration) {
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
         if (i > 0)
-            metas.with_element(
+            metas.set(
                 ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-                [meta = make_meta(fake_ptr(iter, i - 1))](TensorMeta& record) noexcept { record = meta; });
-        metas.with_element(
-            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-            [meta = make_meta(fake_ptr(iter, i))](TensorMeta& record) noexcept { record = meta; });
+                make_meta(fake_ptr(iter, i - 1)));
+        metas.set(::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                  make_meta(fake_ptr(iter, i)));
 
         auto ms = rig.append_metas(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid() && "MetaLog overflow");
@@ -87,12 +86,11 @@ void feed_trigger(crucible::test::TraceRig& rig, Iteration iteration) {
         ::fixy::FixedArray<TensorMeta, 2> metas{};
         uint16_t idx = 0;
         if (i > 0)
-            metas.with_element(
+            metas.set(
                 ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-                [meta = make_meta(fake_ptr(iter, i - 1))](TensorMeta& record) noexcept { record = meta; });
-        metas.with_element(
-            ::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
-            [meta = make_meta(fake_ptr(iter, i))](TensorMeta& record) noexcept { record = meta; });
+                make_meta(fake_ptr(iter, i - 1)));
+        metas.set(::fixy::Index<2>::check(idx++).expect("a test reads an element at or past the count of its array"),
+                  make_meta(fake_ptr(iter, i)));
 
         auto ms = rig.append_metas(crucible::test::records_of(metas, n_metas));
         CRUCIBLE_TEST_ASSERT(kTest, ms.is_valid());

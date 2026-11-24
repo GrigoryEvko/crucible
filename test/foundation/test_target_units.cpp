@@ -71,7 +71,7 @@ struct ProbeInput final {
     constexpr ProbeInput() noexcept {
         for (auto const index : decltype(bytes)::indices()) {
             std::byte const value = static_cast<std::byte>(index.raw() % 251);
-            bytes.with_element(index, [value](std::byte& held) noexcept { held = value; });
+            bytes.set(index, value);
         }
     }
 };
@@ -86,7 +86,7 @@ struct ProbeInput final {
             input.bytes.view().window(0, kConstantLengths.at(index)).expect("the length is in the input");
         FixedArray<std::byte, 32> const hash =
             ::foundation::core::keyed_hash(::crucible::test::target_probe_key(), message).bytes();
-        hashes.with_element(index, [hash](FixedArray<std::byte, 32>& held) noexcept { held = hash; });
+        hashes.set(index, hash);
     }
     return hashes;
 }

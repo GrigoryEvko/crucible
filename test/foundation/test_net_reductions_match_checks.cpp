@@ -220,10 +220,10 @@ template <std::size_t Leaves, std::size_t Grain>
         [run, &combine](auto out) noexcept { core::reduce_grains_by_tree<Grain>(run, 1, std::move(out), combine); });
     core::FixedArray<Symbol, grains> partials{};
     Symbol const first = slot_at(head, 0);
-    partials.with_element(slot_index(partials, 0), [first](Symbol& held) noexcept { held = first; });
+    partials.set(slot_index(partials, 0), first);
     for (std::size_t grain = 1; grain < grains; ++grain) {
         Symbol const element = slot_at(tail, grain - 1);
-        partials.with_element(slot_index(partials, grain), [element](Symbol& held) noexcept { held = element; });
+        partials.set(slot_index(partials, grain), element);
     }
     Symbol const root = core::reduce_by_tree(partials.view(), combine).expect("a run of grains");
     std::uint32_t const result = source_of(graph, port_of(static_cast<std::uint32_t>(2 * Leaves), 0));
@@ -255,9 +255,9 @@ template <std::size_t Count, std::size_t Grain, core::ScanKind Kind>
     core::FixedArray<Symbol, grains> sums{};
     for (std::size_t grain = 0; grain + 1 < grains; ++grain) {
         Symbol const element = slot_at(heads, grain);
-        sums.with_element(slot_index(sums, grain), [element](Symbol& held) noexcept { held = element; });
+        sums.set(slot_index(sums, grain), element);
     }
-    sums.with_element(slot_index(sums, grains - 1), [](Symbol& held) noexcept { held = Symbol{no_add}; });
+    sums.set(slot_index(sums, grains - 1), Symbol{no_add});
     core::FixedArray<Symbol, grains> carries{};
     bool const is_scanned = carries.with_mut([&sums, &combine, empty_node](auto out) noexcept {
         return core::scan_exclusive(core::View<Symbol const>{sums.view()}, std::move(out), Symbol{empty_node}, combine)
@@ -310,8 +310,7 @@ inline constexpr core::FixedArray<std::size_t, 5> segment_offsets{0, 3, 3, 9, 13
         std::uint32_t step = 0;
         for (core::TreeStep const& one : core::plan_tree<Count>()) {
             core::TreeStep const moved_step{moved(one.left), moved(one.right)};
-            plan.steps.with_element(slot_index(plan.steps, base + step),
-                                    [moved_step](core::TreeStep& held) noexcept { held = moved_step; });
+            plan.steps.set(slot_index(plan.steps, base + step), moved_step);
             ++step;
         }
         core::PlanNode const root{static_cast<std::uint32_t>(segment_leaves) + base + step - 1};
@@ -379,7 +378,7 @@ build_sort_net() noexcept {
     for (std::uint32_t position = 0; position < count; ++position) {
         graph.agents[position] = num_kind;
         net::PortRef const port = port_of(position, 0);
-        giver.with_element(slot_index(giver, position), [port](net::PortRef& held) noexcept { held = port; });
+        giver.set(slot_index(giver, position), port);
     }
     std::uint32_t agent = count;
     std::uint32_t wire = 0;
@@ -390,9 +389,8 @@ build_sort_net() noexcept {
         graph.wires[wire + 1] = net::Wire{slot_at(giver, is_crossed ? step.low : step.high), port_of(agent, 1)};
         net::PortRef const low_port = port_of(agent, 2);
         net::PortRef const high_port = port_of(agent, 3);
-        giver.with_element(slot_index(giver, step.low), [low_port](net::PortRef& held) noexcept { held = low_port; });
-        giver.with_element(slot_index(giver, step.high),
-                           [high_port](net::PortRef& held) noexcept { held = high_port; });
+        giver.set(slot_index(giver, step.low), low_port);
+        giver.set(slot_index(giver, step.high), high_port);
         ++agent;
         wire += 2;
     }
@@ -592,10 +590,10 @@ template <class T, std::size_t Count, class Less>
         std::size_t place = next;
         while (place > 0 && less(moved, slot_at(elements, place - 1))) {
             T const shifted = slot_at(elements, place - 1);
-            elements.with_element(slot_index(elements, place), [shifted](T& held) noexcept { held = shifted; });
+            elements.set(slot_index(elements, place), shifted);
             --place;
         }
-        elements.with_element(slot_index(elements, place), [moved](T& held) noexcept { held = moved; });
+        elements.set(slot_index(elements, place), moved);
     }
     return elements;
 }
@@ -665,14 +663,14 @@ template <class T, std::size_t Count>
     std::size_t position = 0;
     for (Bits const bits : specials) {
         T const special = core::bit_cast<T>(bits);
-        values.with_element(slot_index(values, 3 * position + 1), [special](T& held) noexcept { held = special; });
+        values.set(slot_index(values, 3 * position + 1), special);
         ++position;
     }
     // Repeated values: each element of the last part copies an element of
     // the first part.
     for (std::size_t copy = Count - 20; copy < Count; ++copy) {
         T const repeated = slot_at(values, copy - (Count - 20));
-        values.with_element(slot_index(values, copy), [repeated](T& held) noexcept { held = repeated; });
+        values.set(slot_index(values, copy), repeated);
     }
     return values;
 }

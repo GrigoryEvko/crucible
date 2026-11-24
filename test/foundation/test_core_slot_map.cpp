@@ -163,7 +163,7 @@ void test_walk_in_slot_order() {
     FixedArray<Key, 6> keys{Key{0}, Key{0}, Key{0}, Key{0}, Key{0}, Key{0}};
     for (Index<6> const position : keys.indices()) {
         Key const inserted = map.insert(static_cast<int>(position.raw()) * 10).expect("the map has a free slot");
-        keys.with_element(position, [inserted](Key& key) noexcept { key = inserted; });
+        keys.set(position, inserted);
     }
     static_cast<void>(map.remove(keys.at(::foundation::core::index<0>())).expect("the key is live"));
     static_cast<void>(map.remove(keys.at(::foundation::core::index<3>())).expect("the key is live"));
@@ -260,7 +260,7 @@ void test_each_value_ends_once_in_slot_order() {
         for (Index<4> const position : keys.indices()) {
             Key const inserted =
                 map.insert(Value{log_ref, static_cast<int>(position.raw())}).expect("the map has a free slot");
-            keys.with_element(position, [inserted](Key& key) noexcept { key = inserted; });
+            keys.set(position, inserted);
         }
         {
             Value const taken = map.remove(keys.at(::foundation::core::index<1>())).expect("the key is live");
@@ -361,7 +361,7 @@ template <class Generation, std::uint32_t Capacity>
     FixedArray<std::uint64_t, 64> recent{};
     for (Index<64> const position : recent.indices()) {
         std::uint64_t const word = stream.next_wide();
-        recent.with_element(position, [word](std::uint64_t& slot) noexcept { slot = word; });
+        recent.set(position, word);
     }
     std::size_t live = 0;
     std::size_t retired = 0;
@@ -385,17 +385,16 @@ template <class Generation, std::uint32_t Capacity>
             CRUCIBLE_FATAL_INVARIANT(inserted.is_err() == (live + retired == Capacity));
             if (inserted.is_ok()) {
                 Key const key = std::move(inserted).expect("the insert gave a key");
-                model.with_element(Index<Capacity>::check(index_of(key)).expect("an index below the capacity"),
-                                   [key, value](SlotModel& entry) noexcept {
-                                       CRUCIBLE_FATAL_INVARIANT(!entry.is_live && !entry.is_retired);
-                                       CRUCIBLE_FATAL_INVARIANT(generation_of(key) > entry.generation
-                                                                && (generation_of(key) & 1u) == 1u);
-                                       entry = SlotModel{generation_of(key), value, true, false};
-                                   });
+                model.update(Index<Capacity>::check(index_of(key)).expect("an index below the capacity"),
+                             [key, value](SlotModel& entry) noexcept {
+                                 CRUCIBLE_FATAL_INVARIANT(!entry.is_live && !entry.is_retired);
+                                 CRUCIBLE_FATAL_INVARIANT(generation_of(key) > entry.generation
+                                                          && (generation_of(key) & 1u) == 1u);
+                                 entry = SlotModel{generation_of(key), value, true, false};
+                             });
                 ++live;
                 std::uint64_t const word = key.raw();
-                recent.with_element(Index<64>::check(stream.below(64)).expect("below 64"),
-                                    [word](std::uint64_t& slot) noexcept { slot = word; });
+                recent.set(Index<64>::check(stream.below(64)).expect("below 64"), word);
                 last_inserted = key.raw();
             }
         } else if (choice < 8) {
@@ -403,17 +402,16 @@ template <class Generation, std::uint32_t Capacity>
             auto removed = map.remove(probe);
             CRUCIBLE_FATAL_INVARIANT(removed.is_some() == is_held);
             if (is_held) {
-                model.with_element(Index<Capacity>::check(index_of(probe)).expect("an index below the capacity"),
-                                   [&removed, &live, &retired, largest](SlotModel& entry) noexcept {
-                                       CRUCIBLE_FATAL_INVARIANT(std::move(removed).expect("the key is live")
-                                                                == entry.value);
-                                       entry.is_live = false;
-                                       --live;
-                                       if (entry.generation == largest) {
-                                           entry.is_retired = true;
-                                           ++retired;
-                                       }
-                                   });
+                model.update(Index<Capacity>::check(index_of(probe)).expect("an index below the capacity"),
+                             [&removed, &live, &retired, largest](SlotModel& entry) noexcept {
+                                 CRUCIBLE_FATAL_INVARIANT(std::move(removed).expect("the key is live") == entry.value);
+                                 entry.is_live = false;
+                                 --live;
+                                 if (entry.generation == largest) {
+                                     entry.is_retired = true;
+                                     ++retired;
+                                 }
+                             });
             }
         } else {
             bool const is_held = model_holds(probe);

@@ -271,7 +271,7 @@ void test_the_hard_cases() {
         ::fixy::View<T const> const ones_view{ones.view()};
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(-zero));
-        negative_zeros.with_element(::fixy::index<17>(), [zero](T& value) noexcept { value = zero; });
+        negative_zeros.set(::fixy::index<17>(), zero);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(zeros_view, ones_view, lanes)) == bits_of_float(zero));
         // An infinity gives itself, and two infinities of the two signs give
@@ -282,24 +282,24 @@ void test_the_hard_cases() {
                 value = one;
         });
         ::fixy::View<T const> const mixed_view{mixed.view()};
-        mixed.with_element(::fixy::index<3>(), [infinity](T& value) noexcept { value = infinity; });
+        mixed.set(::fixy::index<3>(), infinity);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(infinity));
-        mixed.with_element(::fixy::index<30>(), [infinity](T& value) noexcept { value = -infinity; });
+        mixed.set(::fixy::index<30>(), -infinity);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A product of an infinity and a zero is a NaN, and each NaN of a
         // payload, a sign or a signaling bit gives the canonical NaN.
-        mixed.with_element(::fixy::index<30>(), [one](T& value) noexcept { value = one; });
-        mixed.with_element(::fixy::index<3>(), [infinity](T& value) noexcept { value = infinity; });
-        negative_zeros.with_element(::fixy::index<3>(), [zero](T& value) noexcept { value = zero; });
+        mixed.set(::fixy::index<30>(), one);
+        mixed.set(::fixy::index<3>(), infinity);
+        negative_zeros.set(::fixy::index<3>(), zero);
         CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(mixed_view, zeros_view, lanes))
                                         == bits_of_float(canonical));
         T const payload = payload_nan<T>();
-        mixed.with_element(::fixy::index<3>(), [payload](T& value) noexcept { value = payload; });
+        mixed.set(::fixy::index<3>(), payload);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
-        mixed.with_element(::fixy::index<3>(), [](T& value) noexcept { value = ::fixy::signaling_nan_of<T>; });
+        mixed.set(::fixy::index<3>(), ::fixy::signaling_nan_of<T>);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A cancellation: x0 * 1 + ... with the pairs x and -x, and one small
@@ -315,7 +315,7 @@ void test_the_hard_cases() {
                 *second = -value;
             }
         });
-        pairs.with_element(::fixy::index<36>(), [tiny](T& value) noexcept { value = tiny; });
+        pairs.set(::fixy::index<36>(), tiny);
         CRUCIBLE_TEST_ASSERT(kTest,
                              bits_of_float(product_of_terms(::fixy::View<T const>{pairs.view()}, ones_view, lanes))
                                  == bits_of_float(tiny));

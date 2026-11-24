@@ -100,18 +100,17 @@ divrig::OpData op_reading_batch(::fixy::View<std::byte> memory, uint32_t iter, u
     if (op1_first == kNestResult && op_idx < 2) {
         const crucible::TensorMeta result = meta_at(memory, activation_offset(iter, 1));
         const crucible::TensorMeta input = op_idx == 0 ? result : meta_at(memory, batch_offset(iter));
-        made.metas.with_element(::fixy::index<0>(), [input](crucible::TensorMeta& record) noexcept { record = input; });
-        made.metas.with_element(::fixy::index<1>(),
-                                [result](crucible::TensorMeta& record) noexcept { record = result; });
+        made.metas.set(::fixy::index<0>(), input);
+        made.metas.set(::fixy::index<1>(), result);
         return made;
     }
     const bool is_view_read = op_idx == 1 && op1_first != kOutputOfOp0;
     const crucible::TensorMeta input = op_idx == 0  ? meta_at(memory, batch_offset(iter))
                                      : is_view_read ? meta_at(memory, batch_offset(iter), op1_first)
                                                     : meta_at(memory, activation_offset(iter, op_idx - 1));
-    made.metas.with_element(::fixy::index<0>(), [input](crucible::TensorMeta& record) noexcept { record = input; });
+    made.metas.set(::fixy::index<0>(), input);
     const crucible::TensorMeta output = meta_at(memory, activation_offset(iter, op_idx));
-    made.metas.with_element(::fixy::index<1>(), [output](crucible::TensorMeta& record) noexcept { record = output; });
+    made.metas.set(::fixy::index<1>(), output);
     return made;
 }
 

@@ -121,7 +121,7 @@ static void test_offsets_prefix_sum_invariant() {
     // Chain: 0->1->2->...->9
     for (const auto index : edges.indices()) {
         const auto from = static_cast<uint32_t>(index.raw());
-        edges.with_element(index, [edge = E(from, from + 1)](Edge& held) noexcept { held = edge; });
+        edges.set(index, E(from, from + 1));
     }
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
         TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 10}, edges.view());
@@ -143,8 +143,7 @@ static void test_fanout_node_has_multiple_edges() {
     // Hub-and-spoke: node 0 → {1, 2, 3, 4, 5, 6, 7, 8, 9}
     ::fixy::FixedArray<Edge, 9> edges{};
     for (const auto index : edges.indices()) {
-        edges.with_element(index,
-                           [edge = E(0, static_cast<uint32_t>(index.raw()) + 1)](Edge& held) noexcept { held = edge; });
+        edges.set(index, E(0, static_cast<uint32_t>(index.raw()) + 1));
     }
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
         TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 10}, edges.view());
