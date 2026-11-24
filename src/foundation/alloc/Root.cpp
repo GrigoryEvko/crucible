@@ -72,10 +72,13 @@ struct RootDoor {
     // starting.
     static void start(AllocRoot& root) noexcept {
         WindowDiagnostic diagnostic{};
+        // The init publishes the host window through the Ref of its fill.
         reserve_window(core::to(diagnostic))
-            .match([&root](Window window) noexcept { root.host_window_.fill(std::move(window)); },
-                   [&diagnostic](WindowFull) noexcept { core::fatal("{}", diagnostic.text()); });
-        publish_host_window(*root.host_window_.get(), root.windows_);
+            .match(
+                [&root](Window window) noexcept {
+                    publish_host_window(*root.host_window_.fill(std::move(window)), root.windows_);
+                },
+                [&diagnostic](WindowFull) noexcept { core::fatal("{}", diagnostic.text()); });
         core::ByteCount const table_bytes{kHeapTableGuardBytes + kHeapTableSlotsBytes + kHeapTableGuardBytes};
         os::reserve(table_bytes, os::ReserveAlignment::huge_page)
             .match([&root](os::Reservation table) noexcept { root.heap_table_.fill(std::move(table)); },

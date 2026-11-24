@@ -6,8 +6,11 @@
 //   Immortal<T>          storage for one T.  A constant initializer gives an
 //                        empty holder, and the destructor of the holder is
 //                        trivial
-//   holder.fill(args)    builds the T in the storage, one time
-//   holder.get()         a Ref to the T, with the fresh brand of the call
+//   holder.fill(args)    builds the T in the storage, one time, and gives a
+//                        Ref to the T: the view that reads it
+//   holder.get()         a Ref to the T, with the fresh brand of the call.
+//                        In product code, only the root of the allocator
+//                        reads through it
 //   holder.is_filled()   true after the fill
 //
 // Storage
@@ -23,13 +26,16 @@
 //   and a holder makes no such call.
 //
 // Rules
-//   fill builds the T one time, and a second fill ends the process.  get() of
-//   an empty holder ends the process.  Each check is one test of the address
-//   and a branch to a cold call of the fatal exit, as each access of a Box
-//   has, so get() is one load of the address and its test.  One thread fills
-//   the holder, and each reader reads it after a publish that happens after
-//   the fill, such as the state word of the root.  The holder does not copy
-//   or move, because the address of the T is in its storage.
+//   fill builds the T one time, and a second fill ends the process.  The Ref
+//   that fill gives is the read of a holder in the flow of its fill, so that
+//   read needs no test.  A T that states a brand_type gives its Ref that
+//   brand, as to() does, so a holder can keep the Ref.  get() of an empty
+//   holder ends the process.  Each check is one test of the address and a
+//   branch to a cold call of the fatal exit, as each access of a Box has, so
+//   get() is one load of the address and its test.  One thread fills the
+//   holder, and each reader reads it after a publish that happens after the
+//   fill, such as the state word of the root.  The holder does not copy or
+//   move, because the address of the T is in its storage.
 
 #include <foundation/Brand.h>
 #include <foundation/NoObject.h>
@@ -51,10 +57,11 @@ class Immortal;
 
 // The door of an Immortal to the door of a Ref (the doors of the owners above
 // foundation/core/Ref.h).  Its one member is private, and Immortal is its one
-// friend.  The invariant: get() lends the object only after the test of the
-// fill, the object lives for the whole process, and the brand is the fresh
-// brand of the call of get().  A home owner row of utils/rule-table.txt keeps
-// this definition in this header.
+// friend.  The invariant: fill lends the object that it built, get() lends
+// the object only after the test of the fill, the object lives for the whole
+// process, and the brand is the brand of the payload or the fresh brand of
+// the call.  A home owner row of utils/rule-table.txt keeps this definition
+// in this header.
 class ImmortalRefDoor final : ::foundation::NoObject<ImmortalRefDoor> {
     template <ImmortalPayload T>
     friend class Immortal;
@@ -79,15 +86,17 @@ public:
     // Trivial, so the destructor of T never runs (the storage).
     ~Immortal() = default;
 
-    // Builds the T from the arguments in the storage.  A holder that holds a
-    // T ends the process (the rules).
-    template <class... Args>
+    // Builds the T from the arguments in the storage, and gives the T as a Ref
+    // with the brand of T, or the fresh brand of the call for a T that states
+    // no brand (the rules).  A holder that holds a T ends the process.
+    template <class... Args, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires std::is_nothrow_constructible_v<T, Args&&...>
-    void fill(Args&&... args) noexcept {
+    Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> fill(Args&&... args) noexcept {
         if (object_ != nullptr) [[unlikely]] {
             fatal("an Immortal holds one object for the process, and a second fill would build another one over it");
         }
         object_ = ::new(static_cast<void*>(storage_)) T(static_cast<Args&&>(args)...);
+        return ImmortalRefDoor::lend_<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(*object_);
     }
 
     [[nodiscard]] constexpr bool is_filled() const noexcept { return object_ != nullptr; }
@@ -95,6 +104,12 @@ public:
     // The T as a Ref with the fresh brand of the call.  An empty holder ends
     // the process (the rules).  The pack refuses each explicit argument, so
     // no caller names the brand.
+    //
+    // In product code, only the root of the allocator reads through this
+    // door, after the acquire load of its state word.  A proof of that load cannot be honest
+    // yet: the sentinel heap exists before the root, so no token can live in
+    // each heap until a claimed heap has its own type, which the allocator
+    // line has as a task.  Each other holder keeps the Ref of its fill.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> get() noexcept {

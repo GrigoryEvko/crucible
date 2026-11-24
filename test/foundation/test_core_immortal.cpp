@@ -1,7 +1,7 @@
 // The holder of foundation/core/Immortal.h.
 //
-//   - A fill builds the payload in the storage, and get() reads it through a
-//     Ref, also from a const holder.
+//   - A fill builds the payload in the storage and gives the Ref of it, and
+//     get() reads it through a Ref, also from a const holder.
 //   - The end of a holder runs no destructor of its payload.
 //   - A second fill and a read before the fill each end the child process
 //     with the text of the fatal exit.
@@ -48,6 +48,32 @@ void fill_then_read(TestRunnerCtx const& test) {
     pass(test, "  fill_then_read: PASSED\n");
 }
 
+// The brand of a payload that states its brand, so a Ref of it can be a
+// member.
+struct BrandedBrand final {};
+
+struct Branded final {
+    using brand_type = BrandedBrand;
+
+    std::uint64_t word = 0;
+};
+
+// The Ref that fill gives names the object that the fill built, the object
+// that get reads.  A payload that states a brand_type gives the Ref its
+// brand, so a holder of the Ref can name its type.
+void fill_gives_the_object(TestRunnerCtx const& test) {
+    core::Immortal<Counted> holder{};
+    auto const built = holder.fill(std::uint64_t{0x42});
+    CRUCIBLE_TEST_ASSERT(test, built->word == 0x42);
+    built->word = 0x43;
+    CRUCIBLE_TEST_ASSERT(test, holder.get()->word == 0x43);
+
+    core::Immortal<Branded> branded{};
+    core::Ref<Branded, BrandedBrand> const kept = branded.fill(Branded{.word = 9});
+    CRUCIBLE_TEST_ASSERT(test, kept->word == 9 && branded.is_filled());
+    pass(test, "  fill_gives_the_object: PASSED\n");
+}
+
 void end_runs_no_destructor(TestRunnerCtx const& test) {
     std::uint32_t const before = ended;
     {
@@ -86,6 +112,7 @@ void read_before_fill_dies(TestRunnerCtx const& test) {
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
     fill_then_read(test);
+    fill_gives_the_object(test);
     end_runs_no_destructor(test);
     second_fill_dies(test);
     read_before_fill_dies(test);

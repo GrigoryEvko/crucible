@@ -81,7 +81,14 @@ private:
 // free reach the allocator from each thread.  The thread of the sessions
 // (storage_generation.h) is the one reader and the one writer of the other
 // fields, at the attach, at the detach and at each change.
+//
+// The brand of the state is the brand of its one object, in the Immortal of
+// the store, so the store keeps the Ref of the fill.
+struct GenerationStateBrand final {};
+
 struct GenerationState {
+    using brand_type = GenerationStateBrand;
+
     GenerationAllocator allocator{};
     // The count of the attached sessions.
     uint32_t sessions = 0;
@@ -95,18 +102,20 @@ struct GenerationState {
 // The holder of the state.  Its constructor builds the state in an Immortal,
 // and its destructor is trivial.  So the allocator lives as long as the
 // process: a storage that it made keeps its address as the allocator of the
-// storage, also after the static destructors.
+// storage, also after the static destructors.  The store keeps the Ref that
+// the fill gives, so a read of the state needs no test of the fill.
 class GenerationStore {
 public:
-    GenerationStore() noexcept { held_.fill(); }
+    GenerationStore() noexcept : state_{held_.fill()} {}
 
     GenerationStore(const GenerationStore&) = delete("one allocator lives in the process");
     GenerationStore& operator=(const GenerationStore&) = delete("one allocator lives in the process");
 
-    [[nodiscard]] GenerationState& state() noexcept { return *held_.get(); }
+    [[nodiscard]] GenerationState& state() noexcept { return *state_; }
 
 private:
     ::foundation::core::Immortal<GenerationState> held_{};
+    ::foundation::core::Ref<GenerationState, GenerationStateBrand> state_;
 };
 
 // The state of the process.  The first call builds it, one time, also when
