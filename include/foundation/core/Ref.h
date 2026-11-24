@@ -250,7 +250,7 @@ public:
     [[nodiscard]] constexpr T* operator->() const noexcept { return object_; }
 };
 
-// The brand of a Ref that detail::ref_of_static_ gives.  The template
+// The brand of a Ref that ref_of_static gives.  The template
 // argument of that door names an object of static storage, which lives for
 // the whole process, so such a Ref never dangles.  to() gives the brand that
 // the type of an object states, so a type that states this brand as its
@@ -307,6 +307,12 @@ concept ErasableBrand = ::foundation::brand::IsFreshBrand<Brand> && !detail::nam
 template <RefTarget T, ErasableBrand Brand>
 [[nodiscard]] constexpr auto erase_brand(Ref<T, Brand> ref) noexcept;
 
+// The Ref of an object of static storage (the definition below).  RefDoor
+// names it as a friend, so this declaration stands before the door.
+template <auto& Object>
+    requires RefTarget<std::remove_reference_t<decltype(Object)>>
+[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static() noexcept;
+
 // Doors of the owners above this header
 // An owner in a header above this one makes a Ref of an object that it holds,
 // and an invariant of the owner proves the object and the brand, such as an
@@ -343,12 +349,6 @@ namespace detail {
 template <RefTarget T, ::foundation::brand::IsBrand Brand>
 [[nodiscard]] constexpr Ref<T, Brand> ref_of_word_(atomic_word_key<Ref<T, Brand>> const& key, T* word) noexcept;
 
-// The Ref of an object of static storage (the definition below).  RefDoor
-// names it as a friend, so this declaration stands before the door.
-template <auto& Object>
-    requires RefTarget<std::remove_reference_t<decltype(Object)>>
-[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static_() noexcept;
-
 // The door of the constructor of a Ref from an object.  Its one member is
 // private, and each friend names the proof of the object and of the brand:
 //   - to() gives the brand of a branded object or the fresh brand of its call.
@@ -357,7 +357,7 @@ template <auto& Object>
 //     their call or with the erased brand.
 //   - ref_of_word_ takes the key of the word of a cell, and only a cell builds
 //     the key, from a word that to_word gave for a Ref of the brand.
-//   - ref_of_static_ takes the object as its template argument, which proves
+//   - ref_of_static takes the object as its template argument, which proves
 //     static storage, and gives the one brand of static storage.
 //   - The door class of each owner above this header lends the objects of its
 //     owner (the doors of the owners above this header).
@@ -383,7 +383,7 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
     friend constexpr auto ref_of_word_(atomic_word_key<Ref<T, Brand>> const& key, T* word) noexcept -> Ref<T, Brand>;
     template <auto& Object>
         requires RefTarget<std::remove_reference_t<decltype(Object)>>
-    friend constexpr auto ref_of_static_() noexcept
+    friend constexpr auto ::foundation::core::ref_of_static() noexcept
         -> Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand>;
 
     friend class ::foundation::core::RegionRefDoor;
@@ -505,20 +505,18 @@ template <RefTarget T, ErasableBrand Brand>
     return detail::RefDoor::lend<::foundation::brand::DefaultBrand>(object);
 }
 
-namespace detail {
-
 // The Ref of Object with the brand of static storage.  A template argument
 // of a reference type names an object of static storage, so the object lives
-// for the whole process, and the Ref never dangles.  A local object is no
-// template argument, so the call of a local object does not compile.  The
-// constraint refuses a function, which a reference argument also names.
+// for the whole process, and the Ref never dangles.  A local object, a
+// temporary and a thread_local object are no template argument, so their
+// call does not compile.  The constraint refuses a function, which a
+// reference argument also names.  An object of static or thread storage
+// can hold such a Ref (the statics of the rule view-escape).
 template <auto& Object>
     requires RefTarget<std::remove_reference_t<decltype(Object)>>
-[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static_() noexcept {
-    return RefDoor::lend<StaticStorageBrand>(Object);
+[[nodiscard]] constexpr Ref<std::remove_reference_t<decltype(Object)>, StaticStorageBrand> ref_of_static() noexcept {
+    return detail::RefDoor::lend<StaticStorageBrand>(Object);
 }
-
-}  // namespace detail
 
 namespace detail {
 

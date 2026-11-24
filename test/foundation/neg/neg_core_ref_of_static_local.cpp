@@ -7,5 +7,5 @@
 
 int main() {
     int local = 1;
-    return *foundation::core::detail::ref_of_static_<local>();
+    return *foundation::core::ref_of_static<local>();
 }

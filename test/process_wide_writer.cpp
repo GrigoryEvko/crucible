@@ -28,7 +28,7 @@ constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing
 
 void process_wide_write() noexcept {
     using namespace process_wide_libraries;
-    crucible::publish_static_ckernel_table(kPublishedTable);
+    crucible::publish_static_ckernel_table<kPublishedTable>();
 
     const bool was_kernel_registered = crucible::register_schema_hash(
         kVigilForeground, ::fixy::mint_tagged<::fixy::tags::source::External>(crucible::SchemaHash{kRegisteredHash}),

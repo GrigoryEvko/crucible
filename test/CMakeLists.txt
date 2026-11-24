@@ -2066,11 +2066,15 @@ crucible_neg_compile_test(neg_ckernel_singleton_raw_pointer
 crucible_neg_compile_test(neg_ckernel_singleton_cross_tag
   "could not convert .external. from .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::External>."
   "to .Tagged<\\[\\.\\.\\.\\],fixy::tags::source::Singleton>.")
-# The readers keep the address of the published table, and the deleted twin
-# of publish_static_ckernel_table refuses a temporary table.
+# The readers keep the address of the published table, so the table is the
+# template argument of a reference type of publish_static_ckernel_table, and a
+# temporary table and a local table are no such argument.
 crucible_neg_compile_test(neg_publish_static_ckernel_table_temporary
-  "use of deleted function .void crucible::publish_static_ckernel_table\\(const StaticCKernelTable&&\\)."
-  "the lifetime of a temporary table stops at the end of the statement")
+  "no matching function for call to .publish_static_ckernel_table<crucible::StaticCKernelTable"
+  "cannot bind non-const lvalue reference of type .crucible::StaticCKernelTable&. to an rvalue")
+crucible_neg_compile_test(neg_publish_static_ckernel_table_local
+  "no matching function for call to .publish_static_ckernel_table<local>\\(\\)."
+  "the address of .local. is not a valid template argument because it does not have static storage duration")
 
 # SchemaTable::lookup() returns an Option of
 # LookupName = Tagged<CText, source::Interned>.

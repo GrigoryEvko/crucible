@@ -691,7 +691,7 @@ namespace detail {
 /// Claims a record for a session that starts at the protocol whose text is
 /// Protocol, minted at `site`, with the priority of its Resource.  The text
 /// is a template argument, so it is an object of static storage, and the
-/// record never names a text that ends before it.  ref_of_static_ of
+/// record never names a text that ends before it.  ref_of_static of
 /// foundation/core/Ref.h takes the text as its template argument too, and it
 /// gives the Ref with the brand of static storage.  The site is a constant
 /// Site, so the file of the record is a static text too.  The body is one
@@ -699,7 +699,7 @@ namespace detail {
 /// session is then not tracked.
 template <::foundation::core::TextView const& Protocol>
 [[nodiscard]] inline endpoint_id claim(::foundation::core::Site site, priority order, holder_on_claim holder) noexcept {
-    return detail::claim_with_text(::foundation::core::detail::ref_of_static_<Protocol>(), site, order, holder);
+    return detail::claim_with_text(::foundation::core::ref_of_static<Protocol>(), site, order, holder);
 }
 
 /// Makes `first` and `second` the two ends of one channel.

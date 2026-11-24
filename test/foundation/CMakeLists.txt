@@ -2921,7 +2921,7 @@ foundation_neg_compile_test(neg_core_slot_map_ref_door_private
   "SlotMap\\.h:[0-9]+:[0-9]+: note: declared private here")
 foundation_neg_compile_test(neg_core_ref_of_static_local
   "the address of .local. is not a valid template argument because it does not have static storage duration"
-  "no matching function for call to .ref_of_static_<local>\\(\\).")
+  "no matching function for call to .ref_of_static<local>\\(\\).")
 # The door of the key of the frame doors is private to the door classes of the
 # owners above Frame.h: a unit that is no friend and a class with the name of a
 # friend in another namespace do not reach it.  The member of the door class

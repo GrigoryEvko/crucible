@@ -250,6 +250,10 @@ struct StaticCKernelTable {
     ::fixy::View<const CKernelEntry> entries{};
 };
 
+// The Ref of a published table.  Its brand proves that the table has static
+// storage, because only ref_of_static of foundation/core/Ref.h gives it.
+using StaticCKernelTableRef = ::fixy::Ref<const StaticCKernelTable, ::fixy::StaticStorageBrand>;
+
 namespace detail {
 // Constant-initialized, so it has no dynamic initializer to order against
 // the adapter that publishes into it and no guard variable to race on.  The
@@ -257,9 +261,9 @@ namespace detail {
 //
 // One cell of one pointer for the process.  The PyTorch adapter publishes
 // from libcrucible_dispatch.so, and the background thread that classifies
-// runs in libcrucible_vessel.so.
-CRUCIBLE_PROCESS_WIDE inline constinit ::fixy::Atomic<::fixy::Option<::fixy::Ref<const StaticCKernelTable>>>
-    static_ckernel_table_{};
+// runs in libcrucible_vessel.so.  The cell lives for the whole process, so
+// it holds only a Ref of static storage.
+CRUCIBLE_PROCESS_WIDE inline constinit ::fixy::Atomic<::fixy::Option<StaticCKernelTableRef>> static_ckernel_table_{};
 }  // namespace detail
 
 // Publishing is a release store, and classify_static reads with acquire, so a
@@ -269,19 +273,17 @@ CRUCIBLE_PROCESS_WIDE inline constinit ::fixy::Atomic<::fixy::Option<::fixy::Ref
 // so before the background thread classifies one.  The background thread can
 // start first: Python creates the Vigil before it loads the adapter.
 //
-// The array must outlive the process's classifying readers. A `constexpr`
-// array with static storage duration satisfies that; a local does not.
-inline void publish_static_ckernel_table(const StaticCKernelTable& table CRUCIBLE_LIFETIMEBOUND) noexcept {
+// The table must outlive the process's classifying readers.  The table is the
+// template argument Table, so it is an object of static storage: a local
+// table, a temporary and a thread_local table are no template argument, and
+// their publication does not compile.  The table is const, so no write
+// changes it under a reader.
+template <auto& Table>
+    requires std::is_same_v<std::remove_reference_t<decltype(Table)>, const StaticCKernelTable>
+inline void publish_static_ckernel_table() noexcept {
     detail::static_ckernel_table_.store_release(
-        ::fixy::Option<::fixy::Ref<const StaticCKernelTable>>::some(::fixy::erase_brand(::fixy::to(table))));
+        ::fixy::Option<StaticCKernelTableRef>::some(::fixy::ref_of_static<Table>()));
 }
-
-// The lifetime of a temporary table stops at the end of the statement, but
-// each reader of the process keeps its address.  This twin refuses a
-// temporary table.
-void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
-    "the lifetime of a temporary table stops at the end of the statement, but the readers keep its address. "
-    "Publish a table with static storage duration");
 
 // OPAQUE when no adapter has published, which is every build that links no
 // framework adapter, and OPAQUE when the published array does not name this
@@ -293,7 +295,7 @@ void publish_static_ckernel_table(const StaticCKernelTable&&) = delete(
 // the first call.
 [[nodiscard]] inline CKernelId classify_static(SchemaHash schema_hash) noexcept {
     return detail::static_ckernel_table_.load_acquire()
-        .map([schema_hash](::fixy::Ref<const StaticCKernelTable> table) noexcept {
+        .map([schema_hash](StaticCKernelTableRef table) noexcept {
             return detail::find_kernel_id_(table->entries, schema_hash);
         })
         .value_or(CKernelId::OPAQUE);

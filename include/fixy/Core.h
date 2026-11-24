@@ -182,8 +182,10 @@ using ::foundation::core::Ref;
 using ::foundation::core::RefMut;
 using ::foundation::core::erase_brand;
 using ::foundation::core::ErasableBrand;
+using ::foundation::core::ref_of_static;
 using ::foundation::core::same_object;
 using ::foundation::core::same_target;
+using ::foundation::core::StaticStorageBrand;
 using ::foundation::core::to;
 
 // The door foreign_pointer of a RunAddress stays in foundation::core, as

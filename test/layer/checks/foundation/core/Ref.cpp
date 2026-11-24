@@ -195,8 +195,8 @@ concept ReachesRefDoor = requires(int& object) { detail::RefDoor::lend<Brand>(ob
 static_assert(!ReachesRefDoor<CheckBrand>);
 static_assert(requires(int& object) { to(object); });
 inline constexpr int static_target = 7;
-static_assert(*detail::ref_of_static_<static_target>() == 7);
-static_assert(std::is_same_v<decltype(detail::ref_of_static_<static_target>()), Ref<int const, StaticStorageBrand>>);
+static_assert(*ref_of_static<static_target>() == 7);
+static_assert(std::is_same_v<decltype(ref_of_static<static_target>()), Ref<int const, StaticStorageBrand>>);
 static_assert(!std::is_default_constructible_v<detail::RefDoor>);
 static_assert(!std::is_trivially_copyable_v<detail::RefDoor>);
 

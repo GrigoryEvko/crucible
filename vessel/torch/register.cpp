@@ -224,7 +224,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the block of PyTorch registers the kernel of each operator struct of at::_ops")
 TORCH_LIBRARY_IMPL(aten, Crucible, m) {
     if constexpr (crucible::vessel::kShard == 0)
-        crucible::publish_static_ckernel_table(crucible::vessel::kStaticCKernelTable);
+        crucible::publish_static_ckernel_table<crucible::vessel::kStaticCKernelTable>();
 
 #define CRUCIBLE_REGISTER_ATEN_OP(index, op_struct) \
     ::crucible::vessel::register_kernel_of_shard<index##u, ::at::_ops::op_struct>(m);
