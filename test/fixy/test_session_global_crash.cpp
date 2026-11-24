@@ -9,6 +9,7 @@
 // binary view of the two projections, and runs them through the crash
 // transport of fixy/session/CrashTransport.h under two schedules.
 
+#include <fixy/Core.h>
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/Global.h>
 #include <fixy/session/Liveness.h>
@@ -300,11 +301,11 @@ int run_sender_crashes_after_send() {
     auto q = s::mint_crash_session<BinaryQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     auto [p_value, p_label_lost] = std::move(p).send(push_label);
-    if (p_label_lost.is_some()) return fail("a label to a live peer came back");
+    if (p_label_lost.is_some()) ::fixy::fatal("a label to a live peer came back");
     auto [p_wait, p_value_lost] = std::move(p_value).send(11, push_int);
-    if (p_value_lost.is_some()) return fail("a value to a live peer came back");
+    if (p_value_lost.is_some()) ::fixy::fatal("a value to a live peer came back");
     if (to_q.slots.size() != 2 || to_q.slots.front() != s::step_wire_word_v<BinaryP> || to_q.slots.back() != 11) {
-        return fail("the keyed send did not write its label word and then its value");
+        ::fixy::fatal("the keyed send did not write its label word and then its value");
     }
     (void)std::move(p_wait).crash(s::CrashCause::Abort);
 

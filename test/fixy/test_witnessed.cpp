@@ -216,8 +216,9 @@ void test_a_witness_refuses_another_session_of_the_same_type(::fixy::TestRunnerC
     auto witnessed = ::fixy::session::mint_witnessed_at(first, protocol_storage.view());
 
     CRUCIBLE_TEST_ASSERT(test, deref(witnessed, first).size() == 3);
+    auto const& presented = second;
     ::fixy::check::expect_dies(
-        test, [&witnessed, &second] noexcept { static_cast<void>(deref(witnessed, second)); }, kStale);
+        test, [&witnessed, &presented] noexcept { static_cast<void>(deref(witnessed, presented)); }, kStale);
 
     static_cast<void>(std::move(first).send(Ping{1}, send_ping).close());
     static_cast<void>(std::move(second).send(Ping{2}, send_ping).close());
@@ -231,8 +232,9 @@ void test_a_witness_refuses_the_same_session_after_a_loop_iteration(::fixy::Test
 
     head = std::move(head).send(Ping{3}, send_ping);
     static_assert(CanDeref<decltype(witnessed), decltype(head)>, "a loop iteration gives the handle its type again");
+    auto const& presented = head;
     ::fixy::check::expect_dies(
-        test, [&witnessed, &head] noexcept { static_cast<void>(deref(witnessed, head)); }, kStale);
+        test, [&witnessed, &presented] noexcept { static_cast<void>(deref(witnessed, presented)); }, kStale);
 
     std::move(head).detach(s::detach_reason::InfiniteLoopProtocol{});
 }
@@ -262,8 +264,9 @@ void test_a_witness_refuses_a_later_session_on_the_same_record(::fixy::TestRunne
 
     auto second = s::mint_session<Sending>(ctx, Wire{});
     CRUCIBLE_TEST_ASSERT(test, second.watch_endpoint() == record);
+    auto const& presented = second;
     ::fixy::check::expect_dies(
-        test, [&witnessed, &second] noexcept { static_cast<void>(deref(witnessed, second)); }, kStale);
+        test, [&witnessed, &presented] noexcept { static_cast<void>(deref(witnessed, presented)); }, kStale);
 
     static_cast<void>(std::move(second).send(Ping{6}, send_ping).close());
 }

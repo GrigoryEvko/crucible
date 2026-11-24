@@ -238,23 +238,25 @@ constexpr auto apply = []<typename Transition>(vm::ModeLease& lease, Transition&
 
     auto to_compiled = std::move(session).select<0>(s::no_label);
     auto after_compiled = std::move(to_compiled).send(vm::ModeRecordingToCompiled{}, apply);
-    if (s::atomic_machine_state(cell) != vm::Mode::COMPILED) {
-        std::fprintf(stderr, "the RECORDING -> COMPILED send did not reach the cell\n");
-        return 1;
-    }
+    const bool is_compiled = s::atomic_machine_state(cell) == vm::Mode::COMPILED;
 
     auto to_recording = std::move(after_compiled).select<1>(s::no_label);
     auto after_recording = std::move(to_recording).send(vm::ModeCompiledToRecording{}, apply);
-    if (s::atomic_machine_state(cell) != vm::Mode::RECORDING) {
-        std::fprintf(stderr, "the COMPILED -> RECORDING send did not reach the cell\n");
-        return 1;
-    }
+    const bool is_recording = s::atomic_machine_state(cell) == vm::Mode::RECORDING;
 
     // Branch 2 is End, which is the protocol's only exit.  The close gives
     // the lease back, and the lease gives the writer back to the owner.
     auto terminal = std::move(after_recording).select<2>(s::no_label);
     vm::ModeLease lease = std::move(terminal).close();
     const vm::ModeWriter returned = std::move(lease).return_writer();
+    if (!is_compiled) {
+        std::fprintf(stderr, "the RECORDING -> COMPILED send did not reach the cell\n");
+        return 1;
+    }
+    if (!is_recording) {
+        std::fprintf(stderr, "the COMPILED -> RECORDING send did not reach the cell\n");
+        return 1;
+    }
 
     // The direct publishers stay available to the thread that owns the
     // cell, with the writer that came back.  The cell checks that the writer

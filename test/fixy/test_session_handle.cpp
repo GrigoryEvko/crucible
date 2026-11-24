@@ -488,14 +488,13 @@ static_assert(!s::DetachReason<int>);
         signalled = label;
         return true;
     });
+    static_assert(std::is_same_v<typename decltype(chosen)::protocol, s::Send<Stop, s::End>>);
+    auto at_end = std::move(chosen).send(Stop{}, [](ValueWire&, Stop&) noexcept { return true; });
+    (void)std::move(at_end).close();
     if (signalled != 1) {
         std::fprintf(stderr, "select did not signal the branch index\n");
         return 1;
     }
-    static_assert(std::is_same_v<typename decltype(chosen)::protocol, s::Send<Stop, s::End>>);
-
-    auto at_end = std::move(chosen).send(Stop{}, [](ValueWire&, Stop&) noexcept { return true; });
-    (void)std::move(at_end).close();
     return 0;
 }
 
@@ -629,16 +628,15 @@ constexpr auto pop_int = [](WordQueue& queue) noexcept -> ::fixy::Option<int> {
             return 1;
         }
     });
-    if (taken != 0) {
-        std::fprintf(stderr, "the label word of Hello did not reach the Hello branch of the peer\n");
-        return 1;
-    }
+    // The reply is on the wire only when the receiver took the Hello branch,
+    // and the receive below would wait for it.
+    if (taken != 0) ::fixy::fatal("the label word of Hello did not reach the Hello branch of the peer");
+    auto [reply, sender_end] = std::move(awaiting).recv(pop_int);
+    (void)std::move(sender_end).close();
     if (hello_value != 5) {
         std::fprintf(stderr, "the value of Hello is %d on the receiving side, want 5\n", hello_value);
         return 1;
     }
-    auto [reply, sender_end] = std::move(awaiting).recv(pop_int);
-    (void)std::move(sender_end).close();
     return reply == 7 ? 0 : 1;
 }
 
@@ -658,18 +656,20 @@ static_assert(!::fixy::CarrierDeclaresViewState<AtSend, int>, "a tag outside the
 [[nodiscard]] int view_a_position() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<s::Send<Ping, s::End>>(ctx, ValueWire{});
+    bool is_view_of_handle = false;
     {
         const auto view = ::fixy::mint_view<s::position::AtSend>(handle);
-        if (view.carrier().protocol_name() != AtSend::protocol_name()) {
-            std::fprintf(stderr, "the view does not look at the handle it was minted from\n");
-            return 1;
-        }
+        is_view_of_handle = view.carrier().protocol_name() == AtSend::protocol_name();
     }
     auto at_end = std::move(handle).send(Ping{9}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;
     });
     (void)std::move(at_end).close();
+    if (!is_view_of_handle) {
+        std::fprintf(stderr, "the view does not look at the handle it was minted from\n");
+        return 1;
+    }
     return 0;
 }
 
@@ -1195,16 +1195,17 @@ void liveness_and_cancel_run(::fixy::TestRunnerCtx const& test) {
     const std::uint32_t baseline = s::watch::live_count();
 
     auto handle = s::mint_session<Once>(ctx, ValueWire{});
-    if (!live_count_is(baseline + 1, "a mint")) return 1;
+    const bool is_counted_at_mint = live_count_is(baseline + 1, "a mint");
     auto waits = std::move(handle).send(Ping{1}, [](ValueWire& w, Ping& p) noexcept {
         w.last_sent = p.value;
         return true;
     });
-    if (!live_count_is(baseline + 1, "a step that does not end")) return 1;
+    const bool is_counted_at_step = live_count_is(baseline + 1, "a step that does not end");
     auto [pong, at_end] = std::move(waits).recv([](ValueWire& w) noexcept { return ::fixy::some(Pong{w.last_sent}); });
     (void)pong;
-    if (!live_count_is(baseline, "the step to End")) return 1;
+    const bool is_given_back_at_end = live_count_is(baseline, "the step to End");
     (void)std::move(at_end).close();
+    if (!is_counted_at_mint || !is_counted_at_step || !is_given_back_at_end) return 1;
 
     auto detached = s::mint_session<Once>(ctx, ValueWire{});
     std::move(detached).detach(s::detach_reason::TestInstrumentation{});
@@ -1224,8 +1225,9 @@ void liveness_and_cancel_run(::fixy::TestRunnerCtx const& test) {
     // A moved handle keeps its record, and the move does not claim one.
     auto first = s::mint_session<Once>(ctx, ValueWire{});
     auto second = std::move(first);
-    if (!live_count_is(baseline + 1, "a move")) return 1;
+    const bool is_counted_once = live_count_is(baseline + 1, "a move");
     std::move(second).detach(s::detach_reason::TestInstrumentation{});
+    if (!is_counted_once) return 1;
 
     if (walk_test_channel() != 0 || !live_count_is(baseline, "a test channel")) return 1;
     if (rewind_test_channel() != 0 || !live_count_is(baseline, "a rewound test channel")) return 1;

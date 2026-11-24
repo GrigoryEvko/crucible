@@ -72,18 +72,22 @@ int transfer_keeps_the_record_live() {
     const std::uint32_t live_before = s::watch::live_count();
     auto handle = s::mint_session<Proto>(ctx, Wire{7});
     auto carried = s::mint_delegated_session(std::move(handle));
-    if (handle.is_live()) return fail("the handle stayed live after its endpoint left it");
-    if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
-    if (s::watch::live_count() != live_before + 1) return fail("the transfer ended the session's record");
+    const bool is_source_dead = !handle.is_live();
+    const bool is_endpoint_held = carried.holds_endpoint();
+    const std::uint32_t live_in_transfer = s::watch::live_count();
 
     // The receiver accepts the endpoint, and End releases the record.
     auto received = std::move(carried).accept();
-    if (s::watch::live_count() != live_before + 1) return fail("the accept changed the number of live records");
+    const std::uint32_t live_after_accept = s::watch::live_count();
     auto at_end = std::move(received).send(Ping{1}, [](Wire& wire, Ping& ping) noexcept {
         if (wire.sent != 7) return false;
         wire.sent = ping.value;
         return true;
     });
+    if (!is_source_dead) return fail("the handle stayed live after its endpoint left it");
+    if (!is_endpoint_held) return fail("the payload does not hold the endpoint");
+    if (live_in_transfer != live_before + 1) return fail("the transfer ended the session's record");
+    if (live_after_accept != live_before + 1) return fail("the accept changed the number of live records");
     if (s::watch::live_count() != live_before) return fail("a record stayed live after End");
     const Wire back = std::move(at_end).close();
     if (back.sent != 1) return fail("the receiver's handle did not step the transferred Resource");
