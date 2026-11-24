@@ -1121,7 +1121,7 @@ include(cmake/CodeFlags.cmake)
 
 # ═══════════════════════════════════════════════════════════════
 # Section 1: Common flags — GCC 16
-#            52 warning flags + the code flags of each build
+#            53 warning flags + the code flags of each build
 # ═══════════════════════════════════════════════════════════════
 target_compile_options(crucible_dialect INTERFACE
   # ── 1.1  Baseline (3) ──────────────────────────────────────
@@ -1141,12 +1141,13 @@ target_compile_options(crucible_dialect INTERFACE
   -Wcast-align                         #  12  alignment-increasing cast
   -Wcast-qual                          #  13  cast discards const
 
-  # ── 1.3  Enum safety (5) ───────────────────────────────────
-  # Note: -Wswitch-enum (warn on missing case even with default:) is
-  # intentionally omitted.  Our Op/CKernelId enums have 60+/140+ values;
-  # most dispatchers handle a strict subset and fall through on default.
-  # -Werror=switch + -Wswitch-default catch the real bugs (uncovered value
-  # with no default, missing default) without drowning in 60-way noise.
+  # ── 1.3  Enum safety (6) ───────────────────────────────────
+  # -Wswitch-enum asks each switch on an enumeration to name each
+  # enumerator, also when the switch has a default arm.  Thus a new
+  # enumerator needs a decision at each switch on its enumeration, and no
+  # default arm takes it with no review.  The default arm stays for a value
+  # that names no enumerator (-Wswitch-default).
+  -Wswitch-enum                        #  14  an enumerator with no case
   -Wswitch-default                     #  15  no default in switch
   -Wimplicit-fallthrough               #  16  missing [[fallthrough]]
   -Wenum-conversion                    #  17  enum type conversion
