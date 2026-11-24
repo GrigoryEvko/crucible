@@ -106,11 +106,38 @@ void test_only_the_owner_writes(TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "only the owner thread of a sink writes it\n");
 }
 
+// A reader on another thread loads a count while the owner marks the slot.  A
+// plain count would be a data race, which ThreadSanitizer reports.  The probe
+// gives the other thread the address of the sink as an integer.
+void test_a_reader_runs_beside_the_owner(TestRunnerCtx const& test) {
+    constexpr int kTurns = 1000;
+    Sink sink = observe::mint_timing_sink<2>();
+    ::fixy::BgLoadCtx const bg{eff::testing::bg()};
+    ::fixy::Atomic<std::uint64_t> address{::crucible::test::address_of_thread_bound(sink)};
+    ::fixy::Atomic<std::uint64_t> last_seen{0};
+    auto reader = [&address, &last_seen]() noexcept {
+        Sink const& read = ::crucible::test::thread_bound_at<Sink>(address.load_acquire());
+        for (int turn = 0; turn < kTurns; ++turn) {
+            last_seen.store_release(read.read(eff::testing::test().nondet, kMarkSlot));
+        }
+    };
+    ::fixy::thread::run_beside(bg, ::fixy::thread::ThreadOptions{}, std::move(reader), [&sink]() noexcept {
+        for (int turn = 0; turn < kTurns; ++turn) {
+            sink.mark(kMarkSlot);
+        }
+    }).expect("the door starts the reader with the default options");
+    std::uint64_t const at_the_end = sink.read(eff::extract_bare_from_ctx<eff::Effect::Nondet>(test), kMarkSlot);
+    static_cast<void>(last_seen.load_acquire());
+    CRUCIBLE_TEST_ASSERT(test, at_the_end != 0);
+    ::fixy::check::pass(test, "a reader on another thread loads a count while the owner marks it\n");
+}
+
 }  // namespace
 
 int main() {
     TestRunnerCtx const test{eff::testing::test()};
     test_a_kernel_writes_and_a_test_reads(test);
     test_only_the_owner_writes(test);
+    test_a_reader_runs_beside_the_owner(test);
     return 0;
 }

@@ -434,6 +434,14 @@ static_assert(std::is_same_v<decltype(std::declval<AddressKey const&>().hash()),
 // Its hash is zero, as the hash of each key of a null pointer is.
 static_assert(AddressKey::of_null() == AddressKey::of_null() && AddressKey::of_null().hash() == 0);
 
+// A cell holds a key in one word, and two threads can use the cell at the same
+// time.  The fixture neg_core_address_key_of_word shows that only a cell makes
+// a key from a word.
+static_assert(AtomicValue<AddressKey> && AtomicValue<Option<AddressKey>>);
+static_assert(sizeof(Atomic<AddressKey>) == sizeof(std::uintptr_t));
+static_assert(::foundation::transfer::Synchronized<Atomic<AddressKey>>);
+static_assert(!std::is_default_constructible_v<atomic_word_key<AddressKey>>);
+
 // A key comes from a pointer to an object or a void pointer, and not from a
 // pointer to a function.
 static_assert(AddressKeyTarget<int>);

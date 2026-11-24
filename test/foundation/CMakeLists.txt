@@ -3800,6 +3800,9 @@ foundation_neg_compile_test(neg_core_address_key_of_function
 foundation_neg_compile_test(neg_core_address_key_of_integer
   "no matching function for call to .mint_address_key\\(const uintptr_t&\\)."
   "mismatched types .const T\\*. and .long unsigned int.")
+foundation_neg_compile_test(neg_core_address_key_of_word
+  "foundation::core::atomic_word_key<T>::atomic_word_key\\(\\)"
+  "with T = foundation::core::AddressKey\\]. is private within this context")
 # The address of a run of data, alone and with its device.  The gate of a
 # device and the gate of a run of bytes are disjunctions, so their fixtures
 # take a concept depth of 3, and each regex names the part that fails.

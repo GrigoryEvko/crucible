@@ -101,7 +101,7 @@ public:
         // The count of a cell is an Atomic, and a reader on another thread
         // loads it at the same time.
         slots_.with_element(
-            slot, [](Cell& cell) noexcept { cell.count.store_release(::foundation::os::read_spin_counter()); });
+            slot, [](Cell& cell) noexcept { cell.count->store_release(::foundation::os::read_spin_counter()); });
     }
 
     void mark(Slot) && = delete("a temporary sink ends at the end of the full expression, and nobody reads it");
@@ -117,7 +117,7 @@ public:
     // The value of the slot.  The read takes the bare tag of Nondet, because
     // a count changes from run to run.
     [[nodiscard]] std::uint64_t read(::foundation::effects::cap::Nondet, Slot slot) const noexcept {
-        return slots_.at(slot).count.load_acquire();
+        return slots_.at(slot).count->load_acquire();
     }
 
 private:
@@ -136,15 +136,14 @@ private:
     void add_(Slot slot, std::uint64_t ticks) noexcept {
         require_owner_();
         slots_.with_element(slot, [ticks](Cell& cell) noexcept {
-            cell.count.store_release(::foundation::core::saturating_add(cell.count.load_acquire(), ticks));
+            cell.count->store_release(::foundation::core::saturating_add(cell.count->load_acquire(), ticks));
         });
     }
 
     // One slot alone on its cache line.  The owner writes the count, and a
-    // reader on another thread reads it.  The padding fills the line.
-    struct alignas(64) Cell {
-        ::foundation::core::Atomic<std::uint64_t> count{};
-        ::foundation::core::FixedArray<std::uint8_t, 64 - sizeof(::foundation::core::Atomic<std::uint64_t>)> pad{};
+    // reader on another thread reads it.
+    struct Cell {
+        ::foundation::core::CacheLine<::foundation::core::Atomic<std::uint64_t>> count{};
     };
 
     ::foundation::core::FixedArray<Cell, Slots> slots_{};

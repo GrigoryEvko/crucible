@@ -97,6 +97,7 @@ fixy/channels/StageEndpointBridge.cpp | 2.3 | ::fixy::session::combinators, ::fi
 fixy/channels/SubstrateSessionBridge.cpp | 0.3 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, unknown
 fixy/channels/SwmrSession.cpp | 0.4 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, ::foundation::permissions::permission_rows, ::foundation::transfer::door_probe_contexts, unknown
 fixy/collision/Report.cpp | 3.9 | ::fixy::atom::detail, ::fixy::atom::dispatch, ::fixy::atom::spawn
+fixy/concurrent/AtomicSnapshot.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Pipeline.cpp | 1.2 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Spawn.cpp | 0.5 | unknown
@@ -129,6 +130,7 @@ foundation/core/Atomic.cpp | unmeasured | ::foundation::transfer::door_probe_con
 foundation/core/BumpArena.cpp | unmeasured | unknown
 foundation/core/Link.cpp | 0.3 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Owner.cpp | 0.1 | unknown
+foundation/core/Ref.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Region.cpp | 2.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/core/Strided.cpp | 0.2 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/diag/Catalog.cpp | 3.5 | ::foundation::diag

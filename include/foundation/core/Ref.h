@@ -542,12 +542,18 @@ struct AddressDoor {
     [[nodiscard]] static constexpr AddressOfKey key() noexcept { return AddressOfKey{}; }
 };
 
-// The door of mint_address_key, and the one friend of AddressKey.  Only
-// mint_address_key calls it.  The door holds no template, so no explicit
-// specialization of a template reaches the constructor of a key.  The door
-// is in namespace detail, and a use of that namespace outside the base is a
-// finding.
+// The door of mint_address_key and of the atomic word of a key, and the one
+// friend of AddressKey.  Only the two of them call it.  The door holds no
+// template, so no explicit specialization of a template reaches the
+// constructor of a key.  The door is in namespace detail, and a use of that
+// namespace outside the base is a finding.
 struct AddressKeyDoor;
+
+// The word of an AddressKey in an atomic cell: the bits of its address.  The
+// enum is in namespace detail, and a use of that namespace outside the base is
+// a finding, so no integer comes back from a key.
+enum class AddressKeyWord : std::uintptr_t {
+};
 
 }  // namespace detail
 
@@ -648,9 +654,39 @@ struct AddressKeyDoor {
     [[nodiscard]] static AddressKey key_of(void const volatile* pointer) noexcept {
         return AddressKey{__builtin_bit_cast(std::uintptr_t, pointer)};
     }
+
+    // The word of a key, and the key of a word that a cell holds.  Only a cell
+    // makes the key of the word, and a cell holds only words that word_of gave.
+    [[nodiscard]] static constexpr AddressKeyWord word_of(AddressKey const& key) noexcept {
+        return AddressKeyWord{key.value_};
+    }
+    [[nodiscard]] static constexpr AddressKey key_of_word(atomic_word_key<AddressKey> const& /*cell*/,
+                                                          AddressKeyWord word) noexcept {
+        return AddressKey{std::to_underlying(word)};
+    }
 };
 
 }  // namespace detail
+
+// The word of an AddressKey in an atomic cell (the word of a value of
+// Atomic.h).  So a table that threads share holds its keys in cells, and a
+// compare of a key that a cell gives is a compare of one word.  Each address is
+// a key, and the key of the null address gives the empty word.  So a cell of an
+// Option of an AddressKey ends the process on a store of that key.
+template <>
+struct atomic_word<AddressKey> {
+    using word_type = detail::AddressKeyWord;
+    static constexpr word_type empty_word{};
+
+    [[nodiscard]] static constexpr word_type to_word(AddressKey const& key) noexcept {
+        return detail::AddressKeyDoor::word_of(key);
+    }
+
+    [[nodiscard]] static constexpr AddressKey from_word(atomic_word_key<AddressKey> const& cell,
+                                                        word_type word) noexcept {
+        return detail::AddressKeyDoor::key_of_word(cell, word);
+    }
+};
 
 // The key of the address that pointer holds.  A null pointer gives the key
 // of the address zero, which is equal only to the key of a null pointer.

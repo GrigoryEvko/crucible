@@ -99,6 +99,7 @@ public:
         // Publishes observation into the cell at index.
         void record(::fixy::Index<Count> index, Observation const& observation) noexcept {
             ::foundation::SoleWriterProof<Writer, publish_role_> const proof{};
+            // Each part of a cell is atomic, so the readers of the cell run at the same time.
             sinks_->cells_.with_element(
                 index, [&proof, &observation](cell_type& cell) noexcept { cell.publish(proof, observation); });
         }

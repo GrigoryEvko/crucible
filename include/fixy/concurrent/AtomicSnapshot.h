@@ -44,9 +44,8 @@
 // the sequence counter at any moment.
 //
 // SnapshotValue also requires ImplicitLifetimeThroughout, because the
-// checked lifetime start refuses any other T.  The payload words and the
-// read buffers are std::array, because a Debug build checks each subscript
-// of a std::array.
+// checked lifetime start refuses any other T.  The read buffers are
+// std::array, because a Debug build checks each subscript of a std::array.
 
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
@@ -220,19 +219,21 @@ private:
     }
 
     // Copy one word of a value into a local word, and store it with a release store.
-    CRUCIBLE_INLINE static void store_word_(const std::byte* source, std::uint64_t* words,
-                                            std::size_t word_index) noexcept {
+    template <std::size_t WordIndex>
+    CRUCIBLE_INLINE void store_word_(const std::byte* source) noexcept {
         std::uint64_t word = 0;
-        __builtin_memcpy(&word, source + word_index * kWordBytes, bytes_of_word_(word_index));
-        __atomic_store(words + word_index, &word, __ATOMIC_RELEASE);
+        __builtin_memcpy(&word, source + WordIndex * kWordBytes, bytes_of_word_(WordIndex));
+        // Each word is an Atomic, so the writer and the readers use it at the same time.
+        words_.with_element(
+            ::foundation::core::index<WordIndex>(),
+            [word](::foundation::core::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(word); });
     }
 
     // Load one word with an acquire load, and copy its bytes of T into a thread-private buffer.
-    CRUCIBLE_INLINE static void load_word_(const std::uint64_t* words, std::byte* destination,
-                                           std::size_t word_index) noexcept {
-        std::uint64_t word = 0;
-        __atomic_load(words + word_index, &word, __ATOMIC_ACQUIRE);
-        __builtin_memcpy(destination + word_index * kWordBytes, &word, bytes_of_word_(word_index));
+    template <std::size_t WordIndex>
+    CRUCIBLE_INLINE void load_word_(std::byte* destination) const noexcept {
+        std::uint64_t const word = words_.at(::foundation::core::index<WordIndex>()).load_acquire();
+        __builtin_memcpy(destination + WordIndex * kWordBytes, &word, bytes_of_word_(WordIndex));
     }
 
     // Store each word of a value with a release store.  The read of the value is a plain read.
@@ -240,16 +241,14 @@ private:
     template <std::size_t... WordIndex>
     CRUCIBLE_INLINE void write_words_(const T& value, std::index_sequence<WordIndex...>) noexcept {
         const auto* const source = static_cast<const std::byte*>(static_cast<const void*>(&value));
-        std::uint64_t* const words = storage_.data();
-        (store_word_(source, words, WordIndex), ...);
+        (store_word_<WordIndex>(source), ...);
     }
 
     // Load each word with an acquire load into a thread-private buffer.
     // Complexity: one load for each word, at most 32.
     template <std::size_t... WordIndex>
     CRUCIBLE_INLINE void read_words_(std::byte* destination, std::index_sequence<WordIndex...>) const noexcept {
-        const std::uint64_t* const words = storage_.data();
-        (load_word_(words, destination, WordIndex), ...);
+        (load_word_<WordIndex>(destination), ...);
     }
 
     // Every thread reads the counter, and the writer writes both it and
@@ -257,7 +256,7 @@ private:
     // does not invalidate the other's line.  The payload words come
     // first, so their address is the address of the snapshot, and the
     // word accesses need no separate address computation.
-    alignas(64) std::array<std::uint64_t, kWords> storage_{};
+    alignas(64)::foundation::core::FixedArray<::foundation::core::Atomic<std::uint64_t>, kWords> words_{};
 
     // The counter of the one writer: the cell of an owner of
     // foundation/core/Atomic.h, which the proof of the writer writes.

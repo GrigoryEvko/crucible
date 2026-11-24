@@ -223,6 +223,15 @@ void test_address_key() {
     CRUCIBLE_FATAL_INVARIANT(!(of_pair.lower_by(1) == of_pair));
     AddressKey const below_null = of_null.lower_by(1);
     CRUCIBLE_FATAL_INVARIANT(below_null.lower_by(UINT64_MAX) == of_null);
+
+    // A cell gives back the key that a store put in it, and a compare-and-swap
+    // compares the whole key.
+    ::foundation::core::Atomic<AddressKey> cell{AddressKey::of_null()};
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire() == of_null);
+    cell.store_release(of_pair);
+    CRUCIBLE_FATAL_INVARIANT(cell.load_acquire() == of_pair && cell.load_acquire().hash() == of_pair.hash());
+    CRUCIBLE_FATAL_INVARIANT(!cell.cas_acq_rel(of_second, of_null).is_ok() && cell.load_acquire() == of_pair);
+    CRUCIBLE_FATAL_INVARIANT(cell.cas_acq_rel(of_pair, of_second).is_ok() && cell.load_acquire() == of_second);
 }
 
 // True when a prefetch of a named object of type T compiles.
