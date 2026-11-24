@@ -34,7 +34,9 @@ int main() {
     const crucible::NumericalRecipe recipe{};
     shp::SharpReducer reducer{std::move(context)};
     const ::fixy::HotFgCtx hot = ::foundation::effects::testing::foreground();
-    auto result = reducer.allreduce_via_sharp(hot, input.view(), output.view(), recipe,
-                                              shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
-    return result.is_ok() ? 0 : 1;
+    return output.with_mut([&](auto run) noexcept -> int {
+        auto result = reducer.allreduce_via_sharp(hot, input.view(), std::move(run), recipe,
+                                                  shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
+        return result.is_ok() ? 0 : 1;
+    });
 }

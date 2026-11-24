@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include <utility>
 
 namespace crucible {
 
@@ -576,6 +577,9 @@ enum class TensorViewRefusal : uint8_t {
     // An element of the tensor lies outside the storage, the offset of the
     // storage is negative, or a count of the sizes or of the span wraps.
     OutsideStorage,
+    // Two indexes of the tensor name one element, as two indexes of a
+    // broadcast do, so the tensor has no unique view, which writes.
+    Overlap,
 };
 
 // The strided view of the tensor of meta over storage, the run of its slot
@@ -584,11 +588,12 @@ enum class TensorViewRefusal : uint8_t {
 // storage.  So the element at the zero index is element storage_offset of
 // storage, and a view of a slice at an offset reads the elements of its base.
 // The build of the slots sizes each slot to hold the offset and the extent of
-// each tensor in it.  The view has the dynamic rank of the tensor.  O(ndim).
+// each tensor in it.  The view has the dynamic rank of the tensor, and it
+// reads the elements.  O(ndim).
 template <class T>
     requires TensorElement<T>
-[[nodiscard]] inline ::fixy::Result<::fixy::StridedView<T>, TensorViewRefusal>
-strided_view_of(const TensorMeta& meta, ::fixy::View<T> storage) noexcept {
+[[nodiscard]] inline ::fixy::Result<::fixy::StridedView<T const>, TensorViewRefusal>
+strided_view_of(const TensorMeta& meta, ::fixy::View<T const> storage) noexcept {
     if (meta.layout != Layout::Strided) return ::fixy::err(TensorViewRefusal::NotStrided);
     if (meta.dtype != scalar_type_of<T>) return ::fixy::err(TensorViewRefusal::ElementType);
     ::fixy::FixedArray<std::size_t, kMaxTensorNDim> sizes{};
@@ -615,6 +620,26 @@ strided_view_of(const TensorMeta& meta, ::fixy::View<T> storage) noexcept {
                storage, size_lanes, stride_lanes,
                static_cast<::fixy::Option<std::size_t>&&>(offset).expect("the offset has a value"))
         .ok_or(TensorViewRefusal::OutsideStorage);
+}
+
+// The unique strided view of the tensor of meta over storage, the run of its
+// slot in a frame, or the reason that the tensor has no such view.  The view
+// takes storage, so it is the one writer of the elements of the tensor.  The
+// view makes the checks of the view above, and a tensor in which two indexes
+// name one element gives Overlap.  O(ndim^2).
+template <class T, class Brand, std::size_t Extent>
+    requires TensorElement<T>
+[[nodiscard]] inline ::fixy::Result<::fixy::StridedViewMut<T, ::fixy::dynamic_rank, Brand>, TensorViewRefusal>
+strided_view_of(const TensorMeta& meta, ::fixy::ViewMut<T, Brand, Extent> storage) noexcept {
+    const ::fixy::View<T const> elements = storage.view();
+    CRUCIBLE_TRY(view, strided_view_of(meta, elements));
+    // The view above holds each element inside the storage, so the mint
+    // refuses only a tensor in which two indexes name one element.
+    ::fixy::Option<::fixy::StridedViewMut<T, ::fixy::dynamic_rank, Brand>> unique = ::fixy::mint_strided_view_mut(
+        std::move(storage), view.sizes(), view.strides(),
+        ::fixy::narrow<std::size_t>(meta.storage_offset).expect("the view above refuses a negative offset"));
+    if (unique.is_none()) return ::fixy::err(TensorViewRefusal::Overlap);
+    return std::move(unique).expect("the test above found the view");
 }
 
 }  // namespace crucible

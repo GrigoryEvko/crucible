@@ -4,6 +4,8 @@
 
 #include <crucible/TensorMeta.h>
 
+#include <utility>
+
 namespace {
 
 struct FloatPair {
@@ -17,6 +19,6 @@ int main() {
     ::fixy::FixedArray<FloatPair, 4> values{};
     ::crucible::TensorMeta const meta{};
     return values.with_mut([&meta](auto run) noexcept -> int {
-        return static_cast<int>(::crucible::strided_view_of(meta, ::fixy::View<FloatPair>{run.view()}).is_ok());
+        return static_cast<int>(::crucible::strided_view_of(meta, std::move(run)).is_ok());
     });
 }

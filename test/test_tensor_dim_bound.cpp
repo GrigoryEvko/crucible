@@ -106,13 +106,13 @@ using TraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_META_BYTES>;
     using ::crucible::detail::write_record_field_;
     TraceRecord record{};
     record.with_mut([&fields](auto run) noexcept {
-        write_record_field_<offsetof(TensorMeta, sizes)>(run.view(), fields.sizes);
-        write_record_field_<offsetof(TensorMeta, strides)>(run.view(), fields.strides);
-        write_record_field_<offsetof(TensorMeta, ndim)>(run.view(), fields.ndim);
-        write_record_field_<offsetof(TensorMeta, dtype)>(run.view(), fields.dtype);
-        write_record_field_<offsetof(TensorMeta, device_type)>(run.view(), fields.device_type);
-        write_record_field_<offsetof(TensorMeta, device_idx)>(run.view(), fields.device_idx);
-        write_record_field_<offsetof(TensorMeta, layout)>(run.view(), fields.layout);
+        write_record_field_<offsetof(TensorMeta, sizes)>(run, fields.sizes);
+        write_record_field_<offsetof(TensorMeta, strides)>(run, fields.strides);
+        write_record_field_<offsetof(TensorMeta, ndim)>(run, fields.ndim);
+        write_record_field_<offsetof(TensorMeta, dtype)>(run, fields.dtype);
+        write_record_field_<offsetof(TensorMeta, device_type)>(run, fields.device_type);
+        write_record_field_<offsetof(TensorMeta, device_idx)>(run, fields.device_idx);
+        write_record_field_<offsetof(TensorMeta, layout)>(run, fields.layout);
     });
     return record;
 }
@@ -125,13 +125,13 @@ using FirstTraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_FIRST_M
     using detail::write_record_field_;
     FirstTraceRecord record{};
     record.with_mut([&fields](auto run) noexcept {
-        write_record_field_<detail::kFirstMetaSizesAt>(run.view(), fields.sizes);
-        write_record_field_<detail::kFirstMetaStridesAt>(run.view(), fields.strides);
-        write_record_field_<detail::kFirstMetaNdimAt>(run.view(), fields.ndim);
-        write_record_field_<detail::kFirstMetaDtypeAt>(run.view(), fields.dtype);
-        write_record_field_<detail::kFirstMetaDeviceTypeAt>(run.view(), fields.device_type);
-        write_record_field_<detail::kFirstMetaDeviceIdxAt>(run.view(), fields.device_idx);
-        write_record_field_<detail::kFirstMetaLayoutAt>(run.view(), fields.layout);
+        write_record_field_<detail::kFirstMetaSizesAt>(run, fields.sizes);
+        write_record_field_<detail::kFirstMetaStridesAt>(run, fields.strides);
+        write_record_field_<detail::kFirstMetaNdimAt>(run, fields.ndim);
+        write_record_field_<detail::kFirstMetaDtypeAt>(run, fields.dtype);
+        write_record_field_<detail::kFirstMetaDeviceTypeAt>(run, fields.device_type);
+        write_record_field_<detail::kFirstMetaDeviceIdxAt>(run, fields.device_idx);
+        write_record_field_<detail::kFirstMetaLayoutAt>(run, fields.layout);
     });
     return record;
 }

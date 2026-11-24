@@ -303,28 +303,45 @@ public:
     explicit SharpReducer(SharpContext context) noexcept : context_{std::move(context)} {}
     ~SharpReducer() { drop(std::move(context_)); }
 
-    template <class Ctx>
+    // The output is the run of a frame, and the reduce is its one writer.
+    template <class Ctx, class Brand, std::size_t Extent>
         requires CtxFitsSharpDispatch<Ctx>
     [[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. A valid request returns DispatchDeferred, "
                             "RuntimeUnavailable or VendorBackendUnavailable")]]
     ::fixy::Result<DeclaredSharpDispatch, SharpError>
-    allreduce_via_sharp(Ctx const&, ::fixy::View<float const> input, ::fixy::View<float> output,
+    allreduce_via_sharp(Ctx const&, ::fixy::View<float const> input, ::fixy::ViewMut<float, Brand, Extent> output,
                         NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
-        return run_allreduce_(input, output, recipe, laws, plan);
+        return run_allreduce_(input, output.view(), recipe, laws, plan);
     }
 
 private:
     // The body of allreduce_via_sharp, in Sharp.cpp.  It checks the shapes,
     // the recipe and the plan against the context, and then gives the error
-    // that tells why no switch reduces.
+    // that tells why no switch reduces.  No switch writes the output, so the
+    // body reads only its count.
     [[nodiscard]] ::fixy::Result<DeclaredSharpDispatch, SharpError>
-    run_allreduce_(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
+    run_allreduce_(::fixy::View<float const> input, ::fixy::View<float const> output, NumericalRecipe const& recipe,
                    SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) const noexcept;
 };
 
+namespace detail {
+
+// The body of dispatch_sharp_allreduce, in Sharp.cpp.  It checks the shapes
+// and the recipe, and then gives the fallback that tells why no switch
+// reduces.  No switch writes the output, so the body reads only its count.
+[[nodiscard]] ::fixy::Result<DeclaredSharpDispatch, SharpError>
+dispatch_sharp_allreduce_(::fixy::View<float const> input, ::fixy::View<float const> output,
+                          NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
+
+}  // namespace detail
+
+// The output is the run of a frame, and the dispatch is its one writer.
+template <class Brand, std::size_t Extent>
 [[nodiscard, deprecated("CRUCIBLE_STUB: no switch reduces. Returns a fallback for every request")]]
 ::fixy::Result<DeclaredSharpDispatch, SharpError>
-dispatch_sharp_allreduce(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
-                         SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept;
+dispatch_sharp_allreduce(::fixy::View<float const> input, ::fixy::ViewMut<float, Brand, Extent> output,
+                         NumericalRecipe const& recipe, SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
+    return detail::dispatch_sharp_allreduce_(input, output.view(), recipe, laws, plan);
+}
 
 }  // namespace crucible::cntp::_wip::sharp

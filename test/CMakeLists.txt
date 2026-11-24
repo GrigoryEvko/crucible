@@ -1582,12 +1582,18 @@ crucible_neg_compile_test(neg_cog_mimic_temporary_identity
 #     refused by the IsExecCtx constraint, not deep inside the factory.
 #   * neg_topology_graph_test_ctx_refused — a test context carries no Init
 #     row, so it cannot mint the fleet's topology graph.
+#   * neg_topology_edges_incident_on_named_view_mut — edges_incident_on
+#     takes the ViewMut of a frame by value, so a call with the named ViewMut
+#     would copy the one writer of the run.
 crucible_neg_compile_test(neg_topology_graph_non_ctx_first_arg
     "no matching function for call to .mint_topology_graph.int,"
     "IsExecCtx<Ctx>. \\[with Ctx = int\\]")
 crucible_neg_compile_test(neg_topology_graph_test_ctx_refused
     "no matching function for call to .mint_topology_graph.fixy::TestRunnerCtx&"
     "CtxFitsTopologyGraph<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::Test")
+crucible_neg_compile_test(neg_topology_edges_incident_on_named_view_mut
+    "use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\) \\[with T = crucible::topology::EdgeId.*\\].: a ViewMut is the one writer of its run: a copy would be a second writer"
+    "initializing argument 2 of .constexpr std::size_t crucible::topology::TopologyGraph::edges_incident_on\\(crucible::topology::NodeId, foundation::core::ViewMut<crucible::topology::EdgeId, Brand, Extent>\\) const")
 
 # ─── topology::Discovery ──────────────────────────────────────────────
 #
@@ -2419,13 +2425,18 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
 
 # The strided view of a tensor takes only an element type with a dtype: a
 # bool of the plan can hold a byte other than 0 and 1, and a struct of the
-# bits of a dtype is no element of it.
+# bits of a dtype is no element of it.  The unique view takes the ViewMut of
+# a frame by value, so a const ViewMut, which would copy the one writer of
+# the run, gives no unique view.
 crucible_neg_compile_test(neg_tensor_meta_strided_bool_element
-  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, foundation::core::View<bool>\\)."
+  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, std::remove_reference<foundation::core::ViewMut<bool, main\\(\\)::<lambda\\(\\)>, 4>&>::type\\)."
   "required for the satisfaction of .TensorElement<T>. \\[with T = bool\\]")
 crucible_neg_compile_test(neg_tensor_meta_strided_dtype_without_type
-  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, foundation::core::View<.anonymous.::FloatPair>\\)."
+  "no matching function for call to .strided_view_of\\(const crucible::TensorMeta&, std::remove_reference<foundation::core::ViewMut<.anonymous.::FloatPair, main\\(\\)::<lambda\\(\\)>, 4>&>::type\\)."
   "required for the satisfaction of .TensorElement<T>. \\[with T = <unnamed>::FloatPair\\]")
+crucible_neg_compile_test(neg_tensor_meta_strided_const_view_mut
+  "use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\) \\[with T = float.*\\].: a ViewMut is the one writer of its run: a copy would be a second writer"
+  "initializing argument 2 of .foundation::core::Result<foundation::core::StridedViewMut<T, 18446744073709551615, Brand>, crucible::TensorViewRefusal> crucible::strided_view_of\\(const TensorMeta&, foundation::core::ViewMut<T, Brand, Extent>\\)")
 
 # read_meta dtype gate (sibling of the ndim and kernel_id gates) — ScalarType
 # dtype byte typed gate at the read_meta()
@@ -3017,8 +3028,8 @@ crucible_neg_compile_test(neg_sharp_zero_participants
   "in .constexpr. expansion of .fixy::mint_refined<IsPositive\\(\\), short unsigned int>\\(0\\)."
   "__builtin_trap\\(\\). is not a constant expression")
 crucible_neg_compile_test(neg_sharp_raw_plan_dispatch
-  "could not convert .plan. from .const crucible::cntp::_wip::sharp::SharpFabricPlan. to .crucible::cntp::_wip::sharp::DeclaredSharpFabricPlan."
-  "aka .fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>.")
+  "no matching function for call to .dispatch_sharp_allreduce\\(foundation::core::View<const float, 1>, .*const crucible::cntp::_wip::sharp::SharpFabricPlan&\\)."
+  "cannot convert .plan. \\(type .const crucible::cntp::_wip::sharp::SharpFabricPlan.\\) to type .crucible::cntp::_wip::sharp::DeclaredSharpFabricPlan. \\{aka .fixy::Tagged<crucible::cntp::_wip::sharp::SharpFabricPlan, crucible::cntp::_wip::sharp::wip_source::Sharp>.\\}")
 crucible_neg_compile_test(neg_sharp_strict_recipe_concept
   "no matching function for call to .sharp_recipe_laws<StrictRecipe>\\(\\)."
   "the expression .\\(Recipe::determinism\\) != crucible::ReductionDeterminism::BITEXACT_STRICT \\[with Recipe = StrictRecipe\\]. evaluated to .false.")
@@ -3044,7 +3055,7 @@ crucible_neg_compile_test(neg_sharp_dispatch_hot_ctx
   "no matching function for call to .crucible::cntp::_wip::sharp::SharpReducer::allreduce_via_sharp\\(const fixy::HotFgCtx&, "
   "required for the satisfaction of .CtxFitsSharpDispatch<Ctx>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 crucible_neg_compile_test(neg_sharp_dispatch_is_a_stub
-  "crucible::cntp::_wip::sharp::dispatch_sharp_allreduce\\(foundation::core::View<const float>, foundation::core::View<float>, const crucible::NumericalRecipe&, SharpRecipeLaws, DeclaredSharpFabricPlan\\). is deprecated: CRUCIBLE_STUB: no switch reduces"
+  "crucible::cntp::_wip::sharp::dispatch_sharp_allreduce\\(foundation::core::View<const float>, foundation::core::ViewMut<float, Brand, Extent>, const crucible::NumericalRecipe&, SharpRecipeLaws, DeclaredSharpFabricPlan\\) \\[with Brand = .*\\]. is deprecated: CRUCIBLE_STUB: no switch reduces"
   "\\[-Werror=deprecated-declarations\\]")
 
 # cntp/Tcam.h, the hardware ACL and flow-rule substrate.

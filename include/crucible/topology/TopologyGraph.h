@@ -153,7 +153,9 @@ public:
     // of the edges.  The return is the number of incident edges found, which
     // can exceed the number of ids written.  Each id past the end of out is
     // dropped.  Complexity: linear in the edges.
-    [[nodiscard]] constexpr std::size_t edges_incident_on(NodeId node, ::fixy::View<EdgeId> out) const noexcept {
+    template <class Brand, std::size_t Extent>
+    [[nodiscard]] constexpr std::size_t edges_incident_on(NodeId node,
+                                                          ::fixy::ViewMut<EdgeId, Brand, Extent> out) const noexcept {
         CRUCIBLE_PRE(!node.is_none());
         std::size_t found = 0;
         auto cursor = out.begin();

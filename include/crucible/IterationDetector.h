@@ -233,7 +233,7 @@ struct IterationDetector {
         const bool diverged_at_this_period = period_ != 0 && current_period_reported_ && periods_reported_ == 1;
         if (diverged_at_this_period && phase_is_unique) break_(period_, period_body_sum_, BREAKS_TO_REFUTE);
         refuted_.with_mut([this](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
                 if (refuted.broke_since_restart) refuted.breaks = BREAKS_TO_REFUTE;
                 refuted.broke_since_restart = false;
             }
@@ -253,9 +253,13 @@ struct IterationDetector {
 
 private:
     // The refuted periods: the first refuted_count_ slots of the ring, in the
-    // run of a frame of the ring.
-    [[nodiscard]] ::fixy::View<RefutedPeriod> refuted_in_(::fixy::View<RefutedPeriod> run) const noexcept {
-        return run.window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
+    // run of a frame of the ring.  The window takes the run, so it is the one
+    // writer of the refuted periods.
+    template <class Brand, std::size_t Extent>
+    [[nodiscard]] ::fixy::ViewMut<RefutedPeriod, Brand>
+    refuted_in_(::fixy::ViewMut<RefutedPeriod, Brand, Extent> run) const noexcept {
+        return ::fixy::take_window(std::move(run), 0, refuted_count_)
+            .expect("at most REFUTED_CAPACITY periods are refuted");
     }
     [[nodiscard]] ::fixy::View<const RefutedPeriod> view_refuted_() const noexcept {
         return refuted_.view().window(0, refuted_count_).expect("at most REFUTED_CAPACITY periods are refuted");
@@ -496,7 +500,7 @@ private:
     // it is full.
     void break_(uint32_t period, uint64_t body_sum, uint32_t breaks) {
         const bool is_counted = refuted_.with_mut([this, period, body_sum, breaks](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
                 if (refuted.period == period && refuted.body_sum == body_sum) {
                     refuted.breaks = ::fixy::min(BREAKS_TO_REFUTE, refuted.breaks + breaks);
                     return true;
@@ -622,7 +626,7 @@ private:
 
     void mark_broke_since_restart_(uint32_t period, uint64_t body_sum) {
         refuted_.with_mut([this, period, body_sum](auto run) noexcept {
-            for (RefutedPeriod& refuted : refuted_in_(run.view())) {
+            for (RefutedPeriod& refuted : refuted_in_(std::move(run))) {
                 if (refuted.period == period && refuted.body_sum == body_sum) refuted.broke_since_restart = true;
             }
         });

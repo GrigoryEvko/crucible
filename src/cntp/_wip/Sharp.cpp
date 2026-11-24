@@ -36,8 +36,9 @@ namespace crucible::cntp::_wip::sharp {
 }
 
 ::fixy::Result<DeclaredSharpDispatch, SharpError>
-SharpReducer::run_allreduce_(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
-                             SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) const noexcept {
+SharpReducer::run_allreduce_(::fixy::View<float const> input, ::fixy::View<float const> output,
+                             NumericalRecipe const& recipe, SharpRecipeLaws laws,
+                             DeclaredSharpFabricPlan plan) const noexcept {
     if (input.size() != output.size()) {
         return ::fixy::err(SharpError::OutputShapeMismatch);
     }
@@ -57,8 +58,9 @@ SharpReducer::run_allreduce_(::fixy::View<float const> input, ::fixy::View<float
 }
 
 ::fixy::Result<DeclaredSharpDispatch, SharpError>
-dispatch_sharp_allreduce(::fixy::View<float const> input, ::fixy::View<float> output, NumericalRecipe const& recipe,
-                         SharpRecipeLaws laws, DeclaredSharpFabricPlan plan) noexcept {
+detail::dispatch_sharp_allreduce_(::fixy::View<float const> input, ::fixy::View<float const> output,
+                                  NumericalRecipe const& recipe, SharpRecipeLaws laws,
+                                  DeclaredSharpFabricPlan plan) noexcept {
     if (input.size() != output.size()) {
         return ::fixy::err(SharpError::OutputShapeMismatch);
     }

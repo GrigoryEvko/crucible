@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -200,7 +201,7 @@ static void test_mint_topology_graph_round_trip() {
 
     ::foundation::core::FixedArray<topology::EdgeId, 8> incident{};
     auto found =
-        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{1}, run.view()); });
+        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{1}, std::move(run)); });
     // The middle node is named as the far end of both links, once
     // from each side.
     CRUCIBLE_TEST_ASSERT(kTest, found == 2);
@@ -208,7 +209,7 @@ static void test_mint_topology_graph_round_trip() {
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<1>()) == topology::EdgeId{3});
 
     auto found_on_end_node =
-        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{0}, run.view()); });
+        incident.with_mut([&g](auto run) noexcept { return g.edges_incident_on(topology::NodeId{0}, std::move(run)); });
     // An end node is named by one half-edge only.
     CRUCIBLE_TEST_ASSERT(kTest, found_on_end_node == 1);
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<0>()) == topology::EdgeId{1});

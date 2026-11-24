@@ -6,6 +6,8 @@
 
 #include <crucible/cntp/_wip/Sharp.h>
 
+#include <utility>
+
 // The dispatch path is a stub, and its deprecation is not the error under
 // test.
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -22,7 +24,7 @@ int main() {
     };
     return output.with_mut([&](auto run) noexcept -> int {
         auto result = shp::dispatch_sharp_allreduce(
-            input.view(), run.view(), recipe, shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
+            input.view(), std::move(run), recipe, shp::SharpRecipeLaws{.associative = true, .commutative = true}, plan);
         return result.is_ok() ? 0 : 1;
     });
 }

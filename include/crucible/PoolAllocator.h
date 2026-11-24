@@ -159,7 +159,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
             const ::fixy::View<uint8_t> pool = pool_.view();
             address_column = ::fixy::with_mut(std::move(address_column), [&](auto address_run) noexcept {
                 view_column = ::fixy::with_mut(std::move(view_column), [&](auto view_run) noexcept {
-                    write_pool_windows_(plan, pool, address_run.view(), view_run.view());
+                    write_pool_windows_(plan, pool, std::move(address_run), std::move(view_run));
                 });
             });
             addresses_ = std::move(address_column);
@@ -411,19 +411,20 @@ private:
     }
 
     // Writes the address and the bytes of each pooled slot of the plan into
-    // the two lent runs of the columns.  One branded scope of the slots reads
-    // the two runs at each index with no check, and the address comes from
-    // the window, so the address of each pooled slot is the first byte of its
-    // View by construction.  A pooled slot of no byte has no first byte, so
-    // its address is the byte of the pool at its offset.  Complexity: one
-    // pass over the slots.
-    static void write_pool_windows_(const MemoryPlan& plan, ::fixy::View<uint8_t> pool,
-                                    ::fixy::View<::fixy::Option<::fixy::RunAddress>> address_run,
-                                    ::fixy::View<::fixy::View<uint8_t>> view_run) noexcept {
+    // the two lent runs of the columns.  Each column holds one entry for each
+    // slot of the plan.  One branded scope walks the slots, and each run
+    // writes the entry at the index of the slot through its element door.  The
+    // address comes from the window, so the address of each pooled slot is
+    // the first byte of its View by construction.  A pooled slot of no byte
+    // has no first byte, so its address is the byte of the pool at its
+    // offset.  Complexity: one pass over the slots.
+    template <class AddressBrand, std::size_t AddressExtent, class ViewBrand, std::size_t ViewExtent>
+    static void
+    write_pool_windows_(const MemoryPlan& plan, ::fixy::View<uint8_t> pool,
+                        ::fixy::ViewMut<::fixy::Option<::fixy::RunAddress>, AddressBrand, AddressExtent> address_run,
+                        ::fixy::ViewMut<::fixy::View<uint8_t>, ViewBrand, ViewExtent> view_run) noexcept {
+        CRUCIBLE_PRE(address_run.size() == plan.slots.size() && view_run.size() == plan.slots.size());
         static_cast<void>(::fixy::mint_branded_scope(plan.slots.view(), [&](auto const& slots) noexcept {
-            auto const addresses =
-                slots.parallel(address_run).expect("the column holds one entry for each slot of the plan");
-            auto const views = slots.parallel(view_run).expect("the column holds one entry for each slot of the plan");
             for (auto const index : slots.indices()) {
                 const TensorSlot& slot = slots.at(index);
                 if (slot.is_external) continue;
@@ -432,9 +433,13 @@ private:
                         [&](::fixy::View<uint8_t> bytes) noexcept {
                             if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
                                 refuse_slot_(slot, plan, index);
-                            addresses.at(index) = bytes.size() == 0 ? ::fixy::mint_run_address(pool, slot.offset_bytes)
-                                                                    : ::fixy::mint_run_address(bytes, 0);
-                            views.at(index) = bytes;
+                            auto address = address_run.get_mut(index.raw())
+                                               .expect("the column holds one entry for each slot of the plan");
+                            *address = bytes.size() == 0 ? ::fixy::mint_run_address(pool, slot.offset_bytes)
+                                                         : ::fixy::mint_run_address(bytes, 0);
+                            auto window = view_run.get_mut(index.raw())
+                                              .expect("the column holds one entry for each slot of the plan");
+                            *window = bytes;
                         },
                         [&]() noexcept { refuse_slot_(slot, plan, index); });
             }
