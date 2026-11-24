@@ -34,10 +34,11 @@ namespace fixy::session {
 //
 //   a trying write     bool(Resource&, T&)     false while it has no room,
 //                                              and the value stays as it was
-//   a trying write     fixy::Option<T>(Resource&, T&&)    of a linear T: the
-//                                              value back while it has no
-//                                              room, and no value when it
-//                                              took the value
+//   a trying write     fixy::Option<T>(Resource&, T&&)    of a linear T, on a
+//                                              class with a call operator,
+//                                              such as a closure: the value
+//                                              back while it has no room, and
+//                                              no value when it took the value
 //   a declared write   void(Resource&, T&&, watch::wait_scope&)
 //   a polling read     fixy::Option<T>(Resource&)    no value while nothing
 //                                                    is there
@@ -60,15 +61,18 @@ namespace fixy::session {
 // linear payload takes the value by move and gives it back while it has no
 // room, so each call consumes its value one time and no write moves a value
 // out of a reference.  A linear payload with the reference shape is no trying
-// write, and each door refuses it with [Transport_Shape].
+// write.  A plain send and a recorded send refuse it with [Transport_Shape],
+// and a crash send refuses it with [Crash_Write_Must_Try].
 template <typename F, typename Resource, typename T>
 concept TryWriteByReference =
     std::is_invocable_v<F&, Resource&, T&> && std::same_as<std::invoke_result_t<F&, Resource&, T&>, bool>;
 
-// The write of the move shape is a callable object, and the doors call it as a
-// plain call.
+// The write of the move shape is a class with a call operator, such as a
+// closure, and the doors call it as a plain call.  So the call names the body
+// that takes the linear value.  A function and a pointer to a function are no
+// such class: a pointer can be null, and a call through one names no body.
 template <typename F, typename Resource, typename T>
-concept TryWriteByMove = requires(F& write, Resource& resource, T&& value) {
+concept TryWriteByMove = std::is_class_v<F> && requires(F& write, Resource& resource, T&& value) {
     { write(resource, static_cast<T&&>(value)) } -> std::same_as<::fixy::Option<T>>;
 };
 
@@ -87,6 +91,16 @@ concept WriteShape = TryWrite<F, Resource, T> || DeclaredWrite<F, Resource, T>;
 
 template <typename F, typename Resource, typename T>
 concept WriteTransport = WriteShape<F, Resource, T> && ::foundation::linear::HoldsNoLinearValue<F>;
+
+// The reason of the deleted twin of each send of a linear payload, for a
+// write that has no write shape of a linear payload.
+#define CRUCIBLE_LINEAR_WRITE_REFUSAL                                                                                \
+    "[Transport_Shape] a trying write of a linear payload is a closure, or a class with a call operator, of the "    \
+    "shape fixy::Option<T>(Resource&, T&&): it takes the value, and it gives the value back while it has no room.  " \
+    "A write of a linear payload can also declare its wait, as void(Resource&, T&&, "                                \
+    "fixy::session::watch::wait_scope&).  A write through a reference leaves the handle a moved-out value, or a "    \
+    "value that ends with no consume.  A function and a pointer to a function are no closure, because a pointer "    \
+    "can be null."
 
 // A stop test of a trying write: bool(), true when the write must stop
 // and give the value back to the caller.  A send with a stop test calls

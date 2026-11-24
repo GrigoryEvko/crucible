@@ -406,11 +406,13 @@ struct MessageBox {
 // is linear, so the write takes it by move and gives it back while the
 // mailbox is full.
 template <class Message>
-[[nodiscard]] ::fixy::Option<Message> put_message(MessageBox<Message>& box, Message&& message) noexcept {
-    if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
-    static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
-    return ::fixy::none;
-}
+struct PutMessage {
+    [[nodiscard]] ::fixy::Option<Message> operator()(MessageBox<Message>& box, Message&& message) const noexcept {
+        if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
+        static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
+        return ::fixy::none;
+    }
+};
 
 // A polling read that takes the message out of the mailbox.
 template <class Message>
@@ -453,7 +455,7 @@ int check_fresh_brand_recording() {
     auto sender = s::mint_recorded_session(
         s::mint_permissioned_session<s::Send<Message, s::End>>(bg_ctx(), MessageBox<Message>{}, std::move(root)),
         s::mint_session_event_writer(sender_log), kSelf, kPeer);
-    MessageBox<Message> wire = std::move(sender).send(4, put_message<Message>).close();
+    MessageBox<Message> wire = std::move(sender).send(4, PutMessage<Message>{}).close();
     auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Message, s::End>>(bg_ctx(), std::move(wire)),
                                              s::mint_session_event_writer(receiver_log), kPeer, kSelf);
     auto [value, at_end] = std::move(receiver).recv(take_message<Message>);

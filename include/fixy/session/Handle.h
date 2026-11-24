@@ -2080,11 +2080,16 @@ public:
 
     template <typename Transport>
         requires(!is_keyed) && (slot_form != SlotForm::Token) && (!ChannelPole<Resource>)
-                 && (!WriteShape<Transport, Resource, T>)
+                 && (!WriteShape<Transport, Resource, T>) && (!::foundation::linear::LinearValue<T>)
     void send(detail::sent_value_t<T>, Transport) && = delete(
         "[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns false with the value unchanged "
         "while it has no room, or declares its wait, as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A "
         "write of another shape can wait where the watch of fixy/session/Watch.h does not see it.");
+
+    template <typename Transport>
+        requires(!is_keyed) && (slot_form != SlotForm::Token) && (!ChannelPole<Resource>)
+                 && (!WriteShape<Transport, Resource, T>) && ::foundation::linear::LinearValue<T>
+    void send(detail::sent_value_t<T>, Transport) && = delete(CRUCIBLE_LINEAR_WRITE_REFUSAL);
 
     // A session over a pole of a channel sends through the write of the pole
     // table of its channel (fixy/session/Admission.h), in the context of the
@@ -2124,6 +2129,11 @@ public:
                                           && std::is_nothrow_move_constructible_v<Resource>) {
         return HandleFactory::send(std::move(*this), std::move(transport));
     }
+
+    template <typename Transport>
+        requires(!is_keyed) && (slot_form == SlotForm::Token) && (!ChannelPole<Resource>)
+                 && (!WriteShape<Transport, Resource, T>)
+    void send(Transport) && = delete(CRUCIBLE_LINEAR_WRITE_REFUSAL);
 
     template <typename Arg>
         requires(!is_keyed) && (slot_form == SlotForm::Token) && ChannelPole<Resource>

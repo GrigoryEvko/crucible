@@ -570,11 +570,18 @@ public:
     template <typename T, typename Transport>
         requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
                   && (!WriteShape<Transport, resource_type, typename protocol::message_type>)
+                  && (!::foundation::linear::LinearValue<typename protocol::message_type>)
     void send(T, Transport) && = delete("[Transport_Shape] a write either tries, as bool(Resource&, T&), and returns "
                                         "false with the value unchanged while it has no room, or declares its wait, "
                                         "as void(Resource&, T&&, fixy::session::watch::wait_scope&).  A write of "
                                         "another shape can wait where the watch of fixy/session/Watch.h does not see "
                                         "it.");
+
+    template <typename T, typename Transport>
+        requires is_send_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)
+                  && (!WriteShape<Transport, resource_type, typename protocol::message_type>)
+                  && ::foundation::linear::LinearValue<typename protocol::message_type>
+    void send(T, Transport) && = delete(CRUCIBLE_LINEAR_WRITE_REFUSAL);
 
     template <typename Transport>
         requires is_recv_v<protocol> && (!is_keyed_step_v<protocol>) && (!ChannelPole<resource_type>)

@@ -3997,6 +3997,27 @@ fixy_neg_compile_test(neg_sess_session_priority_untyped
 fixy_neg_compile_test(neg_sess_send_write_waits_in_secret
   ": \\[Transport_Shape\\] a write either tries, as bool\\(Resource&, T&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(fixy::session::detail::sent_value_t<T>, Transport\\)")
+# The write of a linear payload takes it by move and gives it back while it
+# has no room, and it is a class with a call operator.  A write of the shape
+# of a copyable payload, a function and a pointer to a function are refused.
+fixy_neg_compile_test(neg_sess_send_marker_write_by_reference
+  ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(fixy::session::detail::sent_value_t<T>, Transport\\)")
+fixy_neg_compile_test(neg_sess_send_marker_write_only_reads
+  ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(fixy::session::detail::sent_value_t<T>, Transport\\)")
+fixy_neg_compile_test(neg_sess_crash_marker_write_only_reads
+  ": \\[Crash_Write_Must_Try\\] the write of a crash session is a trying write"
+  "use of deleted function .void fixy::session::CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>::send\\(fixy::session::detail::sent_value_t<typename P::message_type>, Transport\\)")
+fixy_neg_compile_test(neg_sess_token_send_write_by_reference
+  ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(Transport\\)")
+fixy_neg_compile_test(neg_sess_send_linear_write_is_a_function
+  ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
+  "use of deleted function .void fixy::session::SessionHandle<fixy::session::Send<T, R>, Resource, LoopCtx, Policy, PS>::send\\(fixy::session::detail::sent_value_t<T>, Transport\\).*\\[with Transport = foundation::core::Option<.*\\(\\*\\)\\(")
+fixy_neg_compile_test(neg_sess_recorded_linear_write_is_a_null_pointer
+  ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
+  "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\).*Transport = foundation::core::Option<.*\\(\\*\\)\\(")
 fixy_neg_compile_test(neg_sess_recv_read_waits_in_secret
   ": \\[Transport_Shape\\] a read either polls, as fixy::Option<T>\\(Resource&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Transport\\)")

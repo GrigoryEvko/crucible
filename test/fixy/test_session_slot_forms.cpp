@@ -65,11 +65,13 @@ struct Mailbox {
 // is linear, so the write takes it by move and gives it back while the
 // mailbox is full.
 template <class Message>
-[[nodiscard]] ::fixy::Option<Message> put_message(Mailbox<Message>& box, Message&& message) noexcept {
-    if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
-    static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
-    return ::fixy::none;
-}
+struct PutMessage {
+    [[nodiscard]] ::fixy::Option<Message> operator()(Mailbox<Message>& box, Message&& message) const noexcept {
+        if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
+        static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
+        return ::fixy::none;
+    }
+};
 
 // A polling read that takes the message out of the mailbox.
 template <class Message>
@@ -103,7 +105,7 @@ template <template <class, class, class> class Marker>
     using Message = Marker<int, Region, Brand>;
     auto sender = s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, Mailbox<Message>{}, std::move(root));
     static_assert(std::is_same_v<typename decltype(sender)::perm_set, HoldsRegion<Brand>>);
-    auto sender_done = std::move(sender).send(value, put_message<Message>);
+    auto sender_done = std::move(sender).send(value, PutMessage<Message>{});
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoTags>,
                   "the sender gave the token of the slots away");
     Mailbox<Message> wire = std::move(sender_done).close();
@@ -118,6 +120,113 @@ template <template <class, class, class> class Marker>
     ::foundation::linear::drop(std::move(token));
     std::move(back.held).expect_empty("the receive takes the marker out of the mailbox");
     if (received != value) return fail("the marker did not carry its value");
+    return 0;
+}
+
+// ── A write of a marker that finds no room ──────────────────────────
+//
+// A write of a linear message gives the message back while it has no room,
+// and the handle moves the same message into the next try.  So a message
+// that the box refuses some times arrives with its value and its token, and
+// a stop test that reports between two tries gives it to the caller.
+
+// A mailbox that refuses its first writes, and counts each try.
+template <class Message>
+struct SlowBox {
+    ::fixy::FixedList<Message, 1> held{};
+    int refusals = 0;
+    int tries = 0;
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+template <class Message>
+struct PutSlowly {
+    [[nodiscard]] ::fixy::Option<Message> operator()(SlowBox<Message>& box, Message&& message) const noexcept {
+        ++box.tries;
+        if (box.refusals > 0) {
+            --box.refusals;
+            return ::fixy::Option<Message>::some(std::move(message));
+        }
+        static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
+        return ::fixy::none;
+    }
+};
+
+// The value of a marker that came back or that the box holds, and -1 for no
+// marker.  The token of the marker ends here through the drop door.
+template <class Message>
+[[nodiscard]] int end_marker(::fixy::Option<Message> marker) noexcept {
+    return std::move(marker).match(
+        [](Message message) noexcept {
+            const int value = message.peek();
+            ::foundation::linear::drop(std::move(message));
+            return value;
+        },
+        []() noexcept { return -1; });
+}
+
+// The box refuses the first try of the send and the first try of its wait.
+// The third try takes the marker.
+[[nodiscard]] int refused_marker_is_taken() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto root = fp::mint_permission_root<Region>();
+    using Message = s::Transferable<int, Region, ::foundation::brand::brand_of_t<decltype(root)>>;
+    auto sender =
+        s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, SlowBox<Message>{.refusals = 2}, std::move(root));
+    auto sender_done = std::move(sender).send(11, PutSlowly<Message>{});
+    static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, NoTags>);
+    SlowBox<Message> wire = std::move(sender_done).close();
+    const int tries = wire.tries;
+    const int value = end_marker<Message>(wire.held.take_last());
+    std::move(wire.held).expect_empty("the line above took the marker");
+    if (value != 11) return fail("a write that found no room twice did not deliver the marker with its value");
+    if (tries != 3) return fail("a write that found no room twice did not call its transport three times");
+    return 0;
+}
+
+// The same box, with a stop test that never reports.  The stop test runs
+// before each try, and the send gives no marker back.
+[[nodiscard]] int refused_marker_is_taken_with_a_stop_test() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto root = fp::mint_permission_root<Region>();
+    using Message = s::Transferable<int, Region, ::foundation::brand::brand_of_t<decltype(root)>>;
+    auto sender =
+        s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, SlowBox<Message>{.refusals = 2}, std::move(root));
+    int stop_tests = 0;
+    auto sent = s::HandleFactory::send(std::move(sender), 12, PutSlowly<Message>{}, [&stop_tests]() noexcept {
+        ++stop_tests;
+        return false;
+    });
+    const int kept = end_marker<Message>(std::move(sent.kept));
+    SlowBox<Message> wire = std::move(sent.next).close();
+    const int tries = wire.tries;
+    const int value = end_marker<Message>(wire.held.take_last());
+    std::move(wire.held).expect_empty("the line above took the marker");
+    if (kept != -1) return fail("a send with a stop test gave back a marker that its transport took");
+    if (value != 12) return fail("a write with a stop test did not deliver the refused marker with its value");
+    if (tries != 3 || stop_tests != 3) return fail("a write with a stop test did not test it before each of 3 tries");
+    return 0;
+}
+
+// The box has no room, and the stop test reports before the third try.  The
+// marker comes back with its value, and the box holds nothing.
+[[nodiscard]] int refused_marker_comes_back_at_a_stop() {
+    const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
+    auto root = fp::mint_permission_root<Region>();
+    using Message = s::Transferable<int, Region, ::foundation::brand::brand_of_t<decltype(root)>>;
+    auto sender =
+        s::mint_permissioned_session<s::Send<Message, s::End>>(ctx, SlowBox<Message>{.refusals = 100}, std::move(root));
+    int stop_tests = 0;
+    auto sent = s::HandleFactory::send(std::move(sender), 13, PutSlowly<Message>{},
+                                       [&stop_tests]() noexcept { return ++stop_tests == 3; });
+    const int kept = end_marker<Message>(std::move(sent.kept));
+    SlowBox<Message> wire = std::move(sent.next).close();
+    const int tries = wire.tries;
+    const int value = end_marker<Message>(wire.held.take_last());
+    std::move(wire.held).expect_empty("the line above took the marker");
+    if (kept != 13) return fail("a stop between two tries did not give the marker back with its value");
+    if (value != -1) return fail("a stop between two tries left a marker in the box");
+    if (tries != 2) return fail("a stop before the third try did not come after two tries");
     return 0;
 }
 
@@ -153,7 +262,7 @@ struct LoanWire {
     using Wire = LoanWire<Brand>;
     auto lender = s::mint_permissioned_session<Lends>(ctx, Wire{.region_value = 40}, std::move(root));
     auto lender_waits = std::move(lender).send(
-        1, [](Wire& wire, Lend&& lend) noexcept { return put_message(wire.lent, std::move(lend)); });
+        1, [](Wire& wire, Lend&& lend) noexcept { return PutMessage<Lend>{}(wire.lent, std::move(lend)); });
     static_assert(
         fp::perm_set_equal(^^typename decltype(lender_waits)::perm_set, ^^fp::PermSet<s::LentOut<Region, Brand>>),
         "the token of the lender is parked in the LentOut slot");
@@ -172,7 +281,7 @@ struct LoanWire {
     auto [seen, reading] = std::move(borrowing).template read<Region>(
         [region_value](fp::ReadView<Region, Brand> const&) noexcept { return region_value; });
     auto borrower_done = std::move(reading).send(seen + ticket, [](Wire& wire, Release&& release) noexcept {
-        return put_message(wire.released, std::move(release));
+        return PutMessage<Release>{}(wire.released, std::move(release));
     });
     static_assert(std::is_same_v<typename decltype(borrower_done)::perm_set, NoTags>,
                   "the release carries the loan back out of the slots of the borrower");
@@ -229,6 +338,9 @@ static_assert(!s::PayloadTransfers<::fixy::View<int const>>);
 int main() {
     if (const int rc = move_in_a_marker<s::Transferable>(7); rc != 0) return rc;
     if (const int rc = move_in_a_marker<s::Returned>(9); rc != 0) return rc;
+    if (const int rc = refused_marker_is_taken(); rc != 0) return rc;
+    if (const int rc = refused_marker_is_taken_with_a_stop_test(); rc != 0) return rc;
+    if (const int rc = refused_marker_comes_back_at_a_stop(); rc != 0) return rc;
     if (const int rc = lend_and_release(); rc != 0) return rc;
     ::fixy::check::pass(kTest, "test_session_slot_forms: OK\n");
     return 0;

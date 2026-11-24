@@ -317,12 +317,15 @@ using HandsRegion = s::Send<ParcelOfRegion<Brand>, s::End>;
 // out, as in delegate_over_a_channel.  The endpoint is linear, so the write
 // takes it by move and gives it back while the slot is full.
 template <class Brand>
-[[nodiscard]] static ::fixy::Option<ParcelOfRegion<Brand>> put_parcel(SenderEndOf<ParcelOfRegion<Brand>>& end,
-                                                                      ParcelOfRegion<Brand>&& parcel) noexcept {
-    if (end.slot->held.is_some()) return ::fixy::Option<ParcelOfRegion<Brand>>::some(std::move(parcel));
-    end.slot->held.fill(std::move(parcel));
-    return ::fixy::none;
-}
+struct PutParcel {
+    using Parcel = ParcelOfRegion<Brand>;
+
+    [[nodiscard]] ::fixy::Option<Parcel> operator()(SenderEndOf<Parcel>& end, Parcel&& parcel) const noexcept {
+        if (end.slot->held.is_some()) return ::fixy::Option<Parcel>::some(std::move(parcel));
+        end.slot->held.fill(std::move(parcel));
+        return ::fixy::none;
+    }
+};
 
 // The read waits in its declared form, so it gives the endpoint with no
 // Option around it.  The sender fills the slot on the same thread before the
@@ -343,7 +346,7 @@ template <class Brand>
         s::mint_test_channel<HandsRegion<Brand>>(ctx, SenderEndOf<Parcel>{&slot}, RecipientEndOf<Parcel>{&slot});
     static_assert(std::is_same_v<typename decltype(sender)::perm_set, fp::EmptyPermSet>);
     auto inner = s::mint_permissioned_session<SendsRegion<Brand>>(ctx, Wire{}, std::move(root));
-    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), put_parcel<Brand>);
+    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), PutParcel<Brand>{});
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, fp::EmptyPermSet>,
                   "the sender holds no token of the endpoint, before the send and after it");
     // The sender closes before the recipient waits, so the waiting thread

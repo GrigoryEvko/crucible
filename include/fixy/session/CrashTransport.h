@@ -1344,9 +1344,10 @@ public:
 
     // ── send ─────────────────────────────────────────────────────────
     //
-    // Transport is a trying write, bool(Resource&, T&).  It returns false,
-    // and leaves the payload as it was, while the queue of the peer has no
-    // room or is closed.  The inner handle then waits through the watch and
+    // Transport is a trying write of fixy/session/Transport.h.  While the
+    // queue of the peer has no room or is closed, it leaves a copyable payload
+    // as it was and returns false, and it gives a linear payload back.  The
+    // inner handle then waits through the watch and
     // tries again, and the decorator checks the peer before each try.  When
     // the peer has crashed, the payload goes back to the caller as
     // `undelivered`, so a token in it is not lost.  The crash check and the
@@ -1367,9 +1368,11 @@ public:
         requires is_send_v<P> && (!is_keyed_step_v<P>)
                   && (!TryWrite<Transport, resource_type, typename P::message_type>)
     void send(detail::sent_value_t<typename P::message_type>, Transport) && = delete(
-        "[Crash_Write_Must_Try] the write of a crash session is a trying write, bool(Resource&, T&), that returns "
-        "false while the queue of the peer has no room or is closed.  A write of another shape waits inside the "
-        "transport, where no crash is seen, or puts the payload into a queue that no one reads.");
+        "[Crash_Write_Must_Try] the write of a crash session is a trying write: bool(Resource&, T&), which returns "
+        "false while the queue of the peer has no room or is closed, or a closure fixy::Option<T>(Resource&, T&&) for "
+        "a linear T, which gives the value back then.  A write of another shape waits inside the transport, where no "
+        "crash is seen, or puts the payload into a queue that no one reads, or moves a linear payload out of a "
+        "reference.");
 
     // A keyed Send is one message: its label word, and then the value of
     // its payload when the payload is not void.  This step writes the word,
