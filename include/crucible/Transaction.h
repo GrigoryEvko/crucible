@@ -178,10 +178,14 @@ private:
 // writes its transaction, and a draft ends only through the commit or the
 // abandon of its log, which take it by reference.  It does not move, so no
 // code makes a second draft of one claim.  begin_tx gives it as a prvalue.
-// A draft of a keyed log holds the key of the log, so no other door of the
-// log opens while it lives, and no later claim reuses its slot.  A draft
+// A draft of a keyed log holds the key of the log, so no door that takes that
+// key opens while it lives.  A key of another log of the mint site has the
+// same type, and it opens the doors of this log, so its claims can reuse the
+// slot of the draft (the brand of a key of foundation/core/Frame.h).  A draft
 // carries the Identity of its log, for the reason of a CommittedTx, and each
-// door that takes a draft requires the Identity of its own log.
+// door that takes a draft requires the Identity of its own log.  Each door
+// that writes or reads the transaction of a keyed draft also requires the
+// claim of the draft.
 template <uint32_t N, class KeyBrand>
 class [[nodiscard]][[= ::foundation::linear::linear{}]] TxDraft final {
 public:
@@ -236,10 +240,12 @@ private:
 //   through the maker transaction_log_owner, with the LoanKey of the log.
 //   begin_tx takes the key by move, the draft holds it, and commit and abandon
 //   give it back.  Each other door that writes or reads a transaction borrows
-//   the key, so no door opens while a draft lives.  The doors with no key of a
-//   log of Unkeyed serve a member log, which has no key until the root doors
-//   of the owner-key series give one.  They wait for removal, and only the log
-//   of the Vigil uses them.
+//   the key, so no door that takes the key of the draft opens while it lives.
+//   A key of another log of the mint site opens a door of this log too, so the
+//   commit and the read of a keyed draft compare the claim of the draft.  The
+//   doors with no key of a log of Unkeyed serve a member log, which has no key
+//   until the root doors of the owner-key series give one.  They wait for
+//   removal, and only the log of the Vigil uses them.
 //
 // Transfer fact.  The log states sendable{} (foundation/Transfer.h).  Each
 // member of the log takes the proof of its owner, and the proof stays on the
@@ -315,9 +321,10 @@ public:
     //
     // A log of Unkeyed has no key, so a later begin_tx can run while a draft
     // lives, and N claims reuse the slot of the draft.  So the commit compares
-    // the claim and the recording state, and refuses a stale draft.  The keyed
-    // member form of the consumer series removes the compare, because a keyed
-    // draft holds the key and no claim runs while it lives.
+    // the claim and the recording state, and refuses a stale draft.  A log of
+    // a key brand requires the claim in place of a refusal: a draft holds the
+    // key of its log, so only a key of another log of the mint site runs a
+    // claim while it lives.
     [[nodiscard]] ::fixy::Result<Committed, TxRefusal> commit(Owner const& /*owner*/, Draft&& draft,
                                                               Transaction::ArenaRegion region, ContentHash content_hash,
                                                               MerkleHash merkle_root) noexcept
@@ -411,6 +418,7 @@ public:
         requires is_keyed_
     {
         CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        CRUCIBLE_PRE_MSG(holds_claim_(draft), "a key of another log of the site reused the slot of the draft");
         Committed const committed{draft.slot_, draft.claim_, draft.log_};
         key_type key = std::move(draft).end_();
         commit_(key, committed, region, content_hash, merkle_root);
@@ -456,12 +464,13 @@ public:
         return with_tx_(committed, static_cast<Body&&>(body));
     }
 
-    // Lends the transaction of a draft as const to body.  A keyed draft holds
-    // the key, so no claim reused its slot, and the door refuses nothing.
+    // Lends the transaction of a draft as const to body.  The claim of the
+    // draft names the transaction of the slot, so the door refuses nothing.
     template <class Body>
         requires is_keyed_ && TxReadBody<Body> && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>
     [[nodiscard]] auto with_draft(Owner const& /*owner*/, Draft const& draft, Body&& body) const noexcept {
         CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        CRUCIBLE_PRE_MSG(holds_claim_(draft), "a key of another log of the site reused the slot of the draft");
         return read_slot_(draft.slot_, static_cast<Body&&>(body));
     }
 
@@ -544,6 +553,12 @@ private:
     // True when the transaction in a slot is in the recording state.
     [[nodiscard]] bool is_recording_(Slot slot) const noexcept {
         return read_slot_(slot, [](Transaction const& tx) noexcept { return tx.status == TxStatus::RECORDING; });
+    }
+
+    // True when the transaction in the slot of the draft is the one of the
+    // claim of the draft.
+    [[nodiscard]] bool holds_claim_(Draft const& draft) const noexcept {
+        return claim_of_(draft.slot_) == draft.claim_;
     }
 
     // True when the token names a transaction of this log that no later claim

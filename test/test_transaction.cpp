@@ -575,6 +575,48 @@ void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc 
         ::fixy::TextView{"a draft goes back only to the log that made it"});
 }
 
+// A key of a second log of one mint site has the type of the key of the first
+// log, and it opens the doors of the first log.  While a draft of the first
+// log holds the first key, the claims of the second key wrap the ring of four
+// slots onto the slot of that draft.  The commit and the read of the draft
+// would then name the transaction of a later claim, so each one requires the
+// claim of the draft.  Each violation runs in a child process, which ends by
+// the abort of the contract.
+void claims_of_a_second_key_break_a_draft(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    crucible::RegionNode& region = *region_of_step(alloc, arena, 121);
+    constexpr ::fixy::TextView kReused{"a key of another log of the site reused the slot of the draft"};
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner, &region] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
+            for (uint32_t step = 100; step < 104; ++step)
+                second_key =
+                    first.abandon(owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
+            auto committed =
+                first.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash);
+            static_cast<void>(committed.at(::fixy::index<0>()));
+        },
+        kReused);
+    ::fixy::check::expect_dies(
+        kTest,
+        [&owner] noexcept {
+            auto [first, first_key] = mint_keyed_log();
+            auto [second, second_key] = mint_keyed_log();
+            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
+            for (uint32_t step = 100; step < 104; ++step)
+                second_key =
+                    first.abandon(owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
+            const uint64_t step =
+                first.with_draft(owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+            static_cast<void>(step);
+            first_key = first.abandon(owner, std::move(draft));
+        },
+        kReused);
+}
+
 // The stamps of a log are places of its own count, so two runs of one
 // computation give two logs with the same stamps.  A clock time in a stamp
 // made two such logs differ.
@@ -735,6 +777,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     token_of_a_log_with_fewer_claims_is_stale(test.alloc, owner);
     token_of_a_second_log_of_unkeyed_is_stale(test.alloc, owner);
     draft_of_a_second_log_breaks_the_precondition(test.alloc, owner);
+    claims_of_a_second_key_break_a_draft(test.alloc, owner);
     two_runs_of_one_computation_give_one_log(test.alloc, owner);
 
     ::fixy::check::pass(kTest, "test_transaction: all tests passed\n");
