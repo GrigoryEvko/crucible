@@ -59,11 +59,7 @@ core::Result<std::size_t, os::Errno> madvise_sys(PageRange range, int advice) no
     constexpr std::uintptr_t kMask = huge_page_bytes - 1;
     std::uintptr_t const start = std::to_underlying(range.first_);
     std::size_t const bytes = range.bytes_;
-    core::Option<std::uintptr_t> boundary = core::align_up(start, std::uintptr_t{huge_page_bytes});
-    if (boundary.is_none()) {
-        return std::size_t{0};
-    }
-    std::uintptr_t const aligned = std::move(boundary).expect("the test above found the boundary");
+    CRUCIBLE_LET_ELSE(aligned, core::align_up(start, std::uintptr_t{huge_page_bytes}), std::size_t{0});
     std::size_t const head = aligned - start;
     if (head >= bytes) {
         return std::size_t{0};
@@ -118,12 +114,8 @@ UnitResult populate_sys(PageRange range) noexcept {
 // third, and an older kernel refuses a third argument that is not zero.  A
 // setting of zero clears the refusal with no flags.
 core::Result<ThpSetting, os::Errno> prctl_sys(ThpSetting next) noexcept {
-    core::Result<std::uint64_t, os::Errno> prior =
-        os::result_of(os::raw_syscall(os::Syscall::prctl, kGetThpDisable, 0, 0, 0, 0));
-    for (os::Errno const error : prior.err()) {
-        return core::err(error);
-    }
-    auto const prior_word = static_cast<std::uint32_t>(std::move(prior).expect("the read succeeded above"));
+    CRUCIBLE_TRY(prior, os::result_of(os::raw_syscall(os::Syscall::prctl, kGetThpDisable, 0, 0, 0, 0)));
+    auto const prior_word = static_cast<std::uint32_t>(prior);
     std::uint32_t const word = std::to_underlying(next);
     std::uint32_t const refuse = word != 0 ? kRefuseBit : 0;
     std::uint32_t const flags = word & ~kRefuseBit;
