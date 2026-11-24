@@ -294,8 +294,11 @@ using ::foundation::core::bit_cast;
 using ::foundation::core::BitValid;
 using ::foundation::core::DecodableFrom;
 using ::foundation::core::decode;
+using ::foundation::core::enum_at;
 using ::foundation::core::enum_from;
+using ::foundation::core::enum_from_field;
 using ::foundation::core::Enumerated;
+using ::foundation::core::FullField;
 using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
 

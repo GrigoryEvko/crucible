@@ -103,6 +103,63 @@ static_assert(names<Switch>(false) && names<Switch>(true));
 static_assert(names<OnlyOn>(true) && !names<OnlyOn>(false));
 static_assert(names<Unscoped>(7) && !names<Unscoped>(8) && names<Unscoped>(9));
 
+// Four enumerators fill a field of two bits, in each order.
+enum class Phase : std::uint8_t {
+    forward = 0,
+    backward = 1,
+    optimizer = 2,
+    other = 3
+};
+enum class Mixed : std::uint8_t {
+    second = 2,
+    zeroth = 0,
+    third = 3,
+    first = 1,
+    beyond = 9
+};
+// A negative value and a field of one bit.
+enum class Signed : std::int8_t {
+    low = -1,
+    zero = 0,
+    one = 1
+};
+// Three enumerators fill no field of two bits.
+enum class Three : std::uint8_t {
+    zero = 0,
+    one = 1,
+    two = 2
+};
+
+static_assert(FullField<Phase, 1> && FullField<Phase, 2> && !FullField<Phase, 3>);
+static_assert(FullField<Mixed, 2> && !FullField<Mixed, 3>);
+static_assert(FullField<Signed, 1> && !FullField<Signed, 2>);
+static_assert(FullField<Three, 1> && !FullField<Three, 2>);
+static_assert(!FullField<Duplicated, 1>);
+static_assert(!FullField<Phase, 0> && !FullField<Phase, 8> && !FullField<Phase, 64>);
+static_assert(!FullField<Strong, 1> && !FullField<Switch, 1> && !FullField<int, 1>);
+static_assert(enum_from_field<Phase, 2>(0u) == Phase::forward && enum_from_field<Phase, 2>(1u) == Phase::backward);
+static_assert(enum_from_field<Phase, 2>(2u) == Phase::optimizer && enum_from_field<Phase, 2>(3u) == Phase::other);
+static_assert(enum_from_field<Phase, 2>(std::uint8_t{0xF6}) == Phase::optimizer);
+static_assert(enum_from_field<Phase, 2>(-1) == Phase::other);
+static_assert(enum_from_field<Mixed, 2>(std::uint64_t{0x5}) == Mixed::first);
+static_assert(enum_from_field<Signed, 1>(std::uint16_t{0xFFFE}) == Signed::zero);
+
+// enum_at gives the values in ascending order, each one time, and no value
+// past the last.
+template <class E>
+[[nodiscard]] consteval bool is_at(std::size_t index, E expected) {
+    return enum_at<E>(index).value_or(expected) == expected && enum_at<E>(index).is_some();
+}
+
+static_assert(is_at(0, Mixed::zeroth) && is_at(1, Mixed::first) && is_at(3, Mixed::third));
+static_assert(is_at(4, Mixed::beyond) && enum_at<Mixed>(5).is_none());
+static_assert(is_at(0, Unsorted::first) && is_at(1, Unsorted::second) && is_at(2, Unsorted::third));
+static_assert(is_at(0, Duplicated::first) && is_at(1, Duplicated::second) && enum_at<Duplicated>(2).is_none());
+static_assert(is_at(0, Shifted::low) && is_at(2, Shifted::high) && enum_at<Shifted>(3).is_none());
+static_assert(is_at(0, Extremes::lowest) && is_at(2, Extremes::highest));
+static_assert(is_at(0, Switch::off) && is_at(1, Switch::on) && enum_at<Switch>(2).is_none());
+static_assert(enum_at<Wide>(~std::size_t{0}).is_none());
+
 // A bool and an enumeration in two bytes.
 struct Flagged {
     bool is_ready = false;
@@ -364,7 +421,9 @@ inline constexpr TextView scalar_names{
     "fits_each_value max_of min_of bits_of value_bits_of min_normal_of min_subnormal_of epsilon_of infinity_of "
     "quiet_nan_of "
     "signaling_nan_of min max Bounds of lo hi bounds clamp compare fits unsigned_abs abs_diff narrow "
-    "wrapping_narrow saturating_narrow widen enum_from checked_add checked_sub checked_mul checked_div checked_rem "
+    "wrapping_narrow saturating_narrow widen enum_from enum_at FullField enum_from_field checked_add checked_sub "
+    "checked_mul "
+    "checked_div checked_rem "
     "checked_neg checked_shl checked_shr wrapping_add wrapping_sub wrapping_mul wrapping_neg wrapping_shl "
     "wrapping_shr saturating_add saturating_sub saturating_mul gcd widening_mul WideProduct low high popcount "
     "countl_zero countr_zero countl_one countr_one bit_width has_single_bit bit_floor bit_ceil rotl rotr low_mask "

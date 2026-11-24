@@ -84,14 +84,17 @@ struct EnumeratorSet final {
     std::size_t count = 0;
 };
 
-// Collects the enumerators of E with an insertion sort.  Quadratic in the
-// number of enumerators, at compile time only.
+// Collects the enumerators of E with an insertion sort.  The list of the
+// enumerators is read one time, so a large enumeration costs no copy of the
+// list for each enumerator.  Quadratic in the number of enumerators, at
+// compile time only.
 template <class E>
 [[nodiscard]] consteval EnumeratorSet<E> make_enumerator_set() {
     using Underlying = std::underlying_type_t<E>;
     EnumeratorSet<E> set{};
+    auto const enumerators = std::meta::enumerators_of(^^E);
     for (std::size_t index = 0; index < EnumeratorSet<E>::declared; ++index) {
-        Underlying const value = static_cast<Underlying>(std::meta::extract<E>(std::meta::enumerators_of(^^E)[index]));
+        Underlying const value = static_cast<Underlying>(std::meta::extract<E>(enumerators[index]));
         std::size_t slot = 0;
         while (slot < set.count && set.sorted[slot] < value)
             ++slot;
@@ -166,6 +169,33 @@ template <class E>
 // True for an enumeration with at least one enumerator.
 [[nodiscard]] consteval bool has_enumerators(std::meta::info type) {
     return std::meta::is_enum_type(type) && !std::meta::enumerators_of(type).empty();
+}
+
+// True when each value of a field of Width bits is the value of an
+// enumerator of E: the enumerators hold each number from 0 to 2^Width - 1.
+// The set of the values holds each value one time, so a count of the values
+// in that range decides.  A width of 0, a width of 64 or more, and a width
+// that the underlying type cannot hold give false.  Linear in the number of
+// enumerators, at compile time only.
+template <class E, std::size_t Width>
+[[nodiscard]] consteval bool is_full_field() {
+    using Underlying = std::underlying_type_t<E>;
+    constexpr std::size_t value_bits = sizeof(Underlying) * 8 - (std::is_signed_v<Underlying> ? 1 : 0);
+    if constexpr (Width == 0 || Width >= 64 || Width > value_bits) {
+        return false;
+    } else {
+        using Unsigned = std::make_unsigned_t<Underlying>;
+        constexpr std::uint64_t size = std::uint64_t{1} << Width;
+        EnumeratorSet<E> const& set = enumerator_set<E>;
+        std::uint64_t count = 0;
+        for (std::size_t index = 0; index < set.count; ++index) {
+            Underlying const value = set.sorted[index];
+            bool is_negative = false;
+            if constexpr (std::is_signed_v<Underlying>) is_negative = value < 0;
+            if (!is_negative && static_cast<std::uint64_t>(static_cast<Unsigned>(value)) < size) ++count;
+        }
+        return count == size;
+    }
 }
 
 // The walks read the parts of a class with the index functions of
@@ -423,6 +453,35 @@ template <Enumerated E>
 [[nodiscard]] constexpr Option<E> enum_from(std::underlying_type_t<E> raw) noexcept {
     if (!detail::names_enumerator<E>(raw)) return none;
     return Option<E>::some(static_cast<E>(raw));
+}
+
+// The enumerator of E at index in the ascending order of the values of the
+// enumerators, each value one time, or no value for an index past the last
+// value.  A draw of an index below the count of the values picks each value
+// with the same chance.  Constant time.
+template <Enumerated E>
+[[nodiscard]] constexpr Option<E> enum_at(std::size_t index) noexcept {
+    if (index >= detail::enumerator_set<E>.count) return none;
+    return Option<E>::some(static_cast<E>(detail::enumerator_set<E>.sorted[index]));
+}
+
+// An enumeration E whose enumerators fill a field of Width bits: each value
+// of Width bits is the value of an enumerator, such as the four phases of a
+// training step in a field of two bits.  E has no underlying type bool.
+template <class E, std::size_t Width>
+concept FullField =
+    Enumerated<E> && !std::same_as<std::underlying_type_t<E>, bool> && detail::is_full_field<E, Width>();
+
+// The enumerator of E that the low Width bits of word name.  Each value of
+// the field names an enumerator (FullField), so the read is total: it has no
+// check and no failure, and it costs one mask, which folds with a mask of the
+// caller.  The bits of word above the field do not count.
+template <class E, std::size_t Width, std::integral Word>
+    requires FullField<E, Width> && (!std::same_as<Word, bool>)
+[[nodiscard]] constexpr E enum_from_field(Word word) noexcept {
+    using Unsigned = std::make_unsigned_t<Word>;
+    constexpr Unsigned mask = static_cast<Unsigned>((std::uint64_t{1} << Width) - 1);
+    return static_cast<E>(static_cast<Unsigned>(word) & mask);
 }
 
 // A To with the bits of source, or no value when a bool of To would hold a

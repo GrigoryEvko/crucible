@@ -4020,7 +4020,7 @@ foundation_neg_compile_test(neg_os_wide_atomic_padded_value
 # enumeration value names an enumerator.  The two types have one size, the
 # source has no padding, and a part whose bytes are not its whole value is
 # refused: an address, a union, a bit-field, an empty class and a sealed
-# class.  enum_from refuses an enumeration with no enumerator.
+# class.  enum_from and enum_at refuse an enumeration with no enumerator.
 foundation_test(test_core_scalar)
 # Each operation of the family gives the answer of its std form for each
 # input that the std form defines.
@@ -4053,6 +4053,18 @@ foundation_neg_compile_test(neg_core_scalar_bit_cast_niche
 foundation_neg_compile_test(neg_core_enum_from_no_enumerator
   "no matching function for call to .enum_from<Strong>\\(int\\)."
   "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_enum_at_no_enumerator
+  "no matching function for call to .enum_at<Strong>\\(int\\)."
+  "the expression .has_enumerators\\(.*\\(\\^\\^ E\\) \\[with E = Strong\\]. evaluated to .false.")
+# enum_from_field reads only a field whose each value names an enumerator,
+# from a word that is no bool.
+foundation_neg_compile_test(neg_core_enum_from_field_too_wide
+  "no matching function for call to .enum_from_field<Phase, 3>\\(uint8_t\\)."
+  "required for the satisfaction of .FullField<E, Width>. \\[with E = Phase; Width = 3\\]"
+  "the expression .\\(is_full_field<E, Width>\\)\\(\\) \\[with E = Phase; Width = 3\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_enum_from_field_bool_word
+  "no matching function for call to .enum_from_field<Side, 1>\\(const bool&\\)."
+  "the expression .!\\(same_as<Word, bool>\\) \\[with Word = bool\\]. evaluated to .false.")
 
 # The gates of a number and the arithmetic.  bool, a character type and
 # long double are no number of the family.  The two operands of an
