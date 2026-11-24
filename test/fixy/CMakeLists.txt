@@ -2280,6 +2280,9 @@ fixy_neg_compile_test(neg_cyclic_buffer_pass_without_key
 fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
   "a later claim reuses each slot of a CyclicBuffer, so the result of a door holds no reference and no address")
+fixy_neg_compile_test(neg_cyclic_buffer_body_keeps_its_slot
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
 fixy_neg_compile_test(neg_cyclic_buffer_owner_no_default
   "no matching function for call to .mint_keyed_owner\\(const fixy::CyclicBufferOwner<.anonymous.::ThrowingDefault, 4>&\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::ThrowingDefault\\]. evaluated to .false.")
