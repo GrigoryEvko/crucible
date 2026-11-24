@@ -564,9 +564,10 @@ enum class PayloadFamily : std::uint8_t {
         case payload_role::constant_time:
             return PayloadFamily::ConstantTime;
         // A hand-off is a carrier of delegation, which the walk reads where
-        // it reads every other carrier.
+        // it reads every other carrier.  Plain data has no family of its own.
         case payload_role::members:
         case payload_role::hand_off:
+        case payload_role::data:
             return PayloadFamily::Other;
         default:
             break;

@@ -277,6 +277,8 @@ struct FlowAnswer {
                 // a Loop in it, and the walk enters it outside every Loop.
                 closes = walk_flow(view.next, set, ^^void, answered);
                 break;
+            // The walk reads no mark, so a mark does not close.
+            case tr::shape_kind::marker:
             default:
                 break;
         }

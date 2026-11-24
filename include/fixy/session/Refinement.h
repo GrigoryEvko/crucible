@@ -434,6 +434,9 @@ consteval std::size_t add_to_graph(std::meta::info registry, type_graph& graph, 
             graph.scratch.top = base;
             break;
         }
+        // A named state is no node of the graph: the build reads its
+        // protocol in its place.
+        case shape_kind::named:
         default:
             break;
     }
@@ -473,6 +476,8 @@ consteval void mark_can_end(type_graph& graph) {
                         reaches = nodes[children[current.first_child + k]].can_end;
                     }
                     break;
+                // A named state is no node of the graph.
+                case shape_kind::named:
                 default:
                     break;
             }
@@ -919,6 +924,8 @@ struct split_branches {
                 scratch.top = 0;
                 break;
             }
+            // A named state is no node of the graph.
+            case shape_kind::named:
             default:
                 break;
         }

@@ -441,6 +441,12 @@ template <class Anchor = void>
             return local_fault_(ContextFaultCode::LoopNotWhole, self, node.type);
         case tr::shape_kind::step:
             break;
+        // A choice, a wrapper, a mark and a named state are outside the model
+        // of the check.
+        case tr::shape_kind::choice:
+        case tr::shape_kind::wrapper:
+        case tr::shape_kind::marker:
+        case tr::shape_kind::named:
         default:
             return local_fault_(ContextFaultCode::NodeOutsideModel, self, node.type);
     }
