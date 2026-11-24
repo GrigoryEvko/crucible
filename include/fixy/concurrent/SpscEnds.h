@@ -39,7 +39,9 @@
 //   mint makes an Identity (foundation/core/Identity.h), and the split and
 //   its two tokens hold it.  Each door of a split that takes a token compares
 //   the two, so a token opens only the split of its own mint.  A token of
-//   another split at a door breaks the precondition of the door.
+//   another split ends the process in each build, also under the ignore
+//   semantic, because a precondition is only an assumption there, and two
+//   threads would write one end.
 //   Only the mint builds a token: its constructor is private, and the door of
 //   the mint and the split are its friends.  A token is linear and does not
 //   copy, so one side has one holder.  It moves, so its holder can give it to
@@ -112,8 +114,8 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
+#include <foundation/Platform.h>
 #include <foundation/Transfer.h>
-#include <foundation/contracts/Pre.h>
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
@@ -581,13 +583,13 @@ public:
     // doors and the producer token of this split.  Complexity: O(1), one
     // compare of a word.
     [[nodiscard]] constexpr producer_end& producer_end_(SpscFrameKey const& /*key*/, producer_token& token) & noexcept {
-        CRUCIBLE_PRE_MSG(token.split_ == identity_, "a side token opens only the split of its own mint");
+        CRUCIBLE_FATAL_INVARIANT(token.split_ == identity_);
         return producer_;
     }
 
     // The consumer end, for a frame door, in the form of the producer end.
     [[nodiscard]] constexpr consumer_end& consumer_end_(SpscFrameKey const& /*key*/, consumer_token& token) & noexcept {
-        CRUCIBLE_PRE_MSG(token.split_ == identity_, "a side token opens only the split of its own mint");
+        CRUCIBLE_FATAL_INVARIANT(token.split_ == identity_);
         return consumer_;
     }
 

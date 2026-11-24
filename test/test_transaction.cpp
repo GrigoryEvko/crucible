@@ -558,12 +558,12 @@ void token_of_a_second_log_of_unkeyed_is_stale(::foundation::effects::Alloc allo
 }
 
 // A draft is linear, and only the door of its own log makes it, so a draft of
-// a second log at a door of a log breaks the precondition of the door.  Each
-// violation runs in a child process, which ends by the abort of the contract.
-void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+// a second log at a door of a log ends the process.  Each violation runs in a
+// child process, which ends by the abort of the fatal invariant.
+void draft_of_a_second_log_ends_the_process(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode& region = *region_of_step(alloc, arena, 61);
-    constexpr ::fixy::TextView kMadeElsewhere{"a draft goes back only to the log that made it"};
+    constexpr ::fixy::TextView kMadeElsewhere{"fatal invariant failed: draft.log_ == identity_"};
     // The second log claimed nothing, so the commit would write a slot that
     // the second log never claimed.
     ::fixy::check::expect_dies(
@@ -635,11 +635,11 @@ void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc 
 // slots onto the slot of that draft.  The commit and the read of the draft
 // would then name the transaction of a later claim, so each one requires the
 // claim of the draft.  Each violation runs in a child process, which ends by
-// the abort of the contract.
+// the abort of the fatal invariant.
 void claims_of_a_second_key_break_a_draft(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode& region = *region_of_step(alloc, arena, 121);
-    constexpr ::fixy::TextView kReused{"a key of another log of the site reused the slot of the draft"};
+    constexpr ::fixy::TextView kReused{"fatal invariant failed: holds_claim_(draft)"};
     ::fixy::check::expect_dies(
         kTest,
         [&owner, &region] noexcept {
@@ -833,7 +833,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     token_of_an_earlier_turn_of_a_loop_is_stale(test.alloc, owner);
     token_of_a_log_with_fewer_claims_is_stale(test.alloc, owner);
     token_of_a_second_log_of_unkeyed_is_stale(test.alloc, owner);
-    draft_of_a_second_log_breaks_the_precondition(test.alloc, owner);
+    draft_of_a_second_log_ends_the_process(test.alloc, owner);
     claims_of_a_second_key_break_a_draft(test.alloc, owner);
     two_runs_of_one_computation_give_one_log(test.alloc, owner);
 

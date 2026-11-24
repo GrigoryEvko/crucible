@@ -381,6 +381,10 @@ set_tests_properties(test_serialize test_serialize_release_gate PROPERTIES
   LABELS "determinism;axiom-detsafe")
 crucible_test(test_cipher)
 crucible_test(test_transaction)
+# The identity checks and the claim check of a draft hold under the ignore
+# semantic, where a CRUCIBLE_PRE is only an assumption.
+crucible_test(test_transaction_ignore test_transaction.cpp)
+crucible_contract_ignore_target(test_transaction_ignore)
 # The executable has its own clock_gettime, so a case can make a clock read fail.
 crucible_test(test_clock_failed_read)
 crucible_test(test_transaction_owner)

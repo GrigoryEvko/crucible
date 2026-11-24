@@ -4814,6 +4814,10 @@ fixy_test(test_spsc_box_channel)
 # not copy, only the mint builds one, and it opens only its side of its split.
 # The tsan preset runs the two threads of the test.
 fixy_test(test_spsc_ends)
+# The identity check of a token holds under the ignore semantic, where a
+# CRUCIBLE_PRE is only an assumption.
+fixy_test(test_spsc_ends_ignore test_spsc_ends.cpp)
+crucible_contract_ignore_target(test_spsc_ends_ignore)
 fixy_neg_compile_test(neg_spsc_ends_copy_of_an_end
   "use of deleted function .fixy::concurrent::SpscEnd<Owner, Side>::SpscEnd\\(const fixy::concurrent::SpscEnd<Owner, Side>&\\)"
   "an end of an owner is the one holder of its side, so a copy would give a second writer of that side")

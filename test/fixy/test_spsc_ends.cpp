@@ -316,34 +316,35 @@ int check_two_threads() {
 }
 
 // Runs body with two splits of one mint site that are alive at one time, and
-// their tokens.  The template calls itself one time, so its two instantiations
-// run one call of the mint, and the two splits have one brand and one type.
+// their tokens, which the body takes by value.  The template calls itself one
+// time, so its two instantiations run one call of the mint, and the two splits
+// have one brand and one type.
 template <class Body, class... First>
-void with_two_splits(Body& body, First&... first) noexcept {
+void with_two_splits(Body& body, First&&... first) noexcept {
     auto [split, producer_token, consumer_token] =
         ::fixy::concurrent::mint_spsc_split<CellLog>(::foundation::effects::testing::test().alloc);
     if constexpr (sizeof...(First) == 0) {
-        with_two_splits(body, split, producer_token, consumer_token);
+        with_two_splits(body, split, std::move(producer_token), std::move(consumer_token));
     } else {
-        body(first..., split, producer_token, consumer_token);
+        body(std::forward<First>(first)..., split, std::move(producer_token), std::move(consumer_token));
     }
 }
 
-// The text of the precondition that a token of a second split breaks.
-constexpr ::fixy::TextView kForeignToken{"a side token opens only the split of its own mint"};
+// The text of the fatal invariant that a token of a second split breaks.
+constexpr ::fixy::TextView kForeignToken{"fatal invariant failed: token.split_ == identity_"};
 
 // The tokens of two splits of one mint site have one type, so the types of
 // the doors do not tell the splits apart.  The Identity of the split does:
-// each door refuses a token of a second split with its precondition, before
-// it lends the end.  So no thread writes a side that a second token opens.
-// Each violation runs in a child process, which ends by the abort of the
-// contract.
-void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const& test) {
+// each door ends the process for a token of a second split, before it lends
+// the end.  So no thread writes a side that a second token opens.  Each
+// violation runs in a child process, which ends by the abort of the fatal
+// invariant.
+void token_of_a_second_split_ends_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 static_assert(
                     std::is_same_v<std::remove_cvref_t<decltype(first_split)>, std::remove_cvref_t<decltype(split)>>);
                 with_producer(split, first_producer, [](ProducerEnd<CellLog>&) noexcept {});
@@ -357,8 +358,8 @@ void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 auto back = with_producer(split, std::move(first_producer), [](ProducerEnd<CellLog>&) noexcept {});
                 static_cast<void>(back);
                 static_cast<void>(producer);
@@ -371,8 +372,8 @@ void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 with_consumer(split, first_consumer, [](ConsumerEnd<CellLog>&) noexcept {});
                 static_cast<void>(producer);
                 static_cast<void>(consumer);
@@ -384,8 +385,8 @@ void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 auto back = with_consumer(split, std::move(first_consumer), [](ConsumerEnd<CellLog>&) noexcept {});
                 static_cast<void>(back);
                 static_cast<void>(producer);
@@ -398,8 +399,8 @@ void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 // The token of one side of the two is foreign.
                 with_ends(split, first_producer, consumer,
                           [](ProducerEnd<CellLog>&, ConsumerEnd<CellLog>&) noexcept {});
@@ -415,12 +416,12 @@ void token_of_a_second_split_breaks_the_precondition(::fixy::TestRunnerCtx const
 // split from two threads, and the two threads would write its end at one time.
 // The foreign token ends the process at the door of its thread, before that
 // thread writes.  The bodies run in a child process, as a death test.
-void foreign_token_on_a_second_thread_breaks_the_precondition(::fixy::TestRunnerCtx const& test) {
+void foreign_token_on_a_second_thread_ends_the_process(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
-            auto body = []([[maybe_unused]] auto& first_split, auto& first_producer, auto& first_consumer, auto& split,
-                           auto& producer, auto& consumer) noexcept {
+            auto body = []([[maybe_unused]] auto& first_split, auto first_producer, auto first_consumer, auto& split,
+                           auto producer, auto consumer) noexcept {
                 ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
                 static_cast<void>(consumer);
                 static_cast<void>(first_consumer);
@@ -747,7 +748,7 @@ int main() {
     if (int rc = check_held_two_threads(); rc != 0) return 50 + rc;
     if (int rc = check_held_ends(); rc != 0) return 60 + rc;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    token_of_a_second_split_breaks_the_precondition(test);
-    foreign_token_on_a_second_thread_breaks_the_precondition(test);
+    token_of_a_second_split_ends_the_process(test);
+    foreign_token_on_a_second_thread_ends_the_process(test);
     return 0;
 }

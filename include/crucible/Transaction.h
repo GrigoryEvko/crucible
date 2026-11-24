@@ -233,8 +233,10 @@ private:
 //   it.  A stored CommittedTx can go stale in correct code, so activate,
 //   with_tx and region_of refuse a token of a different log as stale.  A draft
 //   is linear, and only the door of its own log makes one, so a draft of a
-//   different log at commit, abandon or with_draft breaks the precondition of
-//   the door.
+//   different log at commit, abandon or with_draft ends the process.  That
+//   check and the claim check of a keyed draft hold in each build, because a
+//   precondition is only an assumption under the ignore semantic, and the log
+//   would write or read the transaction of another claim.
 //
 // Key
 //   A log of a key brand comes from the mint of foundation/core/KeyedMint.h
@@ -334,7 +336,7 @@ public:
                                                               MerkleHash merkle_root) noexcept
         requires(!is_keyed_)
     {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        require_own_draft_(draft);
         Committed const committed{draft.slot_, draft.claim_, draft.log_};
         detail::NoTxKey key = std::move(draft).end_();
         if (!names_live_(committed)) return ::fixy::err(TxRefusal::stale);
@@ -348,7 +350,7 @@ public:
     void abandon(Owner const& /*owner*/, Draft&& draft) noexcept
         requires(!is_keyed_)
     {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        require_own_draft_(draft);
         static_cast<void>(std::move(draft).end_());
     }
 
@@ -400,7 +402,7 @@ public:
         requires(!is_keyed_) && TxReadBody<Body>
     [[nodiscard]] ::fixy::Result<std::invoke_result_t<Body&&, Transaction const&>, TxRefusal>
     with_draft(Owner const& /*owner*/, Draft const& draft, Body&& body) const noexcept {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        require_own_draft_(draft);
         return with_tx_(Committed{draft.slot_, draft.claim_, draft.log_}, static_cast<Body&&>(body));
     }
 
@@ -431,8 +433,8 @@ public:
                                                              MerkleHash merkle_root) noexcept
         requires is_keyed_
     {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
-        CRUCIBLE_PRE_MSG(holds_claim_(draft), "a key of another log of the site reused the slot of the draft");
+        require_own_draft_(draft);
+        require_claim_(draft);
         Committed const committed{draft.slot_, draft.claim_, draft.log_};
         key_type key = std::move(draft).end_();
         commit_(key, committed, region, content_hash, merkle_root);
@@ -442,7 +444,7 @@ public:
     [[nodiscard]] key_type abandon(Owner const& /*owner*/, Draft&& draft) noexcept
         requires is_keyed_
     {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
+        require_own_draft_(draft);
         return std::move(draft).end_();
     }
 
@@ -490,8 +492,8 @@ public:
     template <class Body>
         requires is_keyed_ && TxReadBody<Body> && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>
     [[nodiscard]] auto with_draft(Owner const& /*owner*/, Draft const& draft, Body&& body) const noexcept {
-        CRUCIBLE_PRE_MSG(draft.log_ == identity_, "a draft goes back only to the log that made it");
-        CRUCIBLE_PRE_MSG(holds_claim_(draft), "a key of another log of the site reused the slot of the draft");
+        require_own_draft_(draft);
+        require_claim_(draft);
         return read_slot_(draft.slot_, static_cast<Body&&>(body));
     }
 
@@ -585,6 +587,13 @@ private:
     [[nodiscard]] bool holds_claim_(Draft const& draft) const noexcept {
         return claim_of_(draft.slot_) == draft.claim_;
     }
+
+    // Ends the process for a draft of a different log.
+    void require_own_draft_(Draft const& draft) const noexcept { CRUCIBLE_FATAL_INVARIANT(draft.log_ == identity_); }
+
+    // Ends the process when a key of another log of the mint site ran a claim
+    // that reused the slot of the keyed draft.
+    void require_claim_(Draft const& draft) const noexcept { CRUCIBLE_FATAL_INVARIANT(holds_claim_(draft)); }
 
     // True when the token names a transaction of this log that no later claim
     // replaced: the Identity of this log and the claim of the transaction in
