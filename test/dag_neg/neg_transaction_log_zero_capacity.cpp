@@ -12,7 +12,9 @@
 //     capacity fixtures also pin that gate.
 //   * CyclicBuffer<Transaction, 0>'s requires-clause
 //     `(N > 0 && (N & (N - 1)) == 0)` also refuses N = 0, so the `Ring`
-//     alias is ill-formed.  This fixture pins the two refusals.
+//     alias is ill-formed.
+//   * The array of the regions of the slots is a FixedArray of N elements,
+//     and FixedArray refuses N = 0.  This fixture pins the three refusals.
 //
 // Companion: neg_transaction_log_non_power_of_two.cpp (the non-power-of-two
 // edge, caught by the power-of-two gate and the requires-clause).

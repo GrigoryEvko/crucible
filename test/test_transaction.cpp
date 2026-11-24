@@ -106,7 +106,7 @@ static_assert(!std::is_constructible_v<crucible::Transaction::ArenaRegion, std::
 static_assert(sizeof(crucible::Transaction::ArenaRegionLink) == sizeof(void*));
 
 // The facts of one transaction that a check reads: its status, its step, the
-// place of its last event, and the region that it holds or none.
+// place of its last event, and whether the log holds a region for it.
 struct TxFacts {
     crucible::TxStatus status = crucible::TxStatus::RECORDING;
     std::uint64_t step = 0;
@@ -114,29 +114,42 @@ struct TxFacts {
     bool has_region = false;
 };
 
+// The facts that the transaction itself holds.  A draft holds no region.
 [[nodiscard]] TxFacts facts_of_tx(crucible::Transaction const& tx) noexcept {
-    return TxFacts{.status = tx.status,
-                   .step = tx.step_id.get(),
-                   .stamp = tx.event_order.get(),
-                   .has_region = tx.region.value().is_some()};
+    return TxFacts{.status = tx.status, .step = tx.step_id.get(), .stamp = tx.event_order.get(), .has_region = false};
 }
 
-// The facts of a committed transaction of a log.  The handle must still name
-// its transaction.
+// The facts of a committed transaction of a log, with the region that the log
+// keeps for it.  The handle must still name its transaction.
 template <class LogType>
 [[nodiscard]] TxFacts facts_of(LogType const& log, SoloOwner const& owner, typename LogType::Committed committed) {
-    return log.with_tx(owner, committed, facts_of_tx).expect("no claim reused the slot of the transaction");
+    TxFacts facts = log.with_tx(owner, committed, facts_of_tx).expect("no claim reused the slot of the transaction");
+    facts.has_region = log.region_of(owner, committed).expect("no claim reused the slot of the transaction").is_some();
+    return facts;
 }
 
-// True when a committed transaction of a log holds the region.
+// True when the log holds the region for a committed transaction.  The test
+// compares the addresses of the two regions, so a copy of the region is not
+// the region.
 template <class LogType>
 [[nodiscard]] bool holds(LogType const& log, SoloOwner const& owner, typename LogType::Committed committed,
                          crucible::RegionNode& region) {
     crucible::DagRef<crucible::RegionNode const> const wanted = ::fixy::to(region);
-    return log
-        .with_tx(owner, committed,
-                 [wanted](crucible::Transaction const& tx) noexcept { return crucible::holds_region(tx, wanted); })
-        .expect("no claim reused the slot of the transaction");
+    return log.region_of(owner, committed)
+        .expect("no claim reused the slot of the transaction")
+        .is_some_and([wanted](crucible::DagRef<crucible::RegionNode const> held) noexcept {
+            return ::fixy::same_object(held, wanted);
+        });
+}
+
+// The count of the regions that the log keeps for the transactions of its
+// ring (for_each_region).
+template <class LogType>
+[[nodiscard]] std::uint32_t regions_in(LogType const& log, SoloOwner const& owner) {
+    std::uint32_t count = 0;
+    log.for_each_region(owner,
+                        [&count](::fixy::Option<crucible::DagRef<crucible::RegionNode const>>) noexcept { ++count; });
+    return count;
 }
 
 // One region for each step, so that each transaction holds a region that no
@@ -343,6 +356,29 @@ void claim_keeps_the_target_after_a_rollback_before_activation(::foundation::eff
     expect_active(log, owner, 2, regions[2]);
 }
 
+// The log keeps the region of each slot beside its ring, so a fresh claim
+// must clear the region of the slot that it reuses.  Four publications fill
+// the ring with four regions, and the fifth claim reuses the slot of the
+// first.  The draft of the fifth holds no region, so the log keeps three.  A
+// region that stayed in the reused slot would be a region of no transaction,
+// which a rollback could give out.
+void fresh_claim_clears_the_region_of_its_slot(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
+    SmallestLog log{};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
+    for (uint32_t step = 1; step <= 4; ++step) {
+        static_cast<void>(publish(log, owner, step, region_of_step(alloc, arena, step)));
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, regions_in(log, owner) == 4);
+    auto fifth = log.begin_tx(owner, ::fixy::session::StepId{5});
+    CRUCIBLE_TEST_ASSERT(kTest, log.with_draft(owner, fifth, facts_of_tx).expect("fresh").step == 5);
+    CRUCIBLE_TEST_ASSERT(kTest, regions_in(log, owner) == 3);
+    log.abandon(owner, std::move(fifth));
+    CRUCIBLE_TEST_ASSERT(kTest, regions_in(log, owner) == 3);
+    const TxFacts active =
+        facts_of(log, owner, log.active(owner).expect("a claim keeps the slot of the active transaction"));
+    CRUCIBLE_TEST_ASSERT(kTest, active.step == 4 && active.has_region);
+}
+
 // A CommittedTx outlives each later claim, and the log refuses it once a
 // claim reused its slot.  The count of claims that reuses a slot is a fact of
 // run time, so the refusal is a run-time compare of the claim.
@@ -357,6 +393,7 @@ void committed_goes_stale_after_the_ring_wraps(::foundation::effects::Alloc allo
     for (uint32_t step = 2; step <= 5; ++step)
         log.abandon(owner, log.begin_tx(owner, ::fixy::session::StepId{step}));
     CRUCIBLE_TEST_ASSERT(kTest, log.with_tx(owner, kept, facts_of_tx).is_err());
+    CRUCIBLE_TEST_ASSERT(kTest, log.region_of(owner, kept).err() == ::fixy::some(crucible::TxRefusal::stale));
     const auto refused = log.activate(owner, kept);
     CRUCIBLE_TEST_ASSERT(kTest, refused.err() == ::fixy::some(crucible::TxRefusal::stale));
     CRUCIBLE_TEST_ASSERT(kTest, log.active(owner).is_none());
@@ -447,6 +484,9 @@ void token_of_a_second_log_of_one_site_is_stale(::foundation::effects::Alloc all
         CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
         CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_first).err()
                                         == ::fixy::some(crucible::TxRefusal::stale));
+        CRUCIBLE_TEST_ASSERT(kTest, second.region_of(second_key, owner, of_first).err()
+                                        == ::fixy::some(crucible::TxRefusal::stale));
+        CRUCIBLE_TEST_ASSERT(kTest, second.region_of(second_key, owner, of_second).expect("fresh").is_some());
         CRUCIBLE_TEST_ASSERT(kTest, second.active(second_key, owner).is_none());
         CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_second).expect("fresh").is_none());
         CRUCIBLE_TEST_ASSERT(kTest, first.activate(first_key, owner, of_first).expect("fresh").is_none());
@@ -512,6 +552,8 @@ void token_of_a_second_log_of_unkeyed_is_stale(::foundation::effects::Alloc allo
     CRUCIBLE_TEST_ASSERT(kTest, second.with_tx(owner, of_first, facts_of_tx).err()
                                     == ::fixy::some(crucible::TxRefusal::stale));
     CRUCIBLE_TEST_ASSERT(kTest, second.activate(owner, of_first).err() == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.region_of(owner, of_first).err() == ::fixy::some(crucible::TxRefusal::stale));
+    CRUCIBLE_TEST_ASSERT(kTest, second.region_of(owner, of_second).expect("fresh").is_some());
     CRUCIBLE_TEST_ASSERT(kTest, second.activate(owner, of_second).expect("fresh").is_none());
 }
 
@@ -712,7 +754,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     // The log stamped the claim with the first place of its count.
     CRUCIBLE_TEST_ASSERT(kTest, claimed1.stamp == 1);
     // A transaction that the log began and did not commit holds no region.
-    CRUCIBLE_TEST_ASSERT(kTest, !claimed1.has_region);
+    CRUCIBLE_TEST_ASSERT(kTest, regions_in(log, owner) == 0);
 
     const crucible::ContentHash hash1 = region1->content_hash;
     const crucible::MerkleHash merkle1 = region1->merkle_hash;
@@ -783,6 +825,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     previous_follows_the_order_of_displacements(test.alloc, owner);
     claim_keeps_the_target_of_out_of_order_activations(test.alloc, owner);
     claim_keeps_the_target_after_a_rollback_before_activation(test.alloc, owner);
+    fresh_claim_clears_the_region_of_its_slot(test.alloc, owner);
     committed_goes_stale_after_the_ring_wraps(test.alloc, owner);
     draft_goes_stale_on_a_log_of_unkeyed(test.alloc, owner);
     keyed_log_passes_its_key(test.alloc, owner);

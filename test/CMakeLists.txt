@@ -2135,6 +2135,7 @@ crucible_neg_compile_test(neg_transaction_log_zero_capacity
   "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N, class KeyBrand>  requires \\(IsBrand<KeyBrand>\\) && \\(N > 0"
   "the expression .N > 0 \\[with N = 0\\]. evaluated to .false."
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4"
+  "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<class T, long unsigned int N, class KeyBrand>  requires \\(IsBrand<KeyBrand>\\) && \\(\\(OwnedElement<T>\\) && \\(IndexCount<N>\\)"
   "Transaction.h:[0-9]+:[0-9]+: error: template constraint failure for .template<long unsigned int Count>  requires  IndexCount<Count> class foundation::core::Index.")
 crucible_neg_compile_test(neg_transaction_log_capacity_one
   "Transaction.h:[0-9]+:[0-9]+: error: static assertion failed: N must be at least 4: a claim keeps the slots of the active transaction and the rollback target"
@@ -2174,6 +2175,9 @@ crucible_neg_compile_test(neg_transaction_committed_of_another_log
 crucible_neg_compile_test(neg_transaction_keyed_with_tx_without_key
   "use of deleted function .void crucible::TransactionLog<N, Owner, KeyBrand>::with_tx\\(const Owner&, Committed, Body&&\\) const"
   "a keyed TransactionLog lends a committed transaction only with its LoanKey: call with_tx\\(key, owner, committed, body\\)")
+crucible_neg_compile_test(neg_transaction_keyed_region_of_without_key
+  "use of deleted function .foundation::core::Result<.*> crucible::TransactionLog<N, Owner, KeyBrand>::region_of\\(const Owner&, Committed\\) const"
+  "a keyed TransactionLog reads the region of a transaction only with its LoanKey: call region_of\\(key, owner, committed\\)")
 
 # Transaction::step_id is fixy::Monotonic<uint64_t>.
 #   * neg_transaction_step_id_assign_from_raw: Monotonic has no assignment

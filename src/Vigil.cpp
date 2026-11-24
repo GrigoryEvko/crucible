@@ -108,26 +108,21 @@ bool Vigil::rollback() {
             // The restored transaction was active before, and only a commit
             // with a region makes a transaction active.
             const auto active = tx_log.active(stage).expect("a rollback leaves the restored transaction active");
+            const ::fixy::Option<DagRef<RegionNode const>> region =
+                tx_log.region_of(stage, active).expect("no claim runs between the rollback and this read");
             ::fixy::Option<::fixy::handle::Published<RegionNode, DagArena>> region_of_rollback{};
-            const bool has_region =
-                tx_log
-                    .with_tx(stage, active,
-                             [&bg, &stage, &region_of_rollback](Transaction const& tx) noexcept {
-                                 for (const DagRef<RegionNode const>& region : tx.region.value()) {
-                                     region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, region));
-                                     // The foreground gets the region outside the publication slot,
-                                     // so the store keeps it until the foreground writes its holders
-                                     // again (the life of a region of BackgroundThread.h).
-                                     bg.keep_region(stage, ::fixy::some(region));
-                                 }
-                                 return region_of_rollback.is_some();
-                             })
-                    .expect("no claim runs between the rollback and this read");
-            CRUCIBLE_FATAL_INVARIANT(has_region);
+            for (const DagRef<RegionNode const>& restored_region : region) {
+                region_of_rollback = ::fixy::some(::fixy::handle::mint_published(stage, restored_region));
+                // The foreground gets the region outside the publication slot,
+                // so the store keeps it until the foreground writes its holders
+                // again (the life of a region of BackgroundThread.h).
+                bg.keep_region(stage, ::fixy::some(restored_region));
+            }
+            CRUCIBLE_FATAL_INVARIANT(region_of_rollback.is_some());
             return region_of_rollback;
         });
     return restored.match(
-        [this, &fg](::fixy::handle::Published<RegionNode, DagArena> const& region) {
+        [this, &fg](::fixy::handle::Published<RegionNode, DagArena> region) {
             adopt_region_(fg, region.get());
             return true;
         },

@@ -1,6 +1,15 @@
 add_library(crucible_vessel SHARED vessel_api.cpp level_note.cpp layout_note.cpp)
 target_link_libraries(crucible_vessel PRIVATE crucible)
 
+# The layout digest of layout_note.cpp folds the layout of each shared type in
+# one constant evaluation, and the Vigil reaches many types.  The evaluation
+# takes more than 33758572 and at most 33772290 operations, measured with a
+# bisection of the limit, and CRUCIBLE_CONSTEXPR_OPS_LIMIT is 33554432.  So this
+# unit, and no other, takes a higher limit (the owner decision of 2026-11-15: a
+# correct change raises the limit).  Each target that compiles the unit is in
+# this directory.
+set_source_files_properties(layout_note.cpp PROPERTIES COMPILE_OPTIONS "-fconstexpr-ops-limit=40000000")
+
 # ── The layout table of the vessel libraries ─────────────────────────
 #
 # Each vessel library compiles layout_note.cpp, so it carries an ELF note with

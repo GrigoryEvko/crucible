@@ -1220,8 +1220,9 @@ endif()
 # shape.  An evaluation of more operations stops the compile.  A
 # translation unit that needs more takes a source-file COMPILE_OPTIONS
 # property -fconstexpr-ops-limit=N beside this comment, with its reason.  A
-# source property comes last on the compile line, so its limit wins.  No
-# translation unit needs more at this time.
+# source property comes last on the compile line, so its limit wins.  The
+# unit vessel/torch/layout_note.cpp takes such a property, with its reason in
+# vessel/torch/CMakeLists.txt.
 include(cmake/Guards.cmake)
 set(CRUCIBLE_CONSTEXPR_OPS_LIMIT 33554432)
 

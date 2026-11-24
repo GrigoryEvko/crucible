@@ -33,8 +33,8 @@
 
 namespace crucible {
 
-// A transaction holds its region by Ref only, so this header does not need
-// the definition from MerkleDag.h.
+// The log holds the region of a transaction by Ref only, so this header does
+// not need the definition from MerkleDag.h.
 struct RegionNode;
 
 enum class TxStatus : uint8_t {
@@ -52,7 +52,9 @@ struct Transaction {
     // gives it to its owner, and it writes no region, so it holds a region of
     // const.
     using ArenaRegion = ::fixy::Tagged<::fixy::Ref<RegionNode const, DagArena>, ::fixy::tags::source::Arena>;
-    // The region of a transaction, or no region before its commit.
+    // The region of a transaction, or no region before its commit.  The log
+    // keeps it beside its ring, by the slot of the transaction, so a
+    // transaction holds plain values and no borrow (region_of of the log).
     using ArenaRegionLink =
         ::fixy::Tagged<::fixy::Option<::fixy::Ref<RegionNode const, DagArena>>, ::fixy::tags::source::Arena>;
 
@@ -73,7 +75,6 @@ struct Transaction {
     ::fixy::Monotonic<uint64_t> displacement_order = ::fixy::mint_monotonic<uint64_t>(0);
     ContentHash content_hash;  // zero until the transaction commits
     MerkleHash merkle_root;  // zero until the transaction commits
-    ArenaRegionLink region{};  // no region until the transaction commits
     // The place of the last event of this transaction in the order of the
     // events of its log: a claim, a commit, an activation, a displacement or
     // a rollback.  Zero until the log stamps the transaction.  The log keeps
@@ -86,17 +87,8 @@ struct Transaction {
     // a later one in the same slot.
     ::fixy::Monotonic<uint64_t> claim_order = ::fixy::mint_monotonic<uint64_t>(0);
     TxStatus status = TxStatus::RECORDING;
-    ::fixy::FixedArray<uint8_t, 7> pad{};
+    ::fixy::FixedArray<uint8_t, 15> pad{};
 };
-
-// True when the transaction holds the region.  The test compares the
-// addresses of the two regions, so a copy of the region is not the region.
-// A transaction with no region holds no region.
-[[nodiscard]] inline bool holds_region(Transaction const& tx, ::fixy::Ref<const RegionNode, DagArena> region) noexcept {
-    return tx.region.value().is_some_and([region](::fixy::Ref<RegionNode const, DagArena> const& held) noexcept {
-        return ::fixy::same_object(held, region);
-    });
-}
 
 // A proof that the caller is the one thread that owns some state. It is
 // empty, so it costs nothing at a call. It cannot be copied or moved, so a
@@ -224,16 +216,25 @@ private:
 //   any order.  A claim never recycles the slot of the active transaction or
 //   the slot of the rollback target.  active and previous give the CommittedTx
 //   of their transaction, and with_tx lends a transaction as const to a body.
-//   No door gives a reference to a transaction out.
+//   No door gives a reference to a transaction out.  region_of gives the region
+//   of a committed transaction, which the log keeps beside the ring.
+//
+// Regions
+//   A transaction holds plain values.  The log keeps the region of each slot
+//   in its own array, and a fresh claim clears the region of its slot.  So a
+//   body of a door of the ring reaches no borrow, and no body can keep a
+//   borrow of a slot.  A key of the region store with a generation replaces
+//   each region link when the store gets one.
 //
 // Identity
 //   Each log holds an Identity that its constructor mints, so no caller gives
 //   a log the Identity of a different log.  Each CommittedTx and each draft
 //   carries the Identity of its log, and each door that takes one compares
-//   it.  A stored CommittedTx can go stale in correct code, so activate and
-//   with_tx refuse a token of a different log as stale.  A draft is linear,
-//   and only the door of its own log makes one, so a draft of a different log
-//   at commit, abandon or with_draft breaks the precondition of the door.
+//   it.  A stored CommittedTx can go stale in correct code, so activate,
+//   with_tx and region_of refuse a token of a different log as stale.  A draft
+//   is linear, and only the door of its own log makes one, so a draft of a
+//   different log at commit, abandon or with_draft breaks the precondition of
+//   the door.
 //
 // Key
 //   A log of a key brand comes from the mint of foundation/core/KeyedMint.h
@@ -283,6 +284,9 @@ public:
     using Committed = CommittedTx<N, KeyBrand>;
     using Draft = TxDraft<N, KeyBrand>;
     using Slot = ::fixy::Index<N>;
+    // The region of a committed transaction: a Ref of a region of the DAG,
+    // which borrows the DAG and not the ring.
+    using RegionRef = ::fixy::Ref<RegionNode const, DagArena>;
 
     TransactionLog() noexcept
         requires(!is_keyed_)
@@ -400,6 +404,16 @@ public:
         return with_tx_(Committed{draft.slot_, draft.claim_, draft.log_}, static_cast<Body&&>(body));
     }
 
+    // The region of a committed transaction, or a refusal of a token that
+    // names a different log or a slot that a later claim reused (the regions,
+    // the Identity).
+    [[nodiscard]] ::fixy::Result<::fixy::Option<RegionRef>, TxRefusal> region_of(Owner const& /*owner*/,
+                                                                                 Committed committed) const noexcept
+        requires(!is_keyed_)
+    {
+        return region_of_(committed);
+    }
+
     // ── The doors of a log of a key brand (the key) ────────────────────────
 
     [[nodiscard, gnu::cold]] Draft begin_tx(key_type&& key, Owner const& /*owner*/,
@@ -464,6 +478,13 @@ public:
         return with_tx_(committed, static_cast<Body&&>(body));
     }
 
+    [[nodiscard]] ::fixy::Result<::fixy::Option<RegionRef>, TxRefusal>
+    region_of(key_type& /*key*/, Owner const& /*owner*/, Committed committed) const noexcept
+        requires is_keyed_
+    {
+        return region_of_(committed);
+    }
+
     // Lends the transaction of a draft as const to body.  The claim of the
     // draft names the transaction of the slot, so the door refuses nothing.
     template <class Body>
@@ -497,6 +518,11 @@ public:
     void with_tx(Owner const& owner, Committed committed, Body&& body) const noexcept =
         delete("a keyed TransactionLog lends a committed transaction only with its LoanKey: call with_tx(key, owner, "
                "committed, body)");
+    ::fixy::Result<::fixy::Option<RegionRef>, TxRefusal> region_of(Owner const& owner,
+                                                                   Committed committed) const noexcept
+        requires is_keyed_
+    = delete("a keyed TransactionLog reads the region of a transaction only with its LoanKey: call region_of(key, "
+             "owner, committed)");
 
     // ── The doors of each log ──────────────────────────────────────────────
 
@@ -507,10 +533,9 @@ public:
     void for_each_region(Owner const&, Visit&& visit) const {
         for (Slot const back : ::fixy::IndexRange<N>{}) {
             if (back.raw() >= ring_.size()) break;
-            read_slot_(ring_.slot_back(back), [&visit](Transaction const& entry) noexcept {
-                for (const ::fixy::Ref<RegionNode const, DagArena>& region : entry.region.value())
-                    visit(::fixy::some(region));
-            });
+            regions_.at(ring_.slot_back(back))
+                .value()
+                .match([&visit](RegionRef region) { visit(::fixy::some(region)); }, [] {});
         }
     }
 
@@ -575,12 +600,30 @@ private:
         return ::fixy::none;
     }
 
-    // Gives the transaction the next place of the count of the events.  The
-    // count only grows, so a later event of one transaction gets a larger
-    // place.  A slot that a claim recycles starts again at zero.
-    void stamp_(Transaction& tx) noexcept {
+    // The next place of the count of the events, for the transaction of one
+    // event.  The count only grows, so a later event of one transaction gets
+    // a larger place.  A slot that a claim recycles starts again at zero.  The
+    // door takes the place before it lends the slot, so the body of the slot
+    // captures the place by value and reaches no member of the log.
+    [[nodiscard]] uint64_t next_stamp_() noexcept {
         events_.bump();
-        tx.event_order.advance(events_.get());
+        return events_.get();
+    }
+
+    // The body of region_of: the region of the transaction that the token
+    // names, or a refusal of a token that names a different log or a slot
+    // that a later claim reused.
+    [[nodiscard]] ::fixy::Result<::fixy::Option<RegionRef>, TxRefusal> region_of_(Committed committed) const noexcept {
+        if (!names_live_(committed)) return ::fixy::err(TxRefusal::stale);
+        return regions_.at(committed.slot_).value();
+    }
+
+    // The region link of a slot: no region, for a fresh claim, or the region
+    // of a commit.  Each takes the place of the old link with no read of it.
+    [[nodiscard]] static Transaction::ArenaRegionLink no_region_() noexcept { return Transaction::ArenaRegionLink{}; }
+    [[nodiscard]] static Transaction::ArenaRegionLink region_link_(Transaction::ArenaRegion region) noexcept {
+        // The region came in under the Arena tag, so the link keeps it.
+        return ::fixy::mint_tagged<::fixy::tags::source::Arena>(::fixy::Option<RegionRef>::some(region.value()));
     }
 
     // Claims a slot for a new transaction of the step, and gives the slot.
@@ -609,18 +652,19 @@ private:
         // new one in the slot.  An assignment would write step_id backward,
         // and its Monotonic refuses an assignment.  The value initialization
         // also sets each padding byte to zero.
-        write_fresh_claim_(key, [this, step_id, claim](Transaction& tx) noexcept {
+        uint64_t const stamp = next_stamp_();
+        write_fresh_claim_(key, [step_id, claim, stamp](Transaction& tx) noexcept {
             tx.step_id.advance(step_id);
             tx.claim_order.advance(claim);
-            stamp_(tx);
+            tx.event_order.advance(stamp);
         });
+        regions_.build_at(slot, no_region_);
         CRUCIBLE_POST(slot, !is_slot_of_(active_, slot));
         CRUCIBLE_POST(slot, !is_slot_of_(target, slot));
-        bool const is_fresh = read_slot_(slot, [this, step_id](Transaction const& tx) noexcept {
-            return tx.status == TxStatus::RECORDING && tx.step_id.get() == step_id
-                && tx.event_order.get() == events_.get();
+        bool const is_fresh = read_slot_(slot, [step_id, stamp](Transaction const& tx) noexcept {
+            return tx.status == TxStatus::RECORDING && tx.step_id.get() == step_id && tx.event_order.get() == stamp;
         });
-        CRUCIBLE_POST(slot, is_fresh);
+        CRUCIBLE_POST(slot, is_fresh && regions_.at(slot).value().is_none());
         return slot;
     }
 
@@ -630,21 +674,22 @@ private:
     void commit_(write_key& key, Committed committed, Transaction::ArenaRegion region, ContentHash content_hash,
                  MerkleHash merkle_root) noexcept {
         CRUCIBLE_PRE(::foundation::decide::is_non_zero(merkle_root));
-        write_slot_(key, committed.slot_, [this, region, content_hash, merkle_root](Transaction& tx) noexcept {
-            // The region came in under the Arena tag, so the link keeps it.
-            tx.region = ::fixy::mint_tagged<::fixy::tags::source::Arena>(
-                ::fixy::Option<::fixy::Ref<RegionNode const, DagArena>>::some(region.value()));
+        uint64_t const stamp = next_stamp_();
+        write_slot_(key, committed.slot_, [content_hash, merkle_root, stamp](Transaction& tx) noexcept {
             tx.content_hash = content_hash;
             tx.merkle_root = merkle_root;
             tx.status = TxStatus::COMMITTED;
-            stamp_(tx);
+            tx.event_order.advance(stamp);
             // Dropping any one of these assignments leaves the field at the
             // value the slot was reset to, which reads as an uncommitted
             // transaction.
-            CRUCIBLE_POST(true, holds_region(tx, region.value()));
             CRUCIBLE_POST(true, tx.content_hash == content_hash);
             CRUCIBLE_POST(true, tx.merkle_root == merkle_root);
         });
+        regions_.build_at(committed.slot_, region_link_, region);
+        CRUCIBLE_POST(true, regions_.at(committed.slot_).value().is_some_and([region](RegionRef held) noexcept {
+            return ::fixy::same_object(held, region.value());
+        }));
     }
 
     // The activation of activate.  The compare of the claim is a run-time
@@ -661,25 +706,29 @@ private:
         ::fixy::Option<Committed> const displaced = committed_of_(active_);
         for (Slot const& previous : active_) {
             displacements_.bump();
-            write_slot_(key, previous, [this](Transaction& tx) noexcept {
+            uint64_t const displacement = displacements_.get();
+            uint64_t const stamp = next_stamp_();
+            write_slot_(key, previous, [displacement, stamp](Transaction& tx) noexcept {
                 tx.status = TxStatus::SUPERSEDED;
-                tx.displacement_order.advance(displacements_.get());
-                stamp_(tx);
+                tx.displacement_order.advance(displacement);
+                tx.event_order.advance(stamp);
             });
         }
-        write_slot_(key, committed.slot_, [this](Transaction& tx) noexcept {
+        uint64_t const stamp = next_stamp_();
+        write_slot_(key, committed.slot_, [stamp](Transaction& tx) noexcept {
             tx.status = TxStatus::ACTIVE;
-            stamp_(tx);
+            tx.event_order.advance(stamp);
         });
         active_ = ::fixy::some(committed.slot_);
         // The displaced transaction must end up in the superseded state, since
         // that is what a rollback searches for.  It must also hold the newest
         // place in the order of displacements, because a rollback restores
         // the superseded transaction with the largest place.
+        uint64_t const displacements = displacements_.get();
         CRUCIBLE_POST(displaced, is_slot_of_(active_, committed.slot_));
-        CRUCIBLE_POST(displaced, displaced.is_none_or([this](Committed const& previous) noexcept {
-            return read_slot_(previous.slot_, [this](Transaction const& tx) noexcept {
-                return tx.status == TxStatus::SUPERSEDED && tx.displacement_order.get() == displacements_.get();
+        CRUCIBLE_POST(displaced, displaced.is_none_or([this, displacements](Committed previous) noexcept {
+            return read_slot_(previous.slot_, [displacements](Transaction const& tx) noexcept {
+                return tx.status == TxStatus::SUPERSEDED && tx.displacement_order.get() == displacements;
             });
         }));
         return displaced;
@@ -690,15 +739,17 @@ private:
         ::fixy::Option<Slot> const target = previous_slot_();
         if (target.is_none()) return false;
         for (Slot const& current : active_) {
-            write_slot_(key, current, [this](Transaction& tx) noexcept {
+            uint64_t const stamp = next_stamp_();
+            write_slot_(key, current, [stamp](Transaction& tx) noexcept {
                 tx.status = TxStatus::ROLLED_BACK;
-                stamp_(tx);
+                tx.event_order.advance(stamp);
             });
         }
         for (Slot const& restored : target) {
-            write_slot_(key, restored, [this](Transaction& tx) noexcept {
+            uint64_t const stamp = next_stamp_();
+            write_slot_(key, restored, [stamp](Transaction& tx) noexcept {
                 tx.status = TxStatus::ACTIVE;
-                stamp_(tx);
+                tx.event_order.advance(stamp);
             });
         }
         active_ = target;
@@ -745,6 +796,10 @@ private:
     }
 
     Ring ring_{};
+    // The region of the transaction of each slot (the regions).  A key of the
+    // region store with a generation replaces each link when the store gets
+    // one.
+    ::fixy::FixedArray<Transaction::ArenaRegionLink, N> regions_{};
     // The slot of the active transaction, or no value.  A claim never recycles
     // it.  The empty Option is the niche of the Index, so the slot takes the
     // bytes of one Index.

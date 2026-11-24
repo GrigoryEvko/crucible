@@ -4,9 +4,12 @@
 
 namespace crucible {
 
-// A transaction fills one cache line: five words, the place of its last
-// event, the place of its claim, the status and seven bytes of padding.
+// A transaction fills one cache line: four words, the place of its last
+// event, the place of its claim, the status and fifteen bytes of padding.
 static_assert(sizeof(Transaction) == 64, "Transaction layout must be 64 bytes");
+// A transaction holds no borrow: the log keeps its region beside the ring.
+// So a body of a door of the ring reaches no borrow of the DAG.
+static_assert(::foundation::core::HoldsNoBorrow<Transaction>);
 static_assert(std::is_same_v<decltype(std::declval<Transaction>().event_order), ::fixy::Monotonic<std::uint64_t>>,
               "the stamp of a transaction is a place in the order of the events of its log, which only grows");
 
