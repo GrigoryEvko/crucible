@@ -4,12 +4,15 @@
 # applies the lists, so each unit of the tree compiles with them.
 # crucible_release_code_target() applies the same lists to a target that
 # must compile the code of a Release build in each build type, with no
-# warning flag and no sanitizer.  The constant-time taint tests and the
+# warning flag and no sanitizer other than the trap checks of a Release
+# build.  The constant-time taint tests and the
 # timing harness of test/ct are such targets.  So a change of a list changes
 # the library and the taint tests together.
 #
 #   CRUCIBLE_CODE_FLAGS          the code flags that each build takes
 #   CRUCIBLE_RELEASE_CODE_FLAGS  the code flags that each build other than
+#                                Debug takes
+#   CRUCIBLE_RELEASE_TRAP_FLAGS  the trap checks that each build other than
 #                                Debug takes
 #   CRUCIBLE_CODE_DEFINITIONS    the definitions that each build takes
 #
@@ -66,8 +69,34 @@ set(CRUCIBLE_CODE_FLAGS
 # 2026-11-16.  No build takes -fharden-control-flow-redundancy.  It defends a
 # binary against fault injection, it finds no defect in a test, and it cannot
 # instrument a function that calls setjmp.
+#
+# A build other than Debug also takes the trap form of four checks of UBSan
+# (196b).  An integer division or remainder by zero, a shift by a count
+# outside [0, bits), the quotient and the remainder of the minimum by -1, and
+# a cast of a float to an integer type that does not hold its value then end
+# the process with a trap on each target.  With no check, the division by
+# zero traps on x86_64 and gives 0 on aarch64, the minimum by -1 traps on
+# x86_64 and gives the minimum on aarch64, and the cast gives 0x80...0 on
+# x86_64 and a saturated value on aarch64.  So one input gave two results,
+# and the optimizer could also delete code on such a path.  Under
+# -fno-strict-overflow the check signed-integer-overflow reads only the
+# division and the remainder, because a wrapping add, sub and mul are
+# defined.  A check is one compare and one branch to the trap before the
+# operation, and a constant operand folds it.  The trap form needs no
+# runtime library, so the vessel loads the library with no libubsan.  A Debug
+# build of the tests reports the same checks through UBSan.  Each check is a
+# separate flag, so no comma stands in a generator expression.  A sanitizer
+# word changes with the kind of build, so the compare of the code words
+# (crucible_code_flag_problems) does not read the list.
 set(CRUCIBLE_RELEASE_CODE_FLAGS
   -fharden-compares                    # 196  redundant compare checks
+)
+set(CRUCIBLE_RELEASE_TRAP_FLAGS
+  -fsanitize=integer-divide-by-zero    # 196b the trap form of four checks of UBSan
+  -fsanitize=shift
+  -fsanitize=float-cast-overflow
+  -fsanitize=signed-integer-overflow
+  -fsanitize-trap=all
 )
 
 set(CRUCIBLE_CODE_DEFINITIONS
@@ -76,10 +105,12 @@ set(CRUCIBLE_CODE_DEFINITIONS
 
 # Gives TARGET the code flags, the definitions and the FP floor of a Release
 # unit of the tree, in each build type.  The target gets no warning flag, no
-# sanitizer and no contract semantic from this call.  The rule codegen-shapes
+# contract semantic and no sanitizer other than the trap checks of
+# CRUCIBLE_RELEASE_TRAP_FLAGS from this call.  The rule codegen-shapes
 # takes the flags of a Release build from the compile of such a target.
 function(crucible_release_code_target target)
-  target_compile_options(${target} PRIVATE ${CRUCIBLE_CODE_FLAGS} ${CRUCIBLE_RELEASE_CODE_FLAGS})
+  target_compile_options(${target} PRIVATE ${CRUCIBLE_CODE_FLAGS} ${CRUCIBLE_RELEASE_CODE_FLAGS}
+                                           ${CRUCIBLE_RELEASE_TRAP_FLAGS})
   target_compile_definitions(${target} PRIVATE ${CRUCIBLE_CODE_DEFINITIONS})
   target_link_libraries(${target} PRIVATE crucible_fp_strict)
 endfunction()

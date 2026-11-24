@@ -73,11 +73,14 @@ namespace fixy::signal {
 // that are safe in a signal handler.
 using FatalReport = void (*)(int signal_number) noexcept;
 
-// A fatal signal of the handlers: its default action ends the process.  The
-// values are the numbers of Linux on x86_64 and on aarch64, and
-// src/fixy/os/Signal.cpp checks each against <signal.h>.
+// A fatal signal: its default action ends the process.  The values are the
+// numbers of Linux on x86_64 and on aarch64, and src/fixy/os/Signal.cpp
+// checks each against <signal.h>.  The handlers take each signal other than
+// breakpoint_trap, which a trap instruction of aarch64 raises, such as the
+// trap of a check of a Release build.
 enum class FatalSignal : std::uint8_t {
     illegal_instruction = 4,
+    breakpoint_trap = 5,
     abort = 6,
     bus_error = 7,
     floating_point = 8,

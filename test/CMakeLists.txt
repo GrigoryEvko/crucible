@@ -716,6 +716,14 @@ crucible_test(test_tensor_meta_synthetic_address)
 # Each route from bytes to a TensorMeta refuses a size or a stride past the
 # bound of a TensorDim, and a slot reads back the lane that it wrote.
 crucible_test(test_tensor_dim_bound)
+# The trap checks of a build other than Debug (cmake/CodeFlags.cmake, 196b)
+# end a child with a trap for a division by zero, the minimum by -1, a shift
+# by the width and a float cast past the range.  A Debug build of the tests
+# reports the same checks through UBSan, so only a build other than Debug
+# holds the test.
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  crucible_test(test_release_traps)
+endif()
 crucible_test(test_trace_ring_pop_batch)
 # Each group of tests that drives a Vigil is a source file of its own, so
 # that no translation unit compiles all of them.

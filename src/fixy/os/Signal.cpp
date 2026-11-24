@@ -33,6 +33,8 @@ static_assert(::fixy::process::detail::kTerminalOutputSignal == SIGTTOU,
               "fixy::process::detail::kTerminalOutputSignal is not SIGTTOU of <signal.h>");
 static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::illegal_instruction) == SIGILL,
               "fixy::signal::FatalSignal::illegal_instruction is not SIGILL of <signal.h>");
+static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::breakpoint_trap) == SIGTRAP,
+              "fixy::signal::FatalSignal::breakpoint_trap is not SIGTRAP of <signal.h>");
 static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::abort) == SIGABRT,
               "fixy::signal::FatalSignal::abort is not SIGABRT of <signal.h>");
 static_assert(::fixy::signal::number_of(::fixy::signal::FatalSignal::bus_error) == SIGBUS,

@@ -460,7 +460,7 @@ if(CMAKE_CROSSCOMPILING)
   set(_matrix_native "")
 endif()
 set(_matrix_release -O3 ${_matrix_native} -DNDEBUG -U_GLIBCXX_ASSERTIONS -U_GLIBCXX_SANITIZE_VECTOR -fno-sanitize=all
-    -fharden-compares -fno-strict-overflow)
+    ${CRUCIBLE_RELEASE_CODE_FLAGS} ${CRUCIBLE_RELEASE_TRAP_FLAGS} -fno-strict-overflow)
 set(_matrix_debug -O1 -UNDEBUG -D_GLIBCXX_ASSERTIONS=1 -D_GLIBCXX_SANITIZE_VECTOR=1 -fno-sanitize=all)
 set(_matrix_flags_debug ${_matrix_debug} -fsanitize=address -fno-sanitize-recover=all -fno-strict-overflow
     -fcontract-evaluation-semantic=enforce)
