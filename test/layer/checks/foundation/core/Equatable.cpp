@@ -2,6 +2,7 @@
 
 #include <foundation/core/Equatable.h>
 
+#include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 
 #include <compare>
@@ -73,6 +74,37 @@ struct IeeeCompare {
     friend constexpr bool operator==(IeeeCompare, IeeeCompare) noexcept = default;
 };
 
+// The walk reads each floating type, not only float and double.  The types
+// of the two literals are std::float16_t and std::bfloat16_t.
+using Half = decltype(0.0f16);
+using BrainHalf = decltype(0.0bf16);
+
+struct HoldsHalf {
+    Half value = 0.0f16;
+    friend constexpr bool operator==(HoldsHalf, HoldsHalf) noexcept = default;
+};
+
+struct HoldsBrainHalf {
+    BrainHalf value = 0.0bf16;
+    friend constexpr bool operator==(HoldsBrainHalf, HoldsBrainHalf) noexcept = default;
+};
+
+// A long double member, and the same members under the mark ieee_equality:
+// a PartialEquatable class.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the float rule of Equatable reads a long double member")
+struct HoldsLongDouble {
+    long double value = 0.0L;
+    friend constexpr bool operator==(HoldsLongDouble const&, HoldsLongDouble const&) noexcept = default;
+};
+
+struct[[= ieee_equality{}]] StatesWideFloats {
+    long double wide = 0.0L;
+    Half half = 0.0f16;
+    BrainHalf brain = 0.0bf16;
+    friend constexpr bool operator==(StatesWideFloats const&, StatesWideFloats const&) noexcept = default;
+};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
 // The walk reads a part of a part and a base.  test_core_protocol holds the
 // walk over a C array.
 struct HoldsIeeeCompare {
@@ -142,6 +174,8 @@ static_assert(!Equatable<ThrowingEqual>);
 // by IEEE 754 is no Equatable type.  With ieee_equality it is PartialEquatable.
 static_assert(!Equatable<PartialCompare> && PartialEquatable<PartialCompare> && !Orderable<PartialCompare>);
 static_assert(!Equatable<IeeeCompare> && !PartialEquatable<IeeeCompare>);
+static_assert(!Equatable<HoldsLongDouble> && !Equatable<HoldsHalf> && !Equatable<HoldsBrainHalf>);
+static_assert(!Equatable<StatesWideFloats> && PartialEquatable<StatesWideFloats>);
 static_assert(!Equatable<HoldsIeeeCompare> && !Equatable<DerivesIeeeCompare> && !Equatable<DerivesWithIeeeCompare>);
 static_assert(Equatable<HoldsPart<double>> && Equatable<HoldsPart<HoldsFloatLanes>>);
 static_assert(Equatable<HoldsFloatLanes> && Equatable<FixedArray<double, 2>> && !Equatable<FixedArray<IeeeCompare, 1>>);

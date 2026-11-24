@@ -591,7 +591,7 @@ test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of t
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
 test/foundation/ | opted-out | 6 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | opted-out | 3 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | opted-out | 3 | PROBE: the walk of the Protocol family over a C array part and a pointer part | the walk of the float rule of Equatable over a C array of a double in a class with an own ==
+test/foundation/ | opted-out | 4 | PROBE: the walk of the Protocol family over a C array part and a pointer part | the float rule of Equatable over a C array of a float, in a class with an own == and in a class with ieee_equality
 test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | opted-out | 3 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
 test/foundation/ | raw-function-pointer | 9 | - | -
@@ -737,6 +737,8 @@ test/layer/checks/foundation/algebra/lattices/ | std-object | 3 | - | -
 test/layer/checks/foundation/algebra/net/ | opted-out | 1 | PROBE: the fault code names no enumerator, as a code that no check gives | the check file of foundation/algebra/net/Net.h probes the text of a fault code that names no enumerator, which only a cast makes
 test/layer/checks/foundation/algebra/net/ | region | 1 | PROBE: the fault code names no enumerator, as a code that no check gives | the check file of foundation/algebra/net/Net.h probes the text of a fault code that names no enumerator, which only a cast makes
 test/layer/checks/foundation/contracts/ | c-array-object | 4 | - | -
+test/layer/checks/foundation/core/ | opted-out | 4 | PROBE: the float rule of Equatable reads a long double member | the check file of foundation/core/Equatable.h holds two classes with a long double member, because the float rule of Equatable reads each floating type
+test/layer/checks/foundation/core/ | region | 1 | PROBE: the float rule of Equatable reads a long double member | the check file of foundation/core/Equatable.h holds two classes with a long double member, because the float rule of Equatable reads each floating type
 test/layer/checks/foundation/diag/ | enum-cast | 2 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/foundation/diag/ | std-entity | 14 | - | -
 test/layer/checks/foundation/effects/ | c-array-object | 2 | - | -

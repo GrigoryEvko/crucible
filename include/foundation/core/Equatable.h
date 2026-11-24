@@ -201,7 +201,8 @@ enum class CompareKind : std::uint8_t {
 }
 
 // True when an own == of a class that holds the type compares a float by
-// the == of IEEE 754: the type is a float or a double, or it holds one by
+// the == of IEEE 754: the type is a floating type (float, double, long
+// double or an extended type such as std::float16_t), or it holds one by
 // value at a depth of its parts.  The walk stops at a class with the mark
 // equal_parts, whose == compares its parts by the float rule, and it reads
 // a class with the mark ieee_equality as such a compare.  A union is no
@@ -210,7 +211,7 @@ enum class CompareKind : std::uint8_t {
 // the number of parts that it reaches.
 [[nodiscard]] consteval bool compares_float_by_ieee_at(std::meta::info spelled) {
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
-    if (type == ^^float || type == ^^double) return true;
+    if (std::meta::is_floating_point_type(type)) return true;
     if (std::meta::is_array_type(type)) return compares_float_by_ieee_at(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
     if (carries_mark_at(type, ^^equal_parts)) return false;

@@ -765,10 +765,16 @@ struct[[= derive_protocol{}]] HoldsFixedArray {
 };
 
 // A defaulted == of a C array of a float compares each element by IEEE 754,
-// so the class is no Equatable type.
+// so the class is no Equatable type.  Under the mark ieee_equality the same
+// member makes a PartialEquatable class.
 struct HoldsFloatCArray {
-    double lanes[2] = {};
+    float lanes[2] = {};
     friend constexpr bool operator==(HoldsFloatCArray const&, HoldsFloatCArray const&) noexcept = default;
+};
+
+struct[[= ::foundation::core::ieee_equality{}]] StatesFloatCArray {
+    float lanes[2] = {};
+    friend constexpr bool operator==(StatesFloatCArray const&, StatesFloatCArray const&) noexcept = default;
 };
 
 // A pointer compares as an address, and a local pointer has no place in the
@@ -783,6 +789,8 @@ void test_c_array_and_pointer_parts() {
     static_assert(::foundation::core::Encodable<HoldsPointer> && encoded_size_v<HoldsPointer> == 4);
     static_assert(::foundation::core::Equatable<HoldsPointer> && !::foundation::core::Orderable<HoldsPointer>);
     static_assert(!::foundation::core::Equatable<HoldsFloatCArray> && ::foundation::core::Equatable<HoldsCArray>);
+    static_assert(!::foundation::core::Equatable<StatesFloatCArray>
+                  && ::foundation::core::PartialEquatable<StatesFloatCArray>);
 
     ::crucible::test::PhiloxStream stream{0x4341525241595054ULL};
     for (int round = 0; round < 1024; ++round) {
