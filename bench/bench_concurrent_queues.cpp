@@ -37,6 +37,7 @@
 #include <fixy/concurrent/AtomicSnapshot.h>
 #include <fixy/concurrent/LaneRing.h>
 #include <fixy/concurrent/SpscRing.h>
+#include <foundation/SoleWriterProof.h>
 
 #include "bench_harness.h"
 #include "../test/trace_rig.h"
@@ -53,8 +54,19 @@ using HugeSpsc = SpscRing<std::uint64_t, (1U << 20)>;
 using SmallSpsc = SpscRing<std::uint64_t, 1024>;
 
 // AtomicSnapshot payload — 8B uint64_t for the simplest-possible
-// publish/load measurement (single cache line for storage_).
-using Snap = AtomicSnapshot<std::uint64_t>;
+// publish/load measurement (single cache line for storage_).  SnapWriter is
+// its one writer, the owner of the proof of that writer.
+class SnapWriter;
+struct SnapPublishRole final {};
+using Snap = AtomicSnapshot<std::uint64_t, ::foundation::SoleWriterProof<SnapWriter, SnapPublishRole>>;
+
+class SnapWriter final {
+public:
+    // Publishes value into snapshot as its one writer.
+    static void publish(Snap& snapshot, Snap::value_type const& value) noexcept {
+        snapshot.publish(::foundation::SoleWriterProof<SnapWriter, SnapPublishRole>{}, value);
+    }
+};
 
 // A ring of two lanes of 16 cells each.  The round trip pushes into the lane
 // of the turn and receives the item, so each receive steps the turn.
@@ -184,7 +196,7 @@ int main() {
             ::fixy::Box<Snap> snap_box = ::fixy::mint_box<Snap>(kAlloc);
             auto const snap = ::fixy::to(*snap_box);
             std::uint64_t i = 0;
-            return bench::run("atomic_snapshot.publish", [&] { snap->publish(++i); });
+            return bench::run("atomic_snapshot.publish", [&] { SnapWriter::publish(*snap, ++i); });
         }(),
 
         // ── AtomicSnapshot: load (reader-only, no writer) ─────────────

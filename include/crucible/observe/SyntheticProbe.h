@@ -361,20 +361,20 @@ public:
     template <::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsSyntheticProbeRecord<Ctx>
     [[nodiscard]] bool record_outcome(Ctx const&, cog::CogIdentity const& peer, ProbeOutcome outcome,
-                                      observe::ObservationSnapshot& observations) noexcept {
+                                      observe::ObservationSink::Writer& observations) noexcept {
         return record_counters_(peer, outcome)
             .match(
                 [&](PeerIndex index) noexcept {
-                    observe::record_observation(
-                        observations,
+                    observations.record(
+                        ::fixy::index<0>(),
                         observe::latency_ns(detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind,
                                                                   detail::ProbeMetricLane::LatencyNs),
                                             outcome.latency_ns, outcome.sequence));
-                    observe::record_observation(
-                        observations, observe::bits_transferred(
-                                          detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind,
-                                                                detail::ProbeMetricLane::BitsTransferred),
-                                          outcome.bytes_transferred * 8ull, outcome.sequence));
+                    observations.record(::fixy::index<0>(),
+                                        observe::bits_transferred(
+                                            detail::metric_id_for(config_.metric_id_base, index.raw(), outcome.kind,
+                                                                  detail::ProbeMetricLane::BitsTransferred),
+                                            outcome.bytes_transferred * 8ull, outcome.sequence));
                     return true;
                 },
                 []() noexcept { return false; });

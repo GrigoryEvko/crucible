@@ -7,11 +7,10 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
-#include <fixy/os/Process.h>
 
 #include <foundation/Lifetime.h>
 #include <foundation/Platform.h>
-#include <foundation/diag/Runtime.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
@@ -30,12 +29,45 @@ namespace {
 using ::fixy::concurrent::AtomicSnapshot;
 using ::fixy::concurrent::SnapshotValue;
 
+// The one writer of each snapshot of the test (the owner of the proof of its
+// writer).  Each case publishes from one thread at a time through it.
+template <class Payload>
+class TestWriter;
+struct PublishRole {};
+template <class Payload>
+using TestSnapshot = AtomicSnapshot<Payload, ::foundation::SoleWriterProof<TestWriter<Payload>, PublishRole>>;
+
+template <class Payload>
+class TestWriter {
+public:
+    // Publishes value into snapshot as its one writer.
+    static void publish(TestSnapshot<Payload>& snapshot, Payload const& value) noexcept {
+        snapshot.publish(::foundation::SoleWriterProof<TestWriter, PublishRole>{}, value);
+    }
+};
+
+// A publish takes the proof of the one writer, and only the owner makes it.
+// A proof of another owner names another writer, so it has no overload.
+class OtherOwner;
+template <class Snapshot, class Proof>
+concept PublishesWith =
+    requires(Snapshot& snapshot, Proof const& proof, std::uint64_t const& value) { snapshot.publish(proof, value); };
+template <class Snapshot>
+concept PublishesWithNoProof = requires(Snapshot& snapshot, std::uint64_t const& value) { snapshot.publish(value); };
+static_assert(
+    PublishesWith<TestSnapshot<std::uint64_t>, ::foundation::SoleWriterProof<TestWriter<std::uint64_t>, PublishRole>>);
+static_assert(!PublishesWith<TestSnapshot<std::uint64_t>, ::foundation::SoleWriterProof<OtherOwner, PublishRole>>,
+              "a proof of another owner names another writer");
+static_assert(!PublishesWithNoProof<TestSnapshot<std::uint64_t>>, "a publish takes the proof of the one writer");
+static_assert(!std::is_default_constructible_v<::foundation::SoleWriterProof<TestWriter<std::uint64_t>, PublishRole>>,
+              "only the owner makes a proof of its writer");
+
 // The context of each load.  A load spins with no exit while a write is in
 // flight, so its context owns Div, and the test context owns Div.
 constexpr ::fixy::TestRunnerCtx kReader{::foundation::effects::testing::test()};
 
 template <typename Ctx>
-concept LoadsIn = requires(AtomicSnapshot<std::uint64_t> const& snapshot, Ctx const& ctx) { snapshot.load(ctx); };
+concept LoadsIn = requires(TestSnapshot<std::uint64_t> const& snapshot, Ctx const& ctx) { snapshot.load(ctx); };
 static_assert(LoadsIn<::fixy::TestRunnerCtx> && LoadsIn<::fixy::BgLoadCtx>);
 static_assert(!LoadsIn<::fixy::HotFgCtx>, "the hot path does not spin with no exit");
 static_assert(!LoadsIn<::fixy::BgDrainCtx>, "a context with no Div does not spin with no exit");
@@ -89,12 +121,12 @@ static_assert(std::is_trivially_destructible_v<TestPayload>);
 static_assert(sizeof(TestPayload) == 24);
 static_assert(SnapshotValue<TestPayload>);
 
-static_assert(!std::is_copy_constructible_v<AtomicSnapshot<TestPayload>>,
+static_assert(!std::is_copy_constructible_v<TestSnapshot<TestPayload>>,
               "AtomicSnapshot must not be copyable (Pinned contract)");
-static_assert(!std::is_copy_assignable_v<AtomicSnapshot<TestPayload>>);
-static_assert(!std::is_move_constructible_v<AtomicSnapshot<TestPayload>>,
+static_assert(!std::is_copy_assignable_v<TestSnapshot<TestPayload>>);
+static_assert(!std::is_move_constructible_v<TestSnapshot<TestPayload>>,
               "AtomicSnapshot must not be movable (interior atomics)");
-static_assert(!std::is_move_assignable_v<AtomicSnapshot<TestPayload>>);
+static_assert(!std::is_move_assignable_v<TestSnapshot<TestPayload>>);
 
 // A trivially copyable class that refuses a lifetime start over bytes is
 // no snapshot value, because the read starts a T lifetime over a buffer.
@@ -112,7 +144,7 @@ static_assert(!SnapshotValue<Oversized>, "a payload above 256 bytes is refused")
 static_assert(SnapshotValue<std::uint8_t>);
 
 void test_default_construction() {
-    AtomicSnapshot<TestPayload> snap;
+    TestSnapshot<TestPayload> snap;
 
     const auto v = snap.load(kReader);
     CRUCIBLE_REQUIRE(v.value == 0);
@@ -127,7 +159,7 @@ void test_default_construction() {
 
 void test_initial_value_ctor() {
     const auto initial = TestPayload::from(42);
-    AtomicSnapshot<TestPayload> snap{initial};
+    TestSnapshot<TestPayload> snap{initial};
 
     const auto v = snap.load(kReader);
     CRUCIBLE_REQUIRE(v.value == 42);
@@ -136,10 +168,10 @@ void test_initial_value_ctor() {
 }
 
 void test_roundtrip_single_thread() {
-    AtomicSnapshot<TestPayload> snap;
+    TestSnapshot<TestPayload> snap;
 
     for (std::uint64_t i = 1; i <= 100; ++i) {
-        snap.publish(TestPayload::from(i));
+        TestWriter<TestPayload>::publish(snap, TestPayload::from(i));
 
         const auto v = snap.load(kReader);
         CRUCIBLE_REQUIRE(v.is_consistent());
@@ -153,11 +185,11 @@ void test_roundtrip_single_thread() {
 }
 
 void test_version_monotonicity() {
-    AtomicSnapshot<TestPayload> snap;
+    TestSnapshot<TestPayload> snap;
 
     std::uint64_t prev_version = snap.version();
     for (std::uint64_t i = 0; i < 1000; ++i) {
-        snap.publish(TestPayload::from(i));
+        TestWriter<TestPayload>::publish(snap, TestPayload::from(i));
         const std::uint64_t new_version = snap.version();
         CRUCIBLE_REQUIRE(new_version > prev_version);
         prev_version = new_version;
@@ -171,7 +203,7 @@ void test_stress_multithread() {
     // payload fails the check, because zero exclusive-or the magic is
     // not zero, so a reader that arrives before the first publish would
     // report the legitimate default state as a torn read.
-    AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
+    TestSnapshot<TestPayload> snap{TestPayload::from(0)};
     std::atomic<bool> stop{false};
     std::atomic<std::uint64_t> total_loads{0};
     std::atomic<std::uint64_t> torn_reads{0};
@@ -180,7 +212,7 @@ void test_stress_multithread() {
     std::jthread writer([&] {
         std::uint64_t i = 1;
         while (!stop.load(std::memory_order_acquire)) {
-            snap.publish(TestPayload::from(i));
+            TestWriter<TestPayload>::publish(snap, TestPayload::from(i));
             ++i;
         }
     });
@@ -276,7 +308,7 @@ void test_try_load_rejects_in_progress() {
     static_assert(sizeof(LargePayload) == 256);
     static_assert(SnapshotValue<LargePayload>);
 
-    AtomicSnapshot<LargePayload> snap{LargePayload::from(0)};
+    TestSnapshot<LargePayload> snap{LargePayload::from(0)};
     std::atomic<bool> stop{false};
     std::atomic<std::uint64_t> total{0};
     std::atomic<std::uint64_t> torn{0};
@@ -284,7 +316,7 @@ void test_try_load_rejects_in_progress() {
     std::jthread writer([&] {
         std::uint64_t i = 1;
         while (!stop.load(std::memory_order_acquire)) {
-            snap.publish(LargePayload::from(i));
+            TestWriter<LargePayload>::publish(snap, LargePayload::from(i));
             ++i;
         }
     });
@@ -313,44 +345,6 @@ void test_try_load_rejects_in_progress() {
     CRUCIBLE_REQUIRE(total.load(std::memory_order_acquire) > 100);
 }
 
-// Two writers that publish at the same time break the single-writer
-// contract, and the snapshot ends the process through the diagnostic
-// catalog.  The child process installs a sink that exits with a known
-// status when it receives LinearityViolation, so the parent sees that the
-// violation went through the catalog and not through a bare abort.
-constexpr int kLinearityViolationSeen = 42;
-constexpr int kOtherViolationSeen = 43;
-
-void exit_on_linearity_violation(::foundation::diag::Category category, ::foundation::diag::ViolationContextText const&,
-                                 ::foundation::diag::ViolationDetailText const&) noexcept {
-    std::_Exit(category == ::foundation::diag::Category::LinearityViolation ? kLinearityViolationSeen
-                                                                            : kOtherViolationSeen);
-}
-
-// The child exists to die.  The two-writer check ends the process that runs
-// it, so only a parent can observe the route.  The child starts through the
-// child door of fixy/os/Process.h.  The earlier tests join each of their
-// threads, so the test process has one thread at the fork, and the child
-// may start its two writers.
-void test_two_writers_end_through_the_catalog() {
-    ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    ::fixy::process::Child child = ::fixy::process::spawn_child(test, [] noexcept {
-                                       (void)::foundation::diag::set_violation_sink(&exit_on_linearity_violation);
-                                       AtomicSnapshot<TestPayload> snap{TestPayload::from(0)};
-                                       auto hammer = [&snap] {
-                                           for (std::uint64_t i = 1; i < 50000000; ++i)
-                                               snap.publish(TestPayload::from(i));
-                                       };
-                                       std::jthread first(hammer);
-                                       std::jthread second(hammer);
-                                       first.join();
-                                       second.join();
-                                   }).expect("the test starts a child");
-    ::fixy::process::ChildReport const report =
-        ::fixy::process::wait(std::move(child)).expect("the test waits for its child");
-    CRUCIBLE_TEST_ASSERT(test, report.is_exit_with(kLinearityViolationSeen));
-}
-
 }  // namespace
 
 int main() {
@@ -361,7 +355,6 @@ int main() {
     run_test("version_monotonicity", test_version_monotonicity);
     run_test("stress_multithread", test_stress_multithread);
     run_test("try_load_rejects_in_progress", test_try_load_rejects_in_progress);
-    run_test("two_writers_end_through_the_catalog", test_two_writers_end_through_the_catalog);
 
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::check::pass(test, "\n{} passed, {} failed\n", total_passed, total_failed);

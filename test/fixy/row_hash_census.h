@@ -738,6 +738,12 @@ struct MpscBoxWitnessTag {};
 using MpscBoxWitness = ::fixy::concurrent::PermissionedBoxChannel<::fixy::concurrent::ChannelForm::merge, int, 8,
                                                                   MpscBoxWitnessTag, ChannelWitnessBrand>;
 struct PureRegionBrand {};
+// The owner and the role of the one writer of the snapshot witness.  No code
+// makes its proof.
+class SnapshotWitnessOwner;
+struct SnapshotWitnessRole {};
+using SnapshotWitness =
+    ::fixy::concurrent::AtomicSnapshot<int, ::foundation::SoleWriterProof<SnapshotWitnessOwner, SnapshotWitnessRole>>;
 using SwmrWitness =
     ::fixy::channels::swmr_session::SwmrSession<int, SwmrWriterTag, SwmrReaderTag, SwmrReaderBrand, SwmrWriterBrand>;
 // The handles of a frame on a named scope brand.  A frame door gives its body
@@ -881,7 +887,7 @@ inline constexpr CarrierWitness kCarriers[] = {
     {^^::fixy::concurrent::PermissionedBoxChannel, ^^SpscBoxWitness},
     {^^::fixy::concurrent::ProducerHandle, ^^SpscProducerHandleWitness},
     {^^::fixy::concurrent::ConsumerHandle, ^^SpscConsumerHandleWitness},
-    {^^::fixy::concurrent::AtomicSnapshot, ^^::fixy::concurrent::AtomicSnapshot<int>},
+    {^^::fixy::concurrent::AtomicSnapshot, ^^SnapshotWitness},
     {^^::fixy::channels::swmr_session::SwmrSession, ^^SwmrWitness},
     {^^::fixy::channels::swmr_session::WriterHandle, ^^SwmrWriterHandleWitness},
     {^^::fixy::channels::swmr_session::ReaderHandle, ^^SwmrReaderHandleWitness},

@@ -21,7 +21,7 @@ enum class HealthMetricSlot : std::uint8_t {
 // One observation for each slot.
 inline constexpr std::size_t kTopologyHealthObservationCount = 4;
 
-using TopologyHealthObservationSet = ::fixy::FixedArray<ObservationSnapshot, kTopologyHealthObservationCount>;
+using TopologyHealthObservationSet = ObservationSinks<kTopologyHealthObservationCount>;
 using TopologyHealthObservationBatch = ::fixy::FixedArray<Observation, kTopologyHealthObservationCount>;
 
 // The packed metric id of one slot of one peer: the family TopologyHealth in
@@ -51,15 +51,14 @@ topology_health_observations(std::uint16_t peer_slot, topology::HealthSnapshot c
     };
 }
 
-inline void publish_topology_health(TopologyHealthObservationSet& sinks, std::uint16_t peer_slot,
+// Each sink is a snapshot, so a reader loads it while the writer end publishes
+// into it.
+inline void publish_topology_health(TopologyHealthObservationSet::Writer& sinks, std::uint16_t peer_slot,
                                     topology::HealthSnapshot const& snapshot,
                                     ObservationSource source = ObservationSource::Runtime) noexcept {
     TopologyHealthObservationBatch const observations = topology_health_observations(peer_slot, snapshot, source);
-    for (::fixy::Index<kTopologyHealthObservationCount> const index : TopologyHealthObservationSet::indices()) {
-        // Each sink is an AtomicSnapshot, so a reader loads it while the publish writes it.
-        sinks.with_element(index, [observation = observations.at(index)](ObservationSnapshot& sink) noexcept {
-            record_observation(sink, observation);
-        });
+    for (::fixy::Index<kTopologyHealthObservationCount> const index : TopologyHealthObservationBatch::indices()) {
+        sinks.record(index, observations.at(index));
     }
 }
 

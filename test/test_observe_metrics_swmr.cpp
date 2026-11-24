@@ -169,16 +169,39 @@ void test_exclusive_drain_waits_for_readers() {
 }
 
 void test_runtime_observation_snapshot() {
-    observe::ObservationSnapshot sink{observe::latency_ns(11, 250, 1, observe::ObservationSource::Bpf)};
+    observe::ObservationSink sink{};
+    observe::ObservationSink::Writer writer = sink.writer();
+    writer.record(::fixy::index<0>(), observe::latency_ns(11, 250, 1, observe::ObservationSource::Bpf));
 
-    observe::record_observation(sink, observe::bits_transferred(12, 4096, 2, observe::ObservationSource::Runtime));
+    writer.record(::fixy::index<0>(), observe::bits_transferred(12, 4096, 2, observe::ObservationSource::Runtime));
 
-    const observe::Observation latest = observe::latest_observation(kTest, sink);
+    const observe::Observation latest = sink.load(kTest, ::fixy::index<0>());
     CRUCIBLE_REQUIRE(latest.kind == observe::ObservationKind::BitsTransferred);
     CRUCIBLE_REQUIRE(latest.source == observe::ObservationSource::Runtime);
     CRUCIBLE_REQUIRE(latest.metric_id == 12);
     CRUCIBLE_REQUIRE(latest.value == 4096);
     CRUCIBLE_REQUIRE(latest.sequence == 2);
+}
+
+// Gives the end back by move.  The moved-from parameter ends at the return.
+[[nodiscard]] observe::ObservationSink::Writer pass_on(observe::ObservationSink::Writer end) noexcept { return end; }
+
+// The door writer() makes the one writer end of a sink.  An end that ended
+// gives the role back, so the next call of the door makes a new end.  A move
+// hands the role on, so the moved-from end gives nothing back when it ends.
+// While an end lives, a second call of the door ends the process there.
+void test_observation_sink_has_one_writer() {
+    observe::ObservationSink sink{};
+    {
+        observe::ObservationSink::Writer first = sink.writer();
+        first.record(::fixy::index<0>(), observe::latency_ns(21, 5, 1));
+    }
+    observe::ObservationSink::Writer moved = pass_on(sink.writer());
+    moved.record(::fixy::index<0>(), observe::latency_ns(22, 6, 2));
+    CRUCIBLE_REQUIRE(sink.load(kTest, ::fixy::index<0>()).metric_id == 22);
+    ::fixy::check::expect_dies(
+        kTest, [&sink] noexcept { static_cast<void>(sink.writer()); },
+        ::fixy::TextView{"two live writer ends of one set of observation sinks"});
 }
 
 }  // namespace
@@ -189,6 +212,7 @@ int main() {
     run_test("writer_publish_keeper_and_canopy_readers", test_writer_publish_keeper_and_canopy_readers);
     run_test("exclusive_drain_waits_for_readers", test_exclusive_drain_waits_for_readers);
     run_test("runtime_observation_snapshot", test_runtime_observation_snapshot);
+    run_test("observation_sink_has_one_writer", test_observation_sink_has_one_writer);
 
     ::fixy::check::pass(kTest, "\n{} passed, {} failed\n", total_passed, total_failed);
     return total_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;

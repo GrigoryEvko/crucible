@@ -10,10 +10,15 @@
 // argument.
 
 #include <fixy/concurrent/AtomicSnapshot.h>
+#include <foundation/SoleWriterProof.h>
 
 #include <cstdint>
 
+class SnapshotOwner;
+struct PublishRole {};
+
 int main() {
-    const ::fixy::concurrent::AtomicSnapshot<std::uint64_t> snapshot{};
+    const ::fixy::concurrent::AtomicSnapshot<std::uint64_t, ::foundation::SoleWriterProof<SnapshotOwner, PublishRole>>
+        snapshot{};
     return static_cast<int>(snapshot.load());
 }

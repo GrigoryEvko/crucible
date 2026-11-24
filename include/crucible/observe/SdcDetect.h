@@ -306,12 +306,13 @@ public:
         });
     }
 
-    [[nodiscard]] bool publish_latest(ObservationSnapshot& sink) const noexcept {
+    [[nodiscard]] bool publish_latest(ObservationSink::Writer& sink) const noexcept {
         return latest_event().match(
             [&](SdcEvent event) noexcept {
-                record_observation(sink, make_observation(ObservationKind::Metric, ObservationSource::Runtime,
-                                                          config_.metric_id_base,
-                                                          static_cast<std::uint64_t>(event.kind), event.sequence));
+                sink.record(::fixy::index<0>(),
+                            make_observation(ObservationKind::Metric, ObservationSource::Runtime,
+                                             config_.metric_id_base, static_cast<std::uint64_t>(event.kind),
+                                             event.sequence));
                 return true;
             },
             [] noexcept { return false; });

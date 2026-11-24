@@ -53,6 +53,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/Transfer.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
@@ -309,7 +310,11 @@ public:
             return std::move(perm_);
         }
 
-        void publish(T const& value) noexcept { session_->snapshot_.publish(value); }
+        // The writer end is the one writer of the snapshot, so it makes the
+        // proof of that writer for each publish.
+        void publish(T const& value) noexcept {
+            session_->snapshot_.publish(::foundation::SoleWriterProof<WriterEnd, publish_role_>{}, value);
+        }
 
         [[nodiscard]] std::uint64_t version() const noexcept { return session_->snapshot_.version(); }
     };
@@ -442,7 +447,16 @@ public:
     [[nodiscard]] std::uint64_t version() const noexcept { return snapshot_.version(); }
 
 private:
-    ::fixy::concurrent::AtomicSnapshot<T> snapshot_;
+    // The role of the publish of the writer end in the proof of the one
+    // writer of the snapshot.
+    struct publish_role_ final {};
+
+    // The writer end is the one writer of the snapshot: one writer token of
+    // the brand opens it, and the claim of the writer role refuses a second
+    // live end of one token site at its mint.  So the snapshot names the
+    // writer end as the owner of its one writer, and a publish takes no
+    // locked step.
+    ::fixy::concurrent::AtomicSnapshot<T, ::foundation::SoleWriterProof<WriterEnd, publish_role_>> snapshot_;
     ::foundation::permissions::SharedPermissionPool<reader_tag, reader_brand> reader_pool_;
     ::foundation::EndpointClaim writer_claim_;
 };

@@ -27,6 +27,7 @@
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/handle/PublishCommit.h>
 #include <foundation/Quarantine.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -57,6 +58,13 @@ namespace {
 struct ProbeTag final {};
 
 struct ProbeOwner;
+
+// The owner of the one writer of the snapshot of the probe.  The probe only
+// loads, so no code makes the proof.
+class SnapshotOwner;
+struct SnapshotRole final {};
+using ProbeSnapshot =
+    ::fixy::concurrent::AtomicSnapshot<std::uint64_t, ::foundation::SoleWriterProof<SnapshotOwner, SnapshotRole>>;
 
 // The token of the one writer of the commit cell of the probe.  Its read of
 // its own count is the relaxed read of the cell.  Only its owner builds one.
@@ -168,7 +176,7 @@ int main() {
 
     // The load spins with no exit while a write is in flight, so it takes a
     // context that owns Div.
-    const fixy::concurrent::AtomicSnapshot<std::uint64_t> snapshot{};
+    const ProbeSnapshot snapshot{};
     const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
     failures += failures_of(
         fixy::TextView{"AtomicSnapshot::load"},

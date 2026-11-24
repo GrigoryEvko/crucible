@@ -250,10 +250,10 @@ void test_worker_recording() {
     CRUCIBLE_TEST_ASSERT(kTest, bad_start.err().expect("a gpu is no nic") == topology::TelemetryError::InvalidNicCog);
 
     topology::CongestionObservationSet sinks{};
-    topology::publish_congestion(sinks, 0, last, 7);
-    auto p95 = observe::latest_observation(
-        kTest, *sinks.get(static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps))
-                    .expect("the set holds one sink for each slot"));
+    topology::CongestionObservationSet::Writer writer = sinks.writer();
+    topology::publish_congestion(writer, 0, last, 7);
+    auto p95 =
+        sinks.load(kTest, ::fixy::index<static_cast<std::size_t>(topology::CongestionMetricSlot::P95BandwidthBps)>());
     CRUCIBLE_TEST_ASSERT(
         kTest, p95.metric_id == topology::congestion_metric_id(0, topology::CongestionMetricSlot::P95BandwidthBps));
     CRUCIBLE_TEST_ASSERT(kTest, p95.sequence == 7);

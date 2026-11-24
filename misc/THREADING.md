@@ -824,7 +824,7 @@ Total cost of a `parallel_for_views<8>` Permission flow: 8 × 1 byte for child P
 | `MpmcRing<T, N>` | 2N × 64 bytes (double-buffered SCQ) | yes | **Nikolaev SCQ (DISC 2019)** — FAA head/tail, per-cell cycle + IsSafe + occupied bits, threshold livelock prevention | ~15-25 ns uncontended; ~30-60 ns at 16-way contention |
 | `ShardedSpscGrid<T, M, N, C>` | M·N × SpscRing<T, C> | yes | M·N independent SpscRings + routing policy | Per-shard ~5-8 ns |
 | `ChaseLevDeque<T, N>` | N × sizeof(atomic<T>) + 3 cache lines | yes | Chase-Lev work-stealing — owner LIFO, thief FIFO, two seq_cst points | Owner ~8-12 ns push, ~10-15 ns pop; Thief ~20-30 ns steal |
-| `AtomicSnapshot<T>` | 2 cache lines + sizeof(T) | yes | Lamport seqlock — two fetch_add bracketing memcpy | Writer ~15 ns; reader ~5-10 ns uncontended |
+| `AtomicSnapshot<T, Writer>` | 2 cache lines + sizeof(T) | yes | Lamport seqlock of one writer, which its type names — two release stores of the counter bracket the release stores of the words, with no locked instruction | Writer ~15 ns; reader ~5-10 ns uncontended |
 
 **The MPMC slot is the beyond-Vyukov frontier.**  See §5.5.1 for the full comparison; summary: SCQ uses FAA (never fails) where Vyukov uses CAS (retries under contention), achieving 2-4× throughput at high producer/consumer counts without requiring `cmpxchg16b` (so portable to ARM/PowerPC/RISC-V, unlike LCRQ).
 
@@ -1137,7 +1137,7 @@ This section enumerates the structural properties Crucible's threading model del
 | `MpmcRing::try_pop` (SCQ, uncontended) | 1 FAA on head + 1 OR on cell |
 | `MpmcRing::try_pop` (SCQ, empty fast-path) | Threshold < 0 check, no ticket claim |
 | `AtomicSnapshot::load` (uncontended) | 2 seq-loads + memcpy + acquire fence |
-| `AtomicSnapshot::publish` | 2 fetch_add + memcpy |
+| `AtomicSnapshot::publish` | 1 load of the counter + 2 release stores of the counter + 1 release store for each word |
 
 **MPMC vs Vyukov-MPMC under heavy contention:**
 

@@ -4,8 +4,16 @@
 // them. Deterministic replay and safety contracts must not consume them as
 // evidence.
 
+#include <fixy/Core.h>
 #include <fixy/concurrent/AtomicSnapshot.h>
+#include <foundation/ChannelBinding.h>
+#include <foundation/Pinned.h>
+#include <foundation/SoleWriterProof.h>
+#include <foundation/Transfer.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -41,7 +49,84 @@ struct Observation {
     std::uint64_t sequence = 0;
 };
 
-using ObservationSnapshot = ::fixy::concurrent::AtomicSnapshot<Observation>;
+// The cells of the observations of one source, and their one writer.
+//
+// Each cell is a snapshot (fixy/concurrent/AtomicSnapshot.h): readers on other
+// threads load it while the writer publishes.  The writer end is the one writer
+// of each cell, so the cells name it as the owner of the proof of their writer,
+// and a publish takes no locked step.  The door writer() is the one door to a
+// writer end.  It takes the claim of the writer role first, so a second live
+// writer end ends the process at that door, not at a publish.  The end gives
+// the claim back when it ends.  A move clears its binding, so a moved-from end
+// gives no claim back and publishes nothing.  The end refers to its sinks
+// through the binding, so the borrow rules of the quarantine plugin refuse an
+// end that a function gives back or stores past the life of its sinks.
+//
+// The writer end and the readers use the cells on their threads at the same
+// time by design.  Each member is private: the cells are snapshots, and the
+// claim is an atomic cell.  So the class states synchronized{}
+// (foundation/Transfer.h).
+template <std::size_t Count>
+class[[= ::foundation::transfer::synchronized{}]] ObservationSinks
+    : public ::foundation::Pinned<ObservationSinks<Count>> {
+public:
+    class Writer;
+
+private:
+    // The role of the publish of the writer end in the proof of the one
+    // writer of each cell.
+    struct publish_role_ final {};
+    using cell_type =
+        ::fixy::concurrent::AtomicSnapshot<Observation, ::foundation::SoleWriterProof<Writer, publish_role_>>;
+
+public:
+    // The writer end of the cells.  Only the door writer() makes one.
+    class Writer {
+        ::foundation::ChannelBinding<ObservationSinks> sinks_;
+
+        Writer(ObservationSinks& sinks, ::foundation::BindingKey<ObservationSinks> key) noexcept : sinks_{sinks, key} {}
+        friend class ObservationSinks;
+
+    public:
+        Writer(Writer const&) = delete("the writer end of a set of observation sinks is its one writer");
+        Writer& operator=(Writer const&) = delete("the writer end of a set of observation sinks is its one writer");
+        Writer(Writer&&) noexcept = default;
+        Writer& operator=(Writer&&) = delete("a writer end binds to one set of observation sinks for its life");
+        ~Writer() {
+            if (sinks_.is_bound()) sinks_->writer_claim_.release();
+        }
+
+        // Publishes observation into the cell at index.
+        void record(::fixy::Index<Count> index, Observation const& observation) noexcept {
+            ::foundation::SoleWriterProof<Writer, publish_role_> const proof{};
+            sinks_->cells_.with_element(
+                index, [&proof, &observation](cell_type& cell) noexcept { cell.publish(proof, observation); });
+        }
+    };
+
+    ObservationSinks() noexcept = default;
+
+    // The one writer end.  A second live end ends the process here.
+    [[nodiscard]] Writer writer() noexcept {
+        writer_claim_.take("two live writer ends of one set of observation sinks");
+        return Writer{*this, ::foundation::BindingKey<ObservationSinks>{}};
+    }
+
+    // The last observation of the cell at index.  The read spins with no exit
+    // while a write is in flight, so the context owns Div (AtomicSnapshot::load).
+    template <class Ctx>
+        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+    [[nodiscard]] Observation load(Ctx const& ctx, ::fixy::Index<Count> index) const noexcept {
+        return cells_.at(index).load(ctx);
+    }
+
+private:
+    ::fixy::FixedArray<cell_type, Count> cells_{};
+    ::foundation::EndpointClaim writer_claim_;
+};
+
+// The cell of a source with one observation.
+using ObservationSink = ObservationSinks<1>;
 
 // The family of a packed metric id: the kind of the source that owns a range
 // of ids.  The value of each family is an ASCII letter.
@@ -98,18 +183,6 @@ inline constexpr unsigned kMetricSlotBits = 8;
                                                      std::uint64_t sequence = 0,
                                                      ObservationSource source = ObservationSource::Runtime) noexcept {
     return make_observation(ObservationKind::BitsTransferred, source, metric_id, value, sequence);
-}
-
-inline void record_observation(ObservationSnapshot& sink, Observation observation) noexcept {
-    sink.publish(observation);
-}
-
-// The read spins with no exit while a write is in flight, so the context owns
-// Div (AtomicSnapshot::load).
-template <class Ctx>
-    requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
-[[nodiscard]] inline Observation latest_observation(Ctx const& ctx, ObservationSnapshot const& sink) noexcept {
-    return sink.load(ctx);
 }
 
 }  // namespace crucible::observe

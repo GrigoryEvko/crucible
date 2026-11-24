@@ -169,8 +169,9 @@ void test_signed_tolerance_does_not_use_modular_distance() {
 void test_insufficient_replicas_and_observation_publication() {
     auto detector =
         observe::mint_sdc_detector<eff::ColdInitCtx, 2, 4>(eff::ColdInitCtx{::foundation::effects::testing::init()});
-    observe::ObservationSnapshot empty_sink{};
-    CRUCIBLE_REQUIRE(!detector.publish_latest(empty_sink));
+    observe::ObservationSink empty_sink{};
+    observe::ObservationSink::Writer empty_writer = empty_sink.writer();
+    CRUCIBLE_REQUIRE(!detector.publish_latest(empty_writer));
 
     CRUCIBLE_REQUIRE(detector.register_cog(make_cog(31)));
 
@@ -179,9 +180,10 @@ void test_insufficient_replicas_and_observation_publication() {
     CRUCIBLE_REQUIRE(result.err().value_or(observe::SdcEventKind::Verified)
                      == observe::SdcEventKind::InsufficientReplicas);
 
-    observe::ObservationSnapshot sink{};
-    CRUCIBLE_REQUIRE(detector.publish_latest(sink));
-    auto const observation = observe::latest_observation(kTest, sink);
+    observe::ObservationSink sink{};
+    observe::ObservationSink::Writer writer = sink.writer();
+    CRUCIBLE_REQUIRE(detector.publish_latest(writer));
+    auto const observation = sink.load(kTest, ::fixy::index<0>());
     CRUCIBLE_REQUIRE(observation.metric_id == detector.config().metric_id_base);
     CRUCIBLE_REQUIRE(observation.value == static_cast<std::uint64_t>(observe::SdcEventKind::InsufficientReplicas));
 }

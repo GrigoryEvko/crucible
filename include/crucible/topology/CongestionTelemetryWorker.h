@@ -34,8 +34,7 @@ enum class CongestionMetricSlot : std::uint8_t {
 // One observation for each slot.
 inline constexpr std::size_t kCongestionObservationCount = ::foundation::reflect::enum_count<CongestionMetricSlot>;
 
-using CongestionObservationSet =
-    ::fixy::FixedArray<::crucible::observe::ObservationSnapshot, kCongestionObservationCount>;
+using CongestionObservationSet = ::crucible::observe::ObservationSinks<kCongestionObservationCount>;
 using CongestionObservationBatch = ::fixy::FixedArray<::crucible::observe::Observation, kCongestionObservationCount>;
 
 template <class Ctx>
@@ -100,17 +99,15 @@ concept CtxFitsCongestionTelemetryPoll = CtxFitsCongestionTelemetryHarvest<Ctx> 
     };
 }
 
+// Each sink is a snapshot, so a reader on another thread can read it during
+// this write.
 inline void publish_congestion(
-    CongestionObservationSet& sinks, std::uint16_t link_slot, topology::CongestionAggregate const& aggregate,
+    CongestionObservationSet::Writer& sinks, std::uint16_t link_slot, topology::CongestionAggregate const& aggregate,
     std::uint64_t sequence,
     ::crucible::observe::ObservationSource source = ::crucible::observe::ObservationSource::Runtime) noexcept {
     CongestionObservationBatch const observations = congestion_observations(link_slot, aggregate, sequence, source);
     for (::fixy::Index<kCongestionObservationCount> const index : observations.indices()) {
-        ::crucible::observe::Observation const observation = observations.at(index);
-        // The sink is an AtomicSnapshot, so a reader on another thread can read it during this write.
-        sinks.with_element(index, [&observation](::crucible::observe::ObservationSnapshot& sink) noexcept {
-            ::crucible::observe::record_observation(sink, observation);
-        });
+        sinks.record(index, observations.at(index));
     }
 }
 

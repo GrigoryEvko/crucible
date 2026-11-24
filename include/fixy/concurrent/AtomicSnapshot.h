@@ -6,9 +6,16 @@
 // per-write delivery guarantee, which fits traffic where only the
 // latest value matters.
 //
-// The caller guarantees that publish is never called concurrently.
-// Supporting several writers takes a CAS on the sequence counter, and
-// that is a different primitive with worse reader latency.
+// The one writer is in the type.  AtomicSnapshot<T, Writer> takes a
+// SoleWriterProof<Owner, Role> of foundation/SoleWriterProof.h as its
+// writer, as the cell of an owner of foundation/core/Atomic.h does.  Only
+// Owner makes the proof, and the proof lives for one call of Owner, so each
+// publish comes from the code of Owner.  Owner keeps one writer by its own
+// types, such as a linear handle that holds the writer permission and the
+// claim of its role, and its comment states how.  So a publish takes no
+// locked step, and it makes no run-time test for a second writer.  Several
+// writers need a CAS on the sequence counter, and that is a different
+// primitive with worse reader latency.
 //
 // A write brackets its bytes between two increments of the counter, so
 // an odd counter means a write is in flight.  A reader samples the
@@ -47,9 +54,9 @@
 #include <foundation/Lifetime.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/core/Array.h>
-#include <foundation/diag/Tag.h>
-#include <foundation/diag/Runtime.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -78,10 +85,16 @@ template <typename T>
 concept SnapshotValue = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T> && sizeof(T) <= 256
                      && sizeof(T) > 0 && ::foundation::lifetime::ImplicitLifetimeThroughout<T>;
 
-template <SnapshotValue T>
-class AtomicSnapshot : public ::foundation::Pinned<AtomicSnapshot<T>> {
+// The writer of a snapshot: the proof of the one writer, which only its owner
+// makes (foundation/SoleWriterProof.h).
+template <typename Writer>
+concept SnapshotWriter = ::fixy::SoleWriterCounter<Writer>;
+
+template <SnapshotValue T, SnapshotWriter Writer>
+class AtomicSnapshot : public ::foundation::Pinned<AtomicSnapshot<T, Writer>> {
 public:
     using value_type = T;
+    using writer_type = Writer;
     using row_discipline = ::fixy::row_discipline::atomic_snapshot;
     using row_payload = T;
 
@@ -91,43 +104,35 @@ public:
     // counter starts at the count of one publish, and the write of the words
     // needs no bracket.  The counter never moves back: a snapshot has no
     // reset.
-    explicit AtomicSnapshot(const T& initial) noexcept : seq_{::fixy::mint_atomic_monotonic<std::uint64_t>(2)} {
+    explicit AtomicSnapshot(const T& initial) noexcept : seq_{std::uint64_t{2}} {
         write_words_(initial, word_indices_{});
     }
 
-    // The caller guarantees no concurrent publish.
+    // The publish of the one writer, the holder of the proof.  The writer
+    // reads the counter that it stored itself, so the read needs no order,
+    // and each store is a plain release store with no locked instruction.
+    // The counter goes up by 2 for each publish, so it never wraps at this
+    // width.
     //
     // A word must not become visible before the odd counter does, or a
     // reader reads an in-flight word while the counter still reads even.
     // Both of its samples agree, so the retry never fires and the torn
     // read is returned.  Each word store is a release store, so the
-    // increment before it becomes visible first.  The release pairs with
+    // odd counter before it becomes visible first.  The release pairs with
     // the acquire load of the word in the reader (Boehm, "Can seqlocks get
-    // along with programming language memory models?", 2012).  On x86 a
-    // release store and an acquire load are plain moves.
-    void publish(const T& value) noexcept {
-        const std::uint64_t old_seq = seq_.bump_by(1);
-        // The single-writer contract is checked on every build rather
-        // than in debug alone, because an unguarded release path admits
-        // two failures.  Two concurrent writers' copies race, and a
-        // reader that sees the second writer's even counter gets a byte
-        // mix of both.  Or a writer that increments once and then dies
-        // leaves the counter odd, and every reader spins forever.
-        // Aborting is right: the violation belongs to the caller, and
-        // continuing can park all readers.  A contract assertion was
-        // rejected because it collapses to nothing in the hot-path
-        // translation units, which is where the check has to hold.
-        if ((old_seq & 1u) != 0u) [[unlikely]] {
-            two_writers_abort_();
-        }
-
+    // along with programming language memory models?", 2012).  The last
+    // store is a release store too, so each word store becomes visible
+    // before the even counter.  On x86 a release store and an acquire load
+    // are plain moves.
+    //
+    // A writer that stops between the two counter stores would leave the
+    // counter odd, and each reader would spin.  The body calls nothing
+    // between them, and a fatal ends the process with its readers.
+    void publish(Writer const& proof, const T& value) noexcept {
+        const std::uint64_t even = seq_.load_owned(proof);
+        seq_.store_release(proof, even + 1);
         write_words_(value, word_indices_{});
-
-        // Release alone would serve here, since the word stores above
-        // cannot move after it.  The counter type supplies more than
-        // that, and publish is the slow side, so the difference is not
-        // worth a second counter.
-        (void)seq_.bump_by(1);
+        seq_.store_release(proof, even + 2);
     }
 
     // Spins until it observes a coherent snapshot.
@@ -151,16 +156,16 @@ public:
         alignas(T) std::array<std::byte, sizeof(T)> buf{};
 
         for (;;) {
-            std::uint64_t pre = seq_.get();
+            std::uint64_t pre = seq_.load_acquire();
 
             while ((pre & 1u) != 0u) {
                 CRUCIBLE_SPIN_PAUSE;
-                pre = seq_.get();
+                pre = seq_.load_acquire();
             }
 
             read_words_(buf.data(), word_indices_{});
 
-            const std::uint64_t post = seq_.get();
+            const std::uint64_t post = seq_.load_acquire();
 
             if (pre == post) {
                 // The lifetime start is the type-system step alone and
@@ -177,7 +182,7 @@ public:
     // Never blocks.  A write in flight and a torn read both give no
     // value, which suits best-effort instrumentation.
     [[nodiscard]] ::fixy::Option<T> try_load() const noexcept {
-        const std::uint64_t pre = seq_.get();
+        const std::uint64_t pre = seq_.load_acquire();
         if ((pre & 1u) != 0u) {
             return ::fixy::none;
         }
@@ -186,7 +191,7 @@ public:
         // The acquire word loads bracket the copy, as in load.
         read_words_(buf.data(), word_indices_{});
 
-        const std::uint64_t post = seq_.get();
+        const std::uint64_t post = seq_.load_acquire();
         if (pre != post) {
             return ::fixy::none;
         }
@@ -196,7 +201,7 @@ public:
     // Counts completed publishes, and never wraps at this width.  A
     // caller that caches the value can tell whether anything changed
     // since it last looked.
-    [[nodiscard]] std::uint64_t version() const noexcept { return seq_.get() >> 1; }
+    [[nodiscard]] std::uint64_t version() const noexcept { return seq_.load_acquire() >> 1; }
 
 private:
     static constexpr std::size_t kWordBytes = sizeof(std::uint64_t);
@@ -247,13 +252,6 @@ private:
         (load_word_(words, destination, WordIndex), ...);
     }
 
-    // A second writer entered publish while the first one was inside it.
-    [[noreturn]] CRUCIBLE_COLD static void two_writers_abort_() noexcept {
-        ::foundation::diag::report_violation_at_and_abort(
-            ::foundation::diag::Category::LinearityViolation,
-            "two writers published into one AtomicSnapshot at the same time. The snapshot takes one writer.");
-    }
-
     // Every thread reads the counter, and the writer writes both it and
     // the payload.  Each takes a cache line of its own so a publish
     // does not invalidate the other's line.  The payload words come
@@ -261,7 +259,9 @@ private:
     // word accesses need no separate address computation.
     alignas(64) std::array<std::uint64_t, kWords> storage_{};
 
-    alignas(64)::fixy::AtomicMonotonic<std::uint64_t> seq_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+    // The counter of the one writer: the cell of an owner of
+    // foundation/core/Atomic.h, which the proof of the writer writes.
+    alignas(64)::foundation::core::Atomic<std::uint64_t, Writer> seq_{};
 };
 
 }  // namespace fixy::concurrent

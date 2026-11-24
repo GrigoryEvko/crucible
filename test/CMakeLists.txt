@@ -2623,6 +2623,12 @@ crucible_neg_compile_test(neg_sdc_detect_padded_result
   "constraint|constraints.*not satisfied"
     "SdcComparableResult")
 
+# The writer end of a set of observation sinks is the one writer of each
+# cell, so a copy of the writer end does not compile.
+crucible_neg_compile_test(neg_observe_sinks_writer_copied
+  "use of deleted function .crucible::observe::ObservationSinks<Count>::Writer::Writer\\(const crucible::observe::ObservationSinks<Count>::Writer&\\)"
+  "the writer end of a set of observation sinks is its one writer")
+
 # The three frame doors of the runtime metrics channel, one fixture each:
 # the writer door refuses the permission of the reader role, and the
 # two reader doors refuse a call without a metrics channel.

@@ -58,7 +58,8 @@ static void test_register_and_record_success() {
     CRUCIBLE_TEST_ASSERT(kTest, runner.schedule_probe(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                                       observe::TransportProbeKind::FederationMtls));
 
-    observe::ObservationSnapshot observations;
+    observe::ObservationSink observations{};
+    observe::ObservationSink::Writer writer = observations.writer();
     CRUCIBLE_TEST_ASSERT(kTest, runner.record_outcome(eff::BgDrainCtx{::foundation::effects::testing::bg()}, p,
                                                       observe::ProbeOutcome{
                                                           .kind = observe::TransportProbeKind::FederationMtls,
@@ -67,7 +68,7 @@ static void test_register_and_record_success() {
                                                           .bytes_transferred = 256,
                                                           .sequence = 9,
                                                       },
-                                                      observations));
+                                                      writer));
 
     auto const stats = runner.stats(p, observe::TransportProbeKind::FederationMtls);
     CRUCIBLE_TEST_ASSERT(kTest, stats.scheduled == 1);
@@ -76,7 +77,7 @@ static void test_register_and_record_success() {
     CRUCIBLE_TEST_ASSERT(kTest, stats.bytes_transferred == 256);
     CRUCIBLE_TEST_ASSERT(kTest, stats.last_latency_ns == 11000);
     CRUCIBLE_TEST_ASSERT(kTest, stats.last_sequence == 9);
-    CRUCIBLE_TEST_ASSERT(kTest, observe::latest_observation(kTest, observations).kind
+    CRUCIBLE_TEST_ASSERT(kTest, observations.load(kTest, ::fixy::index<0>()).kind
                                     == observe::ObservationKind::BitsTransferred);
     ::fixy::check::pass(kTest, "  test_register_and_record_success: PASSED\n");
 }

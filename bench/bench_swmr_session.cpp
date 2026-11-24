@@ -23,6 +23,7 @@
 #include <fixy/concurrent/AtomicSnapshot.h>
 
 #include <foundation/Linear.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/core/Seat.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -61,6 +62,20 @@ struct ReaderTag {
 using Swmr = ses::SwmrSession<Payload, WriterTag, ReaderTag, ::foundation::brand::brand_of_t<decltype(reader_root())>,
                               ::foundation::brand::brand_of_t<decltype(writer_root())>>;
 
+// The one writer of the bare snapshot of the rows: the owner of the proof of
+// its writer.  Each row publishes from one thread.
+class RawWriter;
+struct PublishRole final {};
+using RawSnapshot = cc::AtomicSnapshot<Payload, ::foundation::SoleWriterProof<RawWriter, PublishRole>>;
+
+class RawWriter final {
+public:
+    // Publishes value into snapshot as its one writer.
+    static void publish(RawSnapshot& snapshot, Payload const& value) noexcept {
+        snapshot.publish(::foundation::SoleWriterProof<RawWriter, PublishRole>{}, value);
+    }
+};
+
 constexpr auto kForeground = ::foundation::effects::testing::foreground();
 
 // The context of each reader: the lend of a reader share and each read take
@@ -80,10 +95,10 @@ template <typename Body>
 }
 
 [[nodiscard]] bench::Report raw_publish() {
-    cc::AtomicSnapshot<Payload> snapshot{payload_at(0)};
+    RawSnapshot snapshot{payload_at(0)};
     std::uint64_t seq = 0;
     return measure("raw AtomicSnapshot.publish", [&] {
-        snapshot.publish(payload_at(++seq));
+        RawWriter::publish(snapshot, payload_at(++seq));
         bench::mark_changed(seq);
     });
 }
@@ -127,7 +142,7 @@ template <typename Body>
 }
 
 [[nodiscard]] bench::Report raw_load() {
-    const cc::AtomicSnapshot<Payload> snapshot{payload_at(123)};
+    const RawSnapshot snapshot{payload_at(123)};
     const ::fixy::TestRunnerCtx reader{::foundation::effects::testing::test()};
     return measure("raw AtomicSnapshot.load", [&] {
         const Payload observed = snapshot.load(reader);
@@ -152,7 +167,7 @@ template <typename Body>
 }
 
 [[nodiscard]] bench::Report raw_try_load() {
-    const cc::AtomicSnapshot<Payload> snapshot{payload_at(123)};
+    const RawSnapshot snapshot{payload_at(123)};
     return measure("raw AtomicSnapshot.try_load", [&] {
         const ::fixy::Option<Payload> observed = snapshot.try_load();
         bench::do_not_optimize(observed);

@@ -5408,6 +5408,11 @@ fixy_neg_compile_test(neg_swmr_session_reader_session_lvalue_handle
 fixy_neg_compile_test(neg_swmr_session_reader_session_without_nondet
   "no matching function for call to .mint_reader_runtime_session<swmr_reader_session_nondet_fixture::Swmr>"
   "CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>")
+# The writer end is the one writer of the snapshot of its session, so a copy
+# of the writer handle does not compile.
+fixy_neg_compile_test(neg_swmr_session_second_writer_handle
+  "use of deleted function .fixy::channels::swmr_session::WriterHandle<Swmr, Scope>::WriterHandle\\(const fixy::channels::swmr_session::WriterHandle<Swmr, Scope>&\\)"
+  "a writer handle owns the linear writer permission")
 
 # ── The handle poles and the stage shape ──────────────────────────────
 #
@@ -6031,11 +6036,16 @@ fixy_neg_compile_test(neg_handle_once_call_no_div
   "no matching function for call to .fixy::handle::Once::call\\(const fixy::HotFgCtx&, "
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Div>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
 fixy_neg_compile_test(neg_atomic_snapshot_load_no_context
-  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int>::load\\(\\) const."
-  "neg_atomic_snapshot_load_no_context.cpp:18")
+  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int, foundation::SoleWriterProof<SnapshotOwner, PublishRole> >::load\\(\\) const."
+  "neg_atomic_snapshot_load_no_context.cpp:23")
 fixy_neg_compile_test(neg_atomic_snapshot_load_no_div
-  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int>::load\\(const fixy::HotFgCtx&\\) const."
+  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int, foundation::SoleWriterProof<SnapshotOwner, PublishRole> >::load\\(const fixy::HotFgCtx&\\) const."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Div>. \\[with Ctx = foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >\\]")
+# A snapshot names its one writer in its type, so a publish takes the proof
+# of that writer.
+fixy_neg_compile_test(neg_atomic_snapshot_publish_without_proof
+  "no matching function for call to .fixy::concurrent::AtomicSnapshot<long unsigned int, foundation::SoleWriterProof<SnapshotOwner, PublishRole> >::publish\\(uint64_t\\)."
+  "candidate expects 2 arguments, 1 provided")
 fixy_neg_compile_test(neg_handle_lazy_init_explicit_conversion
   "no matching function for call to .fixy::handle::Lazy<int>::get_or_init"
   "the expression .is_invocable_r_v<T, F> \\[with T = int; F = .*\\]. evaluated to .false.")
