@@ -120,7 +120,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         RecipeRegistry::RecipeRef const rec_strict =
             registry.by_name(kPure, names::kF32Strict).expect("the starter is present");
 
-        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
@@ -158,7 +158,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         const NumericalRecipe* recipe_orig =
             &*registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
@@ -198,7 +198,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         RecipeRegistry::RecipeRef const rec_a =
             reg_a.by_name(kPure, names::kFp8E4m3F32AccumMxOrd).expect("the starter is present");
 
-        auto const ops_a_run = arena_a.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto ops_a_run = arena_a.array(alloc_cap(), kOpsCount, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const ops_a = ops_a_run.view();
         mk_ops(ops_a);
@@ -218,7 +218,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         // One hash, which is the identity that crosses them.
         CRUCIBLE_TEST_ASSERT(kTest, rec_a->hash == rec_b->hash);
 
-        auto const ops_b_run = arena_b.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto ops_b_run = arena_b.array(alloc_cap(), kOpsCount, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const ops_b = ops_b_run.view();
         mk_ops(ops_b);
@@ -247,7 +247,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
         RecipeRegistry::RecipeRef const rec_bf16_tc =
             registry.by_name(kPure, names::kBf16F32AccumTc).expect("the starter is present");
 
-        auto const ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
+        auto ops_run = arena.array(alloc_cap(), kOpsCount, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const ops = ops_run.view();
         mk_ops(ops);
@@ -318,7 +318,7 @@ inline void mk_ops(::fixy::View<TraceEntry> run) noexcept {
             .flags = {},
             .hash = {},
         };
-        auto const entry_run = arena.array(alloc_cap(), 1, TraceEntry{});
+        auto entry_run = arena.array(alloc_cap(), 1, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         ::fixy::View<TraceEntry> const entry = entry_run.view();
         entry.get(0).expect("the run holds one op")->schema_hash = SchemaHash{0xAA01};

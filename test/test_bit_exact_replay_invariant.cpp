@@ -121,7 +121,7 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
         const uint16_t num_scalars = static_cast<uint16_t>(seed % 3);
         entry.grad_enabled = ((seed & 0x100) != 0);
 
-        const auto metas_run = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
+        auto metas_run = arena.array<TensorMeta>(ctx.alloc, num_inputs, TensorMeta{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorMeta> metas = metas_run.view();
         for (uint16_t input_index = 0; input_index < num_inputs; input_index++) {
@@ -148,7 +148,7 @@ void build_ops(::foundation::effects::Test ctx, ::fixy::BumpArena<crucible::DagA
         const auto output_slots_run = arena.array<SlotId>(ctx.alloc, 1, SlotId{});
         entry.set_outputs(output_metas_run, output_slots_run);
 
-        const auto scalars_run = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
+        auto scalars_run = arena.array<int64_t>(ctx.alloc, num_scalars, int64_t{0});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<int64_t> scalars = scalars_run.view();
         for (uint16_t scalar_index = 0; scalar_index < num_scalars; scalar_index++) {
@@ -204,7 +204,7 @@ struct Built {
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
-    const auto ops_run = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
+    auto ops_run = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
     build_ops(ctx, arena, ops, data_ptr_base);
@@ -220,7 +220,7 @@ struct Built {
             .expect("the tail is in the ops"));
     head->next = crucible::make_link(*tail);
 
-    const auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
+    auto slots_run = arena.array<TensorSlot>(ctx.alloc, kNumSlots, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TensorSlot> slots = slots_run.view();
     build_slots(slots);
@@ -228,7 +228,7 @@ struct Built {
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     sweep_scratch.arena.with_epoch([target, alloc = ctx.alloc, plan_storage,
-                                    slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                               .expect("the slots of the test fit in 64 bits"));
     });

@@ -1049,7 +1049,7 @@ public:
     [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc alloc,
                                                           std::size_t count) noexcept {
         // A plain View of an arena run: the View carries no brand of its arena.
-        auto const run = bump_.array(alloc, count, T{});
+        auto run = bump_.array(alloc, count, T{});
         return run.view();
     }
 };

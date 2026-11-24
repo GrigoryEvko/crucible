@@ -70,7 +70,7 @@ struct[[= ::foundation::brand::arena_family_brand{}]] ProbeArena final {};
     using Bytes = core::Quantity<core::unit::Byte, std::size_t>;
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     core::BumpArena<ProbeArena> arena = core::mint_bump_arena<ProbeArena>(Bytes{4096});
-    auto const storage = arena.array<unsigned char>(alloc, sizeof(std::uint32_t), 0);
+    auto storage = arena.array<unsigned char>(alloc, sizeof(std::uint32_t), 0);
     const WordBytes word = storage.view().template window<sizeof(std::uint32_t)>(0).expect("the run holds one integer");
     return read_after_a_store_of_another_type(word, word);
 }

@@ -30,7 +30,7 @@ class LocalArena {
 public:
     template <typename T>
     [[nodiscard]] fc::View<T> alloc_array(::foundation::effects::Alloc alloc, std::size_t count) noexcept {
-        auto const run = bump_.array(alloc, count, T{});
+        auto run = bump_.array(alloc, count, T{});
         return run.view();
     }
 };

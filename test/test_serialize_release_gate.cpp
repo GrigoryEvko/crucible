@@ -39,7 +39,7 @@ template <class Brand, std::size_t Extent>
                                          ::fixy::ViewMut<std::byte, Brand, Extent> out_buf) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-    const auto ops_run = dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
+    auto ops_run = dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
     crucible::TraceEntry& op = *ops.get(0).expect("the region holds one op");

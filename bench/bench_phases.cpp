@@ -298,7 +298,7 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         // slots, so each run plans a copy of them in an arena of its own.
         for (uint32_t iter = 0; iter < iters; iter++) {
             ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(arena_block);
-            const auto slots_run = slot_arena.array<TensorSlot>(A, num_slots, TensorSlot{});
+            auto slots_run = slot_arena.array<TensorSlot>(A, num_slots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots = slots_run.view();
             ::fixy::copy(slots, saved_slots).expect("the copy holds one entry for each slot");
@@ -307,7 +307,7 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
             const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(A);
             BackgroundThread::PlanTarget const target = bg.plan_target();
             ns_memplan += plan_scratch.arena.with_epoch(
-                [target, plan_storage, slots_run, nspc](PlanScratch::Epoch& epoch) noexcept {
+                [target, plan_storage, &slots_run, nspc](PlanScratch::Epoch& epoch) noexcept {
                     const uint64_t t0 = bench::rdtsc_start();
                     const DagRef<MemoryPlan> plan =
                         BackgroundThread::compute_memory_plan(A, target, plan_storage, epoch, slots_run)
@@ -428,13 +428,13 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
         const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<TraceEntry> op_run = op_arena_run.view();
+        const ::fixy::View<TraceEntry const> op_run = op_arena_run.view();
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<int64_t> scalar_run = scalar_arena_run.view();
+        const ::fixy::View<int64_t const> scalar_run = scalar_arena_run.view();
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<OpIndex> producer_run = producer_arena_run.view();
+        const ::fixy::View<OpIndex const> producer_run = producer_arena_run.view();
         // A plain View of an arena run: the View carries no brand of its arena.
-        const ::fixy::View<SlotId> slot_run = slot_arena_run.view();
+        const ::fixy::View<SlotId const> slot_run = slot_arena_run.view();
         BuildScratchOfBench::ensure_buffers(bg, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
         const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
@@ -529,14 +529,14 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
                                + (size_t{total_inputs} + total_outputs) * sizeof(SlotId);
         ::fixy::Box<::fixy::BumpArena<DagArena>> region_arena =
             ::fixy::mint_box<::fixy::BumpArena<DagArena>>(A, kRunAlignments.plus(Bytes{run_bytes}));
-        const auto ops_arena_run = region_arena->array(A, count, TraceEntry{});
-        const auto meta_arena_run = region_arena->array(A, total_metas, TensorMeta{});
+        auto ops_arena_run = region_arena->array(A, count, TraceEntry{});
+        auto meta_arena_run = region_arena->array(A, total_metas, TensorMeta{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_arena_run.view();
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorMeta> meta_run = meta_arena_run.view();
         meta_log.copy_run(first_meta.raw(), meta_run);
-        const auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
+        auto scalar_arena_run = region_arena->array(A, total_scalars, int64_t{0});
         const auto producer_arena_run = region_arena->array(A, total_inputs, OpIndex{});
         const auto slot_arena_run = region_arena->array(A, total_inputs + total_outputs, SlotId{});
         size_t scalar_cursor = 0;
@@ -580,7 +580,7 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
                 te.torch_function = (flags & op_flag::TORCH_FUNCTION) != 0;
                 te.kernel_id = CKernelId::OPAQUE;
                 const uint32_t n_scalars = ::fixy::min(uint32_t{re.num_scalar_args}, kScalarSlots);
-                const auto scalars =
+                auto scalars =
                     scalar_arena_run
                         .window(::fixy::RunStart{::fixy::ElementCount{scalar_cursor}}, ::fixy::ElementCount{n_scalars})
                         .expect("the scan counted the scalars");
@@ -797,7 +797,7 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
             constexpr ::fixy::ArenaBlockSize kSlotAlignment{Bytes{alignof(TensorSlot)}};
             ::fixy::Box<::fixy::BumpArena<DagArena>> slot_arena = ::fixy::mint_box<::fixy::BumpArena<DagArena>>(
                 A, kSlotAlignment.plus(Bytes{num_slots * sizeof(TensorSlot)}));
-            const auto slots_run = slot_arena->array(A, num_slots, TensorSlot{});
+            auto slots_run = slot_arena->array(A, num_slots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots = slots_run.view();
             uint32_t position = 0;

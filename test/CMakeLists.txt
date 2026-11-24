@@ -2362,7 +2362,7 @@ crucible_neg_compile_test(neg_trace_graph_num_ops_assign_raw
   "assignment of read-only member .crucible::TraceGraph::num_ops."
   "neg_trace_graph_num_ops_assign_raw.cpp:13")
 crucible_neg_compile_test(neg_trace_graph_assign_over_built
-  "use of deleted function .crucible::TraceGraph& crucible::TraceGraph::operator=\\(const crucible::TraceGraph&\\)."
+  "use of deleted function .crucible::TraceGraph& crucible::TraceGraph::operator=\\(crucible::TraceGraph&\\)."
   "non-static const member .const uint(32|64)_t crucible::TraceGraph::(num_ops|num_edges|num_slots|max_meta_end).")
 
 # ─── ValidMetaAppendCount negative-compile fixtures ──────────────────

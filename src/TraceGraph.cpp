@@ -71,8 +71,8 @@ TraceGraphRef build_trace_graph(::foundation::effects::Alloc a, TraceScratch::Ep
 
     // The cursor of each op starts at its offset.  The last offset is the
     // edge count, which no cursor needs.
-    const auto fwd_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
-    const auto rev_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
+    auto fwd_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
+    auto rev_cursor_run = epoch.array<uint32_t>(a, num_ops, 0);
     const ::fixy::View<uint32_t> fwd_cursor = fwd_cursor_run.view();
     const ::fixy::View<uint32_t> rev_cursor = rev_cursor_run.view();
     ::fixy::copy(fwd_cursor, fwd_offsets.window(0, num_ops).expect("the offsets hold one entry for each op"))

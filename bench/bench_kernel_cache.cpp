@@ -250,7 +250,7 @@ int main() {
     ::fixy::BumpArena<KernelArena> arena =
         ::fixy::mint_bump_arena<KernelArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
     auto const take_kernels = [&arena]() noexcept {
-        auto const kernels_run = arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{});
+        auto kernels_run = arena.array(::foundation::effects::testing::test().alloc, kSeedKernels, FakeKernel{});
         // A plain View of an arena run: the View carries no brand of its arena.
         return kernels_run.view().window<kSeedKernels>(0).expect("the run holds the kernels of a seed");
     };

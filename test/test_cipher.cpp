@@ -54,7 +54,7 @@ static auto g_test = ::foundation::effects::testing::test();
 static crucible::DagRef<crucible::RegionNode> make_test_region(::fixy::BumpArena<DagArena>& dag_arena,
                                                                std::uint64_t salt = 0) {
     constexpr uint32_t NUM_OPS = 2;
-    const auto ops_run = dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
+    auto ops_run = dag_arena.array<crucible::TraceEntry>(g_test.alloc, NUM_OPS, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 

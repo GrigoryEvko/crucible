@@ -85,7 +85,7 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
     const auto alloc = test_alloc();
     constexpr std::uint32_t kOps = 2;
     const bool has_plan = seed_plan == SeedPlan::two_slots;
-    const auto ops_run = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
+    auto ops_run = dag_arena.array<TraceEntry>(alloc, kOps, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (std::uint32_t i = 0; i < kOps; ++i) {
@@ -110,7 +110,7 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
         plan->pool_bytes = 2 * PoolAllocator::ALIGNMENT;
         plan->num_external = 0;
         plan->device_type = DeviceType::CPU;
-        const auto slots_run = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
+        auto slots_run = dag_arena.array<TensorSlot>(alloc, 2, TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorSlot> slots = slots_run.view();
         std::uint32_t slot_index = 0;

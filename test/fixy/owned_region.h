@@ -67,7 +67,7 @@ public:
     template <typename T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] ::foundation::core::View<T> alloc_array(::foundation::effects::Alloc alloc, std::size_t n) noexcept {
-        auto const run = bump_.array(alloc, n, T{});
+        auto run = bump_.array(alloc, n, T{});
         // A plain View of an arena run: the View carries no brand of its arena.
         return run.view();
     }

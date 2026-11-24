@@ -37,7 +37,7 @@ using RegionIndex = ::fixy::Index<NUM_REGIONS>;
 // The arena builds each op and each plan with its member initializers.
 [[nodiscard]] DagRef<RegionNode> make_fixture_region(::foundation::effects::Test const& test,
                                                      ::fixy::BumpArena<DagArena>& arena, RegionIndex r) {
-    const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+    auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (uint32_t i = 0; i < NUM_OPS; i++) {

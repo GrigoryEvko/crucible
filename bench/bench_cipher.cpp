@@ -42,7 +42,7 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
     meta.sizes[0] = tensor_dim(64);
     meta.strides[0] = tensor_dim(1);
     meta.dtype = ScalarType::Float;
-    const auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+    auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
     for (uint32_t i = 0; i < num_ops; i++) {

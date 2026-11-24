@@ -28,7 +28,7 @@ namespace {
                                                         crucible::TraceLink second) noexcept {
     crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(alloc, arena);
     branch.kind = crucible::TraceNodeKind::BRANCH;
-    const auto arms_run = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
+    auto arms_run = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
     branch.set_arms(arms_run);
     *branch.arms().get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{1, first};
     *branch.arms().get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{2, second};
@@ -42,7 +42,7 @@ namespace {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
 
-    auto const ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
     ops.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0x1111};
@@ -82,11 +82,11 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, terminal.as_loop().is_none());
 
     // ── The arms of a branch ──────────────────────────────────────────
-    auto const ops_a_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_a_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops_a = ops_a_run.view().window<1>(0).expect("the run holds one op");
     ops_a.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xA1};
-    auto const ops_b_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_b_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry, 1> const ops_b = ops_b_run.view().window<1>(0).expect("the run holds one op");
     ops_b.at(::fixy::index<0>()).schema_hash = crucible::SchemaHash{0xB2};

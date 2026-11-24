@@ -78,8 +78,8 @@ void test_full_run_gives_its_elements() {
     runs.set_count<0>(4);
     runs.set_count<1>(2);
     runs.set_count<2>(1);
-    auto const outputs = arena.array<std::uint32_t>(alloc, 4, 5);
-    auto const inputs = arena.array<std::uint32_t>(alloc, 2, 9);
+    auto outputs = arena.array<std::uint32_t>(alloc, 4, 5);
+    auto inputs = arena.array<std::uint32_t>(alloc, 2, 9);
     // A plain View of an arena run: the View carries no brand of its arena.
     runs.set<1>(outputs.view());
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -102,9 +102,9 @@ void test_new_count_drops_the_runs_of_its_slot() {
     OpRuns runs{};
     runs.set_count<0>(3);
     runs.set_count<1>(1);
-    auto const outputs = arena.array<std::uint32_t>(alloc, 3, 1);
-    auto const output_metas = arena.array(alloc, 3, Meta{.key = 4});
-    auto const inputs = arena.array<std::uint32_t>(alloc, 1, 6);
+    auto outputs = arena.array<std::uint32_t>(alloc, 3, 1);
+    auto output_metas = arena.array(alloc, 3, Meta{.key = 4});
+    auto inputs = arena.array<std::uint32_t>(alloc, 1, 6);
     // A plain View of an arena run: the View carries no brand of its arena.
     runs.set<1>(outputs.view());
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -116,7 +116,7 @@ void test_new_count_drops_the_runs_of_its_slot() {
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<1>() && !runs.has_run<2>());
     CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 0 && runs.view<2>().size() == 0);
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<0>() && sum_of(runs.view<0>()) == 6);
-    auto const new_outputs = arena.array<std::uint32_t>(alloc, 2, 2);
+    auto new_outputs = arena.array<std::uint32_t>(alloc, 2, 2);
     // A plain View of an arena run: the View carries no brand of its arena.
     runs.set<1>(new_outputs.view());
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<1>() && sum_of(runs.view<1>()) == 4);
@@ -129,7 +129,7 @@ void test_copy_holds_the_same_runs() {
     BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<2>(2);
-    auto const scalars = arena.array<std::int64_t>(alloc, 2, -3);
+    auto scalars = arena.array<std::int64_t>(alloc, 2, -3);
     // A plain View of an arena run: the View carries no brand of its arena.
     runs.set<4>(scalars.view());
     OpRuns copy = runs;
@@ -148,14 +148,14 @@ void test_wrong_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
     BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
     OpRuns runs{};
     runs.set_count<0>(3);
-    auto const short_arena_run = arena.array<std::uint32_t>(alloc, 2, 0);
+    auto short_arena_run = arena.array<std::uint32_t>(alloc, 2, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     View<std::uint32_t> const short_run = short_arena_run.view();
     ::fixy::check::expect_dies(
         test, [&runs, &short_run] noexcept { runs.set<1>(short_run); },
         ::foundation::core::TextView{
             "foundation: fatal: RunSet::set got a run of 2 elements for a slot of the count 3"});
-    auto const long_arena_run = arena.array<std::uint32_t>(alloc, 4, 0);
+    auto long_arena_run = arena.array<std::uint32_t>(alloc, 4, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     View<std::uint32_t> const long_run = long_arena_run.view();
     ::fixy::check::expect_dies(

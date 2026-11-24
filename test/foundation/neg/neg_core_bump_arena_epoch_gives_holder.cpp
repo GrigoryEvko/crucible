@@ -28,7 +28,7 @@ int main() {
     Owner owner{};
     static_cast<void>(owner.scratch.with_epoch(
         [](::foundation::core::Epoch<::foundation::core::EpochOf<Owner::Scratch>>& epoch) noexcept {
-            auto const run = epoch.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 4, 7u);
+            auto run = epoch.array<std::uint32_t>(::foundation::effects::testing::test().alloc, 4, 7u);
             return Holder{.elements = run.view(), .count = 4};
         }));
     return 0;

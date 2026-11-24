@@ -220,12 +220,10 @@ void test_input_past_the_limit_reaches_the_digest() {
     const auto producers = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::OpIndex{});
     const auto slot_ids = ::fixy::check::run_of(kTest, test.alloc, arena, crucible::SlotId{});
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.with_element(::fixy::index<0>(),
-                     [metas = ::fixy::ArenaRun<crucible::TensorMeta const, crucible::DagArena>{metas}, producers,
-                      slot_ids](crucible::TraceEntry& op) noexcept {
-                         op.schema_hash = crucible::SchemaHash{42};
-                         op.set_inputs(metas, producers, slot_ids);
-                     });
+    ops.with_element(::fixy::index<0>(), [&metas, &producers, &slot_ids](crucible::TraceEntry& op) noexcept {
+        op.schema_hash = crucible::SchemaHash{42};
+        op.set_inputs(metas, producers, slot_ids);
+    });
     return crucible::compute_content_hash(ops.view());
 }
 
@@ -239,7 +237,7 @@ void test_input_past_the_limit_reaches_the_digest() {
     const crucible::ScalarSlotKinds kinds =
         crucible::ScalarSlotKinds::from_bits(scalar_kinds).expect("the test gives a word of the kinds");
     ::fixy::FixedArray<crucible::TraceEntry, 1> ops{};
-    ops.with_element(::fixy::index<0>(), [scalars, kinds](crucible::TraceEntry& op) noexcept {
+    ops.with_element(::fixy::index<0>(), [&scalars, kinds](crucible::TraceEntry& op) noexcept {
         op.schema_hash = crucible::SchemaHash{42};
         op.set_scalar_args(scalars);
         op.scalar_kinds = kinds;
@@ -325,7 +323,7 @@ void check_host_index_is_one_device(Arena& arena) {
     CRUCIBLE_FATAL_INVARIANT(crucible::device_of(cuda_zero).index() == 0);
 
     // Two data addresses of one run on the two names of the host are equal.
-    auto const bytes_run = arena.array(test.alloc, 8, uint8_t{0});
+    auto bytes_run = arena.array(test.alloc, 8, uint8_t{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<uint8_t> const bytes = bytes_run.view();
     ::fixy::RunAddress const address = ::fixy::mint_run_address(bytes, 0).expect("the run holds a byte");

@@ -168,12 +168,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
             ::fixy::BumpArena<crucible::DagArena> slot_arena =
                 ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
-            const auto slots1_run =
-                slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            auto slots1_run = slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots1 = slots1_run.view();
             const uint32_t max_death = materialize(set, slots1);
-            const auto set_slots1_run =
+            auto set_slots1_run =
                 slots1_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{num_slots})
                     .expect("a set holds at most kMaxSlots slots");
             const ::fixy::View<TensorSlot> set_slots1 = set_slots1_run.view();
@@ -185,7 +184,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             crucible::PlanScratch sweep_scratch1{Bytes{size_t{1} << 16}};
             BackgroundThread::PlanTarget const target1 = bt1.plan_target();
             sweep_scratch1.arena.with_epoch([target1, alloc = test.alloc, plan_storage1,
-                                             set_slots1_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                                             &set_slots1_run](crucible::PlanScratch::Epoch& epoch) noexcept {
                 static_cast<void>(
                     BackgroundThread::compute_memory_plan(alloc, target1, plan_storage1, epoch, set_slots1_run)
                         .expect("the slots of a set are below 2^20 bytes"));
@@ -225,12 +224,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
 
             // (D) Determinism: replan the same set on a fresh arena;
             //     offsets and pool_bytes must be byte-identical.
-            const auto slots2_run =
-                slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
+            auto slots2_run = slot_arena.array(::foundation::effects::testing::test().alloc, kMaxSlots, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> slots2 = slots2_run.view();
             (void)materialize(set, slots2);
-            const auto set_slots2_run =
+            auto set_slots2_run =
                 slots2_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{num_slots})
                     .expect("a set holds at most kMaxSlots slots");
             const ::fixy::View<TensorSlot> set_slots2 = set_slots2_run.view();
@@ -240,7 +238,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             crucible::PlanScratch sweep_scratch2{Bytes{size_t{1} << 16}};
             BackgroundThread::PlanTarget const target2 = bt2.plan_target();
             sweep_scratch2.arena.with_epoch([target2, alloc = test.alloc, plan_storage2,
-                                             set_slots2_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                                             &set_slots2_run](crucible::PlanScratch::Epoch& epoch) noexcept {
                 static_cast<void>(
                     BackgroundThread::compute_memory_plan(alloc, target2, plan_storage2, epoch, set_slots2_run)
                         .expect("the slots of a set are below 2^20 bytes"));

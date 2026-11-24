@@ -80,7 +80,7 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     te.grad_enabled = true;
     te.kernel_id = CKernelId::OPAQUE;
 
-    const auto input_metas_run = arena.array(a, n_in, TensorMeta{});
+    auto input_metas_run = arena.array(a, n_in, TensorMeta{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TensorMeta> input_metas = input_metas_run.view();
     for (TensorMeta& m : input_metas)
@@ -88,14 +88,14 @@ TraceEntry make_synthetic_entry(::foundation::effects::Alloc a, ::fixy::BumpAren
     const auto producers_run = arena.array(a, n_in, OpIndex{});
     const auto input_slots_run = arena.array(a, n_in, SlotId{});
     te.set_inputs(input_metas_run, producers_run, input_slots_run);
-    const auto output_metas_run = arena.array(a, n_out, TensorMeta{});
+    auto output_metas_run = arena.array(a, n_out, TensorMeta{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TensorMeta> output_metas = output_metas_run.view();
     for (TensorMeta& m : output_metas)
         m = make_synthetic_meta(ndim);
     const auto output_slots_run = arena.array(a, n_out, SlotId{});
     te.set_outputs(output_metas_run, output_slots_run);
-    const auto scalars_run = arena.array(a, n_scalar, int64_t{0});
+    auto scalars_run = arena.array(a, n_scalar, int64_t{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<int64_t> scalars = scalars_run.view();
     for (int64_t& value : scalars)
@@ -143,7 +143,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0x12345678ABCDEF01ULL;
@@ -163,7 +163,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 1110;
-        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0xABCDEF0123456789ULL;
@@ -184,7 +184,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> data_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> ops_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        auto ops_run = ops_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0x12345678ABCDEF01ULL;
@@ -203,7 +203,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         ::fixy::BumpArena<DagArena> dag_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
         constexpr uint32_t N = 481;
-        const auto ops_run = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
+        auto ops_run = dag_arena.array<TraceEntry>(test.alloc, N, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
@@ -225,7 +225,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         // the scope through a variable.
         ::fixy::Option<bench::Report> report{};
         ::fixy::with_bump_arena(test.alloc, Bytes{size_t{1} << 20}, [&](auto& arena) noexcept {
-            const auto edges_run = arena.array(test.alloc, NUM_EDGES, Edge{});
+            auto edges_run = arena.array(test.alloc, NUM_EDGES, Edge{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<Edge> edges = edges_run.view();
             bench_rng_state = 0x5555666677778888ULL;
@@ -281,7 +281,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         PlanScratch sweep_scratch{Bytes{size_t{1} << 20}};
         return bench::run("compute_memory_plan (300 slots)", [&] {
             ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
-            const auto copy_run = slot_arena.array<TensorSlot>(test.alloc, NUM_SLOTS, TensorSlot{});
+            auto copy_run = slot_arena.array<TensorSlot>(test.alloc, NUM_SLOTS, TensorSlot{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TensorSlot> copy = copy_run.view();
             ::fixy::copy(copy, slots.view()).expect("the copy holds one entry for each slot");
@@ -290,7 +290,7 @@ int run_bench(::fixy::os::Args const& arguments) {
             const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(test.alloc);
             BackgroundThread::PlanTarget const target = bg.plan_target();
             sweep_scratch.arena.with_epoch(
-                [target, alloc = test.alloc, plan_storage, copy_run](PlanScratch::Epoch& epoch) noexcept {
+                [target, alloc = test.alloc, plan_storage, &copy_run](PlanScratch::Epoch& epoch) noexcept {
                     const DagRef<MemoryPlan> plan =
                         BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, copy_run)
                             .expect("the slots of the bench fit in 64 bits");

@@ -453,7 +453,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     Log log{};
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
 
-    auto const ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const ops = ops_run.view();
     ops.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xFEED};
@@ -464,7 +464,7 @@ void two_runs_of_one_computation_give_one_log(::foundation::effects::Alloc alloc
     crucible::recompute_merkle(*region1);
     CRUCIBLE_TEST_ASSERT(kTest, region1->merkle_hash.raw() != 0);
 
-    auto const ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
+    auto ops2_run = arena.array(test.alloc, 1, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TraceEntry> const ops2 = ops2_run.view();
     ops2.get(0).expect("the run holds one op")->schema_hash = crucible::SchemaHash{0xBEEF};

@@ -36,7 +36,7 @@ struct Scratch {
 
 int main() {
     Scratch scratch{};
-    ::foundation::core::View<std::uint64_t> value{};
+    ::foundation::core::View<std::uint64_t const> value{};
     scratch.arena.with_epoch(
         [&value](::foundation::core::Epoch<::foundation::core::EpochOf<Scratch::Arena>>& epoch) noexcept {
             auto const run = epoch.array<std::uint64_t>(::foundation::effects::testing::test().alloc, 1, 0x5EED);

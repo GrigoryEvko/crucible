@@ -51,7 +51,7 @@ static MemoryPlan make_manual_plan(::fixy::ArenaRun<TensorSlot const, DagArena> 
 
 static void test_basic_init() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds three slots") = {.offset_bytes = 0,
@@ -133,7 +133,7 @@ static void test_basic_init() {
 
 static void test_external_registration() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
@@ -182,7 +182,7 @@ static void test_external_registration() {
 // the precondition the isolation check below rests on.
 static void test_write_read_isolation() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds three slots") = {.offset_bytes = 0,
@@ -250,7 +250,7 @@ static void test_write_read_isolation() {
 // allocator must report itself initialized while holding no memory.
 static void test_all_external() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
@@ -304,7 +304,7 @@ static void test_all_external() {
 
 static void test_reinit() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_a_run = arena.array(::foundation::effects::testing::test().alloc, 1, TensorSlot{});
+    auto slots_a_run = arena.array(::foundation::effects::testing::test().alloc, 1, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots_a = slots_a_run.view();
     *slots_a.get(0).expect("the run holds one slot") = {.offset_bytes = 0,
@@ -330,7 +330,7 @@ static void test_reinit() {
     pool.destroy();
     CRUCIBLE_TEST_ASSERT(kTest, !pool.is_initialized());
 
-    auto const slots_b_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    auto slots_b_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots_b = slots_b_run.view();
     *slots_b.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
@@ -387,7 +387,7 @@ static void test_integration_with_sweep_line() {
     constexpr uint32_t N = 4;
     ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    auto const slots_run = slot_arena.array(test.alloc, N, TensorSlot{});
+    auto slots_run = slot_arena.array(test.alloc, N, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds four slots") = {.offset_bytes = 0,
@@ -442,7 +442,7 @@ static void test_integration_with_sweep_line() {
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = slot_arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
-                                    slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                               .expect("the slots of the test fit in 64 bits"));
     });
@@ -496,7 +496,7 @@ static void test_integration_with_sweep_line() {
 static void test_device_of_slots() {
     const crucible::TensorDevice accelerator{DeviceType::CUDA, 0};
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 2, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds two slots") = {.offset_bytes = 0,
@@ -534,8 +534,7 @@ static void test_device_of_slots() {
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::some(pooled.address()) == pool.slot_ptr(SlotId{0}, pv));
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_data(SlotId{1}, pv).is_none());
 
-    auto const fake_param_run =
-        arena.array(::foundation::effects::testing::test().alloc, 256, static_cast<unsigned char>(0));
+    auto fake_param_run = arena.array(::foundation::effects::testing::test().alloc, 256, static_cast<unsigned char>(0));
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<unsigned char> const fake_param = fake_param_run.view();
     const ::fixy::RunAddress param = ::fixy::mint_run_address(fake_param, 0).expect("the buffer holds 256 bytes");
@@ -612,7 +611,7 @@ static void test_slot_bounds_guard_is_armed(::fixy::TestRunnerCtx const& test) {
 // View.  The address of each slot is the first byte of its View.
 static void test_slot_views() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
+    auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot> const slots = slots_run.view();
     *slots.get(0).expect("the run holds three slots") = {.offset_bytes = 256,

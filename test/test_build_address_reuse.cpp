@@ -51,7 +51,7 @@ using crucible::TraceRing;
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 ::fixy::BumpArena<crucible::DagArena> g_memory_arena =
     ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 13});
-::fixy::ArenaRun<std::byte, crucible::DagArena> const g_memory_run =
+::fixy::ArenaRun<std::byte, crucible::DagArena> g_memory_run =
     g_memory_arena.array(::foundation::effects::testing::test().alloc, 4096, std::byte{});
 // A plain View of an arena run: the View carries no brand of its arena.
 ::fixy::View<std::byte> const g_memory = g_memory_run.view();

@@ -94,7 +94,7 @@ void test_make_builds_the_object() {
 void test_array_fills_each_element() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc](auto& arena) noexcept {
-        auto const numbers_run = arena.template array<std::uint32_t>(alloc, 1000, 7);
+        auto numbers_run = arena.template array<std::uint32_t>(alloc, 1000, 7);
         View<std::uint32_t> const numbers = numbers_run.view();
         CRUCIBLE_FATAL_INVARIANT(numbers.size() == 1000 && numbers_run.size() == 1000);
         std::uint64_t total = 0;
@@ -120,7 +120,7 @@ void test_array_fills_each_element() {
 void test_window_keeps_the_run() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
-    ArenaRun<std::uint32_t, TestFamily> const numbers = arena.array<std::uint32_t>(alloc, 8, 0);
+    ArenaRun<std::uint32_t, TestFamily> numbers = arena.array<std::uint32_t>(alloc, 8, 0);
     std::uint32_t next = 0;
     for (std::uint32_t& element : numbers.view()) {
         element = next++;
@@ -342,7 +342,7 @@ void test_agrees_with_plain_model() {
     for (int trial = 0; trial < 64; ++trial) {
         scratch.arena.with_epoch([&stream](ScratchEpoch& epoch) noexcept {
             ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-            ::foundation::core::FixedArray<View<Wide>, 32> arrays{};
+            ::foundation::core::FixedArray<View<Wide const>, 32> arrays{};
             for (auto const position : arrays.indices()) {
                 std::size_t const count = 1 + stream.below(40);
                 std::uint64_t const fill = position.raw() + 1;
@@ -351,8 +351,8 @@ void test_agrees_with_plain_model() {
                     CRUCIBLE_FATAL_INVARIANT(first_address(odd.view()).is_aligned<alignof(std::uint32_t)>());
                 }
                 auto const lines_run = epoch.array(alloc, count, Wide{.first = fill});
-                View<Wide> const lines = lines_run.view();
-                arrays.with_element(position, [lines](View<Wide>& slot) noexcept { slot = lines; });
+                View<Wide const> const lines = lines_run.view();
+                arrays.with_element(position, [lines](View<Wide const>& slot) noexcept { slot = lines; });
                 CRUCIBLE_FATAL_INVARIANT(first_address(arrays.at(position)).is_aligned<64>());
             }
             for (auto [position, slot] : arrays.enumerate()) {

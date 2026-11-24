@@ -101,7 +101,7 @@ static void test_linear_match() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
 
-    auto const ops_run = arena.array(test.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -114,7 +114,7 @@ static void test_linear_match() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 3, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 3, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -163,7 +163,7 @@ static void test_schema_divergence() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -176,7 +176,7 @@ static void test_schema_divergence() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -203,7 +203,7 @@ static void test_shape_divergence() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{100};
@@ -216,7 +216,7 @@ static void test_shape_divergence() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -239,7 +239,7 @@ static void test_reset() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{10};
@@ -252,7 +252,7 @@ static void test_reset() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -290,7 +290,7 @@ static void test_input_ptr() {
     const auto out1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
     const auto in1 = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{50};
@@ -305,7 +305,7 @@ static void test_input_ptr() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 2, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 2, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -330,7 +330,7 @@ static void test_invalid_slot() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId::none());
 
-    auto const ops_run = arena.array(test.alloc, 1, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 1, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{77};
@@ -340,7 +340,7 @@ static void test_invalid_slot() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -361,7 +361,7 @@ static void test_current_entry() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -374,7 +374,7 @@ static void test_current_entry() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
 
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -399,7 +399,7 @@ static void test_matched_index_after_reset() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
-    auto const ops_run = arena.array(test.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -410,7 +410,7 @@ static void test_matched_index_after_reset() {
     }
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -447,7 +447,7 @@ static void test_matched_index_follows_the_cursor() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
-    auto const ops_run = arena.array(test.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -458,7 +458,7 @@ static void test_matched_index_follows_the_cursor() {
     }
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -491,7 +491,7 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     auto source = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
-    auto const ops_run = arena.array(source.alloc, 3, TraceEntry{});
+    auto ops_run = arena.array(source.alloc, 3, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 3; i++) {
@@ -502,7 +502,7 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     }
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(source.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -530,7 +530,7 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     auto source = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
-    auto const ops_run = arena.array(source.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(source.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry> const ops = ops_run.view();
     for (uint32_t i = 0; i < 2; i++) {
@@ -541,7 +541,7 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     }
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(source.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -564,7 +564,7 @@ static void test_advance_after_the_end_guards_the_first_op() {
     auto source = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
-    auto const ops_run = arena.array(source.alloc, 1, TraceEntry{});
+    auto ops_run = arena.array(source.alloc, 1, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{70};
@@ -572,7 +572,7 @@ static void test_advance_after_the_end_guards_the_first_op() {
     set_output_slots(ops.at(::foundation::core::index<0>()), out_slot);
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(source.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -598,7 +598,7 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     const auto out_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{0});
     const auto in_slot = ::fixy::check::run_of(kTest, source.alloc, arena, SlotId{5});
-    auto const ops_run = arena.array(source.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(source.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{80};
@@ -609,7 +609,7 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
     set_input_slots(ops.at(::foundation::core::index<1>()), in_slot);
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
-    auto const slots_run = arena.array(source.alloc, 2, TensorSlot{});
+    auto slots_run = arena.array(source.alloc, 2, TensorSlot{});
     auto plan = make_simple_plan(slots_run);
     PoolAllocator pool;
     pool.init(::foundation::effects::testing::test().alloc, plan);
@@ -632,7 +632,7 @@ static void test_integration_with_pool() {
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
     constexpr uint32_t NSLOTS = 3;
-    auto const slots_run = arena.array(test.alloc, NSLOTS, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, NSLOTS, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot, NSLOTS> const slots =
         slots_run.view().window<NSLOTS>(0).expect("the run holds NSLOTS slots");
@@ -677,7 +677,7 @@ static void test_integration_with_pool() {
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
-                                    slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+                                    &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                               .expect("the slots of the test fit in 64 bits"));
     });
@@ -696,7 +696,7 @@ static void test_integration_with_pool() {
     const auto op1_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
     const auto op1_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
 
-    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     ops.at(::foundation::core::index<0>()).schema_hash = SchemaHash{0xAAAA};

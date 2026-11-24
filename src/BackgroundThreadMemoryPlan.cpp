@@ -96,8 +96,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     // forms state this, and they end the process when it does not hold.
     uint32_t num_ops = ::fixy::strict_add(max_op, uint32_t{1});
     const uint32_t num_offsets = ::fixy::strict_add(num_ops, uint32_t{1});
-    const auto birth_count_run = scratch.array<uint32_t>(a, num_ops, 0);
-    const auto death_count_run = scratch.array<uint32_t>(a, num_ops, 0);
+    auto birth_count_run = scratch.array<uint32_t>(a, num_ops, 0);
+    auto death_count_run = scratch.array<uint32_t>(a, num_ops, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> birth_count = birth_count_run.view();
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -111,8 +111,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     }
 
     // The first offset of each array is the zero of the fill.
-    const auto birth_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
-    const auto death_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
+    auto birth_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
+    auto death_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> birth_off = birth_off_run.view();
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -124,15 +124,15 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
             ::fixy::strict_add(detail::csr_element_(death_off, o), detail::csr_element_(death_count, o));
     }
 
-    const auto born_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
-    const auto dead_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
+    auto born_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
+    auto dead_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> born_slots = born_slots_run.view();
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> dead_slots = dead_slots_run.view();
     // Cursors start as copies of the offsets and advance during scatter.
-    const auto birth_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
-    const auto death_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
+    auto birth_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
+    auto death_cur_run = scratch.array<uint32_t>(a, num_ops, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> birth_cur = birth_cur_run.view();
     // A plain View of an arena run: the View carries no brand of its arena.

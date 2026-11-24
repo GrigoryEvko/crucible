@@ -75,7 +75,7 @@ inline constexpr CipherTierTag_v tier_v = ::fixy::band_tier_v<W>;
 // region are in dag_arena.
 static crucible::DagRef<RegionNode> make_test_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t seed) {
     constexpr uint32_t NUM_OPS = 1;
-    const auto ops_run = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
+    auto ops_run = dag_arena.array<TraceEntry>(g_test.alloc, NUM_OPS, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
     TraceEntry& op = *ops.get(0).expect("the region holds one op");

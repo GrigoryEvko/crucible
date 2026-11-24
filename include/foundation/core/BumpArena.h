@@ -229,31 +229,58 @@ class ArenaRefDoor final : ::foundation::NoObject<ArenaRefDoor> {
 // holds a run of the brand takes only bytes of an arena of the brand.  view()
 // gives the View of an lvalue run for a read in place.  That View carries no
 // brand (epochs above).
+//
+// A const run gives its elements only as const, and it does not copy, as a
+// Link does: a copy takes a run that is not const.  So a reader of a const
+// object that holds a run writes no element through the run, and the run
+// states refers_deep{} (foundation/Transfer.h).  The check file of this header
+// pins each const door.
 template <ViewElement T, ::foundation::brand::IsBrand Brand>
-class[[= ::foundation::transfer::refers{}]] ArenaRun final {
+class[[= ::foundation::transfer::refers_deep{}]] ArenaRun final {
 public:
     using brand_type = Brand;
 
     // The empty run, which names no byte.
     constexpr ArenaRun() noexcept = default;
 
-    // The run of the same elements as const, with the same brand.
+    // A copy takes a run that is not const.  The rule holds for a run of
+    // const elements too, because a class that states refers_deep{} and
+    // copies from a const object holds no transfer property
+    // (foundation/Transfer.h).
+    constexpr ArenaRun(ArenaRun& other) noexcept = default;
+    constexpr ArenaRun(ArenaRun&& other) noexcept = default;
+    constexpr ArenaRun& operator=(ArenaRun& other) noexcept = default;
+    constexpr ArenaRun& operator=(ArenaRun&& other) noexcept = default;
+    constexpr ~ArenaRun() = default;
+
+    // The run of the same elements as const, with the same brand, also from
+    // a const run.
     template <class Writable>
         requires std::same_as<Writable const, T> && (!std::same_as<Writable, T>)
-    constexpr ArenaRun(ArenaRun<Writable, Brand> other) noexcept : run_{other.run_} {}
+    constexpr ArenaRun(ArenaRun<Writable, Brand> const& other) noexcept : run_{other.run_} {}
 
-    // The elements of the run.  A run of a temporary has no View, because
-    // the View would outlive the name of the run.
-    [[nodiscard]] constexpr View<T> view() const& noexcept { return run_; }
+    // The elements of the run, as const from a const run.  A run of a
+    // temporary has no View, because the View would outlive the name of the
+    // run.
+    [[nodiscard]] constexpr View<T> view() & noexcept { return run_; }
+    [[nodiscard]] constexpr View<T const> view() const& noexcept { return run_; }
     void view() const&& = delete("a View of a temporary run outlives the name of the run: name the run first");
 
     // The count elements from start, as a run of the same brand, or no run
-    // when they do not fit in this run.  The result is an Option<ArenaRun>,
-    // which the class cannot name before it is complete.
-    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) const noexcept {
+    // when they do not fit in this run.  A const run gives a run of const
+    // elements.  The result is an Option<ArenaRun>, which the class cannot
+    // name before it is complete.
+    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) & noexcept {
         Option<View<T>> const part = run_.window(start.value().raw(), count.raw());
         return part.match([](View<T> const& found) noexcept { return Option<ArenaRun>::some(ArenaRun{found}); },
                           []() noexcept { return Option<ArenaRun>{}; });
+    }
+    [[nodiscard]] constexpr auto window(RunStart start, ElementCount count) const& noexcept {
+        using ConstRun = ArenaRun<T const, Brand>;
+        Option<View<T>> const part = run_.window(start.value().raw(), count.raw());
+        return part.match(
+            [](View<T> const& found) noexcept { return Option<ConstRun>::some(ConstRun{View<T const>{found}}); },
+            []() noexcept { return Option<ConstRun>{}; });
     }
 
     // The count of the elements.

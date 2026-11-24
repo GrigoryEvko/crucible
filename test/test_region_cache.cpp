@@ -181,7 +181,7 @@ void test_find_alternate_tracks_live_plan() {
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 14});
 
-    auto const ops_run = arena.array(test.alloc, 2, TraceEntry{});
+    auto ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
     TraceEntry& op0 = ops.at(::foundation::core::index<0>());
@@ -205,7 +205,7 @@ void test_find_alternate_tracks_live_plan() {
     CRUCIBLE_TEST_ASSERT(kTest, cache.find_alternate(1, op1.schema_hash, op1.shape_hash).is_none());
 
     // The plan arrives after the insert. No second call into the cache.
-    auto const slots_run = arena.array(test.alloc, 1, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot, 1> const slots = slots_run.view().window<1>(0).expect("the run holds one slot");
     TensorSlot& slot = slots.at(::foundation::core::index<0>());

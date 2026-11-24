@@ -25,7 +25,7 @@ namespace crucible::fuzz::boundary {
     const auto branch = mint_dag_node<BranchNode>(alloc, arena);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    const auto arms_run = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
+    auto arms_run = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
     branch->set_arms(arms_run);
     for (std::uint32_t i = 0; i < arms; ++i)
         *branch->arms().get(i).expect("i is below the count of arms") =

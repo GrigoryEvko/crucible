@@ -17,7 +17,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
@@ -33,7 +33,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     scratch.arena.with_epoch(
-        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             const crucible::MemoryPlan& plan =
                 *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                      .expect("the slots of the test fit in 64 bits");
@@ -50,7 +50,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& first_slot = slots.at(::foundation::core::index<0>());
@@ -66,7 +66,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     return scratch.arena.with_epoch(
-        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
         });
 }
@@ -79,7 +79,7 @@ refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
-    auto const slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
+    auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
     crucible::TensorSlot& internal_slot = slots.at(::foundation::core::index<0>());
@@ -93,7 +93,7 @@ refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     return scratch.arena.with_epoch(
-        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
         });
 }
@@ -168,7 +168,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
     // op 3 and slot 2 is born at op 4.  Slot 3 is external and takes no pool
     // space.
     constexpr uint32_t N = 4;
-    auto const slots_run = arena.array(source.alloc, N, crucible::TensorSlot{});
+    auto slots_run = arena.array(source.alloc, N, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<crucible::TensorSlot, N> const slots = slots_run.view().window<N>(0).expect("the run holds N slots");
 
@@ -229,7 +229,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(source.alloc);
     crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
     scratch.arena.with_epoch(
-        [target, alloc = source.alloc, plan_storage, slots_run, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
+        [target, alloc = source.alloc, plan_storage, &slots_run, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
             const crucible::MemoryPlan& plan =
                 *crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                      .expect("the slots of the test fit in 64 bits");

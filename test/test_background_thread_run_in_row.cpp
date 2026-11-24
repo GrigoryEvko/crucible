@@ -165,7 +165,7 @@ void test_uncompiled_queue_is_bounded() {
         // The queue never reads a region, so default nodes stand in for the
         // published regions.  Each push names a node of its own.
         constexpr uint64_t OVERRUN = 4u * CAP + 3u;
-        const auto links = arena.array(alloc, OVERRUN, crucible::RegionLink{});
+        auto links = arena.array(alloc, OVERRUN, crucible::RegionLink{});
         const ::fixy::View<crucible::RegionLink> regions = links.view();
         for (crucible::RegionLink& link : regions)
             link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
@@ -210,7 +210,7 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
             // an arena that outlives the queues.
             ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
                 ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-            const auto links = arena.array(alloc, 8, crucible::RegionLink{});
+            auto links = arena.array(alloc, 8, crucible::RegionLink{});
             const ::fixy::View<crucible::RegionLink> regions = links.view();
             for (crucible::RegionLink& link : regions)
                 link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));

@@ -232,14 +232,14 @@ void run_of_holds_the_values(::fixy::TestRunnerCtx const& test) {
                             [&test](auto& arena) noexcept {
                                 const auto built =
                                     ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{7}, 9, 11);
-                                ::fixy::View<std::uint32_t> const run = built.view();
+                                ::fixy::View<std::uint32_t const> const run = built.view();
                                 CRUCIBLE_TEST_ASSERT(test, run.size() == 3);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(0).expect("the run holds three values") == 7);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(1).expect("the run holds three values") == 9);
                                 CRUCIBLE_TEST_ASSERT(test, *run.get(2).expect("the run holds three values") == 11);
                                 const auto built_single =
                                     ::fixy::check::run_of(test, test.cap().alloc, arena, std::uint32_t{5});
-                                ::fixy::View<std::uint32_t> const single = built_single.view();
+                                ::fixy::View<std::uint32_t const> const single = built_single.view();
                                 CRUCIBLE_TEST_ASSERT(test, single.size() == 1);
                                 CRUCIBLE_TEST_ASSERT(test, *single.get(0).expect("the run holds one value") == 5);
                             });

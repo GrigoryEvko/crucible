@@ -63,7 +63,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             return ::fixy::with_bump_arena(
                 ::foundation::effects::testing::test().alloc, ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096},
                 [&cache, &b](auto& arena) noexcept -> bool {
-                    auto const fakes_run = arena.array(::foundation::effects::testing::test().alloc, N, FakeKernel{});
+                    auto fakes_run = arena.array(::foundation::effects::testing::test().alloc, N, FakeKernel{});
                     // A plain View of an arena run: the View carries no brand of its arena.
                     ::fixy::View<FakeKernel, N> const fakes =
                         fakes_run.view().template window<N>(0).expect("the run holds N fakes");

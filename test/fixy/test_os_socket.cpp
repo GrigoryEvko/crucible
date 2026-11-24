@@ -392,7 +392,7 @@ struct LinkDumpRequest final {
     return ::fixy::with_bump_arena(
         eff::testing::test().alloc, ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{2 * kReplyBytes},
         [&ctx, &netlink](auto& arena) noexcept -> int {
-            auto const reply_run = arena.array(eff::testing::test().alloc, kReplyBytes, std::byte{0});
+            auto reply_run = arena.array(eff::testing::test().alloc, kReplyBytes, std::byte{0});
             fixy::View<std::byte> const reply = reply_run.view();
             auto const received = fixy::net::receive_with_timestamps(ctx, netlink, reply);
             return received.match(

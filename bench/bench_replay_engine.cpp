@@ -45,18 +45,18 @@ struct BenchRegion {
           region{mint_dag_node<RegionNode>(::foundation::effects::testing::test().alloc, arena)},
           num_ops{n} {
         auto const alloc = ::foundation::effects::testing::test().alloc;
-        const auto out_slots_run = arena.array(alloc, n, SlotId{});
-        const auto in_slots_run = arena.array(alloc, n, SlotId{});
+        auto out_slots_run = arena.array(alloc, n, SlotId{});
+        auto in_slots_run = arena.array(alloc, n, SlotId{});
         const auto out_metas_run = arena.array(alloc, n, TensorMeta{});
         const auto in_metas_run = arena.array(alloc, n, TensorMeta{});
         const auto in_producers_run = arena.array(alloc, n, OpIndex{});
-        const auto ops_run = arena.array(alloc, n, TraceEntry{});
+        auto ops_run = arena.array(alloc, n, TraceEntry{});
 
         for (uint32_t i = 0; i < n; i++) {
             const ::fixy::RunStart at_op{::fixy::ElementCount{i}};
             const ::fixy::ElementCount one{1};
-            const auto out_slot = out_slots_run.window(at_op, one).expect("i is below n");
-            const auto in_slot = in_slots_run.window(at_op, one).expect("i is below n");
+            auto out_slot = out_slots_run.window(at_op, one).expect("i is below n");
+            auto in_slot = in_slots_run.window(at_op, one).expect("i is below n");
             ::fixy::fill(out_slot.view(), SlotId{i});
             ::fixy::fill(in_slot.view(), SlotId{(i > 0) ? (i - 1) : (n - 1)});
 
@@ -68,7 +68,7 @@ struct BenchRegion {
                           in_producers_run.window(at_op, one).expect("i is below n"), in_slot);
         }
 
-        const auto slots_run = arena.array(alloc, n, TensorSlot{});
+        auto slots_run = arena.array(alloc, n, TensorSlot{});
         for (uint32_t i = 0; i < n; i++) {
             *slots_run.view().get(i).expect("i is below n") = TensorSlot{.offset_bytes = i * 256ULL,
                                                                          .nbytes = 256,

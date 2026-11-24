@@ -59,7 +59,7 @@ int main() {
 
     ::fixy::BumpArena<DagArena> arena =
         ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
-    auto const slots_run = arena.array(test.alloc, N_SLOTS, TensorSlot{});
+    auto slots_run = arena.array(test.alloc, N_SLOTS, TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<TensorSlot, N_SLOTS> const slots =
         slots_run.view().window<N_SLOTS>(0).expect("the run holds N_SLOTS slots");
@@ -135,7 +135,7 @@ int main() {
     crucible::PlanScratch sweep_scratch{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16}};
     BackgroundThread::PlanTarget const target = bt.plan_target();
     sweep_scratch.arena.with_epoch(
-        [target, alloc = test.alloc, plan_storage, slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
+        [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             static_cast<void>(BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                                   .expect("the slots of the test fit in 64 bits"));
         });
@@ -176,7 +176,7 @@ int main() {
         OpDef{.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = slots_of(SL_LOGITS), .out = slots_of(SL_PROBS)},
     };
 
-    auto const ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
+    auto ops_run = runs.array(test.alloc, N_OPS, TraceEntry{});
     ::fixy::View<TraceEntry, N_OPS> const ops = ops_run.view().window<N_OPS>(0).expect("the run holds N_OPS ops");
     for (auto [op, def] : ops.walk().zip(defs.view().walk())) {
         op->schema_hash = def->schema;

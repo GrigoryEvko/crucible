@@ -262,7 +262,7 @@ struct BenchRegion {
     BenchRegion(::fixy::View<const SchemaHash> schemas, ::fixy::View<const ShapeHash> shapes)
         : region{make_ops_region_(schemas, shapes)}, plan{arena.make<MemoryPlan>(test.alloc)} {
         const auto n_ops = static_cast<uint32_t>(schemas.size());
-        const auto slots_run = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
+        auto slots_run = dag_arena.array<TensorSlot>(test.alloc, n_ops, TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorSlot> slots = slots_run.view();
         uint32_t i = 0;
@@ -292,7 +292,7 @@ private:
                                                       ::fixy::View<const ShapeHash> shapes) {
         CRUCIBLE_BENCH_CHECK(schemas.size() == shapes.size());
         const auto n_ops = static_cast<uint32_t>(schemas.size());
-        const auto ops_run = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
+        auto ops_run = dag_arena.array<TraceEntry>(test.alloc, n_ops, TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TraceEntry> ops = ops_run.view();
         for (uint32_t i = 0; i < n_ops; i++) {
@@ -380,7 +380,7 @@ int main() {
         ::fixy::BumpArena<DagArena> slot_arena =
             ::fixy::mint_bump_arena<DagArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16});
         constexpr uint32_t NSLOTS = 16;
-        const auto slots_run = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
+        auto slots_run = slot_arena.array<TensorSlot>(test.alloc, NSLOTS, TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<TensorSlot> slots = slots_run.view();
         uint32_t i = 0;
@@ -707,7 +707,7 @@ int main() {
         constexpr uint32_t NR = 4;
         ::fixy::FixedList<DagRef<RegionNode>, NR> regions{};
         for (uint32_t r = 0; r < NR; r++) {
-            const auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
+            auto ops_run = arena.array<TraceEntry>(test.alloc, NUM_OPS, TraceEntry{});
             // A plain View of an arena run: the View carries no brand of its arena.
             const ::fixy::View<TraceEntry> ops = ops_run.view();
             for (OpSlot const i : ::fixy::IndexRange<NUM_OPS>{}) {

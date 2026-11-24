@@ -636,7 +636,7 @@ struct BranchNode : TraceNode {
     // Adjacent-pair comparison admits duplicate values, because two guards
     // that compare equal are not structurally forbidden.
     [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
-        for (const ::fixy::View<Arm, 2> pair : arms_.view().windows<2>())
+        for (const ::fixy::View<Arm const, 2> pair : arms_.view().windows<2>())
             if (pair.at(::fixy::index<1>()).value < pair.at(::fixy::index<0>()).value) return false;
         return true;
     }

@@ -736,7 +736,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         const DagRef<MemoryPlan> plan = arena->make<MemoryPlan>(bg.alloc);
         const bool is_planned =
             publish_scratch_.arena.with_epoch([target = plan_target(), alloc = bg.alloc, plan,
-                                               slots = parts.runs_.slots](PlanScratch::Epoch& epoch) noexcept {
+                                               slots = parts.runs_.slots](PlanScratch::Epoch& epoch) mutable noexcept {
                 return BackgroundThread::compute_memory_plan(alloc, target, plan, epoch, slots).is_ok();
             });
         if (is_planned) region->plan = make_plan_link(plan);

@@ -23,7 +23,7 @@ static constexpr auto A = BG.alloc;
 // populated with realistic (schema/shape/scope/callsite, 2-input GEMM)
 // op rows.  The ops, their arrays and the region are in dag_arena.
 static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, uint32_t num_ops) {
-    const auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
+    auto ops_run = dag_arena.array<TraceEntry>(A, num_ops, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<TraceEntry> ops = ops_run.view();
 
@@ -44,11 +44,11 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
         te.callsite_hash = CallsiteHash{0xDDDD000000000000ULL + i};
         te.kernel_id = CKernelId::GEMM_MM;
 
-        const auto producers_run = dag_arena.array(A, 2, OpIndex::none());
+        auto producers_run = dag_arena.array(A, 2, OpIndex::none());
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<OpIndex> producers = producers_run.view();
         if (i >= 1) *producers.get(0).expect("the op has two inputs") = OpIndex{i - 1};
-        const auto input_slots_run = dag_arena.array(A, 2, SlotId{i});
+        auto input_slots_run = dag_arena.array(A, 2, SlotId{i});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<SlotId> input_slots = input_slots_run.view();
         *input_slots.get(1).expect("the op has two inputs") = SlotId{100 + i};

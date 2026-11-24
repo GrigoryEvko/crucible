@@ -713,7 +713,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         if (!r.has_remaining(num_slots, kTensorSlotWireBytes)) {
             return ::fixy::err(r.reason_or(LoadError::truncated));
         }
-        const ::fixy::ArenaRun<TensorSlot, DagArena> slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
+        ::fixy::ArenaRun<TensorSlot, DagArena> slots_run = arena.array<TensorSlot>(a, num_slots, TensorSlot{});
         const ::fixy::View<TensorSlot> slots = slots_run.view();
         loaded_plan->slots = slots_run;
         uint32_t slot_position = 0;
@@ -744,7 +744,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     if (!r.has_remaining(num_ops, kTraceEntryMinWireBytes)) {
         return ::fixy::err(r.reason_or(LoadError::truncated));
     }
-    const ::fixy::ArenaRun<TraceEntry, DagArena> ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
+    ::fixy::ArenaRun<TraceEntry, DagArena> ops_run = arena.array<TraceEntry>(a, num_ops, TraceEntry{});
     const ::fixy::View<TraceEntry> ops = ops_run.view();
 
     for (TraceEntry& te : ops) {
@@ -816,31 +816,28 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
             }
         }
 
-        const ::fixy::ArenaRun<TensorMeta, DagArena> input_metas_run =
-            arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
+        ::fixy::ArenaRun<TensorMeta, DagArena> input_metas_run = arena.array<TensorMeta>(a, num_inputs, TensorMeta{});
         for (TensorMeta& meta : input_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        const ::fixy::ArenaRun<TensorMeta, DagArena> output_metas_run =
-            arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
+        ::fixy::ArenaRun<TensorMeta, DagArena> output_metas_run = arena.array<TensorMeta>(a, num_outputs, TensorMeta{});
         for (TensorMeta& meta : output_metas_run.view()) {
             meta = read_meta(r);
         }
 
-        const ::fixy::ArenaRun<int64_t, DagArena> scalar_args_run =
-            arena.array<int64_t>(a, num_scalar_args, int64_t{0});
+        ::fixy::ArenaRun<int64_t, DagArena> scalar_args_run = arena.array<int64_t>(a, num_scalar_args, int64_t{0});
         for (int64_t& value : scalar_args_run.view()) {
             value = r.r<int64_t>();
         }
         te.set_scalar_args(scalar_args_run);
 
-        const ::fixy::ArenaRun<OpIndex, DagArena> producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
+        ::fixy::ArenaRun<OpIndex, DagArena> producers_run = arena.array<OpIndex>(a, num_inputs, OpIndex{});
         for (OpIndex& producer : producers_run.view()) {
             producer = OpIndex{r.r<uint32_t>()};
         }
 
-        const ::fixy::ArenaRun<SlotId, DagArena> input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
+        ::fixy::ArenaRun<SlotId, DagArena> input_slot_ids_run = arena.array<SlotId>(a, num_inputs, SlotId{});
         for (SlotId& slot_id : input_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // A slot id indexes the replay slot table, and replay checks only
@@ -858,7 +855,7 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
         }
         te.set_inputs(input_metas_run, producers_run, input_slot_ids_run);
 
-        const ::fixy::ArenaRun<SlotId, DagArena> output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
+        ::fixy::ArenaRun<SlotId, DagArena> output_slot_ids_run = arena.array<SlotId>(a, num_outputs, SlotId{});
         for (SlotId& slot_id : output_slot_ids_run.view()) {
             const SlotId sid = SlotId{r.r<uint32_t>()};
             // The same bound as for the input slot ids above.

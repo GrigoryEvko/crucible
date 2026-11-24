@@ -331,7 +331,7 @@ static void check_socket_calls(Arena& arena) {
     auto const empty = topology::recv_with_hw_timestamp(bg_fs, sock_fd, ::fixy::View<std::byte>{});
     CRUCIBLE_TEST_ASSERT(kTest, error_of(empty) == topology::PtpError::InvalidReceiveBuffer);
 
-    auto const buffer_run = arena.array(test.alloc, 16, std::byte{0});
+    auto buffer_run = arena.array(test.alloc, 16, std::byte{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const buffer = buffer_run.view();
     auto const idle = topology::recv_with_hw_timestamp(bg_fs, sock_fd, buffer);
@@ -368,7 +368,7 @@ static void check_packet_of_receive(Arena& arena) {
     using ::foundation::os::KernelTimespec;
     using topology::PtpError;
     auto test = ::foundation::effects::testing::test();
-    auto const buffer_run = arena.array(test.alloc, 16, std::byte{0});
+    auto buffer_run = arena.array(test.alloc, 16, std::byte{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<std::byte> const buffer = buffer_run.view();
     KernelTimespec const zero{};

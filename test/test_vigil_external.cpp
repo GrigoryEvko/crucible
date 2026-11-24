@@ -43,7 +43,7 @@ struct[[= ::foundation::brand::arena_family_brand{}]] MemoryArena final {};
 [[nodiscard]] ::fixy::View<std::byte> memory() {
     static ::fixy::BumpArena<MemoryArena> arena =
         ::fixy::mint_bump_arena<MemoryArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{16384});
-    static ::fixy::ArenaRun<std::byte, MemoryArena> const run =
+    static ::fixy::ArenaRun<std::byte, MemoryArena> run =
         arena.array(::foundation::effects::testing::test().alloc, 16384, std::byte{0});
     // A plain View of an arena run: the View carries no brand of its arena.
     return run.view();

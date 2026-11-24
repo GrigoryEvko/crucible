@@ -126,7 +126,7 @@ struct[[= ::foundation::brand::arena_family_brand{}]] BodyArena final {};
 
 // A run of one body for each worker of a race.
 [[nodiscard]] Bodies make_bodies() noexcept {
-    auto const run = g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{});
+    auto run = g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{});
     // A plain View of an arena run: the View carries no brand of its arena.
     return run.view().window<kWorkerCount>(0).expect("the run holds one body for each worker");
 }

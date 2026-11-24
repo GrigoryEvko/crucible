@@ -103,9 +103,9 @@ cipher::CompiledBody blind_body{};
 cipher::CompiledBody empty_row_body{};
 cipher::CompiledBody bg_row_body{};
 cipher::CompiledBody io_row_body{};
-::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> const blind_run =
+::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> blind_run =
     g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
-::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> const aware_run =
+::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> aware_run =
     g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
 // A plain View of an arena run: the View carries no brand of its arena.
 Bodies const blind_population = blind_run.view();

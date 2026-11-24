@@ -81,16 +81,30 @@ static_assert(!std::is_move_constructible_v<EpochArena<Owner::Member>>);
 static_assert(!std::is_move_constructible_v<Epoch<EpochOf<Owner::Member>>>);
 static_assert(!std::is_constructible_v<ArenaRun<int, Family>, View<int>>);
 
-// A run converts to a run of const elements with the same brand, and to no
-// run of a different brand, and no run of const gives back a writable run.
-// A window of a run keeps the type of the run.
+// A run converts to a run of const elements with the same brand, also from a
+// const run, and to no run of a different brand, and no run of const gives
+// back a writable run.  A window of a run keeps the type of the run.
 static_assert(std::is_convertible_v<ArenaRun<int, Family>, ArenaRun<int const, Family>>);
+static_assert(std::is_convertible_v<ArenaRun<int, Family> const&, ArenaRun<int const, Family>>);
 static_assert(!std::is_convertible_v<ArenaRun<int const, Family>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int, Owner::Member>, ArenaRun<int, Family>>);
 static_assert(!std::is_constructible_v<ArenaRun<int const, Owner::Member>, ArenaRun<int, Family>>);
+static_assert(
+    std::is_same_v<decltype(std::declval<ArenaRun<int, Family>&>().window(RunStart{ElementCount{0}}, ElementCount{0})),
+                   Option<ArenaRun<int, Family>>>);
+
+// A const run gives only const access, as each class that states
+// refers_deep{} does (the store check of foundation/core/CaptureStore.h
+// trusts the mark): each const door gives a const element, and a const run
+// does not copy into a writable run.
+static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family>&>().view()), View<int>>);
+static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().view()), View<int const>>);
 static_assert(std::is_same_v<decltype(std::declval<ArenaRun<int, Family> const&>().window(RunStart{ElementCount{0}},
                                                                                           ElementCount{0})),
-                             Option<ArenaRun<int, Family>>>);
+                             Option<ArenaRun<int const, Family>>>);
+static_assert(!std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Family> const&>);
+static_assert(std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Family>&>);
+static_assert(!std::is_assignable_v<ArenaRun<int, Family>&, ArenaRun<int, Family> const&>);
 static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
 
 // A window takes its start and its count in two types, so no call swaps the

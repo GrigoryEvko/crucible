@@ -125,7 +125,7 @@ void check_mint_and_handles(Arena& arena) {
 
     // Six slots hold the four handles, so the View of the handles is the
     // first four slots.
-    auto const handles_run = arena.array(test.alloc, 6, sriov::VfHandle{});
+    auto handles_run = arena.array(test.alloc, 6, sriov::VfHandle{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<sriov::VfHandle, 6> const handles =
         handles_run.view().template window<6>(0).expect("the run holds six handles");
@@ -152,7 +152,7 @@ void check_mint_and_handles(Arena& arena) {
     auto out_of_range = sriov::vf_handle_at(plan, sriov::admit_vf_index(4).expect("4 is a function index"));
     CRUCIBLE_TEST_ASSERT(kTest, out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
 
-    auto const small_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto small_run = arena.array(test.alloc, 2, sriov::VfHandle{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<sriov::VfHandle> const small = small_run.view();
     auto too_small = sriov::materialize_vf_handles(plan, small);
@@ -200,7 +200,7 @@ void check_privileged_boundaries(Arena& arena) {
     auto test = ::foundation::effects::testing::test();
     auto plan = two_vf_plan();
 
-    auto const handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<sriov::VfHandle> const handles = handles_run.view();
     auto enable = sriov::enable(plan, handles);
@@ -242,7 +242,7 @@ void check_apply_paths_are_stubbed(Arena& arena) {
 
     auto plan = two_vf_plan();
 
-    auto const handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
+    auto handles_run = arena.array(test.alloc, 2, sriov::VfHandle{});
     // A plain View of an arena run: the View carries no brand of its arena.
     ::fixy::View<sriov::VfHandle> const handles = handles_run.view();
     auto deferred = sriov::enable(plan, handles);

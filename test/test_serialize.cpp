@@ -67,7 +67,7 @@ template <class Loaded>
 template <std::uint32_t Count>
 [[nodiscard]] static ::fixy::ArenaRun<crucible::TensorSlot, DagArena>
 make_slots_in_place(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena) {
-    const auto slots_run = arena.array<crucible::TensorSlot>(alloc, Count, crucible::TensorSlot{});
+    auto slots_run = arena.array<crucible::TensorSlot>(alloc, Count, crucible::TensorSlot{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<crucible::TensorSlot> slots = slots_run.view();
     std::uint32_t position = 0;
@@ -85,7 +85,7 @@ make_slots_in_place(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagAre
 [[nodiscard]] static ::fixy::Result<::fixy::Unit, crucible::LoadError>
 load_one_op(::foundation::effects::Alloc alloc, crucible::SchemaHash schema, ::fixy::ElementCount inputs) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 20});
-    const auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
+    auto ops_run = arena.array<crucible::TraceEntry>(alloc, 1, crucible::TraceEntry{});
     crucible::TraceEntry& op = *ops_run.view().get(0).expect("the run holds one op");
     op.schema_hash = schema;
     op.set_inputs(arena.array<crucible::TensorMeta>(alloc, inputs.raw(), make_meta(4, 8)),
@@ -205,7 +205,7 @@ static void check_descriptor_images_agree() {
     constexpr uint32_t NUM_OPS = 3;
     // A storage of more than 4 GiB, which a size of 32 bits cannot hold.
     constexpr uint64_t kLargeStorageBytes = 98000000000ULL;
-    const auto ops_run = dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
+    auto ops_run = dag_arena.array<crucible::TraceEntry>(test.alloc, NUM_OPS, crucible::TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<crucible::TraceEntry> ops = ops_run.view();
 
@@ -482,7 +482,7 @@ static void check_descriptor_images_agree() {
         ::fixy::BumpArena<DagArena> branch_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
         crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, branch_arena);
         branch.kind = crucible::TraceNodeKind::BRANCH;
-        const auto arms_run = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
+        auto arms_run = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
         branch.set_arms(arms_run);
         branch.arms().get(0).expect("the branch holds two arms")->value = 2;
         branch.arms().get(1).expect("the branch holds two arms")->value = 1;
@@ -593,14 +593,12 @@ static void check_descriptor_images_agree() {
             return reason;
         };
         ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        const ::fixy::ArenaRun<crucible::TensorSlot, DagArena> swapped =
-            make_slots_in_place<21>(test.alloc, slot_arena);
+        ::fixy::ArenaRun<crucible::TensorSlot, DagArena> swapped = make_slots_in_place<21>(test.alloc, slot_arena);
         swapped.view().get(4).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{5};
         swapped.view().get(5).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{4};
         CRUCIBLE_TEST_ASSERT(kTest, reason_of_slots(swapped) == crucible::LoadError::slot_out_of_place
                                         && "deserialize_region must refuse two slots with swapped ids");
-        const ::fixy::ArenaRun<crucible::TensorSlot, DagArena> unnamed =
-            make_slots_in_place<21>(test.alloc, slot_arena);
+        ::fixy::ArenaRun<crucible::TensorSlot, DagArena> unnamed = make_slots_in_place<21>(test.alloc, slot_arena);
         unnamed.view().get(7).expect("the plan holds 21 slots")->slot_id = crucible::SlotId{};
         CRUCIBLE_TEST_ASSERT(kTest, reason_of_slots(unnamed) == crucible::LoadError::slot_out_of_place
                                         && "deserialize_region must refuse a slot with the default id");
@@ -658,8 +656,7 @@ static void check_descriptor_images_agree() {
         constexpr size_t kPad2AfterDeathOp = 36 - 20;
         ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
         const crucible::DagRef<crucible::MemoryPlan> pad_plan = slot_arena.make<crucible::MemoryPlan>(test.alloc);
-        const ::fixy::ArenaRun<crucible::TensorSlot, DagArena> pad_slots =
-            make_slots_in_place<21>(test.alloc, slot_arena);
+        ::fixy::ArenaRun<crucible::TensorSlot, DagArena> pad_slots = make_slots_in_place<21>(test.alloc, slot_arena);
         pad_slots.view().get(20).expect("the pad plan holds 21 slots")->death_op = crucible::OpIndex{kMarkerDeathOp};
         pad_plan->slots = pad_slots;
         region->plan = crucible::make_plan_link(pad_plan);
@@ -727,7 +724,7 @@ static void check_descriptor_images_agree() {
     // loaded op holds the same scalars.
     {
         ::fixy::BumpArena<DagArena> scalar_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        const auto scalar_ops_run = scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        auto scalar_ops_run = scalar_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TraceEntry> scalar_ops = scalar_ops_run.view();
         crucible::TraceEntry& scalar_op = *scalar_ops.get(0).expect("the region holds one op");
@@ -758,7 +755,7 @@ static void check_descriptor_images_agree() {
     // under it, and an image whose hash names a different policy is refused.
     {
         ::fixy::BumpArena<DagArena> policy_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        const auto policy_ops_run = policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        auto policy_ops_run = policy_arena.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TraceEntry> policy_ops = policy_ops_run.view();
         crucible::TraceEntry& policy_op = *policy_ops.get(0).expect("the region holds one op");
@@ -820,7 +817,7 @@ static void check_descriptor_images_agree() {
     // two tensors on wrong or overlapping memory.
     {
         ::fixy::BumpArena<DagArena> flip_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
-        const auto flip_ops_run = flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
+        auto flip_ops_run = flip_dag.array<crucible::TraceEntry>(test.alloc, 1, crucible::TraceEntry{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TraceEntry> flip_ops = flip_ops_run.view();
         crucible::TraceEntry& flip_op = *flip_ops.get(0).expect("the region holds one op");
@@ -833,7 +830,7 @@ static void check_descriptor_images_agree() {
         crucible::RegionNode& flip_region = *crucible::make_region(test.alloc, flip_dag, flip_ops_run);
         const crucible::DagRef<crucible::MemoryPlan> flip_plan = flip_dag.make<crucible::MemoryPlan>(test.alloc);
         flip_plan->pool_bytes = 2 * crucible::PoolAllocator::ALIGNMENT;
-        const auto flip_slots_run = flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
+        auto flip_slots_run = flip_dag.array<crucible::TensorSlot>(test.alloc, 2, crucible::TensorSlot{});
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<crucible::TensorSlot> flip_slots = flip_slots_run.view();
         std::uint32_t slot_index = 0;
