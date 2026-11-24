@@ -28,6 +28,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -75,8 +76,12 @@ concept CtxFitsPermissionFork = ::foundation::permissions::CtxFitsPermissionFork
                              && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Bg>
                              && ::foundation::transfer::Sendable<Ctx>;
 
-// The clause names the gate of the context, the count of the bodies and
-// the body of each child.  The last two are the test of
+// The clause names the gate of the context, the count of the bodies, the
+// body of each child, and the store check of each body (StoresNoBorrowOutside
+// of foundation/core/CaptureStore.h): the fork owns a copy of each body, so a
+// body stores no borrow in an object of the caller that it captures by
+// reference, and the caller reads none after the join.  The body of each
+// child is the test of
 // each_body_takes_its_child of foundation, written as a fold of the
 // concept that that test substitutes, so the clause names no tuple.  A
 // concept cannot be specialized, so no translation unit can admit a body
@@ -87,6 +92,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
           && (::foundation::permissions::detail::PermissionForkBody<Callables, Children, Brand, Ctx> && ...)
           && (detail::ThreadForkValue<::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
               && ...)
+          && (::foundation::core::StoresNoBorrowOutside<std::decay_t<Callables>> && ...)
 [[nodiscard]] ::foundation::permissions::fork_result_t<
     Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
     ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
@@ -107,6 +113,7 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
               && (detail::ThreadForkValue<
                       ::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
                   && ...)
+              && (::foundation::core::StoresNoBorrowOutside<std::decay_t<Callables>> && ...)
     friend ::foundation::permissions::fork_result_t<
         Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
         ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>
@@ -208,6 +215,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
           && (::foundation::permissions::detail::PermissionForkBody<Callables, Children, Brand, Ctx> && ...)
           && (detail::ThreadForkValue<::foundation::permissions::detail::lent_result_t<Callables, Children, Brand, Ctx>>
               && ...)
+          && (::foundation::core::StoresNoBorrowOutside<std::decay_t<Callables>> && ...)
 [[nodiscard]] ::foundation::permissions::fork_result_t<
     Ctx, Parent, Brand, ::foundation::permissions::detail::fork_pack_<Children...>,
     ::foundation::permissions::detail::fork_pack_<std::decay_t<Callables>...>>

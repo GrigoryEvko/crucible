@@ -50,6 +50,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Platform.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Record.h>
@@ -92,10 +93,14 @@ struct write_view_door;
 // refuses std::bit_cast and std::start_lifetime_as.  It compiles to
 // nothing, because the class is empty.
 //
-// What stays open, as for ReadView: a body can store a pointer to its
-// view in an object outside its frame.  The pointer dangles when the body
-// returns.  It proves nothing that a door reads, because no door takes a
-// view by pointer and no door turns a view into a token.
+// A body cannot keep its view in an object of the caller: the store check
+// of each door (StoresNoBorrowOutside of foundation/core/CaptureStore.h)
+// refuses a body that stores a borrow in an object that it captures by
+// reference.  What stays open, as for ReadView: a body can store a pointer
+// to its view in an object of static storage duration, which it does not
+// capture.  The pointer dangles when the body returns.  It proves nothing
+// that a door reads, because no door takes a view by pointer and no door
+// turns a view into a token.
 template <typename Tag, typename Brand>
 class [[nodiscard]] WriteView {
     static_assert(PermissionTag<Tag>, "WriteView<Tag, Brand>: Tag must be an empty non-union class type, as a "
@@ -321,7 +326,7 @@ template <typename Ctx, typename Tag, typename Brand, typename Body>
     requires ::foundation::effects::IsExecCtx<Ctx> && CtxAdmitsPermission<Tag, Ctx>
           && detail::PermissionForkBody<Body, Tag, Brand, Ctx>
           && detail::LentValue<detail::lent_result_t<Body, Tag, Brand, Ctx>>
-          && ::foundation::linear::HoldsNoLinearValue<Body>
+          && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
 [[nodiscard]] constexpr auto with_write_view(Ctx const& ctx, Permission<Tag, Brand>&& token, Body&& body) noexcept {
     return detail::write_view_door::lend(ctx, std::move(token), body);
 }
@@ -365,6 +370,7 @@ template <typename... Children, typename Ctx, typename Parent, typename Brand, t
     requires CtxFitsPermissionForkInline<Ctx, Parent, Children...>
           && (detail::each_body_takes_its_child(^^Ctx, ^^Brand, ^^std::tuple<Children...>, ^^std::tuple<Callables...>))
           && (detail::LentValue<detail::lent_result_t<Callables, Children, Brand, Ctx>> && ...)
+          && (::foundation::core::StoresNoBorrowOutside<std::decay_t<Callables>> && ...)
 [[nodiscard]] constexpr fork_result_t<Ctx, Parent, Brand, detail::fork_pack_<Children...>,
                                       detail::fork_pack_<std::decay_t<Callables>...>>
 mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, Callables&&... callables) noexcept {
@@ -377,8 +383,11 @@ mint_permission_fork_inline(Ctx const& ctx, Permission<Parent, Brand>&& parent, 
         auto& [... child] = children;
         auto& [... body] = bodies;
         // The comma fold runs the bodies in child order.  Each door gives its
-        // child back into the place that it took the child from.
-        ((child = with_write_view(ctx, std::move(child), body)), ...);
+        // child back into the place that it took the child from.  The fork
+        // owns its copy of each body and runs it one time, so the copy goes
+        // to the door by move, and the store check of the door reads it as a
+        // body that the caller cannot read.
+        ((child = with_write_view(ctx, std::move(child), std::move(body))), ...);
         // The children never left this frame.  The combine consumes each of
         // them, and it checks the manifest and the brand again.
         return mint_permission_combine_n<Parent>(ctx, std::move(child)...);

@@ -573,6 +573,11 @@ foundation_neg_compile_test(neg_permission_forged_without_key
 foundation_neg_compile_test(neg_permission_fork_body_gives_a_borrow
   "no matching function for call to .mint_permission_fork_inline<"
   "the expression .\\(LentValue<typename std::invoke_result<")
+# A body of the inline fork that keeps a Ref of its view in a capture: the
+# store check of the fork refuses it.
+foundation_neg_compile_test(neg_permission_fork_body_stores_a_ref_of_its_view
+  "no matching function for call to .mint_permission_fork_inline<"
+  "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_permission_fork_body_takes_the_token
   "constraints not satisfied"
   "each_body_takes_its_child\\(.*\\^\\^ std::tuple<Callables \\.\\.\\.>\\) \\[with .*evaluated to .false.")

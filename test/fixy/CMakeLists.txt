@@ -7326,6 +7326,11 @@ fixy_neg_compile_test(neg_permission_fork_without_bg
   "constraints not satisfied"
   "satisfaction of .CtxFitsPermissionFork<Ctx, Parent, Children \\.\\.\\.>."
   "satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Bg>.")
+# A body of the fork on threads that keeps a View in a capture: the store
+# check of the fork refuses it.
+fixy_neg_compile_test(neg_permission_fork_threads_body_stores_a_borrow
+  "no matching function for call to .mint_permission_fork<"
+  "StoresNoBorrowOutside")
 # The value of a body of the fork on threads is Sendable.
 fixy_neg_compile_test(neg_permission_fork_body_gives_an_owner_thread_value
   "no matching function for call to .mint_permission_fork<"
