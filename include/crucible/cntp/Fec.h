@@ -251,11 +251,7 @@ template <std::size_t N>
     }
 
     for (auto col : input.indices()) {
-        auto found = pivot_row(input, col);
-        if (found.is_none()) {
-            return false;
-        }
-        auto const pivot = std::move(found).expect("the search found a pivot");
+        CRUCIBLE_LET_ELSE(pivot, pivot_row(input, col), false);
         if (pivot != col) {
             // The type of the two indexes proves that each names a row, so the optimizer removes the check of each
             // get_mut.  The two rows differ, so each has one writer.

@@ -206,17 +206,22 @@ template <typename Brand>
             return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(*permission, hash_key,
                                                                                            std::move(run), body.view());
         });
-        if (written.is_err()) return false;
-        const std::size_t written_bytes = std::move(written).expect("the entry fits its buffer");
-        const ::fixy::View<std::byte const> entry =
-            ::fixy::View<std::byte const>{buf.view()}.window(0, written_bytes).expect("the entry is inside its buffer");
-
-        auto decoded = deserialize_untrusted_federation_entry(entry, FEDERATION_UNIVERSE_CARDINALITY);
-        if (decoded.is_err()) return false;
-        const FederationEntryView view = std::move(decoded).expect("the entry decodes");
-
-        if (!(view.header.key == federation_key<&probe_unary, EmptyR, int>(hash_key))) return false;
-        if (!::fixy::equal(view.payload, body.view())) return false;
+        // The entry is the part of the buffer that the write filled, and it
+        // decodes to the key and the body that the write took.
+        const bool is_round_trip = written.match(
+            [&buf, &hash_key, &body](std::size_t written_bytes) noexcept {
+                const ::fixy::View<std::byte const> entry =
+                    ::fixy::View<std::byte const>{buf.view()}.prefix_up_to(written_bytes);
+                const auto decoded = deserialize_untrusted_federation_entry(entry, FEDERATION_UNIVERSE_CARDINALITY);
+                return decoded.match(
+                    [&hash_key, &body](FederationEntryView const& view) noexcept {
+                        return view.header.key == federation_key<&probe_unary, EmptyR, int>(hash_key)
+                            && ::fixy::equal(view.payload, body.view());
+                    },
+                    [](FederationError) noexcept { return false; });
+            },
+            [](FederationError) noexcept { return false; });
+        if (!is_round_trip) return false;
     }
 
     {
@@ -230,12 +235,16 @@ template <typename Brand>
             return serialize_computation_cache_federation_entry<&probe_unary, BgR, int>(
                 *permission, hash_key, std::move(run), ::fixy::View<std::byte const>{});
         });
-        if (wa.is_err() || wb.is_err()) return false;
-        const std::size_t written_empty = std::move(wa).expect("the entry of the empty row fits");
-        const std::size_t written_bg = std::move(wb).expect("the entry of the Bg row fits");
         // The two entries fill their buffers, so the two buffers differ
         // where the two rows differ.
-        if (written_empty != written_bg) return false;
+        const bool is_same_size = wa.match(
+            [&wb](std::size_t written_empty) noexcept {
+                return wb.match(
+                    [written_empty](std::size_t written_bg) noexcept { return written_empty == written_bg; },
+                    [](FederationError) noexcept { return false; });
+            },
+            [](FederationError) noexcept { return false; });
+        if (!is_same_size) return false;
         if (::fixy::equal(buf_empty.view(), buf_bg.view())) return false;
     }
 
@@ -246,8 +255,10 @@ template <typename Brand>
             return serialize_computation_cache_federation_entry<&probe_unary, EmptyR, int>(
                 *permission, hash_key, std::move(run), Payload::hash_only());
         });
-        if (written.is_err()) return false;
-        if (std::move(written).expect("the hash-only entry fits") != FEDERATION_HEADER_BYTES) return false;
+        const bool is_header_only =
+            written.match([](std::size_t written_bytes) noexcept { return written_bytes == FEDERATION_HEADER_BYTES; },
+                          [](FederationError) noexcept { return false; });
+        if (!is_header_only) return false;
     }
 
     return true;

@@ -350,18 +350,11 @@ namespace detail {
         }
 
         std::size_t const dash = ::fixy::find(entry, '-').value_or(entry.size());
-        ::fixy::Option<std::size_t> first_id = parse_cpu_id(text_prefix(entry, dash));
-        if (first_id.is_none()) {
-            return CpuSet{};
-        }
-        std::size_t const first = std::move(first_id).expect("the test above found an id");
+        CRUCIBLE_LET_ELSE(first, parse_cpu_id(text_prefix(entry, dash)), CpuSet{});
         std::size_t last = first;
         if (dash < entry.size()) {
-            ::fixy::Option<std::size_t> last_id = parse_cpu_id(text_suffix(entry, dash + 1));
-            if (last_id.is_none()) {
-                return CpuSet{};
-            }
-            last = std::move(last_id).expect("the test above found an id");
+            CRUCIBLE_LET_ELSE(last_id, parse_cpu_id(text_suffix(entry, dash + 1)), CpuSet{});
+            last = last_id;
         }
         if (last < first) {
             return CpuSet{};

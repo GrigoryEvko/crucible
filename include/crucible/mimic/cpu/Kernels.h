@@ -283,12 +283,16 @@ struct SumAll final {
         requires IeeeMode<Mode>
     void operator()(::fixy::KernelCall<Brand, Mode> const& /*call*/, ::fixy::StridedViewMut<float, Rank, OutBrand>& out,
                     ::fixy::StridedView<float const, InputRank> input) const noexcept {
-        ::fixy::FixedArray<std::size_t, 2> const column{input.count(), 1};
-        auto runs = input.reshape(column.view());
-        if (runs.is_err() || out.count() != 1) [[unlikely]] {
+        if (out.count() != 1) [[unlikely]] {
             detail::refuse_views_(::fixy::TextView{"sum_all"});
         }
-        ::fixy::StridedView<float const, 2> const one_run = std::move(runs).expect("the check above");
+        ::fixy::FixedArray<std::size_t, 2> const column{input.count(), 1};
+        auto const runs = input.reshape(column.view());
+        ::fixy::StridedView<float const, 2> const one_run =
+            runs.match([](auto const& reshaped) noexcept -> ::fixy::StridedView<float const, 2> { return reshaped; },
+                       [](auto const&) noexcept -> ::fixy::StridedView<float const, 2> {
+                           detail::refuse_views_(::fixy::TextView{"sum_all"});
+                       });
         ::fixy::FixedArray<float, 1> total{};
         ::fixy::FixedArray<std::size_t, 1> const sizes{1};
         ::fixy::FixedArray<std::size_t, 1> const strides{1};

@@ -469,11 +469,15 @@ std::size_t drain_record_stream(H& hist, ConsumerHandle& consumer,
                                 std::size_t max_records) noexcept(noexcept(consumer.try_pop())) {
     std::size_t drained = 0;
     while (drained < max_records) {
-        auto sample = consumer.try_pop();
-        if (sample.is_none()) {
+        bool const is_recorded = consumer.try_pop().match(
+            [&hist](auto sample) noexcept {
+                hist.record(H::checked_value(std::move(sample)));
+                return true;
+            },
+            [] noexcept { return false; });
+        if (!is_recorded) {
             break;
         }
-        hist.record(H::checked_value(std::move(sample).expect("the test above found a sample")));
         ++drained;
     }
     return drained;

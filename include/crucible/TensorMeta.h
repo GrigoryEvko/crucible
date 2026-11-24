@@ -589,11 +589,10 @@ strided_view_of(const TensorMeta& meta, ::fixy::ViewMut<T, Brand, Extent> storag
     CRUCIBLE_TRY(view, strided_view_of(meta, elements));
     // The view above holds each element inside the storage, so the mint
     // refuses only a tensor in which two indexes name one element.
-    ::fixy::Option<::fixy::StridedViewMut<T, ::fixy::dynamic_rank, Brand>> unique = ::fixy::mint_strided_view_mut(
-        std::move(storage), view.sizes(), view.strides(),
-        ::fixy::narrow<std::size_t>(meta.storage_offset).expect("the view above refuses a negative offset"));
-    if (unique.is_none()) return ::fixy::err(TensorViewRefusal::Overlap);
-    return std::move(unique).expect("the test above found the view");
+    return ::fixy::mint_strided_view_mut(
+               std::move(storage), view.sizes(), view.strides(),
+               ::fixy::narrow<std::size_t>(meta.storage_offset).expect("the view above refuses a negative offset"))
+        .ok_or(TensorViewRefusal::Overlap);
 }
 
 }  // namespace crucible

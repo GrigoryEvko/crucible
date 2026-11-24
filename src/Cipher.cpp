@@ -555,36 +555,22 @@ template <class Ctx>
 [[nodiscard]] ::fixy::Result<::fixy::HeapArray<std::byte>, LoadError>
 read_batch_at_(Ctx const& ctx, ::foundation::effects::Alloc allocation, ::fixy::fs::DirectoryHandle const& dir,
                ::fixy::CText path, std::size_t maximum) noexcept {
-    // The rvalue match refuses a result that holds an address, and a
-    // HeapArray holds one.  So the arms give the reason or no reason, and
-    // the bytes leave through the Option.
-    ::fixy::Option<::fixy::HeapArray<std::byte>> read{};
-    const ::fixy::Option<LoadError> refusal =
-        ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir.ref(), path)
-            .match(
-                [&](::fixy::Linear<::fixy::fs::FileOf<::fixy::fs::read_only>> opened) -> ::fixy::Option<LoadError> {
-                    const ::fixy::fs::FileOf<::fixy::fs::read_only> file = std::move(opened).consume();
-                    const std::int64_t size = ::fixy::fs::file_size(ctx, file.ref()).value_or(0);
-                    if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) {
-                        return ::fixy::some(LoadError::file_size);
-                    }
-                    ::fixy::HeapArray<std::byte> bytes =
-                        ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
-                    auto [count_read, filled] = ::fixy::with_mut(std::move(bytes), [&ctx, &file](auto run) noexcept {
-                        return ::fixy::fs::read_full(ctx, file.ref(), std::move(run)).value_or(0);
-                    });
-                    if (count_read != filled.size()) {
-                        return ::fixy::some(LoadError::file_size);
-                    }
-                    read = ::fixy::Option<::fixy::HeapArray<std::byte>>::some(std::move(filled));
-                    return ::fixy::none;
-                },
-                [](::foundation::os::Errno) -> ::fixy::Option<LoadError> {
-                    return ::fixy::some(LoadError::file_open_failed);
-                });
-    for (const LoadError reason : refusal)
-        return ::fixy::err(reason);
-    return std::move(read).expect("a file with no refusal gave its bytes");
+    CRUCIBLE_TRY(opened, ::fixy::fs::mint_file_at<::fixy::fs::read_only>(ctx, dir.ref(), path)
+                             .map_err([](::foundation::os::Errno) noexcept { return LoadError::file_open_failed; }));
+    const ::fixy::fs::FileOf<::fixy::fs::read_only> file = std::move(opened).consume();
+    const std::int64_t size = ::fixy::fs::file_size(ctx, file.ref()).value_or(0);
+    if (size <= 0 || static_cast<std::uint64_t>(size) > maximum) {
+        return ::fixy::err(LoadError::file_size);
+    }
+    ::fixy::HeapArray<std::byte> bytes =
+        ::fixy::mint_heap_array(allocation, static_cast<std::size_t>(size), std::byte{0});
+    auto [count_read, filled] = ::fixy::with_mut(std::move(bytes), [&ctx, &file](auto run) noexcept {
+        return ::fixy::fs::read_full(ctx, file.ref(), std::move(run)).value_or(0);
+    });
+    if (count_read != filled.size()) {
+        return ::fixy::err(LoadError::file_size);
+    }
+    return std::move(filled);
 }
 
 // True when the object leaf in shard_dir is a sound stored image of the region
@@ -765,9 +751,8 @@ struct IndexLine {
 // identity that mint_open_view gives.  The bodies are in this file and are not
 // templates, so no receiver can take the brand of a caller.
 ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddressedRegionPayload payload) {
-    ContentAddressedRegionPayload::Value value = payload.get();
-    if (value.is_none()) return ContentHash{};
-    const RegionNode& region = *std::move(value).expect("the payload holds a region");
+    CRUCIBLE_LET_ELSE(held, payload.get(), ContentHash{});
+    const RegionNode& region = *held;
     const ContentHash hash = region.content_hash;
     if (!hash) return ContentHash{};
 
@@ -1012,11 +997,13 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     // the largest count of a View.
     SessionEventLoad loaded{};
     const EntryPath session_directory = session_entry_(session);
-    auto opened = with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return ::fixy::fs::open_directory_at(ctx, root_directory_.ref(), session_directory.c_text());
-    });
-    if (opened.is_err()) return loaded;
-    const ::fixy::fs::DirectoryHandle session_dir = std::move(opened).expect("the session directory opened");
+    CRUCIBLE_LET_ELSE(session_dir,
+                      with_file_ctx_(file_ctx,
+                                     [&](auto const& ctx) {
+                                         return ::fixy::fs::open_directory_at(ctx, root_directory_.ref(),
+                                                                              session_directory.c_text());
+                                     }),
+                      loaded);
 
     // The index has no bound of its own, so the text takes the largest
     // count of a view.  A failed read leaves the bytes that it read in the
@@ -1099,18 +1086,10 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
         return events;
     };
 
-    for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
-        const LineSplit split = split_line_(rest);
-        rest = split.rest;
-        // A last line with no newline is a torn line, also when it parses.
-        // Its append did not end, and the next append cuts it.
-        if (!split.is_terminated) break;
-        // A line that does not parse names no batch.  The next persist of its
-        // batch appends the line again.
-        ::fixy::Option<IndexLine> parsed = parse_index_line_(split.line);
-        if (parsed.is_none()) continue;
-        const IndexLine index_line = std::move(parsed).expect("the index line parsed");
-        if (index_line.last < from_step.raw()) continue;
+    // Loads the events of the batch of one index line, or reports the reason
+    // that the load skips the batch.
+    const auto load_line = [&](IndexLine const& index_line) noexcept {
+        if (index_line.last < from_step.raw()) return;
         // A writer that stores a batch again appends its line again, and the
         // load holds the events of that batch.  Each other line whose first
         // step the load holds names a batch that overlaps the events of the
@@ -1120,32 +1099,46 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
             && loaded_lines.with_view([&index_line](::fixy::View<IndexLine const> lines) noexcept {
                    return holds_index_line_(lines, index_line);
                });
-        if (is_loaded_again) continue;
+        if (is_loaded_again) return;
 
-        CheckedBatch checked = read_checked_batch(index_line);
-        for (const LoadError reason : checked.err()) {
-            const ::fixy::FixedText<16> hash_digits = hex_digits_(index_line.hash);
-            ::fixy::report(::fixy::Sink::Err,
-                           "[crucible] the Cipher store skips the session-event batch {} of the steps {} to {}: {}\n",
-                           hash_digits.view(), index_line.first, index_line.last, load_error_text(reason));
-            ++loaded.skipped_batches;
-        }
-        if (checked.is_err()) continue;
-        const ::fixy::HeapArray<SessionEvent> events = std::move(checked).expect("the batch passed each check");
+        read_checked_batch(index_line)
+            .match(
+                [&](::fixy::HeapArray<SessionEvent> events) noexcept {
+                    // The steps of the batch are first, first + 1, ..., last,
+                    // and last is at or after from_step.  So the events at
+                    // from_step or after are one suffix of the batch, and it
+                    // is not empty.
+                    const std::uint64_t skipped =
+                        from_step.raw() > index_line.first ? from_step.raw() - index_line.first : std::uint64_t{0};
+                    const ::fixy::View<SessionEvent const> suffix =
+                        events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
+                    for (const SessionEvent& event : suffix) {
+                        loaded.events.append(allocation, event).expect("the list of the events has no maximum");
+                    }
+                    loaded_lines.append(allocation, index_line).expect("the list of the loaded lines has no maximum");
+                    highest_loaded = index_line.last;
+                    have_loaded = true;
+                },
+                [&](LoadError reason) noexcept {
+                    const ::fixy::FixedText<16> hash_digits = hex_digits_(index_line.hash);
+                    ::fixy::report(
+                        ::fixy::Sink::Err,
+                        "[crucible] the Cipher store skips the session-event batch {} of the steps {} to {}: {}\n",
+                        hash_digits.view(), index_line.first, index_line.last, load_error_text(reason));
+                    ++loaded.skipped_batches;
+                });
+    };
 
-        // The steps of the batch are first, first + 1, ..., last, and
-        // last is at or after from_step.  So the events at from_step or
-        // after are one suffix of the batch, and it is not empty.
-        const std::uint64_t skipped =
-            from_step.raw() > index_line.first ? from_step.raw() - index_line.first : std::uint64_t{0};
-        const ::fixy::View<SessionEvent const> suffix =
-            events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
-        for (const SessionEvent& event : suffix) {
-            loaded.events.append(allocation, event).expect("the list of the events has no maximum");
-        }
-        loaded_lines.append(allocation, index_line).expect("the list of the loaded lines has no maximum");
-        highest_loaded = index_line.last;
-        have_loaded = true;
+    for (::fixy::TextView rest = index.view(); rest.size() != 0;) {
+        const LineSplit split = split_line_(rest);
+        rest = split.rest;
+        // A last line with no newline is a torn line, also when it parses.
+        // Its append did not end, and the next append cuts it.
+        if (!split.is_terminated) break;
+        // A line that does not parse names no batch.  The next persist of its
+        // batch appends the line again.
+        for (IndexLine const& index_line : parse_index_line_(split.line))
+            load_line(index_line);
     }
     return loaded;
 }
@@ -1443,6 +1436,25 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "log", text).is_ok();
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
+    // Appends the commit of one line that parsed, or skips a corrupt line.
+    const auto replay_line = [this](LogLine const& line) noexcept {
+        // The log only grows in step order, and its append checks that
+        // order with a contract that aborts.  A line out of order is a
+        // corrupt line, so it is skipped like the others.  A step above the
+        // ceiling is corrupt too: advance_head refuses such a step, and a run
+        // that opens the store starts after the last step.
+        if (line.step > MAX_COMMIT_STEP) return;
+        if (!log_.empty() && line.step < log_.back().step_id().raw()) return;
+        // Each commit takes a larger place than the commit before it, also
+        // after a failed append, so a place that does not grow is a corrupt
+        // line.  The test keeps the count from going back.
+        if (line.order <= commits_.get()) return;
+
+        commits_.advance(line.order);
+        log_.append(SessionEvent::cipher_event(
+            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{line.step},
+            ::fixy::session::StateHash{line.hash}, ::fixy::session::CipherEventOrder{line.order}));
+    };
     for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);
         rest = split.rest;
@@ -1450,25 +1462,8 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         // Its append did not end, so advance_head reported no commit and HEAD
         // did not move.  The next append cuts it.
         if (!split.is_terminated) break;
-        ::fixy::Option<LogLine> parsed = parse_log_line_(split.line);
-        if (parsed.is_none()) continue;
-        const LogLine line = std::move(parsed).expect("the log line parsed");
-        // The log only grows in step order, and its append checks that
-        // order with a contract that aborts.  A line out of order is a
-        // corrupt line, so it is skipped like the others.  A step above the
-        // ceiling is corrupt too: advance_head refuses such a step, and a run
-        // that opens the store starts after the last step.
-        if (line.step > MAX_COMMIT_STEP) continue;
-        if (!log_.empty() && line.step < log_.back().step_id().raw()) continue;
-        // Each commit takes a larger place than the commit before it, also
-        // after a failed append, so a place that does not grow is a corrupt
-        // line.  The test keeps the count from going back.
-        if (line.order <= commits_.get()) continue;
-
-        commits_.advance(line.order);
-        log_.append(SessionEvent::cipher_event(
-            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{line.step},
-            ::fixy::session::StateHash{line.hash}, ::fixy::session::CipherEventOrder{line.order}));
+        for (LogLine const& line : parse_log_line_(split.line))
+            replay_line(line);
     }
 }
 

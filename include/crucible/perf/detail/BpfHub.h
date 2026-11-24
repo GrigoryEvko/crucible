@@ -42,6 +42,14 @@ inline void report_unavailable(::fixy::TextView facade, ::fixy::TextView what, :
     }
 }
 
+// The line of report_unavailable, and then the empty Option of a facade that
+// did not come up, for the early value of CRUCIBLE_LET_ELSE.
+[[nodiscard]] inline ::fixy::NoValue refuse_unavailable(::fixy::TextView facade, ::fixy::TextView what,
+                                                        ::fixy::TextView why) noexcept {
+    report_unavailable(facade, what, why);
+    return ::fixy::none;
+}
+
 // What a facade tells the loader about its BPF object.
 struct LoadSpec {
     // The name in every report line, such as "sched_switch".
@@ -284,12 +292,9 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
 [[nodiscard]] ::fixy::Option<ReadOnlyMapping<Tag>> map_array(Ctx const& ctx, const BpfObject<MaxLinks>& object,
                                                              ::fixy::TextView facade, ForeignName map_name,
                                                              std::size_t bytes) noexcept {
-    ::fixy::Option<Fd> map = object.find_map_fd(map_name.abi);
-    if (map.is_none()) {
-        report_unavailable(facade, map_name.text, "map not found in object (bytecode and header out of sync; rebuild)");
-        return ::fixy::none;
-    }
-    const Fd map_descriptor = std::move(map).expect("the test above found the map");
+    CRUCIBLE_LET_ELSE(map_descriptor, object.find_map_fd(map_name.abi),
+                      refuse_unavailable(facade, map_name.text,
+                                         "map not found in object (bytecode and header out of sync; rebuild)"));
     // The rounding below needs a positive power of two.  The auxiliary
     // vector gives no entry, or the value zero, inside some sandboxes.
     std::size_t const page =
@@ -298,13 +303,9 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
         report_unavailable(facade, "page size", "the auxiliary vector gave no usable page size (hardened sandbox?)");
         return ::fixy::none;
     }
-    ::fixy::Option<std::size_t> rounded = ::fixy::align_up(bytes, page);
-    if (rounded.is_none()) {
-        report_unavailable(facade, map_name.text,
-                           "the bytes of the map, rounded up to whole pages, do not fit in size_t");
-        return ::fixy::none;
-    }
-    const std::size_t length = std::move(rounded).expect("the test above found the rounded length");
+    CRUCIBLE_LET_ELSE(length, ::fixy::align_up(bytes, page),
+                      refuse_unavailable(facade, map_name.text,
+                                         "the bytes of the map, rounded up to whole pages, do not fit in size_t"));
     // The mapping is on the erased identity of its tag, because a facade
     // names the type of its mapping member before the root exists.  So the
     // root is the singleton root of the tag.  The map door only reads it,

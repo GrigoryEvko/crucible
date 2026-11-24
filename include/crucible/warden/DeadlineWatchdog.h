@@ -126,7 +126,8 @@ public:
         requires CtxFitsDeadlineWatchdog<Ctx>
     [[nodiscard]] WatchdogVerdict
     observe_at(Ctx const& /*ctx*/,
-               ::fixy::Result<::fixy::BootClockBytes<uint64_t>, ::foundation::os::Errno> const& now) noexcept {
+               [[maybe_unused]] ::fixy::Result<::fixy::BootClockBytes<uint64_t>, ::foundation::os::Errno> const&
+                   now) noexcept {
         // A budget of zero is the opt-out. A window of zero is also
         // treated as off: every elapsed-time test would pass trivially
         // and the verdict would come from an observation covering
@@ -135,31 +136,32 @@ public:
             return WatchdogVerdict::InsufficientData;
         }
 
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         // A watchdog with no source has no counter.  A source can also
         // lack the counter, on an older kernel or without the capability
         // to load it.  That is an absence of signal, not evidence of
         // health.
-        auto sched = senses_.match(
-            [](::fixy::Box<::crucible::perf::Senses> const& senses) noexcept { return senses->sched_switch(); },
-            []() noexcept { return ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>>{}; });
-        if (sched.is_none()) {
-            return WatchdogVerdict::InsufficientData;
-        }
+        CRUCIBLE_LET_ELSE(
+            sched,
+            senses_.match(
+                [](::fixy::Box<::crucible::perf::Senses> const& senses) noexcept { return senses->sched_switch(); },
+                []() noexcept { return ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>>{}; }),
+            WatchdogVerdict::InsufficientData);
 
         // A failed read gives no reading.  The boot clock never goes
         // back, so a reading before the start of the window is a reading
         // that the caller kept, and it counts as no signal as well.
-        if (now.is_err()) [[unlikely]] {
-            return WatchdogVerdict::InsufficientData;
-        }
-        const uint64_t now_ns =
-            now.match([](::fixy::BootClockBytes<uint64_t> const& reading) noexcept { return reading.peek(); },
-                      [](::foundation::os::Errno const&) noexcept { return uint64_t{0}; });
+        CRUCIBLE_LET_ELSE(now_ns,
+                          now.match(
+                              [](::fixy::BootClockBytes<uint64_t> const& reading) noexcept {
+                                  return ::fixy::Option<uint64_t>::some(reading.peek());
+                              },
+                              [](::foundation::os::Errno const&) noexcept { return ::fixy::Option<uint64_t>{}; }),
+                          WatchdogVerdict::InsufficientData);
         if (now_ns < window_started_ns_) [[unlikely]] {
             return WatchdogVerdict::InsufficientData;
         }
-#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const uint64_t count = std::move(sched).expect("the test above found the counter")->context_switches();
+        const uint64_t count = sched->context_switches();
 
         if (window_started_ns_ == 0) {
             window_started_ns_ = now_ns;

@@ -122,16 +122,14 @@ public:
     recommend_bare([[maybe_unused]] ::foundation::effects::cap::Nondet nondet,
                    ::fixy::concurrent::WorkBudget budget) noexcept {
         const auto decision = ::fixy::concurrent::ParallelismRule::recommend(budget);
-        if (!decision.is_parallel() || senses_.is_none()) return pass_through_(decision);
-        const ::fixy::Ref<const Senses> senses = ProfiledSenses{senses_}.expect("the test above found the Senses");
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+        if (!decision.is_parallel()) return pass_through_(decision);
+        CRUCIBLE_LET_ELSE(senses, ProfiledSenses{senses_}, pass_through_(decision));
 
         // A load that attached only some of its facades still yields a
         // Senses, so the hub can be absent even here.
-        auto hub = senses->sense_hub();
-        if (hub.is_none()) return pass_through_(decision);
-
-#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const auto current = std::move(hub).expect("the test above found the hub")->read(nondet);
+        CRUCIBLE_LET_ELSE(hub, senses->sense_hub(), pass_through_(decision));
+        const auto current = hub->read(nondet);
         if (first_call_) {
             last_ = current;
             first_call_ = false;
