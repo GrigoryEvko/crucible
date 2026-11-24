@@ -480,7 +480,7 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
             const uint64_t t0 = bench::rdtsc_start();
             ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::with_mut(
                 ::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
-                [&meta_log, first_meta](auto run) noexcept { meta_log.copy_run(first_meta.raw(), run.view()); });
+                [&meta_log, first_meta](auto run) noexcept { meta_log.copy_run(first_meta.raw(), std::move(run)); });
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(meta_buffer);

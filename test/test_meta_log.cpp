@@ -9,6 +9,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -76,7 +77,7 @@ static void test_batch_append_and_monotonic() {
 
     // The copy of the two appends is the eight records in their order.
     ::fixy::FixedArray<TensorMeta, 8> copied{};
-    copied.with_mut([&log](auto run) noexcept { log.copy_run(0, run.view()); });
+    copied.with_mut([&log](auto run) noexcept { log.copy_run(0, std::move(run)); });
     for (size_t i = 0; i < 8; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -141,7 +142,7 @@ static void test_copy_run_across_the_end() {
     // The copy joins the three records at the end of the buffer and the two
     // at its start, in the order of the append.
     ::fixy::FixedArray<TensorMeta, 5> copied{};
-    copied.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end, run.view()); });
+    copied.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end, std::move(run)); });
     for (uint32_t i = 0; i < 5; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -151,7 +152,7 @@ static void test_copy_run_across_the_end() {
 
     // A run that does not pass the end is one copy.
     ::fixy::FixedArray<TensorMeta, 2> head2{};
-    head2.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end + 3, run.view()); });
+    head2.with_mut([&log, near_end](auto run) noexcept { log.copy_run(near_end + 3, std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
                                     == tail5.at(::fixy::index<3>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
@@ -186,7 +187,7 @@ static void test_counters_pass_two_to_the_32() {
     // The records keep their order across the boundary, in the copy of the
     // run and in the copy of one record at each index.
     ::fixy::FixedArray<TensorMeta, 32> copied{};
-    copied.with_mut([&log, first](auto cells) noexcept { log.copy_run(first.raw(), cells.view()); });
+    copied.with_mut([&log, first](auto cells) noexcept { log.copy_run(first.raw(), std::move(cells)); });
     for (uint32_t i = 0; i < 32; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -214,8 +215,8 @@ static void test_copy_run_refuses_a_run_longer_than_the_buffer(::fixy::TestRunne
     ::fixy::check::expect_dies(
         test,
         [&log, &destination] noexcept {
-            destination =
-                ::fixy::with_mut(std::move(destination), [&log](auto run) noexcept { log.copy_run(0, run.view()); });
+            destination = ::fixy::with_mut(std::move(destination),
+                                           [&log](auto run) noexcept { log.copy_run(0, std::move(run)); });
         },
         ::fixy::TextView{"foundation: contract violation: dst.size() <= CAPACITY"});
     ::fixy::check::pass(test, "  test_copy_run_refuses_long_run: PASSED\n");

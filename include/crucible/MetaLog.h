@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 #include <crucible/ForegroundCtx.h>
 #include <crucible/TensorMeta.h>
@@ -236,6 +237,33 @@ public:
         // run at the wrong slot, puts a different record at one end.
         CRUCIBLE_POST(0, *dst.get(0).expect("the copy holds its first record") == record_at_(start));
         CRUCIBLE_POST(0, *dst.get(count - 1).expect("the copy holds its last record") == record_at_(start + count - 1));
+    }
+
+    // The same copy into the run of a frame.  The copy takes the ViewMut of
+    // the frame, so it is the one writer of the run.  The form above takes
+    // the plain View of an arena run, which no frame lends.
+    template <class Brand, std::size_t Extent>
+    void copy_run(uint64_t start, ::fixy::ViewMut<TensorMeta, Brand, Extent> dst) const CRUCIBLE_NO_THREAD_SAFETY {
+        CRUCIBLE_PRE(dst.size() <= CAPACITY);
+        if (dst.size() == 0) return;
+        const uint32_t count = static_cast<uint32_t>(dst.size());
+        const uint32_t start_pos = static_cast<uint32_t>(start & MASK);
+        const uint32_t first_chunk = (count <= CAPACITY - start_pos) ? count : CAPACITY - start_pos;
+        dst = ::fixy::reborrow(std::move(dst), [this, start_pos, first_chunk, count](auto lent) noexcept {
+            const ::fixy::View<TensorMeta const> ring = records_.view();
+            auto [front, back] = ::fixy::split_at(std::move(lent), first_chunk).expect("the first part fits the run");
+            ::fixy::copy(std::move(front),
+                         ring.window(start_pos, first_chunk).expect("the records of the copy are slots of the buffer"))
+                .expect("the two windows of the copy hold the same count");
+            ::fixy::copy(std::move(back),
+                         ring.window(0, count - first_chunk).expect("the records of the copy are slots of the buffer"))
+                .expect("the two windows of the copy hold the same count");
+        });
+        // The checks of the form above, through a read of the run.
+        const ::fixy::View<TensorMeta const> copied = dst.view();
+        CRUCIBLE_POST(0, *copied.get(0).expect("the copy holds its first record") == record_at_(start));
+        CRUCIBLE_POST(0,
+                      *copied.get(count - 1).expect("the copy holds its last record") == record_at_(start + count - 1));
     }
 
     // Copies the record at index, with the rule of copy_run.
