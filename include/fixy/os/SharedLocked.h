@@ -88,17 +88,14 @@ public:
     with_write(Ctx const& ctx, Body&& body) noexcept {
         using Given = std::invoke_result_t<Body&&, T&>;
         using Value = spin::locked_value_t<Given>;
-        auto lease = pool_.try_upgrade(ctx);
-        if (lease.is_none()) {
-            return ::foundation::core::Option<Value>{::foundation::core::none};
-        }
+        CRUCIBLE_TRY(lease, pool_.try_upgrade(ctx));
         if constexpr (std::is_void_v<Given>) {
             static_cast<Body&&>(body)(data_);
-            pool_.deposit_exclusive(std::move(lease).expect("the test above found the lease"));
+            pool_.deposit_exclusive(std::move(lease));
             return ::foundation::core::Option<Value>::some(::foundation::core::Unit{});
         } else {
             auto value = ::foundation::core::Option<Value>::some(static_cast<Body&&>(body)(data_));
-            pool_.deposit_exclusive(std::move(lease).expect("the test above found the lease"));
+            pool_.deposit_exclusive(std::move(lease));
             return value;
         }
     }

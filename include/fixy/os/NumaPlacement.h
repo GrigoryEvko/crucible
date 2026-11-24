@@ -384,11 +384,10 @@ mint_numa_placement(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, P
     // into the proof.  A node that is not concrete and a region with no
     // mapping give einval, and the mint makes no system call.
     ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
-    Option<NumaNodeMask> one_node = make_numa_node_mask(node);
-    if (one_node.is_none() || !owned.is_mapped()) {
+    CRUCIBLE_TRY(nodes, make_numa_node_mask(node).ok_or(::foundation::os::Errno::einval));
+    if (!owned.is_mapped()) {
         return ::foundation::core::err(::foundation::os::Errno::einval);
     }
-    NumaNodeMask const nodes = std::move(one_node).expect("the test above found a concrete node");
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const bound =
         ::fixy::detail::mbind_sys(owned.data(), owned.size(), NumaPolicy::bind, nodes);
     for (::foundation::os::Errno const error : bound.err()) {

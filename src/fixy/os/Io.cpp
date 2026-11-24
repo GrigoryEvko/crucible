@@ -101,12 +101,9 @@ core::Result<detail::RingParts, os::Errno> detail::set_up_ring_(std::uint32_t sq
         params.cq_entries = cq_entries;
         params.flags |= IORING_SETUP_CQSIZE;
     }
-    auto made =
-        os::result_of(os::raw_syscall(os::Syscall::io_uring_setup, sq_entries, static_cast<void const*>(&params)));
-    if (made.is_err()) {
-        return core::err(made.err().expect("the setup of the ring gave an error"));
-    }
-    int const descriptor = static_cast<int>(std::move(made).expect("the setup of the ring gave its descriptor"));
+    CRUCIBLE_TRY(made, os::result_of(os::raw_syscall(os::Syscall::io_uring_setup, sq_entries,
+                                                     static_cast<void const*>(&params))));
+    int const descriptor = static_cast<int>(made);
 
     std::size_t const sq_ring_bytes = static_cast<std::size_t>(params.sq_off.array)
                                     + static_cast<std::size_t>(params.sq_entries) * sizeof(std::uint32_t);
@@ -114,12 +111,14 @@ core::Result<detail::RingParts, os::Errno> detail::set_up_ring_(std::uint32_t sq
                                     + static_cast<std::size_t>(params.cq_entries) * sizeof(::io_uring_cqe);
     std::size_t const sqes_bytes = static_cast<std::size_t>(params.sq_entries) * sizeof(::io_uring_sqe);
 
-    auto sq_ring = map_part(descriptor, sq_ring_bytes, IORING_OFF_SQ_RING);
-    if (sq_ring.is_err()) {
-        close_ring(descriptor);
-        return core::err(sq_ring.err().expect("the map of the submission ring gave an error"));
-    }
-    void* const sq_address = std::move(sq_ring).expect("the map of the submission ring gave its address");
+    // A failed map closes each part that the setup made before it, and then
+    // the error goes up.
+    CRUCIBLE_TRY(
+        sq_address,
+        map_part(descriptor, sq_ring_bytes, IORING_OFF_SQ_RING).map_err([descriptor](os::Errno error) noexcept {
+            close_ring(descriptor);
+            return error;
+        }));
 
     // Linux 5.4 and later hand back one allocation that both rings live in,
     // and aliasing them is the documented contract.  A zero size tells the
@@ -127,26 +126,26 @@ core::Result<detail::RingParts, os::Errno> detail::set_up_ring_(std::uint32_t sq
     void* cq_address = sq_address;
     std::size_t cq_bytes_to_unmap = 0;
     if ((params.features & IORING_FEAT_SINGLE_MMAP) == 0) {
-        auto cq_ring = map_part(descriptor, cq_ring_bytes, IORING_OFF_CQ_RING);
-        if (cq_ring.is_err()) {
-            unmap_part(sq_address, sq_ring_bytes);
-            close_ring(descriptor);
-            return core::err(cq_ring.err().expect("the map of the completion ring gave an error"));
-        }
-        cq_address = std::move(cq_ring).expect("the map of the completion ring gave its address");
+        CRUCIBLE_TRY(cq_mapped, map_part(descriptor, cq_ring_bytes, IORING_OFF_CQ_RING)
+                                    .map_err([descriptor, sq_address, sq_ring_bytes](os::Errno error) noexcept {
+                                        unmap_part(sq_address, sq_ring_bytes);
+                                        close_ring(descriptor);
+                                        return error;
+                                    }));
+        cq_address = cq_mapped;
         cq_bytes_to_unmap = cq_ring_bytes;
     }
 
-    auto sqes = map_part(descriptor, sqes_bytes, IORING_OFF_SQES);
-    if (sqes.is_err()) {
-        if (cq_bytes_to_unmap != 0) {
-            unmap_part(cq_address, cq_bytes_to_unmap);
-        }
-        unmap_part(sq_address, sq_ring_bytes);
-        close_ring(descriptor);
-        return core::err(sqes.err().expect("the map of the submission entries gave an error"));
-    }
-    void* const sqes_address = std::move(sqes).expect("the map of the submission entries gave its address");
+    CRUCIBLE_TRY(sqes_address, map_part(descriptor, sqes_bytes, IORING_OFF_SQES)
+                                   .map_err([descriptor, sq_address, sq_ring_bytes, cq_address,
+                                             cq_bytes_to_unmap](os::Errno error) noexcept {
+                                       if (cq_bytes_to_unmap != 0) {
+                                           unmap_part(cq_address, cq_bytes_to_unmap);
+                                       }
+                                       unmap_part(sq_address, sq_ring_bytes);
+                                       close_ring(descriptor);
+                                       return error;
+                                   }));
 
     return RingParts{.descriptor = descriptor,
                      .sq_ring = sq_address,

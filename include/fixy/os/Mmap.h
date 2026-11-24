@@ -246,15 +246,13 @@ inline constexpr bool file_region_mint_admits_v<Ctx, Prot, Share, Held, region_m
     CtxFitsFileRegionMint<Ctx, Prot, Share, Held, Modifiers...>;
 
 // The Linear of the region of a map, or the error of the map.  The region
-// holds an address, so the step is a test of the error and not a match,
-// which gives no result that holds an address.
+// holds an address, so the step takes it through CRUCIBLE_TRY and not a
+// match, which gives no result that holds an address.
 template <typename Region>
 [[nodiscard]] ::foundation::core::Result<Linear<Region>, ::foundation::os::Errno>
 linear_region_(::foundation::core::Result<Region, ::foundation::os::Errno> mapped) noexcept {
-    for (::foundation::os::Errno const error : mapped.err()) {
-        return ::foundation::core::err(error);
-    }
-    return mint_linear<Region>(std::move(mapped).expect("the map door gave a region"));
+    CRUCIBLE_TRY(region, std::move(mapped));
+    return mint_linear<Region>(std::move(region));
 }
 
 template <typename A>

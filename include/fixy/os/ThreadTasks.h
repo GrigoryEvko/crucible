@@ -669,10 +669,9 @@ run_joined_(Ctx const& ctx, ThreadOptions const& options, std::index_sequence<Is
         thread_task{::foundation::core::mint_erased_address(joined[Is]), &run_joined_body_<Ctx, Bodies>}...};
     using Values = joined_values_t<Ctx, Bodies...>;
     using Joined = ::foundation::core::Result<Values, start_error_t<Bodies...>>;
-    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
+    ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const started =
         run_thread_tasks(::foundation::core::detail::view_of_array_(tasks), options);
-    if (started.is_err()) {
-        ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
+    for (::foundation::os::Errno const error : started.err()) {
         // No thread ran, so each slot still holds its body (the errors).
         if constexpr (holds_linear_part_<Bodies...>) {
             return Joined{::foundation::core::err(

@@ -451,12 +451,8 @@ class IoRingDoor final : ::foundation::NoObject<IoRingDoor> {
     // ring that owns the parts that the kernel gave, or the error.
     [[nodiscard]] static ::foundation::core::Result<Linear<IoUringRing>, ::foundation::os::Errno>
     set_up_(std::uint32_t sq_entries, std::uint32_t cq_entries, std::uint32_t flags) noexcept {
-        ::foundation::core::Result<detail::RingParts, ::foundation::os::Errno> parts =
-            detail::set_up_ring_(sq_entries, cq_entries, flags);
-        for (::foundation::os::Errno const error : parts.err()) {
-            return ::foundation::core::err(error);
-        }
-        return mint_linear<IoUringRing>(IoUringRing{std::move(parts).expect("the setup door gave the parts")});
+        CRUCIBLE_TRY(parts, detail::set_up_ring_(sq_entries, cq_entries, flags));
+        return mint_linear<IoUringRing>(IoUringRing{parts});
     }
 };
 

@@ -187,14 +187,10 @@ public:
                     return LineResult{::foundation::core::err(LineError{LineTooLong{}})};
                 }
             }
-            ::foundation::core::Result<std::size_t, ::foundation::os::Errno> read =
-                step(::foundation::core::detail::view_of_array_(bytes_)
-                         .window(last_, buffer_bytes - last_)
-                         .expect("the read buffer holds its last position"));
-            for (::foundation::os::Errno const error : read.err()) {
-                return LineResult{::foundation::core::err(LineError{error})};
-            }
-            std::size_t const count = std::move(read).expect("a read with no error gives a count");
+            CRUCIBLE_TRY(count, step(::foundation::core::detail::view_of_array_(bytes_)
+                                         .window(last_, buffer_bytes - last_)
+                                         .expect("the read buffer holds its last position"))
+                                    .map_err([](::foundation::os::Errno error) noexcept { return LineError{error}; }));
             if (count == 0) {
                 input_ = Input::ended;
             } else {

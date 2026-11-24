@@ -235,53 +235,46 @@ void fail_run(TraceRun& run, os::Errno error) noexcept {
 
 core::Result<ChildReport, os::Errno> collect_child_(ChildParts parts) noexcept {
     OutputRing ring{};
-    core::Option<os::Errno> read_error = read_output_to_end(parts.error_output, ring);
-    if (read_error.is_some()) {
+    core::Option<os::Errno> const read_error = read_output_to_end(parts.error_output, ring);
+    for (os::Errno const error : read_error) {
         // A read error closes the descriptor first, so a child that still
         // writes ends, and the wait cannot block.
         os::detail::close_child_output_(parts.error_output);
         static_cast<void>(os::detail::wait_child_(parts.child));
-        return core::err(std::move(read_error).value_or(os::Errno::eio));
+        return core::err(error);
     }
     os::detail::close_child_output_(parts.error_output);
-    core::Result<os::ChildEnd, os::Errno> waited = os::detail::wait_child_(parts.child);
-    if (waited.is_err()) {
-        return core::err(waited.err().expect("the wait error is present"));
-    }
-    return make_report(ring, std::move(waited).value_or(os::ChildEnd{}), WaitEnd::by_child);
+    CRUCIBLE_TRY(ended, os::detail::wait_child_(parts.child));
+    return make_report(ring, ended, WaitEnd::by_child);
 }
 
 core::Result<ChildReport, os::Errno> collect_child_within_(ChildParts parts, WaitLimit limit) noexcept {
-    core::Result<std::uint64_t, os::Errno> deadline = deadline_after(limit);
-    core::Result<os::detail::ChildEvent, os::Errno> event =
-        deadline.is_err()
-            ? core::Result<os::detail::ChildEvent, os::Errno>{core::err(deadline.err().value_or(os::Errno::eio))}
-            : wait_until(parts.child, std::move(deadline).value_or(0));
-    if (event.is_err()) {
+    // A failed read of the clock or a failed wait ends the child and closes
+    // its output, and then the error goes up.
+    auto const refuse = [&parts](os::Errno error) noexcept {
         static_cast<void>(end_child(parts.child));
         os::detail::close_child_output_(parts.error_output);
-        return core::err(event.err().value_or(os::Errno::eio));
-    }
-    os::detail::ChildEvent const seen = std::move(event).value_or(os::detail::ChildEvent{});
+        return error;
+    };
+    CRUCIBLE_TRY(deadline, deadline_after(limit).map_err(refuse));
+    CRUCIBLE_TRY(seen, wait_until(parts.child, deadline).map_err(refuse));
     os::ChildEnd end = seen.end;
     WaitEnd wait_end = WaitEnd::by_child;
     if (seen.change != os::detail::ChildChange::ended) {
         // The limit passed.  A child with no tracer never stops, so each
         // change other than its end is the deadline.
-        core::Result<os::ChildEnd, os::Errno> ended = end_child(parts.child);
-        if (ended.is_err()) {
+        CRUCIBLE_TRY(ended, end_child(parts.child).map_err([&parts](os::Errno error) noexcept {
             os::detail::close_child_output_(parts.error_output);
-            return core::err(ended.err().value_or(os::Errno::eio));
-        }
-        end = std::move(ended).value_or(os::ChildEnd{});
+            return error;
+        }));
+        end = ended;
         wait_end = WaitEnd::at_limit;
     }
     OutputRing ring{};
-    core::Option<os::Errno> read_error = read_output_to_end(parts.error_output, ring);
+    core::Option<os::Errno> const read_error = read_output_to_end(parts.error_output, ring);
     os::detail::close_child_output_(parts.error_output);
-    if (read_error.is_some()) {
-        return core::err(std::move(read_error).value_or(os::Errno::eio));
-    }
+    for (os::Errno const error : read_error)
+        return core::err(error);
     return make_report(ring, end, wait_end);
 }
 

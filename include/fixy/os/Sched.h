@@ -291,12 +291,8 @@ template <AffinityMask Mask, PinningPosture Posture, eff::IsExecCtx Ctx>
     requires ::fixy::CtxFitsAffinityMint<Ctx, Posture>
 [[nodiscard]] ::foundation::core::Result<sf::CpuPinned<Mask, Posture, sf::PinProofUnit>, ::foundation::os::Errno>
 mint_affinity(Ctx const&) noexcept {
-    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> pin_event =
-        sf::detail::sched_setaffinity_sys(Mask);
-    for (::foundation::os::Errno const error : pin_event.err()) {
-        return ::foundation::core::err(error);
-    }
-    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, std::move(pin_event).expect("the pin succeeded above")};
+    CRUCIBLE_TRY(pin_event, sf::detail::sched_setaffinity_sys(Mask));
+    return sf::CpuPinned<Mask, Posture, sf::PinProofUnit>{0, pin_event};
 }
 
 // The proof of a policy.  The proof holds the real-time priority as its
@@ -621,16 +617,9 @@ template <eff::IsExecCtx Ctx>
 [[nodiscard]] auto apply_affinity_to_mask(Ctx const&, AffinityMask mask) noexcept
     -> ::foundation::core::Result<PriorAffinity, ::foundation::os::Errno> {
     if (mask == AffinityMask{}) return PriorAffinityDoor::none_();
-    ::foundation::core::Result<AffinityMask, ::foundation::os::Errno> prior = sf::detail::sched_getaffinity_sys();
-    for (::foundation::os::Errno const error : prior.err()) {
-        return ::foundation::core::err(error);
-    }
-    ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> const pin_event =
-        sf::detail::sched_setaffinity_sys(mask);
-    for (::foundation::os::Errno const error : pin_event.err()) {
-        return ::foundation::core::err(error);
-    }
-    return PriorAffinityDoor::held_(std::move(prior).expect("the read of the prior mask succeeded above"));
+    CRUCIBLE_TRY(prior, sf::detail::sched_getaffinity_sys());
+    CRUCIBLE_TRY(_, sf::detail::sched_setaffinity_sys(mask));
+    return PriorAffinityDoor::held_(prior);
 }
 
 // A pin to one CPU, through apply_affinity_to_mask.  A negative index asks
