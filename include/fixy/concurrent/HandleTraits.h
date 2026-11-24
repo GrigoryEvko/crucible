@@ -422,14 +422,42 @@ template <class Body, class Scope, class... Handles>
 concept HandleFrameLeaves = HandleFrameBody<Body, Handles...>
                          && ::foundation::core::FrameResult<std::invoke_result_t<Body&&, Handles...>, Scope>;
 
-// A body of a frame door that lends its end, such as the producer door of a
-// merge channel.  The lend fails while the root of the end is out of the
-// pool, and then the door calls no body and ends it at end_unrun_body of
-// foundation/Linear.h.  So the body holds no linear value, or each linear value
-// that it holds states its own end.
+// A body that a door can end with no call: it holds no linear value, or each
+// linear value that it holds states its own end (end_unrun_body of
+// foundation/Linear.h).
 template <class Body>
 concept HandleLendFrameBody =
     ::foundation::linear::HoldsNoLinearValue<Body> || ::foundation::linear::UnrunBody<std::remove_cvref_t<Body>>;
+
+// True when a lend door gives the body back on a refused lend (the lends): the
+// body holds a linear value and no borrow, so a Result can hold it and the
+// caller can keep it.
+template <class Body>
+concept LendGivesBodyBack =
+    !::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::HoldsNoBorrow<std::remove_cvref_t<Body>>;
+
+// A body of a lend door, such as the producer door of a merge channel (the
+// lends).  The lend fails while the root of the end is out of the pool, and
+// then the door calls no body.  A body that holds a linear value and no
+// borrow comes back to the caller (LendGivesBodyBack).  Each other body ends
+// in the door (HandleLendFrameBody): a body that holds no linear value, or a
+// borrowing body whose linear values each state their own end and end
+// through their own drop door.  A value that owes a consume, such as a live
+// fixy::Linear, states no end of its own (owes_consume of
+// foundation/Linear.h), so no such value ends in the door, and a borrowing
+// body that holds one does not compile.
+template <class Body>
+concept LendDoorBody = LendGivesBodyBack<Body> || HandleLendFrameBody<Body>;
+
+// The refusal of a lend door to a body that it gives back (LendGivesBodyBack):
+// the body, which no door called, so no door drops a linear value in silence.
+// The caller calls the body at a later lend, or ends it through end_unrun_body
+// of foundation/Linear.h with a reason.  A body need not have a default
+// state, so the door gives the member its value.
+template <class Body>
+struct RefusedLend {
+    Body body;
+};
 
 // A frame handle of the end of a role of a channel: the handle that a frame
 // door of the channel gives on the scope brand that the handle names.  A
@@ -460,9 +488,9 @@ namespace detail {
 template <class Given>
 using handle_frame_value_t = std::conditional_t<std::is_void_v<Given>, ::foundation::core::Unit, Given>;
 
-// The end of the body of a lend door that lent no end (HandleLendFrameBody).
-// A body that holds a linear value ends at end_unrun_body, so each such
-// value ends at its own end.  Each other body ends with no work.
+// The end of a body that no door called (HandleLendFrameBody).  A body that
+// holds a linear value ends at end_unrun_body, so each such value ends at its
+// own end.  Each other body ends with no work.
 template <class Body>
     requires HandleLendFrameBody<Body>
 constexpr void end_unlent_body_(Body&& body) noexcept {
@@ -471,6 +499,47 @@ constexpr void end_unlent_body_(Body&& body) noexcept {
                                              ::foundation::linear::UnrunReason::lend_refused);
     } else {
         static_cast<void>(body);
+    }
+}
+
+// The result of a lend door (LendDoorBody).  For a body that the door gives
+// back (LendGivesBodyBack), a Result whose error is a RefusedLend with the
+// body.  For each other body, an Option of the value of the body, which is
+// none when the door lent no end.  A Result refuses an error that holds a
+// borrow, so the choice is a specialization, not a conditional of the two
+// types, and the Result names only a body that holds no borrow.
+template <bool GivesBodyBack, class Body, class Value>
+struct lend_result_ {
+    using type = ::foundation::core::Option<Value>;
+};
+
+template <class Body, class Value>
+struct lend_result_<true, Body, Value> {
+    using type = ::foundation::core::Result<Value, RefusedLend<std::remove_cvref_t<Body>>>;
+};
+
+template <class Body, class Given>
+using lend_result_t = typename lend_result_<LendGivesBodyBack<Body>, Body, handle_frame_value_t<Given>>::type;
+
+// The result of a lend door that lent no end: the body back, or none after
+// the end of the body in the door (end_unlent_body_).
+template <class Body, class Given>
+[[nodiscard]] constexpr lend_result_t<Body, Given> refuse_lend_(Body&& body) noexcept {
+    if constexpr (LendGivesBodyBack<Body>) {
+        return ::foundation::core::err(RefusedLend<std::remove_cvref_t<Body>>{static_cast<Body&&>(body)});
+    } else {
+        end_unlent_body_(static_cast<Body&&>(body));
+        return ::foundation::core::none;
+    }
+}
+
+// The result of a lend door that called the body: the value of the body.
+template <class Body, class Given, class Value>
+[[nodiscard]] constexpr lend_result_t<Body, Given> lent_value_(Value&& value) noexcept {
+    if constexpr (LendGivesBodyBack<Body>) {
+        return lend_result_t<Body, Given>{static_cast<Value&&>(value)};
+    } else {
+        return ::foundation::core::Option<handle_frame_value_t<Given>>::some(static_cast<Value&&>(value));
     }
 }
 

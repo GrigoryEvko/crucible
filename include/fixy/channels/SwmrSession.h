@@ -145,17 +145,21 @@ auto with_writer(Swmr& session,
                  Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::writer_handle_of_t<Swmr, Scope>>;
 
 // The reader door (frame doors).  It lends a share of the reader pool, and it
-// gives no value while the reader root is out of the pool.  The context fits
-// the lend of the pool (PoolCtx), so it holds Nondet.
+// gives no value while the reader root is out of the pool.  Then a body that
+// holds a linear value and no borrow comes back in the error of the result,
+// and each other body ends in the door: a borrowing body ends each linear
+// value through its own drop door.  That end is sound, because no value that
+// owes a consume can end there (LendDoorBody of fixy/concurrent/HandleTraits.h).
+// The context fits the lend of the pool (PoolCtx), so it holds Nondet.
 template <class... Refused, class Ctx, class Swmr, class Body,
           ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0)
          && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
          && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
-         && ::fixy::concurrent::HandleLendFrameBody<Body>
+         && ::fixy::concurrent::LendDoorBody<Body>
 [[nodiscard]] auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
-    -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
-        std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>>;
+    -> ::fixy::concurrent::detail::lend_result_t<Body,
+                                                 std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>;
 
 // A body that the caller names binds to these overloads, so the refusal
 // gives its reason.
@@ -202,10 +206,10 @@ class SwmrFrameKey final {
         requires(sizeof...(Refused) == 0)
              && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
              && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
-             && ::fixy::concurrent::HandleLendFrameBody<Body>
+             && ::fixy::concurrent::LendDoorBody<Body>
     friend auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
-        -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
-            std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>>;
+        -> ::fixy::concurrent::detail::lend_result_t<
+            Body, std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>;
 
 public:
     SwmrFrameKey(SwmrFrameKey const&) = delete("a key of the frame doors lives in the frame of one door call");
@@ -552,29 +556,26 @@ template <class... Refused, class Ctx, class Swmr, class Body, ::foundation::bra
     requires(sizeof...(Refused) == 0)
          && SwmrSessionSurface<Swmr> && ::foundation::permissions::PoolCtx<typename Swmr::reader_tag, Ctx>
          && ::fixy::concurrent::HandleFrameLeaves<Body, Scope, detail::reader_handle_of_t<Swmr, Scope>>
-         && ::fixy::concurrent::HandleLendFrameBody<Body>
-auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
-    -> ::fixy::Option<::fixy::concurrent::detail::handle_frame_value_t<
-        std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>>> {
+         && ::fixy::concurrent::LendDoorBody<Body>
+auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept -> ::fixy::concurrent::detail::lend_result_t<
+    Body, std::invoke_result_t<Body&&, detail::reader_handle_of_t<Swmr, Scope>>> {
     using handle_type = detail::reader_handle_of_t<Swmr, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
-    using value_type = ::fixy::concurrent::detail::handle_frame_value_t<result_type>;
     SwmrFrameKey const key{};
     // The frame keeps the test and the expect of the lent end.  The refusal
     // ends the body and returns, and the body moves again below, and the rule
     // use-after-move reads no return in CRUCIBLE_LET_ELSE.
     auto lent = session.reader(key, ctx);
     if (lent.is_none()) {
-        ::fixy::concurrent::detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::fixy::none;
+        return ::fixy::concurrent::detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
     }
     handle_type handle =
         SwmrFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent reader end"));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
-        return ::fixy::Option<value_type>::some(::foundation::core::Unit{});
+        return ::fixy::concurrent::detail::lent_value_<Body, result_type>(::foundation::core::Unit{});
     } else {
-        return ::fixy::Option<value_type>::some(
+        return ::fixy::concurrent::detail::lent_value_<Body, result_type>(
             ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
     }
 }

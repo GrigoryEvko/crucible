@@ -1483,6 +1483,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::SpscEnd,
      "an end of an SPSC owner: the Ref of the owner and the state of one side, a member of its split and never a "
      "kernel signature argument"},
+    {^^::fixy::concurrent::RefusedLend,
+     "the refusal of a lend door: the body that no door called, the error of the result of a call and never a "
+     "kernel signature argument"},
     {^^::fixy::concurrent::SpscSplitBrand,
      "the brand of the Ref of an end: an empty class that is never a value, and the end folds it"},
     {^^::fixy::concurrent::SpscSplit,

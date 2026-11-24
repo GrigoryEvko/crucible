@@ -405,8 +405,9 @@ enum class UnrunReason : std::uint8_t {
     // A test of a refused start ends the body that came back.
     refusal_test,
     // A frame door could not lend the end that the body takes, such as the
-    // producer end of a merge channel while its root is out of the pool, so
-    // the door ends the body that it did not call.
+    // producer end of a merge channel while its root is out of the pool, and
+    // the caller gives up the body that came back, or a door ends a body that
+    // holds no linear value.
     lend_refused,
 };
 

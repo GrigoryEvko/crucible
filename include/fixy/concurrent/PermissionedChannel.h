@@ -417,24 +417,30 @@ auto with_producer(
     Body&& body) noexcept -> std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>;
 
 // The producer door of a merge (frame doors).  It lends a share of the pool,
-// and it gives no value while the producer root is out of the pool.
+// and it gives no value while the producer root is out of the pool.  Then a
+// body that holds a linear value and no borrow comes back in the error of the
+// result (lend_result_t), and each other body ends in the door: a borrowing
+// body ends each linear value through its own drop door.  That end is sound,
+// because no value that owes a consume can end there (LendDoorBody).
 template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
-         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
 [[nodiscard]] auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
-    -> ::foundation::core::Option<
-        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+    -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>;
 
 // The producer door of a lanes channel (frame doors).  It lends a share of
 // the pool for the producer of the lane, and it gives no value while the
-// producer root is out of the pool.
+// producer root is out of the pool.  Then a body that holds a linear value and
+// no borrow comes back in the error of the result (lend_result_t), and each
+// other body ends in the door: a borrowing body ends each linear value through
+// its own drop door.  That end is sound, because no value that owes a consume
+// can end there (LendDoorBody).
 template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
-         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
 [[nodiscard]] auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet,
                                  typename Channel::lane_index lane, Body&& body) noexcept
-    -> ::foundation::core::Option<
-        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+    -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>;
 
 // The consumer door of each form (frame doors).  The consumer token opens the
 // end, and the body gets its handle.
@@ -539,20 +545,16 @@ class ChannelFrameKey final {
 
     template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
         requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
-             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
-             && HandleLendFrameBody<Body>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
     friend auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
-        -> ::foundation::core::Option<
-            detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+        -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>;
 
     template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
         requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
-             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>>
-             && HandleLendFrameBody<Body>
+             && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
     friend auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet,
                               typename Channel::lane_index lane, Body&& body) noexcept
-        -> ::foundation::core::Option<
-            detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>>;
+        -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>;
 
     template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
         requires(sizeof...(Refused) == 0)
@@ -1730,58 +1732,52 @@ auto with_producer(
 
 template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
     requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::merge>
-         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
 auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) noexcept
-    -> ::foundation::core::Option<
-        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>> {
+    -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>> {
     using handle_type = detail::producer_handle_of_t<Channel, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
-    using value_type = detail::handle_frame_value_t<result_type>;
     ChannelFrameKey const key{};
     // The frame keeps the test and the expect of the lent end.  The refusal
     // ends the body and returns, and the body moves again below, and the rule
     // use-after-move reads no return in CRUCIBLE_LET_ELSE.
     auto lent = channel.producer(key, nondet);
     if (lent.is_none()) {
-        detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::foundation::core::none;
+        return detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
     }
     handle_type handle =
         ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
-        return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});
+        return detail::lent_value_<Body, result_type>(::foundation::core::Unit{});
     } else {
-        return ::foundation::core::Option<value_type>::some(
+        return detail::lent_value_<Body, result_type>(
             ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
     }
 }
 
 template <class... Refused, class Channel, class Body, ::foundation::brand::IsBrand Scope>
     requires(sizeof...(Refused) == 0) && ChannelOfForm<Channel, ChannelForm::lanes>
-         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && HandleLendFrameBody<Body>
+         && HandleFrameLeaves<Body, Scope, detail::producer_handle_of_t<Channel, Scope>> && LendDoorBody<Body>
 auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, typename Channel::lane_index lane,
                    Body&& body) noexcept
-    -> ::foundation::core::Option<
-        detail::handle_frame_value_t<std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>>> {
+    -> detail::lend_result_t<Body, std::invoke_result_t<Body&&, detail::producer_handle_of_t<Channel, Scope>>> {
     using handle_type = detail::producer_handle_of_t<Channel, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
-    using value_type = detail::handle_frame_value_t<result_type>;
     ChannelFrameKey const key{};
     // The frame keeps the test and the expect of the lent end, for the reason
     // of the frame above.
     auto lent = channel.producer(key, nondet, lane);
     if (lent.is_none()) {
-        detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::foundation::core::none;
+        return detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
     }
     handle_type handle =
         ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
-        return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});
+        return detail::lent_value_<Body, result_type>(::foundation::core::Unit{});
     } else {
-        return ::foundation::core::Option<value_type>::some(
+        return detail::lent_value_<Body, result_type>(
             ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle)));
     }
 }

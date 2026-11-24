@@ -245,6 +245,12 @@ fixy_neg_compile_test(neg_qtt_unrun_body_holds_a_live_linear
   "use of deleted function"
   "the door ends a body only when each linear value that the body holds states its own end")
 
+# A lend door ends a borrowing body in its frame on a refused lend, so it
+# refuses a borrowing body that holds a Linear, which owes a consume.
+fixy_neg_compile_test(neg_channel_lend_borrowing_body_holds_a_live_linear
+  "no matching function for call to"
+  "LendDoorBody")
+
 # consume is rvalue-qualified and non-const; a const borrow cannot call it.
 fixy_neg_compile_test(neg_qtt_consume_through_const_ref
   "discards qualifiers"

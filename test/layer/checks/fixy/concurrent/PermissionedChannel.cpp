@@ -245,10 +245,13 @@ static_assert(DrainsWith<Lanes, PlainDrop> && !DrainsWith<Lanes, LinearDrop>);
 static_assert(AccessesWith<Wire, PlainAccess> && !AccessesWith<Wire, LinearAccess>);
 static_assert(DrainsRingWith<Lanes::ring_type, PlainDrop> && !DrainsRingWith<Lanes::ring_type, LinearDrop>);
 
-// A lend door ends a body that it did not call at end_unrun_body of
-// foundation/Linear.h, so the body holds no linear value, or each linear
+// A door can end a body that it did not call at end_unrun_body of
+// foundation/Linear.h when the body holds no linear value, or each linear
 // value that it holds states its own end.  A Permission states its own end,
-// and an Option of a Permission does not.
+// and an Option of a Permission does not.  A lend door gives a body that
+// holds a linear value and no borrow back in the error of its result, and it
+// ends each other body.  So it takes a body with an Option of a Permission
+// and no borrow, and it refuses a borrowing body that holds one.
 struct LendBodyWithToken {
     ::foundation::permissions::Permission<Wire::producer_tag, WitnessBrand> held;
     void operator()(auto /*producer*/) && noexcept {}
@@ -257,13 +260,23 @@ struct LendBodyWithOptionalToken {
     ::foundation::core::Option<::foundation::permissions::Permission<Wire::producer_tag, WitnessBrand>> held;
     void operator()(auto /*producer*/) && noexcept {}
 };
+struct BorrowingLendBodyWithOptionalToken {
+    ::foundation::core::Option<::foundation::permissions::Permission<Wire::producer_tag, WitnessBrand>> held;
+    int& seen;
+    void operator()(auto /*producer*/) && noexcept {}
+};
 template <class Channel, class Body>
 concept LendsProducerWith = requires(Channel& channel, ::foundation::effects::cap::Nondet nondet, Body&& body) {
     with_producer(channel, nondet, std::move(body));
 };
 static_assert(HandleLendFrameBody<PlainDrop> && HandleLendFrameBody<LendBodyWithToken>);
 static_assert(!HandleLendFrameBody<LendBodyWithOptionalToken>);
-static_assert(LendsProducerWith<Merge, LendBodyWithToken> && !LendsProducerWith<Merge, LendBodyWithOptionalToken>);
+static_assert(LendsProducerWith<Merge, LendBodyWithToken> && LendsProducerWith<Merge, LendBodyWithOptionalToken>
+              && !LendsProducerWith<Merge, BorrowingLendBodyWithOptionalToken>);
+static_assert(
+    std::same_as<detail::lend_result_t<LendBodyWithOptionalToken, void>,
+                 ::foundation::core::Result<::foundation::core::Unit, RefusedLend<LendBodyWithOptionalToken>>>);
+static_assert(std::same_as<detail::lend_result_t<PlainDrop, int>, ::foundation::core::Option<int>>);
 
 static_assert(ClaimsDrainWithNoRoot<Wire> && !ClaimsDrainWithNoRoot<Merge> && !ClaimsDrainWithNoRoot<Lanes>);
 static_assert(!ClaimsDrainWithRoot<Wire> && ClaimsDrainWithRoot<Merge> && ClaimsDrainWithRoot<Lanes>);

@@ -11,6 +11,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/permissions/Permission.h>
@@ -265,6 +266,94 @@ void root_doors(::fixy::TestRunnerCtx const& test) noexcept {
     });
 }
 
+// A linear value that a body holds by value.
+class[[= ::foundation::linear::linear{}]] LinearToken {
+public:
+    constexpr explicit LinearToken(std::uint32_t value) noexcept : value_{value} {}
+    LinearToken(LinearToken const&) = delete("a linear token has one owner");
+    LinearToken& operator=(LinearToken const&) = delete("a linear token has one owner");
+    constexpr LinearToken(LinearToken&&) noexcept = default;
+    constexpr LinearToken& operator=(LinearToken&&) noexcept = default;
+    constexpr ~LinearToken() = default;
+
+    [[nodiscard]] constexpr std::uint32_t consume() && noexcept { return value_; }
+
+private:
+    std::uint32_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// While the producer root is out of the pool, the door lends no producer,
+// and a body that holds a linear value comes back in the error.  After the
+// deposit of the root, the next lend calls the body that came back.
+void refused_lend_gives_back_a_linear_body(::fixy::TestRunnerCtx const& test) noexcept {
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
+    Lanes channel{std::move(producer_root)};
+    auto withdrawn = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
+    auto body = [held = LinearToken{5}](auto /*lent*/) mutable noexcept { return std::move(held).consume(); };
+    using Body = decltype(body);
+    using Refused = c::RefusedLend<Body>;
+    Body unrun = c::with_producer(channel, kNondet, kFirst, std::move(body))
+                     .match([](std::uint32_t) noexcept -> Body { ::fixy::fatal("the door lends no producer now"); },
+                            [](Refused refusal) noexcept -> Body { return std::move(refusal.body); });
+    channel.deposit_producer_root(std::move(withdrawn));
+    std::uint32_t const value = c::with_producer(channel, kNondet, kFirst, std::move(unrun))
+                                    .match([](std::uint32_t given) noexcept { return given; },
+                                           [](Refused) noexcept -> std::uint32_t {
+                                               ::fixy::fatal("the door lends a producer after the deposit");
+                                           });
+    CRUCIBLE_TEST_ASSERT(test, value == 5);
+    c::with_consumer(channel, std::move(consumer_perm),
+                     [](auto consumer) noexcept { ::foundation::linear::drop(std::move(consumer)); });
+}
+
+// The count of the ends of live counted tokens.
+constinit ::fixy::Atomic<int> counted_token_ends{0};
+
+// A linear value whose end the test observes: the end of a live token counts
+// one, and a moved-from token is not live.
+class[[= ::foundation::linear::linear{}]] CountedToken {
+public:
+    CountedToken() noexcept = default;
+    CountedToken(CountedToken const&) = delete("a linear token has one owner");
+    CountedToken& operator=(CountedToken const&) = delete("a linear token has one owner");
+    CountedToken(CountedToken&& other) noexcept : is_live_{other.is_live_} { other.is_live_ = false; }
+    CountedToken& operator=(CountedToken&&) = delete("the test counts each end");
+    ~CountedToken() {
+        if (is_live_) static_cast<void>(counted_token_ends.fetch_add_acq_rel(1));
+    }
+
+private:
+    bool is_live_ = true;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+
+// A refused lend of a borrowing body ends the body in the door, and each
+// linear value of the body ends through its own drop door: the end of the
+// token runs one time, and the body does not run.
+void refused_lend_ends_a_borrowing_body(::fixy::TestRunnerCtx const& test) noexcept {
+    auto root = perm::mint_permission_root<RootTag>();
+    using Lanes = c::channel_t<int, 4, decltype(root), kLanes>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
+    Lanes channel{std::move(producer_root)};
+    auto withdrawn = channel.try_withdraw_producer_root(kNondet).expect("the root comes out with no producer out");
+    counted_token_ends.store_release(0);
+    int calls = 0;
+    bool const is_lent =
+        c::with_producer(channel, kNondet, kFirst, [&calls, token = CountedToken{}](auto /*lent*/) mutable noexcept {
+            ++calls;
+            ::foundation::linear::drop(std::move(token));
+        }).is_some();
+    CRUCIBLE_TEST_ASSERT(test, !is_lent && calls == 0 && counted_token_ends.load_acquire() == 1);
+    channel.deposit_producer_root(std::move(withdrawn));
+    c::with_consumer(channel, std::move(consumer_perm),
+                     [](auto consumer) noexcept { ::foundation::linear::drop(std::move(consumer)); });
+}
+
 }  // namespace
 
 int main() {
@@ -273,6 +362,8 @@ int main() {
     order_and_end_through_the_handles(test);
     drain_opens_each_lane(test);
     root_doors(test);
+    refused_lend_gives_back_a_linear_body(test);
+    refused_lend_ends_a_borrowing_body(test);
     ::fixy::check::pass(test, "test_lanes_channel: PASSED\n");
     return 0;
 }

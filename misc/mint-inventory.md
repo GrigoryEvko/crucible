@@ -183,7 +183,7 @@ that the axis does not apply to the row.
 | `mint_fn(T0_2)` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_fn_for` | `include/fixy/Fn.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_foreign_owned_region` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 2 |
-| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 15 |
+| `mint_linear` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 18 |
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 7 |
@@ -410,7 +410,7 @@ that the axis does not apply to the row.
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
 | `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 269 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
-| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 65 |
+| `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 66 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_read_loan` | `include/foundation/permissions/ReadView.h` | Y | Y | Y | Y | token | · | HS14: 8 |
 | `mint_scope_permission` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 3 |
