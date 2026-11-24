@@ -32,17 +32,17 @@
 
 namespace crucible {
 
-struct CompiledKernel;
+// A compiled kernel of a region.  It holds no state until the compute path
+// gives it its content, and the owner reviews that content with the IR.  The
+// class is complete and has no member, so a walk that reads the parts of a
+// type, such as the store check of a frame door, reads that it holds nothing.
+struct CompiledKernel final {};
 
-// The transfer facts of a compiled kernel, which no header defines yet (the
-// opaque types of foundation/Transfer.h).  The file that defines
-// CompiledKernel must assert, beside the definition, that the definition
-// holds the statement:
-//
-//     static_assert(::foundation::transfer::holds_its_statement(^^CompiledKernel));
-//
-// A test of the check file of foundation/Transfer.h pins that a definition
-// whose walk refuses its statement fails that assertion.
+// The transfer facts of a compiled kernel (the opaque types of
+// foundation/Transfer.h).  The check file of this header asserts that the
+// definition holds the statement, with holds_its_statement.  A test of the
+// check file of foundation/Transfer.h pins that a definition whose walk
+// refuses its statement fails that assertion.
 namespace transfer_facts {
 // A compiled kernel does not change after its compile, so two threads can
 // read one at the same time.

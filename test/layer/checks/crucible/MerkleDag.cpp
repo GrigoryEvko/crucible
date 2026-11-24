@@ -8,6 +8,12 @@
 
 namespace crucible {
 
+// A compiled kernel holds no state yet, and its definition holds the
+// statement of its transfer facts.
+static_assert(std::is_empty_v<CompiledKernel>, "a compiled kernel holds no state until the compute path gives it one");
+static_assert(::foundation::transfer::holds_its_statement(^^CompiledKernel),
+              "the definition of CompiledKernel holds the statement of its transfer facts");
+
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
