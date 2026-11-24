@@ -3,6 +3,7 @@
 #include <fixy/os/Loader.h>
 #include <foundation/Brand.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Text.h>
 
 #include <type_traits>
 
@@ -47,5 +48,21 @@ static_assert(LibraryScopeResult<OtherFunction, ScopeBrand>, "a function of an o
 static_assert(!LibraryScopeResult<ScopeFunction, ScopeBrand>, "a function leaves no scope of its library");
 static_assert(!LibraryScopeResult<::foundation::core::Option<ScopeFunction>, ScopeBrand>);
 static_assert(!LibraryScopeResult<ScopeLibrary const*, ScopeBrand>, "an address of the library leaves no scope");
+
+// A body that copies a count of the library into a variable of the caller
+// passes.  A body that keeps a text in a variable of the caller binds to the
+// store twin: the text can name memory of the library, which the last close
+// unmaps (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+struct CopiesCount {
+    int& count;
+    void operator()(ScopeLibrary const& library) const noexcept { static_cast<void>(library); }
+};
+struct KeepsText {
+    ::foundation::core::TextView& kept;
+    void operator()(ScopeLibrary const& library) const noexcept { static_cast<void>(library); }
+};
+static_assert(LibraryScopeBody<CopiesCount, ScopeBrand> && !StoringLibraryScopeBody<CopiesCount, ScopeBrand>);
+static_assert(!LibraryScopeBody<KeepsText, ScopeBrand> && StoringLibraryScopeBody<KeepsText, ScopeBrand>
+              && !RefusedLibraryScopeBody<KeepsText, ScopeBrand>);
 
 }  // namespace fixy::os::detail::loader_invariants

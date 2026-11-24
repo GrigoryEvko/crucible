@@ -6698,6 +6698,12 @@ fixy_neg_compile_test(neg_library_function_returned_from_scope
   "the end of the scope of with_library closes the library"
   "neg_library_function_returned_from_scope\\.cpp:[0-9]+:[0-9]+: error:")
 
+# A body of with_library that keeps a text in a capture binds to the store
+# twin: the text can name memory that the last close of the library unmaps.
+fixy_neg_compile_test(neg_library_body_keeps_a_text_of_the_library
+  "use of deleted function .void fixy::os::with_library\\("
+  "a body of a frame door stores no borrow outside the frame")
+
 fixy_neg_compile_test(neg_library_function_called_after_close
   "a scope mint gives a result that holds its own scope brand"
   "fixy::os::with_library: the result foundation::core::Result<.anonymous.::KeepsFunction::operator\\(\\)")

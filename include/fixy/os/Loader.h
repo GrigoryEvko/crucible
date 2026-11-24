@@ -32,6 +32,9 @@
 //     - The rule brand-escape refuses a result that holds the brand in a
 //       capture (neg_library_function_called_after_close), and each object of
 //       static or thread storage duration that holds the brand.
+//     - The store check of the door refuses a body that stores a borrow, such
+//       as a text that a function of the library gives, in a variable of the
+//       caller (neg_library_body_keeps_a_text_of_the_library).
 //   No code outside the scope can name the brand, so no variable outside the
 //   scope holds a function of it.  The body gets the Library by a const
 //   reference, and a Library cannot copy or move.  Its destructor is private
@@ -73,6 +76,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Text.h>
@@ -223,16 +227,29 @@ concept LibraryScopeResult =
         && ::foundation::core::ChoicePayload<std::remove_cv_t<Given>>);
 
 // The body of with_library: it takes the Library of the scope by a const
-// reference with no throw, and its result leaves the scope.
+// reference with no throw, its result leaves the scope, and it stores no
+// borrow outside the scope (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h).  A function of the library can give the
+// address of a text or a table in the memory of the library, and the last
+// close unmaps that memory, so such an address in a capture would name
+// unmapped memory after the scope.
 template <class Body, class Brand>
 concept LibraryScopeBody = std::is_nothrow_invocable_v<Body&&, Library<Brand> const&>
-                        && LibraryScopeResult<std::invoke_result_t<Body&&, Library<Brand> const&>, Brand>;
+                        && LibraryScopeResult<std::invoke_result_t<Body&&, Library<Brand> const&>, Brand>
+                        && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // A body whose result does not leave the scope: the refused twin of the door
 // binds to it.
 template <class Body, class Brand>
 concept RefusedLibraryScopeBody = std::is_nothrow_invocable_v<Body&&, Library<Brand> const&>
                                && (!LibraryScopeResult<std::invoke_result_t<Body&&, Library<Brand> const&>, Brand>);
+
+// A body whose result leaves the scope and that stores a borrow outside the
+// scope: the store twin of the door binds to it.
+template <class Body, class Brand>
+concept StoringLibraryScopeBody = std::is_nothrow_invocable_v<Body&&, Library<Brand> const&>
+                               && LibraryScopeResult<std::invoke_result_t<Body&&, Library<Brand> const&>, Brand>
+                               && (!::foundation::core::StoresNoBorrowOutside<Body>);
 
 // The scope door of a library.  LoaderDoor names it as a friend, and this
 // header defines it after the door.
@@ -359,6 +376,15 @@ void with_library(Ctx const& ctx, ::foundation::core::CText path,
     delete("the end of the scope of with_library closes the library, so the result of the body holds no reference "
            "and no address, and it names no brand of the library: call each function in the body, and give a "
            "plain value");
+
+// A body that stores a borrow outside the scope binds to this overload, so
+// the refusal gives its reason.
+template <class... Refused, eff::IsExecCtx Ctx, class DiagnosticBrand, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && CtxFitsLibraryLoad<Ctx> && StoringLibraryScopeBody<Body, Fresh>
+void with_library(Ctx const& ctx, ::foundation::core::CText path,
+                  ::foundation::core::Ref<LoaderDiagnostic, DiagnosticBrand> diagnostic,
+                  Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // The function name of the library, as a LibraryFunction of the signature of
 // its declaration (the loader door).  The signature is a function type with
