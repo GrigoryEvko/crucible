@@ -461,6 +461,19 @@
 //     keeps each waiting line whose closure type leaves a capture
 //     (judge_waiting_owned_closures).
 //
+// The named bodies
+//     The once door also takes a class that is no closure as its body, its
+//     first argument, and ends it after the call.  The call operator && of
+//     such a class owns its object, as a closure owns its captures by value.
+//     The summary walk of such a call operator reads the object as an owned
+//     body (note_named_body_summary): a path to an exit that leaves the object
+//     or one of its linear fields live gives the fact, and a walk with a goto
+//     fails closed.  The fact has the TYPE_UID of the class as its key.  A call
+//     of the once door whose body has the fact gives the kind
+//     capture-unconsumed at the name of the class, with the entity named body
+//     (TYPE).  A body whose call operator has no fact at the walk waits for
+//     the end of the unit, as a generic closure does.
+//
 // Self-moves
 //     A move assignment whose target and source are one object is the kind
 //     self-move, at the assignment: an operator= that takes an rvalue
@@ -1042,6 +1055,11 @@ std::unordered_set<unsigned> closure_summarized;
 std::unordered_set<unsigned> closure_types_move_out;
 std::unordered_set<unsigned> closure_types_leave_capture;
 
+// The named bodies: each class that is no closure, by its TYPE_UID, whose
+// call operator && the summary walk read.  A named body that leaves a linear
+// field live is in closure_types_leave_capture too.
+std::unordered_set<unsigned> named_bodies_summarized;
+
 // True when CALL calls the call operator of a closure that moves a linear
 // capture out, with an implicit object parameter (the closures that move a
 // capture).
@@ -1068,6 +1086,20 @@ bool is_moving_closure_type(tree type) {
     tree call_operator = lambda_function(type);
     return (call_operator != NULL_TREE && closure_moves_out.count(DECL_UID(call_operator)) != 0)
         || closure_types_move_out.count(TYPE_UID(type)) != 0;
+}
+
+// The named bodies: true when FUNCTION is the call operator && of a class
+// that is no closure and that holds a linear value, with an implicit object
+// parameter.  The once door calls such a body one time as an rvalue, so the
+// object of the call is the body that the door owns.
+bool is_named_body_call(tree function) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || !DECL_IOBJ_MEMBER_FUNCTION_P(function)
+        || !DECL_OVERLOADED_OPERATOR_IS(function, CALL_EXPR) || !FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function))
+        || LAMBDA_FUNCTION_P(function)) {
+        return false;
+    }
+    tree body = TYPE_MAIN_VARIANT(DECL_CONTEXT(function));
+    return CLASS_TYPE_P(body) && !LAMBDA_TYPE_P(body) && linearity_of(body) != Linearity::none;
 }
 
 // True when CALL calls a closure that moves a linear capture out, or calls a
@@ -1584,6 +1616,10 @@ struct Slot {
     // the location of its first consume, and whether a path reaches an exit
     // with the object or one of its fields consumed.
     bool is_lent = false;
+    // The named bodies: the object of the call operator && of a class that is
+    // no closure, in the summary walk.  LEAVES_LIVE tells that a path to an
+    // exit can leave the object or one of its linear fields live.
+    bool is_owned_body = false;
     location_t first_consume = UNKNOWN_LOCATION;
     bool has_spent_exit = false;
     bool has_live_exit = false;
@@ -1840,6 +1876,15 @@ public:
         return fields;
     }
 
+    // The named bodies: true when a path to an exit of the call operator &&
+    // leaves the object or one of its linear fields live.  A walk with a goto
+    // fails closed.
+    [[nodiscard]] bool leaves_owned_body_live() const {
+        return is_unanalyzed_ || std::any_of(slots_.begin(), slots_.end(), [](const Slot& entry) {
+                   return entry.is_owned_body && entry.leaves_live;
+               });
+    }
+
     // True when the body has a goto or a label, so the walk did not read it.
     [[nodiscard]] bool is_unanalyzed() const { return is_unanalyzed_; }
 
@@ -1965,6 +2010,7 @@ private:
             return false;
         }
         bool is_lent = false;
+        bool is_owned_body = false;
         if (VAR_P(decl)) {
             bool is_binding = DECL_DECOMPOSITION_P(decl) && !DECL_DECOMP_IS_BASE(decl);
             if (purpose_ == WalkPurpose::summary && DECL_HAS_VALUE_EXPR_P(decl) && !is_binding) {
@@ -1988,6 +2034,11 @@ private:
             // The lent object: the object of a plain member function is lent,
             // as a parameter by a reference that is not const is.
             is_lent = true;
+            type = TREE_TYPE(type);
+        } else if (TREE_CODE(decl) == PARM_DECL && is_owned_body_this(decl)) {
+            // The named bodies: the once door owns the object of the call
+            // operator && of a named body, as it owns a closure.
+            is_owned_body = true;
             type = TREE_TYPE(type);
         } else if (TREE_CODE(decl) == PARM_DECL) {
             if (DECL_ARTIFICIAL(decl) || is_object_parameter(decl)) {
@@ -2014,6 +2065,7 @@ private:
         entry.decl = decl;
         entry.ends_at_scope = facts.ends_at_scope;
         entry.is_lent = is_lent;
+        entry.is_owned_body = is_owned_body;
         entry.is_sum = is_linear_sum(type);
         entry.door_end = door_end_of(type);
         slots_.push_back(entry);
@@ -2394,6 +2446,14 @@ private:
         }
         tree type = TREE_TYPE(parameter);
         return type != NULL_TREE && TREE_CODE(type) == POINTER_TYPE && !TYPE_READONLY(TREE_TYPE(type));
+    }
+
+    // True when PARAMETER is the implicit this of the call operator && of a
+    // named body in the summary walk (the named bodies): a class that is no
+    // closure, whose object the once door owns and calls one time.
+    bool is_owned_body_this(tree parameter) const {
+        return purpose_ == WalkPurpose::summary && parameter == DECL_ARGUMENTS(function_)
+            && is_named_body_call(function_);
     }
 
     // True when PARAMETER is the object parameter of the function: the
@@ -2797,6 +2857,15 @@ private:
                     // end owes no consume, and a consumed object or field is a
                     // spent value of the caller.
                     slots_[slot].has_spent_exit = entry.has_spent_exit || (!entry.is_escaped && is_spent(state, slot));
+                } else if (entry.is_owned_body && !entry.ends_at_scope) {
+                    // The named bodies: the once door owns the object, so a
+                    // linear field that a path leaves live, or the object of a
+                    // class that is linear by its own mark, drops with it.
+                    bool is_live_here = entry.fields.empty() && status != Status::consumed;
+                    for (std::size_t part : entry.fields) {
+                        is_live_here = is_live_here || state.get(part) != Status::consumed;
+                    }
+                    slots_[slot].leaves_live = slots_[slot].leaves_live || is_live_here;
                 } else if (entry.is_capture_borrow) {
                     // The summaries: the call borrows the capture, so its end
                     // gives no finding.  A slot that the walk never made live
@@ -3449,6 +3518,11 @@ private:
         for (int index = 0; index < count; ++index) {
             report_owned_closure(TREE_TYPE(argument_at(call, index)));
         }
+        // The named bodies: the first argument of the once door is its body,
+        // and each other argument goes to the body.
+        if (count >= 1) {
+            report_owned_body(TREE_TYPE(argument_at(call, 0)));
+        }
         for (int index = 0; index < count; ++index) {
             tree argument = argument_at(call, index);
             if (!is_moving_closure_type(TREE_TYPE(argument)) || is_object_given_up(argument)) {
@@ -3496,6 +3570,42 @@ private:
         }
         pending_.push_back(PendingFinding{Kind::linear_capture_unconsumed, where, std::move(entity), DoorEnd::exempt,
                                           TYPE_UID(closure_type)});
+    }
+
+    // The named bodies: the kind capture-unconsumed at the name of the class
+    // BODY_TYPE, or of the class that the reference BODY_TYPE names, when it
+    // is no closure, holds a linear value, and its call operator && leaves a
+    // linear field live on a path.  A body whose call operator has no fact at
+    // the walk waits for the end of the unit.
+    void report_owned_body(tree body_type) {
+        if (body_type != NULL_TREE && TYPE_REF_P(body_type)) {
+            body_type = TREE_TYPE(body_type);
+        }
+        if (body_type == NULL_TREE) {
+            return;
+        }
+        body_type = TYPE_MAIN_VARIANT(body_type);
+        if (!CLASS_TYPE_P(body_type) || LAMBDA_TYPE_P(body_type) || !COMPLETE_TYPE_P(body_type)
+            || TYPE_NAME(body_type) == NULL_TREE) {
+            return;
+        }
+        TypeFacts const facts = facts_of(body_type);
+        if (facts.linearity == Linearity::none || facts.ends_at_scope) {
+            return;
+        }
+        unsigned const body = TYPE_UID(body_type);
+        bool const leaves_field = closure_types_leave_capture.count(body) != 0;
+        if (!leaves_field && named_bodies_summarized.count(body) != 0) {
+            return;
+        }
+        location_t where = DECL_SOURCE_LOCATION(TYPE_NAME(body_type));
+        std::string entity = "named body (" + linear_type_text(body_type) + ")";
+        if (leaves_field) {
+            add_pending(Kind::linear_capture_unconsumed, where, entity);
+            return;
+        }
+        pending_.push_back(
+            PendingFinding{Kind::linear_capture_unconsumed, where, std::move(entity), DoorEnd::exempt, body});
     }
 
     // True when the closure CLOSURE_TYPE holds a linear capture by value (the
@@ -4116,6 +4226,24 @@ void note_closure_summary(tree function) {
             closure_types_leave_capture.insert(TYPE_UID(TYPE_MAIN_VARIANT(closure)));
             break;
         }
+    }
+}
+
+// The named bodies: the summary walk of the call operator && FUNCTION of a
+// class that is no closure and that holds a linear value.  The once door owns
+// such a body as it owns a closure, so the fact that a path leaves a linear
+// field live serves the closures that a call owns, by the TYPE_UID of the
+// class.  A walk with a goto fails closed.  Complexity: one walk of the body.
+void note_named_body_summary(tree function) {
+    if (!is_named_body_call(function)) {
+        return;
+    }
+    unsigned const body = TYPE_UID(TYPE_MAIN_VARIANT(DECL_CONTEXT(function)));
+    Analysis walk(function, false, UnknownCallee::can_keep, WalkPurpose::summary);
+    walk.run();
+    named_bodies_summarized.insert(body);
+    if (walk.leaves_owned_body_live()) {
+        closure_types_leave_capture.insert(body);
     }
 }
 
@@ -6000,6 +6128,8 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
         if (LAMBDA_FUNCTION_P(function)) {
             note_closure_fills(function);
             note_closure_summary(function);
+        } else {
+            note_named_body_summary(function);
         }
         note_kept_references(function);
     }

@@ -1,0 +1,56 @@
+// The named bodies of linear.cpp: the once door owns a class that is no
+// closure, and its call operator && leaves a linear field live.  A body that
+// ignores its token, a class template whose call operator template ignores
+// its token, and a body that consumes its token on one path.  Each line is at
+// the name of the class.  The plugin of main read no named body, so it gave
+// none of these lines.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+struct IgnoringBody {
+    Token token;
+    int operator()() && noexcept { return 1; }
+};
+
+template <class Held>
+struct GenericIgnoringBody {
+    Held token;
+    template <class Value>
+    Value operator()(Value value) && noexcept {
+        return value;
+    }
+};
+
+struct OnePathBody {
+    Token token;
+    void operator()() && noexcept {
+        if (should_give()) {
+            sink(std::move(token));
+        }
+    }
+};
+
+int ignoring_body() { return ::foundation::linear::call_once(IgnoringBody{Token{1}}); }
+
+int generic_ignoring_body() { return ::foundation::linear::call_once(GenericIgnoringBody<Token>{Token{2}}, 2); }
+
+void one_path_body() { ::foundation::linear::call_once(OnePathBody{Token{3}}); }
+
+}  // namespace planted

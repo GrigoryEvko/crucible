@@ -1,0 +1,8 @@
+# The rule of the named bodies (linear.cpp) admits each form of this unit: a
+# body whose call operator && consumes its token, a body whose call operator
+# && gives its token out, and a body with no linear field.  The directory
+# src/ has the enforce mode error, and the unit compiles with no line of the
+# rule.
+compile named src/named.cpp must-consume=on
+flag named -freflection
+exit named pass

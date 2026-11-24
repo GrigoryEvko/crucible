@@ -1,0 +1,47 @@
+// The named bodies of linear.cpp that end each linear field: a body whose
+// call operator && consumes its token, a body whose call operator && gives
+// its token out as its value, and a body with no linear field.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+struct ConsumingBody {
+    Token token;
+    void operator()() && noexcept { sink(std::move(token)); }
+};
+
+struct GivingBody {
+    Token token;
+    Token operator()() && noexcept { return std::move(token); }
+};
+
+struct PlainBody {
+    int count = 0;
+    int operator()() && noexcept { return count; }
+};
+
+void consuming_body() { ::foundation::linear::call_once(ConsumingBody{Token{1}}); }
+
+void giving_body() {
+    Token given = ::foundation::linear::call_once(GivingBody{Token{2}});
+    sink(std::move(given));
+}
+
+int plain_body() { return ::foundation::linear::call_once(PlainBody{3}); }
+
+}  // namespace planted
