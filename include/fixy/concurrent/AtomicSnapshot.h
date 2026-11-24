@@ -87,13 +87,12 @@ public:
 
     AtomicSnapshot() noexcept = default;
 
-    explicit AtomicSnapshot(const T& initial) noexcept {
+    // No other thread holds this address while the constructor runs, so the
+    // counter starts at the count of one publish, and the write of the words
+    // needs no bracket.  The counter never moves back: a snapshot has no
+    // reset.
+    explicit AtomicSnapshot(const T& initial) noexcept : seq_{::fixy::mint_atomic_monotonic<std::uint64_t>(2)} {
         write_words_(initial, word_indices_{});
-        // No other thread holds this address yet, so the write above
-        // needs no bracketing.  A plain advance would also be accepted
-        // here, but reset_under_quiescence states the no-concurrent-
-        // access precondition at the call site.
-        seq_.reset_under_quiescence(2);
     }
 
     // The caller guarantees no concurrent publish.
