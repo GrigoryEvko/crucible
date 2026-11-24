@@ -216,14 +216,40 @@ copy_vendor_discovery_string(::fixy::TextView text) noexcept {
     }
 }
 
+// The level of each kind, by the groups of the declaration of CogKind.  A
+// server is a chassis, which holds the boards of its parts.
 [[nodiscard]] constexpr cog::CogLevel default_level_for(cog::CogKind kind) noexcept {
     switch (kind) {
+        case cog::CogKind::Gpu:
+        case cog::CogKind::NicPort:
+        case cog::CogKind::CpuCore:
+        case cog::CogKind::DramChannel:
+        case cog::CogKind::NvmeNamespace:
+        case cog::CogKind::NvSwitch:
+        case cog::CogKind::OpticalTransceiver:
+        case cog::CogKind::PsuRail:
+        case cog::CogKind::PcieLaneGroup:
+        case cog::CogKind::BmcSensor:
+            return cog::CogLevel::L0_Atomic;
+        case cog::CogKind::GpuPackage:
+        case cog::CogKind::CpuSocket:
         case cog::CogKind::NicCard:
         case cog::CogKind::NvmeDrive:
+        case cog::CogKind::RackPsu:
         case cog::CogKind::PcieRoot:
             return cog::CogLevel::L1_Component;
+        case cog::CogKind::Server:
+            return cog::CogLevel::L3_Chassis;
+        case cog::CogKind::Rack:
+            return cog::CogLevel::L4_Rack;
+        case cog::CogKind::Row:
+            return cog::CogLevel::L5_Row;
+        case cog::CogKind::Hall:
+            return cog::CogLevel::L6_Hall;
+        case cog::CogKind::Datacenter:
+            return cog::CogLevel::L7_Datacenter;
         default:
-            return cog::CogLevel::L0_Atomic;
+            ::fixy::unreachable();
     }
 }
 

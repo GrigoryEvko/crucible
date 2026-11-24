@@ -30,4 +30,19 @@ static_assert(!CtxFitsDiscoveryInit<::fixy::BgDrainCtx>);
 static_assert(CtxFitsDiscoveryBg<::fixy::BgDrainCtx>);
 static_assert(!CtxFitsDiscoveryBg<::fixy::ColdInitCtx>);
 
+// The default level of each kind follows the groups of the declaration of
+// CogKind: an atom is L0, an aggregate of atoms is L1, and a server, a rack,
+// a row, a hall and a datacenter have the levels of their names.
+static_assert(default_level_for(cog::CogKind::Gpu) == cog::CogLevel::L0_Atomic);
+static_assert(default_level_for(cog::CogKind::BmcSensor) == cog::CogLevel::L0_Atomic);
+static_assert(default_level_for(cog::CogKind::GpuPackage) == cog::CogLevel::L1_Component);
+static_assert(default_level_for(cog::CogKind::CpuSocket) == cog::CogLevel::L1_Component);
+static_assert(default_level_for(cog::CogKind::RackPsu) == cog::CogLevel::L1_Component);
+static_assert(default_level_for(cog::CogKind::NicCard) == cog::CogLevel::L1_Component);
+static_assert(default_level_for(cog::CogKind::Server) == cog::CogLevel::L3_Chassis);
+static_assert(default_level_for(cog::CogKind::Rack) == cog::CogLevel::L4_Rack);
+static_assert(default_level_for(cog::CogKind::Row) == cog::CogLevel::L5_Row);
+static_assert(default_level_for(cog::CogKind::Hall) == cog::CogLevel::L6_Hall);
+static_assert(default_level_for(cog::CogKind::Datacenter) == cog::CogLevel::L7_Datacenter);
+
 }  // namespace crucible::topology
