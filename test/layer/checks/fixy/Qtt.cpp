@@ -114,4 +114,25 @@ static_assert(is_already_consume_disciplined_v<Linear<int>>,
               "Affine<Linear<T>> must be refused: wrapping an exactly-once obligation in an at-most-once one "
               "downgrades a required consume to an optional one.");
 
+// A live Linear owes a consume at its end, so it marks no end of its own.
+// The generic drop door and end_unrun_body then refuse it and each body that
+// holds it, in each build.  An Affine owes no consume.
+namespace detail::qtt_end_witness {
+using LinearBody = decltype([held = mint_linear<int>(1)]() mutable noexcept { return std::move(held).consume(); });
+inline constexpr auto drop_probe =
+    [](auto&& value) -> decltype(::foundation::linear::drop(static_cast<decltype(value)&&>(value))) {};
+inline constexpr auto unrun_probe =
+    [](auto&& body) -> decltype(::foundation::linear::end_unrun_body(
+                        static_cast<decltype(body)&&>(body), ::foundation::linear::UnrunReason::refusal_test)) {};
+}  // namespace detail::qtt_end_witness
+
+static_assert(::foundation::linear::owes_consume_at_end(^^Linear<int>));
+static_assert(!::foundation::linear::marks_own_end(^^Linear<int>));
+static_assert(!::foundation::linear::DroppableLinear<Linear<int>>);
+static_assert(!::foundation::linear::owes_consume_at_end(^^Affine<int>));
+static_assert(!std::is_invocable_v<decltype(detail::qtt_end_witness::drop_probe), Linear<int>&&>);
+static_assert(!::foundation::linear::UnrunBody<detail::qtt_end_witness::LinearBody>);
+static_assert(
+    !std::is_invocable_v<decltype(detail::qtt_end_witness::unrun_probe), detail::qtt_end_witness::LinearBody&&>);
+
 }  // namespace fixy

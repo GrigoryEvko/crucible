@@ -235,6 +235,16 @@ fixy_neg_compile_test(neg_qtt_copy_a_linear
   "fixy::Qtt<Grade, T>::Qtt\\(const fixy::Qtt<Grade, T>&\\)"
   "move-only")
 
+# A live Linear owes a consume at its end, so the generic drop door and
+# end_unrun_body refuse it, and each body that holds it.
+fixy_neg_compile_test(neg_qtt_generic_drop_of_a_live_linear
+  "use of deleted function"
+  "the drop door ends no class that owes a consume at its end")
+
+fixy_neg_compile_test(neg_qtt_unrun_body_holds_a_live_linear
+  "use of deleted function"
+  "the door ends a body only when each linear value that the body holds states its own end")
+
 # consume is rvalue-qualified and non-const; a const borrow cannot call it.
 fixy_neg_compile_test(neg_qtt_consume_through_const_ref
   "discards qualifiers"

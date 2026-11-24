@@ -65,9 +65,11 @@
 //
 // Linear<T> carries the annotation linear of foundation/Linear.h, and
 // Affine<T> does not.  An Affine value can end with no door, so it is not
-// linear.  The friend drop() is the drop door of Linear<T>.  The generic
-// door ::foundation::linear::drop does not apply to a tracked Linear,
-// because it destroys a live wrapper, which the tracker reports.
+// linear.  The friend drop() is the drop door of Linear<T>.  Linear<T> also
+// carries the annotation owes_consume, so it marks no end of its own, and the
+// generic door ::foundation::linear::drop and end_unrun_body refuse it at
+// compile time: an end there destroys a live wrapper, which the tracker
+// reports, and a build with no tracker drops the value with no report.
 //
 // What the bit reads, once it is on:
 //
@@ -309,6 +311,7 @@ template <auto Grade, class T>
     requires detail::IsConsumeBound<Grade>
 class CRUCIBLE_QTT_ABI [[nodiscard]]
 [[= ::foundation::linear::linear_when<Grade == ::foundation::algebra::lattices::QttGrade::One>]]
+    [[= ::foundation::linear::owes_consume_when<Grade == ::foundation::algebra::lattices::QttGrade::One>]]
     [[= ::foundation::lifetime::no_start_over_bytes{}]] Qtt
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
                            ::foundation::algebra::lattices::QttSemiring::At<Grade>, T>,

@@ -77,6 +77,16 @@ struct linear final {};
 // The value of linear_when<false>: an annotation that marks nothing.
 struct not_linear final {};
 
+// The annotation of a linear class whose end with no consume is a defect,
+// such as a live fixy::Linear<T>, whose tracker reports the open obligation.
+// Such a class marks no end of its own (marks_own_end), so no door that ends
+// a value ends it, such as drop or end_unrun_body.  It ends only at its own
+// consumer.
+struct owes_consume final {};
+
+// The value of owes_consume_when<false>: an annotation that marks nothing.
+struct owes_no_consume final {};
+
 // The annotation of a class whose value conveys an authority, such as a
 // permission token.
 struct authority final {};
@@ -141,6 +151,14 @@ inline constexpr auto linear_when = not_linear{};
 
 template <>
 inline constexpr auto linear_when<true> = linear{};
+
+// The annotation value of a class template whose instances owe a consume at
+// their end only for some arguments, such as the grade One of fixy::Qtt.
+template <bool OwesConsume>
+inline constexpr auto owes_consume_when = owes_no_consume{};
+
+template <>
+inline constexpr auto owes_consume_when<true> = owes_consume{};
 
 // True when the entity carries an annotation of the type.  The read goes
 // through a constant array, so it calls no member of the container that
@@ -225,16 +243,25 @@ concept HoldsNoLinearValue =
     "the body holds a linear value by value, and the door calls it with no consume: keep the linear value a local " \
     "of the caller, and let the body capture it by reference or take it as a parameter"
 
+// True when the class owes a consume at its end (owes_consume).
+[[nodiscard]] consteval bool owes_consume_at_end(std::meta::info type) {
+    const std::meta::info bare = ::foundation::reflect::bare_type(type);
+    return std::meta::is_class_type(bare) && carries_annotation(bare, ^^owes_consume);
+}
+
 // True when the class marks its own end: it carries the annotation linear, it
-// is no sum, and no type argument of its template is linear.  A class that is
-// linear only by the values that it holds, such as a class with a linear
-// member, a closure with a linear capture, an Option or a Record of a token,
-// marks no end of its own.  Its end drops each linear value that it holds,
-// and no rule reads the end of such a value in the body of a door.
-// Complexity: linear in the template arguments of the class.
+// is no sum, it owes no consume at its end, and no type argument of its
+// template is linear.  A class that is linear only by the values that it
+// holds, such as a class with a linear member, a closure with a linear
+// capture, an Option or a Record of a token, marks no end of its own.  Its end
+// drops each linear value that it holds, and no rule reads the end of such a
+// value in the body of a door.  Complexity: linear in the template arguments
+// of the class.
 [[nodiscard]] consteval bool marks_own_end(std::meta::info type) {
     const std::meta::info bare = ::foundation::reflect::bare_type(type);
-    if (!is_marked_linear(bare) || carries_annotation(bare, ^^sum)) return false;
+    if (!is_marked_linear(bare) || carries_annotation(bare, ^^sum) || carries_annotation(bare, ^^owes_consume)) {
+        return false;
+    }
     for (const ::foundation::reflect::TypeNode& argument :
          ::foundation::reflect::argument_components_of(::foundation::reflect::TypeNode{bare, false})) {
         const bool is_held_type =
@@ -297,10 +324,18 @@ template <DroppableLinear T>
 // that value in the frame of the door, where no rule reads the end.  The
 // deleted twin gives the reason.
 template <LinearValue T>
-    requires(!marks_own_end(^^T))
+    requires(!marks_own_end(^^T) && !owes_consume_at_end(^^T))
 constexpr void drop(T&&) = delete("the drop door ends only a class that states its own end.  This class is linear "
                                   "by the values that it holds: give each value to its consumer, or end each one at "
                                   "its own door");
+
+// A class that owes a consume at its end, such as a live fixy::Linear<T>,
+// would end with its obligation open in the frame of the door.  The deleted
+// twin gives the reason.
+template <LinearValue T>
+    requires(owes_consume_at_end(^^T))
+constexpr void drop(T&&) = delete("the drop door ends no class that owes a consume at its end, such as a live "
+                                  "fixy::Linear: give the value to its consumer, or end it at its own drop door");
 
 // A class that marks its own end and holds a linear value that states no end
 // of its own, such as a data member Option<Token>, would end that value in
@@ -381,7 +416,8 @@ enum class UnrunReason : std::uint8_t {
 // (parts_state_own_end).  So the end of the body ends each such value with no
 // run-time check.
 template <class Body>
-concept UnrunBody = LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && parts_state_own_end(^^Body);
+concept UnrunBody = LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && !owes_consume_at_end(^^Body)
+                 && parts_state_own_end(^^Body);
 
 // The one door that ends a body that no door called and that holds a linear
 // value by value, such as a body that a refused start of a thread gives back.
@@ -402,13 +438,23 @@ constexpr void end_unrun_body(Body&, UnrunReason) = delete("the door ends a body
                                                            "with std::move");
 
 // A body that holds a linear value that states no end of its own, such as a
-// capture Option<Token>, would end that value in the frame of the door with
-// no consume.  The deleted twin gives the reason.
+// capture Option<Token> or a capture of a live fixy::Linear<T>, would end that
+// value in the frame of the door with no consume.  The deleted twin gives the
+// reason.
 template <class Body>
-    requires(LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && !parts_state_own_end(^^Body))
+    requires(LinearValue<Body> && std::is_class_v<Body> && !marks_own_end(^^Body) && !owes_consume_at_end(^^Body)
+             && !parts_state_own_end(^^Body))
 constexpr void end_unrun_body(Body&&, UnrunReason) = delete(
     "the door ends a body only when each linear value that the body holds states its own end.  This body holds a "
-    "value that states no end of its own, such as an Option of a linear payload: give the body to call_once, and let "
-    "it consume that value");
+    "value that states no end of its own, such as an Option of a linear payload or a live fixy::Linear: give the "
+    "body to call_once, and let it consume that value");
+
+// A value that owes a consume at its end, such as a live fixy::Linear<T>, is
+// no body that a door can end.  The deleted twin gives the reason.
+template <class Body>
+    requires(LinearValue<Body> && owes_consume_at_end(^^Body))
+constexpr void end_unrun_body(Body&&, UnrunReason) =
+    delete("the door ends no value that owes a consume at its end, such as a live fixy::Linear: give the value to its "
+           "consumer");
 
 }  // namespace foundation::linear
