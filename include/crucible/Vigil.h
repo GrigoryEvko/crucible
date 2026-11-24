@@ -966,16 +966,14 @@ private:
     // names.  Runs on the producer thread before each load.  Complexity:
     // O(LOAD_SLOTS * HeldRegions::CAP).
     [[gnu::cold]] void release_unheld_loads_() noexcept {
-        // The body reads only the cells of the holders, through a const
+        // The test reads only the cells of the holders, through a const
         // reference, and no other part of the Vigil.
         HeldRegions const& held = held_regions_;
-        loads_.with_mut([&held](auto slots) noexcept {
-            for (::fixy::Option<LoadedRegion>& load : slots) {
-                const bool is_unheld =
-                    load.is_some_and([&held](const LoadedRegion& kept) noexcept { return !held.holds(kept.region); });
-                if (is_unheld) load = ::fixy::none;
-            }
-        });
+        for (const auto slot : loads_.indices()) {
+            const bool is_unheld = loads_.at(slot).is_some_and(
+                [&held](const LoadedRegion& kept) noexcept { return !held.holds(kept.region); });
+            if (is_unheld) loads_.set(slot, ::fixy::none);
+        }
     }
 
     // Keeps the arena of a load beside its region, in a free slot.  The
@@ -983,15 +981,11 @@ private:
     // the load left a slot only for a region that a holder names.  So one
     // slot of LOAD_SLOTS is free for the new load.
     [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena<DagArena>>&& arena, ConstRegionLink region) noexcept {
-        const bool is_kept = loads_.with_mut([&arena, region](auto slots) noexcept {
-            for (::fixy::Option<LoadedRegion>& load : slots) {
-                if (load.is_some()) continue;
-                load = ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region});
-                return true;
-            }
-            return false;
-        });
-        if (is_kept) return;
+        for (const auto slot : loads_.indices()) {
+            if (loads_.at(slot).is_some()) continue;
+            loads_.set(slot, ::fixy::some(LoadedRegion{.arena = std::move(arena), .region = region}));
+            return;
+        }
         ::fixy::fatal(
             "a load of a Vigil found no free slot for its arena, although the holders name at most {} regions",
             HeldRegions::CAP);

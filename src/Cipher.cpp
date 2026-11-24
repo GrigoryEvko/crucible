@@ -267,8 +267,8 @@ inline constexpr std::size_t kTailChunkBytes = 256;
 template <class Ctx, ::fixy::os::RightSet Rights>
 [[nodiscard]] ::fixy::Option<::fixy::fs::FileOffset> whole_lines_size_(Ctx const& ctx, ::fixy::fs::FileRef<Rights> file,
                                                                        ::fixy::fs::FileOffset size) noexcept {
-    ::fixy::FixedArray<std::byte, kTailChunkBytes> chunk{};
-    return chunk.with_mut([&ctx, file, size](auto run) noexcept -> ::fixy::Option<::fixy::fs::FileOffset> {
+    auto [chunk, chunk_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, kTailChunkBytes>);
+    return chunk.with_mut(chunk_key, [&ctx, file, size](auto run) noexcept -> ::fixy::Option<::fixy::fs::FileOffset> {
         std::int64_t end = size.raw();
         while (end > 0) {
             const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});

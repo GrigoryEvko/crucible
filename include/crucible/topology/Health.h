@@ -238,7 +238,7 @@ template <class Slot, std::size_t Count>
     }
     for (::fixy::Index<Count> const index : slots.indices()) {
         if (!slots.at(index).occupied) {
-            slots.with_element(index, [&peer](Slot& slot) noexcept {
+            slots.update(index, [&peer](Slot& slot) noexcept {
                 slot.occupied = true;
                 slot.peer = peer;
             });
@@ -368,7 +368,7 @@ public:
         return claim_peer_slot(slots_, peer)
             .match(
                 [&](::fixy::Index<MaxPeers> index) {
-                    return slots_.with_element(index, [observed_ns, sequence](Slot& slot) noexcept {
+                    return slots_.update(index, [observed_ns, sequence](Slot& slot) noexcept {
                         return record_heartbeat_in(slot, observed_ns, sequence);
                     });
                 },
@@ -389,8 +389,7 @@ private:
             return false;
         }
         if (prior != 0 && observed_ns > prior) {
-            slot.intervals.with_element(
-                slot.next, [interval = observed_ns - prior](std::uint64_t& held) noexcept { held = interval; });
+            slot.intervals.set(slot.next, observed_ns - prior);
             slot.next = slot.next.next_cyclic();
             if (slot.count < Window) {
                 ++slot.count;
@@ -473,7 +472,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
     [[nodiscard]] constexpr ::fixy::Option<::fixy::Index<MaxPeers>> claim(cog::CogIdentity const& peer) noexcept {
         ::fixy::Option<::fixy::Index<MaxPeers>> claimed = detail::claim_peer_slot(slots_, peer);
         for (::fixy::Index<MaxPeers> const index : claimed) {
-            slots_.with_element(index, [uuid = peer.uuid](Slot& slot) noexcept { slot.last_snapshot.cog_uuid = uuid; });
+            slots_.update(index, [uuid = peer.uuid](Slot& slot) noexcept { slot.last_snapshot.cog_uuid = uuid; });
         }
         return claimed;
     }
@@ -508,7 +507,7 @@ class CompositeHealthScorer : ::foundation::Pinned<CompositeHealthScorer<MaxPeer
 
     // Puts a transition event in the next slot of the ring of events.
     constexpr void push_event(HealthDeltaEvent const& event) noexcept {
-        events_.with_element(next_event_, [event](HealthDeltaEvent& held) noexcept { held = event; });
+        events_.set(next_event_, event);
         next_event_ = next_event_.next_cyclic();
         if (event_count_ < MaxEvents) {
             ++event_count_;
@@ -645,7 +644,7 @@ public:
                                                 ThermalSample sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
+                return slots_.update(index, [&sample](Slot& slot) noexcept {
                     if (!slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -662,7 +661,7 @@ public:
     [[nodiscard]] constexpr bool update_ecc(Ctx const&, cog::CogIdentity const& peer, EccCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
+                return slots_.update(index, [&sample](Slot& slot) noexcept {
                     if (!detail::no_counter_behind(sample, slot.ecc) || !slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -681,7 +680,7 @@ public:
     [[nodiscard]] constexpr bool update_drops(Ctx const&, cog::CogIdentity const& peer, DropCounters sample) noexcept {
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
+                return slots_.update(index, [&sample](Slot& slot) noexcept {
                     if (!detail::no_counter_behind(sample, slot.drops) || !slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -702,7 +701,7 @@ public:
         }
         return claim(peer).match(
             [&](::fixy::Index<MaxPeers> index) {
-                return slots_.with_element(index, [&sample](Slot& slot) noexcept {
+                return slots_.update(index, [&sample](Slot& slot) noexcept {
                     if (!slot.sequence.try_advance(sample.sequence)) {
                         return false;
                     }
@@ -723,12 +722,11 @@ public:
             [&](::fixy::Index<MaxPeers> index) {
                 // The body reads the scorer through a const reference and
                 // gives out the step.  The scorer writes its ring of events
-                // after the frame.
+                // after the update.
                 CompositeHealthScorer const& scorer = *this;
-                HealthStep const step =
-                    slots_.with_element(index, [&scorer, &peer, now_ns, &sequences](Slot& slot) noexcept {
-                        return scorer.compute_in(slot, peer, now_ns, sequences);
-                    });
+                HealthStep const step = slots_.update(index, [&scorer, &peer, now_ns, &sequences](Slot& slot) noexcept {
+                    return scorer.compute_in(slot, peer, now_ns, sequences);
+                });
                 step.event.match([this](HealthDeltaEvent event) noexcept { push_event(event); }, [] noexcept {});
                 return step.graded;
             },

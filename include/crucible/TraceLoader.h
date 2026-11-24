@@ -263,8 +263,7 @@ template <class Field, std::size_t Offset, std::size_t RecordBytes>
     requires(Offset <= RecordBytes && sizeof(Field) <= RecordBytes - Offset)
 [[nodiscard]] inline Field read_record_field_(::fixy::View<std::byte const, RecordBytes> record) noexcept {
     ::fixy::FixedArray<std::byte, sizeof(Field)> image{};
-    image.with_mut(
-        [record](auto run) noexcept { ::fixy::copy(std::move(run), record_block_<Offset, sizeof(Field)>(record)); });
+    image.copy_from(record_block_<Offset, sizeof(Field)>(record));
     return ::fixy::bit_cast<Field>(image);
 }
 
@@ -356,9 +355,8 @@ decode_trace_op_(::fixy::View<std::byte const, RecordBytes> op_record, uint32_t 
     for (::fixy::View<std::byte const, sizeof(int64_t)> scalar : scalar_block.template chunks<sizeof(int64_t)>()) {
         if (lane == num_scalars) break;
         const int64_t value = read_record_field_<int64_t, 0>(scalar);
-        entry.scalar_values.with_element(
-            ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane"),
-            [value](int64_t& held) noexcept { held = value; });
+        entry.scalar_values.set(ScalarLane::check(lane).expect("the scalar block holds one chunk for each lane"),
+                                value);
         ++lane;
     }
     // The entry passes the one validator of an entry from outside, as an
@@ -997,7 +995,7 @@ inline void write_record_field_(::fixy::ViewMut<std::byte, Brand, RecordBytes>& 
 // The lanes of a block of sizes or strides, as the array that a record holds.
 [[nodiscard]] inline ::fixy::FixedArray<int64_t, kMaxTensorNDim> record_lanes_(TensorDimArray const& block) noexcept {
     ::fixy::FixedArray<int64_t, kMaxTensorNDim> lanes{};
-    lanes.with_mut([&block](auto run) noexcept { ::fixy::copy(std::move(run), block.lanes()); });
+    lanes.copy_from(block.lanes());
     return lanes;
 }
 
@@ -1007,22 +1005,19 @@ inline void write_record_field_(::fixy::ViewMut<std::byte, Brand, RecordBytes>& 
 [[nodiscard]] inline ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES>
 encode_trace_header(uint32_t num_ops, uint32_t num_metas) noexcept {
     using detail::write_record_field_;
-    ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
-    header.with_mut([num_ops, num_metas](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, TRACE_HEADER_BYTES>([num_ops, num_metas](auto run) noexcept {
         write_record_field_<0>(run, TRACE_MAGIC);
         write_record_field_<4>(run, TRACE_FORMAT_VERSION);
         write_record_field_<8>(run, num_ops);
         write_record_field_<12>(run, num_metas);
     });
-    return header;
 }
 
 // The bytes of one op record, at the offsets of TraceOpRecord.
 [[nodiscard]] inline ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)>
 encode_trace_op(TraceOpRecord const& record) noexcept {
     using detail::write_record_field_;
-    ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> image{};
-    image.with_mut([&record](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, sizeof(TraceOpRecord)>([&record](auto run) noexcept {
         write_record_field_<offsetof(TraceOpRecord, schema_hash)>(run, record.schema_hash.raw());
         write_record_field_<offsetof(TraceOpRecord, shape_hash)>(run, record.shape_hash.raw());
         write_record_field_<offsetof(TraceOpRecord, scope_hash)>(run, record.scope_hash.raw());
@@ -1037,7 +1032,6 @@ encode_trace_op(TraceOpRecord const& record) noexcept {
         write_record_field_<offsetof(TraceOpRecord, scalar_types)>(run, record.scalar_types);
         write_record_field_<offsetof(TraceOpRecord, data_slots)>(run, record.data_slots);
     });
-    return image;
 }
 
 // The bytes of one metadata record, at the offsets of TensorMeta.  The data
@@ -1049,8 +1043,7 @@ encode_trace_op(TraceOpRecord const& record) noexcept {
 encode_trace_meta(TensorMeta const& meta) noexcept {
     using detail::record_lanes_;
     using detail::write_record_field_;
-    ::fixy::FixedArray<std::byte, TRACE_META_BYTES> image{};
-    image.with_mut([&meta](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, TRACE_META_BYTES>([&meta](auto run) noexcept {
         write_record_field_<offsetof(TensorMeta, sizes)>(run, record_lanes_(meta.sizes));
         write_record_field_<offsetof(TensorMeta, strides)>(run, record_lanes_(meta.strides));
         write_record_field_<offsetof(TensorMeta, ndim)>(run, meta.ndim);
@@ -1066,7 +1059,6 @@ encode_trace_meta(TensorMeta const& meta) noexcept {
         write_record_field_<offsetof(TensorMeta, storage_nbytes)>(run, meta.storage_nbytes);
         write_record_field_<offsetof(TensorMeta, grad_fn_hash)>(run, meta.grad_fn_hash.value());
     });
-    return image;
 }
 
 // The use of the names of a trace: a load that leaves the global schema table
@@ -1123,9 +1115,9 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         return ::fixy::err(TraceLoadError::HeaderTruncated);
     }
 
-    ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header{};
-    CRUCIBLE_TRY(_, header.with_mut(
-                        [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, std::move(run)); }));
+    auto [header_read, header] = ::fixy::build_fixed_array<std::byte, TRACE_HEADER_BYTES>(
+        [&io, &source](auto run) noexcept { return detail::read_exact_(io, source, std::move(run)); });
+    CRUCIBLE_TRY(_, std::move(header_read));
     CRUCIBLE_TRY(checked_header,
                  CheckedTraceHeader::check(::fixy::View<std::byte const, TRACE_HEADER_BYTES>{header.view()}));
 
