@@ -320,6 +320,13 @@ public:
 // The body is in src/foundation/SharedPermission.cpp.
 [[noreturn]] CRUCIBLE_COLD void shared_permission_pool_not_at_rest_abort_() noexcept;
 
+// The end of shared_permission_pool_not_at_rest_abort_, as a value of the
+// type of the lease, for the early value of CRUCIBLE_LET_ELSE.
+template <class Lease>
+[[noreturn]] CRUCIBLE_COLD Lease refuse_not_at_rest_() noexcept {
+    shared_permission_pool_not_at_rest_abort_();
+}
+
 // The context a pool operation runs in: one that admits the tag's row and
 // holds Nondet.  A lend fails while the exclusive is out, and an upgrade
 // fails while a share is out.  Another thread ends a share or deposits the
@@ -406,11 +413,8 @@ public:
     [[nodiscard]] ExclusiveLease<Tag, Brand> claim_exclusive_at_rest() noexcept
         requires(permission_row_empty(^^Tag))
     {
-        ::foundation::core::Option<ExclusiveLease<Tag, Brand>> claimed = try_upgrade_raw_();
-        if (claimed.is_none()) [[unlikely]] {
-            shared_permission_pool_not_at_rest_abort_();
-        }
-        return std::move(claimed).expect("the test above found the exclusive");
+        CRUCIBLE_LET_ELSE(claimed, try_upgrade_raw_(), refuse_not_at_rest_<ExclusiveLease<Tag, Brand>>());
+        return claimed;
     }
 
     // The holder of the lease gives the exclusive back (the lease).  While
@@ -588,6 +592,17 @@ namespace detail {
     inline constexpr bool shared_read_nothrow_v =
         std::is_nothrow_invocable_v<Args...[sizeof...(Args) - 1], shared_read_token_t<Args...>>;
 
+    // The answer of a shared read that got no share: false for a body that
+    // gives void, and the empty Option for each other body.
+    template <typename Result>
+    [[nodiscard]] constexpr auto unlent_shared_read_() noexcept {
+        if constexpr (std::is_void_v<Result>) {
+            return false;
+        } else {
+            return ::foundation::core::Option<Result>{::foundation::core::none};
+        }
+    }
+
     template <typename... Args>
     auto with_shared_read_(Args && ... args) noexcept(shared_read_nothrow_v<Args...>) {
         using Pool = shared_read_pool_t<Args...>;
@@ -596,18 +611,10 @@ namespace detail {
         auto forwarded = std::forward_as_tuple(std::forward<Args>(args)...);
         Pool& pool = std::get<sizeof...(Args) - 2>(forwarded);
         Body&& body = std::get<sizeof...(Args) - 1>(std::move(forwarded));
-        auto lent = pool.lend(std::get<0>(forwarded));
-        if (lent.is_none()) {
-            if constexpr (std::is_void_v<Result>) {
-                return false;
-            } else {
-                return ::foundation::core::Option<Result>{::foundation::core::none};
-            }
-        }
+        CRUCIBLE_LET_ELSE(lent, pool.lend(std::get<0>(forwarded)), unlent_shared_read_<Result>());
         // The guard of the lent share moves to a local, which lives until the
         // return.  The body runs in this frame, so no closure captures it.
-        SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const guard =
-            std::move(lent).expect("the pool lent a share, as the test above shows");
+        SharedPermissionGuard<typename Pool::tag_type, typename Pool::brand_type> const guard = std::move(lent);
         if constexpr (std::is_void_v<Result>) {
             std::forward<Body>(body)(guard.token());
             return true;

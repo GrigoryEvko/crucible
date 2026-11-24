@@ -474,6 +474,15 @@ constexpr void end_unlent_body_(Body&& body) noexcept {
     }
 }
 
+// The end of end_unlent_body_, and then the empty Option of the lend door,
+// for the early value of CRUCIBLE_LET_ELSE.
+template <class Body>
+    requires HandleLendFrameBody<Body>
+[[nodiscard]] constexpr ::foundation::core::NoValue refuse_unlent_body_(Body&& body) noexcept {
+    end_unlent_body_(static_cast<Body&&>(body));
+    return ::foundation::core::none;
+}
+
 }  // namespace detail
 
 }  // namespace fixy::concurrent

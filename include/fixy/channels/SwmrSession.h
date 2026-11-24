@@ -398,9 +398,8 @@ public:
         requires ::foundation::permissions::PoolCtx<reader_tag, Ctx>
     [[nodiscard, gnu::noinline]] ::fixy::Option<ReaderEnd> reader(SwmrFrameKey const& /*key*/,
                                                                   Ctx const& ctx) noexcept {
-        auto lent = reader_pool_.lend(ctx);
-        if (lent.is_none()) return ::fixy::none;
-        return ::fixy::some(ReaderEnd{*this, std::move(lent).expect("SwmrSession::reader: the pool lent a share")});
+        CRUCIBLE_TRY(lent, reader_pool_.lend(ctx));
+        return ::fixy::some(ReaderEnd{*this, std::move(lent)});
     }
 
     // The reader root while it is out of the pool (the lease of
@@ -561,13 +560,9 @@ auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     using value_type = ::fixy::concurrent::detail::handle_frame_value_t<result_type>;
     SwmrFrameKey const key{};
-    auto lent = session.reader(key, ctx);
-    if (lent.is_none()) {
-        ::fixy::concurrent::detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::fixy::none;
-    }
-    handle_type handle =
-        SwmrFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent reader end"));
+    CRUCIBLE_LET_ELSE(lent, session.reader(key, ctx),
+                      ::fixy::concurrent::detail::refuse_unlent_body_(static_cast<Body&&>(body)));
+    handle_type handle = SwmrFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return ::fixy::Option<value_type>::some(::foundation::core::Unit{});

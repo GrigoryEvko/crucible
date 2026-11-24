@@ -1030,11 +1030,9 @@ public:
                                                                    ::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = producer_pool_.lend(nondet);
-        if (lent.is_none()) return ::foundation::core::none;
+        CRUCIBLE_TRY(lent, producer_pool_.lend(nondet));
         side_.producers_.add_producer();
-        return ::foundation::core::Option<ProducerEnd>::some(
-            ProducerEnd{*this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share")});
+        return ::foundation::core::Option<ProducerEnd>::some(ProducerEnd{*this, std::move(lent)});
     }
 
     // The producer door of a lanes channel.  It lends a pool share for the
@@ -1055,8 +1053,7 @@ public:
     producer(ChannelFrameKey const& /*key*/, ::foundation::effects::cap::Nondet nondet, lane_index lane) noexcept
         requires(Form == ChannelForm::lanes)
     {
-        auto lent = producer_pool_.lend(nondet);
-        if (lent.is_none()) return ::foundation::core::none;
+        CRUCIBLE_TRY(lent, producer_pool_.lend(nondet));
         // The claim of a lane is an atomic claim, so two threads can take the
         // claims of two lanes through the element door at the same time.
         side_.lane_claims_.with_element(lane, [](::foundation::EndpointClaim& claim) noexcept {
@@ -1066,8 +1063,7 @@ public:
             ::foundation::core::fatal("a producer handle of a lane that ended. A lane ends one time in a stream, and "
                                       "the drain of the channel opens each lane again.");
         }
-        return ::foundation::core::Option<ProducerEnd>::some(ProducerEnd{
-            *this, std::move(lent).expect("PermissionedChannel::producer: the pool lent a share"), prove_lane_(lane)});
+        return ::foundation::core::Option<ProducerEnd>::some(ProducerEnd{*this, std::move(lent), prove_lane_(lane)});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
@@ -1372,10 +1368,17 @@ public:
                                       "the claim of this channel.");
         }
         if constexpr (Form == ChannelForm::wire) {
-            for (;;) {
-                ::foundation::core::Option<T> item = side_.ring_.try_pop_proven(prove_consumer_());
-                if (item.is_none()) break;
-                drop(std::move(item).expect("the test above found an item"));
+            // Each popped item goes to drop, and the first empty pop ends the
+            // drain.
+            bool is_popped = true;
+            while (is_popped) {
+                is_popped = side_.ring_.try_pop_proven(prove_consumer_())
+                                .match(
+                                    [&drop](T item) noexcept {
+                                        drop(std::move(item));
+                                        return true;
+                                    },
+                                    [] noexcept { return false; });
             }
         } else {
             side_.ring_.drain(prove_consumer_(), std::forward<Drop>(drop));
@@ -1735,13 +1738,8 @@ auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, 
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     using value_type = detail::handle_frame_value_t<result_type>;
     ChannelFrameKey const key{};
-    auto lent = channel.producer(key, nondet);
-    if (lent.is_none()) {
-        detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::foundation::core::none;
-    }
-    handle_type handle =
-        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    CRUCIBLE_LET_ELSE(lent, channel.producer(key, nondet), detail::refuse_unlent_body_(static_cast<Body&&>(body)));
+    handle_type handle = ChannelFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});
@@ -1762,13 +1760,9 @@ auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, 
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     using value_type = detail::handle_frame_value_t<result_type>;
     ChannelFrameKey const key{};
-    auto lent = channel.producer(key, nondet, lane);
-    if (lent.is_none()) {
-        detail::end_unlent_body_(static_cast<Body&&>(body));
-        return ::foundation::core::none;
-    }
-    handle_type handle =
-        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    CRUCIBLE_LET_ELSE(lent, channel.producer(key, nondet, lane),
+                      detail::refuse_unlent_body_(static_cast<Body&&>(body)));
+    handle_type handle = ChannelFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return ::foundation::core::Option<value_type>::some(::foundation::core::Unit{});

@@ -169,11 +169,9 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
                                  first_axis, positions](auto shard, auto place) noexcept {
             std::size_t const index = place.index().raw();
             CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-            core::Option<Rows> own = std::move(*first_of_(core::detail::BaseLayerRead{}, shard));
-            if (own.is_none()) return;
+            CRUCIBLE_LET_ELSE(rows, std::move(*first_of_(core::detail::BaseLayerRead{}, shard)), );
             std::size_t const first = ::fixy::detail::shard_start(positions, Shards, index);
             std::size_t const count = ::fixy::detail::shard_start(positions, Shards, index + 1) - first;
-            Rows const rows = std::move(own).expect("a shard with positions has its rows");
             bool const is_written =
                 core::detail::write_pointwise_(
                     ruled, Sequence{}, apart, rows,

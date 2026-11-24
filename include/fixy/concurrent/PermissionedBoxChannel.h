@@ -377,10 +377,8 @@ public:
                                                                    ::foundation::effects::cap::Nondet nondet) noexcept
         requires(Form == ChannelForm::merge)
     {
-        auto lent = cells_.producer(key, nondet);
-        if (lent.is_none()) return ::foundation::core::none;
-        return ::foundation::core::Option<ProducerEnd>::some(
-            ProducerEnd{std::move(lent).expect("the test above found a producer")});
+        CRUCIBLE_TRY(lent, cells_.producer(key, nondet));
+        return ::foundation::core::Option<ProducerEnd>::some(ProducerEnd{std::move(lent)});
     }
 
     // Takes the claim of the consumer role first, so a second live consumer
