@@ -40,6 +40,7 @@
 #include <fixy/os/Args.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Path.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Sort.h>
 #include <foundation/effects/Effect.h>
@@ -63,7 +64,11 @@ void arm_crash_file(::fixy::TextView path) noexcept;
 
 // The input in flight, which the death path writes to the crash file.  The
 // runner sets it before each input, and its storage lives until the next one.
+// The death callback of the sanitizer takes no argument, so the input is a
+// global, and the rule view-escape refuses a borrow in a global.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the death callback of the sanitizer reads the input in flight")
 inline ::fixy::View<std::byte const> current_input{};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 namespace runner_detail {
 

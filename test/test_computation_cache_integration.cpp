@@ -103,14 +103,6 @@ cipher::CompiledBody blind_body{};
 cipher::CompiledBody empty_row_body{};
 cipher::CompiledBody bg_row_body{};
 cipher::CompiledBody io_row_body{};
-::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> blind_run =
-    g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
-::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> aware_run =
-    g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
-// A plain View of an arena run: the View carries no brand of its arena.
-Bodies const blind_population = blind_run.view();
-// A plain View of an arena run: the View carries no brand of its arena.
-Bodies const aware_population = aware_run.view();
 cipher::CompiledBody lifetime_body{};
 cipher::CompiledBody hot_body{};
 
@@ -226,6 +218,17 @@ int main() {
     // failure of that.
     {
         ::fixy::report(::fixy::Sink::Err, "  scenario 4 (population_disjointness): ");
+
+        // The two populations are runs of the arena, which keeps their bodies
+        // for the process, as the slots name them after the scenario.
+        ::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> blind_run =
+            g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
+        ::fixy::ArenaRun<cipher::CompiledBody, PopulationArena> aware_run =
+            g_population_arena.array(::foundation::effects::testing::test().alloc, 8, cipher::CompiledBody{});
+        // A plain View of an arena run: the View carries no brand of its arena.
+        Bodies const blind_population = blind_run.view();
+        // A plain View of an arena run: the View carries no brand of its arena.
+        Bodies const aware_population = aware_run.view();
 
         cipher::insert_computation_cache<&ic_pop1, int>(lend_erased(body_at(blind_population, 0)));
         cipher::insert_computation_cache<&ic_pop2, int>(lend_erased(body_at(blind_population, 1)));

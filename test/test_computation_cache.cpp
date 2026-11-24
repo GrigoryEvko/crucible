@@ -124,17 +124,14 @@ struct[[= ::foundation::brand::arena_family_brand{}]] BodyArena final {};
 ::fixy::BumpArena<BodyArena> g_runs =
     ::fixy::mint_bump_arena<BodyArena>(::fixy::Quantity<::fixy::unit::Byte, size_t>{4096});
 
-// A run of one body for each worker of a race.
+// A run of one body for each worker of a race.  Each race takes its run in its
+// own body, and the arena keeps the bodies for the process, so the slots of
+// the cache name them after the race.
 [[nodiscard]] Bodies make_bodies() noexcept {
     auto run = g_runs.array(g_test.alloc, kWorkerCount, cipher::CompiledBody{});
     // A plain View of an arena run: the View carries no brand of its arena.
     return run.view().window<kWorkerCount>(0).expect("the run holds one body for each worker");
 }
-
-Bodies const disjoint_bodies = make_bodies();
-Bodies const contended_bodies = make_bodies();
-Bodies const disjoint_row_bodies = make_bodies();
-Bodies const contended_row_bodies = make_bodies();
 
 // True when the slot holds body.
 [[nodiscard]] bool holds(Slot slot, cipher::CompiledBody const& body) noexcept {
@@ -338,22 +335,23 @@ void test_hash_distribution_sanity(::fixy::TestRunnerCtx const& test) {
 // and every slot must end up holding its own thread's body.
 void test_concurrent_inserts_disjoint_slots(::fixy::TestRunnerCtx const& test) {
     RaceGate gate{};
+    Bodies const disjoint_bodies = make_bodies();
 
     // The instantiation is in the body of each worker, so each worker
     // reaches a different slot.
-    auto worker_0 = [&gate] noexcept {
+    auto worker_0 = [&gate, &disjoint_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache<&ct_fn_t0, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<0>())));
     };
-    auto worker_1 = [&gate] noexcept {
+    auto worker_1 = [&gate, &disjoint_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache<&ct_fn_t1, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<1>())));
     };
-    auto worker_2 = [&gate] noexcept {
+    auto worker_2 = [&gate, &disjoint_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache<&ct_fn_t2, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<2>())));
     };
-    auto worker_3 = [&gate] noexcept {
+    auto worker_3 = [&gate, &disjoint_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache<&ct_fn_t3, int>(lend_erased(body_at(disjoint_bodies, ::fixy::index<3>())));
     };
@@ -380,8 +378,9 @@ void test_concurrent_inserts_same_slot_first_wins(::fixy::TestRunnerCtx const& t
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache<&test_fn_c, int>().is_none());
 
     RaceGate gate{};
-    auto contender_of = [&gate](BodyIndex position) noexcept {
-        return [&gate, position] noexcept {
+    Bodies const contended_bodies = make_bodies();
+    auto contender_of = [&gate, &contended_bodies](BodyIndex position) noexcept {
+        return [&gate, &contended_bodies, position] noexcept {
             wait_at(gate);
             cipher::insert_computation_cache<&test_fn_c, int>(lend_erased(body_at(contended_bodies, position)));
         };
@@ -455,23 +454,24 @@ void test_row_aware_slot_id_is_type_driven_not_hash_driven(::fixy::TestRunnerCtx
 // ordering on one family and not the other.
 void test_concurrent_inserts_disjoint_slots_in_row(::fixy::TestRunnerCtx const& test) {
     RaceGate gate{};
+    Bodies const disjoint_row_bodies = make_bodies();
 
-    auto worker_0 = [&gate] noexcept {
+    auto worker_0 = [&gate, &disjoint_row_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t0, EmptyR, int>(
             lend_erased(body_at(disjoint_row_bodies, ::fixy::index<0>())));
     };
-    auto worker_1 = [&gate] noexcept {
+    auto worker_1 = [&gate, &disjoint_row_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t1, EmptyR, int>(
             lend_erased(body_at(disjoint_row_bodies, ::fixy::index<1>())));
     };
-    auto worker_2 = [&gate] noexcept {
+    auto worker_2 = [&gate, &disjoint_row_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t2, EmptyR, int>(
             lend_erased(body_at(disjoint_row_bodies, ::fixy::index<2>())));
     };
-    auto worker_3 = [&gate] noexcept {
+    auto worker_3 = [&gate, &disjoint_row_bodies] noexcept {
         wait_at(gate);
         cipher::insert_computation_cache_in_row<&cr_fn_t3, EmptyR, int>(
             lend_erased(body_at(disjoint_row_bodies, ::fixy::index<3>())));
@@ -494,8 +494,9 @@ void test_concurrent_inserts_same_slot_first_wins_in_row(::fixy::TestRunnerCtx c
     CRUCIBLE_TEST_ASSERT(test, cipher::lookup_computation_cache_in_row<&cr_contention_fn, EmptyR, int>().is_none());
 
     RaceGate gate{};
-    auto contender_of = [&gate](BodyIndex position) noexcept {
-        return [&gate, position] noexcept {
+    Bodies const contended_row_bodies = make_bodies();
+    auto contender_of = [&gate, &contended_row_bodies](BodyIndex position) noexcept {
+        return [&gate, &contended_row_bodies, position] noexcept {
             wait_at(gate);
             cipher::insert_computation_cache_in_row<&cr_contention_fn, EmptyR, int>(
                 lend_erased(body_at(contended_row_bodies, position)));

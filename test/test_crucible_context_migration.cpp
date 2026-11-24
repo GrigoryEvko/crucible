@@ -82,19 +82,19 @@ crucible::DagRef<MemoryPlan> make_plan(::foundation::effects::Alloc alloc, ::fix
 }
 
 // The metadata of the outputs and the slots of the plans are runs of this
-// arena, which lives as long as the process.  The first block holds the 2048
-// slots of the wide plan.
+// arena, which lives as long as the process.  A block holds the 2048 slots of
+// the wide plan.  Each function takes its runs in its own body, so no object
+// of static storage holds a run.
 auto g_test = ::foundation::effects::testing::test();
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, std::size_t>;
 ::fixy::BumpArena<crucible::DagArena> g_runs = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{std::size_t{1} << 17});
 
-// The zero metadata of the outputs of the test ops.  The switch reads no
-// metadata, so the ops of each region share it.
-::fixy::ArenaRun<TensorMeta, crucible::DagArena> const output_metas_run = g_runs.array(g_test.alloc, 2, TensorMeta{});
-
 // Two operations with the same hashes in each region, so the first one is
-// the shared prefix of a switch at position 1.
+// the shared prefix of a switch at position 1.  The metadata of their outputs
+// is zero, and the switch reads none of it.
 void make_ops(::fixy::View<TraceEntry> ops, ::fixy::ArenaRun<SlotId const, crucible::DagArena> outputs) {
+    ::fixy::ArenaRun<TensorMeta, crucible::DagArena> const output_metas_run =
+        g_runs.array(g_test.alloc, 2, TensorMeta{});
     for (std::uint32_t index = 0; index < 2; index++) {
         TraceEntry& op = *ops.get(index).expect("a test region holds two ops");
         op.schema_hash = SchemaHash{100 + index};
@@ -119,17 +119,17 @@ crucible::DagRef<RegionNode> build_region(::foundation::effects::Alloc alloc,
     return region;
 }
 
-// The slots of the plans are runs of g_runs: the wide plan has 2048 slots of
-// 48 bytes, too many for the stack of a test.
-::fixy::ArenaRun<TensorSlot, crucible::DagArena> old_slots_run = g_runs.array(g_test.alloc, 2, TensorSlot{});
-::fixy::ArenaRun<TensorSlot, crucible::DagArena> new_slots_run = g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
-
 // Activates a region of two slots, then switches at position 1 to a region
 // whose plan has new_count slots.  The first operation of the new region
 // writes slot new_slot.  Returns the result of the switch.
 bool switch_to_plan(std::uint32_t new_count, std::uint32_t new_slot) {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
+    // The slots of the plans are runs of g_runs: the wide plan has 2048 slots
+    // of 48 bytes, too many for the stack of a test.
+    ::fixy::ArenaRun<TensorSlot, crucible::DagArena> old_slots_run = g_runs.array(g_test.alloc, 2, TensorSlot{});
+    ::fixy::ArenaRun<TensorSlot, crucible::DagArena> new_slots_run =
+        g_runs.array(g_test.alloc, kWideSlots, TensorSlot{});
     const auto old_outputs = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0}, SlotId{1});
     auto old_ops_run = arena.array(test.alloc, 2, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.

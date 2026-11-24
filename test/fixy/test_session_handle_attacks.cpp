@@ -73,6 +73,7 @@
 #include <fixy/session/Mint.h>
 #include <fixy/session/Projection.h>
 
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/os/ChildProcess.h>
 #include <foundation/permissions/Permission.h>
@@ -607,8 +608,12 @@ using RightHead =
 using RightTracked = decltype(s::HandleFactory::release(std::declval<RightHead>()));
 using RightDone = decltype(std::declval<RightTracked>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
+// The attack moves the handle through a global, where no fork put it, and a
+// handle holds a borrow, which the rule view-escape refuses in a global.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the attack moves a session handle through a global slot")
 Slot<RightTracked> g_right_endpoint;
 Slot<RightDone> g_right_done;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 struct GiveAwayBody {
     template <typename Brand>
@@ -709,10 +714,12 @@ using CycleTrackedB = decltype(s::HandleFactory::release(std::declval<CycleHeadB
 using CycleDoneA = decltype(std::declval<CycleTrackedA>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 using CycleDoneB = decltype(std::declval<CycleTrackedB>().send(Ping{}, [](RightEnd&, Ping&) noexcept { return true; }));
 
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the attack moves a session handle through a global slot")
 Slot<CycleTrackedA> g_cycle_endpoint_a;
 Slot<CycleTrackedB> g_cycle_endpoint_b;
 Slot<CycleDoneA> g_cycle_done_a;
 Slot<CycleDoneB> g_cycle_done_b;
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 struct CycleRightA {
     template <typename Brand>

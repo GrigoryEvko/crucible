@@ -45,16 +45,7 @@ using crucible::MetaLog;
 using crucible::TensorMeta;
 using crucible::TraceRing;
 
-// The memory that the data addresses of the tensors point into: a run of
-// 4096 bytes of this arena.  The build reads an address as a key and never
-// through it.
 using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
-::fixy::BumpArena<crucible::DagArena> g_memory_arena =
-    ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 13});
-::fixy::ArenaRun<std::byte, crucible::DagArena> g_memory_run =
-    g_memory_arena.array(::foundation::effects::testing::test().alloc, 4096, std::byte{});
-// A plain View of an arena run: the View carries no brand of its arena.
-::fixy::View<std::byte> const g_memory = g_memory_run.view();
 
 // Four known generations, and the unknown generations of two periods of the
 // allocator.
@@ -68,8 +59,10 @@ constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
     crucible::StorageGeneration::unknown(crucible::AllocatorEpoch{2});
 
 // A tensor of `elements` floats whose storage starts at the offset base of
-// g_memory, at element `first` of that storage, with the storage generation
-// `generation`.  A tensor past the first element of its storage is a view.
+// the memory, at element `first` of that storage, with the storage
+// generation `generation`.  A tensor past the first element of its storage
+// is a view.  The memory starts at the synthetic address 0x10000: the build
+// reads an address as a key and never through it.
 [[nodiscard]] TensorMeta vector_at(uint32_t base, uint32_t first = 0, int64_t elements = 64,
                                    crucible::StorageGeneration generation = {}) {
     TensorMeta meta{};
@@ -84,7 +77,7 @@ constexpr crucible::StorageGeneration kUnknownInSecondPeriod =
     meta.storage_offset = first;
     if (first != 0) meta.flags = crucible::meta_flags::IS_VIEW;
     meta.data_ptr =
-        crucible::external_data_ptr(&*g_memory.get(base + first * sizeof(float)).expect("the offset is in the memory"));
+        crucible::mint_synthetic_data_ptr(crucible::SyntheticAddress{0x10000 + base + first * sizeof(float)});
     return meta;
 }
 
