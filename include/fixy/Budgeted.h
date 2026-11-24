@@ -185,7 +185,8 @@ template <typename Ctx>
 }
 
 template <SelfContained T>
-class [[nodiscard]] Budgeted : public graded_facade<::foundation::algebra::ModalityKind::Absolute, BudgetLattice, T> {
+class [[nodiscard]][[= ::foundation::core::equal_parts{}]] Budgeted
+    : public graded_facade<::foundation::algebra::ModalityKind::Absolute, BudgetLattice, T> {
 public:
     using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute, BudgetLattice, T>;
     using typename facade_::graded_type;

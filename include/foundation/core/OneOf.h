@@ -95,7 +95,7 @@ class OneOfFrameKeyDoor final : ::foundation::NoObject<OneOfFrameKeyDoor> {
 
 template <class... Ts>
     requires OneOfAlternatives<Ts...>
-class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<Ts...>>]]
+class [[nodiscard]][[= equal_parts{}]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<Ts...>>]]
                    [[= ::foundation::linear::sum{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] OneOf {
     detail::SumSlot<Ts...> slot_;
 

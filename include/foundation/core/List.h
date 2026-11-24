@@ -193,7 +193,7 @@ concept BytewiseListElement = std::is_trivially_copyable_v<T> && std::is_trivial
 template <class T, std::size_t N>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N> && std::is_nothrow_move_constructible_v<T>
 class[[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-     [[= ::foundation::lifetime::no_start_over_bytes{}]] FixedList final {
+     [[= ::foundation::lifetime::no_start_over_bytes{}]][[= equal_parts{}]] FixedList final {
     detail::ListSlots<T, N> slots_{};
     detail::IndexWord<N> count_ = 0;
 

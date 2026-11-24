@@ -406,7 +406,8 @@ concept KeyedLinearElementBody = LinearElementBody<Body, T> && ReachesNoLoanKey<
 
 template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand = Unkeyed>
     requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
-class[[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]] FixedArray final : private detail::ArrayStorage<T, N> {
+class[[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]][[= equal_parts{}]] FixedArray final
+    : private detail::ArrayStorage<T, N> {
     using Storage = detail::ArrayStorage<T, N>;
     using Storage::elements_;
 
@@ -973,7 +974,7 @@ concept CanMintHeapArrayWritten =
 template <class T, std::size_t Align = alignof(T)>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-                   [[= ::foundation::transfer::by_arguments{}]] HeapArray final
+                   [[= ::foundation::transfer::by_arguments{}]][[= equal_parts{}]] HeapArray final
     : public OwnerCore<detail::owner::HeapArrayState<T, Align>, HeapArray<T, Align>> {
     using State = detail::owner::HeapArrayState<T, Align>;
     using Core = OwnerCore<State, HeapArray>;

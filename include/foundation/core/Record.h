@@ -140,7 +140,7 @@ struct RecordCells<std::index_sequence<Is...>, Ts...> : RecordCell<Is, Ts>... {}
 }  // namespace detail
 
 template <RecordElement... Ts>
-struct Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
+struct[[= equal_parts{}]] Record : detail::RecordCells<std::index_sequence_for<Ts...>, Ts...> {
     using types = ::foundation::reflect::Pack<Ts...>;
 
     [[nodiscard]] static consteval std::size_t size() noexcept { return sizeof...(Ts); }

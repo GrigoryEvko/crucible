@@ -207,7 +207,7 @@ template <typename Ctx>
 }
 
 template <SelfContained T>
-class [[nodiscard]] EpochVersioned
+class [[nodiscard]][[= ::foundation::core::equal_parts{}]] EpochVersioned
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute, EpochVersionLattice, T> {
 public:
     using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute, EpochVersionLattice, T>;

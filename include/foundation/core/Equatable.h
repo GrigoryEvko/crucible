@@ -4,12 +4,19 @@
 // value, derived from the parts of its type.
 //
 //   Equatable<T>      a type that equal compares
+//   PartialEquatable<T>
+//                     an Equatable type, or a class whose own == compares a
+//                     float by IEEE 754 and states it with ieee_equality
 //   Orderable<T>      a type that order orders
 //   equal(a, b)       true when a and b hold the same value
 //   order(a, b)       the std::strong_ordering of a and b: lexicographic over
 //                     the parts, in declaration order
 //   derive_protocol   the annotation of a class that takes the operations of
 //                     the family from its parts
+//   equal_parts       the annotation of a class whose own == compares each of
+//                     its parts with equal, such as Option and FixedArray
+//   ieee_equality     the annotation of a class whose own == compares a float
+//                     with the == of IEEE 754
 //   local_part        the annotation of a member whose value is local to one
 //                     process, such as an address or a count of an allocator
 //   pad_part          the annotation of a member of explicit padding
@@ -56,6 +63,16 @@
 //   base, never through this family.  A floating type other than float and
 //   double is refused: long double holds padding bits on x86_64.
 //
+//   A class with its own == that holds a float or a double at a depth of its
+//   parts compares that float by the == of IEEE 754, as a defaulted == does:
+//   +0 equals -0, and a NaN equals nothing.  Such a class is no Equatable
+//   type, with or without derive_protocol, so equal, find and the sums of the
+//   base refuse it.  A class with derive_protocol and no own == compares its
+//   parts by the float rule.  The mark ieee_equality keeps an own == and
+//   makes the class a PartialEquatable type only.  The walk of the parts
+//   stops at a class with the mark equal_parts, whose own == compares each
+//   part with equal.
+//
 // Marks of a member
 //   equal and order read each part, a local part and a pad part too.  hash,
 //   encode and format skip a local part, because its value has no meaning
@@ -87,6 +104,17 @@ struct local_part final {};
 
 // The annotation of a member of explicit padding.  Each byte of it is zero.
 struct pad_part final {};
+
+// The annotation of a class whose own == compares each of its parts with
+// equal, so a float part compares by the float rule: Option, Result, OneOf,
+// Record, FixedArray, HeapArray, FixedList and the wrappers of fixy that
+// compare their value with equal.  Its == asks for Equatable parts.
+struct equal_parts final {};
+
+// The annotation of a class whose own == compares a float or a double with
+// the == of IEEE 754, on purpose.  The class is PartialEquatable, and no
+// Equatable type.
+struct ieee_equality final {};
 
 namespace detail {
 
@@ -167,9 +195,52 @@ enum class CompareKind : std::uint8_t {
     order,
 };
 
+// True when the class carries an annotation of the type mark.
+[[nodiscard]] consteval bool carries_mark_at(std::meta::info type, std::meta::info mark) {
+    return !std::meta::annotations_of_with_type(type, mark).empty();
+}
+
+// True when an own == of a class that holds the type compares a float by
+// the == of IEEE 754: the type is a float or a double, or it holds one by
+// value at a depth of its parts.  The walk stops at a class with the mark
+// equal_parts, whose == compares its parts by the float rule, and it reads
+// a class with the mark ieee_equality as such a compare.  A union is no
+// walked part.  A class cannot hold itself by value, so the walk ends.  The
+// walk reads the list of parts of each class one time, so it is linear in
+// the number of parts that it reaches.
+[[nodiscard]] consteval bool compares_float_by_ieee_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    if (type == ^^float || type == ^^double) return true;
+    if (std::meta::is_array_type(type)) return compares_float_by_ieee_at(std::meta::remove_all_extents(type));
+    if (!std::meta::is_class_type(type) || !std::meta::is_complete_type(type)) return false;
+    if (carries_mark_at(type, ^^equal_parts)) return false;
+    if (carries_mark_at(type, ^^ieee_equality)) return true;
+    auto const bases = std::meta::bases_of(type, std::meta::access_context::unchecked());
+    for (std::size_t index = 0; index < bases.size(); ++index) {
+        if (compares_float_by_ieee_at(std::meta::type_of(bases[index]))) return true;
+    }
+    auto const members = std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked());
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        if (!std::meta::is_bit_field(members[index]) && compares_float_by_ieee_at(std::meta::type_of(members[index]))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True for a class with the mark ieee_equality whose own == gives bool and
+// does not throw: a PartialEquatable class that is no Equatable type.
+[[nodiscard]] consteval bool states_ieee_equality_at(std::meta::info spelled) {
+    std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
+    return std::meta::is_class_type(type) && std::meta::is_complete_type(type) && carries_mark_at(type, ^^ieee_equality)
+        && std::meta::extract<bool>(std::meta::substitute(^^HasOwnEquality, {type}));
+}
+
 // True when the type is a leaf, an array or a class that the compare of the
 // kind takes.  The concept of an own operator is read only for a class with
-// no annotation.  Linear in the number of parts that the walk reaches.
+// no annotation.  A class whose own == compares a float by IEEE 754 is no
+// type of the equality (the float rule).  Linear in the number of parts that
+// the walk reaches.
 [[nodiscard]] consteval bool compares_at(std::meta::info spelled, CompareKind kind, int depth) {
     if (depth > max_protocol_depth) return false;
     std::meta::info const type = std::meta::remove_cv(std::meta::dealias(spelled));
@@ -184,6 +255,11 @@ enum class CompareKind : std::uint8_t {
     if (std::meta::is_array_type(type)) {
         return std::meta::is_bounded_array_type(type)
             && compares_at(std::meta::remove_all_extents(type), kind, depth + 1);
+    }
+    if (kind == CompareKind::equality && std::meta::is_class_type(type)
+        && std::meta::extract<bool>(std::meta::substitute(^^HasOwnEquality, {type}))
+        && compares_float_by_ieee_at(type)) {
+        return false;
     }
     if (derives_protocol_at(type)) {
         std::size_t const bases = base_count(type);
@@ -246,9 +322,17 @@ void member_at_(T const&&) = delete("the reference names a part of the object, a
 // A type that equal compares: an integer, a bool, a character, an
 // enumeration, a float or a double, a pointer, a bounded C array of such
 // elements, a class with the annotation derive_protocol whose parts are
-// Equatable, and a class whose own == gives bool and does not throw.
+// Equatable, and a class whose own == gives bool and does not throw.  A class
+// whose own == compares a float by IEEE 754 is none of them (the float rule).
 template <class T>
 concept Equatable = detail::compares_at(^^T, detail::CompareKind::equality, 0);
+
+// A type with an == that a caller can read: an Equatable type, or a class
+// with the mark ieee_equality, whose own == compares a float by IEEE 754.  A
+// numeric compare of such a value goes through its own ==, and no family of
+// the base takes it as an identity.
+template <class T>
+concept PartialEquatable = Equatable<T> || detail::states_ieee_equality_at(^^T);
 
 // A type that order orders: an integer, a bool, a character, an
 // enumeration, a float or a double, a bounded C array of such elements, a

@@ -764,6 +764,13 @@ struct[[= derive_protocol{}]] HoldsFixedArray {
     FixedArray<std::uint16_t, 3> lanes{};
 };
 
+// A defaulted == of a C array of a float compares each element by IEEE 754,
+// so the class is no Equatable type.
+struct HoldsFloatCArray {
+    double lanes[2] = {};
+    friend constexpr bool operator==(HoldsFloatCArray const&, HoldsFloatCArray const&) noexcept = default;
+};
+
 // A pointer compares as an address, and a local pointer has no place in the
 // hash or the image.
 struct[[= derive_protocol{}]] HoldsPointer {
@@ -775,6 +782,7 @@ void test_c_array_and_pointer_parts() {
     static_assert(encoded_size_v<HoldsCArray> == 6 && encoded_size_v<HoldsFixedArray> == 6);
     static_assert(::foundation::core::Encodable<HoldsPointer> && encoded_size_v<HoldsPointer> == 4);
     static_assert(::foundation::core::Equatable<HoldsPointer> && !::foundation::core::Orderable<HoldsPointer>);
+    static_assert(!::foundation::core::Equatable<HoldsFloatCArray> && ::foundation::core::Equatable<HoldsCArray>);
 
     ::crucible::test::PhiloxStream stream{0x4341525241595054ULL};
     for (int round = 0; round < 1024; ++round) {

@@ -591,7 +591,7 @@ test/foundation/ | opted-out | 1 | PROBE: the layout test reads the address of t
 test/foundation/ | opted-out | 1 | PROBE: the signature reflection reads a raw pointer parameter | -
 test/foundation/ | opted-out | 6 | PROBE: the test ends a linear sum that no consumer took | -
 test/foundation/ | opted-out | 3 | PROBE: the test forges SmBudget with an axis, a budget or a name of a different tag | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
-test/foundation/ | opted-out | 2 | PROBE: the walk of the Protocol family over a C array part and a pointer part | -
+test/foundation/ | opted-out | 3 | PROBE: the walk of the Protocol family over a C array part and a pointer part | the walk of the float rule of Equatable over a C array of a double in a class with an own ==
 test/foundation/ | opted-out | 2 | PROBE: the walk of the extract gate reads the target of a raw pointer member | -
 test/foundation/ | opted-out | 3 | PROBE: valid_span judges a raw pointer with a count, the form of a drain | -
 test/foundation/ | raw-function-pointer | 9 | - | -

@@ -134,11 +134,14 @@ using ::foundation::reflect::pack_unique_v;
 // value is one overload set, as is order.  fixy/Protocol.h gives the upper
 // part: hash, encode, decode and format of a value.
 using ::foundation::core::derive_protocol;
+using ::foundation::core::equal_parts;
 using ::foundation::core::Equatable;
+using ::foundation::core::ieee_equality;
 using ::foundation::core::local_part;
 using ::foundation::core::order;
 using ::foundation::core::Orderable;
 using ::foundation::core::pad_part;
+using ::foundation::core::PartialEquatable;
 
 // The core of an owner of storage, and the marker that its state carries.
 // An owner of each layer derives from the core (foundation/core/Owner.h).

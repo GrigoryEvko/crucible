@@ -3277,6 +3277,14 @@ foundation_neg_compile_test(neg_core_protocol_heap_decode_without_budget
 foundation_neg_compile_test(neg_core_protocol_heap_decode_raw_budget
   "no matching function for call to .decode<HoldsWords>\\(foundation::core::Alloc, std::size_t, foundation::core::View<const std::byte>\\)."
   "cannot convert .4096. \\(type .std::size_t. \\{aka .long unsigned int.\\}\\) to type .foundation::core::Quantity<foundation::core::unit::Byte, long unsigned int>.")
+# The float rule of a class with its own ==: a defaulted == over a double
+# compares by IEEE 754, so find and the == of an Option refuse the class.
+foundation_neg_compile_test(neg_core_equal_ieee_class_find
+  "no matching function for call to .find\\(foundation::core::View<const \\{anonymous\\}::Rate, 2>, \\{anonymous\\}::Rate\\)."
+  "CompareKind::equality, 0\\) \\[with T = <unnamed>::Rate\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_equal_ieee_class_option
+  "no match for .operator==. \\(operand types are .const foundation::core::Option<\\{anonymous\\}::Rate>. and"
+  "CompareKind::equality, 0\\) \\[with T = <unnamed>::Rate\\]. evaluated to .false.")
 
 foundation_neg_compile_test(neg_core_record_reference_part
   "template constraint failure for .template<class ... Ts>  requires \\(... && RecordElement<Ts>\\) struct foundation::core::Record."

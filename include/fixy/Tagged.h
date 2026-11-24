@@ -283,7 +283,7 @@ template <typename To, typename T, typename From>
 // keeps a trivially copyable wrapper: a byte image that crosses a trust
 // boundary arrives under such a tag and is checked again.
 template <typename T, typename Tag>
-class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] Tagged
+class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::core::equal_parts{}]] Tagged
     : public graded_facade<::foundation::algebra::ModalityKind::RelativeMonad,
                            ::foundation::algebra::lattices::TrustLattice<Tag>, T> {
 public:

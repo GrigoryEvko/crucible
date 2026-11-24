@@ -1805,8 +1805,8 @@ template <class T, class E, class OnOk, class OnErr, class Brand>
 concept LinearResultFrameArms = (!ArmsHoldNoLinearValue<OnOk, OnErr>) && ResultFrameCallables<T, E, OnOk, OnErr, Brand>;
 
 template <ChoicePayload T>
-class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]][[= ::foundation::linear::sum{}]]
-    Option {
+class [[nodiscard]][[= equal_parts{}]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T>>]]
+                   [[= ::foundation::linear::sum{}]] Option {
     detail::OptionSlot<T> slot_;
 
     template <class U>
@@ -3068,7 +3068,7 @@ public:
 // conversion.  Zero bytes are a value or an error that no constructor made,
 // so the annotation no_start_over_bytes refuses a lifetime start over bytes.
 template <ChoicePayload T, ErrorValue E>
-class [[nodiscard]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T, E>>]]
+class [[nodiscard]][[= equal_parts{}]][[= ::foundation::linear::linear_when<HoldsLinearAlternative<T, E>>]]
                    [[= ::foundation::linear::sum{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Result {
     detail::ResultSlot<T, E> slot_;
 

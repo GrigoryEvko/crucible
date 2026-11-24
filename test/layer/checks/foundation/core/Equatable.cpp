@@ -55,8 +55,9 @@ struct OwnCompare {
     friend constexpr std::strong_ordering operator<=>(OwnCompare, OwnCompare) noexcept = default;
 };
 
-// A class whose <=> gives a partial order, which does not agree with ==.
-struct PartialCompare {
+// A class whose == compares a double by IEEE 754 on purpose, and whose <=>
+// gives a partial order, which does not agree with ==.
+struct[[= ieee_equality{}]] PartialCompare {
     double value = 0.0;
     friend constexpr bool operator==(PartialCompare left, PartialCompare right) noexcept {
         return left.value <= right.value && right.value <= left.value;
@@ -64,6 +65,38 @@ struct PartialCompare {
     friend constexpr std::partial_ordering operator<=>(PartialCompare left, PartialCompare right) noexcept {
         return left.value <=> right.value;
     }
+};
+
+// A class whose defaulted == compares a float by IEEE 754 and states no rule.
+struct IeeeCompare {
+    float value = 0.0f;
+    friend constexpr bool operator==(IeeeCompare, IeeeCompare) noexcept = default;
+};
+
+// The walk reads a part of a part and a base.  test_core_protocol holds the
+// walk over a C array.
+struct HoldsIeeeCompare {
+    std::uint32_t word = 0;
+    IeeeCompare inner{};
+    friend constexpr bool operator==(HoldsIeeeCompare const&, HoldsIeeeCompare const&) noexcept = default;
+};
+
+struct DerivesIeeeCompare : IeeeCompare {
+    friend constexpr bool operator==(DerivesIeeeCompare const&, DerivesIeeeCompare const&) noexcept = default;
+};
+
+// derive_protocol does not hide an own == that compares a float by IEEE 754,
+// because a caller of == gets that compare and not the float rule.
+struct[[= derive_protocol{}]] DerivesWithIeeeCompare {
+    double value = 0.0;
+    friend constexpr bool operator==(DerivesWithIeeeCompare, DerivesWithIeeeCompare) noexcept = default;
+};
+
+// A FixedArray carries equal_parts: its == compares the elements with equal,
+// so the walk stops at it.
+struct HoldsFloatLanes {
+    FixedArray<double, 2> lanes{};
+    friend constexpr bool operator==(HoldsFloatLanes const&, HoldsFloatLanes const&) noexcept = default;
 };
 
 // A class whose == can throw.
@@ -103,8 +136,17 @@ static_assert(std::is_lt(order(static_cast<signed char>(-1), static_cast<signed 
 static_assert(Equatable<Sealed> && Orderable<Sealed> && Equatable<Wide> && Orderable<Wide>);
 static_assert(!Equatable<Plain> && !Orderable<Plain>);
 static_assert(Equatable<OwnCompare> && Orderable<OwnCompare>);
-static_assert(Equatable<PartialCompare> && !Orderable<PartialCompare>);
 static_assert(!Equatable<ThrowingEqual>);
+
+// The float rule of a class with its own ==.  A class that compares a float
+// by IEEE 754 is no Equatable type.  With ieee_equality it is PartialEquatable.
+static_assert(!Equatable<PartialCompare> && PartialEquatable<PartialCompare> && !Orderable<PartialCompare>);
+static_assert(!Equatable<IeeeCompare> && !PartialEquatable<IeeeCompare>);
+static_assert(!Equatable<HoldsIeeeCompare> && !Equatable<DerivesIeeeCompare> && !Equatable<DerivesWithIeeeCompare>);
+static_assert(Equatable<HoldsPart<double>> && Equatable<HoldsPart<HoldsFloatLanes>>);
+static_assert(Equatable<HoldsFloatLanes> && Equatable<FixedArray<double, 2>> && !Equatable<FixedArray<IeeeCompare, 1>>);
+static_assert(PartialEquatable<int> && PartialEquatable<Sealed> && PartialEquatable<OwnCompare>);
+static_assert(!PartialEquatable<Plain> && !PartialEquatable<ThrowingEqual>);
 static_assert(!Equatable<HoldsBitField> && !Orderable<HoldsBitField>);
 static_assert(Equatable<HoldsPart<int>> && Orderable<HoldsPart<int>> && Equatable<HoldsPart<Wide>>);
 static_assert(std::is_lt(order(HoldsPart<int>{1}, HoldsPart<int>{2})) && equal(HoldsPart<int>{3}, HoldsPart<int>{3}));
