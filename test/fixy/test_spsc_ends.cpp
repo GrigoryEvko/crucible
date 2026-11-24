@@ -132,11 +132,13 @@ int check_split() {
     auto [log, producer_key, consumer_key] =
         ::fixy::concurrent::mint_spsc_split<CountLog>(::foundation::effects::testing::test().alloc, std::uint64_t{3});
 
-    // The two ends name the log of the split.
+    // The two ends name the log of the split.  The body reads the split
+    // through a const reference, so it stores no borrow in the split.
+    auto const& reader = log;
     bool const is_owner =
         log.with_ends(producer_key, consumer_key,
-                      [&log](ProducerEnd<CountLog> const& producer, ConsumerEnd<CountLog> const& consumer) noexcept {
-                          return log.with_owner([&producer, &consumer](CountLog const& owner) noexcept {
+                      [&reader](ProducerEnd<CountLog> const& producer, ConsumerEnd<CountLog> const& consumer) noexcept {
+                          return reader.with_owner([&producer, &consumer](CountLog const& owner) noexcept {
                               return owner.is_owner_of(producer, consumer);
                           });
                       });

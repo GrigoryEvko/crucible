@@ -80,6 +80,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
 #include <foundation/core/Record.h>
@@ -329,25 +330,31 @@ private:
 
 // The body of a frame door of one end: it takes the end with no throw, its
 // result holds no borrow and fits a Record, it reaches no key of the side
-// (the gate of foundation/core/Frame.h), and it holds no linear value by
-// value (HoldsNoLinearValue of foundation/Linear.h).
+// (the gate of foundation/core/Frame.h), it holds no linear value by value
+// (HoldsNoLinearValue of foundation/Linear.h), and it stores no borrow
+// outside the frame (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h).  A Ref of the end in a capture would let
+// the caller write the side after the frame, beside the next holder of the
+// side.
 template <class Body, class End, class KeyBrand>
-concept SpscEndBody =
-    std::is_nothrow_invocable_v<Body&&, End&>
-    && (std::is_void_v<std::invoke_result_t<Body&&, End&>>
-        || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>
-            && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, End&>>>))
-    && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+concept SpscEndBody = std::is_nothrow_invocable_v<Body&&, End&>
+                   && (std::is_void_v<std::invoke_result_t<Body&&, End&>>
+                       || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>
+                           && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, End&>>>))
+                   && ::foundation::core::ReachesNoLoanKey<Body, KeyBrand>
+                   && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // The body of the frame door of the two ends of a split: it takes the two
 // ends with no throw, its result holds no borrow, it reaches no key of either
-// side, and it holds no linear value by value.
+// side, it holds no linear value by value, and it stores no borrow outside
+// the frame.
 template <class Body, class Producer, class Consumer, class ProducerBrand, class ConsumerBrand>
 concept SpscEndsBody =
     std::is_nothrow_invocable_v<Body&&, Producer&, Consumer&>
     && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Producer&, Consumer&>>
     && ::foundation::core::ReachesNoLoanKey<Body, ProducerBrand>
-    && ::foundation::core::ReachesNoLoanKey<Body, ConsumerBrand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+    && ::foundation::core::ReachesNoLoanKey<Body, ConsumerBrand> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // A body of a frame door of one end that reaches no key of the side and
 // holds a linear value by value: the linear twin of the door binds to it.
@@ -378,14 +385,16 @@ concept SpscReachesHeldSplit =
 
 // The body of a proof door of one end of a held split: it takes the end with
 // no throw, its result holds no borrow and fits a Record, it reaches no split
-// of the brand through a borrow, and it holds no linear value by value.
+// of the brand through a borrow, it holds no linear value by value, and it
+// stores no borrow outside the frame.
 template <class Body, class End, class Brand>
 concept SpscHeldEndBody =
     std::is_nothrow_invocable_v<Body&&, End&>
     && (std::is_void_v<std::invoke_result_t<Body&&, End&>>
         || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, End&>>
             && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, End&>>>))
-    && !SpscReachesHeldSplit<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>;
+    && !SpscReachesHeldSplit<Body, Brand> && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // A body of a proof door that reaches a split of the brand through a borrow:
 // the refused twin of the door binds to it.
@@ -489,7 +498,7 @@ public:
     template <class Body>
         requires std::is_nothrow_invocable_v<Body&&, Owner const&>
               && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Owner const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>
     constexpr auto with_owner(Body&& body) const& noexcept {
         Owner const& owner = *producer_.owner_;
         return static_cast<Body&&>(body)(owner);

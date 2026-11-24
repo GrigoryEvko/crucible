@@ -4778,6 +4778,17 @@ fixy_neg_compile_test(neg_spsc_ends_holder_gives_the_end_out
 fixy_neg_compile_test(neg_spsc_ends_split_that_moves
   "use of deleted function .fixy::concurrent::SpscSplit<Owner, Brand>::SpscSplit\\(fixy::concurrent::SpscSplit<Owner, Brand>&&\\)"
   "the ends of a split live beside the Box of their owner, so a split does not move, and no code moves its Box out while an end lives")
+# A body of a door of a split that keeps a Ref of its end in a capture: the
+# store check of the door refuses it.
+fixy_neg_compile_test(neg_spsc_ends_body_keeps_its_end
+  "no matching function for call to .fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "StoresNoBorrowOutside")
+# A body of a door of a split that captures the split by a reference that is
+# not const, to reach a second frame through a helper: the store check of the
+# door refuses the capture.
+fixy_neg_compile_test(neg_spsc_ends_body_reaches_its_split
+  "no matching function for call to .fixy::concurrent::SpscSplit<.anonymous.::Owner, "
+  "StoresNoBorrowOutside")
 fixy_neg_compile_test(neg_spsc_ends_end_in_an_outer_option
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "an end lives in its split beside its owner, so a move would let the end outlive the owner")
