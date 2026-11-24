@@ -2998,6 +2998,15 @@ foundation_neg_compile_test(neg_core_try_unbraced_if
   ".crucible_try_hold_[0-9]+. was not declared in this scope"
   "template argument 1 is invalid"
   "unused variable .crucible_try_hold_[0-9]+.")
+foundation_neg_compile_test(neg_core_let_else_non_choice_operand
+  "static assertion failed: CRUCIBLE_LET_ELSE consumes a Result or an Option and drops a failure"
+  "in expansion of macro .CRUCIBLE_LET_ELSE.")
+foundation_neg_compile_test(neg_core_let_else_name_in_early_value
+  "neg_core_let_else_name_in_early_value\\.cpp:14:[0-9]+: error: .kept. was not declared in this scope"
+  "in definition of macro .CRUCIBLE_LET_ELSE.")
+foundation_neg_compile_test(neg_core_let_else_linear_error
+  "static assertion failed: CRUCIBLE_LET_ELSE consumes a Result or an Option and drops a failure"
+  "in expansion of macro .CRUCIBLE_LET_ELSE.")
 foundation_neg_compile_test(neg_core_one_of_single
   "template constraint failure for .template<class \\.\\.\\. Ts>  requires  OneOfAlternatives<Ts \\.\\.\\.> class foundation::core::OneOf."
   "the expression .sizeof \\.\\.\\. \\(Ts \\.\\.\\.\\) >= 2 \\[with Ts = \\{int\\}\\]. evaluated to .false.")

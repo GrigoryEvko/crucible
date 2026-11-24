@@ -1,6 +1,7 @@
 // Tests of CRUCIBLE_TRY of foundation/core/Choice.h: each kind of operand,
 // the conversion of an error, a linear value and a linear error, the
-// placeholder `_`, a chain of steps and a use in a constant evaluation.
+// placeholder `_`, a chain of steps and a use in a constant evaluation.  The
+// tests of CRUCIBLE_LET_ELSE give the early value of a failure.
 
 #include <foundation/core/Choice.h>
 
@@ -205,6 +206,56 @@ static_assert(quarter_of(10).is_err());
 static_assert(positive_sum(1, 2).expect("one and two are positive") == 3);
 static_assert(positive_sum(0, 2).is_none());
 
+// CRUCIBLE_LET_ELSE in a function that gives neither an Option nor a Result:
+// the failure returns the early value, and the error of a Result is dropped.
+[[nodiscard]] constexpr int half_or_minus_one(int value) noexcept {
+    CRUCIBLE_LET_ELSE(half, half_of(value), -1);
+    return half;
+}
+
+[[nodiscard]] constexpr bool is_positive_pair(int left, int right) noexcept {
+    CRUCIBLE_LET_ELSE(first, positive(left), false);
+    CRUCIBLE_LET_ELSE(second, positive(right), false);
+    return first > 0 && second > 0;
+}
+
+// The early value of a function that returns void is empty.
+int pairs_counted = 0;
+
+void count_positive(int value) noexcept {
+    CRUCIBLE_LET_ELSE(kept, positive(value), );
+    pairs_counted += kept;
+}
+
+// An operand that a local holds, and a Result of a linear value: a failure
+// ends the Result, and a value gives its token to the name.  The cast has a
+// comma in its template arguments, so it goes in a pair of parentheses.
+[[nodiscard]] int handle_or_zero(int handle) noexcept {
+    Result<CountedToken, Refusal> opened = open_token(handle);
+    CRUCIBLE_LET_ELSE(token, (static_cast<Result<CountedToken, Refusal>&&>(opened)), 0);
+    int const kept = token.handle();
+    ::foundation::linear::drop(static_cast<CountedToken&&>(token));
+    return kept;
+}
+
+void test_let_else() {
+    CRUCIBLE_FATAL_INVARIANT(half_or_minus_one(8) == 4);
+    CRUCIBLE_FATAL_INVARIANT(half_or_minus_one(7) == -1);
+    CRUCIBLE_FATAL_INVARIANT(is_positive_pair(1, 2));
+    CRUCIBLE_FATAL_INVARIANT(!is_positive_pair(1, 0));
+    CRUCIBLE_FATAL_INVARIANT(!is_positive_pair(-1, 2));
+    pairs_counted = 0;
+    count_positive(3);
+    count_positive(-3);
+    CRUCIBLE_FATAL_INVARIANT(pairs_counted == 3);
+    CRUCIBLE_FATAL_INVARIANT(handle_or_zero(5) == 5 && live_tokens == 0);
+    CRUCIBLE_FATAL_INVARIANT(handle_or_zero(-5) == 0 && live_tokens == 0);
+}
+
+static_assert(half_or_minus_one(20) == 10);
+static_assert(half_or_minus_one(-2) == -1);
+static_assert(is_positive_pair(2, 3) && !is_positive_pair(2, -3));
+
 }  // namespace
 
 int main() {
@@ -214,5 +265,6 @@ int main() {
     test_linear_parts();
     test_placeholder();
     test_chain();
+    test_let_else();
     return 0;
 }

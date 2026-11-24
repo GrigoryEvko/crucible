@@ -3540,6 +3540,26 @@ template <class Hold>
     }
 }
 
+// The operand of CRUCIBLE_LET_ELSE: an operand of CRUCIBLE_TRY whose failure
+// the macro can drop.  An empty Option holds nothing.  A failed Result holds
+// its error, and the macro drops it, so a linear error is refused: a linear
+// error goes up through CRUCIBLE_TRY or a match.
+template <class Hold>
+concept LetElseOperand = TryOperand<Hold>
+                      && (IsOption<std::remove_cvref_t<Hold>>
+                          || !::foundation::linear::is_linear_type(std::meta::template_arguments_of(
+                              std::meta::dealias(std::meta::remove_cvref(^^Hold)))[1]));
+
+// The end of a failed operand of CRUCIBLE_LET_ELSE: the failure leaves
+// through the propagate of CRUCIBLE_TRY, which consumes a linear Option and
+// a Result of a linear value, and the macro drops what it gives.
+template <class Hold>
+constexpr void let_else_drop_(Hold&& hold) noexcept {
+    if constexpr (LetElseOperand<Hold&&>) {
+        static_cast<void>(detail::try_propagate_(static_cast<Hold&&>(hold)));
+    }
+}
+
 }  // namespace detail
 
 }  // namespace foundation::core
@@ -3568,4 +3588,33 @@ template <class Hold>
         return ::foundation::core::detail::try_propagate_(                                                \
             static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)));           \
     auto name = ::foundation::core::detail::try_take_(                                                    \
+        static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)))
+
+// CRUCIBLE_LET_ELSE(name, operand, early_value) gives the value of an Option
+// or a Result to a new local `name`, as CRUCIBLE_TRY does.  When the operand
+// holds no value or holds an error, the function returns early_value, which
+// can be a value of each type that the function returns, or nothing in a
+// function that returns void.  So the else arm leaves the function, and it
+// cannot fall through.  The macro drops the error of a Result, so a linear
+// error is refused.  Use CRUCIBLE_TRY when the error goes up.
+//
+//   CRUCIBLE_LET_ELSE(first, parse_cpu_id(text), CpuSet{});
+//   CRUCIBLE_LET_ELSE(page, std::move(pages).pop(), false);
+//
+// The operand is a temporary or std::move(local), and the macro evaluates it
+// one time.  An operand with a comma outside parentheses, such as a template
+// argument list, goes in a pair of parentheses.  The name is declared after
+// the else arm, so early_value cannot read it.  The macro is a sequence of
+// statements, as CRUCIBLE_TRY is, and one line holds one of the two macros.
+#define CRUCIBLE_LET_ELSE(name, operand, ...)                                                                  \
+    auto&& CRUCIBLE_TRY_HOLD_(__LINE__) = (operand);                                                           \
+    static_assert(::foundation::core::detail::LetElseOperand<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>,          \
+                  "CRUCIBLE_LET_ELSE consumes a Result or an Option and drops a failure: give it a temporary " \
+                  "or std::move(name), and give a Result with a linear error to CRUCIBLE_TRY");                \
+    if (::foundation::core::detail::try_failed_(CRUCIBLE_TRY_HOLD_(__LINE__))) {                               \
+        ::foundation::core::detail::let_else_drop_(                                                            \
+            static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)));                \
+        return __VA_ARGS__;                                                                                    \
+    }                                                                                                          \
+    auto name = ::foundation::core::detail::try_take_(                                                         \
         static_cast<decltype(CRUCIBLE_TRY_HOLD_(__LINE__))>(CRUCIBLE_TRY_HOLD_(__LINE__)))
