@@ -297,8 +297,8 @@ template <class Calls>
 [[gnu::always_inline]] inline void allocate_window(Calls const calls, Blocks& blocks,
                                                    core::ElementCount count) noexcept {
     for (std::size_t position = 0; position < count.raw(); ++position) {
-        blocks.words.with_element(batch_at(position),
-                                  [calls](alloc::AddressWord& word) noexcept { word = calls.allocate(); });
+        alloc::AddressWord const block = calls.allocate();
+        blocks.words.with_element(batch_at(position), [block](alloc::AddressWord& word) noexcept { word = block; });
     }
 }
 

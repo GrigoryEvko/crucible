@@ -57,8 +57,8 @@ struct Input final {
 [[nodiscard]] fc::FixedArray<std::byte, 32> key_bytes() noexcept {
     constexpr fc::TextView text{"whats the Elvish word for friend"};
     fc::FixedArray<std::byte, 32> bytes{};
-    auto letter = text.begin();
-    bytes.with_mut([&letter](auto run) noexcept {
+    bytes.with_mut([text](auto run) noexcept {
+        auto letter = text.begin();
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(*letter);
             ++letter;

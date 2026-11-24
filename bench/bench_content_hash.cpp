@@ -27,15 +27,16 @@ static ::fixy::HeapArray<TraceEntry> make_ops(::fixy::BumpArena<DagArena>& arena
         meta.strides[d] = tensor_dim((d == ndim - 1) ? 1 : 128);
     }
     ::fixy::HeapArray<TraceEntry> ops = ::fixy::mint_heap_array(A, count, TraceEntry{});
-    ops = ::fixy::with_mut(std::move(ops), [&arena, &meta, count, num_inputs](auto run) noexcept {
+    auto const& meta_read = meta;
+    ops = ::fixy::with_mut(std::move(ops), [&arena, &meta_read, count, num_inputs](auto run) noexcept {
         for (uint32_t i = 0; i < count; i++) {
             auto te = run.get_mut(i).expect("i is below count");
             te->schema_hash = SchemaHash{0xAAAA000000000000ULL ^ i};
-            const auto input_metas_run = arena.array(A, num_inputs, meta);
+            const auto input_metas_run = arena.array(A, num_inputs, meta_read);
             const auto producers_run = arena.array(A, num_inputs, OpIndex{});
             const auto input_slots_run = arena.array(A, num_inputs, SlotId{});
             te->set_inputs(input_metas_run, producers_run, input_slots_run);
-            const auto output_metas_run = arena.array(A, 1, meta);
+            const auto output_metas_run = arena.array(A, 1, meta_read);
             const auto output_slots_run = arena.array(A, 1, SlotId{});
             te->set_outputs(output_metas_run, output_slots_run);
         }

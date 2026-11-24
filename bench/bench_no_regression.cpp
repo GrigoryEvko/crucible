@@ -654,12 +654,13 @@ int main() {
     int failures = 0;
     int reruns = 0;
     bench::print("=== measuring ===\n");
-    // One frame of the rows holds the loop of the workloads.
-    reports = ::fixy::with_mut(std::move(reports), [&workloads, &pieces, samples, &cores](auto rows) noexcept {
-        for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
-            const std::size_t i = workload.raw();
-            workloads.with_element(workload, [&rows, &pieces, samples, &cores, i](Workload& w) noexcept {
-                Trio trio = run_workload(w, pieces, samples, cores);
+    // The frame of each workload holds its three measures, and a frame of the
+    // rows inside it writes the three rows of the workload.
+    for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
+        const std::size_t i = workload.raw();
+        workloads.with_element(workload, [&reports, &pieces, samples, &cores, i](Workload& w) noexcept {
+            Trio trio = run_workload(w, pieces, samples, cores);
+            reports = ::fixy::with_mut(std::move(reports), [&trio, i](auto rows) noexcept {
                 auto sequential_row = rows.get_mut(i * 3 + 0).expect("the sequential row of a workload");
                 *sequential_row = std::move(trio.sequential);
                 auto rule_row = rows.get_mut(i * 3 + 1).expect("the rule row of a workload");
@@ -667,8 +668,8 @@ int main() {
                 auto forced_row = rows.get_mut(i * 3 + 2).expect("the forced row of a workload");
                 *forced_row = std::move(trio.forced);
             });
-        }
-    });
+        });
+    }
 
     bench::emit_reports_text(reports.view());
 

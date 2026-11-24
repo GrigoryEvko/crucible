@@ -222,7 +222,7 @@ void bench_runs_and_segments(View<float const> all) {
     constexpr std::size_t kCount = 65536;
     ::fixy::FixedArray<View<float const>, 8> runs{};
     std::size_t offset = 0;
-    runs.with_mut([&all, &offset](auto slots) noexcept {
+    runs.with_mut([all, &offset](auto slots) noexcept {
         for (View<float const>& run : slots) {
             run = all.window(offset, kCount).expect("the run fits");
             offset += kCount;

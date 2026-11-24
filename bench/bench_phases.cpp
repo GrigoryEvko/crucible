@@ -472,15 +472,18 @@ void bench_phase2_subparts(BackgroundThread& bg, MetaLog& meta_log, const Loaded
         }
         const uint32_t total_metas =
             first_meta.is_valid() ? static_cast<uint32_t>(max_meta_end - first_meta.raw()) : uint32_t{0};
+        const MetaLog& meta_log_read = meta_log;
 
         for (uint32_t iter = 0; iter < iters; iter++) {
             // The buffer is new in each iteration, so its frame is in the
             // timed region.  The frame gives the buffer back with no
             // assignment.
             const uint64_t t0 = bench::rdtsc_start();
-            ::fixy::HeapArray<TensorMeta> meta_buffer = ::fixy::with_mut(
-                ::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
-                [&meta_log, first_meta](auto run) noexcept { meta_log.copy_run(first_meta.raw(), std::move(run)); });
+            ::fixy::HeapArray<TensorMeta> meta_buffer =
+                ::fixy::with_mut(::fixy::mint_heap_array(A, total_metas, TensorMeta{}),
+                                 [&meta_log = meta_log_read, first_meta](auto run) noexcept {
+                                     meta_log.copy_run(first_meta.raw(), std::move(run));
+                                 });
             const uint64_t t1 = bench::rdtsc_end();
 
             bench::do_not_optimize(meta_buffer);

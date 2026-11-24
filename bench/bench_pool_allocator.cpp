@@ -316,20 +316,20 @@ int main() {
         constexpr uint32_t TOTAL = N_INT + N_EXT;
         ::fixy::BumpArena<crucible::DagArena> slot_arena = ::fixy::mint_bump_arena<crucible::DagArena>(kSlotBlock);
         MemoryPlan plan = make_mixed_plan(slot_arena.array(test.alloc, TOTAL, TensorSlot{}), N_INT, N_EXT, 256);
-
-        PoolAllocator pool;
-        pool.init(::foundation::effects::testing::test().alloc, plan);
-        auto pv = pool.mint_initialized_view(kVigilForeground);
+        const MemoryPlan& plan_read = plan;
 
         // The external buffers: one run of bytes, 256 bytes for each slot.
         // The pool keeps the address of each buffer, so the run lives on the
         // heap at the alignment of 256 bytes.  The pool keeps the addresses
-        // until its destroy, so one frame of the run holds the row and the
-        // destroy, and no address outlives the frame.
+        // until its destroy, so the pool lives in the frame of the run, and
+        // no address outlives the frame.
         ::fixy::HeapArray<unsigned char, 256> ext_bytes =
             ::fixy::mint_heap_array<unsigned char, 256>(test.alloc, size_t{N_EXT} * 256, static_cast<unsigned char>(0));
         bench::Report r{};
-        ext_bytes = ::fixy::with_mut(std::move(ext_bytes), [&r, &pool, &pv](auto buffers) noexcept {
+        ext_bytes = ::fixy::with_mut(std::move(ext_bytes), [&r, &plan_read](auto buffers) noexcept {
+            PoolAllocator pool;
+            pool.init(::foundation::effects::testing::test().alloc, plan_read);
+            auto pv = pool.mint_initialized_view(kVigilForeground);
             auto const ext_run = ::fixy::take_window<size_t{N_EXT} * 256>(std::move(buffers), 0)
                                      .expect("the heap run holds each external buffer");
             r = bench::run("register_external(20 slots)", [&] {

@@ -70,9 +70,10 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
 // bench/bench_harness.h).  The call of a noipa function can end its block,
 // so the rows and the timed body around it stay in hot code.  A reborrow
 // lends the run of image to the serialize, and the run comes back to image,
-// so each call writes the same run.
+// so each call writes the same run.  The body holds the region through a
+// const borrow, so it writes no borrow of its frame into the region.
 template <class Brand, std::size_t Extent>
-[[gnu::noipa]] static size_t serialize_through_call(DagRef<RegionNode> region,
+[[gnu::noipa]] static size_t serialize_through_call(DagRef<RegionNode const> region,
                                                     ::fixy::ViewMut<std::byte, Brand, Extent>& image) {
     auto [written, back] = ::fixy::reborrow(std::move(image), [region](auto lent) noexcept {
         return serialize_region(::fixy::to(*region), std::move(lent));

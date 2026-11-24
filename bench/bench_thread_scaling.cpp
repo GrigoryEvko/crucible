@@ -73,7 +73,7 @@
 //
 // Raw workers
 //   The rows measure the bare rings of fixy/concurrent/ and their pinned
-//   references.  The threads of a row share the rings of RowState, and a
+//   references.  The threads of a row share the rings of RowHome, and a
 //   ring keeps plain positions that one side writes and the other reads.  No
 //   type of the base states that, so no door of the base can check the
 //   workers.  The rows thus keep the raw rings and raw threads as a
@@ -347,6 +347,10 @@ template <OpKind Kind>
 inline constexpr bool kIsSpsc = Kind == OpKind::SpscPush || Kind == OpKind::SpscProvenPush
                              || Kind == OpKind::SpscBatchPush || Kind == OpKind::SpscReferencePush;
 
+// True for an op of a pinned reference.
+template <OpKind Kind>
+inline constexpr bool kIsReference = Kind == OpKind::MpscReferencePush || Kind == OpKind::SpscReferencePush;
+
 // True for an op of the ring of lanes or of the lanes channel (the lanes).
 template <OpKind Kind>
 inline constexpr bool kIsLanes =
@@ -449,19 +453,38 @@ struct RowControl {
     ::fixy::FixedArray<ThreadLine, kMaxThreads> lines{};
 };
 
+// The index of the line of a slot of a row.
+using LineIndex = ::fixy::Index<kMaxThreads>;
+
 // The state that the threads of one row share.  The main thread owns it, and
-// it outlives each worker of the row.  Each row builds each ring and each
-// reference, and it uses the one of its op.
+// it outlives each worker of the row.  Each row builds each ring, and it uses
+// the one of its op.  The state holds only rings of the base, so a frame body
+// can write it.
 struct RowState : RowControl {
     MpscOwner::Ring mpsc{};
     MpscOwner::PackedRing mpsc_packed{};
     LanesOwner::Ring lanes{};
     ::fixy::concurrent::SpscRing<Item, kRingCapacity> spsc{};
     ProvenOwner::Ring spsc_proven{};
-    MpscReference mpsc_reference{};
-    SpscReference spsc_reference{};
     // The items of each batch push.  No thread writes them after the start.
     ::fixy::FixedArray<Item, kBatch> batch{};
+};
+
+// The pinned references of a row, which each row builds beside its state.
+// Their queues hold raw pointers, and the store check refuses a frame body
+// that writes such an object.  So each op of a reference runs outside each
+// frame.
+struct RowReferences {
+    MpscReference mpsc{};
+    SpscReference spsc{};
+};
+
+// The state and the references of a row in one block of the heap, so an op
+// of a reference reads its queue and the phase of the row from one address.
+// A frame body captures only the state.
+struct RowHome {
+    RowState state{};
+    RowReferences references{};
 };
 
 [[nodiscard]] Phase read_phase(RowControl const& control) noexcept { return control.phase.phase.load_acquire(); }
@@ -524,13 +547,20 @@ template <OpKind Kind>
     return seat;
 }
 
-// One op of a producer (the ops).
-template <OpKind Kind>
-[[gnu::always_inline]] inline void run_op(RowState& state, ThreadLine& line, Seat const& seat) noexcept {
+// One op of a producer (the ops).  Only the own add writes the line of the
+// thread, so only its arm opens the frame of the line.  The line is a
+// LineIndex, or a constant index for the main thread.  A reference op runs
+// outside each frame (RowReferences).
+template <OpKind Kind, class Line>
+[[gnu::always_inline]] inline void run_op(RowHome& home, Line line, Seat const& seat) noexcept {
+    RowState& state = home.state;
     if constexpr (Kind == OpKind::SharedAdd) {
         static_cast<void>(state.shared.value.fetch_add_acq_rel(1));
     } else if constexpr (Kind == OpKind::OwnAdd) {
-        static_cast<void>(line.cell.fetch_add_acq_rel(1));
+        // Each thread writes only the line of its own slot, and each field of a line is an Atomic.
+        state.lines.with_element(line, [] [[gnu::always_inline]] (ThreadLine & own) noexcept {
+            static_cast<void>(own.cell.fetch_add_acq_rel(1));
+        });
     } else if constexpr (Kind == OpKind::MpscPush) {
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::LanesPush) {
@@ -549,7 +579,7 @@ template <OpKind Kind>
         // The batch of the MPSC ring is all or nothing.
         push_waiting(state, [&state]() noexcept { return state.mpsc.try_push_batch(state.batch.view()) == kBatch; });
     } else if constexpr (Kind == OpKind::MpscReferencePush) {
-        push_waiting(state, [&state]() noexcept { return state.mpsc_reference.try_push(Item{1}); });
+        push_waiting(state, [&home]() noexcept { return home.references.mpsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::SpscPush) {
         push_waiting(state, [&state]() noexcept { return state.spsc.try_push(Item{1}); });
     } else if constexpr (Kind == OpKind::SpscProvenPush) {
@@ -558,7 +588,7 @@ template <OpKind Kind>
     } else if constexpr (Kind == OpKind::SpscBatchPush) {
         push_spsc_batch(state);
     } else {
-        push_waiting(state, [&state]() noexcept { return state.spsc_reference.try_push(Item{1}); });
+        push_waiting(state, [&home]() noexcept { return home.references.spsc.try_push(Item{1}); });
     }
 }
 
@@ -567,9 +597,10 @@ template <OpKind Kind>
 // kOpsPerCheck ops counts in the window of the phase that the worker read
 // before it.
 // The op is a call of the thread, so a worker that owns the end of a channel
-// runs the same loop.
+// runs the same loop.  The loop runs outside the frame of the line, and a
+// frame of the line publishes the counts.
 template <OpKind Kind, class Op>
-void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noexcept {
+void run_producer_loop(RowControl& control, Op const& op, LineIndex line) noexcept {
     static_cast<void>(control.ready.value.fetch_add_acq_rel(1));
     while (read_phase(control) == Phase::Wait)
         CRUCIBLE_SPIN_PAUSE;
@@ -581,13 +612,16 @@ void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noex
         for (WindowIndex const index : window)
             ops.with_element(index, [](std::uint64_t& count) noexcept { count += kOpsPerCheck * kItemsPerOp<Kind>; });
     }
-    for (WindowIndex const index : ops.indices()) {
-        std::uint64_t const value = ops.at(index);
-        // The main thread reads this Atomic only after is_published, and no other thread writes it.
-        line.window_ops.with_element(
-            index, [value](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(value); });
-    }
-    line.is_published.store_release(true);
+    // Each thread writes only the line of its own slot, and each field of a line is an Atomic.
+    control.lines.with_element(line, [&ops](ThreadLine& own) noexcept {
+        for (WindowIndex const index : ops.indices()) {
+            std::uint64_t const value = ops.at(index);
+            // The main thread reads this Atomic only after is_published, and no other thread writes it.
+            own.window_ops.with_element(
+                index, [value](::fixy::Atomic<std::uint64_t>& cell) noexcept { cell.store_release(value); });
+        }
+        own.is_published.store_release(true);
+    });
     while (read_phase(control) != Phase::Stop) {
         for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
             op();
@@ -595,9 +629,9 @@ void run_producer_loop(RowControl& control, Op const& op, ThreadLine& line) noex
 }
 
 template <OpKind Kind>
-void run_producer(RowState& state, ThreadLine& line, Seat const& seat) noexcept {
+void run_producer(RowHome& home, LineIndex line, Seat const& seat) noexcept {
     run_producer_loop<Kind>(
-        state, [&state, &line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line, seat); }, line);
+        home.state, [&home, line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(home, line, seat); }, line);
 }
 
 // The sum of the items that a pop took: one item, or each item of a batch.
@@ -643,19 +677,30 @@ template <OpKind Kind, class Items>
         });
         out = std::move(back);
         return take_batch(count);
-    } else if constexpr (Kind == OpKind::MpscReferencePush) {
-        return take_one(state.mpsc_reference.try_pop());
     } else if constexpr (Kind == OpKind::SpscPush) {
         return take_one(state.spsc.try_pop());
     } else if constexpr (Kind == OpKind::SpscProvenPush) {
         return take_one(state.spsc_proven.try_pop_proven(ProvenOwner::consumer()));
-    } else if constexpr (Kind == OpKind::SpscBatchPush) {
+    } else {
         auto [count, back] = ::fixy::reborrow(
             std::move(out), [&state](auto lent) noexcept { return state.spsc.try_pop_batch(std::move(lent)); });
         out = std::move(back);
         return take_batch(count);
+    }
+}
+
+// One pop of the consumer of a reference op, with the rule of pop_once.
+template <OpKind Kind>
+[[gnu::always_inline]] inline bool pop_reference(RowReferences& references, std::uint64_t& sum) noexcept {
+    auto const take_one = [&sum](::fixy::Option<Item> item) noexcept {
+        bool const has_item = item.is_some();
+        sum += sum_of(std::move(item));
+        return has_item;
+    };
+    if constexpr (Kind == OpKind::MpscReferencePush) {
+        return take_one(references.mpsc.try_pop());
     } else {
-        return take_one(state.spsc_reference.try_pop());
+        return take_one(references.spsc.try_pop());
     }
 }
 
@@ -680,19 +725,33 @@ template <class Pop, class Source, class Items>
     return sum;
 }
 
+// The consumer of an op.  The pop of a ring of the base runs in the frame of
+// the buffer of a batch pop.  The pop of a reference takes one item, and it
+// runs outside each frame (RowReferences).
 template <OpKind Kind>
-void run_consumer(RowState& state, ThreadLine& line) noexcept {
-    ::fixy::FixedArray<Item, kPopBatch> out{};
-    line.is_published.store_release(true);
-    std::uint64_t const item_sum = out.with_mut([&state](auto run) noexcept {
-        return run_consumer_loop(
+void run_consumer(RowHome& home, LineIndex line) noexcept {
+    RowState& state = home.state;
+    // Each thread writes only the line of its own slot, and each field of a line is an Atomic.
+    state.lines.with_element(line, [](ThreadLine& own) noexcept { own.is_published.store_release(true); });
+    std::uint64_t item_sum = 0;
+    if constexpr (kIsReference<Kind>) {
+        item_sum = run_consumer_loop(
             state,
-            [] [[gnu::always_inline]] (RowState & from, auto& items, std::uint64_t& sum) noexcept {
-                return pop_once<Kind>(from, items, sum);
-            },
-            state, run);
-    });
-    line.cell.store_release(item_sum);
+            [] [[gnu::always_inline]] (RowReferences & from, ::fixy::View<Item> /*items*/,
+                                       std::uint64_t& sum) noexcept { return pop_reference<Kind>(from, sum); },
+            home.references, ::fixy::View<Item>{});
+    } else {
+        ::fixy::FixedArray<Item, kPopBatch> out{};
+        item_sum = out.with_mut([&state](auto run) noexcept {
+            return run_consumer_loop(
+                state,
+                [] [[gnu::always_inline]] (RowState & from, auto& items, std::uint64_t& sum) noexcept {
+                    return pop_once<Kind>(from, items, sum);
+                },
+                state, run);
+        });
+    }
+    state.lines.with_element(line, [item_sum](ThreadLine& own) noexcept { own.cell.store_release(item_sum); });
 }
 
 // What the window of the main thread measured: its items, its wall time and
@@ -751,9 +810,9 @@ template <OpKind Kind, class Op>
 }
 
 template <OpKind Kind>
-[[nodiscard]] Window run_window(RowState& state, ThreadLine& line, Seat const& seat, bench::CpuId cpu) noexcept {
+[[nodiscard]] Window run_window(RowHome& home, LineIndex line, Seat const& seat, bench::CpuId cpu) noexcept {
     return run_window_loop<Kind>(
-        state, [&state, &line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(state, line, seat); }, cpu);
+        home.state, [&home, line, &seat] [[gnu::always_inline]] () noexcept { run_op<Kind>(home, line, seat); }, cpu);
 }
 
 // The result of one row.
@@ -843,24 +902,21 @@ namespace {
 class RawWorkers {
 public:
     template <OpKind Kind>
-    void start(RowState& state, bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
+    void start(RowHome& home, bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
         std::uint32_t const consumer_slot = kHasConsumer<Kind> ? threads.raw() - 1 : threads.raw();
         for (std::uint32_t slot = 1; slot < threads.raw(); ++slot) {
             Role const role = slot == consumer_slot ? Role::Consumer : Role::Producer;
-            ::fixy::Index<kMaxThreads> const line_index =
-                ::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads");
+            LineIndex const line_index = LineIndex::check(slot).expect("a slot of a row is below kMaxThreads");
             bench::CpuId const cpu = cpu_of_slot(spread, bench::ThreadSlot{slot}, role, place);
             Seat const seat = role == Role::Producer ? seat_of<Kind>(bench::ThreadSlot{slot}, threads) : Seat{};
-            threads_[slot] = std::jthread{[&state, line_index, role, cpu, seat]() noexcept {
+            // Each worker writes only the line of its own slot, through the frames of its loop.
+            threads_[slot] = std::jthread{[&home, line_index, role, cpu, seat]() noexcept {
                 bench::pin_calling_thread_to(cpu).expect("the pin of a worker to the CPU of its slot");
-                // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
-                state.lines.with_element(line_index, [&state, role, &seat](ThreadLine& line) noexcept {
-                    if (role == Role::Consumer) {
-                        run_consumer<Kind>(state, line);
-                    } else {
-                        run_producer<Kind>(state, line, seat);
-                    }
-                });
+                if (role == Role::Consumer) {
+                    run_consumer<Kind>(home, line_index);
+                } else {
+                    run_producer<Kind>(home, line_index, seat);
+                }
             }};
         }
     }
@@ -952,25 +1008,22 @@ void end_lanes_past_the_producers(RowState& state, ThreadCount threads) noexcept
 // heap and not on the stack of the main thread.
 template <OpKind Kind>
 [[nodiscard]] RowResult run_row(bench::Spread const& spread, ThreadCount threads, ConsumerPlace place) {
-    ::fixy::Box<RowState> boxed = ::fixy::mint_box<RowState>(eff::testing::test().alloc);
-    RowState& state = *boxed;
+    ::fixy::Box<RowHome> boxed = ::fixy::mint_box<RowHome>(eff::testing::test().alloc);
+    RowHome& home = *boxed;
+    RowState& state = home.state;
     for (::fixy::Index<kBatch> const index : state.batch.indices())
         state.batch.with_element(index, [index](Item& item) noexcept { item = Item{index.raw() + 1}; });
     end_lanes_past_the_producers<Kind>(state, threads);
     RawWorkers workers{};
-    workers.start<Kind>(state, spread, threads, place);
+    workers.start<Kind>(home, spread, threads, place);
     while (state.ready.value.load_acquire() + 1 < threads.raw())
         CRUCIBLE_SPIN_PAUSE;
 
     Seat const own_seat = seat_of<Kind>(bench::kMeasuringSlot, threads);
     bench::CpuId const main_cpu = spread.of_slot(bench::kMeasuringSlot).expect("a row has the slot of the main thread");
     RowResult result =
-        finish_row<Kind>(state, threads, place, main_cpu, [&state, &own_seat] [[gnu::always_inline]] () noexcept {
-            // The main thread writes only the line of its own slot, and each field of a line is an Atomic.
-            state.lines.with_element(::fixy::index<bench::kMeasuringSlot.raw()>(),
-                                     [&state, &own_seat] [[gnu::always_inline]] (ThreadLine & own) noexcept {
-                                         run_op<Kind>(state, own, own_seat);
-                                     });
+        finish_row<Kind>(state, threads, place, main_cpu, [&home, &own_seat] [[gnu::always_inline]] () noexcept {
+            run_op<Kind>(home, ::fixy::index<bench::kMeasuringSlot.raw()>(), own_seat);
         });
     workers.join();
     return result;
@@ -1061,15 +1114,13 @@ template <OpKind Kind, std::size_t Slot, class Channel>
 [[nodiscard]] auto make_beside_pusher(RowControl& control, Channel& channel) noexcept {
     return [&control, &channel]() noexcept {
         with_slot_producer<Kind, Slot>(channel, [&control](auto end) noexcept {
-            // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
-            control.lines.with_element(::fixy::index<Slot>(), [&control, &end](ThreadLine& line) noexcept {
-                run_producer_loop<Kind>(
-                    control,
-                    [&control, &end] [[gnu::always_inline]] () noexcept {
-                        push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
-                    },
-                    line);
-            });
+            // Each worker writes only the line of its own slot, through the frame of its loop.
+            run_producer_loop<Kind>(
+                control,
+                [&control, &end] [[gnu::always_inline]] () noexcept {
+                    push_waiting(control, [&end]() noexcept { return end.try_push(Item{1}); });
+                },
+                LineIndex{::fixy::index<Slot>()});
         });
     };
 }
