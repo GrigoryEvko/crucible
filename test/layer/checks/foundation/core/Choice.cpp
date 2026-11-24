@@ -4,6 +4,7 @@
 
 #include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Scalar.h>
@@ -971,6 +972,14 @@ static_assert(borrowed_result_match_reads_exactly<Result<Meters, Code>>);
 struct HoldsReference {
     int const& at;
 };
+// A class that states a refers mark of foundation/Transfer.h holds a borrow
+// also when no member of it is a pointer, as the borrow of a descriptor holds
+// the number of its Handle by value.
+template <class Target>
+struct[[= ::foundation::transfer::refers{}]] RefersByNumber {
+    int number = 0;
+};
+static_assert(!HoldsNoBorrow<RefersByNumber<Code>> && !HoldsNoBorrow<Option<RefersByNumber<Code>>>);
 static_assert(HoldsNoBorrow<int> && HoldsNoBorrow<void> && HoldsNoBorrow<Code>);
 static_assert(HoldsNoBorrow<Result<int, Code>> && HoldsNoBorrow<Option<Owner>> && HoldsNoBorrow<Option<SlotNumber>>);
 static_assert(!HoldsNoBorrow<int const&> && !HoldsNoBorrow<int*> && !HoldsNoBorrow<int Owner::*>);

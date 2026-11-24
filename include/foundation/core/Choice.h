@@ -102,6 +102,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/OpenExtension.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Frame.h>
@@ -1283,10 +1284,15 @@ template <class Arm, class Payload>
 }
 
 // True when a value of the type holds a borrow: a reference, a pointer, a
-// pointer to a member, or a class whose state reflection cannot read, such as
-// a closure with captures on a compiler without the sixth GCC patch.  A
-// closure is a class whose captures are its members.  The walk reads each
-// element of an array, and each
+// pointer to a member, a class that states refers{}, refers_unique{} or
+// refers_deep{} of foundation/Transfer.h, or a class whose state reflection
+// cannot read, such as a closure with captures on a compiler without the sixth
+// GCC patch.  A class that states a refers mark refers to an object also when
+// no member of it is a pointer, such as the borrow of a descriptor of
+// fixy/os/Handle.h, which holds the number by value.  The quarantine plugin
+// and the transfer walk read the same marks as a borrow.  A closure is a class
+// whose captures are its members.  The walk reads each element of an array,
+// and each
 // base and each non-static data member of a class or a union.  An Option and
 // a Result hold only their payloads and a tag, so the walk reads their
 // arguments and not their slots.  A OneOf holds one sum slot, and the walk
@@ -1299,6 +1305,12 @@ template <class Arm, class Payload>
     if (std::meta::is_pointer_type(type) || std::meta::is_member_pointer_type(type)) return true;
     if (std::meta::is_array_type(type)) return detail::holds_borrow_(std::meta::remove_all_extents(type));
     if (!std::meta::is_class_type(type) && !std::meta::is_union_type(type)) return false;
+    bool const states_borrow =
+        std::meta::is_complete_type(type)
+        && (::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers)
+            || ::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers_unique)
+            || ::foundation::linear::carries_annotation(type, ^^::foundation::transfer::refers_deep));
+    if (states_borrow) return true;
     if (std::meta::has_template_arguments(type)) {
         std::meta::info const family = std::meta::template_of(type);
         bool const is_slot = family == ^^SumSlotOf;
