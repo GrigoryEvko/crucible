@@ -6,7 +6,10 @@
 # call of its user-provided destructor: the end of its member, an explicit
 # call through a pointer (25), and a delete-expression (30).  The plugin of
 # main read the pointer of the two last ends as an object of the frame, so it
-# gave no line there.
+# gave no line there.  The end of an alternative in a member of the union
+# Alternative of the base names its place and no type, so the instances for
+# Token and Ticket give one line at the clobber (47:33), and the instance for
+# Sealed gives one line at the call of its destructor (47:41).
 
 compile drops src/drops.cpp linear-shapes=on
 flag drops -freflection
@@ -23,3 +26,5 @@ finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_
 finding drops drop-door destroy include/fixy/LinearDrops.h:35:20 | planted::end_member: planted::Sealed::~Sealed (planted::Sealed)
 finding drops drop-door destroy include/fixy/LinearDrops.h:25:16 | planted::end_in_place: planted::Sealed::~Sealed (planted::Sealed)
 finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_one: planted::Sealed::~Sealed (planted::Sealed)
+finding drops drop-door destroy include/fixy/LinearDrops.h:47:33 | planted::Alternative::end_value: the end of an alternative
+finding drops drop-door destroy include/fixy/LinearDrops.h:47:41 | planted::Alternative::end_value: the end of an alternative

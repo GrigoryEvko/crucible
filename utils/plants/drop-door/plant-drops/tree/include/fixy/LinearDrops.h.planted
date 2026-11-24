@@ -35,6 +35,18 @@ void end_member(Holder<T>& holder) {
     holder.token.~T();
 }
 
+// A union of the base that holds one alternative and ends it in place, as the
+// alternatives of a sum do.  Its line names the place and no type.
+template <class T>
+union Alternative {
+    T value;
+
+    Alternative() noexcept {}
+    ~Alternative() {}
+
+    void end_value() noexcept { value.~T(); }
+};
+
 template <class T>
 void drops(Holder<T>& holder, T& slot, T* pointer) {
     assign_member(holder);

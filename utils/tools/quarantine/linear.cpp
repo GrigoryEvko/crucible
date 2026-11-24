@@ -573,7 +573,11 @@
 //                           destructor and a transfer function read none.
 //                           The entity names the type of the object that
 //                           ends (linear_type_text), so a new instance that
-//                           ends a new type at one line gives its own line
+//                           ends a new type at one line gives its own line.
+//                           The end in a member of a union of the base, such
+//                           as the alternatives of a sum, names its place and
+//                           no type (is_base_union_member): the owner of the
+//                           union owes the end of each alternative
 //       linear-forge        a union that holds a sealed type, a linear type or
 //                           a type that the checked lifetime start of
 //                           include/foundation/Lifetime.h refuses, and a class
@@ -1830,6 +1834,18 @@ bool is_transfer_function(tree function) {
     tree scope = DECL_CONTEXT(function);
     bool is_special = DECL_CONSTRUCTOR_P(function) || DECL_ASSIGNMENT_OPERATOR_P(function);
     return is_special && scope != NULL_TREE && TYPE_P(scope) && linearity_of(scope) == Linearity::direct;
+}
+
+// True when FUNCTION is a member of a union that a base file declares, such as
+// the alternatives of a sum (the shapes).  The union ends one alternative of
+// each type, and its owner owes that end, so a line of drop-door there names
+// its place and no type.
+bool is_base_union_member(tree function) {
+    tree scope = function != NULL_TREE ? DECL_CONTEXT(function) : NULL_TREE;
+    if (scope == NULL_TREE || TREE_CODE(scope) != UNION_TYPE) {
+        return false;
+    }
+    return place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine).file_class == FileClass::base;
 }
 
 // True when FUNCTION carries the annotation moves_own_storage and a base file
@@ -5934,6 +5950,13 @@ void check_call(tree call, ShapeWalk& walk) {
         return;
     }
     tree first = argument_at(call, 0);
+    if (DECL_DESTRUCTOR_P(callee) && is_base_union_member(walk.function)) {
+        if (DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee)) && is_linear_type(DECL_CONTEXT(callee))
+            && !is_frame_object(first, ObjectForm::address)) {
+            record_shape(Kind::linear_destroy, location, walk.name + ": the end of an alternative");
+        }
+        return;
+    }
     if (DECL_ASSIGNMENT_OPERATOR_P(callee) && DECL_CONTEXT(callee) != NULL_TREE && TYPE_P(DECL_CONTEXT(callee))
         && is_linear_type(DECL_CONTEXT(callee))) {
         check_assignment_target(first, ObjectForm::address, location, walk);
@@ -6095,8 +6118,10 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
                 tree target = TREE_OPERAND(node, 0);
                 if (!walk.is_exempt_from_drops && TREE_TYPE(target) != NULL_TREE && is_linear_type(TREE_TYPE(target))
                     && !is_frame_object(target, ObjectForm::object)) {
-                    record_shape(Kind::linear_destroy, walk.location_of(node),
-                                 walk.name + ": the end of a lifetime (" + linear_type_text(TREE_TYPE(target)) + ")");
+                    std::string const ended = is_base_union_member(walk.function)
+                                                ? std::string{"the end of an alternative"}
+                                                : "the end of a lifetime (" + linear_type_text(TREE_TYPE(target)) + ")";
+                    record_shape(Kind::linear_destroy, walk.location_of(node), walk.name + ": " + ended);
                 }
             } else {
                 check_assignment_target(TREE_OPERAND(node, 0), ObjectForm::object, walk.location_of(node), walk);

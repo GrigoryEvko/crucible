@@ -42,4 +42,10 @@ void uses_sealed(Holder<Sealed>& holder, Sealed& last) {
     free_one<Sealed>(&last);
 }
 
+void uses_alternatives(Alternative<Token>& token, Alternative<Ticket>& ticket, Alternative<Sealed>& sealed) {
+    token.end_value();
+    ticket.end_value();
+    sealed.end_value();
+}
+
 }  // namespace planted
