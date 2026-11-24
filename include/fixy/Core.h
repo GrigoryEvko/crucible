@@ -347,6 +347,7 @@ using ::foundation::core::checked_shr;
 using ::foundation::core::checked_sub;
 using ::foundation::core::div_ceil;
 using ::foundation::core::gcd;
+using ::foundation::core::midpoint;
 using ::foundation::core::mul_div_floor;
 using ::foundation::core::saturating_add;
 using ::foundation::core::saturating_div;

@@ -120,6 +120,28 @@ static_assert(gcd(min_of<std::int64_t>, std::int64_t{0}) == std::uint64_t{1} << 
 static_assert(gcd(min_of<std::int64_t>, min_of<std::int64_t>) == std::uint64_t{1} << 63);
 static_assert(gcd(std::uint8_t{128}, std::uint8_t{192}) == std::uint8_t{64});
 
+// midpoint is the floor of the exact mean, the same for the two orders, and
+// total at 0 and at the limits of each width: the sum of the two maxima does
+// not wrap.
+static_assert(std::is_same_v<decltype(midpoint(std::uint8_t{1}, std::uint8_t{2})), std::uint8_t>);
+static_assert(midpoint(std::uint64_t{0}, std::uint64_t{0}) == 0u && midpoint(std::uint64_t{0}, std::uint64_t{1}) == 0u);
+static_assert(midpoint(max_of<std::uint64_t>, max_of<std::uint64_t>) == max_of<std::uint64_t>);
+static_assert(midpoint(max_of<std::uint64_t>, std::uint64_t{0xFFFFFFFFFFFFFFFEu})
+              == std::uint64_t{0xFFFFFFFFFFFFFFFEu});
+static_assert(midpoint(std::uint64_t{0}, max_of<std::uint64_t>) == max_of<std::uint64_t> / 2);
+static_assert(midpoint(max_of<std::uint64_t>, std::uint64_t{0}) == max_of<std::uint64_t> / 2);
+static_assert(midpoint(max_of<std::uint32_t>, max_of<std::uint32_t>) == max_of<std::uint32_t>);
+static_assert(midpoint(std::uint32_t{0}, max_of<std::uint32_t>) == max_of<std::uint32_t> / 2);
+static_assert(midpoint(std::uint8_t{255}, std::uint8_t{254}) == std::uint8_t{254});
+static_assert(midpoint(max_of<std::int64_t>, max_of<std::int64_t>) == max_of<std::int64_t>);
+static_assert(midpoint(min_of<std::int64_t>, min_of<std::int64_t>) == min_of<std::int64_t>);
+static_assert(midpoint(min_of<std::int64_t>, max_of<std::int64_t>) == -1);
+static_assert(midpoint(max_of<std::int64_t>, min_of<std::int64_t>) == -1);
+static_assert(midpoint(std::int64_t{-3}, std::int64_t{0}) == -2 && midpoint(std::int64_t{3}, std::int64_t{0}) == 1);
+static_assert(midpoint(min_of<std::int8_t>, max_of<std::int8_t>) == std::int8_t{-1});
+static_assert(midpoint(min_of<std::int32_t>, min_of<std::int32_t>) == min_of<std::int32_t>);
+static_assert(midpoint(-7, -4) == -6 && midpoint(-4, -7) == -6 && midpoint(4, 7) == 5 && midpoint(7, 4) == 5);
+
 // widening_mul gives the low half first.
 static_assert(widening_mul(max_of<std::uint64_t>, max_of<std::uint64_t>).low == 1);
 static_assert(widening_mul(max_of<std::uint64_t>, max_of<std::uint64_t>).high == max_of < std::uint64_t > -1);

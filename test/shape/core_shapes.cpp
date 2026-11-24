@@ -1595,6 +1595,11 @@ protocol_decode(fixy::View<std::byte const, 16> image) noexcept {
     return fixy::strict_align_up(fixy::strict_mul(count, std::size_t{24}), std::size_t{64});
 }
 
+// The floor of the mean of two words, the midpoint of a binary search.
+[[gnu::used]] std::uint64_t scalar_midpoint(std::uint64_t first, std::uint64_t second) noexcept {
+    return fixy::midpoint(first, second);
+}
+
 [[gnu::used]] ::foundation::core::WideProduct<std::uint64_t> scalar_widening_mul(std::uint64_t left,
                                                                                  std::uint64_t right) noexcept {
     return ::foundation::core::widening_mul(left, right);
@@ -2895,6 +2900,11 @@ struct RawDecodeFault final {
 
 [[gnu::used]] std::size_t scalar_strict_layout_raw(std::size_t count) noexcept {
     return (count * 24 + 63) & ~std::size_t{63};
+}
+
+// std::midpoint rounds toward its first operand, so it orders the two.
+[[gnu::used]] std::uint64_t scalar_midpoint_raw(std::uint64_t first, std::uint64_t second) noexcept {
+    return std::midpoint(first, second);
 }
 
 struct RawWideProduct final {

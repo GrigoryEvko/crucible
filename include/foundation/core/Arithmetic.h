@@ -30,7 +30,11 @@
 //                                           end the process
 //   gcd(a, b)                             the greatest common divisor as
 //                                           an unsigned value, for each input
-//   widening_mul(a, b)                      the full product of two unsigned
+//   midpoint(a, b)                          the floor of the exact mean of a
+//                                           and b, for each pair.  The two
+//                                           orders of the operands give one
+//                                           result
+//   widening_mul(a, b)                     the full product of two unsigned
 //                                           values, as two halves
 //   checked_mul_div(a, b, c)                the floor of a * b / c for an
 //                                           unsigned type, from the exact
@@ -383,6 +387,27 @@ template <Integer T>
         second = static_cast<Bits>(second - first);
     } while (second != 0);
     return static_cast<Bits>(first << shared);
+}
+
+// The floor of the exact mean of two values, for each pair.  It rounds toward
+// negative infinity, and not toward its first operand as std::midpoint does.
+// So the result is the same for the two orders of the operands, and the two
+// parameters of one type can swap with no change of meaning.  The result lies between the two
+// operands, so the type holds it, and no step overflows.  A type of fewer
+// than 64 bits takes the sum in 64 bits, with one add and one shift.  A wider
+// type takes the common bits and half of the different bits: the sum of two
+// values is twice their common bits plus their different bits.  A right shift
+// of a negative value is the floor of its half.  For a binary search on
+// [low, high), the result is low + (high - low) / 2, with no precondition on
+// the order.
+template <Integer T>
+[[nodiscard]] constexpr T midpoint(T first, T second) noexcept {
+    if constexpr (sizeof(T) < sizeof(std::uint64_t)) {
+        using Wide = std::conditional_t<std::is_signed_v<T>, std::int64_t, std::uint64_t>;
+        return static_cast<T>((static_cast<Wide>(first) + static_cast<Wide>(second)) >> 1);
+    } else {
+        return static_cast<T>((first & second) + ((first ^ second) >> 1));
+    }
 }
 
 // The full product of two unsigned values: the low half and the high half.

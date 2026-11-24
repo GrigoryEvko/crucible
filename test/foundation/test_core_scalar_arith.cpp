@@ -6,7 +6,8 @@
 // saturating form is the exact result clamped to the limits.  A zero divisor
 // of saturating_div ends the process.  checked_mul_div agrees with a long
 // division of the exact product, and mul_div_floor ends the process for a
-// zero divisor and for a quotient past the type.  A strict form and
+// zero divisor and for a quotient past the type.  midpoint is the floor of
+// the exact mean in each order of its operands.  A strict form and
 // Strict<T> give the exact result where it fits, and each other input ends
 // the process with the operands in the report.
 
@@ -175,6 +176,12 @@ void check_pair(T left, T right) {
             core::gcd(opaque(static_cast<std::uint64_t>(left_rest)), static_cast<std::uint64_t>(right_rest)) == 1u
             || left_rest == 0 || right_rest == 0);
     }
+
+    // midpoint is the floor of the exact mean, and the two orders give one
+    // result.
+    Signed128 const mean = sum >= 0 ? sum / 2 : -((-sum + 1) / 2);
+    CRUCIBLE_FATAL_INVARIANT(core::midpoint(a, b) == static_cast<T>(mean));
+    CRUCIBLE_FATAL_INVARIANT(core::midpoint(b, a) == static_cast<T>(mean));
 }
 
 // The negation and the shifts of one value, against the model.

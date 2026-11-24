@@ -1212,6 +1212,11 @@ PROBES: tuple[Probe, ...] = (
         "flag of each, into the cold report of the operands.  The plain form wraps with no test",
         checks=("fatal",),
     ),
+    Probe(
+        "scalar_midpoint",
+        "midpoint of two words is one and, one xor, one shift and one add, with no branch.  std::midpoint rounds "
+        "toward its first operand, so it compares the two and multiplies the half difference by the sign",
+    ),
     Probe("scalar_widening_mul", "widening_mul is one mul, and the low and the high half come back in rax and rdx"),
     Probe("scalar_min_float", "min of two doubles is the one compare and the one select of std::min"),
     Probe(
