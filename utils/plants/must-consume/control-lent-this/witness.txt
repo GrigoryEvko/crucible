@@ -1,0 +1,11 @@
+# The object of a member function with the qualifier &&, of a constructor, of
+# a destructor and of the call operator of a closure is no lent object, and a
+# plain member function that gives its token back through exchange leaves a
+# value in the member.  So no move of a linear member out of such an object
+# is a finding.  The rule is in report mode, and the module judges each line
+# against the empty ledger of the control.
+
+compile members src/members.cpp must-consume=on
+flag members -freflection
+exit members pass
+judge members

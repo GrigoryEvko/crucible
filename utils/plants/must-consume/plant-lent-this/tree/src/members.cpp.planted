@@ -1,0 +1,47 @@
+// The object of a plain member function is a lent object.  A move of a
+// linear member out of *this is the finding borrow-move-out, because a second
+// call gives a moved-from member: a call operator of a class template that
+// gives its token (line 25), a plain member function that gives its token
+// (31), and a member function that moves the token on one path (35).  The
+// plugin of main tracked no implicit object, so it gave none of these lines.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+
+template <class Held>
+struct Giver {
+    Held token{};
+
+    Held operator()() noexcept { return static_cast<Held&&>(token); }
+};
+
+struct Holder {
+    Token token{};
+
+    Token give() noexcept { return static_cast<Token&&>(token); }
+
+    void give_on_one_path(bool is_given) noexcept {
+        if (is_given) {
+            take(static_cast<Token&&>(token));
+        }
+    }
+};
+
+Token give_two_times() {
+    Giver<Token> giver{mint()};
+    Token first = giver();
+    take(static_cast<Token&&>(first));
+    return giver();
+}
+
+}  // namespace planted

@@ -38,7 +38,7 @@ struct Pair {
     Handle left;
     Handle right;
 
-    void move_right_into_left() noexcept { left = static_cast<Handle&&>(right); }
+    void move_right_into_left() && noexcept { left = static_cast<Handle&&>(right); }
 };
 
 void two_elements(Handle (&row)[2]) noexcept { row[0] = static_cast<Handle&&>(row[1]); }

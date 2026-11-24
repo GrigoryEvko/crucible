@@ -1,0 +1,40 @@
+// The object of a member function that is no plain member function is no
+// lent object, so a move of a linear member out of it gives no line: a member
+// function with the qualifier &&, a constructor, a destructor, the call
+// operator of a closure that the once door calls one time, and a plain member
+// function that gives the token back through exchange, which leaves a new
+// token in the member.  A const member function reads the member only.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+void read(Token const& token) noexcept;
+
+struct Holder {
+    Token token{};
+
+    Holder() noexcept : token{mint()} {}
+    explicit Holder(Token&& given) noexcept : token{static_cast<Token&&>(given)} {}
+    Holder(Holder&&) = delete;
+    ~Holder() { take(static_cast<Token&&>(token)); }
+
+    Token give() && noexcept { return static_cast<Token&&>(token); }
+    Token swap_out() noexcept { return ::foundation::linear::exchange(token, mint()); }
+    void look() const noexcept { read(token); }
+};
+
+Token through_the_once_door() {
+    return ::foundation::linear::call_once(
+        [held = mint()]() mutable noexcept { return static_cast<Token&&>(held); });
+}
+
+}  // namespace planted

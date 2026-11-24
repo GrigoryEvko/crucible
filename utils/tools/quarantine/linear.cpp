@@ -28,7 +28,8 @@
 //     The rule tracks a linear local, a structured binding of a linear type, a
 //     parameter of a linear class by value and a parameter of an rvalue
 //     reference to a linear class.  It tracks a parameter of a reference that
-//     is not const to a linear class as a lent object (the lent parameters).
+//     is not const to a linear class, and the object of a plain member
+//     function, as a lent object (the lent parameters).
 //     A local reference that extends the life of
 //     a linear temporary, such as T&& name = T{}, auto&& name = make() or
 //     T const& name = make(), and the hidden range reference of a range-based
@@ -287,6 +288,13 @@
 //     capture by reference of a lent object hides each later consume (the
 //     captures).  The body of a door, which ends a value in its place, gives no
 //     line borrow-move-out (the doors).
+//     The object of a plain member function is a lent object too, through its
+//     implicit this: a function that is no constructor, no destructor and no
+//     call operator of a closure, with no qualifier && and an object that is
+//     not const (is_lent_this).  A move of a linear member out of *this then
+//     gives borrow-move-out, because a second call would give a moved-from
+//     member.  A member function that gives up its object states &&, and its
+//     object is no lent object.
 //
 // Base doors
 //     A member function of a base class gets the base subobject as its object.
@@ -1939,6 +1947,11 @@ private:
                 }
                 type = TREE_TYPE(type);
             }
+        } else if (TREE_CODE(decl) == PARM_DECL && is_lent_this(decl)) {
+            // The lent object: the object of a plain member function is lent,
+            // as a parameter by a reference that is not const is.
+            is_lent = true;
+            type = TREE_TYPE(type);
         } else if (TREE_CODE(decl) == PARM_DECL) {
             if (DECL_ARTIFICIAL(decl) || is_object_parameter(decl)) {
                 return false;
@@ -2329,6 +2342,21 @@ private:
         for (std::size_t part : slots_[slot].fields) {
             slots_[part].is_escaped = true;
         }
+    }
+
+    // True when PARAMETER is the implicit this of a member function that
+    // borrows its object (the lent object): no constructor, no destructor, no
+    // call operator of a closure, no qualifier &&, and an object that is not
+    // const.  A move of a linear member out of such an object is a move out
+    // of a borrow, and a second call would give a moved-from member.
+    bool is_lent_this(tree parameter) const {
+        if (parameter != DECL_ARGUMENTS(function_) || !DECL_IOBJ_MEMBER_FUNCTION_P(function_)
+            || DECL_CONSTRUCTOR_P(function_) || DECL_DESTRUCTOR_P(function_) || LAMBDA_FUNCTION_P(function_)
+            || FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function_))) {
+            return false;
+        }
+        tree type = TREE_TYPE(parameter);
+        return type != NULL_TREE && TREE_CODE(type) == POINTER_TYPE && !TYPE_READONLY(TREE_TYPE(type));
     }
 
     // True when PARAMETER is the object parameter of the function: the
@@ -6183,7 +6211,8 @@ void report_option_end(const Finding& finding) {
                "value of one value, such as a second exclusive token of one region");
         inform(finding.spelling,
                "take the value with %<foundation::linear::exchange%>, which leaves a replacement in the parameter, "
-               "give the parameter a value again on each path, or take the parameter by value or by %<T&&%>");
+               "give the parameter a value again on each path, or take the parameter by value or by %<T&&%>.  For "
+               "the object %<this%> of a member function, give the function the qualifier %<&&%>");
     } else {
         return;
     }

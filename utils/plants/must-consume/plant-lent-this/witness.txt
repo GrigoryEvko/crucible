@@ -1,0 +1,16 @@
+# The object of a plain member function is a lent object, so a move of a
+# linear member out of *this is the finding borrow-move-out: the call operator
+# of a class template (line 25), a plain member function (31) and a move on
+# one path (35).  The giver of give_two_times holds a token by value that no
+# path consumes, which is the finding unconsumed (41).  The rule is in report
+# mode, and the module judges each line against the empty ledger of the
+# plant.  The plugin of main gave the unconsumed line only.
+
+compile members src/members.cpp must-consume=on
+flag members -freflection
+exit members pass
+judge members
+finding members must-consume borrow-move-out src/members.cpp:25:66 | planted::Giver::operator(): this (planted::Giver<planted::Token>*)
+finding members must-consume borrow-move-out src/members.cpp:31:62 | planted::Holder::give: this (planted::Holder*)
+finding members must-consume borrow-move-out src/members.cpp:35:17 | planted::Holder::give_on_one_path: this (planted::Holder*)
+finding members must-consume unconsumed src/members.cpp:41:18 | planted::give_two_times: giver (planted::Giver<planted::Token>)
