@@ -24,6 +24,8 @@ namespace ci = crucible::cntp;
 template <std::size_t N>
 using Bytes = ::foundation::core::FixedArray<std::byte, N>;
 
+using HeapBytes = ::foundation::core::HeapArray<std::byte>;
+
 template <std::size_t N>
 using Flags = ::foundation::core::FixedArray<bool, N>;
 
@@ -161,10 +163,11 @@ int main() {
     static_assert(std::same_as<Rs42::concurrent_budget,
                                ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
     static_assert(ci::ByteContiguousBuffer<Bytes<8>> && ci::ByteContiguousBuffer<::fixy::View<std::byte const>>);
-    static_assert(ci::MutableByteContiguousBuffer<Bytes<8>> && !ci::MutableByteContiguousBuffer<Bytes<8> const>);
-    static_assert(ci::MutableByteContiguousBuffer<::foundation::core::FixedArray<unsigned char, 8>>);
+    static_assert(ci::MutableByteContiguousBuffer<HeapBytes> && !ci::MutableByteContiguousBuffer<HeapBytes const>);
+    static_assert(ci::MutableByteContiguousBuffer<::foundation::core::HeapArray<unsigned char>>);
     static_assert(!ci::MutableByteContiguousBuffer<::fixy::View<std::byte>>
-                  && !ci::MutableByteContiguousBuffer<::foundation::core::FixedArray<int, 8>>);
+                  && !ci::MutableByteContiguousBuffer<Bytes<8>>
+                  && !ci::MutableByteContiguousBuffer<::foundation::core::HeapArray<int>>);
 
     auto rs42 = ci::mint_reed_solomon<4, 2>(::foundation::effects::testing::init());
 
@@ -243,24 +246,27 @@ int main() {
 
     {
         constexpr auto payload = payload_seed<13>();
+        constexpr std::size_t encoded_bytes = Rs42::encoded_size_for(payload.size());
+        auto const alloc = ::foundation::effects::testing::test().alloc;
         auto owned_payload = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
-        Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
-        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode_owned(std::move(owned_payload), encoded).is_ok());
+        auto [is_encoded, encoded] = rs42.encode_owned(std::move(owned_payload),
+                                                       ::fixy::mint_heap_array_zeroed<std::byte>(alloc, encoded_bytes));
+        CRUCIBLE_TEST_ASSERT(kTest, is_encoded.is_ok() && encoded.size() == encoded_bytes);
 
         // An owner of unsigned chars lends its bytes through byte_view, and
         // gets the same bytes.
-        ::foundation::core::FixedArray<unsigned char, Rs42::encoded_size_for(payload.size())> encoded_chars{};
         auto payload_again = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
-        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode_owned(std::move(payload_again), encoded_chars).is_ok());
-        for (auto index : encoded.indices()) {
-            CRUCIBLE_TEST_ASSERT(kTest, static_cast<std::byte>(encoded_chars.at(index)) == encoded.at(index));
-        }
+        auto [are_chars_encoded, encoded_chars] = rs42.encode_owned(
+            std::move(payload_again), ::fixy::mint_heap_array_zeroed<unsigned char>(alloc, encoded_bytes));
+        CRUCIBLE_TEST_ASSERT(kTest, are_chars_encoded.is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(::foundation::core::byte_view(encoded_chars.view()), encoded.view()));
 
-        auto owned_encoded = ::fixy::mint_linear<decltype(encoded)>(encoded);
+        auto owned_encoded = ::fixy::mint_linear<HeapBytes>(std::move(encoded));
         Flags<Rs42::total_shards> erasures{};
-        Bytes<payload.size()> decoded{};
-        CRUCIBLE_TEST_ASSERT(kTest, rs42.decode_owned(std::move(owned_encoded), erasures.view(), decoded).is_ok());
-        CRUCIBLE_TEST_ASSERT(kTest, payload == decoded);
+        auto [is_decoded, decoded] =
+            rs42.decode_owned(std::move(owned_encoded), erasures.view(),
+                              ::fixy::mint_heap_array_zeroed<std::byte>(alloc, payload.size()));
+        CRUCIBLE_TEST_ASSERT(kTest, is_decoded.is_ok() && ::fixy::equal(payload.view(), decoded.view()));
     }
 
     {

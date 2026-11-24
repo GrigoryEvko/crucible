@@ -48,26 +48,17 @@ concept ByteContiguousBuffer =
         { buffer.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
     };
 
-namespace detail {
-
-// A body of the frame door of an owner of bytes, for the test of the door: it
-// takes the ViewMut of a run of std::byte or of unsigned char.
-struct ByteRunProbe final {
-    template <class Run>
-        requires std::same_as<typename Run::element_type, std::byte>
-              || std::same_as<typename Run::element_type, unsigned char>
-    constexpr void operator()(Run /*run*/) const noexcept {}
-};
-
-}  // namespace detail
-
-// A buffer whose bytes a codec can write: an owner that lends its run of
-// std::byte or of unsigned char in place through its member frame door
-// with_mut, such as a FixedArray of bytes.  The frame door gives the ViewMut
-// of the run, the one writer of the bytes.  A View and an owner whose view()
-// writes give no ViewMut, so the concept refuses them.
+// A buffer whose bytes a codec can write: an array of std::byte or of unsigned
+// char that lends its run through the frame door that takes it by move, such
+// as a HeapArray of bytes.  The frame door gives the ViewMut of the run, the
+// one writer of the bytes, and then it gives the owner back.  A View owns no
+// run and a const array lends no writer, so the concept refuses them.  An array
+// that holds its run in place lends the run with its key, and it gives the
+// ViewMut to encode or to decode.
 template <typename Buffer>
-concept MutableByteContiguousBuffer = requires(Buffer& buffer) { buffer.with_mut(detail::ByteRunProbe{}); };
+concept MutableByteContiguousBuffer = (!std::is_const_v<Buffer>) && ::foundation::core::ArrayFrameOwner<Buffer>
+                                   && (std::same_as<typename Buffer::element_type, std::byte>
+                                       || std::same_as<typename Buffer::element_type, unsigned char>);
 
 namespace detail {
 
@@ -102,8 +93,8 @@ template <class Field>
     for (::fixy::Index<255> power : ::fixy::IndexRange<255>{}) {
         auto const value = static_cast<std::uint8_t>(x);
         auto const logarithm = static_cast<std::uint8_t>(power.raw());
-        tables.exp.with_element(power, [value](std::uint8_t& entry) noexcept { entry = value; });
-        tables.log.with_element(byte_index(value), [logarithm](std::uint8_t& entry) noexcept { entry = logarithm; });
+        tables.exp.set(power, value);
+        tables.log.set(byte_index(value), logarithm);
         x = static_cast<std::uint16_t>(x << 1U);
         if ((x & 0x100U) != 0U) {
             x ^= gf_poly;
@@ -111,8 +102,7 @@ template <class Field>
     }
     for (auto power : tables.exp.indices()) {
         if (power.raw() >= 255) {
-            std::uint8_t const value = tables.exp.at(power_index(power.raw() - 255U));
-            tables.exp.with_element(power, [value](std::uint8_t& entry) noexcept { entry = value; });
+            tables.exp.set(power, tables.exp.at(power_index(power.raw() - 255U)));
         }
     }
 
@@ -123,20 +113,17 @@ template <class Field>
             continue;
         }
         std::uint8_t const log_a = log.at(a);
-        tables.mul.with_element(a, [&exp, &log, log_a](GfRow& row) noexcept {
-            for (auto b : row.indices()) {
-                if (b.raw() != 0) {
-                    std::uint8_t const product =
-                        exp.at(power_index(static_cast<std::size_t>(log_a) + static_cast<std::size_t>(log.at(b))));
-                    row.with_element(b, [product](std::uint8_t& entry) noexcept { entry = product; });
-                }
+        GfRow row{};
+        for (auto b : row.indices()) {
+            if (b.raw() != 0) {
+                row.set(b, exp.at(power_index(static_cast<std::size_t>(log_a) + static_cast<std::size_t>(log.at(b)))));
             }
-        });
+        }
+        tables.mul.set(a, row);
     }
     for (auto a : tables.inv.indices()) {
         if (a.raw() != 0) {
-            std::uint8_t const inverse = tables.exp.at(power_index(255U - tables.log.at(a)));
-            tables.inv.with_element(a, [inverse](std::uint8_t& entry) noexcept { entry = inverse; });
+            tables.inv.set(a, tables.exp.at(power_index(255U - tables.log.at(a))));
         }
     }
     return tables;
@@ -192,21 +179,20 @@ template <std::uint8_t K, std::uint8_t M>
     GeneratorMatrix<K, M> matrix{};
 
     for (::fixy::Index<K> row : ::fixy::IndexRange<K>{}) {
-        matrix.with_element(row, [row](::fixy::FixedArray<std::uint8_t, K>& entries) noexcept {
-            entries.with_element(row, [](std::uint8_t& entry) noexcept { entry = 1; });
-        });
+        ::fixy::FixedArray<std::uint8_t, K> entries{};
+        entries.set(row, std::uint8_t{1});
+        matrix.set(row, entries);
     }
 
     for (::fixy::Index<M> parity : ::fixy::IndexRange<M>{}) {
         const auto y = static_cast<std::uint8_t>(K + parity.raw());
         auto const parity_row = ::fixy::Index<static_cast<std::size_t>(K) + M>::check(K + parity.raw())
                                     .expect("a parity row is a row of the matrix");
-        matrix.with_element(parity_row, [y](::fixy::FixedArray<std::uint8_t, K>& row) noexcept {
-            for (auto col : row.indices()) {
-                std::uint8_t const entry = inv(static_cast<std::uint8_t>(static_cast<std::uint8_t>(col.raw()) ^ y));
-                row.with_element(col, [entry](std::uint8_t& held) noexcept { held = entry; });
-            }
-        });
+        ::fixy::FixedArray<std::uint8_t, K> entries{};
+        for (auto col : entries.indices()) {
+            entries.set(col, inv(static_cast<std::uint8_t>(static_cast<std::uint8_t>(col.raw()) ^ y)));
+        }
+        matrix.set(parity_row, entries);
     }
     return matrix;
 }
@@ -226,50 +212,36 @@ template <std::size_t N>
 template <std::size_t N>
 [[nodiscard]] constexpr bool invert_matrix(SquareMatrix<N> input, SquareMatrix<N>& inverse) noexcept {
     using Row = ::fixy::FixedArray<std::uint8_t, N>;
-    // Writes each entry of a row as its product with scale.
-    auto const scale_row = [](Row& entries, std::uint8_t scale) noexcept {
-        entries.with_mut([scale](auto run) noexcept {
-            for (std::uint8_t& entry : run) {
-                entry = mul(entry, scale);
-            }
-        });
+    // Gives the row whose entries are the products of scale and the entries of a row.
+    auto const scale_row = [](Row entries, std::uint8_t scale) noexcept {
+        for (auto j : entries.indices()) {
+            entries.set(j, mul(entries.at(j), scale));
+        }
+        return entries;
     };
-    // Adds the product of factor and each entry of pivot to the same entry of a row.  The row is not the pivot.
-    auto const eliminate_row = [](Row& entries, Row const& pivot, std::uint8_t factor) noexcept {
-        entries.with_mut([&pivot, factor](auto run) noexcept {
-            for (auto j : pivot.indices()) {
-                auto entry = run.get_mut(j.raw()).expect("an index of the pivot is an index of the row");
-                *entry = static_cast<std::uint8_t>(*entry ^ mul(factor, pivot.at(j)));
-            }
-        });
+    // Gives the sum of a row and of the product of factor and the pivot row.
+    auto const eliminate_row = [](Row entries, Row const& pivot, std::uint8_t factor) noexcept {
+        for (auto j : entries.indices()) {
+            entries.set(j, static_cast<std::uint8_t>(entries.at(j) ^ mul(factor, pivot.at(j))));
+        }
+        return entries;
     };
     for (auto row : inverse.indices()) {
-        inverse.with_element(row, [row](Row& entries) noexcept {
-            entries.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), std::uint8_t{0}); });
-            entries.with_element(row, [](std::uint8_t& entry) noexcept { entry = 1; });
-        });
+        Row entries{};
+        entries.set(row, std::uint8_t{1});
+        inverse.set(row, entries);
     }
 
     for (auto col : input.indices()) {
         CRUCIBLE_LET_ELSE(pivot, pivot_row(input, col), false);
         if (pivot != col) {
-            // The type of the two indexes proves that each names a row, so the optimizer removes the check of each
-            // get_mut.  The two rows differ, so each has one writer.
-            input.with_mut([pivot, col](auto run) noexcept {
-                auto pivot_row = run.get_mut(pivot.raw()).expect("the pivot is a row of the matrix");
-                auto col_row = run.get_mut(col.raw()).expect("the column is a row of the matrix");
-                ::fixy::swap(*pivot_row, *col_row);
-            });
-            inverse.with_mut([pivot, col](auto run) noexcept {
-                auto pivot_row = run.get_mut(pivot.raw()).expect("the pivot is a row of the matrix");
-                auto col_row = run.get_mut(col.raw()).expect("the column is a row of the matrix");
-                ::fixy::swap(*pivot_row, *col_row);
-            });
+            input.set(col, input.exchange(pivot, input.at(col)));
+            inverse.set(col, inverse.exchange(pivot, inverse.at(col)));
         }
 
         const std::uint8_t scale = inv(input.at(col).at(col));
-        input.with_element(col, [&scale_row, scale](Row& entries) noexcept { scale_row(entries, scale); });
-        inverse.with_element(col, [&scale_row, scale](Row& entries) noexcept { scale_row(entries, scale); });
+        input.set(col, scale_row(input.at(col), scale));
+        inverse.set(col, scale_row(inverse.at(col), scale));
 
         Row const& input_pivot = input.at(col);
         Row const& inverse_pivot = inverse.at(col);
@@ -281,12 +253,8 @@ template <std::size_t N>
             if (factor == 0) {
                 continue;
             }
-            input.with_element(row, [&eliminate_row, &input_pivot, factor](Row& entries) noexcept {
-                eliminate_row(entries, input_pivot, factor);
-            });
-            inverse.with_element(row, [&eliminate_row, &inverse_pivot, factor](Row& entries) noexcept {
-                eliminate_row(entries, inverse_pivot, factor);
-            });
+            input.set(row, eliminate_row(input.at(row), input_pivot, factor));
+            inverse.set(row, eliminate_row(inverse.at(row), inverse_pivot, factor));
         }
     }
     return true;
@@ -322,10 +290,8 @@ template <class Field = void>
     NibbleTables tables{};
     for (::fixy::Index<16> nibble : ::fixy::IndexRange<16>{}) {
         const auto value = static_cast<std::uint8_t>(nibble.raw());
-        std::uint8_t const low = mul<Field>(coeff, value);
-        std::uint8_t const high = mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U));
-        tables.lo.with_element(nibble, [low](std::uint8_t& entry) noexcept { entry = low; });
-        tables.hi.with_element(nibble, [high](std::uint8_t& entry) noexcept { entry = high; });
+        tables.lo.set(nibble, mul<Field>(coeff, value));
+        tables.hi.set(nibble, mul<Field>(coeff, static_cast<std::uint8_t>(value << 4U)));
     }
     return tables;
 }
@@ -449,15 +415,15 @@ void bytes(Buffer const&&) =
     delete("the View borrows the buffer, and a temporary buffer ends with the full expression");
 
 // Gives body the ViewMut of the bytes of the frame of buffer, for the time of
-// the call, and gives the result of body.  The owner lends its bytes in place
-// through its member frame door, and a run of unsigned chars gives its bytes
-// through byte_view.
+// the call, and gives the result of body and the buffer.  The frame takes the
+// buffer by move, so no name of the caller reaches the bytes while body runs.
+// A run of unsigned chars gives its bytes through byte_view.
 template <MutableByteContiguousBuffer Buffer, class Body>
-[[nodiscard]] constexpr auto with_mutable_bytes(Buffer& buffer, Body&& body) noexcept {
+[[nodiscard]] constexpr auto with_mutable_bytes(Buffer buffer, Body&& body) noexcept {
     // The frame body calls body through a const reference, so it writes no
     // borrow of its frame into a capture of body.
     auto const& body_read = body;
-    return buffer.with_mut([&body_read](auto run) noexcept {
+    return ::fixy::with_mut(static_cast<Buffer&&>(buffer), [&body_read](auto run) noexcept {
         if constexpr (std::same_as<typename decltype(run)::element_type, unsigned char>) {
             return body_read(::foundation::core::byte_view(std::move(run)));
         } else {
@@ -575,11 +541,8 @@ public:
             }
             if (selected_count < K) {
                 auto const slot = ::fixy::Index<K>::check(selected_count).expect("the count is below K");
-                std::size_t const position = shard.raw();
-                auto const& generator_row = generator().at(shard);
-                selected.with_element(slot, [position](std::size_t& held) noexcept { held = position; });
-                decode_matrix.with_element(
-                    slot, [&generator_row](::fixy::FixedArray<std::uint8_t, K>& row) noexcept { row = generator_row; });
+                selected.set(slot, shard.raw());
+                decode_matrix.set(slot, generator().at(shard));
                 ++selected_count;
             }
         }
@@ -616,27 +579,29 @@ public:
     }
 
     // The owned forms take the buffer, and they end it after the code reads
-    // it, also when the code refuses the shape.
+    // it, also when the code refuses the shape.  They take the output by move
+    // and give it back after the result.
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> encode_owned(LinearShardBuffer<Input>&& input,
-                                                                      Output& output) const noexcept {
+    [[nodiscard]] ::fixy::Record<::fixy::Result<::fixy::Unit, FecError>, Output>
+    encode_owned(LinearShardBuffer<Input>&& input, Output output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(input.peek());
-        auto result = detail::with_mutable_bytes(
-            output, [this, source](auto target) noexcept { return encode(source, std::move(target)); });
+        auto written = detail::with_mutable_bytes(
+            std::move(output), [this, source](auto target) noexcept { return encode(source, std::move(target)); });
         drop(std::move(input));
-        return result;
+        return written;
     }
 
     template <ByteContiguousBuffer Input, MutableByteContiguousBuffer Output>
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> decode_owned(LinearShardBuffer<Input>&& received,
-                                                                      ::fixy::View<bool const> erasure_mask,
-                                                                      Output& output) const noexcept {
+    [[nodiscard]] ::fixy::Record<::fixy::Result<::fixy::Unit, FecError>, Output>
+    decode_owned(LinearShardBuffer<Input>&& received, ::fixy::View<bool const> erasure_mask,
+                 Output output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(received.peek());
-        auto result = detail::with_mutable_bytes(output, [this, source, erasure_mask](auto target) noexcept {
-            return decode(source, erasure_mask, std::move(target));
-        });
+        auto written =
+            detail::with_mutable_bytes(std::move(output), [this, source, erasure_mask](auto target) noexcept {
+                return decode(source, erasure_mask, std::move(target));
+            });
         drop(std::move(received));
-        return result;
+        return written;
     }
 
 private:
