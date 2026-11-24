@@ -82,17 +82,20 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                 plan.device_type = slot.device_type;
                 plan.device_idx = slot.device_idx;
             }
-            if (slot.death_op.raw() + 1 > max_op) max_op = slot.death_op.raw() + 1;
+            const uint32_t end_op = ::fixy::strict_add(slot.death_op.raw(), uint32_t{1});
+            if (end_op > max_op) max_op = end_op;
         }
     }
 
-    uint32_t num_internal = num_slots - plan.num_external;
+    uint32_t num_internal = ::fixy::strict_sub(num_slots, plan.num_external);
     if (num_internal == 0) return plan_storage;
 
     // Bucket the slots by birth_op and by death_op + 1.  The sweep range
     // is [0, max_op].  The checks above keep max_op in [1, UINT32_MAX - 2],
-    // so num_ops and num_ops + 1 are positive and do not wrap.
-    uint32_t num_ops = max_op + 1;
+    // so num_ops and num_ops + 1 are positive and do not wrap.  The strict
+    // forms state this, and they end the process when it does not hold.
+    uint32_t num_ops = ::fixy::strict_add(max_op, uint32_t{1});
+    const uint32_t num_offsets = ::fixy::strict_add(num_ops, uint32_t{1});
     const auto birth_count_run = scratch.array<uint32_t>(a, num_ops, 0);
     const auto death_count_run = scratch.array<uint32_t>(a, num_ops, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -103,22 +106,22 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
     for (const TensorSlot& slot : slots) {
         if (slot.is_external) continue;
         ++detail::csr_element_(birth_count, slot.birth_op.raw());
-        uint32_t free_at = slot.death_op.raw() + 1;
+        uint32_t free_at = ::fixy::strict_add(slot.death_op.raw(), uint32_t{1});
         if (free_at < num_ops) ++detail::csr_element_(death_count, free_at);
     }
 
     // The first offset of each array is the zero of the fill.
-    const auto birth_off_run = scratch.array<uint32_t>(a, num_ops + 1, 0);
-    const auto death_off_run = scratch.array<uint32_t>(a, num_ops + 1, 0);
+    const auto birth_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
+    const auto death_off_run = scratch.array<uint32_t>(a, num_offsets, 0);
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> birth_off = birth_off_run.view();
     // A plain View of an arena run: the View carries no brand of its arena.
     const ::fixy::View<uint32_t> death_off = death_off_run.view();
     for (uint32_t o = 0; o < num_ops; o++) {
         detail::csr_element_(birth_off, o + 1) =
-            detail::csr_element_(birth_off, o) + detail::csr_element_(birth_count, o);
+            ::fixy::strict_add(detail::csr_element_(birth_off, o), detail::csr_element_(birth_count, o));
         detail::csr_element_(death_off, o + 1) =
-            detail::csr_element_(death_off, o) + detail::csr_element_(death_count, o);
+            ::fixy::strict_add(detail::csr_element_(death_off, o), detail::csr_element_(death_count, o));
     }
 
     const auto born_slots_run = scratch.array<uint32_t>(a, num_internal, 0);
@@ -143,7 +146,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
         const TensorSlot& slot = slot_at(s);
         if (slot.is_external) continue;
         detail::csr_element_(born_slots, detail::csr_element_(birth_cur, slot.birth_op.raw())++) = s;
-        uint32_t free_at = slot.death_op.raw() + 1;
+        uint32_t free_at = ::fixy::strict_add(slot.death_op.raw(), uint32_t{1});
         if (free_at < num_ops) detail::csr_element_(dead_slots, detail::csr_element_(death_cur, free_at)++) = s;
     }
 
@@ -191,9 +194,11 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                 free_list_sizes.with_element(block, [last_size](uint64_t& held) noexcept { held = last_size; });
                 free_list_offsets.with_element(block, [last_offset](uint64_t& held) noexcept { held = last_offset; });
             } else {
-                free_list_offsets.with_element(block,
-                                               [aligned_size](uint64_t& held) noexcept { held += aligned_size; });
-                free_list_sizes.with_element(block, [aligned_size](uint64_t& held) noexcept { held -= aligned_size; });
+                // The fit is larger than the size, so its cut stays inside it.
+                free_list_offsets.with_element(
+                    block, [aligned_size](uint64_t& held) noexcept { held = ::fixy::strict_add(held, aligned_size); });
+                free_list_sizes.with_element(
+                    block, [aligned_size](uint64_t& held) noexcept { held = ::fixy::strict_sub(held, aligned_size); });
             }
             return;
         }
@@ -229,8 +234,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
         uint32_t dying_end = detail::csr_element_(death_off, op + 1);
         uint32_t born_begin = detail::csr_element_(birth_off, op);
         uint32_t born_end = detail::csr_element_(birth_off, op + 1);
-        uint32_t num_dying = dying_end - dying_begin;
-        uint32_t num_born = born_end - born_begin;
+        uint32_t num_dying = ::fixy::strict_sub(dying_end, dying_begin);
+        uint32_t num_born = ::fixy::strict_sub(born_end, born_begin);
 
         // Match a dying slot to a born slot directly, bypassing the
         // free list entirely.
@@ -257,7 +262,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                 for (uint32_t dying_idx = 0; dying_idx < dying_count_capped; dying_idx++) {
                     const DyingInfo& dying_info = dying_slot_info.at(prove_per_op(dying_idx));
                     if (!dying_consumed.at(prove_per_op(dying_idx)) && dying_info.aligned_size >= born_aligned_size) {
-                        uint64_t waste_bytes = dying_info.aligned_size - born_aligned_size;
+                        uint64_t waste_bytes = ::fixy::strict_sub(dying_info.aligned_size, born_aligned_size);
                         if (waste_bytes < best_waste_bytes) {
                             best_dying_match_idx = dying_idx;
                             best_waste_bytes = waste_bytes;
@@ -271,7 +276,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                     born_assigned.with_element(prove_per_op(born_idx),
                                                [](bool& is_assigned) noexcept { is_assigned = true; });
                     if (best_waste_bytes > 0)
-                        free_block(dying_slot_info.at(best_match).offset + born_aligned_size, best_waste_bytes);
+                        free_block(::fixy::strict_add(dying_slot_info.at(best_match).offset, born_aligned_size),
+                                   best_waste_bytes);
                 }
             }
         }

@@ -202,9 +202,11 @@ private:
         return true;
     }
 
+    // The double of a sleep clamps at the largest sleep, so a large bound of
+    // the caller gives that bound and not a wrapped short sleep.
     [[nodiscard]] uint64_t next_sleep_nanos_() noexcept {
         const uint64_t nanos = sleep_nanos_;
-        sleep_nanos_ = ::fixy::min(nanos * 2, max_sleep_nanos_);
+        sleep_nanos_ = ::fixy::min(::fixy::saturating_mul(nanos, uint64_t{2}), max_sleep_nanos_);
         return nanos;
     }
 
@@ -566,7 +568,8 @@ BackgroundThread::BackgroundThread(::foundation::effects::Alloc allocation, Regi
 uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, MetaIndex meta_start) noexcept {
     if (!meta_start.is_valid()) return meta_cursor_;
     CRUCIBLE_FATAL_INVARIANT(meta_start.raw() >= meta_cursor_);
-    meta_cursor_ = meta_start.raw() + entry.num_inputs + entry.num_outputs;
+    meta_cursor_ = ::fixy::strict_add(::fixy::strict_add(meta_start.raw(), uint64_t{entry.num_inputs}),
+                                      uint64_t{entry.num_outputs});
     return meta_start.raw();
 }
 
@@ -575,7 +578,8 @@ uint64_t BackgroundThread::take_record_start_(TraceRing::Entry const& entry, Met
 // so the count stays at most half of the history of the detector, K ops more
 // and the op that the detect stage adds before it drops.
 void BackgroundThread::PendingOps::grow_(::foundation::effects::Alloc alloc) {
-    const uint64_t new_capacity = mask_ == 0 ? MIN_CAPACITY : (mask_ + 1) * 2;
+    const uint64_t new_capacity =
+        mask_ == 0 ? MIN_CAPACITY : ::fixy::strict_mul(::fixy::strict_add(mask_, uint64_t{1}), uint64_t{2});
     CRUCIBLE_FATAL_INVARIANT(new_capacity <= IterationDetector::HISTORY_MAX_CAPACITY);
     ::fixy::MaskedArray<TraceRing::Entry> entries = ::fixy::mint_masked_array<TraceRing::Entry>(alloc, new_capacity);
     ::fixy::MaskedArray<MetaIndex> meta_starts = ::fixy::mint_masked_array<MetaIndex>(alloc, new_capacity);
@@ -617,7 +621,7 @@ void BackgroundThread::PendingOps::push(::foundation::effects::Alloc alloc, Trac
 }
 
 void BackgroundThread::drop_unclaimable_ops_() noexcept {
-    const uint64_t first_held = detector_.pos_ - pending_ops_.size();
+    const uint64_t first_held = ::fixy::strict_sub(detector_.pos_, pending_ops_.size());
     const uint64_t oldest_claimable = detector_.oldest_claimable();
     if (oldest_claimable > first_held) pending_ops_.drop_oldest(oldest_claimable - first_held);
 }
