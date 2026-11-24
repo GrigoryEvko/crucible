@@ -230,6 +230,7 @@ enum class ZeroRun : std::uint8_t {
                     return -0.0f;
                 case ZeroRun::Alternating:
                     return position % 2 == 0 ? 0.0f : -0.0f;
+                case ZeroRun::Cancelling:
                 default:
                     last = position % 2 == 0 ? draw_float(stream) : -last;
                     return last;

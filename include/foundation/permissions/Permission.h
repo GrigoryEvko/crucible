@@ -402,6 +402,10 @@ inline constexpr row_cell row_cell_at = walk_row(Tag, RowsMembers);
             return ::foundation::fail_closed::unique_target(^^permission_rows, tag);
         case row_shape::by_parent:
             return permission_row_source_at_(cell.parent(), rows_members);
+        // One edge, one member, or no source: the cell holds the row, or void.
+        case row_shape::by_edge:
+        case row_shape::by_member:
+        case row_shape::none:
         default:
             return cell.row();
     }

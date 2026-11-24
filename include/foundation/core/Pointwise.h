@@ -1007,6 +1007,8 @@ template <int W, class E>
             LaneRow<LaneClass::General, W, E> const reader{row, input.step_a, {}};
             return live == width ? reader.full(a0) : reader.tail(a0, live);
         }
+        // Switched is a class of a loop, and no row of an input holds it.
+        case LaneClass::Switched:
         default:
             ::foundation::core::unreachable();
     }
@@ -1319,6 +1321,8 @@ CRUCIBLE_INLINE void choose_lane_classes_(LaneClass const (&classes)[Inputs], Ne
             case LaneClass::General:
                 choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::Switched>(classes, next);
                 return;
+            // Switched is the class of this loop, and no input holds it.
+            case LaneClass::Switched:
             default:
                 ::foundation::core::unreachable();
         }
@@ -1336,6 +1340,7 @@ CRUCIBLE_INLINE void choose_lane_classes_(LaneClass const (&classes)[Inputs], Ne
             case LaneClass::General:
                 choose_lane_classes_<Done + 1, Inputs, Chosen..., LaneClass::General>(classes, next);
                 return;
+            case LaneClass::Switched:
             default:
                 ::foundation::core::unreachable();
         }

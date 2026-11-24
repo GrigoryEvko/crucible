@@ -174,6 +174,46 @@ namespace detail {
             return grants_dereference;
         case std::meta::operators::op_plus_plus:
             return grants_cursor;
+        // Each other operator is a verb of the class, which its list names
+        // or the surface refuses.
+        case std::meta::operators::op_new:
+        case std::meta::operators::op_delete:
+        case std::meta::operators::op_array_new:
+        case std::meta::operators::op_array_delete:
+        case std::meta::operators::op_co_await:
+        case std::meta::operators::op_parentheses:
+        case std::meta::operators::op_square_brackets:
+        case std::meta::operators::op_arrow_star:
+        case std::meta::operators::op_tilde:
+        case std::meta::operators::op_exclamation:
+        case std::meta::operators::op_plus:
+        case std::meta::operators::op_minus:
+        case std::meta::operators::op_slash:
+        case std::meta::operators::op_percent:
+        case std::meta::operators::op_caret:
+        case std::meta::operators::op_ampersand:
+        case std::meta::operators::op_pipe:
+        case std::meta::operators::op_plus_equals:
+        case std::meta::operators::op_minus_equals:
+        case std::meta::operators::op_star_equals:
+        case std::meta::operators::op_slash_equals:
+        case std::meta::operators::op_percent_equals:
+        case std::meta::operators::op_caret_equals:
+        case std::meta::operators::op_ampersand_equals:
+        case std::meta::operators::op_pipe_equals:
+        case std::meta::operators::op_exclamation_equals:
+        case std::meta::operators::op_less:
+        case std::meta::operators::op_greater:
+        case std::meta::operators::op_less_equals:
+        case std::meta::operators::op_greater_equals:
+        case std::meta::operators::op_ampersand_ampersand:
+        case std::meta::operators::op_pipe_pipe:
+        case std::meta::operators::op_less_less:
+        case std::meta::operators::op_greater_greater:
+        case std::meta::operators::op_less_less_equals:
+        case std::meta::operators::op_greater_greater_equals:
+        case std::meta::operators::op_minus_minus:
+        case std::meta::operators::op_comma:
         default:
             return false;
     }

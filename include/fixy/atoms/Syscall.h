@@ -335,9 +335,8 @@ inline constexpr sc::SyscallId syscall_nondet_calls[] = {
 }
 
 // The family one step below a family on the chain.  NoSyscall is the
-// bottom, and it answers itself.  A family that a new enumerator appends
-// with no case here answers NoSyscall, and the check file of this header
-// then finds a family whose row is no superset of the row below it.
+// bottom, and it answers itself.  The switch names each family, so a new
+// family needs a case of its own.
 [[nodiscard]] consteval sc::SyscallFamily family_below_(sc::SyscallFamily family) noexcept {
     switch (family) {
         case sc::SyscallFamily::VdsoOnly:
@@ -356,6 +355,7 @@ inline constexpr sc::SyscallId syscall_nondet_calls[] = {
             return sc::SyscallFamily::NetworkIo;
         case sc::SyscallFamily::Privilege:
             return sc::SyscallFamily::ProcessControl;
+        case sc::SyscallFamily::NoSyscall:
         default:
             return sc::SyscallFamily::NoSyscall;
     }

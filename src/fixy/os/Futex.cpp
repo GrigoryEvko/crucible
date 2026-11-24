@@ -7,6 +7,7 @@
 
 #include <fixy/os/Futex.h>
 
+#include <foundation/core/EnumMatch.h>
 #include <foundation/os/FutexWords.h>
 #include <foundation/os/Syscall.h>
 
@@ -47,16 +48,14 @@ core::Result<WaitEnd, os::Errno> wait_on(FutexWord const& word, std::uint32_t ex
     return os::result_of(answer).match(
         [](std::uint64_t) noexcept -> core::Result<WaitEnd, os::Errno> { return WaitEnd::woken; },
         [](os::Errno error) noexcept -> core::Result<WaitEnd, os::Errno> {
-            switch (error) {
-                case os::Errno::eagain:
-                    return WaitEnd::word_changed;
-                case os::Errno::eintr:
-                    return WaitEnd::interrupted;
-                case os::Errno::etimedout:
-                    return WaitEnd::deadline_passed;
-                default:
-                    return core::err(error);
-            }
+            // Errno is open, so each number that the three arms do not name,
+            // also a number with no name, is the error of the wait.
+            using Ended = core::Result<WaitEnd, os::Errno>;
+            return core::match_enum(
+                error, core::arm<os::Errno::eagain>([] noexcept -> Ended { return WaitEnd::word_changed; }),
+                core::arm<os::Errno::eintr>([] noexcept -> Ended { return WaitEnd::interrupted; }),
+                core::arm<os::Errno::etimedout>([] noexcept -> Ended { return WaitEnd::deadline_passed; }),
+                core::otherwise([](os::Errno other) noexcept -> Ended { return core::err(other); }));
         });
 }
 

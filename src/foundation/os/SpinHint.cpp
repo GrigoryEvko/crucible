@@ -189,6 +189,12 @@ void step(SpinArm arm, core::Atomic<std::uint32_t> const& word, std::uint32_t ex
         case SpinArm::mwaitx:
             step_mwaitx(word, expected, now, deadline);
             return;
+        // A plain arm, and an arm of aarch64, which no x86_64 host picks.
+        case SpinArm::pause:
+        case SpinArm::yield:
+        case SpinArm::isb:
+        case SpinArm::wfe:
+        case SpinArm::wfet:
 #elif defined(__aarch64__)
         case SpinArm::wfe:
             step_wfe(word, expected);
@@ -196,6 +202,13 @@ void step(SpinArm arm, core::Atomic<std::uint32_t> const& word, std::uint32_t ex
         case SpinArm::wfet:
             step_wfet(word, expected, deadline);
             return;
+        // A plain arm, and an arm of x86_64, which no aarch64 host picks.
+        case SpinArm::pause:
+        case SpinArm::yield:
+        case SpinArm::isb:
+        case SpinArm::tpause:
+        case SpinArm::umwait:
+        case SpinArm::mwaitx:
 #endif
         default:
             static_cast<void>(now);

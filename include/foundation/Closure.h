@@ -378,6 +378,11 @@ private:
                             "reference if the body only reads it, or use an Atomic or a channel");
                 }
                 break;
+            // A field with no refusal, a field that the walk cannot read, and
+            // a linear field take no explanation of a transfer.
+            case Refusal::None:
+            case Refusal::Unreadable:
+            case Refusal::LinearGrade:
             default:
                 return;
         }
@@ -408,6 +413,12 @@ namespace detail {
             return transfer::first_synchronized_refusal(target);
         case Refusal::NotSendableBeside:
             return transfer::first_refusal(target, transfer::Property::SendBeside);
+        // Each other refusal is no refusal of a transfer property.
+        case Refusal::None:
+        case Refusal::Unreadable:
+        case Refusal::LinearGrade:
+        case Refusal::CapturedContext:
+        case Refusal::Borrow:
         default:
             return std::meta::info{};
     }

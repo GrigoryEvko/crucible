@@ -68,8 +68,24 @@ constexpr std::uint64_t kXcr0Hi16Zmm = std::uint64_t{1} << 7;
         case X86Feature::zmm_hi256_state:
         case X86Feature::hi16_zmm_state:
             return X86Level::v4;
-        default:
+        case X86Feature::avx:
+        case X86Feature::avx2:
+        case X86Feature::bmi1:
+        case X86Feature::bmi2:
+        case X86Feature::f16c:
+        case X86Feature::fma:
+        case X86Feature::lzcnt:
+        case X86Feature::movbe:
+        case X86Feature::osxsave:
+        case X86Feature::xmm_state:
+        case X86Feature::xsave:
+        case X86Feature::ymm_state:
             return X86Level::v3;
+        // No feature: each level has it.
+        case X86Feature::none:
+            return X86Level::v1;
+        default:
+            ::foundation::core::unreachable();
     }
 }
 
@@ -155,6 +171,8 @@ namespace {
             return X86FeatureWords{.xcr0 = kXcr0ZmmHi256};
         case X86Feature::hi16_zmm_state:
             return X86FeatureWords{.xcr0 = kXcr0Hi16Zmm};
+        // No feature has no bit.
+        case X86Feature::none:
         default:
             return X86FeatureWords{};
     }
@@ -216,6 +234,7 @@ namespace {
         case X86Feature::zmm_hi256_state:
         case X86Feature::hi16_zmm_state:
             return __builtin_cpu_supports("x86-64-v4");
+        case X86Feature::none:
         default:
             return false;
     }

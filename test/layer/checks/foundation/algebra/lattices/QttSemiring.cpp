@@ -57,6 +57,7 @@ struct use_interval {
             return {.least = 1, .most = 1};
         case QttGrade::AtMostOne:
             return {.least = 0, .most = 1};
+        case QttGrade::Omega:
         default:
             return {.least = 0, .most = unbounded_uses};
     }
