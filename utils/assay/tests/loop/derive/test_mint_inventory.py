@@ -12,6 +12,7 @@ census.  The fixtures parse with the pinned tree-sitter kit.  The cases hold:
   * The rows of the records: the count of each mint, the carve-out of the
     ledger, the cx cell and the label of an overload
   * The finding of drift() before and after a write of the inventory
+  * The refusal of a build with an object that holds no current records
   * The command line of main.
 Exit 0 when each case holds, else 1.
 """
@@ -244,6 +245,46 @@ def row_cases(expect: testing.Expect) -> None:
         )
 
 
+def refusal_of(context: runner.PluginContext) -> str:
+    """Return the message of the InventoryError of rows_of(), or no text when it gives rows."""
+    try:
+        inventory.rows_of(context)
+    except inventory.InventoryError as problem:
+        return str(problem)
+    return ""
+
+
+def census_cases(expect: testing.Expect) -> None:
+    """Hold that a build with an object of no current records gives no row, also when the other objects hold records."""
+    stale = runner.Problem(
+        "build/a.o", "the section holds the stamp 'old', and the compile command has the stamp 'new'"
+    )
+    with tempfile.TemporaryDirectory(prefix="mint-inventory-") as scratch_text:
+        root = Path(scratch_text)
+        scratch_tree(root)
+        partial = runner.PluginContext(root, census=runner.Census(2, frozenset(RECORDS[:1]), problems=(stale,)))
+        empty = runner.PluginContext(root, census=runner.Census(1, problems=(stale,)))
+        for label, context in (("a part of the records", partial), ("no record", empty)):
+            message = refusal_of(context)
+            expect(
+                f"a build with a stale object and {label} gives no row, and the message names the object and the build "
+                f"to make: {message}",
+                "build/a.o" in message and "stamp 'old'" in message and "Build the target all" in message,
+            )
+        expect("a build whose each object holds its records gives its rows", refusal_of(context_of(root)) == "")
+        (root / "misc").mkdir()
+        (root / inventory.INVENTORY).write_text("kept\n", encoding="utf-8")
+        try:
+            inventory.drift(partial)
+            is_refused = False
+        except inventory.InventoryError:
+            is_refused = True
+        expect(
+            "drift() of a build with a stale object raises, and does not report the records of the other objects",
+            is_refused and (root / inventory.INVENTORY).read_text(encoding="utf-8") == "kept\n",
+        )
+
+
 # The command lines that main refuses, each with the words of its case.
 USAGE_ERRORS = (
     ("a call with no mode", ()),
@@ -267,5 +308,5 @@ def main(argv: list[str]) -> int:
     return testing.run(
         __name__.removeprefix("assay."),
         argv,
-        (layer_cases, fixture_cases, input_cases, count_cases, row_cases, command_cases),
+        (layer_cases, fixture_cases, input_cases, count_cases, row_cases, census_cases, command_cases),
     )

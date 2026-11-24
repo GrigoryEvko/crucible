@@ -11,6 +11,14 @@ Mints
     the rule mint.  The rule mint and the inventory read the same records.
     DIR is the build directory, with REPO_ROOT/build as the default.
 
+    Each object of the build must hold the records of the stamp of its
+    compile command (expect_full_census()).  A build with one object that
+    does not, such as a partly built tree after a rebase, gives exit 3 and
+    writes no file.  The stamp names the plugin and the rule table, and not
+    the sources, so an object older than its sources gives the mints of the
+    older sources.  The gate builds the target all before it writes the
+    inventory.
+
 Rows
     One row is one function: an overload is a row of its own, and a
     declaration and its definition are one row at the definition.  A section
@@ -60,7 +68,8 @@ Inputs
     which give the bytes of the inventory.
 
 Exit 0 when the mode did its work, 1 on drift and 2 on a usage error.  Exit 3
-when the build or the pinned tree-sitter kit is not available.
+when the build, the records of one of its objects or the pinned tree-sitter
+kit is not available.
 """
 
 from __future__ import annotations
@@ -222,6 +231,29 @@ def carved(root: Path, rule: rule_registry.Rule) -> frozenset[str]:
     return frozenset(key.entity for key in ledger.base if key.kind == CARVE_RQ)
 
 
+def expect_full_census(context: runner.PluginContext) -> None:
+    """Raise InventoryError when the census of the build does not hold the records of each object (a half-built tree).
+
+    An object with no section, with a section that does not read, or with the section of a different stamp gives no
+    record.  Its mints are then missing from the rows, and the inventory of the other objects is not the inventory of
+    the tree.
+
+    Raises:
+        NotApplicable: If the build does not apply, or the call gives no build directory
+        InventoryError: If an object of the build has no record of its plugin
+        runner.BuildError: If the build cannot be read
+    """
+    census = context.census()
+    if not census.problems:
+        return
+    first = census.problems[0]
+    raise InventoryError(
+        f"{len(census.problems)} of the {census.objects} objects of {context.build_shown()} have no current plugin "
+        f"records, such as {first.path} ({first.message}).  The records of the other objects are not the mints of the "
+        f"tree.  Build the target all of {context.build_shown()} first, then run this command again"
+    )
+
+
 def rows_of(context: runner.PluginContext) -> list[Row]:
     """Return one row for each mint of the build of the context, sorted by section, name, path and entity.
 
@@ -229,10 +261,12 @@ def rows_of(context: runner.PluginContext) -> list[Row]:
 
     Raises:
         NotApplicable: If the build does not apply, or the call gives no build directory
-        InventoryError: If the build, a record, the rule table or the ledger of the rule mint cannot be read
+        InventoryError: If the build, a record, the rule table or the ledger of the rule mint cannot be read, or an
+            object of the build has no current records (expect_full_census())
         tsast.KitMissing: If the pinned kit is not installed
     """
     try:
+        expect_full_census(context)
         rule = declarations.rule_of(context, declarations.MINT_RULE)
         mints = declarations.mints(context, rule)
         aliases = declarations.aliases(context, rule)
