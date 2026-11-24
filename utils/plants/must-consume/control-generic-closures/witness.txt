@@ -1,0 +1,9 @@
+# The rule of the generic closures (linear.cpp) admits each form of this
+# unit: a generic closure that consumes its token on each path, a closure
+# with an explicit object parameter that gives its token out, a capture by
+# reference that the caller consumes, and a generic closure with no linear
+# capture.  The directory src/ has the enforce mode error, and the unit
+# compiles with no line of the rule.
+compile generic src/generic.cpp must-consume=on
+flag generic -freflection
+exit generic pass

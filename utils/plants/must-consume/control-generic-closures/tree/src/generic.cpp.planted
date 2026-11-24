@@ -1,0 +1,62 @@
+// The closures with a call operator template that end each linear capture
+// (the generic closures of linear.cpp): a generic closure that consumes its
+// token on each path, a closure with an explicit object parameter that gives
+// its token out as its value, a generic closure with a capture by reference
+// that the caller consumes, and a generic closure that the once door owns
+// and that holds no linear capture.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// The once door owns a generic closure that consumes its token on each path.
+int generic_consumes_its_token() {
+    auto give = [token = Token{1}]<class Value>(Value value) mutable noexcept {
+        if (should_give()) {
+            sink(std::move(token));
+        } else {
+            sink(std::move(token));
+        }
+        return value;
+    };
+    return ::foundation::linear::call_once(std::move(give), 1);
+}
+
+// The once door owns a closure with an explicit object parameter that gives
+// its token out, and the caller consumes the value.
+void explicit_object_gives_its_token() {
+    Token given = ::foundation::linear::call_once(
+        [token = Token{2}]<class Self>(this Self&& /*self*/) noexcept { return std::move(token); });
+    sink(std::move(given));
+}
+
+// A capture by reference stays with the caller, which consumes it.
+int generic_reference_capture() {
+    Token held{3};
+    int const value = ::foundation::linear::call_once([&held]<class Value>(Value value) noexcept { return value; }, 3);
+    sink(std::move(held));
+    return value;
+}
+
+// The once door owns a generic closure with no linear capture.
+int generic_plain_capture() {
+    int const count = 4;
+    return ::foundation::linear::call_once([count]<class Value>(Value value) noexcept { return value + count; }, 4);
+}
+
+}  // namespace planted

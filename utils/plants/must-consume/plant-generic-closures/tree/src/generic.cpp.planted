@@ -1,0 +1,67 @@
+// The closures with a call operator template (the generic closures of
+// linear.cpp).  The once door owns a generic closure that ignores its token,
+// a closure with an explicit object parameter that ignores its token, and a
+// generic closure that consumes its token on one path.  A door gives a
+// borrowed generic closure that moves a capture out to the once door.  The
+// plugin of main read the facts of a closure only through a call operator
+// that is no template, so it gave none of these lines.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+[[nodiscard]] bool should_give() noexcept;
+
+// The once door owns a generic closure that ignores its token.
+int generic_ignores_its_token() {
+    return ::foundation::linear::call_once([token = Token{1}]<class Value>(Value value) mutable noexcept { return value; },
+                                           1);
+}
+
+// The once door owns a closure with an explicit object parameter that
+// ignores its token.
+int explicit_object_ignores_its_token() {
+    return ::foundation::linear::call_once([token = Token{2}]<class Self>(this Self&& /*self*/) noexcept { return 2; });
+}
+
+// The once door owns a generic closure that consumes its token on one path.
+int generic_consumes_on_one_path() {
+    auto give = [token = Token{3}]<class Value>(Value value) mutable noexcept {
+        if (should_give()) {
+            sink(std::move(token));
+        }
+        return value;
+    };
+    return ::foundation::linear::call_once(std::move(give), 3);
+}
+
+// A door gives a generic closure that its caller lends to the once door, so
+// a second call of the door gives a second value of the capture.
+template <class Body>
+int give_borrowed_generic(Body& body) noexcept {
+    return ::foundation::linear::call_once(std::move(body), 4);
+}
+
+int borrowed_generic_closure_twice() {
+    Token held{4};
+    auto give = [&held]<class Value>(Value value) noexcept {
+        sink(std::move(held));
+        return value;
+    };
+    return give_borrowed_generic(give) + give_borrowed_generic(give);
+}
+
+}  // namespace planted

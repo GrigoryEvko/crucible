@@ -1,0 +1,21 @@
+# The closures with a call operator template (the generic closures of
+# linear.cpp).  The once door owns a generic closure that ignores its token
+# (line 30), a closure with an explicit object parameter that ignores its
+# token (37), and a generic closure that consumes its token on one path (42).
+# Each line of capture-unconsumed is at the lambda.  A door gives a borrowed
+# generic closure that moves a capture out to the once door, the line of
+# closure-move-out at the call of the door (55).  The directory src/ has the
+# enforce mode error, and the tree holds no ledger of must-consume, so each
+# counted line is a compile error.  The plugin of main gave none of these
+# lines, and the unit compiled.
+compile generic src/generic.cpp must-consume=on
+flag generic -freflection
+exit generic fail
+finding generic must-consume capture-unconsumed src/generic.cpp:30:44 | planted::generic_ignores_its_token: closure (planted::generic_ignores_its_token()::<lambda(Value)>)
+finding generic must-consume capture-unconsumed src/generic.cpp:37:44 | planted::explicit_object_ignores_its_token: closure (planted::explicit_object_ignores_its_token()::<lambda(this Self&&)>)
+finding generic must-consume capture-unconsumed src/generic.cpp:42:17 | planted::generic_consumes_on_one_path: closure (planted::generic_consumes_on_one_path()::<lambda(Value)>)
+finding generic must-consume closure-move-out src/generic.cpp:55:43 | planted::give_borrowed_generic: body (planted::borrowed_generic_closure_twice()::<lambda(Value)>)
+error generic src/generic.cpp:30 | quarantine: capture-unconsumed planted::generic_ignores_its_token: closure (planted::generic_ignores_its_token()::<lambda(Value)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error generic src/generic.cpp:37 | quarantine: capture-unconsumed planted::explicit_object_ignores_its_token: closure (planted::explicit_object_ignores_its_token()::<lambda(this Self&&)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error generic src/generic.cpp:42 | quarantine: capture-unconsumed planted::generic_consumes_on_one_path: closure (planted::generic_consumes_on_one_path()::<lambda(Value)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error generic src/generic.cpp:55 | quarantine: closure-move-out planted::give_borrowed_generic: body (planted::borrowed_generic_closure_twice()::<lambda(Value)>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

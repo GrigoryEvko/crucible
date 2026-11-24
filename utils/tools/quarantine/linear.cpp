@@ -448,6 +448,19 @@
 //     captures the rule must-consume reads, as it reads the parameters of a
 //     function, retires these lines, and C++ cannot state such a type today.
 //
+// The generic closures
+//     A generic lambda, and a lambda with an explicit object parameter, has a
+//     call operator template.  The summary walk reads each instance of it,
+//     and lambda_function gives only the template.  So the two facts of the
+//     closures also have the TYPE_UID of the closure as their key: a closure
+//     type moves a capture out, or leaves a capture by value live, when one
+//     instance of its call operator does.  A call of the once door whose
+//     closure has a linear capture by value and a call operator with no fact
+//     at the walk gives a waiting line.  The door instance can come before
+//     the instance of the call operator in the unit, so the end of the unit
+//     keeps each waiting line whose closure type leaves a capture
+//     (judge_waiting_owned_closures).
+//
 // Self-moves
 //     A move assignment whose target and source are one object is the kind
 //     self-move, at the assignment: an operator= that takes an rvalue
@@ -1021,6 +1034,14 @@ std::unordered_set<unsigned> closure_moves_out;
 std::unordered_set<unsigned> closure_leaves_capture;
 std::unordered_set<unsigned> closure_summarized;
 
+// The same two facts by the TYPE_UID of the closure: a closure type whose
+// call operator, or one instance of its call operator template, moves a linear
+// capture out, or leaves a linear capture by value live on a path.  A generic
+// lambda has a call operator template, and lambda_function gives that
+// template, while the summary walk reads each instance (the generic closures).
+std::unordered_set<unsigned> closure_types_move_out;
+std::unordered_set<unsigned> closure_types_leave_capture;
+
 // True when CALL calls the call operator of a closure that moves a linear
 // capture out, with an implicit object parameter (the closures that move a
 // capture).
@@ -1043,8 +1064,10 @@ bool is_moving_closure_type(tree type) {
     if (type == NULL_TREE || !LAMBDA_TYPE_P(type)) {
         return false;
     }
-    tree call_operator = lambda_function(TYPE_MAIN_VARIANT(type));
-    return call_operator != NULL_TREE && closure_moves_out.count(DECL_UID(call_operator)) != 0;
+    type = TYPE_MAIN_VARIANT(type);
+    tree call_operator = lambda_function(type);
+    return (call_operator != NULL_TREE && closure_moves_out.count(DECL_UID(call_operator)) != 0)
+        || closure_types_move_out.count(TYPE_UID(type)) != 0;
 }
 
 // True when CALL calls a closure that moves a linear capture out, or calls a
@@ -1587,6 +1610,10 @@ struct PendingFinding {
     location_t location;
     std::string entity;
     DoorEnd door_end = DoorEnd::exempt;
+    // The TYPE_UID of a closure that a once door owns and whose call operator
+    // had no fact at the walk, or 0.  Such a line waits for the end of the
+    // unit (the generic closures).
+    unsigned waits_for_closure_type = 0;
 };
 
 // One finding of a walk of a body, with its place, before the rule adds it.
@@ -1613,6 +1640,16 @@ struct DeferredFindings {
 };
 
 std::vector<DeferredFindings> deferred_findings;
+
+// A line of the kind capture-unconsumed that waits for the end of the unit:
+// the once door owns a closure whose call operator had no fact at the walk
+// (the generic closures).
+struct WaitingOwnedClosure {
+    unsigned closure_type = 0;
+    WalkFinding finding;
+};
+
+std::vector<WaitingOwnedClosure> waiting_owned_closures;
 
 // How a walk of a body reads a callee with no fact (the summaries).
 enum class UnknownCallee : std::uint8_t {
@@ -3438,7 +3475,13 @@ private:
         }
         closure_type = TYPE_MAIN_VARIANT(closure_type);
         tree call_operator = lambda_function(closure_type);
-        if (call_operator == NULL_TREE || closure_leaves_capture.count(DECL_UID(call_operator)) == 0) {
+        bool const has_fact = call_operator != NULL_TREE && closure_summarized.count(DECL_UID(call_operator)) != 0;
+        bool const leaves_capture =
+            call_operator != NULL_TREE && closure_leaves_capture.count(DECL_UID(call_operator)) != 0;
+        // The generic closures: a call operator template, or a call operator
+        // whose body the unit reads after this walk, has no fact here.  So a
+        // closure with a linear capture by value waits for the end of the unit.
+        if (!leaves_capture && (has_fact || !has_owned_linear_capture(closure_type))) {
             return;
         }
         tree lambda = CLASSTYPE_LAMBDA_EXPR(closure_type);
@@ -3446,8 +3489,24 @@ private:
             lambda != NULL_TREE ? LAMBDA_EXPR_LOCATION(lambda) : DECL_SOURCE_LOCATION(TYPE_NAME(closure_type));
         tree holder = decl_function_context(TYPE_NAME(closure_type));
         std::string owner = holder != NULL_TREE ? function_text(holder) : std::string{"namespace scope"};
-        add_pending(Kind::linear_capture_unconsumed, where,
-                    owner + ": closure (" + linear_type_text(closure_type) + ")");
+        std::string entity = owner + ": closure (" + linear_type_text(closure_type) + ")";
+        if (leaves_capture) {
+            add_pending(Kind::linear_capture_unconsumed, where, entity);
+            return;
+        }
+        pending_.push_back(PendingFinding{Kind::linear_capture_unconsumed, where, std::move(entity), DoorEnd::exempt,
+                                          TYPE_UID(closure_type)});
+    }
+
+    // True when the closure CLOSURE_TYPE holds a linear capture by value (the
+    // closures that a call owns).  Complexity: linear in the fields.
+    static bool has_owned_linear_capture(tree closure_type) {
+        for (tree field = TYPE_FIELDS(closure_type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+            if (is_owned_linear_capture(field)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // True when OBJECT names a capture of the closure of the call operator
@@ -3953,8 +4012,25 @@ private:
             record(kind, DECL_SOURCE_LOCATION(entry.decl), entity_of(entry.decl), entry.door_end);
         }
         for (const PendingFinding& finding : pending_) {
+            if (finding.waits_for_closure_type != 0) {
+                wait_for_closure(finding);
+                continue;
+            }
             record(finding.kind, finding.location, finding.entity, finding.door_end);
         }
+    }
+
+    // The generic closures: a line of a closure that the once door owns waits
+    // for the end of the unit, where the facts of each instance of its call
+    // operator are known.  The two walks of a body with a callee with no fact
+    // give the same line, and the end of the unit keeps one.
+    static void wait_for_closure(const PendingFinding& finding) {
+        Place place = place_of(finding.location, Scope::quarantine);
+        if (place.file == nullptr) {
+            return;
+        }
+        waiting_owned_closures.push_back(
+            WaitingOwnedClosure{finding.waits_for_closure_type, WalkFinding{finding.kind, place, finding.entity}});
     }
 
     void record(Kind kind, location_t location, const std::string& entity, DoorEnd door_end = DoorEnd::exempt) {
@@ -4028,6 +4104,7 @@ void note_closure_summary(tree function) {
     }
     if (walk.moves_capture_out() || (captures_moving_closure && walk.is_unanalyzed())) {
         closure_moves_out.insert(DECL_UID(function));
+        closure_types_move_out.insert(TYPE_UID(TYPE_MAIN_VARIANT(closure)));
     }
     // Closures that a call owns: a linear capture by value that a path
     // leaves live, or that the body never names, drops with the closure.
@@ -4036,6 +4113,7 @@ void note_closure_summary(tree function) {
     for (tree field = TYPE_FIELDS(closure); field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (is_owned_linear_capture(field) && std::find(ended.begin(), ended.end(), DECL_UID(field)) == ended.end()) {
             closure_leaves_capture.insert(DECL_UID(function));
+            closure_types_leave_capture.insert(TYPE_UID(TYPE_MAIN_VARIANT(closure)));
             break;
         }
     }
@@ -6236,11 +6314,28 @@ void report_self_move(const Finding& finding) {
     inform(finding.spelling, "remove the assignment, or move the value into a different object");
 }
 
+// The generic closures: each waiting line of a once door whose closure type
+// leaves a linear capture live in one instance of its call operator.  The
+// two walks of one body give the same line, so the end keeps it one time.
+// Complexity: quadratic in the waiting lines, which are few in a unit.
+void judge_waiting_owned_closures() {
+    std::vector<WalkFinding> owned;
+    for (const WaitingOwnedClosure& waiting : waiting_owned_closures) {
+        if (closure_types_leave_capture.count(waiting.closure_type) != 0
+            && std::find(owned.begin(), owned.end(), waiting.finding) == owned.end()) {
+            owned.push_back(waiting.finding);
+        }
+    }
+    add_walk_findings(owned);
+    waiting_owned_closures.clear();
+}
+
 // The rule brand-reentry at the end of the unit (plugin.cpp, walk_unit): each
 // body of the unit gave its edges of the call graph by then.
 void finish_linear_rules() {
     if (linear_mode.checks_must_consume) {
         judge_deferred_findings();
+        judge_waiting_owned_closures();
     }
     if (linear_mode.checks_shapes && !call_graph.was_reported && !seen_error()) {
         call_graph.was_reported = true;
