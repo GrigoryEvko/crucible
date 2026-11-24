@@ -204,8 +204,8 @@ struct rule_premises {
 // more axes, and the reason that it refuses a pair is the point of it.
 //
 // The function is not a template, so no other file can give a rule another
-// predicate.  The switch names each enumerator, and the pragma makes a
-// missing enumerator an error of -Wswitch-enum.  Each case builds its row
+// predicate.  The switch names each enumerator, and -Wswitch-enum of the
+// build makes a missing enumerator an error.  Each case builds its row
 // with a designated initializer, because a call with a constant argument
 // in a consteval function that is not a template runs in each unit that
 // includes this header.
@@ -220,8 +220,6 @@ struct rule_row {
     char const* theorem = "";
 };
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wswitch-enum"
 [[nodiscard]] consteval rule_row rule_row_of(RuleCode code, const rule_premises& premise) noexcept {
     switch (code) {
         case RuleCode::L002:
@@ -650,7 +648,6 @@ struct rule_row {
             return rule_row{};
     }
 }
-#pragma GCC diagnostic pop
 
 // ---------------------------------------------------------------------
 // The pending roster.  Each entry keeps the theorem and the citation,

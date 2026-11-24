@@ -361,11 +361,9 @@ struct AxisRecord {
 
 // The table: one row for each axis.  The function is not a template, so no
 // other file can give an axis a different row.  The switch names each
-// enumerator, and the pragma makes a missing enumerator an error of
-// -Wswitch-enum, also with the default case.  A value outside the enum
-// reaches the default case, and its row is unclassified.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic error "-Wswitch-enum"
+// enumerator, and -Wswitch-enum of the build makes a missing enumerator an
+// error, also with the default case.  A value outside the enum reaches the
+// default case, and its row is unclassified.
 [[nodiscard]] consteval AxisRecord axis_record(Axis axis) noexcept {
     switch (axis) {
         // There is no default function type.  Each binding names its own.
@@ -590,7 +588,6 @@ struct AxisRecord {
             return AxisRecord{};
     }
 }
-#pragma GCC diagnostic pop
 
 // The markers of a row, as concepts.  GCC keeps the answer of a concept,
 // so each gate reads the row of an axis one time.
