@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::producer_token{};
+    [[maybe_unused]] auto forged = fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::producer_token{forge::rvalue<foundation::core::Identity>()};
     return 0;
 }

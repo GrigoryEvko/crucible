@@ -33,13 +33,19 @@
 // Side tokens
 //   A side token (SpscSplit::producer_token and SpscSplit::consumer_token) is
 //   the authority over one side of one split.  It is a nested class of the
-//   split, so it opens only the splits of its type, and the mint of a split
-//   gives the one token of each side of the fresh brand of its call.  Only
-//   that mint builds a token: its constructor is private, and the door of the
-//   mint is its one friend.  A token is linear and does not copy, so one side has
-//   one holder.  It moves, so its holder can give it to the body of another
-//   thread.  It holds no resource, so the end of its scope is its door.  Two
-//   threads never read one token through a reference to const.
+//   split, and the brand of the split is a brand of one mint site (fact 2 of
+//   foundation/Brand.h).  Two runs of one site, such as two turns of a loop,
+//   give two splits of one type, and their tokens have one type.  So each
+//   mint makes an Identity (foundation/core/Identity.h), and the split and
+//   its two tokens hold it.  Each door of a split that takes a token compares
+//   the two, so a token opens only the split of its own mint.  A token of
+//   another split at a door breaks the precondition of the door.
+//   Only the mint builds a token: its constructor is private, and the door of
+//   the mint and the split are its friends.  A token is linear and does not
+//   copy, so one side has one holder.  It moves, so its holder can give it to
+//   the body of another thread.  It holds no resource, so the end of its scope
+//   is its door.  Two threads never read one token through a reference to
+//   const.
 //
 // Doors
 //   A body borrows an end through a frame door of the split, for the time of
@@ -107,9 +113,11 @@
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
+#include <foundation/contracts/Pre.h>
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
+#include <foundation/core/Identity.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 
@@ -506,17 +514,21 @@ public:
     using brand_type = Brand;
 
     // The token of the producer side of the splits of this type (side
-    // tokens).  The constructor is private, and the door of the mint is its
-    // one friend.  The token states no shared write, so a friend of it is no
-    // friend of the split.
+    // tokens).  It holds the Identity of the mint that made it.  The
+    // constructor is private.  The door of the mint builds a token, and the
+    // split reads the Identity, so both are friends.  The token states no
+    // shared write, so a friend of it is no friend of the split.
     class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::linear::authority{}]]
                        [[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::not_shareable{}]]
                        [[= ::foundation::core::loan_key_mark{}]] producer_token final {
         friend struct detail::SpscSplitDoor<Owner, Brand>;
+        friend class SpscSplit;
 
-        constexpr producer_token() noexcept {}
+        constexpr explicit producer_token(::foundation::core::Identity split) noexcept : split_{split} {}
 
-        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+        // The Identity of the split of the mint, which no code builds from
+        // bytes (its seal).
+        ::foundation::core::Identity split_;
 
     public:
         producer_token(producer_token const&) = delete("a side token is the authority over one side: a copy would "
@@ -532,10 +544,11 @@ public:
                        [[= ::foundation::linear::scope_end_door{}]][[= ::foundation::transfer::not_shareable{}]]
                        [[= ::foundation::core::loan_key_mark{}]] consumer_token final {
         friend struct detail::SpscSplitDoor<Owner, Brand>;
+        friend class SpscSplit;
 
-        constexpr consumer_token() noexcept {}
+        constexpr explicit consumer_token(::foundation::core::Identity split) noexcept : split_{split} {}
 
-        [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+        ::foundation::core::Identity split_;
 
     public:
         consumer_token(consumer_token const&) = delete("a side token is the authority over one side: a copy would "
@@ -556,22 +569,25 @@ public:
 
     // The split of the owner in the Box, for the door of the mint, which
     // alone holds the key.  The Ref names the object in the Box, and the mint
-    // makes it.  The split comes back as a prvalue, so it does not move.
+    // makes it and the Identity of the split.  The split comes back as a
+    // prvalue, so it does not move.
     [[nodiscard]] static SpscSplit build_(SpscBuildKey<Owner, Brand> const& /*key*/,
-                                          ::foundation::core::Box<Owner>&& owner, owner_ref ref) noexcept {
-        return SpscSplit{std::move(owner), ref};
+                                          ::foundation::core::Box<Owner>&& owner, owner_ref ref,
+                                          ::foundation::core::Identity identity) noexcept {
+        return SpscSplit{std::move(owner), ref, identity};
     }
 
     // The producer end, for a frame door, which holds the key of the frame
-    // doors and the producer token.  Complexity: O(1).
-    [[nodiscard]] constexpr producer_end& producer_end_(SpscFrameKey const& /*key*/,
-                                                        producer_token& /*token*/) & noexcept {
+    // doors and the producer token of this split.  Complexity: O(1), one
+    // compare of a word.
+    [[nodiscard]] constexpr producer_end& producer_end_(SpscFrameKey const& /*key*/, producer_token& token) & noexcept {
+        CRUCIBLE_PRE_MSG(token.split_ == identity_, "a side token opens only the split of its own mint");
         return producer_;
     }
 
     // The consumer end, for a frame door, in the form of the producer end.
-    [[nodiscard]] constexpr consumer_end& consumer_end_(SpscFrameKey const& /*key*/,
-                                                        consumer_token& /*token*/) & noexcept {
+    [[nodiscard]] constexpr consumer_end& consumer_end_(SpscFrameKey const& /*key*/, consumer_token& token) & noexcept {
+        CRUCIBLE_PRE_MSG(token.split_ == identity_, "a side token opens only the split of its own mint");
         return consumer_;
     }
 
@@ -582,10 +598,15 @@ public:
     }
 
 private:
-    SpscSplit(::foundation::core::Box<Owner>&& owner, owner_ref ref) noexcept
-        : owner_{std::move(owner)}, producer_{SpscEndKey<Owner>{}, ref}, consumer_{SpscEndKey<Owner>{}, ref} {}
+    SpscSplit(::foundation::core::Box<Owner>&& owner, owner_ref ref, ::foundation::core::Identity identity) noexcept
+        : owner_{std::move(owner)},
+          identity_{identity},
+          producer_{SpscEndKey<Owner>{}, ref},
+          consumer_{SpscEndKey<Owner>{}, ref} {}
 
     ::foundation::core::Box<Owner> owner_;
+    // The Identity of the mint of this split, which its two tokens hold.
+    ::foundation::core::Identity const identity_;
     producer_end producer_;
     consumer_end consumer_;
 };
@@ -1114,8 +1135,9 @@ struct SpscSplitDoor final {
     [[nodiscard]] static SpscSplitParts<Owner, Brand>
     build(::foundation::core::Box<Owner>&& owner, ::foundation::core::Ref<Owner, SpscSplitBrand<Owner>> ref) noexcept {
         SpscBuildKey<Owner, Brand> const key{};
-        return {SpscSplit<Owner, Brand>::build_(key, std::move(owner), ref), ProducerToken<Owner, Brand>{},
-                ConsumerToken<Owner, Brand>{}};
+        ::foundation::core::Identity const identity = ::foundation::core::mint_identity();
+        return {SpscSplit<Owner, Brand>::build_(key, std::move(owner), ref, identity),
+                ProducerToken<Owner, Brand>{identity}, ConsumerToken<Owner, Brand>{identity}};
     }
 
     // The held split of a held brand, with no token (the held split).

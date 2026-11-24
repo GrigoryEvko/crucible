@@ -4885,7 +4885,7 @@ fixy_neg_compile_test(neg_spsc_ends_token_copy
   "use of deleted function .fixy::concurrent::SpscSplit<Owner, Brand>::producer_token::producer_token\\(const fixy::concurrent::SpscSplit<Owner, Brand>::producer_token&\\)"
   "a side token is the authority over one side: a copy would give a second holder of the side")
 fixy_neg_compile_test(neg_spsc_ends_second_token
-  ".constexpr fixy::concurrent::SpscSplit<Owner, Brand>::producer_token::producer_token\\(\\) .with Owner = .anonymous.::Owner"
+  ".constexpr fixy::concurrent::SpscSplit<Owner, Brand>::producer_token::producer_token\\(foundation::core::Identity\\) .with Owner = .anonymous.::Owner"
   "is private within this context")
 fixy_neg_compile_test(neg_spsc_ends_consumer_token_at_the_producer_door
   "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "

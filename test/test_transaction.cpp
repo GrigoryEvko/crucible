@@ -402,12 +402,18 @@ void keyed_log_passes_its_key(::foundation::effects::Alloc alloc, const SoloOwne
     CRUCIBLE_TEST_ASSERT(kTest, !log.rollback(key_back, owner));
 }
 
-// One mint site of a keyed log.  Each call runs the same site, so each log
-// that it gives has one brand, as two turns of a loop over one site do.  The
-// brand leaves this helper on purpose: the tests below prove that the Identity
-// of a log tells such logs apart at run time.
-[[nodiscard]] auto mint_keyed_log() noexcept {
-    return ::fixy::mint_keyed_owner(crucible::transaction_log_owner<4, SoloOwner>);
+// Runs body with two keyed logs of one mint site that are alive at one time,
+// and their keys, which the body takes by value.  The template calls itself
+// one time, so its two instantiations run one call of the mint, and the two
+// logs have one brand.
+template <class Body, class... First>
+void with_two_keyed_logs(Body& body, First&&... first) noexcept {
+    auto [log, key] = ::fixy::mint_keyed_owner(crucible::transaction_log_owner<4, SoloOwner>);
+    if constexpr (sizeof...(First) == 0) {
+        with_two_keyed_logs(body, log, std::move(key));
+    } else {
+        body(std::forward<First>(first)..., log, std::move(key));
+    }
 }
 
 // The step of a transaction, for a read through with_tx of a keyed log.
@@ -425,49 +431,47 @@ template <class LogType, class Key>
     return token;
 }
 
-// Two logs of one mint site share one brand, as two turns of a loop over one
-// site do, so the type of a token does not tell the two logs apart, and the
-// slot and the claim of a token of the first log name the transaction of the
-// second.  The second log refuses the token of the first as stale, at the read
-// and at the activation.  Each call of the closure runs the one mint site.
+// Two logs of one mint site share one brand, so the type of a token does not
+// tell the two logs apart, and the slot and the claim of a token of the first
+// log name the transaction of the second.  The second log refuses the token of
+// the first as stale, at the read and at the activation.
 void token_of_a_second_log_of_one_site_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
-    auto [first, first_key] = mint_keyed_log();
-    auto [second, second_key] = mint_keyed_log();
-    const auto of_first = commit_keyed_step(first, first_key, owner, 11, *region_of_step(alloc, arena, 11));
-    const auto of_second = commit_keyed_step(second, second_key, owner, 22, *region_of_step(alloc, arena, 22));
-    CRUCIBLE_TEST_ASSERT(kTest, !(of_first == of_second));
-    const auto read = second.with_tx(second_key, owner, of_first,
-                                     [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
-    CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
-    CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_first).err()
-                                    == ::fixy::some(crucible::TxRefusal::stale));
-    CRUCIBLE_TEST_ASSERT(kTest, second.active(second_key, owner).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_second).expect("fresh").is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, first.activate(first_key, owner, of_first).expect("fresh").is_none());
+    auto body = [&](auto& first, auto first_key, auto& second, auto second_key) noexcept {
+        static_assert(std::is_same_v<decltype(first), decltype(second)>, "the two logs have one brand");
+        const auto of_first = commit_keyed_step(first, first_key, owner, 11, *region_of_step(alloc, arena, 11));
+        const auto of_second = commit_keyed_step(second, second_key, owner, 22, *region_of_step(alloc, arena, 22));
+        CRUCIBLE_TEST_ASSERT(kTest, !(of_first == of_second));
+        const auto read = second.with_tx(second_key, owner, of_first,
+                                         [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+        CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
+        CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_first).err()
+                                        == ::fixy::some(crucible::TxRefusal::stale));
+        CRUCIBLE_TEST_ASSERT(kTest, second.active(second_key, owner).is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, second.activate(second_key, owner, of_second).expect("fresh").is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, first.activate(first_key, owner, of_first).expect("fresh").is_none());
+    };
+    with_two_keyed_logs(body);
 }
 
-// One mint site in a loop gives a log of one brand in each turn.  A token of
-// the first turn names the transaction of the same slot and claim in the log
-// of the second turn, and that log refuses it as stale.
+// A log of Unkeyed has the one brand Unkeyed, so a loop over one site gives a
+// log of one brand in each turn.  A token of the first turn names the
+// transaction of the same slot and claim in the log of the second turn, and
+// that log refuses it as stale.
 void token_of_an_earlier_turn_of_a_loop_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
-    using Record = decltype(mint_keyed_log());
-    using Committed = std::remove_cvref_t<decltype(std::declval<Record&>().at(::fixy::index<0>()))>::Committed;
-    ::fixy::Option<Committed> kept{};
+    ::fixy::Option<SmallestLog::Committed> kept{};
     uint32_t refused = 0;
     for (uint32_t turn = 0; turn < 2; ++turn) {
-        auto [log, key] = mint_keyed_log();
-        const auto token = commit_keyed_step(log, key, owner, 100 + turn, *region_of_step(alloc, arena, 100 + turn));
-        for (Committed const& earlier : kept) {
-            const auto read = log.with_tx(key, owner, earlier,
-                                          [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+        SmallestLog log{};
+        const auto token = commit_step(log, owner, 100 + turn, region_of_step(alloc, arena, 100 + turn));
+        for (SmallestLog::Committed const& earlier : kept) {
+            const auto read = log.with_tx(owner, earlier, facts_of_tx);
             CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
-            CRUCIBLE_TEST_ASSERT(kTest,
-                                 log.activate(key, owner, earlier).err() == ::fixy::some(crucible::TxRefusal::stale));
+            CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, earlier).err() == ::fixy::some(crucible::TxRefusal::stale));
             ++refused;
         }
-        CRUCIBLE_TEST_ASSERT(kTest, log.activate(key, owner, token).expect("fresh").is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, log.activate(owner, token).expect("fresh").is_none());
         kept = ::fixy::some(token);
     }
     CRUCIBLE_TEST_ASSERT(kTest, refused == 1);
@@ -478,19 +482,22 @@ void token_of_an_earlier_turn_of_a_loop_is_stale(::foundation::effects::Alloc al
 // stale.
 void token_of_a_log_with_fewer_claims_is_stale(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
-    auto [first, first_key] = mint_keyed_log();
-    auto [second, second_key] = mint_keyed_log();
-    const auto of_first = commit_keyed_step(first, first_key, owner, 31, *region_of_step(alloc, arena, 31));
-    const auto first_of_second = commit_keyed_step(second, second_key, owner, 41, *region_of_step(alloc, arena, 41));
-    static_cast<void>(commit_keyed_step(second, second_key, owner, 42, *region_of_step(alloc, arena, 42)));
-    const auto read = second.with_tx(second_key, owner, of_first,
-                                     [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
-    CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
-    const uint64_t step = second
-                              .with_tx(second_key, owner, first_of_second,
-                                       [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); })
-                              .expect("fresh");
-    CRUCIBLE_TEST_ASSERT(kTest, step == 41);
+    auto body = [&](auto& first, auto first_key, auto& second, auto second_key) noexcept {
+        const auto of_first = commit_keyed_step(first, first_key, owner, 31, *region_of_step(alloc, arena, 31));
+        const auto first_of_second =
+            commit_keyed_step(second, second_key, owner, 41, *region_of_step(alloc, arena, 41));
+        static_cast<void>(commit_keyed_step(second, second_key, owner, 42, *region_of_step(alloc, arena, 42)));
+        const auto read = second.with_tx(second_key, owner, of_first,
+                                         [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+        CRUCIBLE_TEST_ASSERT(kTest, read.err() == ::fixy::some(crucible::TxRefusal::stale));
+        const uint64_t step = second
+                                  .with_tx(second_key, owner, first_of_second,
+                                           [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); })
+                                  .expect("fresh");
+        CRUCIBLE_TEST_ASSERT(kTest, step == 41);
+        static_cast<void>(first_key);
+    };
+    with_two_keyed_logs(body);
 }
 
 // Each log of Unkeyed has the one brand Unkeyed, as the log of each Vigil
@@ -514,55 +521,60 @@ void token_of_a_second_log_of_unkeyed_is_stale(::foundation::effects::Alloc allo
 void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode& region = *region_of_step(alloc, arena, 61);
+    constexpr ::fixy::TextView kMadeElsewhere{"a draft goes back only to the log that made it"};
     // The second log claimed nothing, so the commit would write a slot that
     // the second log never claimed.
     ::fixy::check::expect_dies(
         kTest,
         [&owner, &region] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{61});
-            auto committed =
-                second.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash);
-            static_cast<void>(committed.at(::fixy::index<0>()));
+            auto body = [&](auto& first, auto first_key, auto& second, auto /*second_key*/) noexcept {
+                auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{61});
+                auto committed = second.commit(owner, std::move(draft), arena_region(region), region.content_hash,
+                                               region.merkle_hash);
+                static_cast<void>(committed.at(::fixy::index<0>()));
+            };
+            with_two_keyed_logs(body);
         },
-        ::fixy::TextView{"a draft goes back only to the log that made it"});
+        kMadeElsewhere);
     // Two live drafts name one slot and one claim, so the commit would give
     // the transaction of the draft of the second log a second writer.
     ::fixy::check::expect_dies(
         kTest,
         [&owner, &region] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto of_first = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{71});
-            auto of_second = second.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{72});
-            auto committed = second.commit(owner, std::move(of_first), arena_region(region), region.content_hash,
-                                           region.merkle_hash);
-            static_cast<void>(committed.at(::fixy::index<0>()));
-            first_key = second.abandon(owner, std::move(of_second));
+            auto body = [&](auto& first, auto first_key, auto& second, auto second_key) noexcept {
+                auto of_first = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{71});
+                auto of_second = second.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{72});
+                auto committed = second.commit(owner, std::move(of_first), arena_region(region), region.content_hash,
+                                               region.merkle_hash);
+                static_cast<void>(committed.at(::fixy::index<0>()));
+                first_key = second.abandon(owner, std::move(of_second));
+            };
+            with_two_keyed_logs(body);
         },
-        ::fixy::TextView{"a draft goes back only to the log that made it"});
+        kMadeElsewhere);
     ::fixy::check::expect_dies(
         kTest,
         [&owner] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{81});
-            first_key = second.abandon(owner, std::move(draft));
+            auto body = [&](auto& first, auto first_key, auto& second, auto /*second_key*/) noexcept {
+                auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{81});
+                first_key = second.abandon(owner, std::move(draft));
+            };
+            with_two_keyed_logs(body);
         },
-        ::fixy::TextView{"a draft goes back only to the log that made it"});
+        kMadeElsewhere);
     ::fixy::check::expect_dies(
         kTest,
         [&owner] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{91});
-            const uint64_t step = second.with_draft(
-                owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
-            static_cast<void>(step);
-            first_key = first.abandon(owner, std::move(draft));
+            auto body = [&](auto& first, auto first_key, auto& second, auto /*second_key*/) noexcept {
+                auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{91});
+                const uint64_t step = second.with_draft(
+                    owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+                static_cast<void>(step);
+                first_key = first.abandon(owner, std::move(draft));
+            };
+            with_two_keyed_logs(body);
         },
-        ::fixy::TextView{"a draft goes back only to the log that made it"});
+        kMadeElsewhere);
     ::fixy::check::expect_dies(
         kTest,
         [&owner, &region] noexcept {
@@ -572,7 +584,7 @@ void draft_of_a_second_log_breaks_the_precondition(::foundation::effects::Alloc 
             static_cast<void>(
                 second.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash));
         },
-        ::fixy::TextView{"a draft goes back only to the log that made it"});
+        kMadeElsewhere);
 }
 
 // A key of a second log of one mint site has the type of the key of the first
@@ -589,30 +601,32 @@ void claims_of_a_second_key_break_a_draft(::foundation::effects::Alloc alloc, co
     ::fixy::check::expect_dies(
         kTest,
         [&owner, &region] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
-            for (uint32_t step = 100; step < 104; ++step)
-                second_key =
-                    first.abandon(owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
-            auto committed =
-                first.commit(owner, std::move(draft), arena_region(region), region.content_hash, region.merkle_hash);
-            static_cast<void>(committed.at(::fixy::index<0>()));
+            auto body = [&](auto& first, auto first_key, auto& /*second*/, auto second_key) noexcept {
+                auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
+                for (uint32_t step = 100; step < 104; ++step)
+                    second_key = first.abandon(
+                        owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
+                auto committed = first.commit(owner, std::move(draft), arena_region(region), region.content_hash,
+                                              region.merkle_hash);
+                static_cast<void>(committed.at(::fixy::index<0>()));
+            };
+            with_two_keyed_logs(body);
         },
         kReused);
     ::fixy::check::expect_dies(
         kTest,
         [&owner] noexcept {
-            auto [first, first_key] = mint_keyed_log();
-            auto [second, second_key] = mint_keyed_log();
-            auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
-            for (uint32_t step = 100; step < 104; ++step)
-                second_key =
-                    first.abandon(owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
-            const uint64_t step =
-                first.with_draft(owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
-            static_cast<void>(step);
-            first_key = first.abandon(owner, std::move(draft));
+            auto body = [&](auto& first, auto first_key, auto& /*second*/, auto second_key) noexcept {
+                auto draft = first.begin_tx(std::move(first_key), owner, ::fixy::session::StepId{1});
+                for (uint32_t step = 100; step < 104; ++step)
+                    second_key = first.abandon(
+                        owner, first.begin_tx(std::move(second_key), owner, ::fixy::session::StepId{step}));
+                const uint64_t step = first.with_draft(
+                    owner, draft, [](crucible::Transaction const& tx) noexcept { return step_of_tx(tx); });
+                static_cast<void>(step);
+                first_key = first.abandon(owner, std::move(draft));
+            };
+            with_two_keyed_logs(body);
         },
         kReused);
 }

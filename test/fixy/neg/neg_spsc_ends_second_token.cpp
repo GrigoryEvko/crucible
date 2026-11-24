@@ -1,6 +1,6 @@
 // A caller builds a second producer token of a split.  The side would then
 // have two holders.  The constructor of a token is private, and the door of
-// the mint is its one friend, so only mint_spsc_split builds a token.
+// the mint builds it, so only mint_spsc_split builds a token.
 
 #include <fixy/concurrent/SpscEnds.h>
 
@@ -21,6 +21,6 @@ struct Owner final {
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
     using Brand = decltype(minted.split)::brand_type;
-    [[maybe_unused]] ::fixy::concurrent::ProducerToken<Owner, Brand> second{};
+    [[maybe_unused]] ::fixy::concurrent::ProducerToken<Owner, Brand> second{::foundation::core::mint_identity()};
     return 0;
 }

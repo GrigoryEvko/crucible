@@ -29,9 +29,8 @@ include/fixy/os/Process.h | ungated-body | 3 | - | each line is a public door of
 include/fixy/os/SpinBudget.h | ungated-body | 1 | - | each line is a public door of the header that calls a body of its caller and states no gate HoldsNoLinearValue of foundation/Linear.h.  The series that gates the doors of the header lowers the row
 include/fixy/os/Stdio.h | ungated-body | 1 | - | each line is a public door of the header that calls a body of its caller and states no gate HoldsNoLinearValue of foundation/Linear.h.  The series that gates the doors of the header lowers the row
 include/fixy/os/ThreadTasks.h | ungated-body | 2 | - | each line is a public door of the header that calls a body of its caller and states no gate HoldsNoLinearValue of foundation/Linear.h.  The series that gates the doors of the header lowers the row
-include/fixy/session/ | borrow-move-out | 2 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines
 include/fixy/session/ | double-consume | 2 | - | -
-include/fixy/session/ | unconsumed | 81 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
+include/fixy/session/ | unconsumed | 32 | - | the entity of a line names its linear type, so each type that one line of a template ends is its own line.  These lines hid the types of their instances
 include/fixy/session/AsyncChannel.h | ungated-body | 1 | - | each line is a door of the header that moves its two bodies into the sides of mint_permission_fork of fixy/concurrent/PermissionFork.h.  The fork calls each side as an lvalue, not through call_once, and a refused start ends the process in start_and_join_.  The lines move with the fork when its bodies go through call_once
 include/fixy/session/Checkpoint.h | ungated-body | 2 | - | each line is a public door of the header that owns its body and calls it one time through call_once of foundation/Linear.h, also through the door that it moves the body into, so a body can hold a linear value by move, and the rule reads each consume of it
 include/fixy/session/CrashTransport.h | ungated-body | 2 | - | each line is a public door of the header that owns its body and calls it one time through call_once of foundation/Linear.h, also through the door that it moves the body into, so a body can hold a linear value by move, and the rule reads each consume of it
@@ -44,7 +43,7 @@ include/foundation/core/Link.h | ungated-body | 1 | - | each line is a public do
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 2 | - | -
 test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
-test/fixy/ | borrow-move-out | 7 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines.  Each message type of a test transport is its own line
+test/fixy/ | borrow-move-out | 4 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines.  Each message type of a test transport is its own line
 test/fixy/ | discarded-temporary | 3 | - | -
 test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
 test/fixy/ | unconsumed | 119 | - | -

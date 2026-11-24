@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>{forge::rvalue<foundation::core::Box<fixy::concurrent::spsc_ends_witness::WitnessOwner>>(), forge::lvalue<foundation::core::Ref<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSplitBrand<fixy::concurrent::spsc_ends_witness::WitnessOwner>>>()};
+    [[maybe_unused]] auto forged = fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>{forge::rvalue<foundation::core::Box<fixy::concurrent::spsc_ends_witness::WitnessOwner>>(), forge::lvalue<foundation::core::Ref<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSplitBrand<fixy::concurrent::spsc_ends_witness::WitnessOwner>>>(), forge::rvalue<foundation::core::Identity>()};
     return 0;
 }

@@ -345,7 +345,7 @@ that the axis does not apply to the row.
 | `mint_heap_bit_set` | `include/foundation/core/BitSet.h` | Y | - | Y | Y | token | · | HS14: 4 |
 | `mint_hole(T0_2)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
 | `mint_hole(foundation::core::Box<T0_0>&&)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 14 |
-| `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 3 |
+| `mint_identity` | `include/foundation/core/Identity.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_keyed_owner` | `include/foundation/core/KeyedMint.h` | Y | Y | Y | Y | token | · | HS14: 22 |
 | `mint_masked_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 5 |
 | `mint_member_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 2 |
