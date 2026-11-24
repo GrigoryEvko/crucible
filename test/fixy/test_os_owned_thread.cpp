@@ -7,6 +7,8 @@
 
 #include <fixy/os/OwnedThread.h>
 
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
 #include <foundation/Transfer.h>
@@ -77,6 +79,7 @@ constinit Atomic<std::uint32_t> body_ends{0};
 constinit Atomic<bool> has_canary_ended{false};
 constinit Atomic<bool> did_body_see_live_members{false};
 constinit Atomic<std::uint32_t> stop_hook_calls{0};
+constinit Atomic<std::uint32_t> consumed_value{0};
 
 void reset_cells() noexcept {
     has_run.store_release(false);
@@ -90,7 +93,26 @@ void reset_cells() noexcept {
     has_canary_ended.store_release(false);
     did_body_see_live_members.store_release(false);
     stop_hook_calls.store_release(0);
+    consumed_value.store_release(0);
 }
+
+// A linear value that a body holds by value: a refused start must give the
+// body back, so no door drops the token in silence.
+class[[= ::foundation::linear::linear{}]] LinearToken {
+public:
+    constexpr explicit LinearToken(std::uint32_t value) noexcept : value_{value} {}
+    LinearToken(LinearToken const&) = delete("a linear token has one owner");
+    LinearToken& operator=(LinearToken const&) = delete("a linear token has one owner");
+    constexpr LinearToken(LinearToken&&) noexcept = default;
+    constexpr LinearToken& operator=(LinearToken&&) noexcept = default;
+    constexpr ~LinearToken() = default;
+
+    [[nodiscard]] constexpr std::uint32_t consume() && noexcept { return value_; }
+
+private:
+    std::uint32_t value_ = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
 
 [[nodiscard]] OwnedThread start_or_end(::foundation::core::Result<OwnedThread, Errno>&& started) noexcept {
     return std::move(started).expect("the thread door starts a thread with the default options");
@@ -208,6 +230,34 @@ void test_refused_start_runs_no_body() {
     CRUCIBLE_FATAL_INVARIANT(body_ends.load_acquire() == 1);
 }
 
+// A refused start of a body that holds a linear value gives the body back in
+// the error.  The case starts the body that came back with the default
+// options, and the body consumes its token on its own thread.
+void test_refused_start_gives_back_a_linear_body() {
+    reset_cells();
+    auto body = [token = LinearToken{7}]() mutable noexcept {
+        consumed_value.store_release(std::move(token).consume());
+    };
+    using Refused = ::fixy::thread::RefusedStart<decltype(body)>;
+    auto refused = ::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{.guard_bytes = 0},
+                                                     std::move(body));
+    // An OwnedThread holds the address of its frame, so the arms join the
+    // thread and give a plain value.
+    std::uint32_t const restarted_value = std::move(refused).match(
+        [](OwnedThread) noexcept -> std::uint32_t {
+            ::foundation::core::fatal("the mint refuses a guard of zero bytes");
+        },
+        [](Refused refusal) noexcept -> std::uint32_t {
+            CRUCIBLE_FATAL_INVARIANT(refusal.error == Errno::einval);
+            auto [unrun] = std::move(refusal.parts);
+            ::fixy::thread::mint_owned_thread(StarterCtx{eff::testing::bg()}, ThreadOptions{}, std::move(unrun))
+                .expect("the mint starts the body that came back with the default options")
+                .join();
+            return consumed_value.load_acquire();
+        });
+    CRUCIBLE_FATAL_INVARIANT(restarted_value == 7);
+}
+
 // A member whose end the body of the thread of its owner must not see.
 struct Canary {
     Canary() noexcept = default;
@@ -269,6 +319,28 @@ public:
                 CRUCIBLE_SPIN_PAUSE;
         }
         return started;
+    }
+
+    // Starts a body that holds a linear value with an option that the door
+    // refuses, and ends the body that came back.  Gives the error number.
+    [[nodiscard]] Errno refuse_a_linear_body(StarterKey& /*key*/) noexcept {
+        auto body = [token = LinearToken{9}](LoopingOwner& owner) mutable noexcept {
+            consumed_value.store_release(std::move(token).consume());
+            owner.run_();
+        };
+        using Refused = ::fixy::thread::RefusedStart<decltype(body)>;
+        return ::fixy::thread::mint_owner_thread<&LoopingOwner::thread_, &LoopingOwner::request_stop_>(
+                   StarterCtx{eff::testing::bg()}, ThreadOptions{.guard_bytes = 0}, *this, std::move(body))
+            .match(
+                [](::foundation::core::Unit) noexcept -> Errno {
+                    ::foundation::core::fatal("the door refuses a guard of zero bytes");
+                },
+                [](Refused refusal) noexcept -> Errno {
+                    auto [unrun] = std::move(refusal.parts);
+                    ::foundation::linear::end_unrun_body(std::move(unrun),
+                                                         ::foundation::linear::UnrunReason::refusal_test);
+                    return refusal.error;
+                });
     }
 
     void stop(StarterKey& /*key*/) noexcept { thread_.stop_and_join(); }
@@ -351,6 +423,18 @@ void test_refused_start_leaves_the_member_empty() {
     CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 0);
 }
 
+// A refused start of the thread of an owner with a body that holds a linear
+// value gives the body back in the error, and no body runs.
+void test_refused_owner_start_gives_back_a_linear_body() {
+    reset_cells();
+    LoopingOwner owner{};
+    LoopingOwner::StarterKey key = owner.claim_starter();
+    CRUCIBLE_FATAL_INVARIANT(owner.refuse_a_linear_body(key) == Errno::einval);
+    CRUCIBLE_FATAL_INVARIANT(!owner.holds_thread());
+    CRUCIBLE_FATAL_INVARIANT(consumed_value.load_acquire() == 0);
+    CRUCIBLE_FATAL_INVARIANT(stop_hook_calls.load_acquire() == 0);
+}
+
 }  // namespace
 
 int main() {
@@ -361,8 +445,10 @@ int main() {
     test_option_holds_the_owner();
     test_name_outlives_the_options();
     test_refused_start_runs_no_body();
+    test_refused_start_gives_back_a_linear_body();
     test_end_of_an_owner_stops_its_thread_first();
     test_early_stop_empties_the_member();
     test_refused_start_leaves_the_member_empty();
+    test_refused_owner_start_gives_back_a_linear_body();
     return 0;
 }

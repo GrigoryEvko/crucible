@@ -13,8 +13,11 @@
 //     The mint moves the body into a frame on the heap, beside the task of the
 //     thread door and a copy of the name of the thread.  The thread reads the
 //     frame, and the owner can move, so the frame has an address of its own.
-//     The frame ends after the join, on the thread that joins, so the body
-//     ends there too.
+//     The owned thread takes the body out of the frame and gives it to the
+//     once door call_once of foundation/Linear.h, which calls it one time as
+//     an rvalue and ends it.  So the body ends on the owned thread at the end
+//     of its call, and the rule must-consume reads its body as a body that
+//     the door owns.  The frame ends after the join, on the thread that joins.
 //
 // Owner
 //     An OwnedThread is the one owner of the join of its thread.  It has no
@@ -44,9 +47,14 @@
 //
 // Errors
 //     A start that the C library refuses is the error of the Result, and no
-//     thread runs then.  A join that fails ends the process.  A join of an
-//     owner that holds no thread, such as the source of a move, ends the
-//     process.
+//     thread runs then.  When the body holds a linear value, the error is a
+//     RefusedStart of fixy/os/ThreadTasks.h with the error number and the
+//     body, which no thread ran, so no door drops a linear value in silence.
+//     The caller starts the body again, or ends it through end_unrun_body of
+//     foundation/Linear.h with a reason.  For each other body the error is the
+//     error number (start_error_t).  A join that fails ends the process.  A
+//     join of an owner that holds no thread, such as the source of a move,
+//     ends the process.
 //
 // Thread of an owner
 //     mint_owner_thread<&Owner::thread_, &Owner::request_stop_>(ctx,
@@ -85,6 +93,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Closure.h>
+#include <foundation/Linear.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/Choice.h>
@@ -168,13 +177,14 @@ public:
 };
 
 // The fit of the mint: a context that starts threads and allocates, and a
-// body that moves and runs with no throw and takes no argument.  The tests
-// of the body are the builtins of the compiler.
+// body that moves and runs as an rvalue with no throw and takes no argument.
+// The once door calls the body as an rvalue (the frame).  The tests of the
+// body are the builtins of the compiler.
 template <typename Ctx, typename Body>
 concept CanMintOwnedThread =
     CtxStartsThreads<Ctx> && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Alloc>
     && __is_object(Body) && !__is_const(Body) && !__is_volatile(Body) && __is_nothrow_constructible(Body, Body&&)
-    && __is_nothrow_destructible(Body) && __is_nothrow_invocable(Body&);
+    && __is_nothrow_destructible(Body) && __is_nothrow_invocable(Body&&);
 
 namespace detail {
 
@@ -199,8 +209,17 @@ public:
         return start_thread_task(frame.task_, options);
     }
 
-    // Runs on the owned thread.
-    static void run(::foundation::core::ErasedAddress frame) noexcept { frame.restore<owned_frame_>().body_(); }
+    // Runs on the owned thread.  The body leaves the frame for a local, and
+    // the once door calls it one time as an rvalue and ends it (the frame).
+    static void run(::foundation::core::ErasedAddress frame) noexcept {
+        Body body{static_cast<Body&&>(frame.restore<owned_frame_>().body_)};
+        static_cast<void>(::foundation::linear::call_once(static_cast<Body&&>(body)));
+    }
+
+    // Takes the body out of a frame whose thread did not start (the errors).
+    [[nodiscard]] static Body take_unrun_body(owned_frame_& frame) noexcept {
+        return Body{static_cast<Body&&>(frame.body_)};
+    }
 
     // Ends the body and gives the storage back.  Runs after the join.
     static void end(void* frame) noexcept {
@@ -314,11 +333,14 @@ struct owned_thread_door {
     [[nodiscard]] static OwnedThread empty() noexcept { return OwnedThread{0, nullptr, nullptr}; }
 
     // Moves the body into a frame and starts the thread of the frame (the
-    // frame).  Complexity: one allocation and one start.
+    // frame).  A refused start gives back a body that holds a linear value,
+    // and ends each other body with its frame (the errors).  Complexity: one
+    // allocation and one start.
     template <typename Body>
-    [[nodiscard]] static ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
+    [[nodiscard]] static ::foundation::core::Result<OwnedThread, start_error_t<Body>>
     start(ThreadOptions const& options, Body&& body) noexcept {
         using Frame = owned_frame_<Body>;
+        using Started = ::foundation::core::Result<OwnedThread, start_error_t<Body>>;
         void* const storage = ::foundation::core::detail::heap_allocate_(::foundation::alloc::Layout::of<Frame>());
         Frame* const frame = ::new(storage) Frame{static_cast<Body&&>(body), options.name};
         // The owner holds the address of the frame, so the match reads a
@@ -326,14 +348,19 @@ struct owned_thread_door {
         ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> const started =
             Frame::start_thread(*frame, options);
         return started.match(
-            [frame](std::uint64_t const& handle) noexcept
-                -> ::foundation::core::Result<OwnedThread, ::foundation::os::Errno> {
+            [frame](std::uint64_t const& handle) noexcept -> Started {
                 return OwnedThread{handle, frame, &Frame::end};
             },
-            [frame](::foundation::os::Errno const& error) noexcept
-                -> ::foundation::core::Result<OwnedThread, ::foundation::os::Errno> {
-                Frame::end(frame);
-                return ::foundation::core::err(error);
+            [frame](::foundation::os::Errno const& error) noexcept -> Started {
+                if constexpr (holds_linear_part_<Body>) {
+                    Body unrun = Frame::take_unrun_body(*frame);
+                    Frame::end(frame);
+                    return ::foundation::core::err(
+                        RefusedStart<Body>{error, ::foundation::core::Record<Body>{std::move(unrun)}});
+                } else {
+                    Frame::end(frame);
+                    return ::foundation::core::err(error);
+                }
             });
     }
 };
@@ -350,7 +377,7 @@ inline constexpr ::foundation::closure::DoorPolicy escaping_body_policy{::founda
 // owner (the gate, the errors).  Complexity: one allocation and one start.
 template <typename Ctx, typename Body>
     requires CanMintOwnedThread<Ctx, Body>
-[[nodiscard]] ::foundation::core::Result<OwnedThread, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<OwnedThread, start_error_t<Body>>
 mint_owned_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Body body) noexcept {
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owned_thread");
@@ -437,12 +464,35 @@ template <typename Owner>
 concept StaysInPlace = !__is_constructible(Owner, Owner const&) && !__is_constructible(Owner, Owner&&)
                     && !__is_assignable(Owner&, Owner const&) && !__is_assignable(Owner&, Owner&&);
 
-// A body of the thread of an owner: it takes the owner, gives nothing and
-// does not throw.
+// A body of the thread of an owner: it runs as an rvalue, takes the owner,
+// gives nothing and does not throw.  The once door calls the body as an
+// rvalue (the frame).
 template <typename Body, typename Owner>
-concept OwnerThreadBody = __is_object(Body) && !__is_const(Body) && __is_nothrow_constructible(Body, Body&&)
-                       && __is_nothrow_destructible(Body) && __is_nothrow_invocable(Body&, Owner&)
-                       && requires(Body& body, Owner& owner) { requires __is_same(decltype(body(owner)), void); };
+concept OwnerThreadBody =
+    __is_object(Body) && !__is_const(Body) && __is_nothrow_constructible(Body, Body&&)
+    && __is_nothrow_destructible(Body) && __is_nothrow_invocable(Body&&, Owner&)
+    && requires(Body&& body, Owner& owner) { requires __is_same(decltype(static_cast<Body&&>(body)(owner)), void); };
+
+namespace detail {
+
+// The body of the frame of the thread of an owner: the address of the owner
+// and the body.  The frame calls it one time as an rvalue, and it gives the
+// owner to the body through the once door.  A refused start gives back its
+// body (the errors).
+template <typename Owner, typename Body>
+struct owner_body_ {
+    Owner* owner = nullptr;
+    // A body need not have a default state, so the mint gives this member
+    // its value, as the frame gives the body of a frame its value.
+    Body body;
+
+    void operator()() && noexcept {
+        Body moved{static_cast<Body&&>(body)};
+        ::foundation::linear::call_once(static_cast<Body&&>(moved), *owner);
+    }
+};
+
+}  // namespace detail
 
 // The fit of mint_owner_thread (the thread of an owner): a context that
 // starts threads and allocates, the last member of the owner for its
@@ -567,7 +617,7 @@ QuiescenceProof<Owner> OwnerThread<Owner>::quiescence(Owner const& owner CRUCIBL
 // allocation and one start.
 template <auto Member, auto Hook, typename Ctx, typename Owner, typename Body>
     requires CanMintOwnerThread<Member, Hook, Ctx, Owner, Body>
-[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, start_error_t<Body>>
 mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner, Body body) noexcept {
     constexpr ::foundation::closure::ClosureVerdict verdict =
         ::foundation::closure::check_closure(^^Body, escaping_body_policy, "mint_owner_thread");
@@ -586,18 +636,27 @@ mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner
         static_assert(::foundation::transfer::Synchronized<Owner>, std::meta::display_string_of(^^Owner));
         static_assert(::foundation::transfer::Synchronized<Owner>,
                       std::meta::display_string_of(detail::first_unsynchronized_member_(^^Owner)));
+        // The refusal stops here, so the build gives only the three reasons.
+        return ::foundation::core::Unit{};
+    } else {
+        OwnerThread<Owner>& slot = owner.*Member;
+        CRUCIBLE_PRE(!slot.holds_thread());
+        using Held = detail::owner_body_<Owner, Body>;
+        ::foundation::core::Result<OwnedThread, start_error_t<Held>> started =
+            detail::owned_thread_door::start(options, Held{__builtin_addressof(owner), static_cast<Body&&>(body)});
+        if (started.is_err()) {
+            if constexpr (detail::holds_linear_part_<Body>) {
+                RefusedStart<Held> refusal = std::move(started).err().expect("a refused start holds its body");
+                auto [held] = std::move(refusal.parts);
+                return ::foundation::core::err(
+                    RefusedStart<Body>{refusal.error, ::foundation::core::Record<Body>{std::move(held.body)}});
+            } else {
+                return ::foundation::core::err(std::move(started).err().expect("a refused start holds its error"));
+            }
+        }
+        detail::owner_thread_door::keep(slot, owner, Hook,
+                                        std::move(started).expect("a start that is no error holds its owner"));
+        return ::foundation::core::Unit{};
     }
-    OwnerThread<Owner>& slot = owner.*Member;
-    CRUCIBLE_PRE(!slot.holds_thread());
-    Owner* const held = __builtin_addressof(owner);
-    auto run = [held, moved = static_cast<Body&&>(body)]() mutable noexcept { moved(*held); };
-    ::foundation::core::Result<OwnedThread, ::foundation::os::Errno> started =
-        detail::owned_thread_door::start(options, std::move(run));
-    if (started.is_err()) {
-        return ::foundation::core::err(std::move(started).err().expect("a refused start holds its error"));
-    }
-    detail::owner_thread_door::keep(slot, owner, Hook,
-                                    std::move(started).expect("a start that is no error holds its owner"));
-    return ::foundation::core::Unit{};
 }
 }  // namespace fixy::thread
