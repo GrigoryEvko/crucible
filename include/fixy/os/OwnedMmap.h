@@ -396,15 +396,18 @@ class [[nodiscard]] OwnedMmap final
     // that the doors below give.
     template <typename... Modifiers>
     [[nodiscard]] static auto map_(int descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+        // The body deduces its return type, and CRUCIBLE_TRY returns the error
+        // as a type of its own.  So the lambda, which names the return type,
+        // reads the Result once.  A region holds the address of its map, so it
+        // is no payload of map or of the rvalue match.
         using Mapped = ::foundation::core::Result<OwnedMmap, ::foundation::os::Errno>;
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
-        ::foundation::core::Result<void*, ::foundation::os::Errno> mapped =
-            mmap::detail::map_region_(length, protection, flags, descriptor, offset.raw());
-        for (::foundation::os::Errno const error : mapped.err()) {
-            return Mapped{::foundation::core::err(error)};
-        }
-        return Mapped{OwnedMmap{std::move(mapped).expect("the map door gave the address of the map"), length}};
+        auto const map_region = [descriptor, length, offset]() noexcept -> Mapped {
+            CRUCIBLE_TRY(address, mmap::detail::map_region_(length, protection, flags, descriptor, offset.raw()));
+            return OwnedMmap{address, length};
+        };
+        return map_region();
     }
 
 public:
