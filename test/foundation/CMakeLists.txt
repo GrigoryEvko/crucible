@@ -4629,7 +4629,27 @@ foundation_neg_compile_test(neg_core_window_loan_moved
   "a loan ends at the end of its scope, in the reverse order of its open")
 foundation_neg_compile_test(neg_core_window_stack_copied
   "use of deleted function .foundation::core::WindowStack<T, N>::WindowStack\\(const foundation::core::WindowStack<T, N>&\\)"
-  "each open loan holds a Ref to its stack")
+  "each open window points into its stack")
+# The arms of a window door keep no borrow of the window past the door: the
+# store twin and the result twin of the door give their reasons.  A window
+# of a fixed extent past the stack never fits, so its count is refused.  A
+# foreign door checks no result and no capture, and it still refuses a
+# temporary stack and an arm that holds a linear value.
+foundation_neg_compile_test(neg_core_window_stack_view_kept_past_its_frame
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_window\\(foundation::core::WindowCount, OnOpen&&, OnClosed&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_window_stack_frame_gives_view
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_window\\(foundation::core::WindowCount, OnOpen&&, OnClosed&&\\) &"
+  "the result of a frame door leaves the frame, so it holds no reference and no address")
+foundation_neg_compile_test(neg_core_window_stack_window_past_capacity
+  "no matching function for call to .foundation::core::WindowStack<int, 8>::with_window<9>"
+  "required for the satisfaction of .WindowExtent<T, Count, N>. \\[with T = int; Count = 9; N = 8\\]")
+foundation_neg_compile_test(neg_core_window_stack_foreign_window_of_temporary
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_foreign_window\\(Arguments&& ...\\) &&"
+  "a window door of a temporary stack lends a window that the full expression ends")
+foundation_neg_compile_test(neg_core_window_stack_foreign_window_linear_arm
+  "use of deleted function .void foundation::core::WindowStack<T, N>::with_foreign_window\\(OnOpen&&, OnClosed&&\\) & .with long unsigned int Count = 4"
+  "the body holds a linear value by value, and the door calls it with no consume")
 # view() of a FixedArray gives a View of the const elements, so no two Views
 # of one array write its elements.
 foundation_neg_compile_test(neg_core_fixed_array_two_mutable_views
