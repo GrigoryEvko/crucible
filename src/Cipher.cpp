@@ -1087,8 +1087,9 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     };
 
     // Loads the events of the batch of one index line, or reports the reason
-    // that the load skips the batch.
-    const auto load_line = [&](IndexLine const& index_line) noexcept {
+    // that the load skips the batch.  The read of the batch is not noexcept,
+    // so the lambda is not noexcept either.
+    const auto load_line = [&](IndexLine const& index_line) {
         if (index_line.last < from_step.raw()) return;
         // A writer that stores a batch again appends its line again, and the
         // load holds the events of that batch.  Each other line whose first
@@ -1437,7 +1438,10 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
     // Appends the commit of one line that parsed, or skips a corrupt line.
-    const auto replay_line = [this](LogLine const& line) noexcept {
+    // The append of the log can allocate and is not noexcept, so the lambda
+    // is not noexcept either: a noexcept body would add a terminate landing
+    // pad to load_log.
+    const auto replay_line = [this](LogLine const& line) {
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.  A step above the
