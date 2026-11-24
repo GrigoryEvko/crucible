@@ -4068,6 +4068,17 @@ crucible_neg_compile_test(neg_tracering_drain_pure_no_context
   "no matching function for call to .crucible::TraceRing::drain_pure\\("
   "IsExecCtx")
 
+# The reset of a ring or a log moves each counter back, so it takes the two
+# ends of one ring or one log, which only a frame of the two ends lends to one
+# thread.  A producer that holds only its own end gives no consumer end, so a
+# reset while a second thread holds the consumer end does not compile.
+crucible_neg_compile_test(neg_tracering_reset_with_the_producer_end
+  "cannot convert .crucible::TraceRing::Producer. .aka .fixy::concurrent::SpscEnd<crucible::TraceRing, fixy::concurrent::SpscSide::producer>.. to .crucible::TraceRing::Consumer&."
+  "neg_tracering_reset_with_the_producer_end\\.cpp:18:[0-9]+: error: cannot convert")
+crucible_neg_compile_test(neg_metalog_reset_with_the_producer_end
+  "cannot convert .crucible::MetaLog::Producer. .aka .fixy::concurrent::SpscEnd<crucible::MetaLog, fixy::concurrent::SpscSide::producer>.. to .crucible::MetaLog::Consumer&."
+  "neg_metalog_reset_with_the_producer_end\\.cpp:18:[0-9]+: error: cannot convert")
+
 # Each pure gate also reads the source of the context (CtxHasPureSource).
 # A context that narrowed its row to the empty row with in_row keeps the
 # source of a test runner, an init step or a background stage, and each
