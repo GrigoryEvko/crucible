@@ -155,8 +155,11 @@ private:
     // Only the list of the same element and capacity reaches a slot.
     friend class FixedList<T, N>;
 
-    // The slot at position, which is below N.
-    [[nodiscard]] constexpr T* slot(std::size_t position) noexcept { return &elements_[position]; }
+    // The slot at position, which is below N.  A storage door: the slot is in
+    // the union of the list, which only the list reaches.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T* slot(std::size_t position) noexcept {
+        return &elements_[position];
+    }
     [[nodiscard]] constexpr T const* slot(std::size_t position) const noexcept { return &elements_[position]; }
 
 public:
@@ -229,8 +232,9 @@ class[[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(
 
     // Starts each element of this empty list as a move of the element at the
     // same position of source, and ends each element of source.  Complexity:
-    // O(source.size()).
-    constexpr void move_each_(FixedList& source) noexcept {
+    // O(source.size()).  A body that moves storage: the move of the list
+    // that owns source gives it up.
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void move_each_(FixedList& source) noexcept {
         for (std::size_t position = 0; position != source.count_; ++position) {
             ::new(static_cast<void*>(slots_.slot(position))) T(static_cast<T&&>(*source.slots_.slot(position)));
         }

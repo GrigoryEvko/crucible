@@ -10,5 +10,5 @@ include/fixy/concurrent/ | library-holder | 3 | - | -
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
 test/fixy/ | library-holder | 7 | - | -
-test/fixy/ | pinned-holder | 1 | - | -
+test/fixy/ | pinned-holder | 2 | - | the slot of a channel test is pinned and holds an Option of the endpoint, which the test fills and takes, so the slot ends empty, and the delegation test checks that
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -

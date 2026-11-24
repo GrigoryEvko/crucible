@@ -464,8 +464,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     // The value of a slot that holds_ admitted.  The used slots are above
     // zero, so the mint gave the values a pointer that is not null.  The
     // assume reads a local pointer, so the Option of a Ref needs no test of
-    // its niche, as window() of a View does.
-    [[nodiscard]] constexpr T* slot_of_(std::uint64_t key) const noexcept {
+    // its niche, as window() of a View does.  A storage door: the values are
+    // in the storage that the map owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T*
+        slot_of_(std::uint64_t key) const noexcept {
         T* const value = this->state_.values + detail::slot_index_of_(key);
         [[assume(value != nullptr)]];
         return value;

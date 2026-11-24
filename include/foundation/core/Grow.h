@@ -336,7 +336,10 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::i
     // The key of the run, for the frame door lend_elements_, a friend.
     using Core::run_key_;
 
-    [[nodiscard]] constexpr T* first_() const noexcept { return static_cast<T*>(this->state_.storage); }
+    // A storage door: the elements are in the storage that the list owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T* first_() const noexcept {
+        return static_cast<T*>(this->state_.storage);
+    }
 
     // Ends each element from the last, and poisons each slot of the storage
     // (the spare storage of Heap.h).  Complexity: O(size()).
