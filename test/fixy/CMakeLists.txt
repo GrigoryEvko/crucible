@@ -7948,6 +7948,9 @@ fixy_neg_compile_test(neg_foreign_owned_region_named_permission
 fixy_neg_compile_test(neg_region_scope_storage_by_name
   "no matching function for call to .with_region<\\{anonymous\\}::Slots>\\(foundation::core::HeapArray<int, 4>&,"
   "cannot bind rvalue reference of type .foundation::core::HeapArray<int, 4>&&. to lvalue")
+fixy_neg_compile_test(neg_region_scope_body_keeps_a_view
+  "no matching function for call to .with_region<\\{anonymous\\}::Slots>"
+  "StoresNoBorrowOutside")
 fixy_neg_compile_test(neg_region_scope_body_drops_the_region
   "no matching function for call to .with_region<\\{anonymous\\}::Slots>"
   "required for the satisfaction of .RegionScopeBody<Body, T, Tag, Fresh>."

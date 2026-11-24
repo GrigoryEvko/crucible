@@ -39,6 +39,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
@@ -655,8 +656,11 @@ struct region_scope_value<::foundation::core::Record<Value, Region>, Region> {
 }  // namespace detail
 
 // A body of a region scope door: it takes the region by value with no throw,
-// and gives the region back alone, or after a value that holds no borrow and
-// names no brand of the frame in a Record.
+// gives the region back alone, or after a value that holds no borrow and
+// names no brand of the frame in a Record, and stores no borrow outside the
+// frame (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  A View
+// of the elements in a capture would be a second writer of the storage after
+// the door gives the storage back.
 template <typename Body, typename T, typename Tag, typename Brand>
 concept RegionScopeBody =
     std::is_nothrow_invocable_v<Body&&, OwnedRegion<T, Tag, Brand>&&>
@@ -666,7 +670,8 @@ concept RegionScopeBody =
         || ::foundation::core::FrameResult<
             typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Brand>&&>,
                                                 OwnedRegion<T, Tag, Brand>>::type,
-            Brand>);
+            Brand>)
+    && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // The region scope door over a HeapArray, declared here for the friend of the
 // door below.  The pack refuses each explicit argument after the tag.
