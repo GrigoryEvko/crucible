@@ -163,8 +163,7 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
                                                            Nonce nonce) noexcept {
     ::foundation::core::FixedArray<std::uint64_t, 4> const words{handshake_domain, org_id.raw(),
                                                                  peer_key_fingerprint.raw(), nonce.raw()};
-    HandshakeMessage message{};
-    message.with_mut([&words](auto run) noexcept {
+    return ::foundation::core::build_fixed_array<std::byte, HandshakeMessage::size()>([&words](auto run) noexcept {
         std::size_t at = 0;
         for (std::byte& byte : run) {
             std::uint64_t const word = words.at(::foundation::core::Index<4>::check(at / 8).expect("four words"));
@@ -172,7 +171,6 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
             ++at;
         }
     });
-    return message;
 }
 
 // A tag and a MAC word are the same eight bytes, read little-endian.
@@ -187,15 +185,14 @@ using HandshakeMessage = ::foundation::core::FixedArray<std::byte, handshake_mes
 }
 
 [[nodiscard]] constexpr ::foundation::core::SipTag tag_of(HandshakeMac mac) noexcept {
-    ::foundation::core::SipTag tag{};
-    tag.with_mut([mac](auto run) noexcept {
-        int shift = 0;
-        for (std::byte& byte : run) {
-            byte = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> shift));
-            shift += 8;
-        }
-    });
-    return tag;
+    return ::foundation::core::build_fixed_array<std::byte, ::foundation::core::SipTag::size()>(
+        [mac](auto run) noexcept {
+            int shift = 0;
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(static_cast<std::uint8_t>(mac.raw() >> shift));
+                shift += 8;
+            }
+        });
 }
 
 // The handshake of a peer of Org, tagged under the key that the peer

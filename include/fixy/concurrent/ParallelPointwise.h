@@ -153,7 +153,7 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         // out, which writes.  Each body holds a copy of a view of const
         // elements of each input, because an input can be a view that writes.
         using Rows = core::StridedView<T, Rank>;
-        core::FixedArray<core::Option<Rows>, Shards> parts{};
+        auto [parts, parts_key] = core::mint_keyed_owner(core::fixed_array_owner<core::Option<Rows>, Shards>);
         for (std::size_t shard = 0; shard < Shards; ++shard) {
             std::size_t const first = ::fixy::detail::shard_start(positions, Shards, shard);
             std::size_t const count = ::fixy::detail::shard_start(positions, Shards, shard + 1) - first;
@@ -161,7 +161,7 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
             core::Option<Rows> rows = core::Option<Rows>::some(
                 whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out"));
             parts.with_element(
-                core::Index<Shards>::check(shard).expect("each shard has a part"),
+                parts_key, core::Index<Shards>::check(shard).expect("each shard has a part"),
                 [rows = std::move(rows)](core::Option<Rows>& part) mutable noexcept { part = std::move(rows); });
         }
         auto const ruled = core::detail::ruled_op_<T>(op);
@@ -185,7 +185,7 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         // The region of the parts lives in the frame of the parts: the frame
         // door of the parts lends their run, and the region scope door covers
         // it.
-        parts.with_mut([&launch, budget, &shard_body](auto run) noexcept {
+        parts.with_mut(parts_key, [&launch, budget, &shard_body](auto run) noexcept {
             static_cast<void>(::fixy::with_region<detail::ParallelPointwiseShards>(
                 std::move(run), [&launch, budget, &shard_body](auto region) noexcept {
                     return launch(budget, std::move(region), shard_body);

@@ -517,7 +517,7 @@ private:
         ++pages_;
         if (status >= 0) {
             for (NodeSlot const slot : NodeSlot::check(static_cast<std::size_t>(status))) {
-                on_node_.with_element(slot, [](std::size_t& pages) noexcept { ++pages; });
+                on_node_.set(slot, on_node_.at(slot) + 1);
                 return;
             }
         }

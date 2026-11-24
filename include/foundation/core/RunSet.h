@@ -200,7 +200,7 @@ public:
         requires(Slot < slot_count)
     constexpr void set_count(Count count) noexcept {
         drop_runs_of_<Slot>(std::index_sequence_for<Runs...>{});
-        counts_.with_element(index<Slot>(), [count](Count& held) noexcept { held = count; });
+        counts_.set(index<Slot>(), count);
     }
 
     // The elements of run for the run at index I.  The View holds the count

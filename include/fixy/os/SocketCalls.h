@@ -193,12 +193,7 @@ template <class Value>
     return bytes.template window<sizeof(Value)>(offset).match(
         [](::foundation::core::View<std::byte const, sizeof(Value)> window) -> Decoded {
             ::foundation::core::FixedArray<std::byte, sizeof(Value)> word{};
-            word.with_mut([window](auto run) noexcept {
-                for (::foundation::core::Index<sizeof(Value)> const index : window.indices()) {
-                    auto byte = run.get_mut(index.raw()).expect("an index of the window is inside the word");
-                    *byte = window.at(index);
-                }
-            });
+            word.copy_from(window);
             return ::foundation::core::decode<Value>(word);
         },
         []() -> Decoded { return ::foundation::core::none; });

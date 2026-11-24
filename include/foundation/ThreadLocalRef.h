@@ -141,15 +141,14 @@ struct ThreadLocalTypeIds {
 // "ThreadLocalRef 2", one byte each.
 [[nodiscard]] consteval ::foundation::core::SipKeyBytes thread_local_second_key_() noexcept {
     constexpr ::foundation::core::TextView text{"ThreadLocalRef 2"};
-    ::foundation::core::SipKeyBytes key{};
-    key.with_mut([text](auto run) noexcept {
-        auto letter = text.begin();
-        for (std::byte& byte : run) {
-            byte = static_cast<std::byte>(*letter);
-            ++letter;
-        }
-    });
-    return key;
+    return ::foundation::core::build_fixed_array<std::byte, ::foundation::core::SipKeyBytes::size()>(
+        [text](auto run) noexcept {
+            auto letter = text.begin();
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(*letter);
+                ++letter;
+            }
+        });
 }
 
 // The second key of a handle type: the SipHash-2-4 of its stable name under

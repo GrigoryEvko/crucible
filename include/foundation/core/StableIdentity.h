@@ -78,25 +78,21 @@ struct StableIdentity final {
         return total;
     }();
 
-    static constexpr FixedArray<std::byte, count> image = [] consteval {
-        FixedArray<std::byte, count> out{};
-        out.with_mut([](auto run) noexcept {
-            auto cursor = run.begin();
-            for (TextView const field : fields) {
-                // The compiler cannot hold a name of 4 GiB, so each count fits
-                // its four bytes.
-                for (std::size_t shift = 0; shift < 32; shift += 8) {
-                    *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(field.size() >> shift));
-                    ++cursor;
-                }
-                for (char const letter : field) {
-                    *cursor = static_cast<std::byte>(static_cast<unsigned char>(letter));
-                    ++cursor;
-                }
+    static constexpr FixedArray<std::byte, count> image = build_fixed_array<std::byte, count>([](auto run) noexcept {
+        auto cursor = run.begin();
+        for (TextView const field : fields) {
+            // The compiler cannot hold a name of 4 GiB, so each count fits its
+            // four bytes.
+            for (std::size_t shift = 0; shift < 32; shift += 8) {
+                *cursor = static_cast<std::byte>(static_cast<std::uint8_t>(field.size() >> shift));
+                ++cursor;
             }
-        });
-        return out;
-    }();
+            for (char const letter : field) {
+                *cursor = static_cast<std::byte>(static_cast<unsigned char>(letter));
+                ++cursor;
+            }
+        }
+    });
 };
 
 }  // namespace detail

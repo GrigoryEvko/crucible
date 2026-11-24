@@ -147,15 +147,13 @@ template <class Message>
     zeroize_bytes(key_high);
     zeroize_bytes(state);
 
-    SipTag tag{};
-    tag.with_mut([out](auto run) noexcept {
+    return build_fixed_array<std::byte, SipTag::size()>([out](auto run) noexcept {
         int shift = 0;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(static_cast<std::uint8_t>(out >> shift));
             shift += 8;
         }
     });
-    return tag;
 }
 
 }  // namespace detail

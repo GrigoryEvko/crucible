@@ -210,9 +210,9 @@ private:
             value = philox_word_(position_);
         }
         if (position_ < kMaxDraws) {
-            record_.words.with_element(
+            record_.words.set(
                 ::foundation::core::Index<kMaxDraws>::check(position_).expect("a recorded position is below kMaxDraws"),
-                [value](std::uint64_t& word) noexcept { word = value; });
+                value);
             record_.count = position_ + 1;
         }
         ++position_;
@@ -236,11 +236,9 @@ private:
 
     void show_(std::uint64_t bits, bool is_signed) noexcept {
         if (shown_count_ < kMaxDraws) {
-            shown_.with_element(
+            shown_.set(
                 ::foundation::core::Index<kMaxDraws>::check(shown_count_).expect("a shown position is below kMaxDraws"),
-                [bits, is_signed](detail::DrawnValue& shown) noexcept {
-                    shown = detail::DrawnValue{bits, is_signed, {}};
-                });
+                detail::DrawnValue{bits, is_signed, {}});
             ++shown_count_;
         }
     }
@@ -312,9 +310,9 @@ private:
             for (std::size_t index = position; index + 1 < candidate.count; ++index) {
                 std::uint64_t const next =
                     *failed_.words.get(index + 1).expect("an index below the count is in the array");
-                candidate.words.with_element(::foundation::core::Index<kMaxDraws>::check(index).expect(
-                                                 "an index below the count is in the array"),
-                                             [next](std::uint64_t& word) noexcept { word = next; });
+                candidate.words.set(::foundation::core::Index<kMaxDraws>::check(index).expect(
+                                        "an index below the count is in the array"),
+                                    next);
             }
             candidate.count = failed_.count - 1;
             if (fails_on_(candidate)) {
@@ -337,9 +335,8 @@ private:
             while (low < high && budget_ > 0) {
                 std::uint64_t const middle = low + (high - low) / 2;
                 ChoiceWords candidate = failed_;
-                candidate.words.with_element(
-                    ::foundation::core::Index<kMaxDraws>::check(position).expect("a position below the count"),
-                    [middle](std::uint64_t& word) noexcept { word = middle; });
+                candidate.words.set(
+                    ::foundation::core::Index<kMaxDraws>::check(position).expect("a position below the count"), middle);
                 if (fails_on_(candidate)) {
                     high = middle;
                 } else {
@@ -347,9 +344,8 @@ private:
                 }
             }
             if (high < current) {
-                failed_.words.with_element(
-                    ::foundation::core::Index<kMaxDraws>::check(position).expect("a position below the count"),
-                    [high](std::uint64_t& word) noexcept { word = high; });
+                failed_.words.set(
+                    ::foundation::core::Index<kMaxDraws>::check(position).expect("a position below the count"), high);
                 has_improved = true;
             }
         }

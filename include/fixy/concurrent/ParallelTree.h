@@ -189,30 +189,28 @@ struct ParallelScanParts {
     using scope_door = ::fixy::RegionScopeDoor;
 };
 
-// The parts of out at the cut of the Shards shards of a region of grains
-// slots: part s holds the outputs of the grains of shard s, by the cut of
-// mint_split (fixy::detail::shard_start).  Complexity: O(Shards).
-template <std::size_t Shards, typename T, typename Brand, std::size_t Extent>
-[[nodiscard]] ::foundation::core::FixedArray<::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>, Shards>
-split_by_shards_(::foundation::core::ViewMut<T, Brand, Extent> out, std::size_t grains) noexcept {
-    using Part = ::foundation::core::ViewMut<T, Brand>;
-    ::foundation::core::FixedArray<::foundation::core::Option<Part>, Shards> parts{};
+// Gives the elements of parts the parts of out at the cut of the shards of a
+// region of grains slots, one shard for each element: part s holds the outputs
+// of the grains of shard s, by the cut of mint_split
+// (fixy::detail::shard_start).  Complexity: O(Shards).
+template <typename T, typename Brand, typename PartsBrand, std::size_t Shards>
+void split_by_shards_(
+    ::foundation::core::ViewMut<::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>, PartsBrand, Shards>
+        parts,
+    ::foundation::core::ViewMut<T, Brand> out, std::size_t grains) noexcept {
     std::size_t const count = out.size();
-    Part rest{std::move(out)};
     std::size_t begin = 0;
-    for (std::size_t shard = 0; shard < Shards; ++shard) {
-        std::size_t const limit = ::fixy::detail::shard_start(grains, Shards, shard + 1) * parallel_tree_grain;
+    std::size_t shard = 0;
+    for (::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>& part : parts) {
+        ++shard;
+        std::size_t const limit = ::fixy::detail::shard_start(grains, Shards, shard) * parallel_tree_grain;
         std::size_t const end = limit < count ? limit : count;
-        auto [own, next] = ::foundation::core::split_at(std::move(rest), end - begin)
+        auto [own, next] = ::foundation::core::split_at(std::move(out), end - begin)
                                .expect("the cut of a shard lies inside the outputs that are left");
-        parts.with_element(::foundation::core::Index<Shards>::check(shard).expect("each shard has a part"),
-                           [&own](::foundation::core::Option<Part>& part) noexcept {
-                               part = ::foundation::core::Option<Part>::some(std::move(own));
-                           });
-        rest = std::move(next);
+        part = ::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>::some(std::move(own));
+        out = std::move(next);
         begin = end;
     }
-    return parts;
 }
 
 }  // namespace detail
@@ -311,11 +309,19 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, In cons
     // The parts of out are a region of Shards elements, so the split of the
     // door gives shard s the part s and no other.  The carries stay in the
     // region of the call, and each shard reads the carries of its grains.
-    auto parts = detail::split_by_shards_<Shards>(std::move(out), grains);
+    using Part = ::foundation::core::ViewMut<T, OutBrand>;
+    // The maker is a value of this call, because its type names the brand of
+    // out, and no object of static storage holds a value of a scope brand.
+    auto [parts, parts_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::FixedArrayOwner<::foundation::core::Option<Part>, Shards>{});
     ::foundation::core::View<T const> const all_carries = ::fixy::mint_borrowed(scanned);
     // The region of the parts lives in the frame of the parts: the frame door
     // of the parts lends their run, and the region scope door covers it.
-    parts.with_mut([&ctx, budget, in, all_carries, kind, grains](auto run) noexcept {
+    parts.with_mut(parts_key, [&ctx, budget, in, all_carries, kind, grains,
+                               rest = Part{std::move(out)}](auto run) mutable noexcept {
+        run = ::foundation::core::reborrow(std::move(run), [&rest, grains](auto lent) noexcept {
+            detail::split_by_shards_(std::move(lent), std::move(rest), grains);
+        });
         static_cast<void>(::fixy::with_region<detail::ParallelScanParts>(
             std::move(run), [&ctx, budget, in, all_carries, kind, grains](auto region) noexcept {
                 return spawn::mint_parallel_for<Coupling, Shards>(

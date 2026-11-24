@@ -99,8 +99,7 @@ public:
 
     // The 32 bytes of the output, in the byte order of the reference.
     [[nodiscard]] constexpr FixedArray<std::byte, 32> bytes() const noexcept {
-        FixedArray<std::byte, 32> out{};
-        out.with_mut([this](auto run) noexcept {
+        return build_fixed_array<std::byte, 32>([this](auto run) noexcept {
             auto cursor = run.begin();
             for (std::uint64_t const word : words_) {
                 for (int shift = 0; shift < 64; shift += 8) {
@@ -109,7 +108,6 @@ public:
                 }
             }
         });
-        return out;
     }
 
     [[nodiscard]] friend constexpr bool operator==(Hash256 const& left, Hash256 const& right) noexcept = default;

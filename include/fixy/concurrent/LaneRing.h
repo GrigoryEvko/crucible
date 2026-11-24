@@ -161,10 +161,10 @@ namespace foundation::core {
 // The door of a ring of lanes to the key of the frame doors (the doors of the
 // owners above foundation/core/Frame.h).  Its one member is private, and
 // LaneRing of fixy/concurrent/LaneRing.h is its one friend.  The invariant:
-// only the one consumer of the ring reads the run of the FixedArray of its
-// lanes, and the producers write only the SPSC ring and the end word of their
-// lanes, which are atomic.  A home owner row of utils/rule-table.txt keeps this
-// definition in this header.
+// the one consumer of the ring reaches each lane of the run of the FixedArray
+// of its lanes, and a producer reaches only the lane of its proof.  A producer
+// writes only the SPSC ring and the end word of its lane, which are atomic.  A
+// home owner row of utils/rule-table.txt keeps this definition in this header.
 class LaneRingFrameKeyDoor final : ::foundation::NoObject<LaneRingFrameKeyDoor> {
     template <::fixy::concurrent::RingValue T, std::size_t LaneCapacity, ::fixy::concurrent::LaneCount Lanes,
               class Owner>
@@ -261,25 +261,20 @@ public:
 
     // The push of the one producer of the lane of the proof.  It gives false
     // when the lane is full.  The proof names the one producer, so the SPSC
-    // ring of the lane takes the proven push.  The element door writes no
-    // state of the array of lanes, so the producers of two lanes call it at
-    // the same time: each writes its own lane, and the SPSC ring of a lane
-    // takes its one producer and the one consumer at once.
+    // ring of the lane takes the proven push.  The producers of two lanes call
+    // it at the same time: each writes its own lane, and the SPSC ring of a
+    // lane takes its one producer and the one consumer at once.
     [[nodiscard, gnu::hot]] bool try_push(LaneProof const& proof, T const& item) noexcept {
-        return lanes_.with_element(proof.lane(), [&item](lane_type& held) noexcept {
-            return held.ring.try_push_proven(prove_lane_producer_(), item);
-        });
+        return lane_of_(proof.lane()).ring.try_push_proven(prove_lane_producer_(), item);
     }
 
     // The producer of the lane of the proof ends it after its last push (the end
     // of a lane).  A second end of one lane in a stream ends the process.  The
     // end of a lane is an Atomic, which the consumer reads at the same time.
     void end_lane(LaneProof const& proof) noexcept {
-        lanes_.with_element(proof.lane(), [](lane_type& held) noexcept {
-            ::foundation::core::Atomic<LaneEnd>& end = *held.end;
-            CRUCIBLE_FATAL_INVARIANT(end.load_acquire() == LaneEnd::open);
-            end.store_release(LaneEnd::ended);
-        });
+        ::foundation::core::Atomic<LaneEnd>& end = *lane_of_(proof.lane()).end;
+        CRUCIBLE_FATAL_INVARIANT(end.load_acquire() == LaneEnd::open);
+        end.store_release(LaneEnd::ended);
     }
 
     // The next item of the merged stream (the order), NoItem::Empty while the
@@ -371,13 +366,19 @@ private:
     // the turn prove them below lane_count, so the reads have no check.
     [[nodiscard, gnu::always_inline]] lane_type& lane_of_turn_() noexcept { return lane_at_(turn_.at()); }
 
-    // The lane at a position of the turn.  Only the one consumer calls it, and
-    // the producers write only the SPSC ring and the end of their lanes, which
-    // are atomic.  The ring reaches its own lane through the keyed run of a
-    // frame, because a FixedArray gives no other reference that writes an
-    // element.
+    // The lane at a position of the turn.  Only the one consumer calls it.
     [[nodiscard, gnu::always_inline]] lane_type& lane_at_(lane_index position) noexcept {
-        return frame_run_(::foundation::core::LaneRingFrameKeyDoor::key_(), lanes_).at(live_.at(position).lane);
+        return lane_of_(live_.at(position).lane);
+    }
+
+    // A lane of the ring.  The one consumer calls it for each lane, and a
+    // producer for the lane of its proof.  The producers write only the SPSC
+    // ring and the end of their lanes, which are atomic.  The ring reaches its
+    // own lane through the keyed run of a frame, because a FixedArray gives no
+    // other reference that writes an element.  The read of the run writes no
+    // state of the array, so two threads can call it at the same time.
+    [[nodiscard, gnu::always_inline]] lane_type& lane_of_(lane_index lane) noexcept {
+        return frame_run_(::foundation::core::LaneRingFrameKeyDoor::key_(), lanes_).at(lane);
     }
 
     // The Index of a position of the turn.  Each caller compares the position
@@ -436,7 +437,7 @@ private:
         lane_of_turn_().ring.publish_tail_proven(prove_lane_consumer_());
         for (std::size_t position = turn_.at().raw() + 1; position < turn_.live(); ++position) {
             TurnLane const next = live_.at(position_(position));
-            live_.with_element(position_(position - 1), [next](TurnLane& lane) noexcept { lane = next; });
+            live_.set(position_(position - 1), next);
         }
         turn_.drop();
     }
@@ -471,8 +472,8 @@ private:
     // turn is at lane 0.  A new ring and a drained ring hold no deferred pop.
     void open_each_lane_() noexcept {
         for (lane_index const lane : ::foundation::core::IndexRange<lane_count>{}) {
-            lanes_.with_element(lane, [](lane_type& held) noexcept { held.end->store_release(LaneEnd::open); });
-            live_.with_element(lane, [lane](TurnLane& slot) noexcept { slot.lane = lane; });
+            lane_of_(lane).end->store_release(LaneEnd::open);
+            live_.set(lane, TurnLane{.lane = lane});
         }
         turn_ = ::foundation::core::CyclicIndex<lane_count>{};
         tails_ = LaneTails::published;

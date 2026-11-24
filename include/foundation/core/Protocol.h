@@ -1001,7 +1001,7 @@ template <class T>
         for (auto const index : Bare::indices()) {
             std::size_t const at = index.raw() * step;
             bool const is_decoded =
-                part.with_element(index, [first, offset, at, &fault](typename Bare::element_type& element) noexcept {
+                part.update(index, [first, offset, at, &fault](typename Bare::element_type& element) noexcept {
                     return detail::decode_part_(element, first + at, offset + at, fault);
                 });
             if (!is_decoded) return false;

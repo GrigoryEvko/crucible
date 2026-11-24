@@ -58,14 +58,12 @@ struct OutputRing {
     std::uint64_t total = 0;
 
     void put(core::View<char const> run) noexcept {
-        bytes.with_mut([this, run](auto slots) noexcept {
-            for (char const character : run) {
-                auto slot =
-                    slots.get_mut(total % kChildOutputCapacity).expect("a position modulo the capacity is in the ring");
-                *slot = character;
-                ++total;
-            }
-        });
+        for (char const character : run) {
+            bytes.set(core::Index<kChildOutputCapacity>::check(total % kChildOutputCapacity)
+                          .expect("a position modulo the capacity is in the ring"),
+                      character);
+            ++total;
+        }
     }
 };
 
@@ -76,8 +74,8 @@ struct OutputRing {
     // The end of the reads: the error of a failed read, or no error at the
     // end of the output.  No end means that the output goes on.
     using ReadEnd = core::Option<core::Option<os::Errno>>;
-    core::FixedArray<char, kReadChunk> chunk{};
-    return chunk.with_mut([error_output, &ring](auto run) noexcept -> core::Option<os::Errno> {
+    auto [chunk, chunk_key] = core::mint_keyed_owner(core::fixed_array_owner<char, kReadChunk>);
+    return chunk.with_mut(chunk_key, [error_output, &ring](auto run) noexcept -> core::Option<os::Errno> {
         for (;;) {
             core::Result<core::View<char>, os::Errno> const taken =
                 os::detail::read_child_output_(error_output, core::detail::run_of_(run));
@@ -206,12 +204,9 @@ struct OutputRing {
     }
     if (info.op == PTRACE_SYSCALL_INFO_ENTRY) {
         core::FixedArray<std::uint64_t, kSyscallArguments> arguments{};
-        arguments.with_mut([&info](auto run) noexcept {
-            for (std::size_t index = 0; index < kSyscallArguments; ++index) {
-                auto argument = run.get_mut(index).expect("the entry has six arguments");
-                *argument = info.entry.args[index];
-            }
-        });
+        for (auto const index : arguments.indices()) {
+            arguments.set(index, info.entry.args[index.raw()]);
+        }
         return Read{core::Option<SyscallStop>::some(
             ChildDoor::make_entry_stop(child, SyscallNumber{info.entry.nr}, arguments))};
     }

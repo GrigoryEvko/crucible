@@ -453,9 +453,7 @@ class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
         detail::const_record_word_* const first =
             static_cast<detail::const_record_word_*>(static_cast<void const*>(record));
         for (Word const word : Words::indices()) {
-            words.with_element(word, [first, word](std::uint64_t& held) noexcept {
-                held = __atomic_load_n(first + word.raw(), __ATOMIC_ACQUIRE);
-            });
+            words.set(word, __atomic_load_n(first + word.raw(), __ATOMIC_ACQUIRE));
         }
     }
 
