@@ -784,20 +784,19 @@ template <class T>
 class Slot {
 public:
     void put(T value) {
-        value_.emplace(std::move(value));
+        value_.fill(std::move(value));
         full_.store(true, std::memory_order_release);
     }
     [[nodiscard]] T take() {
         while (!full_.load(std::memory_order_acquire))
             std::this_thread::yield();
-        T value = std::move(*value_);
-        value_.reset();
+        T value = value_.take().expect("the slot is full after the wait");
         full_.store(false, std::memory_order_release);
         return value;
     }
 
 private:
-    std::optional<T> value_;
+    ::fixy::Option<T> value_{};
     std::atomic<bool> full_{false};
 };
 

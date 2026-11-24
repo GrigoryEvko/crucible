@@ -386,9 +386,7 @@ void draft_goes_stale_on_a_log_of_unkeyed(::foundation::effects::Alloc alloc, co
 void keyed_log_passes_its_key(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode* const region = region_of_step(alloc, arena, 1);
-    auto minted = ::fixy::mint_cyclic_buffer<crucible::Transaction, 4>();
-    auto& ring = minted.at(::fixy::index<0>());
-    auto& key = minted.at(::fixy::index<1>());
+    auto [ring, key] = ::fixy::mint_cyclic_buffer<crucible::Transaction, 4>();
     auto log = crucible::build_transaction_log<SoloOwner>(std::move(ring));
 
     auto draft = log.begin_tx(std::move(key), owner, ::fixy::session::StepId{1});

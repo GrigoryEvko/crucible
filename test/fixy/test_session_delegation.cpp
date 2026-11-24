@@ -20,7 +20,6 @@
 #include <atomic>
 #include <cstdio>
 #include <initializer_list>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -46,7 +45,7 @@ using Carried = s::DelegatedSession<Inner, Wire, s::DefaultAbandonmentPolicy, fp
 // fills and empties on one thread.
 template <class Payload>
 struct SlotOf : ::foundation::Pinned<SlotOf<Payload>> {
-    std::optional<Payload> held;
+    ::fixy::Option<Payload> held{};
 };
 // A recipient that waits for an endpoint holds that endpoint only after the
 // wait, so the outer channel takes the priority above the priority 0 of the
@@ -211,17 +210,12 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
     if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
 
     auto sender_done = std::move(sender).send(std::move(carried), [](SenderEnd& end, Carried& value) noexcept {
-        if (end.slot->held.has_value()) return false;
-        end.slot->held.emplace(std::move(value));
+        if (end.slot->held.is_some()) return false;
+        end.slot->held.fill(std::move(value));
         return true;
     });
-    auto [received, recipient_done] =
-        std::move(recipient).recv([](RecipientEnd& end) noexcept -> ::fixy::Option<Carried> {
-            if (!end.slot->held.has_value()) return ::fixy::none;
-            ::fixy::Option<Carried> taken = ::fixy::some(std::move(*end.slot->held));
-            end.slot->held.reset();
-            return taken;
-        });
+    auto [received, recipient_done] = std::move(recipient).recv(
+        [](RecipientEnd& end) noexcept -> ::fixy::Option<Carried> { return end.slot->held.take(); });
     static_cast<void>(std::move(sender_done).close());
     static_cast<void>(std::move(recipient_done).close());
 
@@ -317,8 +311,8 @@ using HandsRegion = s::Send<ParcelOfRegion<Brand>, s::End>;
 // out, as in delegate_over_a_channel.
 template <class Brand>
 [[nodiscard]] static bool put_parcel(SenderEndOf<ParcelOfRegion<Brand>>& end, ParcelOfRegion<Brand>& parcel) noexcept {
-    if (end.slot->held.has_value()) return false;
-    end.slot->held.emplace(std::move(parcel));
+    if (end.slot->held.is_some()) return false;
+    end.slot->held.fill(std::move(parcel));
     return true;
 }
 
@@ -328,10 +322,7 @@ template <class Brand>
 template <class Brand>
 [[nodiscard]] static ParcelOfRegion<Brand> take_parcel(RecipientEndOf<ParcelOfRegion<Brand>>& end,
                                                        s::watch::wait_scope&) noexcept {
-    if (!end.slot->held.has_value()) ::fixy::fatal("the sender put no endpoint into the slot");
-    ParcelOfRegion<Brand> taken = std::move(*end.slot->held);
-    end.slot->held.reset();
-    return taken;
+    return end.slot->held.take().expect("the sender put no endpoint into the slot");
 }
 
 [[nodiscard]] static int sender_without_tags_hands_off_a_region() {
@@ -354,7 +345,7 @@ template <class Brand>
     static_assert(std::is_same_v<typename decltype(recipient_done)::perm_set, fp::EmptyPermSet>,
                   "the recipient holds the region through the endpoint, and not in its own set");
     static_cast<void>(std::move(recipient_done).close());
-    if (slot.held.has_value()) return fail("the recipient left the endpoint in the slot");
+    if (slot.held.is_some()) return fail("the recipient left the endpoint in the slot");
 
     auto accepted = std::move(received).accept();
     static_assert(std::is_same_v<typename decltype(accepted)::perm_set, HoldsRegion<Brand>>,
