@@ -275,6 +275,52 @@ void test_commit_sender_loses_in_flight_bytes() {
     ::fixy::check::pass(kTest, "  test_commit_sender_loses_in_flight_bytes: PASSED\n");
 }
 
+// A commit that the swapper refuses gives the handle of the old path back in
+// the refusal, with the reason.  The session on the old path then runs to its
+// end, on the resource that it had.
+template <class NewHandle, class OldHandle>
+[[nodiscard]] Wire end_refused_session(::fixy::Result<NewHandle, cntp::SwapRefused<OldHandle>>&& committed,
+                                       cntp::SwapError reason) noexcept {
+    static_assert(::foundation::linear::LinearValue<cntp::SwapRefused<OldHandle>>);
+    return std::move(committed).match(
+        [](NewHandle) noexcept -> Wire { ::fixy::fatal("the swapper took a commit that it must refuse"); },
+        [reason](cntp::SwapRefused<OldHandle> refused) noexcept -> Wire {
+            CRUCIBLE_TEST_ASSERT(kTest, refused.reason() == reason);
+            OldHandle kept = std::move(refused).take_handle();
+            CRUCIBLE_TEST_ASSERT(kTest, kept.is_live());
+            return std::move(kept).send(11, send_int).close();
+        });
+}
+
+void test_refused_commit_gives_the_handle_back() {
+    ::fixy::ColdInitCtx init{fe::testing::init()};
+    ::fixy::BgLoadCtx bg{fe::testing::bg()};
+
+    auto swapper = cntp::mint_path_swapper<8>(init);
+    auto plan = make_plan();
+
+    // The swapper is at Stable, so no swap runs that a commit could complete.
+    const Wire early = end_refused_session(
+        swapper.commit_sender(bg, sess::mint_session<Proto>(bg, Wire{.id = 3}), Wire{.id = 4}, Nanos{50}),
+        cntp::SwapError::InvalidTransition);
+    CRUCIBLE_TEST_ASSERT(kTest, early.id == 3 && early.last == 11);
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Stable);
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.event_count(bg) == 0);
+
+    // The swap passes its deadline.  The commit that finds the deadline
+    // passed fails the swap.
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.begin_swap(bg, plan, Nanos{100}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.receiver_accepts_bidir(bg, Nanos{200}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.sender_observed_drain_ack(bg, Nanos{300}).is_ok());
+    const Wire late = end_refused_session(
+        swapper.commit_sender(bg, sess::mint_session<Proto>(bg, Wire{.id = 5}), Wire{.id = 6}, Nanos{5000}),
+        cntp::SwapError::Timeout);
+    CRUCIBLE_TEST_ASSERT(kTest, late.id == 5 && late.last == 11);
+    CRUCIBLE_TEST_ASSERT(kTest, swapper.state() == cntp::SwapState::Failed);
+
+    ::fixy::check::pass(kTest, "  test_refused_commit_gives_the_handle_back: PASSED\n");
+}
+
 // A transition that read the state and then stored it without a gate
 // would let two threads both see the same source state and both append
 // an event, so one edge would appear twice in the audit log.  The gate
@@ -500,6 +546,7 @@ int main() {
     test_admission();
     test_state_machine_and_session_resource_transition();
     test_commit_sender_loses_in_flight_bytes();
+    test_refused_commit_gives_the_handle_back();
     test_concurrent_observer_sees_only_valid_states();
     test_concurrent_complete_receiver_exactly_one_wins();
     test_plan_reader_races_the_writer();

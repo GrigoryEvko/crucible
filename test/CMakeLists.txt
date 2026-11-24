@@ -2802,6 +2802,8 @@ crucible_neg_compile_test(neg_pacing_raw_config_ensure
 #   * neg_path_swap_commit_non_session_resource,
 #     neg_path_swap_commit_pointer_resource: the new resource is a
 #     SessionResource.
+#   * neg_path_swap_commit_result_dropped: the Result of a commit holds the
+#     new handle or the handle of the old path, so no caller drops it.
 crucible_neg_compile_test(neg_path_swap_raw_plan_begin
   "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::begin_swap.fixy::BgLoadCtx&, crucible::cntp::PathSwapPlan&, crucible::cntp::SwapNanoseconds.."
   "cannot convert .raw. .type .crucible::cntp::PathSwapPlan.. to type .const crucible::cntp::DeclaredPathSwapPlan&.")
@@ -2844,6 +2846,9 @@ crucible_neg_compile_test(neg_path_swap_commit_non_session_resource
 crucible_neg_compile_test(neg_path_swap_commit_pointer_resource
   "no matching function for call to .crucible::cntp::PathSwapper<[^>]*>::commit_sender.fixy::BgLoadCtx&"
   "required for the satisfaction of .PathSwapSessionResource<NewResource>. .with NewResource = PointerWire.")
+crucible_neg_compile_test(neg_path_swap_commit_result_dropped
+  "the code discards a temporary linear sum, so its payload can drop"
+  "main: temporary .foundation::core::Result<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, Wire.*crucible::cntp::SwapRefused<")
 
 # ─── topology::CongestionTelemetry and its worker ────────────────────
 #

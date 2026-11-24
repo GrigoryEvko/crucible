@@ -12,6 +12,8 @@
 #include <fixy/os/SpinLock.h>
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
+#include <foundation/Lifetime.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -198,6 +200,36 @@ concept CtxFitsPathSwapRead = ::fixy::spin::CtxMayBlock<Ctx>;
 
 template <class Resource>
 concept PathSwapSessionResource = ::fixy::session::SessionResource<Resource>;
+
+// The refusal of a commit of a sender: the handle of the old path, which the
+// swap did not take, and why.  The class is linear, so must-consume reads
+// that the caller takes the handle back, or ends the refusal at a named door,
+// on each path.  So no refused swap ends a session in silence.  The checked
+// lifetime start of foundation/Lifetime.h refuses the class, so no start over
+// bytes forges a refusal.
+template <class Handle>
+class [[nodiscard]][[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]]
+    SwapRefused final {
+public:
+    constexpr SwapRefused(Handle&& current, SwapError why) noexcept : current_{std::move(current)}, why_{why} {}
+
+    constexpr SwapRefused(SwapRefused&&) noexcept = default;
+    SwapRefused(SwapRefused const&) = delete("a refusal holds the one handle of the old path");
+    SwapRefused& operator=(SwapRefused const&) = delete("a refusal holds the one handle of the old path");
+    SwapRefused& operator=(SwapRefused&&) = delete("a refusal holds the one handle of the old path");
+    ~SwapRefused() = default;
+
+    // Why the swap did not take the handle.
+    [[nodiscard]] constexpr SwapError reason() const noexcept { return why_; }
+
+    // The handle back, at its position on the old path, for a later commit,
+    // for its own protocol or for its own end.
+    [[nodiscard]] constexpr Handle take_handle() && noexcept { return std::move(current_); }
+
+private:
+    Handle current_;
+    SwapError why_ = SwapError::InvalidTransition;
+};
 
 // The admission of an id or a timeout from outside: the value above zero, or
 // the error of its kind.
@@ -449,13 +481,19 @@ public:
                             "The bytes buffered on the old path are dropped.")]]
     auto commit_sender(Ctx const& ctx, ::fixy::session::SessionHandle<Proto, OldResource, void, Policy>&& current,
                        NewResource&& new_resource, SwapNanoseconds now) noexcept
-        -> ::fixy::Result<::fixy::session::SessionHandle<Proto, NewResource, void, Policy>, SwapError> {
-        // The transition has to land before the detach.  A call that is
-        // refused must not consume `current`, or the resource leaks and the
-        // audit log gains an event for a transition that never happened.
-        // The detach and the new mint run after the lock is given back.
-        CRUCIBLE_TRY(
-            _, advance_locked(ctx, SwapFromState{SwapState::NewPathFlushing}, SwapToState{SwapState::Complete}, now));
+        -> ::fixy::Result<::fixy::session::SessionHandle<Proto, NewResource, void, Policy>,
+                          SwapRefused<::fixy::session::SessionHandle<Proto, OldResource, void, Policy>>> {
+        // The transition has to land before the detach.  A refused call
+        // gives `current` back in the refusal, so the session on the old path
+        // goes on, and the audit log gains no event for a transition that
+        // never happened.  The detach and the new mint run after the lock is
+        // given back.
+        auto advanced =
+            advance_locked(ctx, SwapFromState{SwapState::NewPathFlushing}, SwapToState{SwapState::Complete}, now);
+        if (advanced.is_err()) {
+            return ::fixy::err(SwapRefused<::fixy::session::SessionHandle<Proto, OldResource, void, Policy>>{
+                std::move(current), std::move(advanced).err().expect("the test above found the error")});
+        }
         std::move(current).detach(::fixy::session::detach_reason::TransportClosedOutOfBand{});
         return ::fixy::session::mint_session<Proto, Policy, Ctx, NewResource>(ctx,
                                                                               std::forward<NewResource>(new_resource));
