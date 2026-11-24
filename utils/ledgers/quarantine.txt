@@ -92,7 +92,7 @@ bench/ | opted-out | 1 | MEASURE: a C array of descriptors is the raw floor of t
 bench/ | opted-out | 3 | MEASURE: a chain of dependent adds gives the clock of the core | a chain of dependent adds gives the clock of the core, for the cycles of the speed-of-light rows of the owner lookup bench, the heap fast-paths bench and the session handle bench
 bench/ | opted-out | 12 | MEASURE: a raw memcpy of TensorMeta is the floor reference of try_append | the regions of the bench move: ABI for the timeline rings that the BPF programs of the perf facades write, MEASURE for the bare MPSC ring on std::jthread, the raw triple table of the kernel cache and the memcpy floors of try_append
 bench/ | opted-out | 9 | MEASURE: a raw memcpy of plain arrays is the floor reference of the ring | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
-bench/ | opted-out | 77 | MEASURE: a reference allocator gives a raw address, which no type of the base holds | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
+bench/ | opted-out | 80 | MEASURE: a reference allocator gives a raw address, which no type of the base holds | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 13 | MEASURE: an empty asm statement holds each value of a timed body, with no call | the sink of a timed body is an empty asm statement with one operand, which holds a value with no call and no memory clobber, and the base has no door for an operand of asm
 bench/ | opted-out | 5 | MEASURE: each round of mstress and mleak starts and joins its workers on std::jthread | The allocation bench measures the base against three pinned reference allocators and glibc: their raw addresses, the C ABI of main, and the std::jthread workers of its rows are MEASURE regions.
 bench/ | opted-out | 5 | MEASURE: libatomic is the reference of each atomic operation of 16 bytes | -
@@ -365,8 +365,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 368 | - | -
-test/ | std-object | 127 | - | -
+test/ | std-entity | 366 | - | -
+test/ | std-object | 126 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -570,6 +570,7 @@ test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that name
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 2 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | opted-out | 1 | PROBE: a precondition reads a struct through a raw pointer and tests it for null | -
+test/foundation/ | opted-out | 9 | PROBE: a raw read past the count tests the poison under AddressSanitizer | three poison tests read a slot past the count through a raw address under AddressSanitizer, so they test the poison of their owner, and the store check of the frame doors refuses each safe route to such a slot
 test/foundation/ | opted-out | 1 | PROBE: a read of a byte of the window shows the access of its page | -
 test/foundation/ | opted-out | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | opted-out | 45 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
@@ -607,6 +608,7 @@ test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names n
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of a Result | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a copy of bytes writes a tag that names no alternative of an Option | the test of the forged tag of a plain Option and a plain Result copies bytes over the sum in PROBE regions
 test/foundation/ | region | 1 | PROBE: a precondition reads a struct through a raw pointer and tests it for null | -
+test/foundation/ | region | 3 | PROBE: a raw read past the count tests the poison under AddressSanitizer | three poison tests read a slot past the count through a raw address under AddressSanitizer, so they test the poison of their owner, and the store check of the frame doors refuses each safe route to such a slot
 test/foundation/ | region | 1 | PROBE: a read of a byte of the window shows the access of its page | -
 test/foundation/ | region | 1 | PROBE: a read of the bytes after an allocation, which the arena did not give out | the test of the poison of a new block reads the bytes after the first allocation of a BumpArena, which the arena does not give out, through a raw pointer in a PROBE region
 test/foundation/ | region | 1 | PROBE: a report to a stream with no reader raises no SIGPIPE in its thread | -
