@@ -1264,9 +1264,11 @@ concept HoldCanPack = PlainTag<Tag> && holds_token_of(^^Set, ^^Tag)
 class HoldFactory final : ::foundation::NoObject<HoldFactory> {
     struct no_incoming {};
 
-    // The object that the slots keep for one element of their set.
+    // The object that the slots keep for one element of their set.  A storage
+    // door: the slot is a part of the HoldSlots that the step of the factory takes.
     template <class Element, class Set>
-    [[nodiscard]] static constexpr auto& slot_(HoldSlots<Set>& slots) noexcept {
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] static constexpr auto&
+        slot_(HoldSlots<Set>& slots) noexcept {
         return slots.parts_.at(::foundation::core::index<detail::slot_index_v<Element, Set>>());
     }
 

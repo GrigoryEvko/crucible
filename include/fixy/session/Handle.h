@@ -965,9 +965,11 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     template <typename Proto, typename Resource, AbandonmentPolicy Policy>
     [[nodiscard]] static constexpr watch::session_ref claim_(MintSite site) noexcept;
 
-    // The core of a handle, where its Resource and its tracker are.
+    // The core of a handle, where its Resource and its tracker are.  A storage
+    // door: the core is the base of the handle that the step of the factory takes.
     template <typename Proto, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS>
-    [[nodiscard]] static constexpr auto& core_(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>& handle) noexcept {
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] static constexpr auto&
+        core_(SessionHandle<Proto, Resource, LoopCtx, Policy, PS>& handle) noexcept {
         detail::handle_core<Proto, Resource, LoopCtx, Policy, PS>& core = handle;
         return core;
     }

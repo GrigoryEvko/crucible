@@ -135,8 +135,10 @@ class PermissionForkThreads final : ::foundation::NoObject<PermissionForkThreads
         // Runs on the thread of the child.  The thread moves the body out
         // of the fork and copies the context, so each lives on the thread
         // and ends there.  The value of the body goes into the slot of the
-        // child, which the join orders before the read of the fork.
-        static void run(::foundation::core::ErasedAddress frame) noexcept {
+        // child, which the join orders before the read of the fork.  A body
+        // that moves storage: only this thread empties the erased frame.
+        [[= ::foundation::linear::moves_own_storage{}]] static void
+            run(::foundation::core::ErasedAddress frame) noexcept {
             child_frame_ const& source = frame.restore<child_frame_>();
             Body moved_body = std::move(*source.body);
             Ctx const child_ctx = *source.ctx;

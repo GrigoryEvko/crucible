@@ -600,9 +600,11 @@ template <typename Ctx, typename Body>
 
 // Takes the body out of its slot in the frame of the door, calls it one time,
 // and writes its value.  The slot is empty after the take, so the door reads
-// that the thread took the body (the bodies by move).
+// that the thread took the body (the bodies by move).  A body that moves
+// storage: only this thread empties the slot of the erased frame.
 template <typename Ctx, typename Body>
-void run_joined_body_(::foundation::core::ErasedAddress frame) noexcept {
+[[= ::foundation::linear::moves_own_storage{}]] void
+    run_joined_body_(::foundation::core::ErasedAddress frame) noexcept {
     using Value = joined_result_t_<Ctx, Body>;
     joined_body_ const& joined = frame.restore<joined_body_>();
     joined.value.restore<::foundation::core::Option<Value>>() =

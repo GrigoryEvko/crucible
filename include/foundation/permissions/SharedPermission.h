@@ -480,8 +480,9 @@ private:
     // with one compare-exchange.  The write of the parked permission after
     // the compare-exchange happens only on the thread that won it, and no
     // other thread writes the parked permission until that thread deposits
-    // the lease.
-    [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>> try_upgrade_raw_() noexcept {
+    // the lease.  A body that moves storage: the pool owns its parked token.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] ::foundation::core::Option<ExclusiveLease<Tag, Brand>>
+        try_upgrade_raw_() noexcept {
         using Upgraded = ::foundation::core::Option<ExclusiveLease<Tag, Brand>>;
         if (state_.cas_acq_rel(std::uint64_t{0}, EXCLUSIVE_OUT_BIT).is_err()) {
             return Upgraded{::foundation::core::none};

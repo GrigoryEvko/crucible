@@ -780,9 +780,11 @@ private:
     // Runs on the thread of one stage.  The thread moves the stage out of
     // the tuple, so the stage lives on its own thread and ends there.  The
     // caller waits in the join, so it does not touch the tuple while a
-    // thread reads it.
+    // thread reads it.  A body that moves storage: only this thread empties
+    // the erased frame of the stage.
     template <class Stage>
-    static void run_threaded_stage_(::foundation::core::ErasedAddress frame) noexcept {
+    [[= ::foundation::linear::moves_own_storage{}]] static void
+        run_threaded_stage_(::foundation::core::ErasedAddress frame) noexcept {
         stage_frame_<Stage> const& source = frame.restore<stage_frame_<Stage>>();
         Stage stage = std::move(*source.stage);
         pin_current_pipeline_thread_(stage.ctx(), source.cpu);

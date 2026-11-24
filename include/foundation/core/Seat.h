@@ -110,10 +110,11 @@ public:
     // holds the payload that fn gives, in the same storage (the step).
     // fn holds no linear value by value (HoldsNoLinearValue of
     // foundation/Linear.h): the step calls it and ends it, and a call is no
-    // consume.
+    // consume.  A body that moves storage: the Seat owns its payload, and the
+    // step puts the next payload in the same storage.
     template <class Fn>
         requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn>
-    constexpr void step(Fn&& fn) & noexcept {
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void step(Fn&& fn) & noexcept {
         // The storage of the payload, before fn moves the payload.  It is a
         // pointer to T and not to void, so it is no view of the bytes of the
         // payload, and the placement new builds a T in it (the byte views of

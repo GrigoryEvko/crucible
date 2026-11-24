@@ -211,13 +211,16 @@ public:
 
     // Runs on the owned thread.  The body leaves the frame for a local, and
     // the once door calls it one time as an rvalue and ends it (the frame).
-    static void run(::foundation::core::ErasedAddress frame) noexcept {
+    // A body that moves storage: only the owned thread empties its frame.
+    [[= ::foundation::linear::moves_own_storage{}]] static void run(::foundation::core::ErasedAddress frame) noexcept {
         Body body{static_cast<Body&&>(frame.restore<owned_frame_>().body_)};
         static_cast<void>(::foundation::linear::call_once(static_cast<Body&&>(body)));
     }
 
     // Takes the body out of a frame whose thread did not start (the errors).
-    [[nodiscard]] static Body take_unrun_body(owned_frame_& frame) noexcept {
+    // A body that moves storage: the door that owns the frame takes it back.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] static Body
+        take_unrun_body(owned_frame_& frame) noexcept {
         return Body{static_cast<Body&&>(frame.body_)};
     }
 

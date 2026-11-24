@@ -1645,7 +1645,8 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return holds_() == other.holds_();
     }
-    [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
+    // A storage door: the payload is a member of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
     constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
 
@@ -2355,8 +2356,10 @@ public:
 
     // Build the alternative of the index from the same alternative of the
     // source.  No member is active before the call: the constructor calls it
-    // first, and an assignment calls it after destroy_.
-    constexpr void move_in_(std::size_t, Alternatives& source) noexcept {
+    // first, and an assignment calls it after destroy_.  A body that moves
+    // storage: the move of the sum that owns the source gives it up.
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void move_in_(std::size_t,
+                                                                            Alternatives& source) noexcept {
         ::new(static_cast<void*>(&head_)) Last(static_cast<Last&&>(source.head_));
     }
 };
@@ -2401,8 +2404,10 @@ public:
 
     // Build the alternative of the index from the same alternative of the
     // source.  The tail is a union of its own, so a new tail starts its
-    // lifetime, and its constructor builds the alternative inside it.
-    constexpr void move_in_(std::size_t index, Alternatives& source) noexcept {
+    // lifetime, and its constructor builds the alternative inside it.  A body
+    // that moves storage: the move of the sum that owns the source gives it up.
+    [[= ::foundation::linear::moves_own_storage{}]] constexpr void move_in_(std::size_t index,
+                                                                            Alternatives& source) noexcept {
         if (index == 0) {
             ::new(static_cast<void*>(&head_)) Head(static_cast<Head&&>(source.head_));
         } else {
@@ -2823,7 +2828,10 @@ class OptionSlot<T, OptionForm::plain> {
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return sum_.index_(SumDoor::key()) == other.sum_.index_(SumDoor::key());
     }
-    [[nodiscard]] constexpr T& payload_() noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
+    // A storage door: the payload is an alternative of the sum of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T& payload_() noexcept {
+        return sum_.template alternative_<1>(SumDoor::key());
+    }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return sum_.template alternative_<1>(SumDoor::key()); }
 
     // A payload with no assignment, such as a closure or a class with a const
@@ -2917,7 +2925,10 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
         return is_engaged_ == other.is_engaged_;
     }
-    [[nodiscard]] constexpr T& payload_() noexcept { return detail::alternative_of_<1>(storage_); }
+    // A storage door: the payload is in the storage of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T& payload_() noexcept {
+        return detail::alternative_of_<1>(storage_);
+    }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return detail::alternative_of_<1>(storage_); }
     // Builds the alternative of an empty slot in place.  The storage holds no
     // live payload, so no end is due.
@@ -3041,11 +3052,13 @@ class ResultSlot {
     // The value and the error for a consumer, which takes the Result.  The
     // end of the slot then reads no linear alternative as owed (the end of
     // a linear alternative).
-    [[nodiscard]] constexpr T&& take_value_() noexcept {
+    // A storage door: the value is an alternative of the sum of the slot, which its Result owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T&& take_value_() noexcept {
         sum_.spend_(SumDoor::key());
         return static_cast<T&&>(value_());
     }
-    [[nodiscard]] constexpr E&& take_error_() noexcept {
+    // A storage door: the error is an alternative of the sum of the slot, which its Result owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr E&& take_error_() noexcept {
         sum_.spend_(SumDoor::key());
         return static_cast<E&&>(error_());
     }

@@ -107,6 +107,12 @@ struct scope_end_door final {};
 // as one call of the closure, and the end of the closure after it.
 struct once_door final {};
 
+// The annotation of a function of the base that reaches a payload in storage
+// that it owns, or in its erased frame.  The rule must-consume reads a call of
+// such a function on the way to a move, and a move in its body, as no move out
+// of a borrow.  The rule trusts the annotation only in a base file.
+struct moves_own_storage final {};
+
 // The annotation of the hook get<I> of a structured binding.  A direct call
 // on an rvalue moves one part out and drops the other parts.
 struct binding_hook final {};
