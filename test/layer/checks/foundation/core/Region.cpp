@@ -156,6 +156,15 @@ static_assert(single_view().window<1>(1).is_none());
 static_assert(sum_of(single_view().window<1>(0).expect("the fixed window fits")) == 7);
 static_assert(sum_of(View<int const>{}) == 0);
 
+// prefix_up_to is total: a count past the size gives the whole View, and the
+// prefix starts at the first element.
+static_assert(single_view().prefix_up_to(0).size() == 0);
+static_assert(sum_of(single_view().prefix_up_to(1)) == 7);
+static_assert(sum_of(single_view().prefix_up_to(2)) == 7);
+static_assert(single_view().prefix_up_to(dynamic_extent).size() == 1);
+static_assert(View<int const>{}.prefix_up_to(5).size() == 0);
+static_assert(sum_of(detail::view_of_object_(single_value).prefix_up_to(4)) == 7, "a View of a fixed extent too");
+
 // fill in a constant evaluation keeps the loop.  Each case fills a run of
 // one element, through a View of a dynamic extent and of the fixed extent 1.
 template <class T>
@@ -468,9 +477,9 @@ static_assert(std::is_same_v<decltype(write_each(std::declval<ViewMut<int, Uniqu
 inline constexpr TextView region_names{
     "View ViewMut Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray "
     "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
-    "element_type brand_type extent capacity window split_at prefix suffix get_mut indices index parallel check "
-    "mask raw rest take take_first take_last expect_empty clear with_view with_element with_mut append_self freeze "
-    "is_at_end remaining"};
+    "element_type brand_type extent capacity window split_at prefix prefix_up_to suffix get_mut indices index parallel "
+    "check mask raw rest take take_first take_last expect_empty clear with_view with_element with_mut append_self "
+    "freeze is_at_end remaining"};
 
 // The brand that the check of a branded type names.  A program gets each
 // brand from mint_branded_scope.

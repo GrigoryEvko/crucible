@@ -4831,6 +4831,15 @@ foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_named
 foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_const
   "neg_core_view_mut_for_each_chunk_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::for_each_chunk\\(const ViewMut<T, Brand, Extent>&, Body\\)"
   "a const ViewMut writes nothing, so it gives no writer of a part")
+# The total prefix of a ViewMut takes it by move, so the prefix is the one
+# writer of its part.  The prefix of a named ViewMut and of a const one do
+# not compile.
+foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_named
+  "neg_core_view_mut_take_prefix_up_to_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "a prefix takes the ViewMut by move: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_const
+  "neg_core_view_mut_take_prefix_up_to_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "a const ViewMut writes nothing, so it gives no writer of a prefix")
 # The bytes of a ViewMut take it by move, so the bytes are the one writer of
 # the run.  The bytes of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named

@@ -262,6 +262,7 @@ using ::foundation::core::split_at;
 using ::foundation::core::split_chunks;
 using ::foundation::core::starts_with;
 using ::foundation::core::StaticIndex;
+using ::foundation::core::take_prefix_up_to;
 using ::foundation::core::take_window;
 using ::foundation::core::View;
 using ::foundation::core::ViewMut;

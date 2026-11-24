@@ -747,7 +747,7 @@ test/session_oracle/ | raw-function-pointer | 3 | - | -
 test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1382 | - | -
-test/shape/ | opted-out | 330 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
+test/shape/ | opted-out | 331 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
 test/shape/ | opted-out | 2 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call

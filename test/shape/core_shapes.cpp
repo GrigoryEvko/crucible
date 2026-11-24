@@ -326,6 +326,13 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return view.window(offset, count);
 }
 
+// The window that a read filled: the prefix of the count of the read, with no
+// Option.
+[[gnu::used]] fixy::View<std::uint32_t const> view_prefix_up_to(fixy::View<std::uint32_t const> view,
+                                                                std::size_t count) noexcept {
+    return view.prefix_up_to(count);
+}
+
 // The append path of a producer: the window of the run in the segment, then
 // the copy of the run into the window.
 [[gnu::used]] bool view_append(fixy::View<std::uint8_t> segment, std::size_t used,
@@ -1904,6 +1911,11 @@ struct RawCycle {
         return RawWindow{nullptr, ~std::size_t{0}};
     }
     return RawWindow{first + offset, count};
+}
+
+[[gnu::used]] RawWindow view_prefix_up_to_raw(std::uint32_t const* first, std::size_t size,
+                                              std::size_t count) noexcept {
+    return RawWindow{first, count < size ? count : size};
 }
 
 [[gnu::used]] bool view_append_raw(std::uint8_t* segment, std::size_t size, std::size_t used, std::uint8_t const* run,

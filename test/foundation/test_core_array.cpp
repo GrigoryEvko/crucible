@@ -212,6 +212,31 @@ void test_fixed_array_view_fill_and_copy() {
     CRUCIBLE_TEST_ASSERT(kTest, !(target == source));
 }
 
+// prefix_up_to gives the first count elements of a View, or each element for
+// a count past the size: the window that a read door filled.
+// take_prefix_up_to gives the same part of the run of a frame as a ViewMut,
+// and a write through it writes the elements of the array.
+void test_prefix_up_to_is_total() {
+    FixedArray<std::uint32_t, 6> numbers{1, 2, 3, 4, 5, 6};
+    std::size_t volatile seed = 4;
+    std::size_t const filled = seed;
+    View<std::uint32_t const> const elements = numbers.view();
+    CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(filled).size() == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(filled * 10).size() == 6);
+    CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(0).size() == 0);
+    std::size_t const taken = numbers.with_mut([filled](auto run) noexcept {
+        auto prefix = ::foundation::core::take_prefix_up_to(std::move(run), filled);
+        std::size_t const count = prefix.size();
+        ::foundation::core::fill(std::move(prefix), std::uint32_t{0});
+        return count;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, taken == 4);
+    CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<3>()) == 0 && numbers.at(index<4>()) == 5);
+    std::size_t const whole = numbers.with_mut(
+        [](auto run) noexcept { return ::foundation::core::take_prefix_up_to(std::move(run), 1000).size(); });
+    CRUCIBLE_TEST_ASSERT(kTest, whole == 6);
+}
+
 // get gives a Ref of the element below the count, and no value at or past
 // the count, for a View of each extent and for a FixedArray.
 void test_get_reads_below_the_count() {
@@ -318,6 +343,7 @@ int main() {
     test_fixed_array_element_door_writes_in_place();
     test_doors_take_a_body_that_borrows_a_linear_value();
     test_fixed_array_view_fill_and_copy();
+    test_prefix_up_to_is_total();
     test_get_reads_below_the_count();
     test_fixed_array_of_a_type_with_no_default();
     test_fixed_array_view_of_a_static_is_constant();

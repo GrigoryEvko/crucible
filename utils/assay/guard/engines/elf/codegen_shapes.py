@@ -520,6 +520,7 @@ PROBES: tuple[Probe, ...] = (
         "tests the byte count",
     ),
     Probe("view_window", "window gives its Option with no test of the niche of the Option"),
+    Probe("view_prefix_up_to", "prefix_up_to is one compare and one select of the smaller count, as the raw min"),
     Probe(
         "view_append",
         "the append path is the bounds compare of the window and one memmove.  The copy into the window does no test "
