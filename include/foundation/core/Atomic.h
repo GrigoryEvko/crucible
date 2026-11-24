@@ -757,6 +757,14 @@ class[[= ::foundation::transfer::payload_cell{}]]
     // cell.  A proof of a different id comes from a different run of the mint
     // site of the writer, such as a different turn of a loop.  A moved-from
     // writer holds 0, which no cell holds.
+    //
+    // The compare stays at run time because of fact 2 of foundation/Brand.h:
+    // two runs of one mint site give two tokens of one type, and no type
+    // tells them apart.  A token that held a Ref to its cell would need no
+    // id, but it would be a borrow.  HoldsNoBorrow of foundation/core/
+    // Choice.h refuses a borrow in a thread task, and a thread task is how a
+    // writer goes to its thread.  A cell that the code of one owner writes
+    // takes the cell of an owner below, with no compare.
     void expect_writer_(SoleWriter<Role, Identity> const& writer) const noexcept {
         if (writer.identity_ != writer_identity_) [[unlikely]] {
             fatal("Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of the mint site used the cell.  "
