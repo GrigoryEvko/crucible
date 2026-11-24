@@ -110,6 +110,47 @@ public:
     [[nodiscard]] constexpr uint64_t given() const noexcept { return given_; }
     [[nodiscard]] constexpr OpDepth last_given_depth() const noexcept { return last_given_depth_; }
 
+    // The frame doors of the records of one op: the window doors of
+    // foundation/core/WindowStack.h over the slots of the stack.
+    // with_frame(count, on_open, on_closed) lends on_open the ViewMut of count
+    // slots at the top, and the slots go back when on_open returns or raises.
+    // When the slots do not fit, on_closed runs.  A frame that opens while
+    // on_open runs, also the frame of an op that on_open runs, starts past
+    // these slots.  with_frame<Count> lends a ViewMut of the fixed extent
+    // Count.  O(1), and the cost of the arm.
+    template <class OnOpen, class OnClosed>
+    constexpr decltype(auto)
+    with_frame(::foundation::core::WindowCount count, OnOpen&& on_open,
+               OnClosed&& on_closed) & noexcept(noexcept(slots_.with_window(count, static_cast<OnOpen&&>(on_open),
+                                                                            static_cast<OnClosed&&>(on_closed)))) {
+        return slots_.with_window(count, static_cast<OnOpen&&>(on_open), static_cast<OnClosed&&>(on_closed));
+    }
+    template <uint32_t Count, class OnOpen, class OnClosed>
+    constexpr decltype(auto) with_frame(OnOpen&& on_open, OnClosed&& on_closed) & noexcept(noexcept(
+        slots_.template with_window<Count>(static_cast<OnOpen&&>(on_open), static_cast<OnClosed&&>(on_closed)))) {
+        return slots_.template with_window<Count>(static_cast<OnOpen&&>(on_open), static_cast<OnClosed&&>(on_closed));
+    }
+
+    // The foreign frame doors: the frame doors above with no check of the
+    // result and of the captures of the arms, for an arm that runs PyTorch
+    // and gives its result (the foreign doors of WindowStack.h).  Each call
+    // stands in an opt-out region of the class ABI.  O(1), and the cost of the
+    // arm.
+    template <class OnOpen, class OnClosed>
+    constexpr decltype(auto) with_foreign_frame(
+        ::foundation::core::WindowCount count, OnOpen&& on_open,
+        OnClosed&& on_closed) & noexcept(noexcept(slots_.with_foreign_window(count, static_cast<OnOpen&&>(on_open),
+                                                                             static_cast<OnClosed&&>(on_closed)))) {
+        return slots_.with_foreign_window(count, static_cast<OnOpen&&>(on_open), static_cast<OnClosed&&>(on_closed));
+    }
+    template <uint32_t Count, class OnOpen, class OnClosed>
+    constexpr decltype(auto) with_foreign_frame(OnOpen&& on_open, OnClosed&& on_closed) & noexcept(
+        noexcept(slots_.template with_foreign_window<Count>(static_cast<OnOpen&&>(on_open),
+                                                            static_cast<OnClosed&&>(on_closed)))) {
+        return slots_.template with_foreign_window<Count>(static_cast<OnOpen&&>(on_open),
+                                                          static_cast<OnClosed&&>(on_closed));
+    }
+
 private:
     friend class OpRecordFrame;
     friend class OpNest;

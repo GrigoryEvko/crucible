@@ -305,19 +305,25 @@ CrucibleDispatchResult crucible_dispatch_op(CrucibleHandle handle, uint64_t sche
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
     crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
     const crucible::OpDepth depth = record_stack.depth();
-    const crucible::OpRecordFrame frame{record_stack, n_metas};
-    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
-        for (const ::fixy::View<const crucible::TensorMeta> records :
-             crucible::vessel::decode_ffi_records(metas_typed, slots)) {
-            entry.shape_hash = guard_word_of(entry, records, depth);
-            for (const crucible::ValidatedOp& op :
-                 crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                return encode_dispatch_result(
-                    vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+    // The arm dispatches to the Vigil, which the store check of a frame door
+    // refuses as a capture, so the frame is a foreign frame of the C entry.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the frame of a C entry lends its slots to the decode and the dispatch")
+    return record_stack.with_foreign_frame(
+        ::foundation::core::WindowCount{n_metas},
+        [&](auto slots) noexcept {
+            for (const ::fixy::View<const crucible::TensorMeta> records :
+                 crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+                entry.shape_hash = guard_word_of(entry, records, depth);
+                for (const crucible::ValidatedOp& op :
+                     crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+                    return encode_dispatch_result(
+                        vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+                }
             }
-        }
-    }
-    return refused_dispatch_result();
+            return refused_dispatch_result();
+        },
+        [] noexcept { return refused_dispatch_result(); });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a C entry takes and gives the raw pointers of the C caller")
@@ -392,19 +398,25 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     const crucible::VigilFgCtx fg = vigil->mint_producer_context();
     crucible::OpRecordStack& record_stack = vigil->op_record_stack(fg);
     const crucible::OpDepth depth = record_stack.depth();
-    const crucible::OpRecordFrame frame{record_stack, n_metas};
-    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
-        for (const ::fixy::View<const crucible::TensorMeta> records :
-             crucible::vessel::decode_ffi_records(metas_typed, slots)) {
-            entry.shape_hash = guard_word_of(entry, records, depth);
-            for (const crucible::ValidatedOp& op :
-                 crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
-                return encode_dispatch_result(
-                    vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+    // The arm dispatches to the Vigil, which the store check of a frame door
+    // refuses as a capture, so the frame is a foreign frame of the C entry.
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the frame of a C entry lends its slots to the decode and the dispatch")
+    return record_stack.with_foreign_frame(
+        ::foundation::core::WindowCount{n_metas},
+        [&](auto slots) noexcept {
+            for (const ::fixy::View<const crucible::TensorMeta> records :
+                 crucible::vessel::decode_ffi_records(metas_typed, slots)) {
+                entry.shape_hash = guard_word_of(entry, records, depth);
+                for (const crucible::ValidatedOp& op :
+                     crucible::vessel::validate_ffi_op(crucible::mint_ffi_entry(entry), records)) {
+                    return encode_dispatch_result(
+                        vigil->dispatch_op_pure(fg, op, crucible::ScopeHash{}, crucible::CallsiteHash{}, depth));
+                }
             }
-        }
-    }
-    return refused_dispatch_result();
+            return refused_dispatch_result();
+        },
+        [] noexcept { return refused_dispatch_result(); });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 }
 
 // The position of the C caller is a number, and a position past the

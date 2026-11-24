@@ -469,14 +469,17 @@ void test_ffi_decode_refuses_each_broken_claim() {
 // thunk.
 [[nodiscard]] ::fixy::Option<Ranks> decode_in_frame(crucible::OpRecordStack& stack, TypedMeta typed,
                                                     uint32_t count) noexcept {
-    const crucible::OpRecordFrame frame{stack, count};
-    for (const ::fixy::View<crucible::TensorMeta> slots : frame.slots()) {
-        for (const ::fixy::View<const crucible::TensorMeta> records :
-             crucible::vessel::decode_ffi_records(typed, slots)) {
-            return ::fixy::Option<Ranks>::some(ranks_of(records));
-        }
-    }
-    return ::fixy::none;
+    return stack.with_frame(
+        ::foundation::core::WindowCount{count},
+        [typed](auto slots) noexcept {
+            return crucible::vessel::decode_ffi_records(typed, slots)
+                .match(
+                    [](::fixy::View<const crucible::TensorMeta> records) noexcept {
+                        return ::fixy::Option<Ranks>::some(ranks_of(records));
+                    },
+                    [] noexcept { return ::fixy::Option<Ranks>{::fixy::none}; });
+        },
+        [] noexcept { return ::fixy::Option<Ranks>{::fixy::none}; });
 }
 
 // The record stack of a Vigil holds the records of the ops in flight, and
@@ -531,23 +534,27 @@ void test_ffi_records_reuse_the_slots_of_the_producer() {
     EXPECT(decode_in_frame(stack, typed_at(first, 3), crucible::kMaxOpRecords + 1).is_none(),
            "a count past the slots of the stack is refused");
 
-    // A thunk that runs while the frame of an outer op is open.
-    {
-        const crucible::OpRecordFrame outer{stack, 3};
-        const auto outer_slots = outer.slots();
-        const auto outer_records = outer_slots.match(
-            [&typed_at, &first](::fixy::View<crucible::TensorMeta> slots) noexcept {
-                return crucible::vessel::decode_ffi_records(typed_at(first, 3), slots);
-            },
-            [] noexcept { return ::fixy::Option<::fixy::View<const crucible::TensorMeta>>{::fixy::none}; });
-        EXPECT(has_ranks(decode_in_frame(stack, typed_at(fourth, 2), 2).value_or(Ranks{}),
-                         ::fixy::FixedArray<uint8_t, 2>{4, 5}),
-               "a nested call reads its own records");
-        EXPECT(has_ranks(collect_ranks(outer_records), ::fixy::FixedArray<uint8_t, 3>{1, 2, 3}),
-               "a nested call writes no record of the op around it");
-        EXPECT(decode_in_frame(stack, typed_at(first, 3), crucible::kMaxOpRecords - 2).is_none(),
-               "a nested call past the free slots is refused");
-    }
+    // A thunk that runs while the frame of an outer op is open.  The arm of
+    // the outer frame reaches the stack, so it is a foreign frame, as the
+    // frame of an op of the vessel is.
+    const TypedMeta outer_typed = typed_at(first, 3);
+    const TypedMeta nested_typed = typed_at(fourth, 2);
+    const TypedMeta past_typed = typed_at(first, 3);
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the arm of an outer frame reaches the record stack, as in the vessel")
+    const bool is_nested_kept = stack.with_foreign_frame(
+        ::foundation::core::WindowCount{3},
+        [&stack, outer_typed, nested_typed, past_typed](auto outer) noexcept {
+            const bool is_outer_decoded = crucible::vessel::decode_ffi_records(outer_typed, outer).is_some();
+            EXPECT(has_ranks(decode_in_frame(stack, nested_typed, 2).value_or(Ranks{}),
+                             ::fixy::FixedArray<uint8_t, 2>{4, 5}),
+                   "a nested call reads its own records");
+            EXPECT(decode_in_frame(stack, past_typed, crucible::kMaxOpRecords - 2).is_none(),
+                   "a nested call past the free slots is refused");
+            return is_outer_decoded && has_ranks(ranks_of(outer.view()), ::fixy::FixedArray<uint8_t, 3>{1, 2, 3});
+        },
+        [] noexcept { return false; });
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    EXPECT(is_nested_kept, "a nested call writes no record of the op around it");
     EXPECT(stack.held() == 0, "each frame gives its slots back");
 }
 

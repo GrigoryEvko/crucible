@@ -281,8 +281,8 @@ template <class Element>
 namespace detail {
 
 // Decodes one record at typed into each slot of slots, in order: the loop of
-// the two forms of decode_ffi_records.  False when decode_ffi_meta refuses a
-// record.  Linear in the count of the slots.
+// decode_ffi_records.  False when decode_ffi_meta refuses a record.  Linear in
+// the count of the slots.
 template <class Slots>
 [[nodiscard]] inline bool decode_ffi_records_into_(TypedMeta typed, Slots& slots) noexcept {
     uint32_t position = 0;
@@ -302,20 +302,13 @@ template <class Slots>
 
 }  // namespace detail
 
-// Decodes one record at typed into each slot, in order, and gives the View of
-// the slots.  The caller gives as many slots as it gives records: the slots of
-// the OpRecordFrame of the op, a window loan that no frame lends.  No value
-// when decode_ffi_meta refuses a record.  The caller then records nothing.
-// Linear in the count of the slots.
-[[nodiscard]] inline ::fixy::Option<::fixy::View<TensorMeta const>>
-decode_ffi_records(TypedMeta typed, ::fixy::View<TensorMeta> slots) noexcept {
-    if (!detail::decode_ffi_records_into_(typed, slots)) return ::fixy::none;
-    return ::fixy::Option<::fixy::View<TensorMeta const>>::some(slots);
-}
-
-// The same decode into the run of a frame.  The decode writes through the
-// ViewMut of the frame, so it is the one writer of the run, and the View of
-// the result reads the run while the frame lends it.
+// Decodes one record at typed into each slot of the run of a frame, in order,
+// and gives the View of the slots.  The caller gives as many slots as it gives
+// records: the slots of the frame of the op on the record stack, or the run of
+// another frame.  The decode writes through the ViewMut of the frame, so it is
+// the one writer of the run, and the View of the result reads the run while
+// the frame lends it.  No value when decode_ffi_meta refuses a record.  The
+// caller then records nothing.  Linear in the count of the slots.
 template <class Brand, std::size_t Extent>
 [[nodiscard]] inline ::fixy::Option<::fixy::View<TensorMeta const>>
 decode_ffi_records(TypedMeta typed, ::fixy::ViewMut<TensorMeta, Brand, Extent>& slots) noexcept {
