@@ -428,18 +428,13 @@ private:
     }
 
     // Copies the count records of src from src_at into the buffer from at,
-    // through the frame door of the buffer.  The caller gives two windows that
+    // through the value door of the buffer.  The caller gives two windows that
     // fit, and the count of the buffer is in its type, so the optimizer
-    // removes each check of a window.  The body of the frame inlines into
-    // the append: a call of it takes its captures through the stack and puts
-    // a stack canary on the hot path of each record.
+    // removes each check of a window.
     CRUCIBLE_INLINE void write_records_(uint64_t at, ::fixy::View<TensorMeta const> src, uint64_t src_at,
                                         uint64_t count) noexcept {
-        records_.with_mut([at, src, src_at, count] [[gnu::always_inline]] (auto ring) noexcept {
-            ::fixy::copy(::fixy::take_window(std::move(ring), at, count).expect("the records fit in the buffer"),
-                         src.window(src_at, count).expect("the records of the copy are records of the run"))
-                .expect("the two windows of the copy hold the same count");
-        });
+        records_.copy_window(at, src.window(src_at, count).expect("the records of the copy are records of the run"))
+            .expect("the records fit in the buffer");
     }
 
     // Copies the count records of src from src_at into dst from dst_at.  Each
