@@ -1,10 +1,10 @@
 // Written by `loop derive witness-fixtures --write` from the witness row of
-// foundation::core::SpscSplitFrameKeyDoor in utils/rule-table.txt.  Edit the row, not this file.
+// fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::consumer_token in utils/rule-table.txt.  Edit the row, not this file.
 // clang-format off: the writer owns this layout, and --check compares it byte for byte.
 //
-// foundation::core::SpscSplitFrameKeyDoor attests to a fact that it cannot see.  The expression below is
+// fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::consumer_token attests to a fact that it cannot see.  The expression below is
 // the raw data that a forger gives its constructor, and the fixture keeps the door
-// shut: the compiler must refuse the construction with "use of deleted function".
+// shut: the compiler must refuse the construction with "is private within this context".
 //
 // The second diagnostic is the constructor as the compiler writes it, with
 // parentheses.  The source spells it with braces, so the text of the fixture
@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = foundation::core::SpscSplitFrameKeyDoor{};
+    [[maybe_unused]] auto forged = fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::consumer_token{};
     return 0;
 }

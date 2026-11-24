@@ -267,6 +267,11 @@
       "constructor": "(?<!~)\\bWriteTicket\\("
     },
     {
+      "name": "neg_witness_concurrent_spscbuildkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bSpscBuildKey\\("
+    },
+    {
       "name": "neg_witness_concurrent_spscend_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bSpscEnd\\("
@@ -277,9 +282,34 @@
       "constructor": "(?<!~)\\bSpscEndKey\\("
     },
     {
+      "name": "neg_witness_concurrent_spscframekey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bSpscFrameKey\\("
+    },
+    {
+      "name": "neg_witness_concurrent_spscheldside_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bSpscHeldSide\\("
+    },
+    {
+      "name": "neg_witness_concurrent_spscheldsplit_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bSpscHeldSplit\\("
+    },
+    {
+      "name": "neg_witness_concurrent_spscsplit_consumer_token_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bconsumer_token\\("
+    },
+    {
       "name": "neg_witness_concurrent_spscsplit_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bSpscSplit\\("
+    },
+    {
+      "name": "neg_witness_concurrent_spscsplit_producer_token_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bproducer_token\\("
     },
     {
       "name": "neg_witness_concurrent_stage_direct_construction",
@@ -765,11 +795,6 @@
       "name": "neg_witness_core_sortrundoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bSortRunDoor\\("
-    },
-    {
-      "name": "neg_witness_core_spscsplitframekeydoor_direct_construction",
-      "reason": "use of deleted function",
-      "constructor": "(?<!~)\\bSpscSplitFrameKeyDoor\\("
     },
     {
       "name": "neg_witness_core_spscsplitrefdoor_direct_construction",
@@ -2236,10 +2261,6 @@
       "header": "fixy/concurrent/SpscEnds.h"
     },
     {
-      "type": "foundation::core::SpscSplitFrameKeyDoor",
-      "header": "fixy/concurrent/SpscEnds.h"
-    },
-    {
       "type": "foundation::core::CyclicBufferFrameKeyDoor",
       "header": "fixy/CyclicBuffer.h"
     },
@@ -2729,6 +2750,30 @@
     },
     {
       "type": "fixy::concurrent::SpscEnd<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSide::producer>",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscBuildKey<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::producer_token",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessBrand>::consumer_token",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscFrameKey",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscHeldSide<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::SpscSide::producer, fixy::concurrent::spsc_ends_witness::WitnessProducerProof>",
+      "header": "fixy/concurrent/SpscEnds.h"
+    },
+    {
+      "type": "fixy::concurrent::SpscHeldSplit<fixy::concurrent::spsc_ends_witness::WitnessOwner, fixy::concurrent::spsc_ends_witness::WitnessHeldBrand>",
       "header": "fixy/concurrent/SpscEnds.h"
     },
     {
