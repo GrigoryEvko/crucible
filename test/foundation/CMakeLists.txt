@@ -3611,6 +3611,17 @@ foundation_neg_compile_test(neg_core_bump_arena_make_on_temporary
 foundation_neg_compile_test(neg_core_bump_arena_make_with_destructor
   "no matching function for call to .foundation::core::BumpArena<Family>::make<Ended>\\(foundation::core::Alloc\\)."
   "the expression .is_trivially_destructible_v<T> \\[with T = Ended\\]. evaluated to .false.")
+# The arena ends no object, so make of an arena and of an epoch refuses a type
+# that holds a linear value: a linear class, and a class linear by its member.
+foundation_neg_compile_test(neg_core_bump_arena_make_linear_token
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::End; Marker = foundation::core::Alloc; Args = \\{\\{anonymous\\}::End\\}; Brand = Family\\]."
+  "an arena ends no object, so a linear value that make builds in it ends with no consume")
+foundation_neg_compile_test(neg_core_bump_arena_make_linear_holder
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::Holder; Marker = foundation::core::Alloc; Args = \\{\\{anonymous\\}::Holder\\}; Brand = Family\\]."
+  "an arena ends no object, so a linear value that make builds in it ends with no consume")
+foundation_neg_compile_test(neg_core_epoch_make_linear_token
+  "use of deleted function .void foundation::core::Epoch<Brand>::make\\(this foundation::core::Epoch<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::End; Marker = foundation::core::Alloc; Args = \\{\\{anonymous\\}::End\\}; Brand = foundation::core::EpochOf<Owner::Scratch>\\]."
+  "an arena ends no object, so a linear value that make builds in it ends with no consume")
 # The brands of an arena: the two mints take a named tag of one kind, a Ref
 # of one family does not fit a different family, an arena has no public
 # constructor, and the view-escape rule refuses a Ref of a local arena that

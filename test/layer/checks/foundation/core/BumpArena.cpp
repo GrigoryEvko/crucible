@@ -219,6 +219,28 @@ concept BuildsPlains = requires {
 };
 static_assert(BuildsPlains<BumpArena<Family>&, MakesPlain> && !BuildsPlains<BumpArena<Family>&&, MakesPlain>);
 static_assert(!BuildsPlains<BumpArena<Family>&, MakesPlain, std::size_t>);
+
+// make takes no type that holds a linear value, because the arena ends no
+// object: a linear class, and a class that is linear by its member.  The make
+// of such a class binds to the deleted twin of make, on an arena and on an
+// epoch.  array takes no such type either.  A class that holds a linear value
+// and copies is refused by the rule linear-containment of the plugin, so no
+// check of this file names one.
+struct HoldsLinearEnd {
+    LinearEnd end{1};
+    int count = 0;
+};
+static_assert(std::is_trivially_destructible_v<LinearEnd> && std::is_trivially_destructible_v<HoldsLinearEnd>);
+static_assert(!CanMakeInArena<LinearEnd, Alloc, LinearEnd&&> && MakesLinearInArena<LinearEnd, Alloc, LinearEnd&&>);
+static_assert(!CanMakeInArena<HoldsLinearEnd, Alloc, HoldsLinearEnd&&>
+              && MakesLinearInArena<HoldsLinearEnd, Alloc, HoldsLinearEnd&&>);
+static_assert(!MakesLinearInArena<Plain, Alloc> && !MakesLinearInArena<LinearEnd, NoMarker, LinearEnd&&>);
+template <class Arena, class T>
+concept MakesHeld = requires { std::declval<Arena>().template make<T>(std::declval<Alloc>(), std::declval<T>()); };
+static_assert(MakesHeld<BumpArena<Family>&, Plain> && MakesHeld<Epoch<EpochOf<Owner::Member>>&, Plain>);
+static_assert(!MakesHeld<BumpArena<Family>&, LinearEnd> && !MakesHeld<BumpArena<Family>&, HoldsLinearEnd>);
+static_assert(!MakesHeld<Epoch<EpochOf<Owner::Member>>&, LinearEnd>
+              && !MakesHeld<Epoch<EpochOf<Owner::Member>>&, HoldsLinearEnd>);
 static_assert(!BuildsPlains<BumpArena<Family>&, HoldsEnd> && !BuildsPlains<BumpArena<Family>&, HoldsEnd&>);
 static_assert(BuildsPlains<Epoch<EpochOf<Owner::Member>>&, MakesPlain>
               && !BuildsPlains<Epoch<EpochOf<Owner::Member>>&&, MakesPlain>);

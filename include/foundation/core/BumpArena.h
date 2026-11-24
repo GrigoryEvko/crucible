@@ -49,9 +49,10 @@
 // the cold code.
 //
 // The arena ends no object, so make, array and build_array take only a type
-// with a trivial destructor, and build_array only an element that holds no
-// linear value.  A Ref or an ArenaRun of an arena owns nothing, and its
-// bytes die when the arena ends, or when the epoch that gave them ends.
+// with a trivial destructor that holds no linear value.  A linear value in the
+// arena would end with no consume.  A Ref or an ArenaRun of an arena owns
+// nothing, and its bytes die when the arena ends, or when the epoch that gave
+// them ends.
 //
 // Brands of an arena
 //   The brand of an arena is its first template argument, and each Ref and
@@ -149,16 +150,29 @@
 namespace foundation::core {
 
 // The arguments of make<T>: a type that the arena can hold and that the
-// arguments build with no throw, and the allocation capability.
+// arguments build with no throw, and the allocation capability.  The arena
+// ends no object, so T holds no linear value (HoldsNoLinearValue of
+// foundation/Linear.h): a linear value in the arena would end with no
+// consume.
 template <class T, class Marker, class... Args>
 concept CanMakeInArena = RefTarget<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
-                      && std::is_nothrow_constructible_v<T, Args&&...> && AllocationCapability<Marker>;
+                      && ::foundation::linear::HoldsNoLinearValue<T> && std::is_nothrow_constructible_v<T, Args&&...>
+                      && AllocationCapability<Marker>;
 
-// The arguments of array: an element that the arena can hold and that copies
-// with no throw, and the allocation capability.
+// The arguments of make<T> of a T that holds a linear value: the deleted twin
+// of make binds to them.
+template <class T, class Marker, class... Args>
+concept MakesLinearInArena = RefTarget<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
+                          && (!::foundation::linear::HoldsNoLinearValue<T>)
+                          && std::is_nothrow_constructible_v<T, Args&&...> && AllocationCapability<Marker>;
+
+// The arguments of array: an element that the arena can hold, that copies
+// with no throw and that holds no linear value, for the reason of
+// CanMakeInArena, and the allocation capability.
 template <class T, class Marker>
 concept CanFillArenaArray = ViewElement<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
-                         && std::is_nothrow_copy_constructible_v<T> && AllocationCapability<Marker>;
+                         && ::foundation::linear::HoldsNoLinearValue<T> && std::is_nothrow_copy_constructible_v<T>
+                         && AllocationCapability<Marker>;
 
 // The brand of a BumpArena: a named arena tag, or the scope brand of
 // with_bump_arena.
@@ -634,6 +648,14 @@ public:
         return ArenaRefDoor::lend_<Brand>(self.core_.template build_<T>(static_cast<Args&&>(args)...));
     }
 
+    // A T that holds a linear value binds to this overload, so the refusal
+    // gives its reason (CanMakeInArena).
+    template <class T, class Marker, class... Args>
+        requires MakesLinearInArena<T, Marker, Args...>
+    void make(this BumpArena& self, Marker, Args&&...) = delete(
+        "an arena ends no object, so a linear value that make builds in it ends with no consume: keep the linear "
+        "value with its consumer, or in an owner whose end consumes it");
+
     template <class T, class... Rest>
     void make(this BumpArena&& self, Rest&&...) = delete("a temporary arena gives back its blocks at the end of the "
                                                          "statement");
@@ -750,6 +772,14 @@ public:
                                      Args&&... args) noexcept {
         return ArenaRefDoor::lend_<Brand>((*self.core_).template build_<T>(static_cast<Args&&>(args)...));
     }
+
+    // A T that holds a linear value binds to this overload, so the refusal
+    // gives its reason (CanMakeInArena).
+    template <class T, class Marker, class... Args>
+        requires MakesLinearInArena<T, Marker, Args...>
+    void make(this Epoch& self, Marker, Args&&...) = delete(
+        "an arena ends no object, so a linear value that make builds in it ends with no consume: keep the linear "
+        "value with its consumer, or in an owner whose end consumes it");
 
     template <class T, class... Rest>
     void make(this Epoch&& self, Rest&&...) = delete("an epoch lives in the frame of with_epoch: take it by reference");
