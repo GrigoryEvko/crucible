@@ -275,6 +275,40 @@ void test_linear_payload() {
     CRUCIBLE_FATAL_INVARIANT(live_tokens == 0);
 }
 
+// A payload that copies only from an lvalue that is not const, as a Link
+// does.  A member of the payload names an Option of its own class, so the
+// Option needs the payload to be droppable while a walk of the linear marker
+// reads a class that holds the payload.
+template <class T>
+class LvalueCopyOnly {
+public:
+    constexpr LvalueCopyOnly() noexcept = default;
+    constexpr LvalueCopyOnly(LvalueCopyOnly& other) noexcept = default;
+    constexpr LvalueCopyOnly(LvalueCopyOnly&& other) noexcept = default;
+    constexpr LvalueCopyOnly& operator=(LvalueCopyOnly& other) noexcept = default;
+    constexpr LvalueCopyOnly& operator=(LvalueCopyOnly&& other) noexcept = default;
+    constexpr ~LvalueCopyOnly() = default;
+
+    [[nodiscard]] constexpr auto again() & noexcept { return Option<LvalueCopyOnly>::some(LvalueCopyOnly{*this}); }
+
+    T value{};
+};
+
+struct HoldsLvalueCopyOnly {
+    LvalueCopyOnly<int> part{};
+};
+
+// The payload is droppable, and the class that holds it is not linear.
+void test_lvalue_copy_payload() {
+    LvalueCopyOnly<int> copy{};
+    copy.value = 7;
+    auto const again = copy.again();
+    static_assert(!::foundation::linear::is_linear_type(^^HoldsLvalueCopyOnly));
+    int const value =
+        again.match([](LvalueCopyOnly<int> const& found) noexcept { return found.value; }, [] noexcept { return 0; });
+    CRUCIBLE_FATAL_INVARIANT(value == 7);
+}
+
 void test_value_or() {
     CRUCIBLE_FATAL_INVARIANT(Option<int>::some(4).value_or(9) == 4);
     CRUCIBLE_FATAL_INVARIANT(Option<int>{}.value_or(9) == 9);
@@ -1453,6 +1487,7 @@ int main() {
     test_owning_assignment();
     test_equality_agrees_with_plain_model();
     test_linear_payload();
+    test_lvalue_copy_payload();
     test_value_or();
     test_match();
     test_niche_payload();

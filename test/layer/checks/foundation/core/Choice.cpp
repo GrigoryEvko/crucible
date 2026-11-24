@@ -1037,6 +1037,15 @@ static_assert(::foundation::linear::is_linear_v<HoldsToken> && std::is_trivially
 // The Choice family reads the marker, so each linear payload takes the
 // owning form, and its Option and its Result are move-only.
 static_assert(!DroppablePayload<Token> && !DroppablePayload<HoldsToken> && DroppablePayload<Owner>);
+
+// A payload that copies only from an lvalue that is not const, as a Link
+// does, copies, so it is droppable with no walk of the marker.
+struct CopiesFromLvalue {
+    CopiesFromLvalue() = default;
+    CopiesFromLvalue(CopiesFromLvalue&) = default;
+    CopiesFromLvalue(CopiesFromLvalue&&) = default;
+};
+static_assert(!std::is_copy_constructible_v<CopiesFromLvalue> && DroppablePayload<CopiesFromLvalue>);
 static_assert(option_form_of<Token> == OptionForm::owning && option_form_of<HoldsToken> == OptionForm::owning);
 static_assert(!std::is_copy_constructible_v<Option<HoldsToken>> && !std::is_trivially_copyable_v<Option<HoldsToken>>);
 static_assert(!std::is_copy_constructible_v<Result<HoldsToken, Code>>);

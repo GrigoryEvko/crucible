@@ -1029,11 +1029,15 @@ concept ChoicePayload = std::is_object_v<T> && !std::is_array_v<T> && !std::is_c
 
 // A payload that a member can drop or copy.  A linear payload is not one,
 // because its loss or its copy changes what the program can prove.  A
-// linear class never copies, so a payload that copies is droppable, and
-// the walk of the marker runs only for a payload that only moves.  That
-// walk reads the members of the payload.
+// linear class never copies, also from an lvalue that is not const, so a
+// payload that copies is droppable.  A Link or an ArenaRun copies only from
+// an lvalue that is not const, and it is droppable too.  The walk of the
+// marker runs only for a payload that only moves, and it reads the members
+// of the payload.  A payload of a member of its own class, such as the
+// Option<ArenaRun> of ArenaRun::window, then needs no walk inside the walk.
 template <class T>
-concept DroppablePayload = std::is_copy_constructible_v<T> || !::foundation::linear::is_linear_type(^^T);
+concept DroppablePayload =
+    std::is_copy_constructible_v<T> || std::is_constructible_v<T, T&> || !::foundation::linear::is_linear_type(^^T);
 
 // A sum with an alternative that is not droppable, so the sum must give it out
 // exactly one time.  Option, Result and OneOf then carry the linear marker,
