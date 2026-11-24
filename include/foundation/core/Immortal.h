@@ -29,7 +29,9 @@
 //   fill builds the T one time, and a second fill ends the process.  The Ref
 //   that fill gives is the read of a holder in the flow of its fill, so that
 //   read needs no test.  A T that states a brand_type gives its Ref that
-//   brand, as to() does, so a holder can keep the Ref.  get() of an empty
+//   brand, as to() does, so a holder of automatic storage can keep the Ref.
+//   A holder of static storage calls get(), because the rule view-escape
+//   refuses a borrow with no brand of static storage there.  get() of an empty
 //   holder ends the process.  Each check is one test of the address and a
 //   branch to a cold call of the fatal exit, as each access of a Box has, so
 //   get() is one load of the address and its test.  One thread fills the
@@ -105,11 +107,14 @@ public:
     // the process (the rules).  The pack refuses each explicit argument, so
     // no caller names the brand.
     //
-    // In product code, only the root of the allocator reads through this
-    // door, after the acquire load of its state word.  A proof of that load cannot be honest
-    // yet: the sentinel heap exists before the root, so no token can live in
-    // each heap until a claimed heap has its own type, which the allocator
-    // line has as a task.  Each other holder keeps the Ref of its fill.
+    // In product code, two holders read through this door.  The root of the
+    // allocator reads after the acquire load of its state word.  A proof of
+    // that load cannot be honest yet: the sentinel heap exists before the
+    // root, so no token can live in each heap until a claimed heap has its own
+    // type, which the allocator line has as a task.  The generation allocator
+    // of the vessel keeps its state in an object of static storage, which can
+    // hold no Ref of it (the statics of the rule view-escape).  Each other
+    // holder keeps the Ref of its fill.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] Ref<T, ::foundation::brand::undeducible_brand_t<Fresh>> get() noexcept {
