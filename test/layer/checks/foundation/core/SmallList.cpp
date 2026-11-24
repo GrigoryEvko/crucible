@@ -84,8 +84,14 @@ struct CountsElements final {
 struct GivesElements final {
     [[nodiscard]] constexpr View<int const> operator()(View<int const> view) const noexcept { return view; }
 };
+// A body that takes a View that writes the elements finds no door: with_view
+// lends only the const elements, so no two Views of one list write them.
+struct WritesElements final {
+    constexpr void operator()(View<int> view) const noexcept { static_cast<void>(view); }
+};
 static_assert(Lends<SmallList<int, 4>&, CountsElements> && Lends<SmallList<int, 4> const&, CountsElements>);
 static_assert(!Lends<SmallList<int, 4>&, GivesElements> && !Lends<SmallList<int, 4>, CountsElements>);
+static_assert(!Lends<SmallList<int, 4>&, WritesElements> && !Lends<SmallList<int, 4> const&, WritesElements>);
 
 // The surface of the list is closed over the shared verbs and the names of
 // the family.

@@ -15,7 +15,7 @@ int main() {
         ::foundation::core::Quantity<::foundation::core::unit::Element, std::size_t>{64});
     list.append(alloc, 1).expect("the list is below its maximum");
     list.append(alloc, 2).expect("the list is below its maximum");
-    std::size_t const count = list.with_view([&](::foundation::core::View<int> view) noexcept {
+    std::size_t const count = list.with_view([&](::foundation::core::View<int const> view) noexcept {
         static_cast<void>(list.append(alloc, 3));
         return view.size();
     });

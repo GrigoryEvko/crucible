@@ -4954,8 +4954,18 @@ foundation_neg_compile_test(neg_core_small_list_view_across_move
   "has no member named .view."
   "foundation::core::SmallList<int, 4>")
 foundation_neg_compile_test(neg_core_small_list_frame_gives_view
-  "use of deleted function .void foundation::core::SmallList<T, Inline>::with_view\\(Body&&\\) &"
+  "use of deleted function .void foundation::core::SmallList<T, Inline>::with_view\\(Body&&\\) const &"
   "the result of a frame door holds no borrow: the next append can move the elements of the list")
+# with_view lends only the View of the const elements, so no two Views of a
+# list write its elements: a body that writes takes with_mut.  The door carries
+# the annotation borrow_match, so the rule borrow-match refuses a frame of the
+# same list in its body, which moves the list.
+foundation_neg_compile_test(neg_core_small_list_view_writes
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view\\(main\\(\\)::<lambda\\(foundation::core::View<int>\\)>\\)."
+  "no match for call to .\\(main\\(\\)::<lambda\\(foundation::core::View<int>\\)>\\) \\(foundation::core::View<const int")
+foundation_neg_compile_test(neg_core_small_list_nested_frame_door
+  "this arm of a borrow match writes the sum that the match reads .move list."
+  "the payload that the arm borrows can end while the arm holds its reference")
 
 # The frame doors of foundation/core/Frame.h write each owner of the Region
 # family and each sum of the Choice family.  The door of an owner gives the

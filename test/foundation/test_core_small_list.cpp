@@ -191,14 +191,14 @@ void test_frame_doors() {
     for (std::uint64_t value = 1; value <= 6; ++value) {
         list.append(allocation(), value).expect("the list is below its maximum");
     }
-    std::uint64_t const read = list.with_view([](View<std::uint64_t> run) noexcept {
+    std::uint64_t const read = list.with_view([](View<std::uint64_t const> run) noexcept {
         std::uint64_t const third = *run.get(2).expect("2 is below the count");
         std::uint64_t backward = 0;
         for (std::uint64_t const element : run.reverse()) {
             backward = backward * 10 + element;
         }
         std::size_t windows = 0;
-        for (View<std::uint64_t, 2> const pair : run.windows<2>()) {
+        for (View<std::uint64_t const, 2> const pair : run.windows<2>()) {
             windows +=
                 pair.at(::foundation::core::index<1>()) == pair.at(::foundation::core::index<0>()) + 1 ? 1uz : 0uz;
         }
@@ -282,7 +282,7 @@ void test_lent_list_refuses_changes(::fixy::TestRunnerCtx const& test) {
         test,
         [] noexcept {
             SmallList<std::uint64_t, 4> list = list_of_two();
-            static_cast<void>(list.with_view([&list](View<std::uint64_t> run) noexcept {
+            static_cast<void>(list.with_view([&list](View<std::uint64_t const> run) noexcept {
                 append_to(list);
                 return run.size();
             }));
@@ -292,7 +292,7 @@ void test_lent_list_refuses_changes(::fixy::TestRunnerCtx const& test) {
         test,
         [] noexcept {
             SmallList<std::uint64_t, 4> list = list_of_two();
-            static_cast<void>(list.with_view([&list](View<std::uint64_t> run) noexcept {
+            static_cast<void>(list.with_view([&list](View<std::uint64_t const> run) noexcept {
                 take_from(list);
                 return run.size();
             }));
@@ -302,7 +302,7 @@ void test_lent_list_refuses_changes(::fixy::TestRunnerCtx const& test) {
         test,
         [] noexcept {
             SmallList<std::uint64_t, 4> list = list_of_two();
-            static_cast<void>(list.with_view([&list](View<std::uint64_t> run) noexcept {
+            static_cast<void>(list.with_view([&list](View<std::uint64_t const> run) noexcept {
                 move_from(list);
                 return run.size();
             }));

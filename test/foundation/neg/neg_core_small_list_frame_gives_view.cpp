@@ -13,6 +13,6 @@ int main() {
     auto list = ::foundation::core::mint_small_list<int, 2>(
         ::foundation::core::Quantity<::foundation::core::unit::Element, std::size_t>{64});
     list.append(alloc, 1).expect("the list is below its maximum");
-    list.with_view([](::foundation::core::View<int> view) noexcept { return view; });
+    list.with_view([](::foundation::core::View<int const> view) noexcept { return view; });
     return 0;
 }

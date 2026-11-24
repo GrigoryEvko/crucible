@@ -28,10 +28,11 @@
 //   size(), is_empty(), clear()
 //
 // Frame doors
-//   with_view(body)     calls body with the View of the elements, and gives
-//                       the result of body.  The View gives get(position),
-//                       the loop and the iteration verbs reverse(),
-//                       windows<W>() and chunks<W>()
+//   with_view(body)     calls body with the View of the const elements, and
+//                       gives the result of body.  The View gives
+//                       get(position), the loop and the iteration verbs
+//                       reverse(), windows<W>() and chunks<W>().  A body that
+//                       writes the elements takes with_mut
 //   with_mut(std::move(list), body)
 //                       the list moves into the frame of the door, body gets
 //                       the ViewMut of the elements, and the door gives the
@@ -190,6 +191,8 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] SmallList
     : public OwnerCore<detail::owner::SmallListState<T, Inline>, SmallList<T, Inline>> {
     using State = detail::owner::SmallListState<T, Inline>;
     using Core = OwnerCore<State, SmallList>;
+    // The key of the run, for the frame door lend_elements_, a friend.
+    using Core::run_key_;
 
     // The first element: the heap storage, or the inline slots.
     [[nodiscard]] constexpr T* first_() noexcept {
@@ -303,17 +306,9 @@ public:
     }
 
     // The frame door of the elements (the frame doors): body gets the View
-    // of the elements, and the list lends them until body returns.  The
-    // result of body holds no borrow.  A const list gives a View of const
-    // elements.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
-              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T>>
-        with_view(Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, View<T>>) {
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T>{this->run_key_(), first_(), this->state_.count});
-    }
+    // of the const elements, and the list lends them until body returns.  The
+    // result of body holds no borrow.  A body that writes the elements takes
+    // with_mut, so no two Views of one list write the same elements.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
@@ -323,23 +318,27 @@ public:
         return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
 
-    // A body that holds a linear value by value binds to these overloads, so
+    // A body that holds a linear value by value binds to this overload, so
     // the refusal gives its reason.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>
-                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
-    void with_view(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
                   && (!::foundation::linear::HoldsNoLinearValue<Body>)
     void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
-    // A body whose result holds a borrow binds to these overloads, so the
-    // refusal gives its reason.
+    // The lend of the elements to the frame door with_mut (the lend count):
+    // body gets the View of the elements, and the list lends them until body
+    // returns.  The key of a frame keeps each caller outside the base out, so
+    // only with_mut gives a View that writes the elements.  The list lives in
+    // the frame of with_mut, and no body can name it.
     template <class Body>
-        requires std::is_invocable_v<Body, View<T>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T>>>)
-    void with_view(Body&& body) & = delete("the result of a frame door holds no borrow: the next append can move the "
-                                           "elements of the list.  Give a value with no reference and no address");
+    friend constexpr decltype(auto) lend_elements_(detail::FrameKey const& /*key*/, SmallList& list,
+                                                   Body&& body) noexcept {
+        [[maybe_unused]] detail::OwnerLend const lend{list.state_.lend_count};
+        return static_cast<Body&&>(body)(View<T>{SmallList::run_key_(), list.first_(), list.state_.count});
+    }
+
+    // A body whose result holds a borrow binds to this overload, so the
+    // refusal gives its reason.
     template <class Body>
         requires std::is_invocable_v<Body, View<T const>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>)
     void with_view(Body&& body) const& = delete("the result of a frame door holds no borrow: the next append can move "
@@ -396,10 +395,10 @@ class SmallListFrameKeyDoor final : ::foundation::NoObject<SmallListFrameKeyDoor
 // The frame door of a SmallList (foundation/core/Frame.h).  The list moves
 // into the frame, body gets the ViewMut of its elements, and the door gives
 // the list back: alone for a body that gives void, and after the result in a
-// Record for each other body.  The list lends its elements through with_view
-// for the time of the body (the lend count), and no code outside the frame can
-// reach the list in that time.  The pack refuses each explicit argument, so no
-// caller names the brand of the frame.  Complexity: two moves of the state,
+// Record for each other body.  The list lends its elements through
+// lend_elements_ for the time of the body (the lend count), and no code
+// outside the frame can reach the list in that time.  The pack refuses each
+// explicit argument, so no caller names the brand of the frame.  Complexity: two moves of the state,
 // two plain steps of the lend count, and the cost of the body.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
@@ -412,14 +411,15 @@ with_mut(Owner&& owner, Body&& body) noexcept {
     using Given = detail::body_result_t<Body&&, ViewMut<T, Fresh>>;
     Owner held{static_cast<Owner&&>(owner)};
     if constexpr (std::is_void_v<Given>) {
-        held.with_view([&body](View<T> run) noexcept {
+        lend_elements_(SmallListFrameKeyDoor::key_(), held, [&body](View<T> run) noexcept {
             static_cast<Body&&>(body)(ViewMut<T, Fresh>{SmallListFrameKeyDoor::key_(), run});
         });
         return held;
     } else {
-        std::remove_cv_t<Given> result = held.with_view([&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
-            return static_cast<Body&&>(body)(ViewMut<T, Fresh>{SmallListFrameKeyDoor::key_(), run});
-        });
+        std::remove_cv_t<Given> result = lend_elements_(
+            SmallListFrameKeyDoor::key_(), held, [&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
+                return static_cast<Body&&>(body)(ViewMut<T, Fresh>{SmallListFrameKeyDoor::key_(), run});
+            });
         return detail::frame_return_t<Given, Owner>{static_cast<std::remove_cv_t<Given>&&>(result),
                                                     static_cast<Owner&&>(held)};
     }
