@@ -122,9 +122,8 @@ consteval ::fixy::FixedArray<ModeEnumerator, kModeCount> read_mode_enumerators()
     for (const std::meta::info enumerator : std::meta::enumerators_of(^^c10::CrucibleMode)) {
         const ModeEnumerator mode{.name = std::define_static_string(std::meta::identifier_of(enumerator)),
                                   .value = std::to_underlying(std::meta::extract<c10::CrucibleMode>(enumerator))};
-        table.with_element(
-            ::fixy::Index<kModeCount>::check(position).expect("the walk stays below the count of the modes"),
-            [mode](ModeEnumerator& held) noexcept { held = mode; });
+        table.set(::fixy::Index<kModeCount>::check(position).expect("the walk stays below the count of the modes"),
+                  mode);
         ++position;
     }
     return table;
@@ -280,15 +279,20 @@ static constexpr uint64_t FLAG_REFUSED = 4;
 // the high 32 bits of the flags.
 static constexpr uint32_t FLAG_DATA_ARGUMENTS_SHIFT = 32;
 
+// A slot.  The release store of the state makes the three facts visible to the
+// acquire load of a reader, and each fact is an Atomic too, so two threads can
+// use one slot at the same time.
 struct SchemaHashSlot {
     ::fixy::Atomic<uint64_t> state{SLOT_EMPTY};
-    ::fixy::AddressKey key = ::fixy::AddressKey::of_null();
-    crucible::SchemaHash hash;
-    uint64_t flags = 0;
+    ::fixy::Atomic<::fixy::AddressKey> key{::fixy::AddressKey::of_null()};
+    ::fixy::Atomic<crucible::SchemaHash> hash{};
+    ::fixy::Atomic<uint64_t> flags{0};
 };
 
 static_assert(sizeof(SchemaHashSlot) == 32, "SchemaHashSlot holds four words and no padding.  An AddressKey "
                                             "holds one word.");
+static_assert(::foundation::transfer::Synchronized<SchemaHashSlot>,
+              "each field of a SchemaHashSlot is an Atomic, so each thread uses the slot at the same time");
 
 static constexpr uint32_t SCHEMA_CACHE_CAP = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
@@ -309,9 +313,9 @@ static constinit ::fixy::FixedArray<SchemaHashSlot, SCHEMA_CACHE_CAP> schema_cac
 }
 
 // Lends the slot of a probe to body in place, and gives the result of body.
-// The cache is process-wide and each thread probes it at the same time: the
-// state of a slot is an Atomic, and a thread writes the other fields only
-// after its claim of the state.
+// The cache is process-wide and each thread probes it at the same time: each
+// field of a slot is an Atomic, and a thread writes the facts only after its
+// claim of the state.
 template <class Body>
 static decltype(auto) with_schema_slot(uint64_t probe, Body&& body) noexcept {
     return schema_cache.with_element(::fixy::Index<SCHEMA_CACHE_CAP>::check(probe & SCHEMA_CACHE_MASK)
@@ -376,9 +380,9 @@ static void keep_schema_facts(::fixy::AddressKey const& key, ::fixy::Option<Sche
         const bool is_claimed =
             with_schema_slot(idx + probe, [&key, schema_hash, flags](SchemaHashSlot& slot) noexcept {
                 if (!slot.state.cas_acq_rel(SLOT_EMPTY, SLOT_CLAIMED).is_ok()) return false;
-                slot.key = key;
-                slot.hash = schema_hash;
-                slot.flags = flags;
+                slot.key.store_release(key);
+                slot.hash.store_release(schema_hash);
+                slot.flags.store_release(flags);
                 slot.state.store_release(SLOT_READY);
                 return true;
             });
@@ -535,12 +539,13 @@ get_schema_info(crucible::Vigil& vigil, const c10::OperatorHandle& op, const c10
         // Two operators whose keys give one index take two slots of the
         // window, and neither one reads the facts of the other.  A retired
         // slot of this key is not ready, so the lookup passes it.
-        if (state == SLOT_READY && slot.key == key) [[likely]] {
-            if ((slot.flags & FLAG_REFUSED) != 0) [[unlikely]]
+        if (state == SLOT_READY && slot.key.load_acquire() == key) [[likely]] {
+            const uint64_t flags = slot.flags.load_acquire();
+            if ((flags & FLAG_REFUSED) != 0) [[unlikely]]
                 return ::fixy::none;
             return ::fixy::some(
-                SchemaInfo{slot.hash, (slot.flags & FLAG_MUTABLE) != 0, (slot.flags & FLAG_FOREACH) != 0,
-                           DataArguments::from_bits(static_cast<uint32_t>(slot.flags >> FLAG_DATA_ARGUMENTS_SHIFT))});
+                SchemaInfo{slot.hash.load_acquire(), (flags & FLAG_MUTABLE) != 0, (flags & FLAG_FOREACH) != 0,
+                           DataArguments::from_bits(static_cast<uint32_t>(flags >> FLAG_DATA_ARGUMENTS_SHIFT))});
         }
         if (state == SLOT_EMPTY) break;
     }
@@ -577,7 +582,7 @@ static void retire_schema_slots(::fixy::AddressKey const& key) noexcept {
         SchemaHashSlot const& slot = read_schema_slot(idx + probe);
         const uint64_t state = slot.state.load_acquire();
         if (state == SLOT_EMPTY) break;
-        if (state == SLOT_READY && slot.key == key) {
+        if (state == SLOT_READY && slot.key.load_acquire() == key) {
             with_schema_slot(idx + probe,
                              [](SchemaHashSlot& held) noexcept { held.state.store_release(SLOT_RETIRED); });
         }

@@ -379,10 +379,8 @@ CrucibleDispatchResult crucible_dispatch_op_ex(CrucibleHandle handle, uint64_t s
     // The door gave a pointer that is not null for each count above 0.
     const uint16_t stored_scalars = num_scalars < inline_scalars ? num_scalars : inline_scalars;
     for (uint16_t i = 0; i < stored_scalars; i++) {
-        const int64_t value = scalars_typed.value()[i];
-        entry.scalar_values.with_element(
-            ::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
-            [value](int64_t& held) noexcept { held = value; });
+        entry.scalar_values.set(::fixy::Index<inline_scalars>::check(i).expect("the copy takes at most the room"),
+                                scalars_typed.value()[i]);
     }
     // The tags of the stored values, after the flags, because the tag of
     // slot 4 is in the two high bits of op_flags.  The bits of a slot past
@@ -669,9 +667,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
             uint16_t stored = 0;
             for (const int64_t value : te.scalar_args()) {
                 if (stored == 5) break;
-                rec.scalar_values.with_element(
-                    ::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5"),
-                    [value](int64_t& held) noexcept { held = value; });
+                rec.scalar_values.set(::fixy::Index<5>::check(stored).expect("the test above keeps the lane below 5"),
+                                      value);
                 ++stored;
             }
             cursor.put(crucible::encode_trace_op(rec));

@@ -269,7 +269,7 @@ struct StoredScalars {
     void push(int64_t value, crucible::ScalarType2 tag, crucible::ScalarRole role) noexcept {
         for (const ::fixy::Index<crucible::kScalarSlots> index : ::fixy::Index<crucible::kScalarSlots>::check(stored)) {
             const ScalarSlot slot{index};
-            values.with_element(index, [value](int64_t& held) noexcept { held = value; });
+            values.set(index, value);
             tags = static_cast<uint16_t>(tags | (static_cast<uint32_t>(tag) << (crucible::kScalarTypeBits * stored)));
             data = data.with(slot, role);
             ++stored;
@@ -392,8 +392,7 @@ struct input_overflow_of<false> {
 inline void copy_stored_scalars(crucible::TraceRing::Entry& entry, StoredScalars const& scalars) noexcept {
     entry.num_scalar_args = static_cast<uint8_t>(scalars.stored);
     entry.set_data_slots(scalars.data);
-    entry.scalar_values.with_mut(
-        [&scalars](auto run) noexcept { ::fixy::copy(std::move(run), scalars.values.view()); });
+    entry.scalar_values.copy_from(scalars.values.view());
     entry.set_packed_scalar_types(scalars.tags);
 }
 
@@ -417,9 +416,9 @@ inline void write_scalar_slots(crucible::TraceRing::Entry& entry, ScalarArgs<tru
         uint64_t digest = ::foundation::reflect::combine_ids(scalars.digest, scalars.count);
         digest = ::foundation::reflect::combine_ids(digest, inputs.digest);
         digest = ::foundation::reflect::combine_ids(digest, inputs.count);
-        entry.scalar_values.with_element(
+        entry.scalar_values.set(
             crucible::scalar_slot_at(digest_slot).expect("the digest slot is the last slot or before it").take(),
-            [digest](int64_t& held) noexcept { held = static_cast<int64_t>(digest); });
+            static_cast<int64_t>(digest));
         entry.num_scalar_args = static_cast<uint8_t>(digest_slot + 1);
         // The digest slot holds an integer, so its tag is INT, and it is
         // structural.  The bits of a slot past it are zero.

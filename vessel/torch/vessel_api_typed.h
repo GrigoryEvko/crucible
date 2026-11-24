@@ -258,10 +258,8 @@ template <class Element>
 [[nodiscard]] inline ::fixy::Option<TensorMeta> decode_ffi_meta(const CrucibleMeta& record) noexcept {
     UncheckedTensorMeta fields{};
     for (const TensorDimArray::LaneIndex lane : decltype(fields.sizes)::indices()) {
-        const int64_t size = record.sizes[lane.raw()];
-        const int64_t stride = record.strides[lane.raw()];
-        fields.sizes.with_element(lane, [size](int64_t& held) noexcept { held = size; });
-        fields.strides.with_element(lane, [stride](int64_t& held) noexcept { held = stride; });
+        fields.sizes.set(lane, record.sizes[lane.raw()]);
+        fields.strides.set(lane, record.strides[lane.raw()]);
     }
     fields.ndim = record.ndim;
     fields.dtype = record.dtype;

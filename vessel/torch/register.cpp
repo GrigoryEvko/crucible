@@ -95,8 +95,8 @@ template <uint32_t Count>
     for_each_aten_op_row([&](const OpEntry& row) {
         if (row.kernel_id == crucible::CKernelId::OPAQUE) return;
         const Slot slot = Slot::check(next).expect("the count pass counted each classified row");
-        hashes.with_element(slot, [&row](uint64_t& hash) noexcept { hash = row.schema_hash; });
-        kernels.with_element(slot, [&row](crucible::CKernelId& kernel) noexcept { kernel = row.kernel_id; });
+        hashes.set(slot, row.schema_hash);
+        kernels.set(slot, row.kernel_id);
         ++next;
     });
     ::fixy::FixedArray<crucible::CKernelEntry, Count> sorted{};
@@ -108,11 +108,10 @@ template <uint32_t Count>
             if (other < hash || (other == hash && other_place < place)) ++rank;
             ++other_place;
         }
-        const crucible::CKernelEntry entry{
-            .schema_hash = crucible::SchemaHash{hash},
-            .id = kernels.at(Slot::check(place).expect("a place is below the count of the rows"))};
-        sorted.with_element(Slot::check(rank).expect("a rank is below the count of the rows"),
-                            [&entry](crucible::CKernelEntry& held) noexcept { held = entry; });
+        sorted.set(Slot::check(rank).expect("a rank is below the count of the rows"),
+                   crucible::CKernelEntry{
+                       .schema_hash = crucible::SchemaHash{hash},
+                       .id = kernels.at(Slot::check(place).expect("a place is below the count of the rows"))});
         ++place;
     }
     return sorted;

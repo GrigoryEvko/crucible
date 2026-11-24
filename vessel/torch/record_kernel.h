@@ -974,19 +974,18 @@ struct Recording {
     // The three helpers below are always inline, so the optimizer sees each
     // read of the counts, and each check of an index or a window folds.
     //
-    // Lends the slot at position to body in place, and gives the result of
-    // body.  The slots of a lent window are the ViewMut that the caller lends
-    // for the record of one op, and the list of the home SlotsOwned lends its
-    // slot through its element door.  Each caller tests the position against
-    // Capacity first, so the optimizer removes the check.
-    template <class Body>
-    CRUCIBLE_INLINE decltype(auto) with_slot(uint32_t position, Body&& body) noexcept {
+    // Writes meta into the slot at position.  The slots of a lent window are
+    // the ViewMut that the caller lends for the record of one op, and the list
+    // of the home SlotsOwned takes the value through its value door.  Each
+    // caller tests the position against Capacity first, so the optimizer
+    // removes the check.
+    CRUCIBLE_INLINE void set_slot(uint32_t position, crucible::TensorMeta const& meta) noexcept {
         const ::fixy::Index<kSlots> slot =
             ::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot");
         if constexpr (kIsLent) {
-            return with_frame_slot(metas, slot, static_cast<Body&&>(body));
+            with_frame_slot(metas, slot, [&meta](crucible::TensorMeta& held) noexcept { held = meta; });
         } else {
-            return metas.with_element(slot, static_cast<Body&&>(body));
+            metas.set(slot, meta);
         }
     }
 
@@ -1074,8 +1073,7 @@ struct Recording {
     // A result that is one scalar, as the meta of scalar_result_meta.
     void add_scalar_output(crucible::ScalarType dtype) {
         if (counts.total() < Capacity) {
-            const crucible::TensorMeta meta = scalar_result_meta(dtype);
-            with_slot(counts.total(), [&meta](crucible::TensorMeta& slot) noexcept { slot = meta; });
+            set_slot(counts.total(), scalar_result_meta(dtype));
             counts.outputs++;
         }
     }
