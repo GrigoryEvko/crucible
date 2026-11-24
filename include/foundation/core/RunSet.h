@@ -17,7 +17,8 @@
 //                       the process in each build
 //   has_run<I>()        true when the run holds the count of its slot: the
 //                       count is zero, or set<I> gave the run its elements
-//   view<I>()           the run at index I as a View.  A run with no
+//   view<I>()           the run at index I as a View of const elements, so
+//                       no door of a set writes an element.  A run with no
 //                       elements at a count above zero gives the empty View
 //
 // A run with no elements at a count above zero is a valid state.  A record
@@ -35,11 +36,16 @@
 // The layout: the pointer of each run in the order of the runs, then the
 // counts.  A set owns nothing, so its runs dangle when their owner ends.
 //
+// A copy of a set refers to the same runs, and a set holds no unique borrow of
+// them, so it lends no writing View.  Two writing Views of one run would be two
+// writers of one element.  The owner of a run writes its elements, such as an
+// ArenaRun, before it gives the View of the run to set<I>.
+//
 // The first element of each run states refers{} (foundation/Transfer.h), so
-// the walk of the transfer facts reads a run of T as a reference to T.  A
-// copy of a set refers to the same runs, and a View of a set that is not
-// const writes them.  So two threads can read a set of runs of T only when
-// two threads can write a T.  A run of const elements gives only const
+// the walk of the transfer facts reads a run of T as a reference to T.  The
+// set keeps the address that set<I> took, so the walk does not read the const
+// of view<I>() into the property: two threads can read a set of runs of T only
+// when two threads can write a T.  A run of const elements gives only const
 // elements, also through a copy, so two threads can read a set of such runs
 // when two threads can read each element.
 
@@ -217,12 +223,9 @@ public:
         return static_cast<First_<I> const&>(*this).first_ != nullptr || counts_.at(index<slot_of<I>>()) == 0;
     }
 
-    // The run at index I.  A run with no elements gives the empty View.
-    template <std::size_t I>
-        requires(I < sizeof...(Runs))
-    [[nodiscard]] constexpr View<element_t<I>> view() & noexcept {
-        return view_of_<I>(static_cast<First_<I>&>(*this).first_);
-    }
+    // The run at index I, as a View of const elements: a set lends no writing
+    // View, because a copy of the set refers to the same run.  A run with no
+    // elements gives the empty View.
     template <std::size_t I>
         requires(I < sizeof...(Runs))
     [[nodiscard]] constexpr View<element_t<I> const> view() const& noexcept {

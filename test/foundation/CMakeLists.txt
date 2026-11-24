@@ -5634,6 +5634,14 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_count_door_forged
 foundation_neg_compile_test(neg_core_run_set_layout_door_forged
   "foundation::core::RunSetLayoutDoor::held_run_\\(Element\\*, std::size_t\\) \\[with Element = int; std::size_t = long unsigned int\\]. is private within this context"
   "RunSet\\.h:[0-9]+:[0-9]+: note: declared private here")
+# A RunSet lends no writing View of a run: two calls of view<I>() would give
+# two writers of one element, and a copy of the set refers to the same run.
+foundation_neg_compile_test(neg_core_run_set_two_writing_views
+  "assignment of read-only location .second\\."
+  "neg_core_run_set_two_writing_views\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_run_set_writing_view_taken
+  "conversion from .View<const int,\\[...\\]>. to non-scalar type .View<int,\\[...\\]>. requested"
+  "neg_core_run_set_writing_view_taken\\.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_tested_window_door_forged
   "foundation::core::TestedWindowDoor::started_run_\\(uint8_t\\*, std::size_t\\) \\[with T = int; uint8_t = unsigned char; std::size_t = long unsigned int\\]. is private within this context"
   "AlignedBytes\\.h:[0-9]+:[0-9]+: note: declared private here")

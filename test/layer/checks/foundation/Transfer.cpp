@@ -97,10 +97,11 @@ static_assert(first_refusal(^^IntRun, Property::Share) == std::meta::dealias(^^I
 static_assert(first_refusal(^^PointerRun, Property::Send) == ^^int*);
 
 // Rule 1 for each run of a RunSet: the first element of a run states
-// refers{}.  A copy of a set refers to the same runs, and a set that is not
-// const writes them, so a set of runs of plain ints holds no property.  A set
-// of runs of const elements gives only const elements, also through a copy,
-// so it holds each property when two threads can read each element.
+// refers{}.  A copy of a set refers to the same runs, and the set keeps the
+// address that set<I> took, so a set of runs of plain ints holds no property,
+// also when the set gives only const elements.  A set of runs of const
+// elements gives only const elements, also through a copy, so it holds each
+// property when two threads can read each element.
 struct HoldsBorrow {
     int& target;
 };

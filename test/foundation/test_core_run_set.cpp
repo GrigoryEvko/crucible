@@ -69,8 +69,9 @@ void test_empty_run_has_its_elements() {
     CRUCIBLE_FATAL_INVARIANT(runs.has_run<4>() && runs.view<4>().size() == 0);
 }
 
-// The elements of the count: the View holds them, a write through the View
-// reaches them, and the other run of the slot stays absent.
+// The elements of the count: the View holds them, a write by the owner of the
+// run reaches them, and the other run of the slot stays absent.  The set
+// itself gives only const elements.
 void test_full_run_gives_its_elements() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
@@ -88,7 +89,8 @@ void test_full_run_gives_its_elements() {
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<2>() && !runs.has_run<3>() && !runs.has_run<4>());
     CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 4 && sum_of(runs.view<1>()) == 20);
     CRUCIBLE_FATAL_INVARIANT(runs.view<0>().size() == 2 && sum_of(runs.view<0>()) == 18);
-    *runs.view<1>().get(3).expect("the run holds four elements") = 1;
+    // A plain View of an arena run: the View carries no brand of its arena.
+    *outputs.view().get(3).expect("the run holds four elements") = 1;
     OpRuns const& read = runs;
     CRUCIBLE_FATAL_INVARIANT(sum_of(read.view<1>()) == 16);
     CRUCIBLE_FATAL_INVARIANT(*read.view<1>().get(3).expect("the run holds four elements") == 1);

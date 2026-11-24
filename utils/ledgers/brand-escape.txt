@@ -12,7 +12,7 @@ include/fixy/session/ | escaped-return | 1 | - | -
 src/ | escaped-alias | 4 | - | -
 src/ | escaped-return | 4 | - | -
 test/ | escaped-alias | 5 | - | -
-test/ | escaped-return | 5 | - | the test mints one site of a keyed log in a helper, so two logs of one brand live at once, which the Identity of a log must tell apart at run time
+test/ | escaped-return | 5 | - | the tests mint the root of a channel in a helper, as the directory row of test/ states
 test/ | escaped-static | 1 | - | -
 test/fixy/ | escaped-alias | 27 | - | -
 test/fixy/ | escaped-container | 2 | - | -

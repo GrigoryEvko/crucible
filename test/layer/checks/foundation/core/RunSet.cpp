@@ -53,9 +53,10 @@ static_assert(CanSet<std::uint16_t, RunOf<int, 0>> && CanSet<std::size_t, RunOf<
 static_assert(!CanSet<int, RunOf<int, 0>> && !CanSet<bool, RunOf<int, 0>> && !CanSet<std::uint16_t, int>);
 static_assert(!CanSet<std::uint16_t>);
 
-// view<I>() gives a View of the elements, and a const set gives const
-// elements.  The View of a temporary set is refused.
-static_assert(std::is_same_v<decltype(std::declval<Mixed&>().view<1>()), View<Wide>>);
+// view<I>() gives a View of const elements, also of a set that is not const,
+// so no door of a set writes an element.  The View of a temporary set is
+// refused.
+static_assert(std::is_same_v<decltype(std::declval<Mixed&>().view<1>()), View<Wide const>>);
 static_assert(std::is_same_v<decltype(std::declval<Mixed const&>().view<1>()), View<Wide const>>);
 template <class Set>
 concept ViewsFirst = requires { std::declval<Set>().template view<0>(); };
