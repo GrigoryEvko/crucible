@@ -132,6 +132,13 @@ struct MetaCount {
 // ABI region.
 // =====================================================================
 
+// Whether each meta of a record describes its tensor, or fill_meta refused
+// one of the tensors.
+enum class TensorDescription : unsigned char {
+    described,
+    refused,
+};
+
 // The answer of fill_meta for a tensor that a meta cannot describe: the zero
 // meta, and false.
 [[nodiscard]] CRUCIBLE_COLD inline bool refuse_tensor_meta(crucible::TensorMeta& meta) noexcept {
@@ -140,8 +147,10 @@ struct MetaCount {
 }
 
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of PyTorch")
-[[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
-    meta = {};  // zero-init (InitSafe -- NSDMI defaults)
+// The body of fill_meta, for a meta that holds zero in each byte: it writes
+// the fields of the tensor, and gives false for a tensor that a meta cannot
+// describe.
+[[nodiscard]] inline bool fill_zeroed_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
     if (!tensor.defined()) return true;
 
     // -- Core fields --------------------------------------------------
@@ -356,6 +365,27 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: fill_meta reads a tensor through the API of 
                   "c10 version counter width drifted — re-check the TensorMeta.version narrowing");
     meta.version = impl->version_counter().current_version();
     return is_each_enumeration_named;
+}
+
+// Writes the meta of the tensor into meta, each byte of it, and gives false
+// for a tensor that a meta cannot describe.
+[[nodiscard]] inline bool fill_meta(crucible::TensorMeta& meta, const at::Tensor& tensor) {
+    meta = {};  // zero-init (InitSafe -- NSDMI defaults)
+    return fill_zeroed_meta(meta, tensor);
+}
+
+// The meta of the tensor as a value.  For a tensor that a meta cannot
+// describe, the function sets description to refused, and it leaves
+// description as it is for each other tensor.  The value door of a slot
+// (build_at of FixedArray) builds the slot from this result in its place, so
+// the call writes the meta straight into the slot.  The function stays out
+// of line, so the zero fill of the meta stays in it and out of each kernel
+// that records an operation.
+[[nodiscard, gnu::noinline]] inline crucible::TensorMeta make_described_meta(const at::Tensor& tensor,
+                                                                             TensorDescription& description) noexcept {
+    crucible::TensorMeta meta{};
+    if (!fill_zeroed_meta(meta, tensor)) description = TensorDescription::refused;
+    return meta;
 }
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
@@ -912,10 +942,10 @@ struct Recording {
     MetaCount counts{};
     ScalarArgs<MayOverflow> scalars{};
     [[no_unique_address]] typename input_overflow_of<MayOverflow>::type overflow{};
-    // False when fill_meta refuses a recorded tensor: its rank or an extent
+    // refused when fill_meta refuses a recorded tensor: its rank or an extent
     // is past the bound of a meta, or an enumeration names no crucible
     // enumerator.  append_trace_entry then records nothing.
-    bool is_each_tensor_described = true;
+    TensorDescription each_tensor_description = TensorDescription::described;
 
     // The three helpers below are always inline, so the optimizer sees each
     // read of the counts, and each check of an index or a window folds.
@@ -961,13 +991,28 @@ struct Recording {
         return read_slots().window(0, count).expect("the records fit the slots");
     }
 
-    // The three adds below take the tensors of PyTorch.
+    // The slot at a position below Capacity.  Each caller tests the position
+    // against Capacity first, so the optimizer removes the check.
+    [[nodiscard]] CRUCIBLE_INLINE ::fixy::Index<kSlots> slot_at(uint32_t position) const noexcept {
+        return ::fixy::Index<kSlots>::check(position).expect("a count below Capacity names a slot");
+    }
+
+    // The three adds below take the tensors of PyTorch.  Each writes the meta
+    // of a tensor into its slot in place, and sets each_tensor_description to
+    // refused when fill_meta refuses the tensor.  A lent slot is an element of
+    // a View, and fill_meta writes it.  The list of the home Owned builds its
+    // slot through its value door build_at, which lends no borrow of the list,
+    // so the tensor and the description go to make_described_meta as
+    // arguments of the door.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: a Recording takes the tensors of an operator of PyTorch")
     void add_input(const at::Tensor& tensor) {
         if (tensor.defined() && counts.inputs < Capacity) {
-            if (!with_slot(counts.inputs,
-                           [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
-                is_each_tensor_described = false;
+            if constexpr (Home == SlotsHome::Lent) {
+                if (!fill_meta(metas.at(slot_at(counts.inputs)), tensor)) {
+                    each_tensor_description = TensorDescription::refused;
+                }
+            } else {
+                metas.build_at(slot_at(counts.inputs), make_described_meta, tensor, each_tensor_description);
             }
             counts.inputs++;
         } else if constexpr (MayOverflow) {
@@ -981,7 +1026,7 @@ struct Recording {
         requires MayOverflow
     {
         crucible::TensorMeta meta{};
-        if (!fill_meta(meta, tensor)) is_each_tensor_described = false;
+        if (!fill_meta(meta, tensor)) each_tensor_description = TensorDescription::refused;
         overflow.fold(meta);
     }
 
@@ -989,9 +1034,12 @@ struct Recording {
     // append and every reader of it expect.
     void add_output(const at::Tensor& tensor) {
         if (tensor.defined() && counts.total() < Capacity) {
-            if (!with_slot(counts.total(),
-                           [&tensor](crucible::TensorMeta& slot) noexcept { return fill_meta(slot, tensor); })) {
-                is_each_tensor_described = false;
+            if constexpr (Home == SlotsHome::Lent) {
+                if (!fill_meta(metas.at(slot_at(counts.total())), tensor)) {
+                    each_tensor_description = TensorDescription::refused;
+                }
+            } else {
+                metas.build_at(slot_at(counts.total()), make_described_meta, tensor, each_tensor_description);
             }
             counts.outputs++;
         }
@@ -1304,7 +1352,7 @@ template <bool IsMutable, bool IsForeach, uint32_t Capacity, bool MayOverflow, S
     // A tensor that fill_meta refuses has no meta, so the operation stays out
     // of the ring, as an operation that the trust ladder refuses.  This is the
     // rank part and the enumerator part of the ladder on this path.
-    if (!recording.is_each_tensor_described) [[unlikely]]
+    if (recording.each_tensor_description == TensorDescription::refused) [[unlikely]]
         return;
 
     crucible::TraceRing::Entry entry{};
