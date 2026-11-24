@@ -222,12 +222,15 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
     int invocations = 0;
     h::Lazy<int> lazy{};
 
-    if (lazy.initialized()) {
+    // A fresh Lazy is not built, and a read of it gives no value, from a
+    // mutable Lazy and from a const one.
+    const h::Lazy<int>& const_view = lazy;
+    if (lazy.initialized() || lazy.get().is_some() || const_view.get().is_some()) {
         std::fprintf(stderr, "a fresh Lazy read as initialized\n");
         return 1;
     }
 
-    int& first = lazy.get_or_init(kSpin, [&]() noexcept {
+    int& first = *lazy.get_or_init(kSpin, [&]() noexcept {
         ++invocations;
         return seed + 1;
     });
@@ -238,7 +241,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
 
     // The second initializer must never run, and the reference must be
     // the same object rather than a second one holding the same value.
-    int& second = lazy.get_or_init(kSpin, [&]() noexcept {
+    int& second = *lazy.get_or_init(kSpin, [&]() noexcept {
         ++invocations;
         return seed + 99999;
     });
@@ -247,14 +250,13 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         return 1;
     }
 
-    int& third = lazy.get();
+    int& third = *lazy.get().expect("the build made the value");
     if (&third != &first || third != seed + 1) {
         std::fprintf(stderr, "get() returned a different object than get_or_init\n");
         return 1;
     }
 
-    const h::Lazy<int>& const_view = lazy;
-    const int& fourth = const_view.get();
+    const int& fourth = *const_view.get().expect("the build made the value");
     if (&fourth != &first) {
         std::fprintf(stderr, "the const get() returned a different object\n");
         return 1;
@@ -272,7 +274,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         std::vector<std::jthread> racers;
         for (int i = 0; i < kThreads; ++i) {
             racers.emplace_back([&lazy, &initializers, &wrong_value] {
-                const int& value = lazy.get_or_init(kSpin, [&initializers]() noexcept {
+                const int& value = *lazy.get_or_init(kSpin, [&initializers]() noexcept {
                     initializers.fetch_add(1, std::memory_order_acq_rel);
                     return 4242;
                 });
@@ -289,7 +291,7 @@ static_assert(!std::is_copy_constructible_v<h::Lazy<int>>);
         std::fprintf(stderr, "a racer read a value the initializer never produced\n");
         return 1;
     }
-    if (!lazy.initialized() || lazy.get() != 4242) {
+    if (!lazy.initialized() || *lazy.get().expect("the racers built the value") != 4242) {
         std::fprintf(stderr, "the lazy value did not settle\n");
         return 1;
     }
@@ -324,33 +326,6 @@ void double_publish_aborts(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  a second publish aborts, and one publish does not\n");
 }
 
-// ── Runtime: the preconditions no constant evaluation reaches ────────
-//
-// Lazy::get reads an atomic, so it is not constexpr, and a negative-compile
-// fixture cannot reach its precondition.  Each refusal is observed in a
-// child process through expect_dies instead.  The runs above are the
-// positive controls: a get after the value is built does not abort.  A
-// publish has no precondition: the cells of the publish of a Ref above
-// refuse the null pointer at compile time.
-void preconditions_abort(::fixy::TestRunnerCtx const& test) {
-    constexpr ::fixy::TextView kNeverBuilt{"foundation: fatal invariant failed: initialized()"};
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            h::Lazy<int> lazy{};
-            (void)lazy.get();
-        },
-        kNeverBuilt);
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            const h::Lazy<int> lazy{};
-            (void)lazy.get();
-        },
-        kNeverBuilt);
-    ::fixy::check::pass(test, "  each precondition that no constant evaluation reaches aborts\n");
-}
-
 }  // namespace
 
 int main() {
@@ -361,6 +336,5 @@ int main() {
     if (const int rc = lazy_initializes_once(); rc != 0) return rc;
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     double_publish_aborts(test);
-    preconditions_abort(test);
     return 0;
 }

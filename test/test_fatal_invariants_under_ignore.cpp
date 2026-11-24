@@ -2,13 +2,14 @@
 // this file the ignore semantic, where a CRUCIBLE_PRE or a CRUCIBLE_POST is
 // only an assumption for the optimizer.  A false assumption is undefined
 // behavior.  Each check below guards a fact that data or a caller can break
-// at run time, so it is a fatal invariant:
-//   - Lazy::get refuses a read before the build of the value.
+// at run time:
+//   - Lazy::get gives no value before the build of the value.  Its test of
+//     the gate is a branch of the code, not a contract.
 //   - FractionalLattice refuses a sum or a product whose reduced
-//     denominator is above the bound.
-// Each violation runs in a child process through expect_dies of the Check
-// family, which requires SIGABRT and the text of the failed invariant.  The
-// live window of PermissionedMetaLog has its test in
+//     denominator is above the bound.  This check is a fatal invariant.
+// Each violation of a fatal invariant runs in a child process through
+// expect_dies of the Check family, which requires SIGABRT and the text of the
+// failed invariant.  The live window of PermissionedMetaLog has its test in
 // test_metalog_session_ignore, which builds test_metalog_session.cpp with the
 // ignore semantic.
 
@@ -32,11 +33,6 @@ template <typename T>
     return value;
 }
 
-void read_lazy_before_build() noexcept {
-    ::fixy::handle::Lazy<int> lazy{};
-    (void)opaque(lazy.get());
-}
-
 // The reduced denominator of 1/2^31 * 1/2^31 is 2^62.
 void multiply_past_bound() noexcept {
     const fl::Rational least{1, opaque(fl::Rational::MAX_SAFE_MAGNITUDE)};
@@ -54,14 +50,17 @@ void add_past_bound() noexcept {
 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
-    expect_dies(test, read_lazy_before_build, ::fixy::TextView{"fatal invariant failed: initialized()"});
+    // A read of a Lazy before its build gives no value, and a read after the
+    // build gives the value that the build made.
+    ::fixy::handle::Lazy<int> lazy{};
+    CRUCIBLE_TEST_ASSERT(test, lazy.get().is_none());
+    CRUCIBLE_TEST_ASSERT(test, *lazy.get_or_init(test, [] noexcept { return opaque(7); }) == 7);
+    CRUCIBLE_TEST_ASSERT(test, *lazy.get().expect("the build made the value") == 7);
+
     expect_dies(test, multiply_past_bound, ::fixy::TextView{"fatal invariant failed: product.is_well_formed()"});
     expect_dies(test, add_past_bound, ::fixy::TextView{"fatal invariant failed: sum.is_well_formed()"});
 
-    // The controls: a read after the build, and a product and a sum at the
-    // bound.
-    ::fixy::handle::Lazy<int> lazy{};
-    CRUCIBLE_TEST_ASSERT(test, lazy.get_or_init(test, [] noexcept { return 7; }) == 7 && lazy.get() == 7);
+    // The controls: a product and a sum at the bound.
     const fl::Rational least{1, opaque(fl::Rational::MAX_SAFE_MAGNITUDE)};
     CRUCIBLE_TEST_ASSERT(test, fl::FractionalLattice::mul(least, fl::FractionalLattice::top()) == least);
     const fl::Rational half = opaque(fl::Rational{1, 2});

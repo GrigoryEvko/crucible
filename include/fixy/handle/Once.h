@@ -3,8 +3,12 @@
 // Two initialize-once handles: a cross-thread once-gate that spins rather
 // than parks, and a lazily-constructed value built on top of it.
 
+#include <foundation/Brand.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 
@@ -21,6 +25,32 @@
 namespace fixy::row_discipline {
 struct lazy;
 }  // namespace fixy::row_discipline
+
+namespace fixy::handle {
+template <typename T>
+class Lazy;
+}  // namespace fixy::handle
+
+namespace foundation::core {
+
+// The door of a Lazy to the door of a Ref (the doors of the owners above
+// foundation/core/Ref.h).  Its one member is private, and Lazy is its one
+// friend.  The invariant: a Lazy lends its value only after the gate reads
+// the end of the build, the value lives as long as the pinned Lazy, and the
+// brand is the brand of the value or the fresh brand of the call.  A home
+// owner row of utils/rule-table.txt keeps this definition in this header.
+class LazyRefDoor final : ::foundation::NoObject<LazyRefDoor> {
+    template <typename T>
+    friend class ::fixy::handle::Lazy;
+
+    // The value of a built Lazy, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
 
 namespace fixy::handle {
 
@@ -101,30 +131,49 @@ public:
         }
     }
 
-    template <typename Ctx, typename F>
-        requires ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
-              && std::is_invocable_r_v<T, F>
-    [[nodiscard]] T& get_or_init(Ctx const& ctx, F&& f) noexcept {
+    // Builds the value one time, and gives it as a Ref with the brand of T,
+    // or the fresh brand of the call for a T that states no brand.  The call
+    // returns after the build, so the read of the value needs no test.  The
+    // pack refuses each explicit argument, so no caller names the brand.
+    template <class... Refused, typename Ctx, typename F, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+             && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
+             && std::is_invocable_r_v<T, F>
+    [[nodiscard]] ::foundation::core::Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
+    get_or_init(Ctx const& ctx, F&& f) noexcept {
         // Exceptions are off for the build, so no path here throws.
         // Both specifiers are unconditional rather than derived from F.
         // A derived one reads false for a lambda whose call operator is
         // not itself declared noexcept, and the warning that infers
         // from the body then flags the mismatch.
         once_.call(ctx, [&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
-        return *storage_ptr_();
+        return ::foundation::core::LazyRefDoor::lend_<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(
+            *storage_ptr_());
     }
 
-    // A read before the build of the value reads bytes that hold no T.  The
-    // test reads a load of the gate, which an assumption cannot hold, so it
-    // is a fatal invariant and checks under each contract semantic.
-    [[nodiscard]] T& get() & {
-        CRUCIBLE_FATAL_INVARIANT(initialized());
-        return *storage_ptr_();
+    // The value as a Ref, or none before the end of the build.  Another
+    // thread can run the build at the same time, so a value can be absent.
+    // One acquire load of the gate.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] ::foundation::core::Option<
+        ::foundation::core::Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>>
+    get() & noexcept {
+        using Brand = ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>;
+        using Held = ::foundation::core::Ref<T, Brand>;
+        if (!once_.done()) return ::foundation::core::Option<Held>{::foundation::core::none};
+        return ::foundation::core::Option<Held>::some(::foundation::core::LazyRefDoor::lend_<Brand>(*storage_ptr_()));
     }
 
-    [[nodiscard]] const T& get() const& {
-        CRUCIBLE_FATAL_INVARIANT(initialized());
-        return *storage_ptr_();
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] ::foundation::core::Option<
+        ::foundation::core::Ref<T const, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>>
+    get() const& noexcept {
+        using Brand = ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>;
+        using Held = ::foundation::core::Ref<T const, Brand>;
+        if (!once_.done()) return ::foundation::core::Option<Held>{::foundation::core::none};
+        return ::foundation::core::Option<Held>::some(::foundation::core::LazyRefDoor::lend_<Brand>(*storage_ptr_()));
     }
 
     [[nodiscard]] bool initialized() const noexcept { return once_.done(); }

@@ -333,6 +333,7 @@ class ScopedViewRefDoor;
 class ChaseLevDequeRefDoor;
 class SpscSplitRefDoor;
 class SchedProofRefDoor;
+class LazyRefDoor;
 
 namespace detail {
 
@@ -399,6 +400,7 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
     friend class ::foundation::core::ChaseLevDequeRefDoor;
     friend class ::foundation::core::SpscSplitRefDoor;
     friend class ::foundation::core::SchedProofRefDoor;
+    friend class ::foundation::core::LazyRefDoor;
 
     template <::foundation::brand::IsBrand Brand, RefTarget T>
     [[nodiscard]] static constexpr Ref<T, Brand> lend(T& object) noexcept {
