@@ -460,8 +460,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2013 | - | -
-test/fixy/ | std-object | 647 | - | -
+test/fixy/ | std-entity | 2001 | - | -
+test/fixy/ | std-object | 645 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 346 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core

@@ -2197,6 +2197,19 @@ crucible_neg_compile_test(neg_transaction_log_copyable_owner
 crucible_neg_compile_test(neg_publish_stage_built_outside
   "is private within this context"
   ".crucible::BackgroundThread::PublishStage::PublishStage\\(\\). is private within this context")
+# The consumer side of the trace ring opens only with the proof of the drain
+# stage, and the consumer side of the metadata log only with the proof of the
+# publish stage.  No code outside the background thread builds the proof of
+# the drain stage, and the proof of one stage opens no side of the other.
+crucible_neg_compile_test(neg_drain_stage_built_outside
+  "is private within this context"
+  ".crucible::BackgroundThread::DrainStage::DrainStage\\(\\). is private within this context")
+crucible_neg_compile_test(neg_ring_side_with_the_publish_proof
+  "cannot convert .stage. \\(type .const crucible::BackgroundThread::PublishStage.\\)"
+  "to type .const crucible::BackgroundThread::DrainStage&.")
+crucible_neg_compile_test(neg_log_side_with_the_drain_proof
+  "cannot convert .stage. \\(type .const crucible::BackgroundThread::DrainStage.\\)"
+  "to type .const crucible::BackgroundThread::PublishStage&.")
 # The ops of a built region point into the runs of its arena, so no code
 # outside the background thread assigns the arena, which would free the runs
 # that the ops name.
