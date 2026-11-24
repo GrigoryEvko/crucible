@@ -10,6 +10,6 @@ include/fixy/concurrent/ | library-holder | 3 | - | -
 include/foundation/core/ | pinned-holder | 1 | - | the Record of the mint of a keyed transaction log does not move, because the log does not move.  Its one linear part is the LoanKey, which ends at its own scope door.  task: the plugin derives scope_end_door for a pinned holder whose each linear part has one
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
-test/fixy/ | library-holder | 5 | - | -
+test/fixy/ | library-holder | 9 | - | test_owned_region returns and holds the parts of a split in a std::tuple.  The attacks on a session handle hold a live handle in a std::optional, a std::vector and a std::variant
 test/fixy/ | pinned-holder | 2 | - | the slot of a channel test is pinned and holds an Option of the endpoint, which the test fills and takes, so the slot ends empty, and the delegation test checks that
 test/layer/checks/foundation/ | pinned-holder | 1 | - | -

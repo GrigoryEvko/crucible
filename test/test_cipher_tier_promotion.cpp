@@ -11,7 +11,6 @@
 #include <foundation/reflect/EnumName.h>
 
 #include <cstdio>
-#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -131,19 +130,12 @@ struct HotWire {
 using CarriedHotEndpoint =
     s::DelegatedSession<HotPromote<ContentHash>, HotWire, s::DefaultAbandonmentPolicy, fp::EmptyPermSet>;
 
-// The carrier channel moves one delegated endpoint, in a slot that the
-// test fills and empties on one thread.  A hand-off that runs is a Send of
-// the DelegatedSession.  The Delegate head only states it.
-struct CarrierSlot : ::foundation::Pinned<CarrierSlot> {
-    std::optional<CarriedHotEndpoint> held;
-    int delegated_endpoints = 0;
-};
-struct CarrierSender {
-    CarrierSlot* slot = nullptr;
-    [[no_unique_address]] s::MoveOnlyResource one_holder{};
-};
-struct CarrierRecipient {
-    CarrierSlot* slot = nullptr;
+// The carrier moves one delegated endpoint in a box, on one thread.  The
+// sender closes with the endpoint in the box, and the recipient opens on it.
+// A hand-off that runs is a Send of the DelegatedSession.  The Delegate head
+// only states it.
+struct CarrierBox {
+    ::fixy::FixedList<CarriedHotEndpoint, 1> held{};
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
 };
 using Carrier = s::Send<CarriedHotEndpoint, s::End>;
@@ -152,30 +144,26 @@ void test_hot_promote_delegate_protocol() {
     constexpr ContentHash marker{0xABCD000000000001ULL};
     constexpr ContentHash payload{0xABCD000000000002ULL};
 
-    CarrierSlot slot{};
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
-    auto [delegator, acceptor] = s::mint_test_channel<Carrier>(ctx, CarrierSender{&slot}, CarrierRecipient{&slot});
-
+    auto delegator = s::mint_session<Carrier>(ctx, CarrierBox{});
     auto delegated_endpoint = s::mint_session<HotPromote<ContentHash>>(ctx, HotWire{.marker = marker});
     CarriedHotEndpoint carried = s::mint_delegated_session(std::move(delegated_endpoint));
 
-    auto delegator_end =
-        std::move(delegator).send(std::move(carried), [](CarrierSender& end, CarriedHotEndpoint& value) noexcept {
-            if (end.slot->held.has_value()) return false;
-            end.slot->held.emplace(std::move(value));
-            ++end.slot->delegated_endpoints;
-            return true;
+    // The endpoint is linear, so the write takes it by move and gives it back
+    // while the box is full.
+    auto delegator_end = std::move(delegator).send(
+        std::move(carried),
+        [](CarrierBox& box, CarriedHotEndpoint&& value) noexcept -> ::fixy::Option<CarriedHotEndpoint> {
+            if (box.held.size() != 0) return ::fixy::Option<CarriedHotEndpoint>::some(std::move(value));
+            static_cast<void>(box.held.append(std::move(value)).expect("the box is empty"));
+            return ::fixy::none;
         });
+    auto acceptor = s::mint_session<s::dual_of_t<Carrier>>(ctx, std::move(delegator_end).close());
     auto [received, acceptor_end] =
-        std::move(acceptor).recv([](CarrierRecipient& end) noexcept -> ::fixy::Option<CarriedHotEndpoint> {
-            if (!end.slot->held.has_value()) return ::fixy::none;
-            ::fixy::Option<CarriedHotEndpoint> taken = ::fixy::some(std::move(*end.slot->held));
-            end.slot->held.reset();
-            return taken;
-        });
-    static_cast<void>(std::move(delegator_end).close());
-    static_cast<void>(std::move(acceptor_end).close());
-    CRUCIBLE_TEST_ASSERT(kTest, slot.delegated_endpoints == 1);
+        std::move(acceptor).recv([](CarrierBox& box) noexcept { return box.held.take_last(); });
+    CarrierBox carrier_back = std::move(acceptor_end).close();
+    std::move(carrier_back.held).expect_empty("the receive takes the endpoint out of the box");
+    CRUCIBLE_TEST_ASSERT(kTest, received.holds_endpoint());
 
     auto hot_endpoint = std::move(received).accept();
     auto hot_end = std::move(hot_endpoint)

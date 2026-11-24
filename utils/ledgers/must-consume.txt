@@ -42,11 +42,11 @@ include/fixy/session/Recording.h | ungated-body | 2 | - | each line is a public 
 include/foundation/core/Link.h | ungated-body | 1 | - | each line is a public door of the header that calls a body of its caller and states no gate HoldsNoLinearValue of foundation/Linear.h.  The series that gates the doors of the header lowers the row
 src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 2 | - | -
-test/fixy/ | assign-over-live | 2 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
-test/fixy/ | borrow-move-out | 4 | - | the trying write of the session protocol moves its value out of a lent reference on success, and only its result tells the handle.  The safe trying-write shape for a linear payload retires these lines.  Each message type of a test transport is its own line
-test/fixy/ | discarded-temporary | 3 | - | -
-test/fixy/ | double-consume | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch
-test/fixy/ | unconsumed | 119 | - | -
+test/fixy/ | assign-over-live | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch.  The tests of the backstops of a session handle assign over a live handle or a live endpoint in a child process
+test/fixy/ | borrow-move-out | 8 | - | the attacks on a session handle move a handle out of the std::optional of a static slot, and move one handle into itself through two references.  The two death tests of test_spsc_ends move a foreign token out of a frame that lends it, each in a child process
+test/fixy/ | discarded-temporary | 4 | - | test_owned_region discards the result of two refused recombines, test_channel_identity discards the token of a recombined access that the door refuses, and test_session_endpoint_transfer discards the endpoint of a consumed handle, each in a child process that must end there
+test/fixy/ | double-consume | 10 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch.  The tests of the backstops of a session handle and of a permission hold use a consumed handle, endpoint or hold in a child process
+test/fixy/ | unconsumed | 131 | - | twelve lines are the tests of the backstops of a session handle, which drop a live handle or a live endpoint in a child process.  The other lines state no cause
 test/foundation/ | borrow-move-out | 3 | - | test_core_hole spends one lent Hole two times on purpose, and the probe of a Hole consumes a spent Hole through a Ref, each to show that the spend ends the process
 test/foundation/ | double-consume | 7 | - | test_core_hole spends one lent Hole two times on purpose, and test_moved_from_token and test_core_owner_probe move a token and a region through the reference helper through() and then again on purpose, to show that the second spend and the moved-from value end the process
 test/foundation/ | unconsumed | 8 | - | -

@@ -4018,6 +4018,11 @@ fixy_neg_compile_test(neg_sess_send_linear_write_is_a_function
 fixy_neg_compile_test(neg_sess_recorded_linear_write_is_a_null_pointer
   ": \\[Transport_Shape\\] a trying write of a linear payload is a closure"
   "use of deleted function .void fixy::session::Recorded<Inner>::send\\(T, Transport\\).*Transport = foundation::core::Option<.*\\(\\*\\)\\(")
+# A handle over a plain Resource is linear at each position that owes a
+# message, so an Option of it is a linear sum that cannot end full.
+fixy_neg_compile_test(neg_sess_handle_in_option_dropped
+  "a linear sum can end with a payload that no consumer took"
+  "keep_a_handle: held .foundation::core::Option<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_handle_in_option_dropped_types::Wire")
 fixy_neg_compile_test(neg_sess_recv_read_waits_in_secret
   ": \\[Transport_Shape\\] a read either polls, as fixy::Option<T>\\(Resource&\\)"
   "use of deleted function .void fixy::session::SessionHandle<fixy::session::Recv<T, R>, Resource, LoopCtx, Policy, PS>::recv\\(Transport\\)")

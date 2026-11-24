@@ -8,6 +8,7 @@
 // that sends an endpoint to a peer of its own session, the delegation
 // heads, and that no code builds a DelegatedSession other than the mint.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/Refined.h>
 #include <fixy/session/Delegate.h>
@@ -20,7 +21,6 @@
 
 #include <atomic>
 #include <cstdio>
-#include <initializer_list>
 #include <type_traits>
 #include <utility>
 
@@ -62,6 +62,16 @@ struct RecipientEndOf {
     static constexpr s::watch::priority session_priority{1};
     SlotOf<Payload>* slot = nullptr;
     [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+// The write of an endpoint into the slot.  The endpoint is linear, so the
+// write takes it by move and gives it back while the slot is full.
+template <class Payload>
+struct PutEndpoint {
+    [[nodiscard]] ::fixy::Option<Payload> operator()(SenderEndOf<Payload>& end, Payload&& payload) const noexcept {
+        if (end.slot->held.is_some()) return ::fixy::Option<Payload>::some(std::move(payload));
+        end.slot->held.fill(std::move(payload));
+        return ::fixy::none;
+    }
 };
 using Slot = SlotOf<Carried>;
 using SenderEnd = SenderEndOf<Carried>;
@@ -208,13 +218,9 @@ static_assert(!s::PermissionFlowCloses<s::Recv<CarriesRegion, s::End>, fp::PermS
 
     auto inner = s::mint_session<Inner>(ctx, Wire{});
     Carried carried = s::mint_delegated_session(std::move(inner));
-    if (!carried.holds_endpoint()) return fail("the payload does not hold the endpoint");
+    if (!carried.holds_endpoint()) ::fixy::fatal("the payload does not hold the endpoint");
 
-    auto sender_done = std::move(sender).send(std::move(carried), [](SenderEnd& end, Carried& value) noexcept {
-        if (end.slot->held.is_some()) return false;
-        end.slot->held.fill(std::move(value));
-        return true;
-    });
+    auto sender_done = std::move(sender).send(std::move(carried), PutEndpoint<Carried>{});
     auto [received, recipient_done] = std::move(recipient).recv(
         [](RecipientEnd& end) noexcept -> ::fixy::Option<Carried> { return end.slot->held.take(); });
     static_cast<void>(std::move(sender_done).close());
@@ -243,17 +249,20 @@ static_assert(std::is_nothrow_move_constructible_v<Carried> && std::is_nothrow_m
     Carried first = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{1}));
     Carried second = s::mint_delegated_session(s::mint_session<Inner>(ctx, Wire{2}));
     Carried drained = std::move(first);
-    if (first.holds_endpoint() || !drained.holds_endpoint()) return fail("a move did not take the endpoint");
+    const bool is_moved = !first.holds_endpoint() && drained.holds_endpoint();
     first = std::move(second);
-    if (!first.holds_endpoint() || second.holds_endpoint()) return fail("an assignment did not take the endpoint");
-    int sent_total = 0;
-    for (Carried* parcel : {&drained, &first}) {
-        auto at_end = std::move(*parcel).accept().send(Ping{10}, [](Wire& wire, Ping& ping) noexcept {
+    const bool is_assigned = first.holds_endpoint() && !second.holds_endpoint();
+    // Accepts the endpoint of a parcel, and steps it to End.
+    auto step_to_end = [](Carried&& parcel) noexcept {
+        auto at_end = std::move(parcel).accept().send(Ping{10}, [](Wire& wire, Ping& ping) noexcept {
             wire.sent += ping.value;
             return true;
         });
-        sent_total += std::move(at_end).close().sent;
-    }
+        return std::move(at_end).close().sent;
+    };
+    const int sent_total = step_to_end(std::move(drained)) + step_to_end(std::move(first));
+    if (!is_moved) return fail("a move did not take the endpoint");
+    if (!is_assigned) return fail("an assignment did not take the endpoint");
     if (sent_total != 23) return fail("the accepted handles did not step the Resources that the parcels held");
     return 0;
 }
@@ -314,20 +323,7 @@ template <class Brand>
 using HandsRegion = s::Send<ParcelOfRegion<Brand>, s::End>;
 
 // The sender puts the endpoint into the slot, and the recipient takes it
-// out, as in delegate_over_a_channel.  The endpoint is linear, so the write
-// takes it by move and gives it back while the slot is full.
-template <class Brand>
-struct PutParcel {
-    using Parcel = ParcelOfRegion<Brand>;
-
-    [[nodiscard]] ::fixy::Option<Parcel> operator()(SenderEndOf<Parcel>& end, Parcel&& parcel) const noexcept {
-        if (end.slot->held.is_some()) return ::fixy::Option<Parcel>::some(std::move(parcel));
-        end.slot->held.fill(std::move(parcel));
-        return ::fixy::none;
-    }
-};
-
-// The read waits in its declared form, so it gives the endpoint with no
+// out, as in delegate_over_a_channel.  The read waits in its declared form, so it gives the endpoint with no
 // Option around it.  The sender fills the slot on the same thread before the
 // read, so the read does not wait.
 template <class Brand>
@@ -346,7 +342,7 @@ template <class Brand>
         s::mint_test_channel<HandsRegion<Brand>>(ctx, SenderEndOf<Parcel>{&slot}, RecipientEndOf<Parcel>{&slot});
     static_assert(std::is_same_v<typename decltype(sender)::perm_set, fp::EmptyPermSet>);
     auto inner = s::mint_permissioned_session<SendsRegion<Brand>>(ctx, Wire{}, std::move(root));
-    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), PutParcel<Brand>{});
+    auto sender_done = std::move(sender).send(s::mint_delegated_session(std::move(inner)), PutEndpoint<Parcel>{});
     static_assert(std::is_same_v<typename decltype(sender_done)::perm_set, fp::EmptyPermSet>,
                   "the sender holds no token of the endpoint, before the send and after it");
     // The sender closes before the recipient waits, so the waiting thread

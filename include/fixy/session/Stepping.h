@@ -27,7 +27,11 @@
 //   - check::Enforced prints the construction site and aborts.
 //   - check::Cancel sends a cancellation to the peer through the
 //     Resource, and then the program continues.  This is the affine
-//     design of Lagaillardie, Neykova and Yoshida (ECOOP 2022).
+//     design of Lagaillardie, Neykova and Yoshida (ECOOP 2022).  A handle
+//     under it is linear too (SessionHandleBase of fixy/session/Handle.h),
+//     because a destructor that sends a message is a hidden effect.  So a
+//     path that ends a session early calls cancel(), and the cancellation of
+//     the destructor is the fallback of a path that no rule reads.
 //   - check::Off does nothing.  It is an explicit hatch, and a handle
 //     under it does not keep the guarantee above.
 //   - check::Pinned and check::PinnedCancel act as Enforced and Cancel,

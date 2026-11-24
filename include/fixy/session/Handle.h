@@ -122,6 +122,7 @@
 #include <fixy/session/Wire.h>
 
 #include <foundation/Closure.h>
+#include <foundation/Lifetime.h>
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
@@ -493,8 +494,22 @@ concept CancellableResource = requires(std::remove_reference_t<Resource>& resour
 // This base holds no Resource.  A decorator derives from it directly and
 // holds an inner handle, and the handle family below adds the Resource
 // in detail::handle_core.
+//
+// The class is linear (foundation/Linear.h) under each policy that checks
+// abandonment, at each position that still owes a message.  So each handle
+// and each decorator at such a position is linear by its base, also over a
+// plain Resource, and the rule must-consume reads each path that ends one
+// with no step, no detach and no cancel.  The destructor check stays as the
+// run-time backstop of a holder that the rule does not read.  A handle at a
+// terminal position owes no message: the doors of End give its Resource back.
+// Under check::Off the policy states that a drop is no error.  Under
+// check::Cancel the cancellation of the destructor is the backstop, and a
+// path that ends a session before its end calls cancel().  The checked
+// lifetime start of foundation/Lifetime.h refuses the class, so no start over
+// bytes forges a handle.
 template <typename Proto, typename Derived = void, AbandonmentPolicy Policy = DefaultAbandonmentPolicy>
-class SessionHandleBase {
+class[[= ::foundation::linear::linear_when<Policy::checks_abandonment && !is_terminal_state_v<Proto>>]]
+     [[= ::foundation::lifetime::no_start_over_bytes{}]] SessionHandleBase {
     [[no_unique_address]] Policy tracker_;
 
 protected:

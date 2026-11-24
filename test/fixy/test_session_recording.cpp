@@ -36,7 +36,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -291,6 +290,35 @@ int check_plain_recording() {
 
 }  // namespace
 
+// ── A mailbox of one linear message ──────────────────────────────────
+//
+// The Resource of a sender and of a receiver of a linear message.  The
+// sender closes with the message in the mailbox, and the receiver opens on
+// it.
+template <class Message>
+struct MessageBox {
+    ::fixy::FixedList<Message, 1> held{};
+    [[no_unique_address]] s::MoveOnlyResource one_holder{};
+};
+
+// A trying write that puts the message into an empty mailbox.  The message
+// is linear, so the write takes it by move and gives it back while the
+// mailbox is full.
+template <class Message>
+struct PutMessage {
+    [[nodiscard]] ::fixy::Option<Message> operator()(MessageBox<Message>& box, Message&& message) const noexcept {
+        if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
+        static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
+        return ::fixy::none;
+    }
+};
+
+// A polling read that takes the message out of the mailbox.
+template <class Message>
+[[nodiscard]] ::fixy::Option<Message> take_message(MessageBox<Message>& box) noexcept {
+    return box.held.take_last();
+}
+
 // ── The hand-off of an endpoint ─────────────────────────────────────
 //
 // A payload that carries an endpoint is recorded as a hand-off and never
@@ -316,39 +344,21 @@ inline constexpr auto keep_int = [](HandedPort& port, int& value) noexcept { ret
 
 using Parcel = s::DelegatedSession<Carried, HandedPort, s::DefaultAbandonmentPolicy, NoPermissions>;
 
-// The outer channel holds one parcel.
-struct ParcelPort {
-    std::optional<Parcel>* held = nullptr;
-    [[no_unique_address]] s::MoveOnlyResource one_holder{};
-};
-
 namespace {
 
 int check_handoff_recording() {
-    std::optional<Parcel> held;
     // Each endpoint records into a log of its own.
     s::SessionEventLog sender_log;
     s::SessionEventLog receiver_log;
-    auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}),
+    auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), MessageBox<Parcel>{}),
                                            s::mint_session_event_writer(sender_log), kSelf, kPeer);
-    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), ParcelPort{&held}),
-                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
-
     auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), HandedPort{}));
-    (void)std::move(sender)
-        .send(std::move(parcel),
-              [](ParcelPort& port, Parcel& value) noexcept {
-                  port.held->emplace(std::move(value));
-                  return true;
-              })
-        .close();
-    auto [received, at_end] = std::move(receiver).recv([](ParcelPort& port) noexcept -> ::fixy::Option<Parcel> {
-        if (!port.held->has_value()) return ::fixy::none;
-        ::fixy::Option<Parcel> taken = ::fixy::some(std::move(**port.held));
-        port.held->reset();
-        return taken;
-    });
-    (void)std::move(at_end).close();
+    MessageBox<Parcel> wire = std::move(sender).send(std::move(parcel), PutMessage<Parcel>{}).close();
+    auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), std::move(wire)),
+                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
+    auto [received, at_end] = std::move(receiver).recv(take_message<Parcel>);
+    MessageBox<Parcel> back = std::move(at_end).close();
+    std::move(back.held).expect_empty("the receive takes the parcel out of the mailbox");
     const HandedPort port_at_end = std::move(received).accept().send(3, keep_int).close();
     if (port_at_end.sent.size() != 1) return fail("the accepted endpoint did not step its own session");
 
@@ -394,31 +404,6 @@ int check_handoff_recording() {
 // refuses a type with such a brand.  The recorder hashes each payload with
 // each brand erased, so a recorded session carries a token of a fresh brand,
 // and two units give one hash for one payload.
-
-// The mailbox of one message.
-template <class Message>
-struct MessageBox {
-    ::fixy::FixedList<Message, 1> held{};
-    [[no_unique_address]] s::MoveOnlyResource one_holder{};
-};
-
-// A trying write that puts the message into an empty mailbox.  The message
-// is linear, so the write takes it by move and gives it back while the
-// mailbox is full.
-template <class Message>
-struct PutMessage {
-    [[nodiscard]] ::fixy::Option<Message> operator()(MessageBox<Message>& box, Message&& message) const noexcept {
-        if (box.held.size() != 0) return ::fixy::Option<Message>::some(std::move(message));
-        static_cast<void>(box.held.append(std::move(message)).expect("the mailbox is empty"));
-        return ::fixy::none;
-    }
-};
-
-// A polling read that takes the message out of the mailbox.
-template <class Message>
-[[nodiscard]] ::fixy::Option<Message> take_message(MessageBox<Message>& box) noexcept {
-    return box.held.take_last();
-}
 
 // A brand with a declared name.  The stable id reads its name.
 struct NamedBrand {};
@@ -577,7 +562,7 @@ int check_keyed_recording() {
     static_assert(std::is_same_v<typename decltype(left_value)::protocol, s::Send<int, s::End>>);
     (void)std::move(left_value).send(8, push_int).close();
     if (to_right.slots.size() != 2)
-        return fail("the keyed select did not put its label word and its value on the wire");
+        ::fixy::fatal("the keyed select did not put its label word and its value on the wire");
     int heard = 0;
     std::move(right).branch(pop_label, [&](auto right_value) {
         auto [value, right_end] = std::move(right_value).recv(pop_int);

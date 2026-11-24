@@ -95,7 +95,7 @@ that the axis does not apply to the row.
 | `mint_incast_controller` | `include/crucible/cntp/IncastControlRuntime.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `mint_mtls_config` | `include/crucible/cntp/MtlsTransport.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_path_swap_plan` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | · | token | · | HS14: 6 |
-| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
+| `mint_path_swapper` | `include/crucible/cntp/PathSwap.h` | Y | Y | Y | Y | ctx | Y | HS14: 11 |
 | `mint_reed_solomon` | `include/crucible/cntp/Fec.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_resource_limit` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
 | `mint_resource_pressure` | `include/crucible/cntp/Backpressure.h` | Y | Y | Y | Y | token | · | HS14: 1 ⚠ |
@@ -293,7 +293,7 @@ that the axis does not apply to the row.
 | `mint_permission_hold` | `include/fixy/session/Flow.h` | Y | Y | Y | Y | token | · | HS14: 12 |
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 20 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 13 |
-| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 88 |
+| `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 89 |
 | `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 18 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |

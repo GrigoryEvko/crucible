@@ -71,4 +71,30 @@ static_assert(!HasPoleTable<Pole>);
 
 }  // namespace detail::pole_self_test
 
+namespace detail::linear_handle_self_test {
+
+struct Wire {
+    int sent = 0;
+    [[no_unique_address]] MoveOnlyResource one_holder{};
+};
+void cancel_session(Wire&) noexcept;
+
+template <typename Proto, AbandonmentPolicy Policy>
+using HandleAt = SessionHandle<Proto, Wire, void, Policy>;
+using Owes = Send<int, End>;
+
+// A handle over a plain Resource is linear by its base, at each position that
+// owes a message, under each policy that checks abandonment.
+static_assert(!::foundation::linear::LinearValue<Wire>);
+static_assert(::foundation::linear::LinearValue<HandleAt<Owes, check::Enforced>>);
+static_assert(::foundation::linear::LinearValue<HandleAt<Owes, check::Cancel>>);
+static_assert(::foundation::linear::LinearValue<HandleAt<Owes, check::Pinned>>);
+static_assert(::foundation::linear::LinearValue<HandleAt<Select<Owes, End>, check::Enforced>>);
+// A handle at End gives its Resource back at close(), and check::Off checks
+// no drop.
+static_assert(!::foundation::linear::LinearValue<HandleAt<End, check::Enforced>>);
+static_assert(!::foundation::linear::LinearValue<HandleAt<Owes, check::Off>>);
+
+}  // namespace detail::linear_handle_self_test
+
 }  // namespace fixy::session

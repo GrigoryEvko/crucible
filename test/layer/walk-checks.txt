@@ -24,7 +24,7 @@ crucible/SwissTable.cpp | 0.1 | unknown
 crucible/TensorMeta.cpp | 2.5 | ::fixy::tags::admitted_retags, ::foundation::transfer::door_probe_contexts, unknown
 crucible/TraceRing.cpp | 0.5 | unknown
 crucible/Types.cpp | 0.3 | ::crucible
-crucible/cipher/CipherDurable.cpp | 0.0 | unknown
+crucible/cipher/CipherDurable.cpp | 0.0 | ::fixy::session::combinators, unknown
 crucible/cipher/CipherTierPromotion.cpp | 0.2 | ::fixy::session::combinators, unknown
 crucible/cipher/ComputationCache.cpp | 0.4 | ::foundation::effects::resource, ::foundation::permissions::permission_rows
 crucible/cipher/ComputationCacheFederation.cpp | 2.9 | ::fixy::session::combinators, ::fixy::tags::admitted_retags
@@ -62,7 +62,7 @@ crucible/warden/Quarantine.cpp | 0.5 | ::foundation::permissions::permission_row
 fixy/Atom.cpp | 3.4 | unknown
 fixy/Bands.cpp | 2.0 | ::fixy::alloc_class, ::fixy::cipher_tier, ::fixy::det_safe, ::fixy::numerical_tier, ::fixy::opaque_lifetime, ::fixy::residency_heat, ::fixy::scoped_fence, ::fixy::vendor, ::fixy::wait
 fixy/CanonicalOrder.cpp | 0.2 | ::fixy::tags::admitted_retags
-fixy/Collision.cpp | 16.7 | ::fixy::collision, ::fixy::collision::detail, unknown
+fixy/Collision.cpp | 16.7 | ::fixy::collision, ::fixy::collision::detail, ::fixy::session::combinators, unknown
 fixy/Corpus.cpp | 3.1 | ::fixy::corpus, ::fixy::tags::secret_policy, unknown
 fixy/Fn.cpp | 2.8 | ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
 fixy/Machine.cpp | 0.0 | ::fixy::machine::no_edges, unknown
@@ -104,21 +104,22 @@ fixy/concurrent/SpscEnds.cpp | unmeasured | ::foundation::transfer::door_probe_c
 fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
-fixy/os/Fs.cpp | 0.1 | unknown
+fixy/os/Fs.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/os/Handle.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown
 fixy/os/Path.cpp | 0.0 | ::fixy::tags::admitted_retags
+fixy/os/Time.cpp | unmeasured | ::fixy::session::combinators
 fixy/session/Checkpoint.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/session/ContextNet.cpp | 7.4 | ::fixy::session::combinators
 fixy/session/Crash.cpp | 0.6 | ::fixy::session::combinators
 fixy/session/Delegate.cpp | 0.4 | ::fixy::session::combinators, ::foundation::transfer::door_probe_contexts, unknown
 fixy/session/Flow.cpp | 2.3 | ::fixy::session::combinators, ::foundation::permissions::permission_rows
-fixy/session/Handle.cpp | 0.2 | ::fixy::session::pole_tables
+fixy/session/Handle.cpp | 0.2 | ::fixy::session::combinators, ::fixy::session::pole_tables
 fixy/session/Network.cpp | 0.0 | ::fixy::session::combinators
 fixy/session/Protocol.cpp | 0.3 | ::fixy::session::combinators
 fixy/session/VigilMode.cpp | 0.0 | ::fixy::session::combinators
-fixy/session/Witnessed.cpp | 0.2 | ::foundation::permissions::permission_rows
+fixy/session/Witnessed.cpp | 0.2 | ::fixy::session::combinators, ::foundation::permissions::permission_rows
 foundation/ChannelBinding.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/Closure.cpp | 1.8 | ::foundation::transfer::door_probe_contexts, unknown
 foundation/Transfer.cpp | 5.2 | ::foundation::transfer::door_probe_contexts, unknown

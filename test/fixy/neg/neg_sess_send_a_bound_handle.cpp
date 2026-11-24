@@ -35,6 +35,7 @@ int main() {
     auto body = [moved = std::move(bound)]() mutable noexcept {
         std::move(moved).detach(s::detach_reason::TestInstrumentation{});
     };
-    [[maybe_unused]] auto started = ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body));
+    ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(body))
+        .expect("the door refuses the body at compile time");
     return 0;
 }

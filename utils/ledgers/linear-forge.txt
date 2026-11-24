@@ -5,7 +5,7 @@ rule linear-forge
 reason include/foundation/core/ | the alternatives of Option and Result hold each payload in a union, and the alternatives end the lifetime of the payload.  The slots of a FixedList hold each element in a union, and the count of the list is the tag: no code reads a slot at or past it
 reason test/ | the tests and the checks put a token in a union to show a refusal, and the tests of Option and Result use a token that has no seal
 include/foundation/core/ | sealed-union | 5 | - | The union of the Choice sums and the union under the zero words of a small alternative. Each holds one active member that a constructor builds from a value of the caller, and no read takes an inactive member
-test/fixy/ | sealed-union | 3 | - | -
+test/fixy/ | sealed-union | 4 | - | each line is a union that holds a proof, a view, a token or an endpoint, as a probe of a walk or an audit that must find it
 test/foundation/ | unsealed-lifetime | 2 | - | -
 test/layer/checks/foundation/ | sealed-union | 1 | - | -
 test/layer/checks/foundation/core/ | unsealed-lifetime | 1 | - | -
