@@ -360,7 +360,7 @@ that the axis does not apply to the row.
 | `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
-| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 18 |
+| `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 19 |
 | `mint_strided_view_mut` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 
 ## include/foundation/diag/
