@@ -796,6 +796,9 @@ run_beside_(Ctx const& ctx, ThreadOptions const& options, Body body, Continuatio
     joined_body_ joined{::foundation::core::mint_erased_address(owned), &ctx,
                         ::foundation::core::mint_erased_address(slot)};
     thread_task task{::foundation::core::mint_erased_address(joined), &run_joined_body_<Ctx, Body>};
+    // The start keeps a test and an expect.  The refusal gives the body and
+    // the continuation back, and the join takes the handle, each in this
+    // frame.  An arm of a match would move the two through its captures.
     ::foundation::core::Result<std::uint64_t, ::foundation::os::Errno> started = start_thread_task(task, options);
     if (started.is_err()) {
         ::foundation::os::Errno const error = std::move(started).err().expect("a refused start holds its error");
@@ -970,6 +973,10 @@ run_beside_each(Ctx const& /*ctx*/, ThreadOptions const& options, ::foundation::
     // window always fits.
     ::foundation::core::View<detail::thread_task> const started_tasks =
         task_run.window(0, count.raw()).expect("an index of the bound is below the count of the frame");
+    // The start keeps a test and an expect.  A fixture refuses the body with
+    // the static_assert above, and GCC then goes on in this body with the
+    // reflected constraints of Option and Result spoiled.  A loop over the
+    // error here gives a second error, which hides the reason of the fixture.
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> started =
         detail::start_thread_tasks(started_tasks, options);
     if (started.is_err()) {

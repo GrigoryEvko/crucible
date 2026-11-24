@@ -642,6 +642,10 @@ mint_owner_thread(Ctx const& /*ctx*/, ThreadOptions const& options, Owner& owner
         OwnerThread<Owner>& slot = owner.*Member;
         CRUCIBLE_PRE(!slot.holds_thread());
         using Held = detail::owner_body_<Owner, Body>;
+        // The start keeps a test and an expect.  The error of the start names
+        // the inner body, so the refusal branch builds the refusal again for
+        // the body of the caller, and gives that body back when it holds a
+        // linear part.
         ::foundation::core::Result<OwnedThread, start_error_t<Held>> started =
             detail::owned_thread_door::start(options, Held{__builtin_addressof(owner), static_cast<Body&&>(body)});
         if (started.is_err()) {
