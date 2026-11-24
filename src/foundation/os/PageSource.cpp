@@ -105,12 +105,13 @@ void unmap_mapped(std::uint8_t* first, std::size_t bytes) noexcept {
     std::size_t total = 0;
     if (__builtin_add_overflow(bytes, slack, &total)) return core::err(Errno::enomem);
     CRUCIBLE_TRY(mapped, map_no_access(total));
-    core::Option<std::uintptr_t> aligned = core::align_up(word_of(mapped), std::uintptr_t{alignment});
-    if (aligned.is_none()) {
-        unmap_mapped(mapped, total);
-        return core::err(Errno::enomem);
-    }
-    std::size_t const head = std::move(aligned).expect("the test above found the boundary") - word_of(mapped);
+    CRUCIBLE_TRY(aligned, core::align_up(word_of(mapped), std::uintptr_t{alignment})
+                              .ok_or(Errno::enomem)
+                              .map_err([mapped, total](Errno error) noexcept {
+                                  unmap_mapped(mapped, total);
+                                  return error;
+                              }));
+    std::size_t const head = aligned - word_of(mapped);
     std::size_t const tail = total - head - bytes;
     if (head != 0) unmap_mapped(mapped, head);
     if (tail != 0) unmap_mapped(mapped + head + bytes, tail);
@@ -122,9 +123,7 @@ void unmap_mapped(std::uint8_t* first, std::size_t bytes) noexcept {
 core::Result<Reservation, Errno> reserve(ByteCount bytes, ReserveAlignment alignment) noexcept {
     if (bytes.raw() == 0) return core::err(Errno::einval);
     std::size_t const page_bytes = read_page_bytes();
-    core::Option<std::size_t> rounded = whole_pages(bytes.raw(), page_bytes);
-    if (rounded.is_none()) return core::err(Errno::enomem);
-    std::size_t const size = std::move(rounded).expect("the test above found the rounded count");
+    CRUCIBLE_TRY(size, whole_pages(bytes.raw(), page_bytes).ok_or(Errno::enomem));
     CRUCIBLE_TRY(first, map_aligned(size, alignment_bytes(alignment, page_bytes), page_bytes));
     return detail::PageSourceDoor::build(first, size, page_bytes, alignment);
 }
@@ -222,9 +221,8 @@ Placement Reservation::bind(ReservedRange const& range, Placement placement) noe
     NumaNodeSet nodes = placement.nodes();
     int policy = kMemoryPolicyInterleave;
     if (placement.kind() == PlacementKind::node) {
-        core::Option<NumaNodeSlot> slot = numa_node_slot(placement.node());
-        if (slot.is_none()) return Placement::unknown();
-        nodes = NumaNodeSet{}.with(std::move(slot).expect("the test above found the slot"));
+        CRUCIBLE_LET_ELSE(slot, numa_node_slot(placement.node()), Placement::unknown());
+        nodes = NumaNodeSet{}.with(slot);
         policy = kMemoryPolicyPreferred;
     }
     // mbind reads maxnode - 1 bits of the mask, so a mask of one word takes
@@ -247,9 +245,7 @@ HugePageAdvice Reservation::advise_huge(ReservedRange const& range) noexcept {
 PageKind Reservation::collapse(CommittedRange const& range) noexcept {
     std::uint8_t* const first = first_of_(range);
     std::uintptr_t const start = word_of(first);
-    core::Option<std::uintptr_t> boundary = core::align_up(start, std::uintptr_t{kPageSourceHugePageBytes});
-    if (boundary.is_none()) return PageKind::base;
-    std::uintptr_t const aligned = std::move(boundary).expect("the test above found the boundary");
+    CRUCIBLE_LET_ELSE(aligned, core::align_up(start, std::uintptr_t{kPageSourceHugePageBytes}), PageKind::base);
     std::size_t const head = aligned - start;
     if (head >= range.bytes_) return PageKind::base;
     std::size_t const whole = (range.bytes_ - head) & ~(kPageSourceHugePageBytes - 1);
@@ -289,9 +285,7 @@ core::Result<NumaNodeId, Errno> Reservation::node_of_first_page(CommittedRange c
 }
 
 core::Result<core::Unit, Errno> Reservation::grow(ByteCount bytes) noexcept {
-    core::Option<std::size_t> rounded = whole_pages(bytes.raw(), page_bytes_);
-    if (rounded.is_none()) return core::err(Errno::enomem);
-    std::size_t const size = std::move(rounded).expect("the test above found the rounded count");
+    CRUCIBLE_TRY(size, whole_pages(bytes.raw(), page_bytes_).ok_or(Errno::enomem));
     if (size < bytes_) return core::err(Errno::einval);
     if (size == bytes_) return core::Unit{};
     if (alignment_ == ReserveAlignment::page) {

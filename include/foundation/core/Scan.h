@@ -618,9 +618,8 @@ template <class StepBrand, std::size_t StepExtent, class OutputBrand, std::size_
 [[nodiscard]] constexpr Result<Unit, PlanError>
 write_scan_plan(ScanKind kind, ViewMut<TreeStep, StepBrand, StepExtent> steps,
                 ViewMut<PlanNode, OutputBrand, OutputExtent> outputs) noexcept {
-    auto counted = count_scan_plan_steps(outputs.size(), kind);
-    if (counted.is_err()) return err(PlanError::TooManyLeaves);
-    if (steps.size() != std::move(counted).expect("the count of a plan of fewer leaves than the limit")) {
+    CRUCIBLE_TRY(counted, count_scan_plan_steps(outputs.size(), kind));
+    if (steps.size() != counted) {
         return err(PlanError::CountMismatch);
     }
     if (outputs.size() == 0) return Unit{};

@@ -72,20 +72,20 @@ struct RootDoor {
     // starting.
     static void start(AllocRoot& root) noexcept {
         WindowDiagnostic diagnostic{};
-        core::Result<Window, WindowFull> reserved = reserve_window(core::to(diagnostic));
-        if (reserved.is_err()) {
-            core::fatal("{}", diagnostic.text());
-        }
-        root.host_window_.fill(std::move(reserved).expect("the ladder gave the host window"));
+        reserve_window(core::to(diagnostic))
+            .match([&root](Window window) noexcept { root.host_window_.fill(std::move(window)); },
+                   [&diagnostic](WindowFull) noexcept { core::fatal("{}", diagnostic.text()); });
         publish_host_window(*root.host_window_.get(), root.windows_);
         core::ByteCount const table_bytes{kHeapTableGuardBytes + kHeapTableSlotsBytes + kHeapTableGuardBytes};
-        core::Result<os::Reservation, os::Errno> table = os::reserve(table_bytes, os::ReserveAlignment::huge_page);
-        if (table.is_err()) {
-            core::fatal("foundation: the root of the allocator got no address space for its heap table of {} bytes, "
-                        "with {}.  Raise the address-space limit of the process (ulimit -v), and start it again.",
-                        table_bytes.raw(), core::enum_name_text(table.err().value_or(os::Errno::enomem)));
-        }
-        root.heap_table_.fill(std::move(table).expect("the page source gave the heap table"));
+        os::reserve(table_bytes, os::ReserveAlignment::huge_page)
+            .match([&root](os::Reservation table) noexcept { root.heap_table_.fill(std::move(table)); },
+                   [table_bytes](os::Errno error) noexcept {
+                       core::fatal(
+                           "foundation: the root of the allocator got no address space for its heap table of {} "
+                           "bytes, with {}.  Raise the address-space limit of the process (ulimit -v), and start it "
+                           "again.",
+                           table_bytes.raw(), core::enum_name_text(error));
+                   });
         HeapStateDoor::set_chunk_map(sentinel_heap_, root.windows_.host().chunk_map());
         root.state_.store_release(RootState::ready);
     }
@@ -151,14 +151,17 @@ struct RootDoor {
         ChunkIndex const chunk = core::Option<ChunkIndex>{claimed}.value_or(ChunkIndex{0});
         require_commit(window.commit_extent_of(commits, chunk));
         require_commit(window.commit_slab_records_of(commits, chunk));
-        auto started = window.start_chunk_meta(commits, chunk);
-        if (started.is_err()) {
-            core::fatal("foundation: the kernel refused the memory of the record of a chunk of the allocator, with {}",
-                        core::enum_name_text(started.err().value_or(os::Errno::enomem)));
-        }
-        auto record = std::move(started).expect("the record of the chunk is started");
-        record->set_owner(owner);
-        record->set_state(ChunkState::owned);
+        auto const started = window.start_chunk_meta(commits, chunk);
+        started.match(
+            [owner](auto const& record) noexcept {
+                record->set_owner(owner);
+                record->set_state(ChunkState::owned);
+            },
+            [](os::Errno error) noexcept {
+                core::fatal(
+                    "foundation: the kernel refused the memory of the record of a chunk of the allocator, with {}",
+                    core::enum_name_text(error));
+            });
         window.set_owner(chunk, owner);
         return chunk;
     }

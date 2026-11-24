@@ -1089,11 +1089,9 @@ mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> siz
     constexpr std::size_t rank = detail::minted_rank<SizesExtent, StridesExtent>;
     using Minted = Option<StridedViewMut<T, rank, Brand>>;
     // The arms of a match would give the brand of the frame through a return
-    // type that no template argument of the match names, so the mint reads
-    // the Option with a test and an expect.
-    Option<StridedView<T, rank>> plain = mint_strided_view(detail::run_of_(run), sizes, strides, offset);
-    if (plain.is_none()) return Minted{none};
-    StridedView<T, rank> const view = std::move(plain).expect("the test above");
+    // type that no template argument of the match names, so the mint takes
+    // the view through CRUCIBLE_TRY.
+    CRUCIBLE_TRY(view, mint_strided_view(detail::run_of_(run), sizes, strides, offset));
     if (view.count() != 0 && !detail::has_no_overlap_(detail::strided_lanes_of_(view))) {
         return Minted{none};
     }

@@ -223,11 +223,9 @@ public:
         requires ::foundation::permissions::PoolCtx<Tag, Ctx>
     [[nodiscard]] ::foundation::core::Option<OwnedRegion<T, Tag, Brand>> try_upgrade(Ctx const& ctx) noexcept {
         using Upgraded = ::foundation::core::Option<OwnedRegion<T, Tag, Brand>>;
-        auto exclusive = pool_.try_upgrade(ctx);
-        if (exclusive.is_none()) return Upgraded{::foundation::core::none};
-        return Upgraded::some(
-            OwnedRegion<T, Tag, Brand>{first_of_(::foundation::core::detail::BaseLayerRead{}, run_), run_.size(),
-                                       std::move(exclusive).expect("the test above found the exclusive").leave_pool()});
+        CRUCIBLE_TRY(exclusive, pool_.try_upgrade(ctx));
+        return Upgraded::some(OwnedRegion<T, Tag, Brand>{first_of_(::foundation::core::detail::BaseLayerRead{}, run_),
+                                                         run_.size(), std::move(exclusive).leave_pool()});
     }
 
     [[nodiscard]] std::uint64_t outstanding() const noexcept { return pool_.outstanding(); }

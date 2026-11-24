@@ -329,8 +329,10 @@ public:
                                ::fixy::federation::FederationHandshake const& handshake) noexcept {
         ::fixy::Result<::fixy::Unit, ::fixy::federation::AdmittanceError> const verdict =
             verify_federation_handshake_(handshake);
-        if (verdict.is_err()) {
-            return {std::move(local_cipher), ::fixy::err(verdict.err().expect("a refused handshake has its reason"))};
+        // The token names the fresh brand of this call, so it comes from this
+        // frame and not from an arm of a match.
+        for (::fixy::federation::AdmittanceError const reason : verdict.err()) {
+            return {std::move(local_cipher), ::fixy::err(reason)};
         }
         return {std::move(local_cipher), Permission<tag::FederatedPeer<Org>, Brand>{federation_admission_key{}}};
     }
