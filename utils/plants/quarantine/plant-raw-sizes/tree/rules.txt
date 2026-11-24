@@ -1,0 +1,13 @@
+# The rule table of the plant plant-raw-sizes of the rule quarantine.  The
+# header include/fixy/Sizes.h is a base file, and src/sizes.cpp is
+# quarantined.  The two size-door rows name the mint and the check of the
+# header.  The subscript of a class of the base needs no row.
+
+layer low 0 include/fixy/
+
+admit foundation::core | the vocabulary of the opt-out region
+
+size-door fixy::mint_room 1 | the count of the elements of a new room
+size-door fixy::Slot::check 0 | the raw position that the check compares with the count of the slot
+
+quarantine src/sizes.cpp

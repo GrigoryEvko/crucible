@@ -1,0 +1,59 @@
+// A quarantined unit with no sum or product of two unsigned words at a size
+// door compiles in the mode error with no error: a constant operand (lines 16
+// and 17), a named constant (20), a parameter of a template (23), a sizeof
+// (25), a sum of 32 bits (26), the strict forms (28 and 31), a product at a
+// function that is no size door (33), the base door mint_square (34), and the
+// same forms in a template body (38 to 40).  The known gaps of the kind give
+// no finding too: a signed product (46), a difference (48), a local that is
+// not const (51), and a second const local (56).
+#include <fixy/Sizes.h>
+
+namespace planted {
+
+using ::fixy::Count;
+
+// The forms that the kind does not count.
+::fixy::Room constant_operand(Count rows) { return ::fixy::mint_room<int>(0, rows * 8); }
+::fixy::Slot<64> constant_step(Count cursor) { return ::fixy::Slot<64>::check(cursor + 1); }
+::fixy::Room named_constant(Count rows) {
+    Count const width = 16;
+    return ::fixy::mint_room<int>(0, rows * width);
+}
+template <Count Width>
+::fixy::Room template_parameter(Count rows) { return ::fixy::mint_room<int>(0, rows * Width); }
+::fixy::Room use_parameter(Count rows) { return template_parameter<4>(rows); }
+::fixy::Room size_of(Count rows) { return ::fixy::mint_room<int>(0, rows * sizeof(Count)); }
+::fixy::Room narrow_sum(unsigned first, unsigned extra) { return ::fixy::mint_room<int>(0, first + extra); }
+::fixy::Room strict_forms(Count rows, Count columns) {
+    return ::fixy::mint_room<int>(0, ::fixy::strict_mul(rows, columns));
+}
+::fixy::Slot<64> strict_step(Count cursor, Count step) {
+    return ::fixy::Slot<64>::check(::fixy::strict_add(cursor, step));
+}
+Count other_function(Count rows, Count columns) { return ::fixy::measure(rows * columns); }
+::fixy::Room base_square(Count side) { return ::fixy::mint_square(side); }
+template <class T>
+Count pattern_forms(::fixy::Table const& table, Count rows, Count step) {
+    Count const width = 16;
+    ::fixy::Room const room = ::fixy::mint_room<T>(0, rows * width);
+    ::fixy::Slot<64> const slot = ::fixy::Slot<64>::check(rows + sizeof(T));
+    return table[rows * 4] + table[::fixy::strict_add(rows, step)] + room.elements + slot.value;
+}
+Count use_pattern_forms(::fixy::Table const& table, Count rows) { return pattern_forms<int>(table, rows, rows); }
+
+// The known gaps.
+::fixy::Room signed_product(long rows, long columns) {
+    return ::fixy::mint_room<int>(0, static_cast<Count>(rows * columns));
+}
+::fixy::Slot<64> difference(Count high, Count low) { return ::fixy::Slot<64>::check(high - low); }
+::fixy::Room mutable_local(Count rows, Count columns) {
+    Count cells = rows * columns;
+    return ::fixy::mint_room<int>(0, cells);
+}
+::fixy::Room second_local(Count rows, Count columns) {
+    Count const cells = rows * columns;
+    Count const copy = cells;
+    return ::fixy::mint_room<int>(0, copy);
+}
+
+}  // namespace planted

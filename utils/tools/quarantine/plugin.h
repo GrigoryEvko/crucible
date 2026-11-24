@@ -191,6 +191,16 @@
 //                           value.  fixy::enum_from and fixy::enum_from_field
 //                           are the doors (the casts into an enumeration of
 //                           expression.cpp)
+//     raw-size-arithmetic   a sum or a product of an unsigned type of 64
+//                           bits with no constant operand, as the size
+//                           argument of a door of a size-door row or as the
+//                           index of a subscript of a class of a base file,
+//                           in a quarantined file.  The argument can pass
+//                           through conversions and one const local.  A sum
+//                           or a product that wraps gives a wrong size or a
+//                           wrong index with no report.  The entity is the
+//                           door and the operator (the raw sizes of
+//                           expression.cpp)
 //     opted-out           a finding of each kind of each rule, inside a region
 //                           that CRUCIBLE_I_KNOW_WHAT_IM_DOING("CLASS: reason")
 //                           opens.  Its entity is the kind and the entity of the
@@ -1097,6 +1107,7 @@ enum class Kind : std::uint8_t {
     base_c_library_call,
     forged_tag,
     enum_cast,
+    raw_size_arithmetic,
     contract_specifier,
     binding_hook,
     borrow_match,
@@ -1410,6 +1421,8 @@ inline const char* kind_name(Kind kind) {
             return "forged-tag";
         case Kind::enum_cast:
             return "enum-cast";
+        case Kind::raw_size_arithmetic:
+            return "raw-size-arithmetic";
         case Kind::contract_specifier:
             return "contract-specifier";
         case Kind::binding_hook:
@@ -2029,6 +2042,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"quarantine", "base-c-library-call"},
     {"quarantine", "forged-tag"},
     {"quarantine", "enum-cast"},
+    {"quarantine", "raw-size-arithmetic"},
     {"quarantine", "opted-out"},
     {"quarantine", "region"},
     {"contract-specifier", "contract-specifier"},

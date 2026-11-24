@@ -179,6 +179,26 @@
 //     (InitSafe).  The entity is ENUMERATION from TYPE, ENUMERATION from the
 //     constant VALUE, or ENUMERATION from the empty brace.
 //
+// Raw sizes (the rule quarantine)
+//     A size door takes a size or an index as one argument: a function of a
+//     size-door row of the rule table, at the position of its row, and the
+//     subscript operator of a class of a base file, at its index.  A sum or a
+//     product of an unsigned type of 64 bits with no constant operand as that
+//     argument is the kind raw-size-arithmetic, in a quarantined file only.
+//     Such a sum can wrap with no report, and the door then sizes an
+//     allocation or reads an element with a wrong value.  The walk strips the
+//     conversions of the argument, and it follows a const local of the
+//     function to its initializer one time.  A call of the strict family, of
+//     a checked, wrapping or saturating form, or of each other function is
+//     no sum, so it gives no finding.  A constant operand, as in count * 8 or
+//     cursor + 1, gives no finding: its bound is in the source.  A sum of 32
+//     bits gives no finding, because the conversion to the size happens
+//     after the sum.  The walk reads the pattern of a template and each body
+//     that is no template.  It does not read a local that is not const, a
+//     difference, a signed sum, or a sum that a helper function computes.
+//     The places of the base are no places of the kind.  The entity is the
+//     door and the operator, such as foundation::core::mint_heap_array (*).
+//
 // Refined parameters (the rule refined-pre-subsumption)
 //     A parameter of a specialization of fixy::Refinement, the class of
 //     fixy::Refined and fixy::SealedRefined, carries the proof of the
@@ -244,6 +264,10 @@ struct BodyWalk {
     // The grant row of the grant file that holds the code, or null (the
     // grants).
     const GrantRow* grant = nullptr;
+    // The initializer of each const local of the body, by its declaration,
+    // from the statement that initializes it (the raw sizes).  The front end
+    // keeps no initial value of a local whose initializer calls a function.
+    std::unordered_map<tree, tree> local_initializers;
 };
 
 // The identifiers that the family compares, interned one time.
@@ -268,6 +292,9 @@ struct Names {
     // of each one, which a test asks before it makes a qualified name.
     std::unordered_set<std::string> witnessed;
     std::unordered_set<tree> witnessed_last_names;
+    // The last name of each size-door row, which a call compares before it
+    // makes a qualified name (the raw sizes).
+    std::unordered_set<tree> size_door_last_names;
 };
 
 Names names;
@@ -1688,6 +1715,152 @@ void collect_macro_facts(tree node, location_t location) {
     }
 }
 
+// ── The raw sizes (the rule quarantine) ─────────────────────────────────
+
+// The place of the size or index argument of FUNCTION, from 0 and with no
+// object of a member function, or -1 when FUNCTION is no size door (the raw
+// sizes).  A function whose last name no size-door row has costs one lookup.
+int size_argument_of(tree function) {
+    if (names.size_door_last_names.count(DECL_NAME(function)) != 0) {
+        std::string const name = qualified_name(function);
+        for (const SizeDoorRow& row : state.table.size_doors) {
+            if (row.function == name) {
+                return row.position;
+            }
+        }
+    }
+    tree scope = DECL_CONTEXT(function);
+    bool const is_subscript = DECL_LANG_SPECIFIC(function) != nullptr && DECL_OVERLOADED_OPERATOR_P(function)
+                           && DECL_OVERLOADED_OPERATOR_IS(function, ARRAY_REF);
+    if (is_subscript && scope != NULL_TREE && TYPE_P(scope)
+        && place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine).file_class == FileClass::base) {
+        return 0;
+    }
+    return -1;
+}
+
+// NODE with no location wrapper and no conversion.  The pattern of a
+// template keeps a static_cast and a functional cast of one operand as a
+// node of its own.  Complexity: one step for each conversion.
+tree without_conversions(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = tree_strip_any_location_wrapper(node);
+        tree_code const code = TREE_CODE(node);
+        if (code == CAST_EXPR) {
+            tree operands = TREE_OPERAND(node, 0);
+            if (operands == NULL_TREE || TREE_CODE(operands) != TREE_LIST || TREE_CHAIN(operands) != NULL_TREE) {
+                return node;
+            }
+            node = TREE_VALUE(operands);
+            continue;
+        }
+        if (!CONVERT_EXPR_P(node) && code != NON_LVALUE_EXPR && code != VIEW_CONVERT_EXPR && code != IMPLICIT_CONV_EXPR
+            && code != STATIC_CAST_EXPR) {
+            return node;
+        }
+        node = TREE_OPERAND(node, 0);
+    }
+    return node;
+}
+
+// True when the variable NODE is const.  The pattern of a template marks
+// the type of a const local, and the variable only in its instance.
+bool is_const_variable(tree node) { return VAR_P(node) && (TREE_READONLY(node) || CP_TYPE_CONST_P(TREE_TYPE(node))); }
+
+// True when the operand NODE has its value in the source: an integer
+// constant, a variable of an integral type whose initializer is one, a
+// parameter of a template and a sizeof or an alignof.  The front end folds
+// such an operand outside a template, and the pattern of a template keeps
+// it, so the two give the same answer.
+bool is_constant_operand(tree node) {
+    node = without_conversions(node);
+    if (node == NULL_TREE) {
+        return false;
+    }
+    switch (TREE_CODE(node)) {
+        case INTEGER_CST:
+        case TEMPLATE_PARM_INDEX:
+        case SIZEOF_EXPR:
+        case ALIGNOF_EXPR:
+            return true;
+        case VAR_DECL: {
+            tree initial = DECL_INITIAL(node);
+            return is_const_variable(node) && INTEGRAL_TYPE_P(TREE_TYPE(node)) && initial != NULL_TREE
+                && TREE_CODE(without_conversions(initial)) == INTEGER_CST;
+        }
+        default:
+            return false;
+    }
+}
+
+// The initializer of the const local NODE of the walked body, or null.  The
+// pattern of a template keeps it as the initial value, and the statement
+// that initializes the local gives it in a body that is no template.
+tree local_initializer_of(tree node, const BodyWalk& walk) {
+    if (!is_const_variable(node) || TREE_STATIC(node) || !DECL_FUNCTION_SCOPE_P(node)) {
+        return NULL_TREE;
+    }
+    if (DECL_INITIAL(node) != NULL_TREE) {
+        return DECL_INITIAL(node);
+    }
+    auto found = walk.local_initializers.find(node);
+    return found != walk.local_initializers.end() ? found->second : NULL_TREE;
+}
+
+// The operator of NODE when it is a sum or a product of an unsigned type of
+// 64 bits with no constant operand, through the conversions of the argument
+// and one const local of the function, or null (the raw sizes).
+const char* raw_size_operation(tree node, const BodyWalk& walk, bool is_local_read) {
+    node = without_conversions(node);
+    if (node == NULL_TREE) {
+        return nullptr;
+    }
+    if (tree initializer = !is_local_read ? local_initializer_of(node, walk) : NULL_TREE; initializer != NULL_TREE) {
+        return raw_size_operation(initializer, walk, true);
+    }
+    tree_code const code = TREE_CODE(node);
+    tree type = TREE_TYPE(node);
+    if ((code != PLUS_EXPR && code != MULT_EXPR) || type == NULL_TREE || TREE_CODE(type) != INTEGER_TYPE
+        || !TYPE_UNSIGNED(type) || TYPE_PRECISION(type) != 64) {
+        return nullptr;
+    }
+    if (is_constant_operand(TREE_OPERAND(node, 0)) || is_constant_operand(TREE_OPERAND(node, 1))) {
+        return nullptr;
+    }
+    return code == PLUS_EXPR ? "+" : "*";
+}
+
+// A sum or a product of the kind raw-size-arithmetic as the size or index
+// argument of a call of a size door, in a quarantined file (the raw sizes).
+// A resolved call of a member function holds its object as the first
+// argument.  The pattern of a template keeps the object in the callee, a
+// member access, and not in the arguments.  A call of no size door costs one
+// lookup for each function that its callee can name.
+void check_raw_size(tree call, location_t location, const BodyWalk& walk) {
+    tree door = NULL_TREE;
+    int position = -1;
+    tree callee = callee_of(call);
+    for_each_function(callee, [&](tree function) {
+        if (door == NULL_TREE) {
+            position = size_argument_of(function);
+            door = position >= 0 ? function : NULL_TREE;
+        }
+    });
+    if (door == NULL_TREE) {
+        return;
+    }
+    bool const is_object_member = DECL_LANG_SPECIFIC(door) != nullptr && DECL_OBJECT_MEMBER_FUNCTION_P(door);
+    if (is_object_member && callee != NULL_TREE && TREE_CODE(callee) != COMPONENT_REF) {
+        ++position;
+    }
+    if (position >= argument_count(call) || !is_quarantined(location)) {
+        return;
+    }
+    if (const char* operation = raw_size_operation(argument_at(call, position), walk, false)) {
+        record(Kind::raw_size_arithmetic, location, qualified_name(door) + " (" + operation + ")");
+    }
+}
+
 // ── The routes of a call (the proof routes) ─────────────────────────────
 
 // True when FUNCTION gives raw storage: an operator new or new[] of each
@@ -2063,11 +2236,20 @@ void check_expression_rules(tree node, BodyWalk& walk) {
         case AGGR_INIT_EXPR: {
             location_t location = EXPR_HAS_LOCATION(node) ? EXPR_LOCATION(node) : walk.last;
             check_call_routes(node, location);
+            check_raw_size(node, location, walk);
             if (!walk.refined.empty()) {
                 check_retest(node, location, walk);
             }
             break;
         }
+        // The statement that initializes a local of a body that is no
+        // template, which a call of a later size door can read (the raw
+        // sizes).
+        case INIT_EXPR:
+            if (tree target = TREE_OPERAND(node, 0); is_const_variable(target) && DECL_FUNCTION_SCOPE_P(target)) {
+                walk.local_initializers.emplace(target, TREE_OPERAND(node, 1));
+            }
+            break;
         default:
             break;
     }
@@ -2749,6 +2931,11 @@ void register_expressions(const char* plugin_name) {
         std::size_t last = witness.name.rfind("::");
         names.witnessed_last_names.insert(
             get_identifier(last == std::string::npos ? witness.name.c_str() : witness.name.c_str() + last + 2));
+    }
+    for (const SizeDoorRow& row : state.table.size_doors) {
+        std::size_t last = row.function.rfind("::");
+        names.size_door_last_names.insert(
+            get_identifier(last == std::string::npos ? row.function.c_str() : row.function.c_str() + last + 2));
     }
     register_callback(plugin_name, PLUGIN_PRE_GENERICIZE, on_pre_genericize, nullptr);
     register_callback(plugin_name, PLUGIN_FINISH_TYPE, on_finish_route_type, nullptr);

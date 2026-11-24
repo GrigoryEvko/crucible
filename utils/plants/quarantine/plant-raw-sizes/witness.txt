@@ -1,0 +1,35 @@
+# Each sum or product of two unsigned words with no constant operand at a size
+# door of a quarantined file is the kind raw-size-arithmetic: a product and a
+# sum at the count of a mint (lines 16 and 17), a product through a
+# conversion (19), a product through a const local (23), a sum at the check
+# of an index (25), a sum at the subscript of a class of the base (26), and a
+# product in a template body (29).  A template body keeps a member call, a
+# const local and a static_cast in nodes of its own, and the same forms count
+# there (34 to 37).  A const local whose initializer calls a function counts
+# at its door (43): the front end keeps no initial value of it, and the walk
+# reads the statement that initializes it.  The product of the base door
+# mint_square gives no finding.  The opt-out region turns its product into
+# opted-out (48).  In the mode error, each finding outside the region is an
+# error that names the strict forms.
+
+compile report src/sizes.cpp
+exit report pass
+judge report
+finding report quarantine raw-size-arithmetic src/sizes.cpp:16:86 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:17:81 | fixy::mint_room (+)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:19:34 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:23:34 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:25:85 | fixy::Slot::check (+)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:26:105 | fixy::Table::operator[] (+)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:29:86 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:34:53 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:35:53 | fixy::mint_room (*)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:36:58 | fixy::Slot::check (+)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:37:33 | fixy::Table::operator[] (+)
+finding report quarantine raw-size-arithmetic src/sizes.cpp:43:34 | fixy::mint_room (*)
+finding report quarantine opted-out src/sizes.cpp:48:53 | raw-size-arithmetic fixy::mint_room (*)
+finding report quarantine region src/sizes.cpp:47:1 | PROBE: the test wraps a count
+
+compile error src/sizes.cpp mode=error out=no errors=report
+exit error fail
+text error | fixy::strict_add

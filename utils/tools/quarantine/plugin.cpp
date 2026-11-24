@@ -726,6 +726,12 @@ void report(bool can_add_dependencies) {
                      "quarantine: enum-cast %s; the cast can make a value that names no enumerator.  Read a number "
                      "with %qs, read a field whose each value names an enumerator with %qs, or write the enumerator",
                      entity.c_str(), "fixy::enum_from", "fixy::enum_from_field");
+        } else if (is_error && !is_out && finding.kind == Kind::raw_size_arithmetic) {
+            error_at(finding.spelling,
+                     "quarantine: raw-size-arithmetic %s; a sum or a product of two sizes can wrap with no report, "
+                     "and the door then gets a wrong size or index.  Compute it with %qs or %qs, or with a checked "
+                     "form at the boundary of outside data",
+                     entity.c_str(), "fixy::strict_add", "fixy::strict_mul");
         } else if (is_error && !is_out && is_include_kind(finding.kind)) {
             error_at(finding.spelling,
                      "quarantine: %s %s; the rule table does not let this file include the header, so include a "

@@ -1,0 +1,53 @@
+// A quarantined unit.  Each sum or product of two unsigned words with no
+// constant operand at a size door is raw-size-arithmetic: a product and a sum
+// at the count of a mint (16, 17), a product through a conversion (19) and
+// a const local (23), a sum at the check of an index (25) and the subscript
+// of a class of the base (26), and a product in a template body (29).  In a
+// template body, the same forms count at lines 34 to 37.  A const local whose
+// initializer calls a function counts too (43).  The base door mint_square
+// is a place of the base.  The opt-out region gives opted-out (48).
+#include <fixy/Sizes.h>
+#include <foundation/Quarantine.h>
+
+namespace planted {
+
+using ::fixy::Count;
+
+::fixy::Room product_count(Count rows, Count columns) { return ::fixy::mint_room<int>(0, rows * columns); }
+::fixy::Room sum_count(Count first, Count extra) { return ::fixy::mint_room<int>(0, first + extra); }
+::fixy::Room converted_product(unsigned long long rows, unsigned long long columns) {
+    return ::fixy::mint_room<int>(0, static_cast<Count>(rows * columns));
+}
+::fixy::Room local_product(Count rows, Count columns) {
+    Count const cells = rows * columns;
+    return ::fixy::mint_room<int>(0, cells);
+}
+::fixy::Slot<64> sum_slot(Count cursor, Count step) { return ::fixy::Slot<64>::check(cursor + step); }
+Count sum_subscript(::fixy::Table const& table, Count row, Count column) { return table[row * 4 + column]; }
+
+template <class T>
+::fixy::Room pattern_product(Count rows, Count columns) { return ::fixy::mint_room<T>(0, rows * columns); }
+::fixy::Room use_pattern(Count rows, Count columns) { return pattern_product<int>(rows, columns); }
+template <class T>
+Count pattern_doors(::fixy::Table const& table, Count first, Count extra) {
+    Count const cells = first * extra;
+    ::fixy::Room const room = ::fixy::mint_room<int>(0, cells);
+    ::fixy::Room const cast = ::fixy::mint_room<int>(0, static_cast<Count>(first * extra));
+    ::fixy::Slot<64> const slot = ::fixy::Slot<64>::check(first + extra);
+    return table[first + extra] + slot.value + room.elements + cast.elements + sizeof(T);
+}
+Count use_pattern_doors(::fixy::Table const& table, Count first) { return pattern_doors<int>(table, first, first); }
+::fixy::Room base_square(Count side) { return ::fixy::mint_square(side); }
+::fixy::Room called_local(Count rows, Count columns) {
+    Count const cells = ::fixy::measure(rows) * columns;
+    return ::fixy::mint_room<int>(0, cells);
+}
+
+::fixy::Room probe(Count rows, Count columns) {
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the test wraps a count")
+    ::fixy::Room const room = ::fixy::mint_room<int>(0, rows * columns);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    return room;
+}
+
+}  // namespace planted

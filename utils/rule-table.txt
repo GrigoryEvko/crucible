@@ -246,6 +246,17 @@
 #       with no row.  These rows are the roster of the other doors, and the
 #       rule refuses a row whose function no unit of the build reads.  A
 #       FUNCTION has one linear-door row at most, and the reason is necessary
+#   size-door FUNCTION POSITION | REASON
+#       FUNCTION takes a size or an index as its argument at POSITION.  The
+#       arguments count from 0, and the object of a member function is no
+#       argument.  A sum or a product of an unsigned type of 64 bits with no
+#       constant operand as that argument, also through conversions and one
+#       const local, is the kind raw-size-arithmetic of the rule quarantine
+#       in a quarantined file (utils/tools/quarantine/expression.cpp, the raw
+#       sizes).  The index of a subscript of a class of a base file is such an
+#       argument with no row.  FUNCTION is a qualified name with no template
+#       arguments, and it names each overload of that name.  A FUNCTION has
+#       one size-door row at most, and the reason is necessary
 #
 # THE LONGEST PATH
 #   When the PATHs of two rows hold one file, the longer PATH decides.  A
@@ -645,6 +656,16 @@ linear-door foundation::permissions::mint_permission_combine_n | the combine end
 linear-door foundation::permissions::mint_permission_share | the share ends the exclusive token, which it takes by an unnamed parameter, and mints a share of the region
 linear-door foundation::permissions::mint_permission_after_loan | the door ends the loan when it comes back, and it takes the parked token out of its carrier
 linear-door fixy::OwnedRegion::recombine | the door ends the receipt of the split, and it takes the permission out of each shard to combine the region
+
+# The doors that take a size or an index of the rule quarantine.  A raw sum or
+# product of two unsigned words as such an argument can wrap with no report,
+# so a quarantined file computes it with the strict family.
+size-door foundation::core::mint_heap_array 1 | the count of the elements of a new HeapArray, which sizes its allocation
+size-door foundation::core::mint_heap_array_with 1 | the count of the elements of a new HeapArray, which sizes its allocation
+size-door foundation::core::mint_heap_array_zeroed 1 | the count of the elements of a new HeapArray, which sizes its allocation
+size-door foundation::core::mint_heap_array_written 1 | the count of the elements of a new HeapArray, which sizes its allocation
+size-door foundation::core::mint_masked_array 1 | the count of the elements of a new MaskedArray, which sizes its allocation
+size-door foundation::core::Index::check 0 | the raw position that the check compares with the count of the Index
 
 # The witness rows.  Each class of the base that attests to a fact that it
 # cannot see, and the door that it keeps.  Edit a row, and then write the

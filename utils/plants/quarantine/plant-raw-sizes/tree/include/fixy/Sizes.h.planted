@@ -1,0 +1,35 @@
+#pragma once
+
+// A base header with three size doors: a mint that takes a count, the check
+// of an index and the subscript of a class.  A product in the base, as in
+// mint_square, is a place of the base, so it gives no finding.
+
+namespace fixy {
+
+using Count = decltype(sizeof(0));
+
+struct Room {
+    Count elements = 0;
+};
+
+template <class T>
+constexpr Room mint_room(int marker, Count count) {
+    return Room{marker == 0 ? count : Count{0}};
+}
+
+template <Count N>
+struct Slot {
+    Count value = 0;
+    static constexpr Slot check(Count raw) { return Slot{raw < N ? raw : Count{0}}; }
+};
+
+struct Table {
+    Count first = 0;
+    constexpr Count operator[](Count index) const { return first + index; }
+};
+
+constexpr Room mint_square(Count side) { return mint_room<int>(0, side * side); }
+
+constexpr Count measure(Count value) { return value; }
+
+}  // namespace fixy

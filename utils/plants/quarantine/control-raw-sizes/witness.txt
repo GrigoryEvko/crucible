@@ -1,0 +1,15 @@
+# A quarantined unit with no sum or product of two unsigned words at a size
+# door compiles in the mode error with no error: a constant operand, a named
+# constant, a parameter of a template, a sizeof, a sum of 32 bits, the strict
+# forms, a product at a function that is no size door, and the base door
+# mint_square.  The plant plant-raw-sizes refuses each form with two
+# computed operands.  The known gaps of the kind also give no finding: a
+# signed product, a difference, a local that is not const, and a second const
+# local after the first one.
+
+compile clean src/uses.cpp mode=error
+exit clean pass
+
+compile report src/uses.cpp
+exit report pass
+judge report
