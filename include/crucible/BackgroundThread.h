@@ -921,12 +921,9 @@ public:
         void push(RegionNode& region) noexcept {
             const uint64_t capacity = slots_.size();
             if (capacity != 0) {
-                // The body reads the link through a const reference, so it
-                // writes no borrow of its frame into the region.
-                RegionLink const link = ::fixy::some(::fixy::to(region));
-                slots_.with_element(
-                    total_.peek_relaxed() % capacity, [&link](RegionLink& slot) noexcept { slot = link; },
-                    [] noexcept { ::fixy::fatal("a count modulo the capacity is below it"); });
+                // The exchange takes the link by value and calls no body.  The
+                // region store keeps the region that the slot held before.
+                static_cast<void>(slots_.exchange(total_.peek_relaxed() % capacity, ::fixy::some(::fixy::to(region))));
             }
             (void)total_.bump();
         }
