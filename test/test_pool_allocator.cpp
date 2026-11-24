@@ -665,7 +665,7 @@ static void test_slot_views() {
     // of the pool at its offset.  Pooled slot 2 holds no byte, so its address
     // is the byte of the pool at its offset, and its View is empty.
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<std::uint8_t>(SlotId{0}, pv)
-                                    .is_some_and([&pool, &pv](::fixy::View<std::uint8_t const> const& bytes) noexcept {
+                                    .is_some_and([&pool, &pv](::fixy::View<std::uint8_t const> bytes) noexcept {
                                         return bytes.size() == 64
                                             && pool.slot_ptr(SlotId{0}, pv)
                                                    == ::fixy::mint_run_address(pool.bytes(), 256);

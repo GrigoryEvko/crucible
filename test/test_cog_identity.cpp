@@ -174,7 +174,7 @@ static void test_cog_identity_topology_links() {
     cog::CogIdentity child = gpu0;
     child.parent = ::fixy::some(::fixy::Ref<const cog::CogIdentity>{::fixy::erase_brand(::fixy::to(package))});
     CRUCIBLE_TEST_ASSERT(kTest, child.parent.match(
-                                    [&package](::fixy::Ref<const cog::CogIdentity> const& parent) noexcept {
+                                    [&package](::fixy::Ref<const cog::CogIdentity> parent) noexcept {
                                         return ::fixy::same_object(parent, ::fixy::to(package));
                                     },
                                     []() noexcept { return false; }));

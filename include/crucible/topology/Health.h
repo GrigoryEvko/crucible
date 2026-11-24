@@ -729,7 +729,7 @@ public:
                     slots_.with_element(index, [&scorer, &peer, now_ns, &sequences](Slot& slot) noexcept {
                         return scorer.compute_in(slot, peer, now_ns, sequences);
                     });
-                step.event.match([this](HealthDeltaEvent const& event) noexcept { push_event(event); }, [] noexcept {});
+                step.event.match([this](HealthDeltaEvent event) noexcept { push_event(event); }, [] noexcept {});
                 return step.graded;
             },
             [&] { return missing_snapshot(peer, sequences); });

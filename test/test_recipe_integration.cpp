@@ -60,9 +60,7 @@ template <class Fake>
 template <class Fake>
 [[nodiscard]] bool is_found(KernelCache::FoundKernel const& found, Fake& fake) noexcept {
     return found.match(
-        [&fake](KernelCache::KernelRef const& kernel) noexcept {
-            return ::fixy::same_object(kernel, kernel_ref(fake));
-        },
+        [&fake](KernelCache::KernelRef kernel) noexcept { return ::fixy::same_object(kernel, kernel_ref(fake)); },
         []() noexcept { return false; });
 }
 

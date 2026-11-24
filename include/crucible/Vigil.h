@@ -1276,9 +1276,9 @@ private:
         // over, and the walk keeps its position.  The background publishes
         // a region at each iteration boundary of a backlog, and each one has
         // the same ops, so a restart at each one would lose the matched ops.
-        const bool continues_walk =
-            pending_activation_.is_some_and([&region, this](DagRef<const RegionNode> const& walked) noexcept {
-                return holds_walk_(*walked, region, alignment_pos_.value());
+        const bool continues_walk = pending_activation_.is_some_and(
+            [&region, position = alignment_pos_.value()](DagRef<const RegionNode> const& walked) noexcept {
+                return holds_walk_(*walked, region, position);
             });
         pending_activation_ = taken;
         if (continues_walk) return;

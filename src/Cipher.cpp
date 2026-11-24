@@ -762,7 +762,7 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     // shard when it is missing and syncs objects, which holds the shard.
     const EntryPath shard = object_shard_(hash.raw());
     const EntryPath leaf = object_leaf_(hash.raw());
-    const ::fixy::fs::DirectoryHandle shard_dir = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    const ::fixy::fs::DirectoryHandle shard_dir = with_file_ctx_(file_ctx, [&](auto ctx) {
         return open_durable_directory_at_(ctx, open_level_(ctx, root_directory_, "objects"), shard.c_text());
     });
     if (!shard_dir.is_open()) return ContentHash{};
@@ -773,7 +773,7 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     // object.  Another process may have written them and died before the
     // kernel flushed them, and this process is about to return the hash as
     // durable.
-    const auto is_sound_and_flushed = [&](auto const& ctx) {
+    const auto is_sound_and_flushed = [&](auto ctx) {
         return is_sound_object_(ctx, allocation_, shard_dir, leaf.c_text(), hash)
             && flush_entry_at_(ctx, shard_dir, leaf.c_text())
             && ::fixy::fs::sync<::fixy::fs::sync_op::FsyncParentDir>(ctx, shard_dir.ref()).is_ok();
@@ -958,7 +958,7 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     // in the meantime, and that file must hold the same bytes too.  A batch
     // file of the hash that does not read gives the LoadError of its read.
     using Indexed = ::fixy::Result<::fixy::Unit, PersistError>;
-    Indexed indexed = with_file_ctx_(file_ctx, [&](auto const& ctx) -> Indexed {
+    Indexed indexed = with_file_ctx_(file_ctx, [&](auto ctx) -> Indexed {
         const ::fixy::fs::DirectoryHandle session_dir = open_durable_directory_at_(
             ctx, open_durable_directory_at_(ctx, root_directory_, "session_events"), session_name.c_text());
         if (!session_dir.is_open()) return ::fixy::err(PersistRefusal::session_directory_failed);
@@ -1248,8 +1248,8 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     ::fixy::FixedText<64> record{};
     const ::fixy::TextView log_line = ::fixy::format(record, "{},{},{}\n", step_id, hash_digits.view(), order.raw())
                                           .expect("a log record fits 64 characters");
-    const bool is_appended = with_file_ctx_(
-        file_ctx, [&](auto const& ctx) { return append_entry_at_(ctx, root_directory_, "log", log_line); });
+    const bool is_appended =
+        with_file_ctx_(file_ctx, [&](auto ctx) { return append_entry_at_(ctx, root_directory_, "log", log_line); });
     if (!is_appended) {
         return ::fixy::err(CommitError::log_append);
     }
@@ -1262,7 +1262,7 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     ::fixy::FixedText<17> head_line{};
     head_line.append(hash_digits.view()).expect("sixteen digits fit the HEAD line");
     head_line.append('\n').expect("the newline fits the HEAD line");
-    const bool is_head_written = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    const bool is_head_written = with_file_ctx_(file_ctx, [&](auto ctx) {
         return write_entry_at_(ctx, root_directory_, "HEAD", head_line.view(), EntryCommit::replace)
             == EntryWrite::written;
     });
@@ -1403,9 +1403,8 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     // The open makes objects when it is missing and syncs the root, which
     // holds it.  A store opens objects again, so a failure here shows in
     // the first store.
-    static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
-        return open_durable_directory_at_(ctx, root_directory_, "objects").is_open();
-    }));
+    static_cast<void>(with_file_ctx_(
+        file_ctx, [&](auto ctx) { return open_durable_directory_at_(ctx, root_directory_, "objects").is_open(); }));
 
     load_log(file_ctx, allocation);
 
@@ -1418,7 +1417,7 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
         return ::fixy::Unit{};
     }
     ::fixy::GrowText head_text = ::fixy::mint_grow_text(MAX_HEAD_BYTES);
-    const bool is_head_read = with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    const bool is_head_read = with_file_ctx_(file_ctx, [&](auto ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "HEAD", head_text).is_ok();
     });
     const ::fixy::HeapText head = ::fixy::freeze(std::move(head_text));
@@ -1432,7 +1431,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     // and the parse reads them: a torn last line has no newline, and the
     // loop stops at it.
     ::fixy::GrowText text = ::fixy::mint_grow_text(::fixy::max_of<std::size_t>);
-    static_cast<void>(with_file_ctx_(file_ctx, [&](auto const& ctx) {
+    static_cast<void>(with_file_ctx_(file_ctx, [&](auto ctx) {
         return ::fixy::fs::read_whole_at(ctx, allocation, root_directory_.ref(), "log", text).is_ok();
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));

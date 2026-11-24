@@ -1206,18 +1206,21 @@ load_trace_(Ctx const& io, ::fixy::Path<::fixy::tags::source::Sanitized> const& 
         detail::report_name_refusal_(TraceLoadError::NameReserved, checked);
         return ::fixy::err(TraceLoadError::NameReserved);
     }
-    const auto walk_names = [&checked](AddSchemaName const& add_name) noexcept {
-        ::fixy::View<std::byte const> rest = checked.names();
-        for (uint32_t index = 0; index < checked.num_names(); ++index) {
-            const detail::TraceName entry =
-                detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
-            // The check of the image ran sanitize_schema_name on each name,
-            // and the same validator gives the Sanitized name here.  Its
-            // characters stay in the image, and the table copies them.
-            add_name(sanitize_schema_name(entry.hash, detail::trace_name_text_(entry))
-                         .expect("the check of the image ran the same validator on each name"));
-        }
-    };
+    // The walk reads the image through a const reference, so the match that
+    // lends the view of the table to it lends no place that it can write.
+    const auto walk_names =
+        [&image = static_cast<CheckedTraceImage const&>(checked)](AddSchemaName const& add_name) noexcept {
+            ::fixy::View<std::byte const> rest = image.names();
+            for (uint32_t index = 0; index < image.num_names(); ++index) {
+                const detail::TraceName entry =
+                    detail::take_trace_name_(rest).expect("the checked image holds each name of its count");
+                // The check of the image ran sanitize_schema_name on each name,
+                // and the same validator gives the Sanitized name here.  Its
+                // characters stay in the image, and the table copies them.
+                add_name(sanitize_schema_name(entry.hash, detail::trace_name_text_(entry))
+                             .expect("the check of the image ran the same validator on each name"));
+            }
+        };
     const SchemaRegistration registration = schema_table_view.match(
         [&io, &walk_names](SchemaTable::MutableView const& view) {
             return global_schema_table().register_names(io, io.cap().alloc, view, walk_names);

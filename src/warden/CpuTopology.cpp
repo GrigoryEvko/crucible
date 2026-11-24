@@ -272,7 +272,7 @@ CpuSet select_warm_cpus_of(CpuSet const& allowed, TopologyRef topology, ::fixy::
         bool const is_hot_cpu =
             hot_cpu.is_some_and([c](CpuId const& cpu) noexcept { return cpu.raw() == static_cast<std::uint32_t>(c); });
         if (is_hot_cpu) continue;
-        bool const is_on_hot_node = hot_node.is_some_and([topology, c](int const& hot) noexcept {
+        bool const is_on_hot_node = hot_node.is_some_and([topology, c](int hot) noexcept {
             return (*topology).numa_node_of_cpu(c).is_some_and([hot](int node) noexcept { return node == hot; });
         });
         if (is_on_hot_node)
