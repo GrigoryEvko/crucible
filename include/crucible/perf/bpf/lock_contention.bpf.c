@@ -111,7 +111,9 @@ int handle_futex_exit(struct trace_event_raw_sys_exit* ctx) {
              * stamp is fully ordered too, so each field is visible before
              * the stamp. */
             (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, 0);
-            tl->events[slot].futex_addr = info->addr;
+            /* The delete above frees the element of info, and another CPU can
+             * write its own wait there. So the address is the copy in key. */
+            tl->events[slot].futex_addr = key.addr;
             tl->events[slot].wait_ns = delta;
             tl->events[slot].tid = tid;
             (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, now);
