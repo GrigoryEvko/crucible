@@ -597,18 +597,22 @@ namespace bench_alloc {
 // The block of a reference allocator: its first byte, its bytes and its
 // alignment, the three words of the block of the base.  A move leaves the
 // source with no block, and a block that ends with no release ends the
-// process, so the checks of a row see each lost block.
+// process, so the checks of a row see each lost block.  The block holds the
+// address of its first byte as an integer, which holds no borrow.  Each
+// access to the bytes and each call of the allocator converts it back.
 class RawBlock {
 public:
     RawBlock(void* first, ByteCount bytes, BlockAlignment alignment) noexcept
-        : first_{static_cast<std::uint8_t*>(first)}, bytes_{bytes.raw()}, alignment_{alignment_bytes(alignment)} {}
+        : first_{__builtin_bit_cast(std::uintptr_t, first)},
+          bytes_{bytes.raw()},
+          alignment_{alignment_bytes(alignment)} {}
 
     RawBlock(RawBlock&& other) noexcept
-        : first_{std::exchange(other.first_, nullptr)}, bytes_{other.bytes_}, alignment_{other.alignment_} {}
+        : first_{std::exchange(other.first_, std::uintptr_t{0})}, bytes_{other.bytes_}, alignment_{other.alignment_} {}
     RawBlock& operator=(RawBlock&& other) noexcept {
-        if (first_ != nullptr) [[unlikely]]
+        if (first_ != 0) [[unlikely]]
             ::fixy::fatal("a block of a reference allocator took a second block before its release");
-        first_ = std::exchange(other.first_, nullptr);
+        first_ = std::exchange(other.first_, std::uintptr_t{0});
         bytes_ = other.bytes_;
         alignment_ = other.alignment_;
         return *this;
@@ -617,32 +621,35 @@ public:
     RawBlock& operator=(RawBlock const&) = delete("a block has one owner: a copy would release it two times");
 
     ~RawBlock() {
-        if (first_ != nullptr) [[unlikely]]
+        if (first_ != 0) [[unlikely]]
             ::fixy::fatal("a block of {} bytes of a reference allocator ended with no release", bytes_);
     }
 
     [[nodiscard]] ByteCount bytes() const noexcept { return ByteCount{bytes_}; }
 
     // The first byte, which the block gives up.
-    [[nodiscard]] std::uint8_t* take() noexcept { return std::exchange(first_, nullptr); }
+    [[nodiscard]] void* take() noexcept { return __builtin_bit_cast(void*, std::exchange(first_, std::uintptr_t{0})); }
 
-    void write_each_byte(Stamp stamp) const noexcept { __builtin_memset(first_, byte_of(stamp), bytes_); }
+    void write_each_byte(Stamp stamp) const noexcept { __builtin_memset(first_byte_(), byte_of(stamp), bytes_); }
 
     // Writes the first byte kRewrites times, with the barrier of the base
     // adapter after each write.
     void write_first_byte(Stamp stamp) const noexcept {
         for (std::uint32_t write = 0; write < kRewrites; ++write) {
-            first_[0] = byte_of(stamp);
+            first_byte_()[0] = byte_of(stamp);
             bench::clobber_memory();
         }
     }
 
     [[nodiscard]] bool holds_stamp(Stamp stamp) const noexcept {
-        return first_[0] == byte_of(stamp) && first_[bytes_ - 1] == byte_of(stamp);
+        return first_byte_()[0] == byte_of(stamp) && first_byte_()[bytes_ - 1] == byte_of(stamp);
     }
 
 private:
-    std::uint8_t* first_ = nullptr;
+    // The first byte of the block, from its address.
+    [[nodiscard]] std::uint8_t* first_byte_() const noexcept { return __builtin_bit_cast(std::uint8_t*, first_); }
+
+    std::uintptr_t first_ = 0;
     std::size_t bytes_ = 0;
     std::size_t alignment_ = 0;
 };
