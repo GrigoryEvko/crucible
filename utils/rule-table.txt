@@ -1303,16 +1303,24 @@ witness <fixy/os/Io.h> private | fixy::io::IoUringRing | fixy::io::IoUringRing{{
 # The door of a ring.  No object of it exists, its member is private, and
 # its one friend is mint_io_uring_ring, which sets up the ring.
 witness <fixy/os/Io.h> deleted | fixy::io::IoRingDoor | fixy::io::IoRingDoor{}
+# An opened descriptor is a number that a door of an open gave, below the
+# slots of the generations.  Its constructor is private, and its one friend
+# is the door that refuses a number past the slots.  A stamp of a descriptor
+# is a number and its generation, and its constructor is private, so only a
+# read of the generation now makes one.
+witness <fixy/os/Fd.h> private | fixy::fs::OpenedDescriptor | fixy::fs::OpenedDescriptor{3}
+witness <fixy/os/Fd.h> private | fixy::fs::DescriptorStamp | fixy::fs::DescriptorStamp{forge::rvalue<int>(), forge::rvalue<std::uint32_t>()}
 # A Handle claims one descriptor with the rights of its type, and a borrow
-# names the descriptor of a Handle.  The constructor of each is private, and
-# the friends of a Handle are the door classes that open a descriptor.
-witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{3}
-witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<int>()}
+# holds the stamp of the descriptor of a Handle.  The constructor of each is
+# private, and the friends of a Handle are the door classes that open a
+# descriptor.
+witness <fixy/os/Handle.h> private | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::OpenedDescriptor>()}
+witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read> | fixy::os::HandleRef<fixy::os::kind::File, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
 # A foreign ref names the descriptor of a socket that a Handle owns or that
-# a C library opened, with the generation of its number.  Its constructor
-# from a number and a generation is private, and its one friend is the door
-# that share_socket and admit_foreign_socket call.
-witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<int>(), forge::rvalue<std::uint32_t>()}
+# a C library opened, with the stamp of its number.  Its constructor from a
+# stamp is private, and its one friend is the door that share_socket and
+# admit_foreign_socket call.
+witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
 # The four doors of a descriptor handle.  No object of a door exists, its
 # members are private, and its friends are the gated mints that open a
 # descriptor.

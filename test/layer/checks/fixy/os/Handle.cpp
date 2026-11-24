@@ -1,6 +1,9 @@
 // The compile-time checks of fixy/os/Handle.h.
 
 #include <fixy/os/Handle.h>
+
+#include <fixy/os/Fd.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>
@@ -34,6 +37,8 @@ static_assert(!HandleKind<NotAKind> && !HandleKind<int> && !HandleKind<kind::Fil
 static_assert(!std::is_copy_constructible_v<ReadFile> && !std::is_copy_assignable_v<ReadFile>);
 static_assert(std::is_nothrow_move_constructible_v<ReadFile> && std::is_nothrow_move_assignable_v<ReadFile>);
 static_assert(!std::is_constructible_v<ReadFile, int>, "a public constructor would close a descriptor of a caller");
+static_assert(!std::is_constructible_v<ReadFile, ::fixy::fs::OpenedDescriptor&&>,
+              "only the doors of an open give an opened number to a handle");
 static_assert(!std::is_trivially_copyable_v<ReadFile>, "std::bit_cast must not build a handle");
 static_assert(std::is_default_constructible_v<ReadFile>, "the empty handle claims nothing, so it stays reachable");
 static_assert(sizeof(ReadFile) == sizeof(int), "a handle is the descriptor and no more");
@@ -46,9 +51,20 @@ concept CanRestrict = requires(Ref borrow) { borrow.template restrict<Fewer>(); 
 static_assert(std::is_same_v<decltype(std::declval<ReadFile const&>().ref()), ReadFileRef>);
 static_assert(!std::is_trivially_copyable_v<ReadFileRef> && std::is_trivially_copy_constructible_v<ReadFileRef>,
               "std::bit_cast must not build a borrow, and the ABI still passes a borrow in a register");
-static_assert(sizeof(ReadFileRef) == sizeof(int const*), "the seal of a borrow adds no byte");
+static_assert(sizeof(ReadFileRef) == sizeof(::fixy::fs::DescriptorStamp), "the seal of a borrow adds no byte");
+static_assert(sizeof(::fixy::fs::DescriptorStamp) == sizeof(int) + sizeof(std::uint32_t),
+              "a stamp is the number and its generation, and no address of a handle");
 static_assert(!::foundation::core::HoldsNoBorrow<ReadFileRef>,
-              "a borrow of a descriptor holds the address of its handle, so no frame result carries it out");
+              "a borrow of a descriptor states refers, so no frame result carries it out");
+static_assert(!::foundation::transfer::Sendable<ReadFileRef> && !::foundation::transfer::Shareable<ReadFileRef>
+                  && !::foundation::transfer::SendableBeside<ReadFileRef>
+                  && !::foundation::transfer::SendableOwned<ReadFileRef>,
+              "a borrow of a descriptor stays on its thread, so no door of a second thread acts on its number");
+
+// The opened number: one owner, and no number of a caller.
+static_assert(!std::is_copy_constructible_v<::fixy::fs::OpenedDescriptor>
+                  && !std::is_constructible_v<::fixy::fs::OpenedDescriptor, int>,
+              "an opened number comes only from the door of an open, and no copy gives it to two handles");
 static_assert(CanRestrict<ReadFileRef, RightSet::read> && CanRestrict<ReadFileRef, RightSet::none>);
 static_assert(!CanRestrict<ReadFileRef, RightSet::write>, "a borrow gives no right that its handle lacks");
 static_assert(!std::is_constructible_v<ReadFileRef, int const&>, "no descriptor of a caller becomes a borrow");

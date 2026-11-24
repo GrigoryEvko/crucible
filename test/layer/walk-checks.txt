@@ -105,6 +105,7 @@ fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, u
 fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Fs.cpp | 0.1 | unknown
+fixy/os/Handle.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Io.cpp | 0.1 | unknown
 fixy/os/Mmap.cpp | 0.1 | unknown
 fixy/os/Path.cpp | 0.0 | ::fixy::tags::admitted_retags

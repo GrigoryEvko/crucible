@@ -24,7 +24,6 @@
 #include <fixy/os/Fd.h>
 #include <fixy/os/Handle.h>
 #include <fixy/os/SocketCalls.h>
-#include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/contracts/Pre.h>
@@ -123,24 +122,24 @@ using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uin
 // Foreign socket
 //   A ForeignSocketRef is the borrow of a socket by value.  A table that
 //   stores, compares or keys a socket that it gives back to a door holds
-//   one, because a HandleRef holds the address of the descriptor of its
-//   Handle and cannot outlive the frame of that Handle.  Two doors make one:
-//   share_socket, from the borrow of a Handle of the base, and
-//   admit_foreign_socket, from the descriptor of a socket that a C library
-//   opened.  Each ref carries one promise of the code that made it: the
-//   owner of the socket keeps it open for the life of each copy of the ref.
-//   The ref also keeps the generation of its number (the generation of a
-//   descriptor of fixy/os/Fd.h), and a Handle of the base advances that
-//   generation at its open, at its close and at its release to an ABI.  So a
-//   ref that outlives its Handle is not current, and each door gives ebadf
-//   for it and makes no call on the number, which the kernel can have given
-//   to a later descriptor.  abi_descriptor() gives -1 for such a ref.  Two
-//   holes stay: a close of the Handle while a door of another thread makes
-//   its call, and a foreign socket that a C library closes and a C library
-//   opens again on its number with no Handle between.  A number at or past
-//   descriptor_generation_slots has no generation, so its ref is never
-//   current, and each door refuses it.  The default ref is empty, and a door
-//   gives ebadf for it.
+//   one, because a HandleRef is a borrow, which the rule view-escape keeps
+//   inside the frame of its Handle.  Two doors make one: share_socket, from
+//   the borrow of a Handle of the base, and admit_foreign_socket, from the
+//   descriptor of a socket that a C library opened.  Each ref carries one
+//   promise of the code that made it: the owner of the socket keeps it open
+//   for the life of each copy of the ref.  The ref holds the stamp of its
+//   descriptor (the stamp of a descriptor of fixy/os/Fd.h), as a HandleRef
+//   does, and a Handle of the base advances the generation of the number at
+//   its open, at its close and at its release to an ABI.  So a ref that
+//   outlives its Handle is not current, and each door gives ebadf for it and
+//   makes no call on the number, which the kernel can have given to a later
+//   descriptor.  abi_descriptor() gives -1 for such a ref.  The two routes
+//   that the stamp leaves open stay open here: a close of the Handle while a
+//   door of another thread makes its call, and a foreign socket that a C
+//   library closes and a C library opens again on its number with no Handle
+//   between.  A number at or past descriptor_generation_slots has no
+//   generation, so its ref is never current, and each door refuses it.  The
+//   default ref is empty, and a door gives ebadf for it.
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
 class ForeignSocketRef;
@@ -148,11 +147,16 @@ class ForeignSocketRef;
 namespace detail {
 
 // The door of the base to the descriptor of a foreign socket.  No object of
-// it exists.  admit makes a ref with the generation of its number, and
-// descriptor_of gives the descriptor of a current ref, or -1.
+// it exists.  admit makes a ref with the stamp of its number now, share makes
+// a ref with the stamp of a borrow of a Handle, and descriptor_of gives the
+// descriptor of a current ref, or -1.
 struct ForeignSocketDoor final : ::foundation::NoObject<ForeignSocketDoor> {
     template <typename Kind, ::fixy::os::RightSet Rights>
     [[nodiscard]] static ForeignSocketRef<Kind, Rights> admit(int descriptor) noexcept;
+
+    template <typename Kind, ::fixy::os::RightSet Rights>
+    [[nodiscard]] static ForeignSocketRef<Kind, Rights>
+    share(::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights> socket) noexcept;
 
     template <typename Kind, ::fixy::os::RightSet Rights>
     [[nodiscard]] static int descriptor_of(ForeignSocketRef<Kind, Rights> borrow) noexcept;
@@ -163,16 +167,12 @@ struct ForeignSocketDoor final : ::foundation::NoObject<ForeignSocketDoor> {
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
 class [[nodiscard]] ForeignSocketRef final {
-    // The descriptor of the socket, or -1 for the empty ref.
-    int descriptor_ = -1;
-    // The generation of the number of the descriptor when a door made the ref.
-    std::uint32_t generation_ = 0;
-    // No copy of bytes builds a ref, so a number becomes a ref only through
-    // a door (foundation/ByteSeal.h).
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    // The number of the socket and its generation when a door made the ref,
+    // or the empty stamp for the empty ref.  The stamp holds the seal of
+    // foundation/ByteSeal.h, so a number becomes a ref only through a door.
+    ::fixy::fs::DescriptorStamp stamp_{};
 
-    constexpr ForeignSocketRef(int descriptor, std::uint32_t generation) noexcept
-        : descriptor_{descriptor}, generation_{generation} {}
+    explicit constexpr ForeignSocketRef(::fixy::fs::DescriptorStamp stamp) noexcept : stamp_{stamp} {}
 
     template <typename OtherKind, ::fixy::os::RightSet OtherRights>
         requires MappedSocketKind<OtherKind>
@@ -189,31 +189,29 @@ public:
     constexpr ForeignSocketRef() noexcept = default;
 
     // A ref with the rights Fewer, which this ref holds.  It keeps the
-    // generation of this ref.
+    // stamp of this ref.
     template <::fixy::os::RightSet Fewer>
         requires ::fixy::os::HoldsRights<Rights, Fewer>
     [[nodiscard]] constexpr ForeignSocketRef<Kind, Fewer> restrict() const noexcept {
-        return ForeignSocketRef<Kind, Fewer>{descriptor_, generation_};
+        return ForeignSocketRef<Kind, Fewer>{stamp_};
     }
 
     // False for the empty ref.  A ref that is open can still be stale: ask
     // is_current() for that.
-    [[nodiscard]] constexpr bool is_open() const noexcept { return descriptor_ >= 0; }
+    [[nodiscard]] constexpr bool is_open() const noexcept { return stamp_.is_open(); }
 
     // True when no Handle of the base opened, closed or released the number
     // of this ref since a door made it, so the number still names the socket
     // of the ref (the foreign socket).  False for the empty ref.  Complexity:
     // one acquire load.
-    [[nodiscard]] bool is_current() const noexcept {
-        return descriptor_ >= 0 && ::fixy::fs::detail::is_descriptor_generation_(descriptor_, generation_);
-    }
+    [[nodiscard]] bool is_current() const noexcept { return stamp_.is_current(); }
 
     // The identity of the socket of an open ref: the number of its descriptor.
     // A stale ref and the ref of a later socket of the number have one
     // identity, so a table that keys by identity also asks is_current().
     [[nodiscard]] constexpr SocketIdentity identity() const noexcept {
         CRUCIBLE_PRE(is_open());
-        return SocketIdentity{static_cast<std::uint32_t>(descriptor_)};
+        return SocketIdentity{static_cast<std::uint32_t>(stamp_.number())};
     }
 
     // The raw descriptor, for a call of a C ABI only (the ABI descriptor of
@@ -222,14 +220,14 @@ public:
     // constant evaluation reads no generation and gives the descriptor.
     [[nodiscard]] constexpr int abi_descriptor() const noexcept {
         if consteval {
-            return descriptor_;
+            return stamp_.number();
         }
-        return is_current() ? descriptor_ : -1;
+        return stamp_.current_number();
     }
 
     // Two refs are equal when they hold one descriptor of one generation.
     [[nodiscard]] friend constexpr bool operator==(ForeignSocketRef left, ForeignSocketRef right) noexcept {
-        return left.descriptor_ == right.descriptor_ && left.generation_ == right.generation_;
+        return left.stamp_ == right.stamp_;
     }
 };
 
@@ -237,15 +235,20 @@ public:
 // has no number, so it reads no generation.
 template <typename Kind, ::fixy::os::RightSet Rights>
 ForeignSocketRef<Kind, Rights> detail::ForeignSocketDoor::admit(int descriptor) noexcept {
-    if (descriptor < 0) {
-        return ForeignSocketRef<Kind, Rights>{};
-    }
-    return ForeignSocketRef<Kind, Rights>{descriptor, ::fixy::fs::detail::descriptor_generation_(descriptor)};
+    return ForeignSocketRef<Kind, Rights>{::fixy::fs::DescriptorStamp::read_now(descriptor)};
+}
+
+// The ref with the stamp of the borrow of a Handle, so a borrow that is not
+// current gives a ref that is not current.
+template <typename Kind, ::fixy::os::RightSet Rights>
+ForeignSocketRef<Kind, Rights>
+detail::ForeignSocketDoor::share(::fixy::os::HandleRef<::fixy::os::kind::Socket<Kind>, Rights> socket) noexcept {
+    return ForeignSocketRef<Kind, Rights>{::fixy::os::detail::HandleDoor::stamp_of(socket)};
 }
 
 template <typename Kind, ::fixy::os::RightSet Rights>
 int detail::ForeignSocketDoor::descriptor_of(ForeignSocketRef<Kind, Rights> borrow) noexcept {
-    return borrow.is_current() ? borrow.descriptor_ : -1;
+    return borrow.stamp_.current_number();
 }
 
 // The ref of a socket that a C library opened, with the kind Kind and the
@@ -265,11 +268,12 @@ template <typename Kind, ::fixy::os::RightSet Rights>
 // The ref by value of the socket of a Handle, for a table that stores the
 // socket.  The caller keeps the Handle open for the life of each copy of the
 // ref (the foreign socket), and a ref that outlives the Handle is stale.  The
-// borrow of an empty Handle gives the empty ref.
+// ref keeps the stamp of the borrow, so the borrow of an empty Handle gives
+// the empty ref, and a borrow that is not current gives a stale ref.
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
 [[nodiscard]] ForeignSocketRef<Kind, Rights> share_socket(SocketRef<Kind, Rights> const& socket) noexcept {
-    return detail::ForeignSocketDoor::admit<Kind, Rights>(::fixy::os::detail::HandleDoor::descriptor_of(socket));
+    return detail::ForeignSocketDoor::share<Kind, Rights>(socket);
 }
 
 // A borrow of a socket: a SocketRef or a ForeignSocketRef.
@@ -349,9 +353,11 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     [[nodiscard]] static ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
     open_() noexcept {
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        return detail::open_socket_(triple.domain, triple.type, triple.protocol).map([](int descriptor) noexcept {
-            return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{descriptor});
-        });
+        return ::fixy::fs::detail::admit_opened_descriptor_(
+                   detail::open_socket_(triple.domain, triple.type, triple.protocol))
+            .map([](::fixy::fs::OpenedDescriptor opened) noexcept {
+                return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{std::move(opened)});
+            });
     }
 };
 

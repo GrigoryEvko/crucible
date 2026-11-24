@@ -533,7 +533,7 @@ struct PtpClockReader final {
     // does.
     [[nodiscard]] ::foundation::core::Result<result_type, ::foundation::os::Errno>
     read(eff::cap::Nondet) const noexcept {
-        return detail::read_ptp_clock_nanos(::fixy::os::detail::HandleDoor::descriptor_of(device_.ref()))
+        return detail::read_ptp_clock_nanos(::fixy::os::detail::HandleDoor::owned_descriptor_of(device_))
             .map([](std::uint64_t nanos) noexcept {
                 return detail::clock_stamp_access::stamp<ClockSource_v::PtpHwClock>(nanos);
             });
@@ -547,7 +547,7 @@ struct PtpClockReader final {
         if (!device_.is_open()) [[unlikely]] {
             return ::foundation::core::err(::foundation::os::Errno::ebadf);
         }
-        return detail::read_ptp_caps_(::fixy::os::detail::HandleDoor::descriptor_of(device_.ref()));
+        return detail::read_ptp_caps_(::fixy::os::detail::HandleDoor::owned_descriptor_of(device_));
     }
 
 private:
@@ -607,9 +607,12 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        return ::fixy::fs::detail::open_descriptor_(
-                   path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0)
-            .map([](int descriptor) noexcept { return PtpClockReader{PtpClockHandle{descriptor}}; });
+        return ::fixy::fs::detail::admit_opened_descriptor_(
+                   ::fixy::fs::detail::open_descriptor_(
+                       path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0))
+            .map([](::fixy::fs::OpenedDescriptor descriptor) noexcept {
+                return PtpClockReader{PtpClockHandle{std::move(descriptor)}};
+            });
     }
 };
 

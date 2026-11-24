@@ -1,6 +1,6 @@
 // An arm of a frame door gives the borrow of a handle as its result.  A borrow
-// holds the address of the descriptor of its handle, so the frame door refuses
-// it as a result that leaves the frame: the borrow could outlive its handle.
+// states refers{} of foundation/Transfer.h, so the frame door refuses it as a
+// result that leaves the frame: the borrow could outlive its handle.
 
 #include <fixy/os/Handle.h>
 #include <foundation/core/Choice.h>

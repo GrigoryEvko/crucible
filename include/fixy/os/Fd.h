@@ -14,6 +14,8 @@
 // issues the calls with the raw primitive of foundation/os/Syscall.h, so this
 // header includes no system header.
 
+#include <foundation/ByteSeal.h>
+#include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
@@ -22,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace fixy::fs {
 
@@ -73,10 +76,11 @@ query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcep
 //   Each number of a descriptor below descriptor_generation_slots has a
 //   generation: a count that a Handle of fixy/os/Handle.h advances after the
 //   open that gives it the number, and before the close or the release that
-//   ends its ownership.  A move of a Handle keeps the generation.  A
-//   ForeignSocketRef of fixy/os/Socket.h keeps the generation of its number
-//   when a door makes it, and each door of the ref compares the two, so a ref
-//   that outlives its Handle fails closed.  The table is in the door file
+//   ends its ownership.  A move of a Handle keeps the generation.  The borrow
+//   of a Handle and a ForeignSocketRef of fixy/os/Socket.h keep the
+//   generation of their number in a DescriptorStamp (the stamp of a
+//   descriptor below), and each door compares it with the generation now, so
+//   a borrow that outlives its Handle fails closed.  The table is in the door file
 //   src/fixy/os/Fd.cpp, and one table serves the process
 //   (CRUCIBLE_PROCESS_WIDE of foundation/Platform.h), as one table of
 //   descriptors does in the kernel.
@@ -96,6 +100,139 @@ inline constexpr std::size_t descriptor_generation_slots = std::size_t{1} << 20;
 // Advances the generation of the number of descriptor.  A negative number and
 // a number with no generation change nothing.
 void advance_descriptor_generation_(int descriptor) noexcept;
+
+// The door that makes an opened descriptor (below).
+struct OpenedDescriptorDoor;
+
+}  // namespace detail
+
+// Stamp of a descriptor
+//   A DescriptorStamp is the number of a descriptor and the generation of the
+//   number when a door read it.  The borrow of a Handle (fixy/os/Handle.h)
+//   and a ForeignSocketRef (fixy/os/Socket.h) each hold one by value, and no
+//   address of a Handle.  A Handle advances the generation at its close and
+//   at its release to an ABI, so a stamp of a closed Handle is not current
+//   (is_current), and a door gives ebadf for it and makes no call on the
+//   number.  So a borrow that outlives its Handle, a borrow of a Handle that
+//   a move assignment closed, and a number that the kernel gave to a later
+//   open all fail closed.  A move of a Handle keeps the generation, so a
+//   stamp of a Handle that moved stays current while the descriptor is open.
+//
+//   Two routes stay open.  A close of the Handle on a second thread between
+//   the check of the generation and the call of the door lets the call act
+//   on the number, which the kernel can give to a later open in that time.
+//   A C library that closes a number that a Handle owns changes no
+//   generation, so a later open of the number by the C library keeps each
+//   stamp current.
+class DescriptorStamp final {
+    // The number of the descriptor, or -1 for the empty stamp.
+    int number_ = -1;
+    // The generation of the number when a door read it.
+    std::uint32_t generation_ = 0;
+    // No copy of bytes builds a stamp, so none builds a borrow that holds one
+    // (foundation/ByteSeal.h).
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr DescriptorStamp(int number, std::uint32_t generation) noexcept
+        : number_{number}, generation_{generation} {}
+
+public:
+    // The empty stamp, which names no descriptor.
+    constexpr DescriptorStamp() noexcept = default;
+
+    // The stamp of descriptor with the generation of its number now.  A
+    // negative number gives the empty stamp and reads no generation.
+    // Complexity: one acquire load.
+    [[nodiscard]] static DescriptorStamp read_now(int descriptor) noexcept {
+        if (descriptor < 0) {
+            return DescriptorStamp{};
+        }
+        return DescriptorStamp{descriptor, detail::descriptor_generation_(descriptor)};
+    }
+
+    // False for the empty stamp.  A stamp that is open can still be stale.
+    [[nodiscard]] constexpr bool is_open() const noexcept { return number_ >= 0; }
+
+    // True when the number has a generation and it is the generation of the
+    // stamp: no Handle opened, closed or released the number since the read.
+    // False for the empty stamp.  Complexity: one acquire load.
+    [[nodiscard]] bool is_current() const noexcept {
+        return number_ >= 0 && detail::is_descriptor_generation_(number_, generation_);
+    }
+
+    // The number of a current stamp, or -1, so a door that gets it gives
+    // ebadf and makes no system call.  Complexity: one acquire load.
+    [[nodiscard]] int current_number() const noexcept { return is_current() ? number_ : -1; }
+
+    // The number with no check of the generation, for a constant evaluation
+    // and for an identity that names a socket only while it is open.
+    [[nodiscard]] constexpr int number() const noexcept { return number_; }
+
+    // Two stamps are equal when they hold one number of one generation.
+    [[nodiscard]] friend constexpr bool operator==(DescriptorStamp left, DescriptorStamp right) noexcept {
+        return left.number_ == right.number_ && left.generation_ == right.generation_;
+    }
+};
+
+// Opened descriptor
+//   An OpenedDescriptor is the number that an open gave to the base, below the
+//   limit Slots of the slots of the generations, so the number has a
+//   generation.  The private constructor of a Handle takes one, so each number
+//   that a Handle owns has a generation.  A number at or past the limit, which
+//   a host with a raised fs.nr_open and a raised limit of open files can
+//   give, has no generation: admit_opened_descriptor_ closes it and gives
+//   emfile.  The value moves and does not copy, so no two Handles take one
+//   number.  detail::OpenedDescriptorDoor is the one friend that makes one.
+class OpenedDescriptor final {
+    int number_ = -1;
+
+    explicit constexpr OpenedDescriptor(int number) noexcept : number_{number} {}
+
+    friend struct detail::OpenedDescriptorDoor;
+
+public:
+    OpenedDescriptor(OpenedDescriptor const&) =
+        delete("an opened number has one owner: a copy gives it to two Handles");
+    OpenedDescriptor&
+    operator=(OpenedDescriptor const&) = delete("an opened number has one owner: a copy gives it to two Handles");
+
+    // A move takes the number, and the source holds -1.
+    constexpr OpenedDescriptor(OpenedDescriptor&& other) noexcept : number_{other.number_} { other.number_ = -1; }
+    OpenedDescriptor& operator=(OpenedDescriptor&&) = delete("a Handle takes an opened number one time");
+    ~OpenedDescriptor() = default;
+
+    // The number, for the constructor of a Handle.
+    [[nodiscard]] constexpr int number() const noexcept { return number_; }
+};
+
+namespace detail {
+
+// The door that makes an opened descriptor.  No object of it exists.
+struct OpenedDescriptorDoor final : ::foundation::NoObject<OpenedDescriptorDoor> {
+    // The opened descriptor of the number descriptor that an open gave, when
+    // it is below Slots.  A number at or past Slots is closed, and the result
+    // is emfile (the opened descriptor).  The limit is a parameter, so a test
+    // can give a low limit to a real open.
+    template <std::size_t Slots>
+    [[nodiscard]] static ::foundation::core::Result<OpenedDescriptor, ::foundation::os::Errno>
+    admit_below(int descriptor) noexcept {
+        if (static_cast<std::size_t>(descriptor) >= Slots) {
+            close_descriptor_(descriptor);
+            return ::foundation::core::err(::foundation::os::Errno::emfile);
+        }
+        return OpenedDescriptor{descriptor};
+    }
+};
+
+// The opened descriptor of the result of an open, or the error of the open,
+// or emfile for a number with no generation (the opened descriptor).  A door
+// of an open gives the result to the constructor of a Handle.
+[[nodiscard]] inline ::foundation::core::Result<OpenedDescriptor, ::foundation::os::Errno>
+admit_opened_descriptor_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+    return std::move(opened).and_then([](int descriptor) noexcept {
+        return OpenedDescriptorDoor::admit_below<descriptor_generation_slots>(descriptor);
+    });
+}
 
 }  // namespace detail
 

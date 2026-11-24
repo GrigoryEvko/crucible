@@ -492,12 +492,12 @@ template <typename... Atoms, ::fixy::os::RightSet SourceRights, class Destinatio
 zerocopy_transfer(Ctx const&, ::fixy::os::HandleRef<::fixy::os::kind::File, SourceRights> source,
                   ::fixy::os::HandleRef<DestinationKind, DestinationRights> destination, std::size_t length,
                   SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
-    if (!source.is_open() || !destination.is_open()) {
+    int const from = ::fixy::os::detail::HandleDoor::descriptor_of(source);
+    int const to = ::fixy::os::detail::HandleDoor::descriptor_of(destination);
+    if (from < 0 || to < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::send_file_(::fixy::os::detail::HandleDoor::descriptor_of(destination),
-                              ::fixy::os::detail::HandleDoor::descriptor_of(source), source_offset.value().raw(),
-                              length);
+    return detail::send_file_(to, from, source_offset.value().raw(), length);
 }
 
 // copy_file_range reads from source_offset and writes at
@@ -513,12 +513,12 @@ zerocopy_transfer(Ctx const&, ::fixy::os::HandleRef<::fixy::os::kind::File, Sour
                   ::fixy::os::HandleRef<::fixy::os::kind::File, DestinationRights> destination, std::size_t length,
                   SourceOffsetOf source_offset = SourceOffsetOf{::fixy::fs::FileOffset{0}},
                   DestinationOffsetOf destination_offset = DestinationOffsetOf{::fixy::fs::FileOffset{0}}) noexcept {
-    if (!source.is_open() || !destination.is_open()) {
+    int const from = ::fixy::os::detail::HandleDoor::descriptor_of(source);
+    int const to = ::fixy::os::detail::HandleDoor::descriptor_of(destination);
+    if (from < 0 || to < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::copy_file_range_(::fixy::os::detail::HandleDoor::descriptor_of(source), source_offset.value().raw(),
-                                    ::fixy::os::detail::HandleDoor::descriptor_of(destination),
-                                    destination_offset.value().raw(), length);
+    return detail::copy_file_range_(from, source_offset.value().raw(), to, destination_offset.value().raw(), length);
 }
 
 }  // namespace fixy::io

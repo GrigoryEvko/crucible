@@ -1012,9 +1012,19 @@
       "constructor": "(?<!~)\\bfn\\("
     },
     {
+      "name": "neg_witness_fs_descriptorstamp_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bDescriptorStamp\\("
+    },
+    {
       "name": "neg_witness_fs_filedoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bFileDoor\\("
+    },
+    {
+      "name": "neg_witness_fs_openeddescriptor_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bOpenedDescriptor\\("
     },
     {
       "name": "neg_witness_fs_temporarydirectorydoor_direct_construction",
@@ -2734,6 +2744,14 @@
     {
       "type": "fixy::io::IoRingDoor",
       "header": "fixy/os/Io.h"
+    },
+    {
+      "type": "fixy::fs::OpenedDescriptor",
+      "header": "fixy/os/Fd.h"
+    },
+    {
+      "type": "fixy::fs::DescriptorStamp",
+      "header": "fixy/os/Fd.h"
     },
     {
       "type": "fixy::os::Handle<fixy::os::kind::File, fixy::os::RightSet::read>",

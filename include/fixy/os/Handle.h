@@ -25,26 +25,38 @@
 //   (fixy/os/Socket.h), because the doors of a socket read its triple.
 //
 // Borrow
-//   HandleRef is the one borrow of a descriptor.  It holds the address of the
-//   descriptor of its Handle, so it is a borrow for the frame doors of the
-//   base (HoldsNoBorrow of foundation/core/Choice.h), and no result of a
-//   frame carries it out.  A Handle that a move emptied gives its borrows the
-//   descriptor -1, so a door makes no call through them and gives ebadf.  A
-//   borrow that outlives its Handle dangles, as each borrow does.  A table
-//   that stores a socket holds a ForeignSocketRef of fixy/os/Socket.h by
-//   value, with the generation of its number (the generation of a
-//   descriptor of fixy/os/Fd.h), which each Handle advances at its open, at
-//   its close and at its release to an ABI.
+//   HandleRef is the one borrow of a descriptor.  It holds the number of the
+//   descriptor and the generation of the number by value (the stamp of a
+//   descriptor of fixy/os/Fd.h), and no address of its Handle.  Each Handle
+//   advances the generation at its open, at its close and at its release to
+//   an ABI, so a borrow that outlives its Handle, or whose Handle a move
+//   assignment closed, is not current.  A door then gives ebadf and makes no
+//   call on the number, which the kernel can have given to a later open.  A
+//   move of a Handle keeps the generation, so a borrow taken before the move
+//   stays current while the descriptor is open.  The borrow of an empty
+//   Handle, such as one that a move emptied, holds -1.
+//
+//   The borrow states refers{} of foundation/Transfer.h over its kind, so the
+//   rule view-escape refuses a return or a store of the borrow of a local
+//   Handle, and the frame doors of the base read it as a borrow (HoldsNoBorrow
+//   of foundation/core/Choice.h).  It also states thread_bound{} and
+//   not_shareable{}: a door on a second thread can act on the number between
+//   the check of the generation and the call, while the thread of the Handle
+//   closes it, so the borrow stays on its thread.  A table that stores a
+//   socket holds a ForeignSocketRef of fixy/os/Socket.h, which holds the same
+//   stamp and is no borrow.
 //   restrict<Fewer>() gives a borrow with fewer rights, and no form gives
 //   more rights.  A borrow of a temporary Handle does not compile.
 //
 // Doors
 //   The constructor of a Handle from a descriptor is private.  Its friends
 //   are the door classes that make the open, socket, perf_event_open and
-//   PTP open calls, and each door admits only its gated mints.  The doors of
-//   the base read the descriptor of a borrow through detail::HandleDoor.  A
-//   use of a namespace detail outside the base is a finding of the
-//   quarantine plugin.
+//   PTP open calls, and each door admits only its gated mints.  The
+//   constructor takes an OpenedDescriptor of fixy/os/Fd.h, so each number of
+//   a Handle has a generation.  The doors of the base read the descriptor of
+//   a borrow, and an owner reads the descriptor of its own Handle, through
+//   detail::HandleDoor.  A use of a namespace detail outside the base is a
+//   finding of the quarantine plugin.
 //
 // ABI descriptor
 //   A call of a C ABI, such as a call of libbpf that takes a descriptor,
@@ -58,9 +70,9 @@
 //   each new use keeps that limit.  Each other caller uses a door of the base.
 
 #include <fixy/os/Fd.h>
-#include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/PathText.h>
@@ -154,23 +166,35 @@ class HandleRef;
 namespace detail {
 
 // The door of the calls of the base to the descriptor of a borrow.  No
-// object of it exists, and its member gives the descriptor of a borrow.
+// object of it exists.  descriptor_of gives the descriptor of a current
+// borrow, or -1 for an empty or a stale borrow, so the door of the call gives
+// ebadf and makes no system call.  owned_descriptor_of gives the descriptor
+// of a Handle to its owner, which keeps the Handle alive, so it reads no
+// generation.  stamp_of gives the stamp of a borrow, for a ForeignSocketRef
+// of the same socket.
 struct HandleDoor final : ::foundation::NoObject<HandleDoor> {
     template <class Kind, RightSet Rights>
     [[nodiscard]] static int descriptor_of(HandleRef<Kind, Rights> borrow) noexcept;
+
+    template <class Kind, RightSet Rights>
+    [[nodiscard]] static int owned_descriptor_of(Handle<Kind, Rights> const& owner) noexcept;
+
+    template <class Kind, RightSet Rights>
+    [[nodiscard]] static ::fixy::fs::DescriptorStamp stamp_of(HandleRef<Kind, Rights> borrow) noexcept;
 };
 
 }  // namespace detail
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
-class [[nodiscard]] HandleRef final {
-    // The descriptor of the Handle.  It is never null.
-    int const* descriptor_ = nullptr;
-    // No copy of bytes builds a borrow (foundation/ByteSeal.h).
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+class [[nodiscard]][[= ::foundation::transfer::refers{}]][[= ::foundation::transfer::thread_bound{}]]
+                   [[= ::foundation::transfer::not_shareable{}]] HandleRef final {
+    // The number of the descriptor of the Handle and its generation, or the
+    // empty stamp for the borrow of an empty Handle.  The stamp holds the
+    // seal of foundation/ByteSeal.h, so no copy of bytes builds a borrow.
+    ::fixy::fs::DescriptorStamp stamp_{};
 
-    explicit constexpr HandleRef(int const& descriptor) noexcept : descriptor_{__builtin_addressof(descriptor)} {}
+    explicit constexpr HandleRef(::fixy::fs::DescriptorStamp stamp) noexcept : stamp_{stamp} {}
 
     template <class OtherKind, RightSet OtherRights>
         requires HandleKind<OtherKind>
@@ -186,38 +210,54 @@ public:
     using kind_type = Kind;
     static constexpr RightSet rights = Rights;
 
-    // A borrow with the rights Fewer, which this borrow holds.
+    // A borrow with the rights Fewer, which this borrow holds.  It keeps the
+    // stamp of this borrow.
     template <RightSet Fewer>
         requires HoldsRights<Rights, Fewer>
     [[nodiscard]] constexpr HandleRef<Kind, Fewer> restrict() const noexcept {
-        return HandleRef<Kind, Fewer>{*descriptor_};
+        return HandleRef<Kind, Fewer>{stamp_};
     }
 
-    // False for the borrow of an empty Handle, such as one that a move
-    // emptied.
-    [[nodiscard]] constexpr bool is_open() const noexcept { return *descriptor_ >= 0; }
+    // True when the Handle still owns the descriptor of the borrow.  False
+    // for the borrow of an empty Handle, and for a borrow whose Handle closed
+    // or released the descriptor since the borrow.  Complexity: one acquire
+    // load.
+    [[nodiscard]] bool is_open() const noexcept { return stamp_.is_current(); }
 
     // The raw descriptor, for a call of a C ABI only (the ABI descriptor).
-    // The descriptor of an empty Handle is -1.
-    [[nodiscard]] constexpr int abi_descriptor() const noexcept { return *descriptor_; }
+    // The descriptor of the borrow of an empty Handle, and of a borrow that
+    // is not open, is -1, so a C ABI gets no number of a later open.  A
+    // constant evaluation reads no generation and gives the number.
+    [[nodiscard]] constexpr int abi_descriptor() const noexcept {
+        if consteval {
+            return stamp_.number();
+        }
+        return stamp_.current_number();
+    }
 };
 
 template <class Kind, RightSet Rights>
 [[nodiscard]] int detail::HandleDoor::descriptor_of(HandleRef<Kind, Rights> borrow) noexcept {
-    return *borrow.descriptor_;
+    return borrow.stamp_.current_number();
+}
+
+template <class Kind, RightSet Rights>
+[[nodiscard]] ::fixy::fs::DescriptorStamp detail::HandleDoor::stamp_of(HandleRef<Kind, Rights> borrow) noexcept {
+    return borrow.stamp_;
 }
 
 // Appends the number of the descriptor of borrow to path, in decimal, for a
 // path under /proc/self/fd or /dev/fd that names the open file of the
-// descriptor.  The borrow of an empty handle gives ebadf, and a number that
-// does not fit gives enametoolong.  Each error leaves the path as it was.
+// descriptor.  A borrow that is not open gives ebadf, and a number that does
+// not fit gives enametoolong.  Each error leaves the path as it was.
 template <class Kind, RightSet Rights, std::size_t Capacity>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 append_descriptor_number(::foundation::os::PathText<Capacity>& path, HandleRef<Kind, Rights> borrow) noexcept {
-    if (!borrow.is_open()) {
+    int const descriptor = detail::HandleDoor::descriptor_of(borrow);
+    if (descriptor < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return path.append_decimal(static_cast<std::uint64_t>(detail::HandleDoor::descriptor_of(borrow)));
+    return path.append_decimal(static_cast<std::uint64_t>(descriptor));
 }
 
 // Exclusive ownership of one descriptor of the kind Kind with the rights
@@ -228,8 +268,10 @@ class [[nodiscard]] Handle final {
     int descriptor_ = -1;
 
     // The open gave the number to this Handle, so the generation of the
-    // number advances (the generation of a descriptor of fixy/os/Fd.h).
-    explicit Handle(int descriptor) noexcept : descriptor_{descriptor} {
+    // number advances (the generation of a descriptor of fixy/os/Fd.h).  The
+    // number is below the slots of the generations (the opened descriptor of
+    // fixy/os/Fd.h), so it has a generation.
+    explicit Handle(::fixy::fs::OpenedDescriptor&& opened) noexcept : descriptor_{opened.number()} {
         ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
     }
 
@@ -237,6 +279,7 @@ class [[nodiscard]] Handle final {
     friend class ::fixy::net::SocketDoor;
     friend class ::fixy::time::PtpDeviceDoor;
     friend class ::fixy::perf::PerfEventDoor;
+    friend struct detail::HandleDoor;
 
 public:
     using kind_type = Kind;
@@ -265,8 +308,12 @@ public:
     [[nodiscard]] bool is_open() const noexcept { return descriptor_ >= 0; }
 
     // The borrow of the descriptor with each right of this Handle.  The
-    // borrow names the descriptor of this object, so it must not outlive it.
-    [[nodiscard]] HandleRef<Kind, Rights> ref() const& noexcept { return HandleRef<Kind, Rights>{descriptor_}; }
+    // borrow holds the stamp of the descriptor now, so it fails closed when
+    // this Handle closes or releases the descriptor.  The borrow of an empty
+    // Handle holds the empty stamp.  Complexity: one acquire load.
+    [[nodiscard]] HandleRef<Kind, Rights> ref() const& noexcept {
+        return HandleRef<Kind, Rights>{::fixy::fs::DescriptorStamp::read_now(descriptor_)};
+    }
     void ref() const&& = delete("the borrow of a temporary handle dangles at the end of the full expression");
 
     // Gives the descriptor to the caller, which closes it from then on, and
@@ -291,5 +338,10 @@ private:
         }
     }
 };
+
+template <class Kind, RightSet Rights>
+[[nodiscard]] int detail::HandleDoor::owned_descriptor_of(Handle<Kind, Rights> const& owner) noexcept {
+    return owner.descriptor_;
+}
 
 }  // namespace fixy::os

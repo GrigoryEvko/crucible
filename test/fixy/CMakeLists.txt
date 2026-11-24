@@ -6702,6 +6702,22 @@ fixy_test(test_fs_beneath)
 # mapping and the stream hold the same check on an owner that they mint.
 fixy_test(test_os_moved_from_owner)
 
+# A borrow of a descriptor fails closed after its Handle closes the
+# descriptor: a kept copy, a move assignment, the end of a Box and a number
+# that a later open takes again.  A borrow from before a move stays open, and
+# the door of an open refuses a number past the slots of the generations.
+fixy_test(test_os_handle_generation)
+
+# The borrow of a descriptor holds the number by value and states refers{},
+# so the rule view-escape refuses a return and a store of the borrow of a
+# local Handle.
+fixy_neg_compile_test(neg_os_handle_ref_of_local
+  "neg_os_handle_ref_of_local\\.cpp:13:[0-9]+: error: this function gives back a borrow of the local owner"
+  "and that object ends with the frame of the function")
+fixy_neg_compile_test(neg_os_handle_ref_stored_from_local
+  "neg_os_handle_ref_stored_from_local\\.cpp:19:[0-9]+: error: this function stores a borrow of the local owner into the parameter kept"
+  "and the borrowed object ends with the frame of the function")
+
 # The fixtures, each named for what it refuses.  Every second
 # regex is a string the compiler emits and the fixture source does not:
 # the anonymous-namespace prefix on the context type, the libstdc++

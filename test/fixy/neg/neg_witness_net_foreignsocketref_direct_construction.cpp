@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<int>(), forge::rvalue<std::uint32_t>()};
+    [[maybe_unused]] auto forged = fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()};
     return 0;
 }

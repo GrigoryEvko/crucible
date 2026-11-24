@@ -751,18 +751,23 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
                                           | ::foundation::os::kOpenCloseOnExec | ::foundation::os::kOpenReadOnly;
 
     // The handle Owned of a descriptor that the open gave, or the error of
-    // the open.
+    // the open, or emfile for a number with no generation (the opened
+    // descriptor of fixy/os/Fd.h).
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Owned, ::foundation::os::Errno>
     own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return std::move(opened).map([](int descriptor) noexcept { return Owned{descriptor}; });
+        return detail::admit_opened_descriptor_(std::move(opened)).map([](OpenedDescriptor descriptor) noexcept {
+            return Owned{std::move(descriptor)};
+        });
     }
 
     // The handle Owned of the open, in a Linear, or the error of the open.
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
     own_linear_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return std::move(opened).map([](int descriptor) noexcept { return mint_linear<Owned>(Owned{descriptor}); });
+        return detail::admit_opened_descriptor_(std::move(opened)).map([](OpenedDescriptor descriptor) noexcept {
+            return mint_linear<Owned>(Owned{std::move(descriptor)});
+        });
     }
 
     // The open reads perms only when flags holds O_CREAT and ignores it
@@ -882,9 +887,11 @@ open_directory(Ctx const&, Path<tags::source::Sanitized> const& dir) noexcept {
 //   inside the directory are permitted.
 //
 //   The borrow of a directory handle that holds no descriptor, such as a
-//   handle that a move emptied, gives ebadf, and the call makes no system
-//   call.  The kernel reads an absolute path with no regard to the
-//   descriptor, so the descriptor -1 of an empty handle must not reach it.
+//   handle that a move emptied, and a borrow that is not open, give ebadf,
+//   and the call makes no system call.  The kernel reads an absolute path
+//   with no regard to the descriptor, so the descriptor -1 of such a borrow
+//   must not reach it.  Each call reads the descriptor of the borrow one
+//   time, so no close between two reads gives the kernel -1.
 
 // Opens path under dir with the mode and the flags of Atoms, as mint_file
 // does.  The kernel reads perms only for a mode that creates the file.
@@ -892,13 +899,13 @@ template <typename... Atoms, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsFileMintAt<Ctx, Rights, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<Linear<FileOf<Atoms...>>, ::foundation::os::Errno>
 mint_file_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path, FileMode perms) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     constexpr int flags = detail::fold_open_flags<Atoms...>() | ::foundation::os::kOpenNoFollow;
     return FileDoor::own_linear_<FileOf<Atoms...>>(
-        FileDoor::open_path_at_(::fixy::os::detail::HandleDoor::descriptor_of(dir),
-                                ::foundation::core::detail::c_text_first_(path), flags, perms));
+        FileDoor::open_path_at_(directory, ::foundation::core::detail::c_text_first_(path), flags, perms));
 }
 
 // Opens the directory at path under dir.
@@ -906,11 +913,12 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
 [[nodiscard]] ::foundation::core::Result<DirectoryHandle, ::foundation::os::Errno>
 open_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return FileDoor::own_<DirectoryHandle>(FileDoor::open_directory_at_(
-        ::fixy::os::detail::HandleDoor::descriptor_of(dir), ::foundation::core::detail::c_text_first_(path)));
+    return FileDoor::own_<DirectoryHandle>(
+        FileDoor::open_directory_at_(directory, ::foundation::core::detail::c_text_first_(path)));
 }
 
 // Temporary file
@@ -925,11 +933,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsTemporaryMint<Ctx, Rights>
 [[nodiscard]] inline ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>
 mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return FileDoor::own_linear_<TemporaryFile>(
-        FileDoor::open_temporary_at_(::fixy::os::detail::HandleDoor::descriptor_of(dir), perms));
+    return FileDoor::own_linear_<TemporaryFile>(FileDoor::open_temporary_at_(directory, perms));
 }
 
 // A rename under a directory with the rights Held.  The rename makes the
@@ -947,10 +955,10 @@ template <typename Atomicity, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 commit_atomic_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText from,
                  ::foundation::core::CText to) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
     return std::is_same_v<Atomicity, atomicity::Rename> ? detail::rename_replacing_beneath_(directory, from, to)
                                                         : detail::rename_no_replace_beneath_(directory, from, to);
 }
@@ -960,10 +968,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 unlink_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::unlink_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
+    return detail::unlink_beneath_(directory, path);
 }
 
 // Makes the directory at path under dir, with the permission bits perms.
@@ -973,11 +982,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 make_directory_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path,
                   FileMode perms = FileMode::owner_all_others_read_execute) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::make_directory_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path,
-                                           std::to_underlying(perms));
+    return detail::make_directory_beneath_(directory, path, std::to_underlying(perms));
 }
 
 // True when an entry is at path under dir, and false when no entry is
@@ -986,10 +995,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup>
 [[nodiscard]] inline ::foundation::core::Result<bool, ::foundation::os::Errno>
 has_entry_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::has_entry_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
+    return detail::has_entry_beneath_(directory, path);
 }
 
 // True when an entry is at path, and false when no entry is there.  The
@@ -1045,10 +1055,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 remove_tree_at(Ctx const&, DirectoryRef<Rights> dir, ::foundation::core::CText path) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::remove_tree_beneath_(::fixy::os::detail::HandleDoor::descriptor_of(dir), path);
+    return detail::remove_tree_beneath_(directory, path);
 }
 
 // Removes each entry below dir, and dir stays as an empty directory (the tree
@@ -1057,10 +1068,11 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::lookup | ::fixy::os::RightSet::remove>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 remove_entries_below(Ctx const&, DirectoryRef<Rights> dir) noexcept {
-    if (!dir.is_open()) {
+    int const directory = ::fixy::os::detail::HandleDoor::descriptor_of(dir);
+    if (directory < 0) {
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
-    return detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(dir));
+    return detail::remove_entries_below_(directory);
 }
 
 // Temporary directory
@@ -1277,10 +1289,10 @@ private:
     void remove_() noexcept {
         if (!directory_.is_open()) return;
         static_cast<void>(
-            detail::remove_entries_below_(::fixy::os::detail::HandleDoor::descriptor_of(directory_.ref())));
+            detail::remove_entries_below_(::fixy::os::detail::HandleDoor::owned_descriptor_of(directory_)));
         directory_ = DirectoryHandle{};
         static_cast<void>(detail::remove_empty_directory_beneath_(
-            ::fixy::os::detail::HandleDoor::descriptor_of(parent_.ref()), name_.c_text()));
+            ::fixy::os::detail::HandleDoor::owned_descriptor_of(parent_), name_.c_text()));
         parent_ = DirectoryHandle{};
     }
 
@@ -1367,7 +1379,7 @@ TemporaryDirectoryDoor::make_(Ctx const& ctx) noexcept {
                 // The directory is made and holds no entry, so the mint removes
                 // it before it gives the error.
                 static_cast<void>(detail::remove_empty_directory_beneath_(
-                    ::fixy::os::detail::HandleDoor::descriptor_of(parent.ref()), owner.name_.c_text()));
+                    ::fixy::os::detail::HandleDoor::owned_descriptor_of(parent), owner.name_.c_text()));
                 return ::foundation::core::err(error);
             });
 }
@@ -1460,7 +1472,7 @@ sweep_temporary_directories(Ctx const& ctx) noexcept {
     CRUCIBLE_TRY(space, read_pid_namespace(ctx));
     CRUCIBLE_TRY(host, open_directory(ctx, host_path));
     detail::SweepCaller const caller{.space = space, .user = ::fixy::process::current_user(ctx)};
-    int const listed = ::fixy::os::detail::HandleDoor::descriptor_of(host.ref());
+    int const listed = ::fixy::os::detail::HandleDoor::owned_descriptor_of(host);
     SweepReport report{};
     auto visit = [&ctx, &host, &report, listed, caller](::foundation::core::CText name) noexcept {
         if (!detail::is_stale_tree_(ctx, listed, name, caller)) return ::foundation::os::Visit::proceed;
@@ -1574,7 +1586,7 @@ read_whole_at(Ctx const& ctx, Marker allocation, DirectoryRef<Rights> dir, ::fou
     return mint_file_at<read_only>(ctx, dir, path)
         .and_then([allocation, &text](Linear<FileOf<read_only>> opened) noexcept {
             FileOf<read_only> const file = std::move(opened).consume();
-            return detail::read_all_into_(::fixy::os::detail::HandleDoor::descriptor_of(file.ref()), allocation, text);
+            return detail::read_all_into_(::fixy::os::detail::HandleDoor::owned_descriptor_of(file), allocation, text);
         });
 }
 
