@@ -4,8 +4,12 @@
 
 #include <foundation/Linear.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/CaptureStore.h>
+#include <foundation/core/Owner.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <meta>
 #include <type_traits>
 
 namespace fixy::concurrent::detail::spsc_ends_checks {
@@ -49,6 +53,75 @@ static_assert(::foundation::transfer::Synchronized<CheckOwner>);
 static_assert(::foundation::transfer::Synchronized<CheckSplit>);
 static_assert(!::foundation::transfer::Synchronized<PlainOwner>);
 static_assert(!::foundation::transfer::Synchronized<SpscSplit<PlainOwner, CheckBrand>>);
+
+// The store mark of an end rests on three facts.  The end states the mark,
+// it holds two parts only, the const Ref of its owner and its state, and a
+// side state holds no borrow.  The members come as a constant array, so the
+// loop reads no container.
+template <std::meta::info Type>
+inline constexpr std::meta::info data_members_of_ = std::meta::reflect_constant_array(
+    std::meta::nonstatic_data_members_of(Type, std::meta::access_context::unchecked()));
+
+template <std::meta::info End, std::meta::info Ref, std::meta::info State>
+[[nodiscard]] consteval bool holds_const_ref_and_state() {
+    std::size_t count = 0;
+    bool is_expected = true;
+    for (std::meta::info const member : [:data_members_of_<End>:]) {
+        std::meta::info const type = std::meta::dealias(std::meta::type_of(member));
+        if (count == 0) {
+            is_expected = is_expected && std::meta::is_const_type(type)
+                       && std::meta::dealias(std::meta::remove_const(type)) == Ref;
+        } else {
+            is_expected = is_expected && type == State;
+        }
+        ++count;
+    }
+    return is_expected && count == 2;
+}
+
+static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^ProducerEnd<PlainOwner>),
+                                                       ^^::foundation::core::owns_its_storage));
+static_assert(holds_const_ref_and_state<^^ProducerEnd<PlainOwner>,
+                                        ^^::foundation::core::Ref<PlainOwner, SpscSplitBrand<PlainOwner>>,
+                                        ^^PlainOwner::producer_state>());
+static_assert(holds_const_ref_and_state<^^ConsumerEnd<PlainOwner>,
+                                        ^^::foundation::core::Ref<PlainOwner, SpscSplitBrand<PlainOwner>>,
+                                        ^^PlainOwner::consumer_state>());
+
+// A state that holds a borrow is no side state, so an owner with such a
+// state does not split.  The borrows name a brand of their own.
+struct BorrowBrand final {};
+struct BorrowState final {
+    ::foundation::core::Option<::foundation::core::Ref<int, BorrowBrand>> held{};
+};
+struct OwnerOfABorrowState final {
+    using producer_state = BorrowState;
+    struct consumer_state {};
+    OwnerOfABorrowState() noexcept = default;
+    OwnerOfABorrowState(OwnerOfABorrowState const&) = delete("an owner of a split is pinned");
+    OwnerOfABorrowState(OwnerOfABorrowState&&) = delete("an owner of a split is pinned");
+};
+static_assert(!SpscSideState<BorrowState> && !SpscSplitOwner<OwnerOfABorrowState>);
+
+// So a body of an inner frame captures an end, or a split, by a reference
+// that is not const.  The walk still reads the owner type, so an end of an
+// owner that holds a borrow refuses the body.
+struct BorrowOwner final {
+    struct producer_state {};
+    struct consumer_state {};
+    BorrowOwner() noexcept = default;
+    BorrowOwner(BorrowOwner const&) = delete("an owner of a split is pinned");
+    BorrowOwner(BorrowOwner&&) = delete("an owner of a split is pinned");
+    ::foundation::core::Option<::foundation::core::Ref<int, BorrowBrand>> held{};
+};
+template <class Captured>
+struct CapturesByReference final {
+    Captured& captured;
+    void operator()() const noexcept {}
+};
+static_assert(::foundation::core::StoresNoBorrowOutside<CapturesByReference<ProducerEnd<PlainOwner>>>);
+static_assert(::foundation::core::StoresNoBorrowOutside<CapturesByReference<SpscSplit<PlainOwner, CheckBrand>>>);
+static_assert(!::foundation::core::StoresNoBorrowOutside<CapturesByReference<ProducerEnd<BorrowOwner>>>);
 
 // The producer token of a split opens its producer side.  The consumer token
 // and the token of another brand open nothing there.

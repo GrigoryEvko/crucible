@@ -4785,12 +4785,17 @@ fixy_neg_compile_test(neg_spsc_ends_split_that_moves
 fixy_neg_compile_test(neg_spsc_ends_body_keeps_its_end
   "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
   "StoresNoBorrowOutside")
-# A body of a door of a split of an owner with a plain count that captures the
-# split by a reference that is not const, to reach a second frame through a
-# helper: the store check of the door refuses the capture.
+# A body of the producer door that captures the split and the producer token,
+# to open a second frame of that side through a helper: the gate of the door
+# refuses a body that reaches the token of its side.
 fixy_neg_compile_test(neg_spsc_ends_body_reaches_its_split
-  "no matching function for call to .with_producer\\(fixy::concurrent::SpscSplit<.anonymous.::Owner, "
-  "StoresNoBorrowOutside")
+  "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, ProducerToken<Owner, Brand>&, Body&&\\)"
+  "a body of a frame door of a split reaches the token of its side, so code in the body could open a second frame")
+# An owner whose producer state holds a borrow: a side state holds no borrow,
+# so the mint refuses the owner (the store mark of an end).
+fixy_neg_compile_test(neg_spsc_ends_state_holds_a_borrow
+  "no matching function for call to .mint_spsc_split<.anonymous.::Owner>\\("
+  "required for the satisfaction of .HoldsNoBorrow<State>. \\[with State = <unnamed>::BorrowState\\]")
 fixy_neg_compile_test(neg_spsc_ends_end_in_an_outer_option
   "template constraint failure for .template<class T>  requires  ChoicePayload<T> class foundation::core::Option."
   "an end lives in its split beside its owner, so a move would let the end outlive the owner")

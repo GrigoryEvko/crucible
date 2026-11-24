@@ -1,11 +1,12 @@
-// A body of the producer door captures the split by a reference that is not
-// const, and gives it to a helper, which opens the consumer side with its
-// token: the route of a second frame through a callee.  The owner holds a
-// plain count, so the split stays on one thread and holds the borrows of its
-// ends, and the store check of the door (StoresNoBorrowOutside of
-// foundation/core/CaptureStore.h) refuses the capture.  A split of an owner
-// that two threads write states synchronized{}, and its doors take the token
-// of each side, so a capture of it opens no side without its token.
+// A body of the producer door captures the split and the producer token, and
+// gives them to a helper, which opens the producer side again with that
+// token: the route of a second frame of one side through a callee.  The body
+// would hold two writers of one end.  The gate of the door refuses a body
+// that reaches the token of its side (ReachesNoSideToken).
+//
+// The same body may open the consumer side with the consumer token.  The two
+// ends of one split then open on one thread, as with_ends opens them, and the
+// two frames name two ends, so that route is no defect.
 
 #include <fixy/concurrent/SpscEnds.h>
 
@@ -25,8 +26,8 @@ struct Owner final {
 };
 
 template <class Split, class Token>
-void open_consumer(Split& split, Token& token) noexcept {
-    with_consumer(split, token, [](::fixy::concurrent::ConsumerEnd<Owner>&) noexcept {});
+void open_producer(Split& split, Token& token) noexcept {
+    with_producer(split, token, [](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {});
 }
 
 }  // namespace
@@ -34,10 +35,9 @@ void open_consumer(Split& split, Token& token) noexcept {
 int main() {
     auto minted = ::fixy::concurrent::mint_spsc_split<Owner>(::foundation::effects::testing::test().alloc);
     auto& split = minted.split;
-    auto& consumer_token = minted.consumer_token;
-    with_producer(split, minted.producer_token,
-                  [&split, &consumer_token](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {
-                      open_consumer(split, consumer_token);
-                  });
+    auto& producer_token = minted.producer_token;
+    with_producer(split, producer_token, [&split, &producer_token](::fixy::concurrent::ProducerEnd<Owner>&) noexcept {
+        open_producer(split, producer_token);
+    });
     return 0;
 }

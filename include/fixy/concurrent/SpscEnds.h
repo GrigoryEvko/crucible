@@ -126,10 +126,11 @@ enum class SpscSide : std::uint8_t {
     consumer = 1,
 };
 
-// The state of one side: it starts with no argument, and it moves with no
-// failure.
+// The state of one side: it starts with no argument, it moves with no
+// failure, and it holds no borrow (the store mark of an end).
 template <class State>
-concept SpscSideState = std::is_nothrow_default_constructible_v<State> && std::is_nothrow_move_constructible_v<State>;
+concept SpscSideState = std::is_nothrow_default_constructible_v<State> && std::is_nothrow_move_constructible_v<State>
+                     && ::foundation::core::HoldsNoBorrow<State>;
 
 // An owner names the state of each side.
 template <class Owner>
@@ -290,8 +291,20 @@ public:
 
 // One end of an owner.  Its two parts are private, and the owner reads them.
 // The Ref is const, so no code points an end at a second owner.
+//
+// The store mark of an end
+//   The end states owns_its_storage{} of foundation/core/Owner.h.  The mark
+//   holds because the end has two parts only: the one Ref, which is const
+//   and which only the mint sets, and the state, which holds no borrow
+//   (SpscSideState).  So no door and no body can store a borrow of a caller
+//   in an end.  The store check of a frame body (StoresNoBorrowOutside of
+//   foundation/core/CaptureStore.h) still reads the owner type, the type
+//   argument of the end, in the region of the end, so a body that reaches an
+//   owner that holds a borrow stays refused.  A body of an inner frame, such
+//   as a drain into the run of an array, can thus capture an end, or a split
+//   that holds one, by a reference that is not const.
 template <class Owner, SpscSide Side>
-class [[nodiscard]] SpscEnd final {
+class [[nodiscard]][[= ::foundation::core::owns_its_storage{}]] SpscEnd final {
 public:
     using owner_type = Owner;
     using state_type =
