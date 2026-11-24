@@ -2357,6 +2357,12 @@ crucible_neg_compile_test(neg_trace_num_metas_above_max
 crucible_neg_compile_test(neg_trace_num_metas_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<16777216>\\(\\), unsigned int>\\(4294967295\\)")
+# A static of a const Ref of the consumer side of a trace ring: the const of a
+# Ref is shallow, so the static reaches the keyed side (loan-key-static), and it
+# holds a borrow with no brand of static storage (static-borrow).
+crucible_neg_compile_test(neg_trace_ring_side_in_static_const_ref
+  "an object of static or thread storage duration holds a borrow that names no object of static storage: .*by_const_ref"
+  "an object with static or thread storage duration reaches a loan key or a keyed owner through a path that is not const, so a body with no capture reaches it: .*by_const_ref")
 crucible_neg_compile_test(neg_trace_num_names_above_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<66048>\\(\\), unsigned int>\\(\\(\\(\\(uint32_t\\)crucible::TRACE_NAMES_MAX\\) \\+ 1\\)\\)")

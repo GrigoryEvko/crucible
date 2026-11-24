@@ -33,4 +33,15 @@ Holder& reach_holder() noexcept {
 // A global that refers to a holder.
 core::Option<core::Ref<Holder>> g_holder_ref{};
 
+// A const Ref of a holder in a member.  The const of a Ref is shallow, so the
+// Ref still writes the holder.
+struct ConstRefHolder {
+    core::Ref<Holder> const holder;
+};
+
+void keep(Holder& held) noexcept {
+    static ConstRefHolder by_const_ref{core::erase_brand(core::to(held))};
+    static_cast<void>(by_const_ref);
+}
+
 }  // namespace planted

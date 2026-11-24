@@ -214,7 +214,11 @@
 //     thread-bound statics reads the parts, and this walk goes on through a
 //     reference and a pointer too, because a reference to a holder reaches the
 //     keys of the holder.  A const part ends the path: a const key moves into
-//     no door, and a const owner lends no writer.
+//     no door, and a const owner lends no writer.  The const of a pointer and
+//     of a borrow of the base, a class that states refers, refers_unique or
+//     refers_deep of foundation/Transfer.h such as a Ref, is shallow: a const
+//     Ref still writes its target.  So the path goes on through such a part
+//     to its target, which keeps its own const.
 //
 // Statics of a linear sum (the rule must-consume)
 //     The same walk of the statics gives each such variable to the rule
@@ -2663,6 +2667,31 @@ enum class StaticWalk : std::uint8_t {
 std::unordered_map<unsigned, bool> thread_bound_classes;
 std::unordered_map<unsigned, bool> loan_key_classes;
 
+// True when the const of TYPE is shallow: a pointer, and a borrow of the base,
+// a class that states refers, refers_unique or refers_deep of
+// foundation/Transfer.h, such as a Ref or a View.  A const one still writes its
+// target, and the target keeps its own const (the loan-key statics).
+bool has_shallow_const(tree type) {
+    static tree const transfer = get_identifier("transfer");
+    static tree const borrow_marks[] = {
+        get_identifier("refers"),
+        get_identifier("refers_unique"),
+        get_identifier("refers_deep"),
+    };
+    if (TREE_CODE(type) == POINTER_TYPE) {
+        return true;
+    }
+    tree main = TYPE_MAIN_VARIANT(type);
+    if (!CLASS_TYPE_P(main)) {
+        return false;
+    }
+    bool is_borrow = false;
+    for (tree mark : borrow_marks) {
+        is_borrow = is_borrow || carries_base_annotation(TYPE_ATTRIBUTES(main), mark, transfer);
+    }
+    return is_borrow;
+}
+
 // True when TYPE holds a class of the mark of WALK (the thread-bound statics,
 // the loan-key statics).  A class that the walk meets again during its walk
 // holds nothing, so a type that reaches itself ends the walk.  An incomplete
@@ -2683,9 +2712,10 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
     }
     // A reference and an array reach their element in each walk, and a
     // pointer reaches it in the walk of the keys.  A const part ends the path
-    // of the keys.
+    // of the keys, unless its const is shallow: a const pointer and a const
+    // Ref still write their target.
     for (int step = 0; type != NULL_TREE && type != error_mark_node && step < kTypeDepth; ++step) {
-        if (is_key_walk && TYPE_READONLY(type)) {
+        if (is_key_walk && TYPE_READONLY(type) && !has_shallow_const(type)) {
             return false;
         }
         bool const is_reached = TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == ARRAY_TYPE
