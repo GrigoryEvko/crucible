@@ -875,9 +875,9 @@ template <class Fake>
                 ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
             crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, child_arena);
             branch.kind = crucible::TraceNodeKind::BRANCH;
-            auto arms_run = child_arena.array<crucible::BranchNode::Arm>(
-                test.alloc, 1, crucible::BranchNode::Arm{1, crucible::TraceLink{}});
-            branch.set_arms(arms_run);
+            branch.set_arms(child_arena.build_array<crucible::BranchNode::Arm>(
+                test.alloc, ::fixy::ElementCount{1},
+                [](::fixy::RunStart) noexcept { return crucible::BranchNode::Arm{1, crucible::TraceLink{}}; }));
             crucible::recompute_merkle(branch);
             // The child prints the hash only when the hash returns.
             ::fixy::report(::fixy::Sink::Out, "  the hash of the unresolved branch: {}\n", branch.merkle_hash.raw());

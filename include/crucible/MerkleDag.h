@@ -579,8 +579,9 @@ struct BranchNode : TraceNode {
     Guard guard;
 
     // One arm: the guard value and the node that the arm runs.  A const arm
-    // gives its node only as const.  The arm copies from a const arm, so an
-    // arena can fill a run of arms with one arm.
+    // gives its node only as const, and it copies only from an arm that is
+    // not const, as its NodeLink does.  So an arena builds a run of arms with
+    // build_array, one arm for each position.
     class Arm {
     public:
         int64_t value = 0;  // the observed guard outcome
@@ -590,27 +591,23 @@ struct BranchNode : TraceNode {
 
         // The node that the arm runs.  An arm of a loaded branch has no
         // target until a caller resolves it.
-        [[nodiscard]] TraceLink target() noexcept { return target_; }
-        [[nodiscard]] ::fixy::Option<DagRef<TraceNode const>> target() const noexcept {
-            return target_.match(
-                [](DagRef<TraceNode> const& node) noexcept { return ::fixy::some(DagRef<TraceNode const>{node}); },
-                []() noexcept { return ::fixy::Option<DagRef<TraceNode const>>{}; });
-        }
-        void set_target(TraceLink arm_target) noexcept { target_ = arm_target; }
+        [[nodiscard]] TraceLink target() noexcept { return target_.option(); }
+        [[nodiscard]] ::fixy::Option<DagRef<TraceNode const>> target() const noexcept { return target_.option(); }
+        void set_target(TraceLink arm_target) noexcept { target_ = NodeLink{arm_target}; }
 
         // The target of the arm.  A hash of the branch reads the target of
         // each arm, so an arm with no target ends the process here.
         [[nodiscard]] TraceNode& resolved_target() noexcept {
-            return *TraceLink{target_}.expect("an arm of the branch has no target: resolve the targets of a "
-                                              "loaded branch before a walk reads them");
+            return *target_.expect("an arm of the branch has no target: resolve the targets of a "
+                                   "loaded branch before a walk reads them");
         }
         [[nodiscard]] TraceNode const& resolved_target() const noexcept {
-            return *target().expect("an arm of the branch has no target: resolve the targets of a "
-                                    "loaded branch before a walk reads them");
+            return *target_.expect("an arm of the branch has no target: resolve the targets of a "
+                                   "loaded branch before a walk reads them");
         }
 
     private:
-        TraceLink target_{};
+        NodeLink target_{};
     };
 
     uint32_t pad1 = 0;  // the bytes between the guard and the arms

@@ -482,10 +482,12 @@ static void check_descriptor_images_agree() {
         ::fixy::BumpArena<DagArena> branch_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
         crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(test.alloc, branch_arena);
         branch.kind = crucible::TraceNodeKind::BRANCH;
-        auto arms_run = branch_arena.array<crucible::BranchNode::Arm>(test.alloc, 2, crucible::BranchNode::Arm{});
-        branch.set_arms(arms_run);
-        branch.arms().get(0).expect("the branch holds two arms")->value = 2;
-        branch.arms().get(1).expect("the branch holds two arms")->value = 1;
+        // The arm at position 0 holds the value 2, and the arm at position 1
+        // the value 1.
+        branch.set_arms(branch_arena.build_array<crucible::BranchNode::Arm>(
+            test.alloc, ::fixy::ElementCount{2}, [](::fixy::RunStart at) noexcept {
+                return crucible::BranchNode::Arm{at.value().raw() == 0 ? 2 : 1, crucible::TraceLink{}};
+            }));
         auto const& branch_read = branch;
         auto [branch_bytes, branch_buf] =
             ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 256, std::byte{0}), [&branch_read](auto run) noexcept {

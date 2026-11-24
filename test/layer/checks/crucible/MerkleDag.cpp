@@ -77,6 +77,18 @@ static_assert(std::is_same_v<decltype(std::declval<RegionNode&>().ops), ::fixy::
 static_assert(sizeof(::fixy::ArenaRun<TraceEntry const, DagArena>) == sizeof(::fixy::View<TraceEntry const>));
 static_assert(!std::is_constructible_v<::fixy::ArenaRun<TraceEntry const, DagArena>, ::fixy::View<TraceEntry const>>);
 
+// An arm holds its target as a NodeLink, so a const arm gives its target
+// only as const and does not copy.  An arm copies from an arm that is not
+// const, and an arena builds a run of arms with build_array.
+static_assert(sizeof(BranchNode::Arm) == 16, "an arm holds its value and the one pointer of its link");
+static_assert(!std::is_copy_constructible_v<BranchNode::Arm>
+              && std::is_constructible_v<BranchNode::Arm, BranchNode::Arm&>);
+static_assert(!std::is_copy_assignable_v<BranchNode::Arm>);
+static_assert(
+    std::is_same_v<decltype(std::declval<BranchNode::Arm const&>().target()), ::fixy::Option<DagRef<TraceNode const>>>);
+static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm const&>().resolved_target()), TraceNode const&>);
+static_assert(std::is_same_v<decltype(std::declval<BranchNode::Arm&>().target()), TraceLink>);
+
 // A region of the pipeline does not change after its publication, so two
 // threads can read one through a reference to const.  The pin holds each part
 // that a reader reaches: the continuation through a const Link, the ops and

@@ -25,11 +25,11 @@ namespace crucible::fuzz::boundary {
     const auto branch = mint_dag_node<BranchNode>(alloc, arena);
     branch->kind = TraceNodeKind::BRANCH;
     branch->merkle_hash = MerkleHash{0x5eed0000u + arms};
-    auto arms_run = arena.array<BranchNode::Arm>(alloc, arms, BranchNode::Arm{});
-    branch->set_arms(arms_run);
-    for (std::uint32_t i = 0; i < arms; ++i)
-        *branch->arms().get(i).expect("i is below the count of arms") =
-            BranchNode::Arm{*values.get(i).expect("i is below the count of values"), TraceLink{}};
+    branch->set_arms(
+        arena.build_array<BranchNode::Arm>(alloc, ::fixy::ElementCount{arms}, [values](::fixy::RunStart at) noexcept {
+            return BranchNode::Arm{*values.get(at.value().raw()).expect("a position is below the count of values"),
+                                   TraceLink{}};
+        }));
     ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, 4096, std::byte{0});
     // The body takes the node by reference, and the serializer reads it as
     // const.

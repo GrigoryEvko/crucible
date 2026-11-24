@@ -537,15 +537,16 @@ add_branch(::foundation::effects::Alloc a, ::foundation::effects::cap::Nondet no
     const DagRef<BranchNode> branch = mint_dag_node<BranchNode>(a, arena);
     branch->kind = TraceNodeKind::BRANCH;
     branch->guard = guard;
-    // Arms go in sorted by value: replay binary-searches them.
-    const BranchNode::Arm old_arm{old_guard_value, make_link(divergence_point)};
-    const BranchNode::Arm new_arm{new_guard_value, make_link(*new_region)};
+    // Arms go in sorted by value: replay binary-searches them.  The arm at
+    // position 0 holds the lower value.
     const bool is_old_first = old_guard_value <= new_guard_value;
-    branch->set_arms(arena.array<BranchNode::Arm>(a, 2, old_arm));
-    BranchNode::Arm& first_arm = *branch->arms().get(0).expect("a branch of two arms holds arm 0");
-    BranchNode::Arm& second_arm = *branch->arms().get(1).expect("a branch of two arms holds arm 1");
-    first_arm = is_old_first ? old_arm : new_arm;
-    second_arm = is_old_first ? new_arm : old_arm;
+    branch->set_arms(arena.build_array<BranchNode::Arm>(
+        a, ::fixy::ElementCount{2},
+        [is_old_first, old_guard_value, new_guard_value, &divergence_point, new_region](::fixy::RunStart at) noexcept {
+            const bool is_old_arm = (at.value().raw() == 0) == is_old_first;
+            return is_old_arm ? BranchNode::Arm{old_guard_value, make_link(divergence_point)}
+                              : BranchNode::Arm{new_guard_value, make_link(*new_region)};
+        }));
     branch->next = merge;
 
     recompute_merkle(*branch);

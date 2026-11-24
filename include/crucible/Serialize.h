@@ -981,7 +981,8 @@ deserialize_branch(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     node->merkle_hash = hdr.merkle_hash;
     node->next = ::fixy::none;  // the caller resolves the continuation separately
     node->guard = guard;
-    node->set_arms(arena.array<BranchNode::Arm>(a, num_arms, BranchNode::Arm{}));
+    node->set_arms(arena.build_array<BranchNode::Arm>(a, ::fixy::ElementCount{num_arms},
+                                                      [](::fixy::RunStart) noexcept { return BranchNode::Arm{}; }));
     for (BranchNode::Arm& arm : node->arms()) {
         arm.value = r.r<int64_t>();
         const MerkleHash target_h = MerkleHash{r.r<uint64_t>()};

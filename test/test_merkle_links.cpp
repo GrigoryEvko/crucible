@@ -28,10 +28,10 @@ namespace {
                                                         crucible::TraceLink second) noexcept {
     crucible::BranchNode& branch = *crucible::mint_dag_node<crucible::BranchNode>(alloc, arena);
     branch.kind = crucible::TraceNodeKind::BRANCH;
-    auto arms_run = arena.array<crucible::BranchNode::Arm>(alloc, 2, crucible::BranchNode::Arm{});
-    branch.set_arms(arms_run);
-    *branch.arms().get(0).expect("the branch holds two arms") = crucible::BranchNode::Arm{1, first};
-    *branch.arms().get(1).expect("the branch holds two arms") = crucible::BranchNode::Arm{2, second};
+    branch.set_arms(arena.build_array<crucible::BranchNode::Arm>(
+        alloc, ::fixy::ElementCount{2}, [first, second](::fixy::RunStart at) noexcept {
+            return at.value().raw() == 0 ? crucible::BranchNode::Arm{1, first} : crucible::BranchNode::Arm{2, second};
+        }));
     return branch;
 }
 
