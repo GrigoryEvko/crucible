@@ -110,10 +110,16 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
                            });
 }
 
+// The root of an open store of the tests.  A store that is not open ends the
+// test.
+[[nodiscard]] static ::fixy::TextView root_of(crucible::Cipher const& cipher) {
+    return cipher.root().expect("the store of the test is open");
+}
+
 // The directory of the root of cipher.
 [[nodiscard]] static ::fixy::fs::DirectoryHandle root_directory_of(crucible::Cipher const& cipher) {
     return ::fixy::fs::open_directory(
-               store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
+               store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root_of(cipher)))
                                 .expect("the sanitizer passes the root of the test"))
         .expect("the root of the test opens");
 }
@@ -475,7 +481,7 @@ static void test_commit_below_the_last_step(::fixy::TextView root) {
 // step_order.
 static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
     const crucible::Cipher made = open_cipher_under(root, ::fixy::TextView{"high_step"});
-    write_store_file(made.root(), "log",
+    write_store_file(root_of(made), "log",
                      ::fixy::TextView{"5,5900000000000001,1\n18446744073709551615,5900000000000002,2\n"});
     auto cipher = open_cipher_under(root, ::fixy::TextView{"high_step"});
     auto ov = cipher.mint_open_view(store_ctx());
@@ -498,7 +504,7 @@ static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
     CRUCIBLE_TEST_ASSERT(kTest, report.is_exit_with(0) && "a corrupt step of the log ends no later commit");
 
     const crucible::Cipher at_ceiling_made = open_cipher_under(root, ::fixy::TextView{"ceiling_step"});
-    write_store_file(at_ceiling_made.root(), "log", ::fixy::TextView{"4611686018427387903,5900000000000004,1\n"});
+    write_store_file(root_of(at_ceiling_made), "log", ::fixy::TextView{"4611686018427387903,5900000000000004,1\n"});
     auto at_ceiling = open_cipher_under(root, ::fixy::TextView{"ceiling_step"});
     auto at_ceiling_ov = at_ceiling.mint_open_view(store_ctx());
     CRUCIBLE_TEST_ASSERT(kTest, at_ceiling.last_committed_step().is_some_and([](::fixy::session::StepId step) {
@@ -521,7 +527,7 @@ static void test_step_above_the_ceiling_is_corrupt(::fixy::TextView root) {
 // 13.
 static void test_commit_after_a_torn_record(::fixy::TextView root) {
     const crucible::Cipher torn_made = open_cipher_under(root, ::fixy::TextView{"torn_log"});
-    write_store_file(torn_made.root(), "log", ::fixy::TextView{"1,5b00000000000001,1\n0,01234"});
+    write_store_file(root_of(torn_made), "log", ::fixy::TextView{"1,5b00000000000001,1\n0,01234"});
     {
         auto cipher = open_cipher_under(root, ::fixy::TextView{"torn_log"});
         auto ov = cipher.mint_open_view(store_ctx());
@@ -533,7 +539,7 @@ static void test_commit_after_a_torn_record(::fixy::TextView root) {
                                     && "the commit after a torn record loads at the reopen");
 
     const crucible::Cipher digit_made = open_cipher_under(root, ::fixy::TextView{"torn_digit"});
-    write_store_file(digit_made.root(), "log", ::fixy::TextView{"1,5b00000000000003,1\n1"});
+    write_store_file(root_of(digit_made), "log", ::fixy::TextView{"1,5b00000000000003,1\n1"});
     {
         auto cipher = open_cipher_under(root, ::fixy::TextView{"torn_digit"});
         auto ov = cipher.mint_open_view(store_ctx());
@@ -557,11 +563,11 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
     ::fixy::BumpArena<DagArena> writers_dag = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
     const crucible::RegionNode& writer_region = *make_test_region(writers_dag, 0x61);
     const crucible::ContentHash writer_hash = writer_region.content_hash;
-    write_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"}, ::fixy::TextView{"another writer"});
+    write_beside_object(root_of(cipher), writer_hash, ::fixy::TextView{".tmp"}, ::fixy::TextView{"another writer"});
     CRUCIBLE_TEST_ASSERT(kTest,
                          cipher.store(store_ctx(), ov, crucible::Cipher::content_addressed(::fixy::to(writer_region)))
                              == writer_hash);
-    CRUCIBLE_TEST_ASSERT(kTest, holds_beside_object(cipher.root(), writer_hash, ::fixy::TextView{".tmp"},
+    CRUCIBLE_TEST_ASSERT(kTest, holds_beside_object(root_of(cipher), writer_hash, ::fixy::TextView{".tmp"},
                                                     ::fixy::TextView{"another writer"})
                                     && "the store leaves the temporary file of another writer");
     {
@@ -580,7 +586,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
             return crucible::serialize_region(::fixy::to(variant_read), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
-    write_object_file(cipher.root(), variant.content_hash,
+    write_object_file(root_of(cipher), variant.content_hash,
                       variant_image.view().window(0, variant_bytes).expect("the writer writes inside its image"));
     const crucible::RegionNode& plain = *make_test_region(writers_dag, 0x62);
     CRUCIBLE_TEST_ASSERT(kTest, plain.content_hash == variant.content_hash);
@@ -669,8 +675,8 @@ int main() {
         auto cipher = open_cipher(dir);
         CRUCIBLE_TEST_ASSERT(kTest, cipher.empty() && "freshly opened Cipher must be empty");
         // The store keeps each character of its root.
-        CRUCIBLE_TEST_ASSERT(kTest, cipher.root().size() == dir.size());
-        CRUCIBLE_TEST_ASSERT(kTest, cipher.root() == dir);
+        CRUCIBLE_TEST_ASSERT(kTest, root_of(cipher).size() == dir.size());
+        CRUCIBLE_TEST_ASSERT(kTest, root_of(cipher) == dir);
         CRUCIBLE_TEST_ASSERT(kTest, ::fixy::fs::open_directory_at(store_ctx(), dir_owner.ref(), "objects").is_ok());
     }
 
@@ -779,21 +785,22 @@ int main() {
         const ::fixy::View<const std::byte> sound =
             image.view().window(0, image_bytes).expect("the image holds its bytes");
 
-        write_object_file(cipher.root(), crucible::ContentHash{0x1111111111111111ULL}, ::fixy::View<const std::byte>{});
+        write_object_file(root_of(cipher), crucible::ContentHash{0x1111111111111111ULL},
+                          ::fixy::View<const std::byte>{});
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x1111111111111111ULL)) == LoadError::file_size);
 
         // A sound region under the name of another hash.
-        write_object_file(cipher.root(), crucible::ContentHash{0x2222222222222222ULL}, sound);
+        write_object_file(root_of(cipher), crucible::ContentHash{0x2222222222222222ULL}, sound);
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x2222222222222222ULL)) == LoadError::object_hash_mismatch);
 
         // A damaged image gives the reason of its first fault.
-        write_object_file(cipher.root(), crucible::ContentHash{0x3333333333333333ULL},
+        write_object_file(root_of(cipher), crucible::ContentHash{0x3333333333333333ULL},
                           sound.window(0, 16).expect("the image holds sixteen bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x3333333333333333ULL)) == LoadError::truncated);
         image.with_element(
             0, [](std::byte& element) noexcept { element = std::byte{0}; },
             [] noexcept { ::fixy::fatal("the image holds its magic"); });
-        write_object_file(cipher.root(), crucible::ContentHash{0x4444444444444444ULL},
+        write_object_file(root_of(cipher), crucible::ContentHash{0x4444444444444444ULL},
                           image.view().window(0, image_bytes).expect("the image holds its bytes"));
         CRUCIBLE_TEST_ASSERT(kTest, reason_of(load(0x4444444444444444ULL)) == LoadError::bad_magic);
     }
@@ -819,7 +826,7 @@ int main() {
         // durable: it writes the object again, and the file grows back to its
         // full size.  A sound object stays as it is (the block of the
         // temporary file of another writer below).
-        write_beside_object(cipher.root(), hash, ::fixy::TextView{}, ::fixy::TextView{"hash-only"});
+        write_beside_object(root_of(cipher), hash, ::fixy::TextView{}, ::fixy::TextView{"hash-only"});
         const std::int64_t corrupted_size = object_file_size(cipher, hash);
 
         const crucible::ContentHash second = cipher.store(store_ctx(), ov, ca_payload);
@@ -868,6 +875,8 @@ int main() {
     {
         crucible::Cipher closed{::foundation::effects::testing::test().alloc};
         CRUCIBLE_TEST_ASSERT(kTest, !closed.is_open() && "a constructed Cipher must be Closed");
+        // A store that is not open has no root to read.
+        CRUCIBLE_TEST_ASSERT(kTest, closed.root().is_none());
         // These two queries are answerable without a root, so they stay
         // callable in the closed state rather than becoming errors.
         CRUCIBLE_TEST_ASSERT(kTest, closed.empty());
@@ -1152,12 +1161,12 @@ int main() {
     // the root of the test.
     {
         const crucible::Cipher anchor = open_cipher(dir);
-        test_commit_below_the_last_step(anchor.root());
-        test_step_above_the_ceiling_is_corrupt(anchor.root());
-        test_commit_after_a_torn_record(anchor.root());
-        test_store_leaves_the_file_of_another_writer(anchor.root());
-        test_two_writers_of_one_object(anchor.root());
-        test_batch_after_a_torn_index_line(anchor.root());
+        test_commit_below_the_last_step(root_of(anchor));
+        test_step_above_the_ceiling_is_corrupt(root_of(anchor));
+        test_commit_after_a_torn_record(root_of(anchor));
+        test_store_leaves_the_file_of_another_writer(root_of(anchor));
+        test_two_writers_of_one_object(root_of(anchor));
+        test_batch_after_a_torn_index_line(root_of(anchor));
     }
 
     ::fixy::check::pass(kTest, "test_cipher: all tests passed\n");

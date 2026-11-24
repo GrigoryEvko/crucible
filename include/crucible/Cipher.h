@@ -292,7 +292,7 @@ public:
         "Cipher holds a write-once root and an append-only log.  An assignment would drop both; move-construct "
         "a new Cipher instead");
 
-    [[nodiscard]] constexpr bool is_open() const noexcept { return root_.has_value(); }
+    [[nodiscard]] constexpr bool is_open() const noexcept { return root_.is_some(); }
 
     using OpenView = ::crucible::CipherOpenView;
 
@@ -545,11 +545,17 @@ public:
         return ::fixy::some(log_.back().step_id());
     }
 
-    // The text of the root is a member of the store.  The deleted `const&&`
-    // twin refuses a read of the root of a temporary store, because the
-    // store releases that text at the end of the statement.
-    // get checks that the root is set, in each build.
-    [[nodiscard]] ::fixy::TextView root() const& { return root_.get().value().c_text().view(); }
+    // The text of the root, a member of the store, or no text for a store
+    // that is not open.  The deleted `const&&` twin refuses a read of the
+    // root of a temporary store, because the store releases that text at the
+    // end of the statement.
+    [[nodiscard]] ::fixy::Option<::fixy::TextView> root() const& {
+        return root_.match(
+            [](::fixy::Tagged<RootPath, ::fixy::tags::source::Durable> const& path) noexcept {
+                return ::fixy::Option<::fixy::TextView>::some(path.value().c_text().view());
+            },
+            []() noexcept { return ::fixy::Option<::fixy::TextView>{::fixy::none}; });
+    }
     auto root() const&& = delete("a temporary store releases its root at the end of the statement. Read the root "
                                  "of a store that has a name");
 
@@ -583,8 +589,9 @@ private:
     static constexpr size_t MAX_SESSION_EVENT_BATCH_EVENTS =
         MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES / sizeof(SessionEvent);
 
-    ::fixy::WriteOnce<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>> root_ =
-        ::fixy::mint_write_once<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>>();
+    // The path of the root, or no path for a store that is not open.  Only
+    // open_root_ writes it, one time, after the root directory opened.
+    ::fixy::Option<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>> root_{::fixy::none};
     // The directory handle of the Cipher root.  Every helper that touches
     // the on-disk tree opens relative to this handle with O_NOFOLLOW, which
     // buys three properties:

@@ -1398,9 +1398,8 @@ Cipher::open_root_(FileCtx const& file_ctx, ::foundation::effects::Alloc allocat
     root_directory_ = std::move(root_dir);
     // The bound of the root is the bound of the path, so the path of the
     // root is a copy of the path.
-    [[maybe_unused]] const bool root_set =
-        root_.try_set(::fixy::mint_tagged<::fixy::tags::source::Durable>(RootPath{root.value()}));
-    [[assume(root_set)]];
+    root_ = ::fixy::Option<::fixy::Tagged<RootPath, ::fixy::tags::source::Durable>>::some(
+        ::fixy::mint_tagged<::fixy::tags::source::Durable>(RootPath{root.value()}));
     // The open makes objects when it is missing and syncs the root, which
     // holds it.  A store opens objects again, so a failure here shows in
     // the first store.

@@ -134,9 +134,10 @@ using LogOrders = ::fixy::FixedList<std::uint64_t, kLogLines>;
 
 // The directory of the root of cipher.
 [[nodiscard]] static ::fixy::fs::DirectoryHandle root_directory_of(Cipher const& cipher) {
-    return ::fixy::fs::open_directory(
-               store_ctx(), ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(cipher.root()))
-                                .expect("the sanitizer passes the root of the test"))
+    ::fixy::TextView const root = cipher.root().expect("the store of the test is open");
+    return ::fixy::fs::open_directory(store_ctx(),
+                                      ::fixy::sanitize_path(::fixy::mint_tagged<::fixy::tags::source::External>(root))
+                                          .expect("the sanitizer passes the root of the test"))
         .expect("the root of the test opens");
 }
 
