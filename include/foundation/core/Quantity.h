@@ -71,9 +71,13 @@
 // A Quantity has no operator other than the compare, and no default
 // constructor, so each Quantity states its number.  Two quantities compare
 // only in one unit and with one Rep.  Thus a compare of bytes per second
-// with flops per second does not compile.  The compare of a Float Rep is the
-// compare of the Rep, a partial order.  No operation takes a float quantity
-// and an integer quantity together.
+// with flops per second does not compile.  The orders <, <=, > and >= of a
+// Float Rep are the orders of the Rep, a partial order.  A Float Rep has no
+// ==, because the == of IEEE 754 makes -0 equal +0 and a NaN equal nothing.
+// The class carries derive_protocol, so equal, order, hash, encode and
+// format of the base read its number by the float rule: equal is the
+// identity of the bits, and order is the totalOrder.  No operation takes a
+// float quantity and an integer quantity together.
 //
 // Integer set.  It has no + and no -, so each overflow is a choice at the
 // call site.  The operations of two quantities take one Rep, and the sum and
@@ -108,6 +112,7 @@
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Compare.h>
+#include <foundation/core/Equatable.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
 
@@ -336,7 +341,7 @@ using Quotient = typename detail::CombinedUnit<Left, Right, detail::UnitOperatio
 }  // namespace unit
 
 template <QuantityUnit UnitTag, Arithmetic Rep>
-class Quantity final {
+class[[= derive_protocol{}]] Quantity final {
     Rep value_{};
 
 public:
@@ -344,7 +349,10 @@ public:
 
     [[nodiscard]] constexpr Rep raw() const noexcept { return value_; }
 
-    [[nodiscard]] friend constexpr bool operator==(Quantity left, Quantity right) noexcept = default;
+    // The == of an integer Rep.  equal of a Float Rep compares its bits.
+    [[nodiscard]] friend constexpr bool operator==(Quantity left, Quantity right) noexcept
+        requires(!Float<Rep>)
+    = default;
     [[nodiscard]] friend constexpr auto operator<=>(Quantity left, Quantity right) noexcept = default;
 
     // The four orders compare the numbers, so a caller reads no ordering

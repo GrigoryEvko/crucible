@@ -48,23 +48,23 @@ static void test_preset_sanity() {
     CRUCIBLE_TEST_ASSERT(kTest, b200.max_threads_per_sm() == 32 * 64);
     CRUCIBLE_TEST_ASSERT(kTest, b200.total_threads() == 128ULL * 32 * 64);
     // The rates of the presets are whole numbers below 2^53, so a double
-    // holds each one exactly.
-    CRUCIBLE_FATAL_INVARIANT(b200.peak_fp16 == FlopRate{1.125e15});
-    CRUCIBLE_FATAL_INVARIANT(b200.hbm_bw == ByteRate{8.0e12});
+    // holds each one exactly, and equal compares the bits.
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(b200.peak_fp16, FlopRate{1.125e15}));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(b200.hbm_bw, ByteRate{8.0e12}));
 
     auto h100 = hopper_h100();
     CRUCIBLE_TEST_ASSERT(kTest, h100.num_sms == 132);
-    CRUCIBLE_FATAL_INVARIANT(h100.peak_fp16 == FlopRate{9.9e14});
-    CRUCIBLE_FATAL_INVARIANT(h100.hbm_bw == ByteRate{3.35e12});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(h100.peak_fp16, FlopRate{9.9e14}));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(h100.hbm_bw, ByteRate{3.35e12}));
     CRUCIBLE_TEST_ASSERT(kTest, h100.sm_version == 90);
 
     auto mi300 = mi300x();
     CRUCIBLE_TEST_ASSERT(kTest, mi300.warp_size.value() == 64);  // AMD wavefront
-    CRUCIBLE_FATAL_INVARIANT(mi300.peak_fp16 == FlopRate{1.3e15});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(mi300.peak_fp16, FlopRate{1.3e15}));
 
     auto a100 = ampere_a100();
     CRUCIBLE_TEST_ASSERT(kTest, a100.num_sms == 108);
-    CRUCIBLE_FATAL_INVARIANT(a100.peak_fp8 == FlopRate{0.0});  // A100 predates FP8
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(a100.peak_fp8, FlopRate{0.0}));  // A100 predates FP8
 
     ::fixy::check::pass(kTest, "  test_preset_sanity:             PASSED\n");
 }
@@ -86,7 +86,7 @@ static void test_ridge_point() {
     CRUCIBLE_FATAL_INVARIANT(approx(static_cast<float>(h100.compute_ridge_point(ScalarType::Half).raw()), 295.52f));
 
     // A part with no bandwidth has the ridge 0.
-    CRUCIBLE_FATAL_INVARIANT(HardwareProfile{}.compute_ridge_point(ScalarType::Half) == FlopsPerByte{0.0});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(HardwareProfile{}.compute_ridge_point(ScalarType::Half), FlopsPerByte{0.0}));
 
     ::fixy::check::pass(kTest, "  test_ridge_point:               PASSED\n");
 }
@@ -96,13 +96,13 @@ static void test_ridge_point() {
 // Float4_e2m1fn_x2 to its default arm, the FP32 peak.
 static void test_peak_of_each_narrow_type() {
     auto const hw = blackwell_b200();
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e5m2) == hw.peak_fp8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e4m3fn) == hw.peak_fp8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e5m2fnuz) == hw.peak_fp8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e4m3fnuz) == hw.peak_fp8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float8_e8m0fnu) == hw.peak_fp8
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float8_e5m2), hw.peak_fp8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float8_e4m3fn), hw.peak_fp8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float8_e5m2fnuz), hw.peak_fp8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float8_e4m3fnuz), hw.peak_fp8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float8_e8m0fnu), hw.peak_fp8)
                                     && "the scale type of a block-scaled format is rated at the FP8 peak");
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Float4_e2m1fn_x2) == hw.peak_fp4
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Float4_e2m1fn_x2), hw.peak_fp4)
                                     && "the FP4 type is rated at the FP4 peak");
     ::fixy::check::pass(kTest, "  test_peak_of_each_narrow_type:  PASSED\n");
 }
@@ -112,16 +112,16 @@ static void test_peak_of_each_narrow_type() {
 // the FP32 peak, and no type at no rate.
 static void test_peak_of_each_other_type() {
     auto const hw = blackwell_b200();
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Byte) == hw.peak_int8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Char) == hw.peak_int8);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexHalf) == hw.peak_fp16);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexFloat) == hw.peak_fp32);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::ComplexDouble) == hw.peak_fp64);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Short) == hw.peak_fp32);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Int) == hw.peak_fp32);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Long) == hw.peak_fp32);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Bool) == hw.peak_fp32);
-    CRUCIBLE_TEST_ASSERT(kTest, hw.select_peak_rate(ScalarType::Undefined) == FlopRate{0.0});
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Byte), hw.peak_int8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Char), hw.peak_int8));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::ComplexHalf), hw.peak_fp16));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::ComplexFloat), hw.peak_fp32));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::ComplexDouble), hw.peak_fp64));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Short), hw.peak_fp32));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Int), hw.peak_fp32));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Long), hw.peak_fp32));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Bool), hw.peak_fp32));
+    CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(hw.select_peak_rate(ScalarType::Undefined), FlopRate{0.0}));
     ::fixy::check::pass(kTest, "  test_peak_of_each_other_type:   PASSED\n");
 }
 
@@ -148,8 +148,9 @@ static void test_evaluate_cost() {
     // No bytes give the intensity 0, and a part with no rate gives no time.
     CostBreakdown const empty = evaluate_cost(pure_ctx, FlopCount{1024}, ByteCount{0}, ElementCount{4096},
                                               ScalarType::Float, cfg, HardwareProfile{});
-    CRUCIBLE_FATAL_INVARIANT(empty.arithmetic_intensity == FlopsPerByte{0.0});
-    CRUCIBLE_FATAL_INVARIANT(empty.compute_ns == Nanoseconds{0.0} && empty.memory_ns == Nanoseconds{0.0});
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(empty.arithmetic_intensity, FlopsPerByte{0.0}));
+    CRUCIBLE_FATAL_INVARIANT(::fixy::equal(empty.compute_ns, Nanoseconds{0.0})
+                             && ::fixy::equal(empty.memory_ns, Nanoseconds{0.0}));
 
     ::fixy::check::pass(kTest, "  test_evaluate_cost:             PASSED\n");
 }

@@ -217,9 +217,17 @@ using FloatFlopRate = Quantity<unit::FlopPerSecond, double>;
 static_assert(sizeof(FloatBytes) == 8 && std::is_trivially_copyable_v<FloatBytes>);
 static_assert(!std::is_default_constructible_v<FloatBytes> && !std::is_convertible_v<double, FloatBytes>);
 static_assert(std::same_as<decltype(FloatBytes{1.0} <=> FloatBytes{2.0}), std::partial_ordering>);
-static_assert(FloatBytes{1.5} == FloatBytes{1.5} && FloatBytes{1.0} < FloatBytes{2.0});
+static_assert(FloatBytes{1.0} < FloatBytes{2.0} && !(FloatBytes{2.0} < FloatBytes{1.0}));
+static_assert(!std::equality_comparable<FloatBytes> && std::equality_comparable<Bytes>);
 static_assert(!std::equality_comparable_with<FloatByteRate, FloatFlopRate>);
 static_assert(!std::equality_comparable_with<FloatBytes, Bytes>);
+
+// equal and order of the base read the number of a Float Rep by the float
+// rule: the identity of the bits and the totalOrder of IEEE 754.
+static_assert(Equatable<FloatBytes> && Orderable<FloatBytes> && Equatable<Bytes> && Orderable<Bytes>);
+static_assert(equal(FloatBytes{1.5}, FloatBytes{1.5}) && !equal(FloatBytes{0.0}, FloatBytes{-0.0}));
+static_assert(equal(FloatBytes{quiet_nan_of<double>}, FloatBytes{quiet_nan_of<double>}));
+static_assert(std::is_lt(order(FloatBytes{-0.0}, FloatBytes{0.0})) && std::is_lt(order(Bytes{1}, Bytes{2})));
 
 // Each operation is one IEEE operation.
 static_assert(has_bits(add(FloatBytes{1.5}, FloatBytes{2.25}), 3.75));
