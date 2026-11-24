@@ -130,10 +130,9 @@ int main() {
     put_slot(::foundation::core::index<SL_LOGITS>(), make_int(SL_LOGITS, SZ_BNCLS, 13, 14));
     put_slot(::foundation::core::index<SL_PROBS>(), make_int(SL_PROBS, SZ_BNCLS, 14, 14));
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc};
     const DagRef<MemoryPlan> plan_storage = arena.make<MemoryPlan>(test.alloc);
     crucible::PlanScratch sweep_scratch{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 16}};
-    BackgroundThread::PlanTarget const target = bt.plan_target();
+    BackgroundThread::PlanTarget const target{};
     sweep_scratch.arena.with_epoch(
         [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             static_cast<void>(BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)

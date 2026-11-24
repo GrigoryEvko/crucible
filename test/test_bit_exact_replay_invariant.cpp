@@ -202,7 +202,6 @@ struct Built {
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 20});
-    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     auto ops_run = dag_arena.array<TraceEntry>(ctx.alloc, kNumOps, TraceEntry{});
     // A plain View of an arena run: the View carries no brand of its arena.
@@ -226,7 +225,7 @@ struct Built {
     build_slots(slots);
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = dag_arena.make<crucible::MemoryPlan>(ctx.alloc);
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     sweep_scratch.arena.with_epoch([target, alloc = ctx.alloc, plan_storage,
                                     &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)

@@ -382,7 +382,6 @@ static void test_reinit() {
 // placed in the space slot 1 vacated.
 static void test_integration_with_sweep_line() {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     constexpr uint32_t N = 4;
     ::fixy::BumpArena<DagArena> slot_arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 16});
@@ -440,7 +439,7 @@ static void test_integration_with_sweep_line() {
                                                         .pad2 = {}};
 
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = slot_arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
                                     &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)

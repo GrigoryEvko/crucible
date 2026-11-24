@@ -178,11 +178,10 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const ::fixy::View<TensorSlot> set_slots1 = set_slots1_run.view();
 
             auto test = ::foundation::effects::testing::test();
-            BackgroundThread bt1{::foundation::effects::testing::test().alloc};
             const crucible::DagRef<crucible::MemoryPlan> plan_storage1 =
                 slot_arena.make<crucible::MemoryPlan>(test.alloc);
             crucible::PlanScratch sweep_scratch1{Bytes{size_t{1} << 16}};
-            BackgroundThread::PlanTarget const target1 = bt1.plan_target();
+            BackgroundThread::PlanTarget const target1{};
             sweep_scratch1.arena.with_epoch([target1, alloc = test.alloc, plan_storage1,
                                              &set_slots1_run](crucible::PlanScratch::Epoch& epoch) noexcept {
                 static_cast<void>(
@@ -232,11 +231,10 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 slots2_run.window(::fixy::RunStart{::fixy::ElementCount{0}}, ::fixy::ElementCount{num_slots})
                     .expect("a set holds at most kMaxSlots slots");
             const ::fixy::View<TensorSlot> set_slots2 = set_slots2_run.view();
-            BackgroundThread bt2{::foundation::effects::testing::test().alloc};
             const crucible::DagRef<crucible::MemoryPlan> plan_storage2 =
                 slot_arena.make<crucible::MemoryPlan>(test.alloc);
             crucible::PlanScratch sweep_scratch2{Bytes{size_t{1} << 16}};
-            BackgroundThread::PlanTarget const target2 = bt2.plan_target();
+            BackgroundThread::PlanTarget const target2{};
             sweep_scratch2.arena.with_epoch([target2, alloc = test.alloc, plan_storage2,
                                              &set_slots2_run](crucible::PlanScratch::Epoch& epoch) noexcept {
                 static_cast<void>(

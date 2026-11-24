@@ -14,7 +14,6 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 // lifetime that the planner accepts.
 void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
@@ -31,7 +30,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.death_op = crucible::OpIndex{death_op};
     second_slot.slot_id = crucible::SlotId{1};
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     scratch.arena.with_epoch(
         [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             const crucible::MemoryPlan& plan =
@@ -47,7 +46,6 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
 [[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal> refusal_of_spans(std::uint64_t first_nbytes,
                                                                                        std::uint64_t second_nbytes) {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
@@ -64,7 +62,7 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
     second_slot.death_op = crucible::OpIndex{2};
     second_slot.slot_id = crucible::SlotId{1};
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     return scratch.arena.with_epoch(
         [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
@@ -76,7 +74,6 @@ void plan_two_slots(std::uint32_t birth_op, std::uint32_t death_op) {
 [[nodiscard]] ::fixy::Option<crucible::BackgroundThread::PlanRefusal>
 refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     auto test = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt{test.alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     auto slots_run = arena.array(test.alloc, 2, crucible::TensorSlot{});
@@ -91,7 +88,7 @@ refusal_of_ids(::foundation::core::FixedArray<crucible::SlotId, 2> const& ids) {
     external_slot.is_external = true;
     external_slot.slot_id = ids.at(::foundation::core::index<1>());
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     return scratch.arena.with_epoch(
         [target, alloc = test.alloc, plan_storage, &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
             return crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run).err();
@@ -161,7 +158,6 @@ void test_refuses_slot_lifetimes_outside_the_sweep(::fixy::TestRunnerCtx const& 
 // external and takes no pool space.
 void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
     auto source = ::foundation::effects::testing::test();
-    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
     crucible::PlanScratch scratch{Bytes{size_t{1} << 16}};
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{4096});
     // The intervals are chosen so slot 2 can reuse slot 1's space: slot 1 dies at
@@ -227,7 +223,7 @@ void test_plan_reuses_space(::fixy::TestRunnerCtx const& test) {
                                                 .pad2 = {}};
 
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(source.alloc);
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     scratch.arena.with_epoch(
         [target, alloc = source.alloc, plan_storage, &slots_run, &test](crucible::PlanScratch::Epoch& epoch) noexcept {
             const crucible::MemoryPlan& plan =

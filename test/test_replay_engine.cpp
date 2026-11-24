@@ -627,7 +627,6 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
 static void test_integration_with_pool() {
     auto test = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
-    crucible::BackgroundThread bt{::foundation::effects::testing::test().alloc};
 
     // Slot 2 is external: it stands for a parameter whose storage the
     // pool does not own and must not place.
@@ -675,7 +674,7 @@ static void test_integration_with_pool() {
 
     const crucible::DagRef<crucible::MemoryPlan> plan_storage = arena.make<crucible::MemoryPlan>(test.alloc);
     crucible::PlanScratch sweep_scratch{Bytes{size_t{1} << 16}};
-    crucible::BackgroundThread::PlanTarget const target = bt.plan_target();
+    crucible::BackgroundThread::PlanTarget const target{};
     sweep_scratch.arena.with_epoch([target, alloc = test.alloc, plan_storage,
                                     &slots_run](crucible::PlanScratch::Epoch& epoch) noexcept {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
