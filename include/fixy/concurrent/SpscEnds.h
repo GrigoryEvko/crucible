@@ -916,6 +916,43 @@ public:
         return static_cast<Body&&>(body)(owner);
     }
 
+    // View of the owner for the consumer: a Ref to the owner as const, which
+    // lives as long as the held split.  The holder declares the split before
+    // the object that keeps the view, and that object joins its thread
+    // before its own end, as for a reference to a side.  Only the consumer
+    // side has the door, and the producer side has none.
+    //
+    // The view writes nothing, because each door of the owner that writes
+    // takes an end.  Its risk is a read of a part that the producer still
+    // writes.  So each read through the view stays at or below the position
+    // that the consumer acquired, and the consumer gives the range of each
+    // read from that position.  The one user is the build stage of the
+    // background thread (crucible/BackgroundThread.h).  It calls one const
+    // door of the metadata log through the view, MetaLog::copy_run, for the
+    // records that the meta starts of its drained ops name.  The record path
+    // appends the records of an op and publishes the head of the log before
+    // it publishes the op in the trace ring, and the drain stage acquired the
+    // head of the ring, so each such record is published.  The publish stage
+    // releases a record only after the build of its work.  The flush and the
+    // binds read the counters of the ring and of the log through with_owner
+    // frames, and not through a view.
+    //
+    // The door ends when a built region holds its arena in a form that the
+    // store check of with_owner admits: the build stage then reads the log
+    // inside a with_owner frame again.  Complexity: O(1).
+    [[nodiscard]] constexpr ::foundation::core::Ref<Owner const, SpscSplitBrand<Owner>> owner_view() const& noexcept
+        requires(Side == SpscSide::consumer)
+    {
+        return end_.owner_;
+    }
+    ::foundation::core::Ref<Owner const, SpscSplitBrand<Owner>> owner_view() const&&
+        requires(Side == SpscSide::consumer)
+    = delete("a temporary side gives no view of its owner: take the view from the side that the held split holds");
+    ::foundation::core::Ref<Owner const, SpscSplitBrand<Owner>> owner_view() const&
+        requires(Side == SpscSide::producer)
+    = delete("the producer side gives no view of its owner: the producer writes the owner, so a read outside a frame "
+             "could read a part that the producer still writes");
+
     // A door with no proof binds to this overload, so the refusal gives its
     // reason.
     template <class Body>

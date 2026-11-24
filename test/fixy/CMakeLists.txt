@@ -4791,6 +4791,17 @@ fixy_neg_compile_test(neg_spsc_ends_body_keeps_its_end
 fixy_neg_compile_test(neg_spsc_ends_body_reaches_its_split
   "use of deleted function .void fixy::concurrent::with_producer\\(SpscSplit<Owner, Brand>&, ProducerToken<Owner, Brand>&, Body&&\\)"
   "a body of a frame door of a split reaches the token of its side, so code in the body could open a second frame")
+# The view of the owner of a held split: only the consumer side gives one, it
+# names the owner as const, and a temporary side gives none.
+fixy_neg_compile_test(neg_spsc_ends_owner_view_on_a_producer_side
+  "use of deleted function .foundation::core::Ref<const Owner, fixy::concurrent::SpscSplitBrand<Owner> > fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::owner_view\\(\\) const &"
+  "the producer side gives no view of its owner")
+fixy_neg_compile_test(neg_spsc_ends_owner_view_writes_the_owner
+  "assignment of member .\\{anonymous\\}::Owner::count. in read-only object"
+  "neg_spsc_ends_owner_view_writes_the_owner\\.cpp:[0-9]+:[0-9]+: error")
+fixy_neg_compile_test(neg_spsc_ends_owner_view_of_a_temporary_side
+  "use of deleted function .foundation::core::Ref<const Owner, fixy::concurrent::SpscSplitBrand<Owner> > fixy::concurrent::SpscHeldSide<Owner, Side, Proof>::owner_view\\(\\) const &&"
+  "a temporary side gives no view of its owner")
 # An owner whose producer state holds a borrow: a side state holds no borrow,
 # so the mint refuses the owner (the store mark of an end).
 fixy_neg_compile_test(neg_spsc_ends_state_holds_a_borrow

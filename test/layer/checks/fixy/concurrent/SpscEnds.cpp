@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <meta>
 #include <type_traits>
+#include <utility>
 
 namespace fixy::concurrent::detail::spsc_ends_checks {
 
@@ -206,6 +207,14 @@ constexpr bool opens_side = requires(Side& side, Opener& opener) { side.with_end
 static_assert(opens_side<HeldProducerSide, ProducerProof const>);
 static_assert(!opens_side<HeldProducerSide, ConsumerProof const>);
 static_assert(!::foundation::transfer::Synchronized<HeldSplit>);
+
+// The consumer side gives a view of its owner as const, and the producer side
+// gives none.
+template <class Side>
+constexpr bool gives_view = requires(Side const& side) { side.owner_view(); };
+static_assert(gives_view<HeldSplit::consumer_side_type> && !gives_view<HeldProducerSide>);
+static_assert(std::is_same_v<decltype(std::declval<HeldSplit::consumer_side_type const&>().owner_view()),
+                             ::foundation::core::Ref<CheckOwner const, SpscSplitBrand<CheckOwner>>>);
 
 // The door of two held sides takes two sides of two types, such as the two
 // sides of one held split, and refuses one side type given two times.

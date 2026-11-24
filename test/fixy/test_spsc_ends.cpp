@@ -371,6 +371,16 @@ public:
         return split_.with_owner([](CountLog const& log) noexcept { return log.held(); });
     }
 
+    // The view of the owner that the consumer side gives.  It names the log
+    // of the split, and it reads the count that a frame of the owner reads.
+    [[nodiscard]] bool has_view_of_the_log() noexcept {
+        ::foundation::core::Ref<CountLog const, ::fixy::concurrent::SpscSplitBrand<CountLog>> const view =
+            split_.consumer_side().owner_view();
+        bool const is_same_log = split_.with_owner(
+            [&view](CountLog const& log) noexcept { return __builtin_addressof(*view) == __builtin_addressof(log); });
+        return is_same_log && view->held() == held();
+    }
+
 private:
     ::fixy::concurrent::SpscHeldSplit<CountLog, HeldBrand> split_;
 };
@@ -467,6 +477,9 @@ int check_held_split() {
     if (holder.read_each(ProofDoor::consumer()) != 2 || holder.held() != 0) return 3;
     if (holder.write_all(ProofDoor::producer()) != 2) return 4;
     if (holder.read_each(ProofDoor::consumer()) != 2 || holder.held() != 0) return 5;
+
+    // The consumer side gives a view of the log outside a frame.
+    if (holder.write_all(ProofDoor::producer()) != 2 || !holder.has_view_of_the_log()) return 6;
     return 0;
 }
 
