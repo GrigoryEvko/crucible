@@ -67,7 +67,7 @@ public:
 
     // The raw table takes the tag of Nondet that the typed cache takes, so one
     // body of the bench calls the two caches.
-    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel*
+    CRUCIBLE_UNSAFE_BUFFER_USAGE [[nodiscard, gnu::hot]] CompiledKernel const*
     lookup(::foundation::effects::cap::Nondet /*nondet*/, ContentHash content_hash, RowHash row_hash) const noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
@@ -82,7 +82,7 @@ public:
             if (key == 0) return nullptr;
             if (key != lookup_hash) continue;
 
-            CompiledKernel* kernel = entry.kernel.load(std::memory_order_acquire);
+            CompiledKernel const* kernel = entry.kernel.load(std::memory_order_acquire);
             if (kernel == nullptr) [[unlikely]] {
                 kernel = await_claimed_(entry);
                 if (kernel == nullptr) continue;
@@ -103,7 +103,7 @@ public:
                                                                    KernelCache::KernelRef kernel_ref) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(content_hash.raw() != 0);
-        CompiledKernel* const kernel = &*kernel_ref;
+        CompiledKernel const* const kernel = &*kernel_ref;
         const std::uint64_t lookup_hash = content_hash.raw();
         const std::uint64_t lookup_row = row_hash.raw();
         const std::uint32_t mask = capacity_ - 1;
@@ -119,7 +119,7 @@ public:
             }
 
             if (expected == lookup_hash) {
-                CompiledKernel* existing = entry.kernel.load(std::memory_order_acquire);
+                CompiledKernel const* existing = entry.kernel.load(std::memory_order_acquire);
                 for (std::uint32_t spin = 0; spin < kClaimedSpinBudget && existing == nullptr; ++spin) {
                     CRUCIBLE_SPIN_PAUSE;
                     existing = entry.kernel.load(std::memory_order_acquire);
@@ -143,16 +143,16 @@ private:
     struct Entry {
         std::atomic<std::uint64_t> content_hash{0};
         std::atomic<std::uint64_t> row_hash{0};
-        std::atomic<CompiledKernel*> kernel{nullptr};
+        std::atomic<CompiledKernel const*> kernel{nullptr};
     };
 
     static_assert(sizeof(Entry) == 24);
     static_assert(alignof(Entry) == 8);
 
-    [[nodiscard]] static CompiledKernel* await_claimed_(Entry const& entry) noexcept {
+    [[nodiscard]] static CompiledKernel const* await_claimed_(Entry const& entry) noexcept {
         for (std::uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
             CRUCIBLE_SPIN_PAUSE;
-            CompiledKernel* kernel = entry.kernel.load(std::memory_order_acquire);
+            CompiledKernel const* kernel = entry.kernel.load(std::memory_order_acquire);
             if (kernel != nullptr) return kernel;
         }
         return nullptr;

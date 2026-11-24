@@ -87,9 +87,10 @@ public:
     template <typename Level, typename T>
     using AtLevel = ::fixy::Tagged<T, Level>;
 
-    // A compiled kernel in a slot.  The cache does not own the kernel, and
-    // a reference is never null.
-    using KernelRef = ::fixy::Ref<CompiledKernel>;
+    // A compiled kernel in a slot.  The cache does not own the kernel, a
+    // reference is never null, and a reader of the cache gets the kernel as
+    // const.
+    using KernelRef = ::fixy::Ref<CompiledKernel const>;
     // The kernel of a key, or no value when no slot holds the key.
     using FoundKernel = ::fixy::Option<KernelRef>;
 
@@ -337,14 +338,12 @@ public:
             Placed,
             Next,
         };
-        // The body reads the kernel through a const reference: its type is
-        // not complete here, so the store check of the door cannot read what
-        // a write through a Ref of it could store.
+        // The body takes the Ref of the kernel by value.  The Ref names a
+        // const kernel, so the body writes no part of the kernel.
         const std::size_t slots = table_.size();
-        KernelRef const& kernel_read = kernel;
         for (std::size_t probe = 0; probe < slots; probe++) {
             const ProbeStep step =
-                table_.with_masked(lookup_hash + probe, [&size = size_, &kernel_read, nondet, lookup_hash,
+                table_.with_masked(lookup_hash + probe, [&size = size_, kernel, nondet, lookup_hash,
                                                          lookup_row](KernelCacheSlot& entry) noexcept {
                     uint64_t expected = 0;
                     // A successful CAS claims the slot for this thread.  The
@@ -356,7 +355,7 @@ public:
                         writer.publish(KernelCacheSlotSnapshot{
                             .content_hash = lookup_hash,
                             .row_hash = lookup_row,
-                            .kernel = ::fixy::some(kernel_read),
+                            .kernel = ::fixy::some(kernel),
                         });
                         ::foundation::linear::drop(std::move(writer).release());
                         // Nothing branches on the exact count.  The content hash
@@ -378,7 +377,7 @@ public:
                     // changes, so a concurrent reader observes one kernel or the
                     // other and both are valid.
                     auto writer = entry.writer(::foundation::permissions::mint_permission_root<KernelCompileTag>());
-                    writer.publish_kernel_variant(kernel_read);
+                    writer.publish_kernel_variant(kernel);
                     ::foundation::linear::drop(std::move(writer).release());
                     return ProbeStep::Placed;
                 });
