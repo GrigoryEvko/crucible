@@ -135,6 +135,7 @@
 // thread reads or writes it.  Every "none" is zero, so the tables are in
 // .bss and cost no page until a session touches them.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Fatal.h>
@@ -161,8 +162,9 @@ enum class endpoint_id : std::uint32_t {
 
 // The priority of a session in the order that the watch keeps.  A
 // Resource states it as a static constexpr member session_priority of
-// this type.  lowest is the priority of a Resource that states none.
-enum class priority : std::uint32_t {
+// this type.  lowest is the priority of a Resource that states none.  Each
+// number is a priority (open_values of foundation/ByteSeal.h).
+enum class[[= ::foundation::core::open_values{}]] priority : std::uint32_t {
     lowest = 0
 };
 

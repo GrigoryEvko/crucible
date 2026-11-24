@@ -34,6 +34,17 @@ namespace foundation::core {
 // mark, so a sum on the slot of the family needs no mark of its own.
 struct closed_tag final {};
 
+// The mark of an enumeration whose each value of the underlying type is a
+// valid value, such as the error number of the kernel: the enumerators name
+// some values, and a number that no enumerator names is a value too.  The
+// quarantine plugin refuses a cast of a number into an enumeration with
+// enumerators, and it skips a marked enumeration
+// (utils/tools/quarantine/expression.cpp, the casts into an enumeration).
+// An exhaustive match over a marked enumeration keeps a default arm, because
+// a value can name no enumerator.  A new mark is a reviewed change of the
+// header that declares the enumeration.
+struct open_values final {};
+
 // The mark of a function of the base that frees the storage of an object
 // that ended, such as heap_release_ of foundation/core/Heap.h.  A pointer to
 // void that can write is a view of the bytes of the object that it points

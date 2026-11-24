@@ -12,6 +12,7 @@
 // This header is in the layer F0_doors of utils/rule-table.txt, above the
 // families of foundation/core.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/core/Choice.h>
 
 #include <cstdint>
@@ -22,8 +23,8 @@ namespace foundation::os {
 // asm-generic/errno.h in lower case, which x86_64 and aarch64 both use.  The
 // door file src/foundation/os/Errno.cpp compares each value with that
 // header.  A number that no name gives, for example from a newer kernel, is
-// a value of the enumeration too.
-enum class Errno : std::uint16_t {
+// a value of the enumeration too (open_values of foundation/ByteSeal.h).
+enum class[[= ::foundation::core::open_values{}]] Errno : std::uint16_t {
     eperm = 1,
     enoent = 2,
     esrch = 3,

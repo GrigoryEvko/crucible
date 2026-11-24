@@ -20,6 +20,7 @@
 // concrete node only.  test/foundation/test_lattices_bands.cpp runs the
 // lattice at run time.
 
+#include <foundation/ByteSeal.h>
 #include <foundation/algebra/Lattice.h>
 #include <foundation/algebra/lattices/FlatLattice.h>
 #include <foundation/core/Text.h>
@@ -34,8 +35,8 @@ namespace foundation::algebra::lattices {
 
 // A sparse enum.  The two enumerators are sentinels.  The values 0 thru
 // 253 are concrete node identifiers of the same type, with no enumerator
-// of their own.
-enum class NumaNodeId : std::uint8_t {
+// of their own (open_values of foundation/ByteSeal.h).
+enum class[[= ::foundation::core::open_values{}]] NumaNodeId : std::uint8_t {
     None = 254,  // bottom: no node
     Any = 255,  // top: every node
 };
