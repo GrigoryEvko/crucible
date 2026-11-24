@@ -34,7 +34,7 @@ namespace {
 
 // The op of a matrix product of [B*S, D] with [D, D].
 void run_square_mm(CrucibleContext& ctx, const CrucibleContext::CompiledView& cv) {
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),
                 make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})), std::move(out),
                 make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D), make_dim<roles::Inner>(D));
@@ -48,7 +48,7 @@ void run_attention_ops(CrucibleContext& ctx, const CrucibleContext::CompiledView
 
     s = ctx.advance(H_LN1, S_LN1, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::layer_norm(kTest, read_input(ctx, cv, InputPosition{0}),
                         make_input<roles::Scale>(read_input(ctx, cv, InputPosition{1})),
                         make_input<roles::Shift>(read_input(ctx, cv, InputPosition{2})), std::move(out),
@@ -69,7 +69,7 @@ void run_attention_ops(CrucibleContext& ctx, const CrucibleContext::CompiledView
 
     s = ctx.advance(H_SDPA, S_SDPA, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::sdpa(kTest, read_input(ctx, cv, InputPosition{0}),
                   make_input<roles::Keys>(read_input(ctx, cv, InputPosition{1})),
                   make_input<roles::Values>(read_input(ctx, cv, InputPosition{2})), std::move(out),
@@ -82,7 +82,7 @@ void run_attention_ops(CrucibleContext& ctx, const CrucibleContext::CompiledView
 
     s = ctx.advance(H_ADD1, S_ADD1, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::add(kTest, make_input<roles::Augend>(read_input(ctx, cv, InputPosition{0})),
                  make_input<roles::Addend>(read_input(ctx, cv, InputPosition{1})), std::move(out),
                  make_dim<roles::Count>(B * S * D));

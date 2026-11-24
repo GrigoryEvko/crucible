@@ -36,7 +36,7 @@ namespace {
 // The op of a matrix product of [rows, inner] with [inner, columns].
 void run_mm(CrucibleContext& ctx, const CrucibleContext::CompiledView& cv, cpu::Dim<roles::Rows> rows,
             cpu::Dim<roles::Columns> columns, cpu::Dim<roles::Inner> inner) {
-    write_output(kTest, ctx, cv, [&ctx, &cv, &rows, &columns, &inner](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv, &rows, &columns, &inner](auto out) noexcept {
         cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),
                 make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})), std::move(out), rows, columns, inner);
     });
@@ -49,7 +49,7 @@ void run_ffn_and_head_ops(CrucibleContext& ctx, const CrucibleContext::CompiledV
 
     s = ctx.advance(H_LN2, S_LN2, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::layer_norm(kTest, read_input(ctx, cv, InputPosition{0}),
                         make_input<roles::Scale>(read_input(ctx, cv, InputPosition{1})),
                         make_input<roles::Shift>(read_input(ctx, cv, InputPosition{2})), std::move(out),
@@ -62,7 +62,7 @@ void run_ffn_and_head_ops(CrucibleContext& ctx, const CrucibleContext::CompiledV
 
     s = ctx.advance(H_RELU, S_RELU, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::relu(kTest, read_input(ctx, cv, InputPosition{0}), std::move(out), make_dim<roles::Count>(B * S * D_FF));
     });
 
@@ -72,7 +72,7 @@ void run_ffn_and_head_ops(CrucibleContext& ctx, const CrucibleContext::CompiledV
 
     s = ctx.advance(H_ADD2, S_ADD2, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::add(kTest, make_input<roles::Augend>(read_input(ctx, cv, InputPosition{0})),
                  make_input<roles::Addend>(read_input(ctx, cv, InputPosition{1})), std::move(out),
                  make_dim<roles::Count>(B * S * D));
@@ -80,7 +80,7 @@ void run_ffn_and_head_ops(CrucibleContext& ctx, const CrucibleContext::CompiledV
 
     s = ctx.advance(H_IDXSEL, S_IDXSEL, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::index_select(kTest, read_input(ctx, cv, InputPosition{0}), std::move(out), make_dim<roles::Batch>(B),
                           make_dim<roles::Sequence>(S), make_dim<roles::Width>(D), make_dim<roles::Selected>(0));
     });
@@ -91,7 +91,7 @@ void run_ffn_and_head_ops(CrucibleContext& ctx, const CrucibleContext::CompiledV
 
     s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
     CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-    write_output(kTest, ctx, cv, [&ctx, &cv](auto out) noexcept {
+    write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto out) noexcept {
         cpu::softmax(kTest, read_input(ctx, cv, InputPosition{0}), std::move(out), make_dim<roles::Rows>(B),
                      make_dim<roles::Width>(N_CLS));
     });

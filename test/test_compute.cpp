@@ -300,7 +300,7 @@ int main() {
         // which the index alone does not.
         auto s = ctx.advance(H_MM1, S_MM1, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](auto mm1_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto mm1_out) noexcept {
             cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // X
                     make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W1
                     std::move(mm1_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(HIDDEN),
@@ -309,14 +309,14 @@ int main() {
 
         s = ctx.advance(H_RELU, S_RELU, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](auto relu_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto relu_out) noexcept {
             cpu::relu(kTest, read_input(ctx, cv, InputPosition{0}),  // mm1_out
                       std::move(relu_out), make_dim<roles::Count>(BATCH * HIDDEN));
         });
 
         s = ctx.advance(H_MM2, S_MM2, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::MATCH);
-        write_output(kTest, ctx, cv, [&ctx, &cv](auto mm2_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto mm2_out) noexcept {
             cpu::mm(kTest, make_input<LeftFactor>(read_input(ctx, cv, InputPosition{0})),  // relu_out
                     make_input<RightFactor>(read_input(ctx, cv, InputPosition{1})),  // W2
                     std::move(mm2_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Columns>(OUT_DIM),
@@ -327,7 +327,7 @@ int main() {
         // than matching.
         s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv).status();
         CRUCIBLE_TEST_ASSERT(kTest, s == ReplayStatus::COMPLETE);
-        write_output(kTest, ctx, cv, [&ctx, &cv](auto softmax_out) noexcept {
+        write_output(kTest, ctx, cv, [&ctx = ::fixy::as_const(ctx), &cv](auto softmax_out) noexcept {
             cpu::softmax(kTest, read_input(ctx, cv, InputPosition{0}),  // mm2_out
                          std::move(softmax_out), make_dim<roles::Rows>(BATCH), make_dim<roles::Width>(OUT_DIM));
         });
