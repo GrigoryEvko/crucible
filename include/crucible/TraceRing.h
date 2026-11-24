@@ -454,7 +454,7 @@ public:
         requires detail::is_drain_prefix_v<Parallel...>
     [[nodiscard, gnu::hot]] static uint32_t drain(Consumer& consumer, ::fixy::ViewMut<Entry, Brand, Extent> out,
                                                   Parallel... parallel) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        return drain_into_(consumer, std::move(out), std::move(parallel)...);
+        return drain_into_(consumer, erased_run_(std::move(out)), erased_run_(std::move(parallel))...);
     }
 
     // The consumer counterpart of try_append_pure, with the same gate: the
@@ -481,8 +481,9 @@ public:
     try_pop_batch(Consumer& consumer, ::fixy::ViewMut<Entry, Brand, Extent> out_entries, Metas out_meta_starts,
                   Scopes out_scope_hashes, Callsites out_callsite_hashes, Depths out_depths) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        return drain_into_(consumer, std::move(out_entries), std::move(out_meta_starts), std::move(out_scope_hashes),
-                           std::move(out_callsite_hashes), std::move(out_depths));
+        return drain_into_(consumer, erased_run_(std::move(out_entries)), erased_run_(std::move(out_meta_starts)),
+                           erased_run_(std::move(out_scope_hashes)), erased_run_(std::move(out_callsite_hashes)),
+                           erased_run_(std::move(out_depths)));
     }
 
     // Empties the ring: each counter and each copy of a counter go back to
@@ -531,6 +532,21 @@ private:
     [[nodiscard]] static constexpr head_writer prove_head_writer_() noexcept { return {}; }
 
     [[nodiscard]] static constexpr tail_writer prove_tail_writer_() noexcept { return {}; }
+
+    // The run of a frame on the erased identity (erase_brand of
+    // foundation/core/Region.h).  Each drain erases each of its runs at its
+    // entry, so the body of the drains is one instance for each element type
+    // and extent of its runs, and not one for each frame of a caller.  The
+    // drain takes each run by move and keeps none, so the erased run ends in
+    // the drain.  A run that its caller erased passes as it is.
+    template <class T, class Brand, std::size_t Extent>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr auto erased_run_(::fixy::ViewMut<T, Brand, Extent>&& run) noexcept {
+        if constexpr (::foundation::brand::IsFreshBrand<Brand>) {
+            return ::fixy::erase_brand(std::move(run));
+        } else {
+            return std::move(run);
+        }
+    }
 
     // The ring array of the elements T: the entries, the meta starts, the
     // scope hashes, the callsite hashes or the depths.

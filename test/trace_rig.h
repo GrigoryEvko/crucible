@@ -275,25 +275,24 @@ public:
     }
 
     // The runs are the runs of the frames of the caller, which the drain
-    // takes by move.
+    // takes by move.  Each door erases the brand and the fixed extent of each
+    // run before it opens the frame of the consumer side (erase_brand of
+    // foundation/core/Region.h).  So the frame and the flattened body of the
+    // drain are one instance for each set of element types, and not one for
+    // each frame of a caller.
     template <class... Runs>
     [[nodiscard]] uint32_t drain(Runs... runs) noexcept {
-        return local_.with_consumer(
-            [&runs...](TraceRing::Consumer& end) noexcept { return TraceRing::drain(end, std::move(runs)...); });
+        return drain_erased_(erased_run_(std::move(runs))...);
     }
 
     template <class Ctx, class... Runs>
     [[nodiscard]] uint32_t drain_pure(Ctx const& ctx, Runs... runs) noexcept {
-        return local_.with_consumer([&ctx, &runs...](TraceRing::Consumer& end) noexcept {
-            return TraceRing::drain_pure(ctx, end, std::move(runs)...);
-        });
+        return drain_pure_erased_(ctx, erased_run_(std::move(runs))...);
     }
 
     template <class... Runs>
     [[nodiscard]] uint32_t try_pop_batch(Runs... runs) noexcept {
-        return local_.with_consumer([&runs...](TraceRing::Consumer& end) noexcept {
-            return TraceRing::try_pop_batch(end, std::move(runs)...);
-        });
+        return pop_batch_erased_(erased_run_(std::move(runs))...);
     }
 
     // Empties the ring, with the two ends in one frame.
@@ -311,6 +310,41 @@ public:
     }
 
 private:
+    // The run on the erased identity with a dynamic extent.
+    template <class T, class Brand, std::size_t Extent>
+    [[nodiscard]] static auto erased_run_(::fixy::ViewMut<T, Brand, Extent>&& run) noexcept {
+        auto erased = ::fixy::erase_brand(std::move(run));
+        if constexpr (Extent == ::fixy::dynamic_extent) {
+            return erased;
+        } else {
+            return ::fixy::ViewMut<T, typename decltype(erased)::brand_type>{std::move(erased)};
+        }
+    }
+
+    // The frames of the three drains, on the erased runs.  The body holds
+    // each erased run by value: the store check refuses a body that writes an
+    // erased run of its caller, because each erased run has one type.
+    template <class... Erased>
+    [[nodiscard]] uint32_t drain_erased_(Erased... runs) noexcept {
+        return local_.with_consumer([... held = std::move(runs)](TraceRing::Consumer& end) mutable noexcept {
+            return TraceRing::drain(end, std::move(held)...);
+        });
+    }
+
+    template <class Ctx, class... Erased>
+    [[nodiscard]] uint32_t drain_pure_erased_(Ctx const& ctx, Erased... runs) noexcept {
+        return local_.with_consumer([&ctx, ... held = std::move(runs)](TraceRing::Consumer& end) mutable noexcept {
+            return TraceRing::drain_pure(ctx, end, std::move(held)...);
+        });
+    }
+
+    template <class... Erased>
+    [[nodiscard]] uint32_t pop_batch_erased_(Erased... runs) noexcept {
+        return local_.with_consumer([... held = std::move(runs)](TraceRing::Consumer& end) mutable noexcept {
+            return TraceRing::try_pop_batch(end, std::move(held)...);
+        });
+    }
+
     Local<TraceRing> local_{};
 };
 
