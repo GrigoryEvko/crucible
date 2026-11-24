@@ -123,8 +123,8 @@ bool is_digits(const std::string& text) {
     return true;
 }
 
-// The largest number of a rank or an arity.  ruletable.MAX_NUMBER gives the
-// same value.
+// The largest number of a rank, an arity or a position.  ruletable.MAX_NUMBER
+// gives the same value.
 constexpr int kMaxNumber = INT_MAX;
 
 // Reads the number text, a run of digits (is_digits), into value.  Returns
@@ -143,7 +143,7 @@ bool number_value(const std::string& text, int& value) {
 // gives the same text.
 std::string number_message(const std::string& text) {
     return "the number " + text + " is more than " + std::to_string(kMaxNumber)
-         + ", the largest number of a rank or an arity";
+         + ", the largest number of a rank, an arity or a position";
 }
 
 // The errors of an allow row and of an enforce row that do not obey the
@@ -373,6 +373,11 @@ constexpr const char* kDenyFormat =
 constexpr const char* kLinearDoorFormat =
     "a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of "
     "its frame, and a reason";
+// The error of a size-door row.  ruletable.SIZE_DOOR_FORMAT gives the same
+// text.  The text holds no bar, so a cell of a plant manifest can hold it.
+constexpr const char* kSizeDoorFormat =
+    "a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or "
+    "index argument in digits, and a reason";
 
 // The kind of a use outside the sites of an owner row of rule, as the row
 // spells it, or false when rule has no such kind.
@@ -532,6 +537,7 @@ bool load_rule_table(const std::string& path) {
     crucible_rows::KeyLines primitive_lines;  // the function of each primitive row, and its line
     crucible_rows::KeyLines deny_lines;  // each name of a deny row, and its line
     crucible_rows::KeyLines linear_door_lines;  // the function of each linear-door row, and its line
+    crucible_rows::KeyLines size_door_lines;  // the function of each size-door row, and its line
     bool is_valid = true;
     int line_number = 0;
     auto refuse = [&](const std::string& message) {
@@ -883,10 +889,30 @@ bool load_rule_table(const std::string& path) {
                 continue;
             }
             table.linear_doors.push_back(LinearDoorRow{args[0], line_number});
+        } else if (kind == "size-door") {
+            if (args.size() != 2 || reason.empty() || !is_qualified_name(args[0]) || !is_digits(args[1])) {
+                refuse(kSizeDoorFormat);
+                continue;
+            }
+            SizeDoorRow row{args[0], 0, line_number};
+            if (!number_value(args[1], row.position)) {
+                refuse(number_message(args[1]));
+                continue;
+            }
+            // One row names a door.  A second row would give it a second
+            // position.
+            if (int first_line = size_door_lines.add(args[0], line_number); first_line > 0) {
+                refuse("the function " + args[0]
+                       + " has a second size-door row, and its first size-door row is on line "
+                       + std::to_string(first_line));
+                continue;
+            }
+            table.size_doors.push_back(std::move(row));
         } else {
-            refuse("the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, "
-                   "language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, "
-                   "deny and linear-door");
+            refuse(
+                "the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, "
+                "language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, "
+                "deny, linear-door and size-door");
         }
     }
     for (std::size_t index = 0; index < allow_layers.size(); ++index) {

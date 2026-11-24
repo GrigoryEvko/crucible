@@ -14,7 +14,8 @@ files under the directory OUT:
                   name of its class.  A new expression then compiles nothing.
                   An owner row gives its rule, kind, entity, paths and
                   function, and a syscall row gives each of its names.  A
-                  linear-door row gives its function.
+                  linear-door row gives its function, and a size-door row
+                  gives its function and its position.
                   The lines are sorted.  The stamp of each compile command
                   holds the hash of this file, so a change of a fact compiles
                   each unit again, and a change of a reason compiles nothing.
@@ -146,6 +147,7 @@ def facts_text(table: layer_rules.RuleTable) -> str:
     ]
     lines += [f"syscall {name}" for name in table.syscalls]
     lines += [f"linear-door {door.function}" for door in table.linear_doors]
+    lines += [f"size-door {door.function} {door.position}" for door in table.size_doors]
     return "".join(f"{line}\n" for line in sorted(lines))
 
 

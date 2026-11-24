@@ -1,0 +1,4 @@
+quarantine plant_std.cpp
+size-door planted::sized 1 | the planted door
+size-door planted::Slot::check 0 | a second planted door
+size-door planted::Grid::cell 0002 | a position with zeros before it

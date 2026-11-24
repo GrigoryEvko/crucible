@@ -1036,6 +1036,16 @@ struct LinearDoorRow {
     int line = 0;
 };
 
+// One size-door row: a function that takes a size or an index as the
+// argument at the place position, from 0 and with no object of a member
+// function.  The function is a qualified name with no template arguments, and
+// it names each overload of that name (the raw sizes of expression.cpp).
+struct SizeDoorRow {
+    std::string function;
+    int position = 0;
+    int line = 0;
+};
+
 // The rows of the rule table, in the order of the file.  A header keeps the
 // name inside its angle brackets.
 struct RuleTable {
@@ -1058,6 +1068,7 @@ struct RuleTable {
     std::vector<std::string> primitives;  // the function of each primitive row (owner.cpp, the claims)
     std::vector<std::string> denied_syscalls;  // each name of a deny row (owner.cpp, the denied calls)
     std::vector<LinearDoorRow> linear_doors;  // each linear-door row, in the order of the file
+    std::vector<SizeDoorRow> size_doors;  // each size-door row, in the order of the file
 };
 
 // The kinds of a finding (the rules and the kinds above).  opted-out and

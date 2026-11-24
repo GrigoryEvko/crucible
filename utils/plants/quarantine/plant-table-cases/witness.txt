@@ -6,7 +6,7 @@
 
 table-unit plant_std.cpp
 
-table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, deny and linear-door
+table tables/an-unknown-row-kind.txt refused 1 | the row kind is unknown; the kinds are layer, allow, door, admit, quarantine, host, kernel, enforce, language, seal, heavy, light, cite, grant, home, home-args, witness, owner, syscall, primitive, deny, linear-door and size-door
 table tables/a-host-row-with-no-reason.txt refused 1 | a host row is 'host PATH... \| REASON', with each PATH of a host build tool that links a foreign API, and the reason is necessary
 table tables/a-kernel-row-with-a-path-of-the-build-directory.txt refused 1 | a kernel row is 'kernel PATH... \| REASON', with each PATH of kernel C that a different compiler compiles, and the reason is necessary
 table tables/an-exempt-path-in-the-base.txt refused 2 | the path a/tool/ of an exempt row holds a file of the base, and the base is never exempt
@@ -51,9 +51,9 @@ table tables/a-language-row-of-no-layer.txt refused 2 | the language row names t
 table tables/a-language-path-outside-the-base.txt refused 3 | the path b/x.h of a language row is in no layer; it must be a path of the base
 table tables/a-path-in-two-language-rows.txt refused 3 | the path has a second language row
 table tables/a-reason-with-no-row-kind.txt refused 1 | a word holds a bar.  Put " \| " between a word and a cell
-table tables/a-rank-that-is-more-than-the-largest-number.txt refused 1 | the number 2147483648 is more than 2147483647, the largest number of a rank or an arity
-table tables/a-rank-with-more-digits-than-each-integer-type.txt refused 1 | the number 99999999999999999999999 is more than 2147483647, the largest number of a rank or an arity
-table tables/an-arity-that-is-more-than-the-largest-number.txt refused 1 | the number 4294967297 is more than 2147483647, the largest number of a rank or an arity
+table tables/a-rank-that-is-more-than-the-largest-number.txt refused 1 | the number 2147483648 is more than 2147483647, the largest number of a rank, an arity or a position
+table tables/a-rank-with-more-digits-than-each-integer-type.txt refused 1 | the number 99999999999999999999999 is more than 2147483647, the largest number of a rank, an arity or a position
+table tables/an-arity-that-is-more-than-the-largest-number.txt refused 1 | the number 4294967297 is more than 2147483647, the largest number of a rank, an arity or a position
 table tables/a-rank-of-arabic-indic-digits.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/a-rank-of-a-superscript-digit.txt refused 1 | a layer row is 'layer NAME RANK PATH...', with a RANK of digits
 table tables/an-arity-of-arabic-indic-digits.txt refused 1 | an admit row is 'admit ENTRY [RESTRICTION...] \| REASON'.  The restrictions are 'until FAMILY', 'arity N', 'parameters', 'plain-result' and 'consteval-only' of a name, 'concepts' of a header, 'unless MACRO' and 'in PATH...', each one time, and the reason is necessary
@@ -108,6 +108,13 @@ table tables/a-linear-door-row-with-two-functions.txt refused 1 | a linear-door 
 table tables/a-linear-door-that-is-no-qualified-name.txt refused 1 | a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of its frame, and a reason
 table tables/a-linear-door-with-two-rows.txt refused 2 | the function planted::ended has a second linear-door row, and its first linear-door row is on line 1
 table tables/linear-door-rows-accepted.txt accepted
+table tables/a-size-door-row-with-no-reason.txt refused 1 | a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or index argument in digits, and a reason
+table tables/a-size-door-row-with-no-position.txt refused 1 | a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or index argument in digits, and a reason
+table tables/a-size-door-position-of-arabic-indic-digits.txt refused 1 | a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or index argument in digits, and a reason
+table tables/a-size-door-that-is-no-qualified-name.txt refused 1 | a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or index argument in digits, and a reason
+table tables/a-size-door-position-that-is-more-than-the-largest-number.txt refused 1 | the number 2147483648 is more than 2147483647, the largest number of a rank, an arity or a position
+table tables/a-size-door-with-two-rows.txt refused 2 | the function planted::sized has a second size-door row, and its first size-door row is on line 1
+table tables/size-door-rows-accepted.txt accepted
 
 # The table of each white-space character between two words, in a reason, and
 # the carriage return in a comment and in the line ends \r\n.

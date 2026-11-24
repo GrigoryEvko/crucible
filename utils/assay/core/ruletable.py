@@ -25,7 +25,9 @@ and syscalls, and the syscall rows give the system calls of the rule
 syscalls.  For the same rule, the primitive rows
 give the raw system call primitive of the base.  The deny rows give the system
 calls that the base does not issue raw.  The linear-door rows give the
-functions that end each linear value of their frame.
+functions that end each linear value of their frame.  The size-door rows
+give the functions that take a size or an index, and the place of that
+argument.
 """
 
 from __future__ import annotations
@@ -82,6 +84,7 @@ ROW_KINDS = (
     "primitive",
     "deny",
     "linear-door",
+    "size-door",
 )
 # The refusal that the negative fixture of a witness row must see, as the row names it.
 REFUSALS = ("private", "deleted", "no-match")
@@ -144,6 +147,12 @@ LINEAR_DOOR_FORMAT = (
     "a linear-door row has one word after its kind, the qualified name of a function that ends each linear value of "
     "its frame, and a reason"
 )
+# The error of a size-door row.  rule_table.cpp gives the same text.  The text holds no bar, so a cell of a plant
+# manifest can hold it.
+SIZE_DOOR_FORMAT = (
+    "a size-door row has two words after its kind, the qualified name of a function and the POSITION of its size or "
+    "index argument in digits, and a reason"
+)
 # The prefix of the field of an owner row that names the function of its sites.
 BY_PREFIX = "by="
 # The classes of the rule home of the plugin (utils/tools/quarantine/home.cpp, the classes), which the home rows and
@@ -161,8 +170,8 @@ HOME_FORMAT = (
 BUILD_PREFIX = "@build/"
 # The two characters that divide the words of a row.
 WORD_DIVIDERS = rows_grammar.DIVIDERS
-# The largest number of a rank or an arity: the largest value of the `int` of
-# the reader of rule_table.cpp.
+# The largest number of a rank, an arity or a position: the largest value of
+# the `int` of the reader of rule_table.cpp.
 MAX_NUMBER = 2**31 - 1
 # The rank of a project root of a quarantine row, above each layer: kTopRank of include.cpp.
 TOP_RANK = MAX_NUMBER
@@ -346,6 +355,20 @@ class LinearDoor:
     line: int
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class SizeDoor:
+    """One size-door row: a function, the position of its size or index argument, the reason and the line.
+
+    The function is a qualified name with no template arguments, and it names each overload of that name.  The
+    position counts the arguments from 0, with no object of a member function.
+    """
+
+    function: str
+    position: int
+    reason: str
+    line: int
+
+
 @dataclasses.dataclass(frozen=True)
 class RuleTable:
     """The rows of one rule table, in the order of the file."""
@@ -377,6 +400,8 @@ class RuleTable:
     door_lines: tuple[int, ...] = ()
     # The linear-door rows, in the sequence of the file.
     linear_doors: tuple[LinearDoor, ...] = ()
+    # The size-door rows, in the sequence of the file.
+    size_doors: tuple[SizeDoor, ...] = ()
 
     def layer_named(self, name: str) -> Layer | None:
         """Return the layer with NAME, or None."""
@@ -591,8 +616,8 @@ def number_value(text: str, where: str) -> int:
     """
     digits = text.lstrip("0") or "0"
     if len(digits) > len(str(MAX_NUMBER)) or int(digits) > MAX_NUMBER:
-        raise TableError(f"{where}: the number {text} is more than {MAX_NUMBER}, the largest number of a rank or an "
-                         f"arity")
+        raise TableError(f"{where}: the number {text} is more than {MAX_NUMBER}, the largest number of a rank, an "
+                         f"arity or a position")
     return int(digits)
 
 
@@ -758,6 +783,8 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     deny_lines: dict[str, int] = {}  # each name of a deny row, and its line
     linear_doors: list[LinearDoor] = []
     linear_door_lines: dict[str, int] = {}  # the function of each linear-door row, and its line
+    size_doors: list[SizeDoor] = []
+    size_door_lines: dict[str, int] = {}  # the function of each size-door row, and its line
     for row in rows:
         number = row.line
         where = f"{name}:{number}"
@@ -969,6 +996,16 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
                                  f"linear-door row is on line {linear_door_lines[args[0]]}")
             linear_door_lines[args[0]] = number
             linear_doors.append(LinearDoor(args[0], reason, number))
+        elif kind == "size-door":
+            if len(args) != 2 or not reason or not is_qualified_name(args[0]) or not is_number(args[1]):
+                raise TableError(f"{where}: {SIZE_DOOR_FORMAT}")
+            position = number_value(args[1], where)
+            # One row names a door.  A second row would give it a second position.
+            if args[0] in size_door_lines:
+                raise TableError(f"{where}: the function {args[0]} has a second size-door row, and its first "
+                                 f"size-door row is on line {size_door_lines[args[0]]}")
+            size_door_lines[args[0]] = number
+            size_doors.append(SizeDoor(args[0], position, reason, number))
         else:
             if len(args) not in (2, 3) or args[1] not in MODES or (len(args) == 3 and args[2] != INCLUDE_SCOPE):
                 raise TableError(f"{where}: {ENFORCE_FORMAT}")
@@ -999,7 +1036,7 @@ def parse(text: str, name: str = TABLE.name) -> RuleTable:
     return RuleTable(tuple(layers), tuple(allows), tuple(doors), tuple(admits), tuple(quarantines),
                      tuple(enforces), tuple(languages), tuple(seals), tuple(header_costs), tuple(cites),
                      tuple(grants), tuple(homes), tuple(witnesses), tuple(owners), tuple(syscalls), tuple(primitives),
-                     tuple(denied), tuple(exempts), tuple(door_lines), tuple(linear_doors))
+                     tuple(denied), tuple(exempts), tuple(door_lines), tuple(linear_doors), tuple(size_doors))
 
 
 def load(path: Path = TABLE) -> RuleTable:
