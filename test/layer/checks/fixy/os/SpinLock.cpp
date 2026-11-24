@@ -2,6 +2,9 @@
 
 #include <fixy/os/SpinLock.h>
 
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+
 namespace fixy::spin {
 
 static_assert(alignof(UnwitnessedSpinLock) >= 64 && alignof(UnwitnessedBlockingLock) >= 64,
@@ -141,6 +144,23 @@ struct GivesData {
 };
 static_assert(LockedBody<GivesCount, LockedData const> && LockedBody<GivesCount, LockedData>);
 static_assert(!LockedBody<GivesData, LockedData> && LockedBorrowGivingBody<GivesData, LockedData>);
+
+// A body that copies the data into a variable of the caller passes.  A body
+// that keeps a Ref of the data in a variable of the caller binds to the store
+// twin: the Ref would name the data after the unlock, in a data race with the
+// next holder (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+struct LockedBrand final {};
+struct CopiesCount {
+    std::uint64_t& copied;
+    void operator()(LockedData& data) const noexcept { copied = data.count; }
+};
+struct KeepsData {
+    ::foundation::core::Option<::foundation::core::Ref<LockedData, LockedBrand>>& kept;
+    void operator()(LockedData& data) const noexcept { static_cast<void>(data); }
+};
+static_assert(LockedBody<CopiesCount, LockedData> && !LockedStoringBody<CopiesCount, LockedData>);
+static_assert(!LockedBody<KeepsData, LockedData> && LockedStoringBody<KeepsData, LockedData>
+              && !LockedBorrowGivingBody<KeepsData, LockedData>);
 
 // Seven claims about this header cannot be written here.  An access
 // failure inside a requires-expression is a hard error in GCC 16 rather

@@ -86,6 +86,7 @@
 #include <foundation/algebra/lattices/HotPathLattice.h>
 #include <foundation/algebra/lattices/WaitLattice.h>
 #include <foundation/core/Atomic.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Record.h>
 #include <foundation/diag/RowHash.h>
@@ -432,13 +433,17 @@ using BlockingGuard = GateGuard<Tag, WaitStrategy::AcquireWait, Brand>;
 
 // The body of a door of a lock that owns its data (design note 7), which gets
 // Data&: it takes the data with no throw, its result holds no borrow and fits
-// a Record, and it holds no linear value by value.
+// a Record, it holds no linear value by value, and it stores no borrow
+// outside the frame of the lock (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h).  A borrow of the data that leaves the
+// lock in a capture names data that another holder writes after the unlock,
+// so the caller would read it in a data race.
 template <class Body, class Data>
 concept LockedBody = std::is_nothrow_invocable_v<Body&&, Data&>
                   && (std::is_void_v<std::invoke_result_t<Body&&, Data&>>
                       || (::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Data&>>
                           && ::foundation::core::RecordElement<std::remove_cv_t<std::invoke_result_t<Body&&, Data&>>>))
-                  && ::foundation::linear::HoldsNoLinearValue<Body>;
+                  && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
 
 // A body of a door of a lock whose result holds a borrow: the refused twin of
 // the door binds to it.
@@ -451,6 +456,15 @@ concept LockedBorrowGivingBody =
 // twin of the door binds to it.
 template <class Body, class Data>
 concept LockedLinearBody = std::is_invocable_v<Body&&, Data&> && (!::foundation::linear::HoldsNoLinearValue<Body>);
+
+// A body of a door of a lock that stores a borrow outside the frame of the
+// lock: the store twin of the door binds to it.  A body whose result holds a
+// borrow binds to the twin of the result, so one twin gives the refusal.
+template <class Body, class Data>
+concept LockedStoringBody = std::is_invocable_v<Body&&, Data&> && ::foundation::linear::HoldsNoLinearValue<Body>
+                         && (!::foundation::core::StoresNoBorrowOutside<Body>)
+                         && (std::is_void_v<std::invoke_result_t<Body&&, Data&>>
+                             || ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Data&>>);
 
 // The value of try_with for a body that gives Given: Given, or Unit for a
 // body that gives void.
@@ -527,6 +541,9 @@ public:
     template <class Body>
         requires LockedLinearBody<Body, Data>
     void with(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires LockedStoringBody<Body, Data>
+    void with(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 private:
     template <class, typename, WaitStrategy>
@@ -623,8 +640,9 @@ public:
         return try_lend_(substrate_, data_, static_cast<Body&&>(body));
     }
 
-    // A body whose result holds a borrow, or that holds a linear value by
-    // value, binds to these overloads, so the refusal gives its reason.
+    // A body whose result holds a borrow, that holds a linear value by value,
+    // or that stores a borrow outside the frame, binds to these overloads, so
+    // the refusal gives its reason.
     template <typename Ctx, class Body>
         requires LockedBorrowGivingBody<Body, T>
     void with(Ctx const& ctx, Body&& body) & = delete("the result of a body of a lock leaves the lock, so it holds no "
@@ -632,6 +650,12 @@ public:
     template <typename Ctx, class Body>
         requires LockedLinearBody<Body, T>
     void with(Ctx const& ctx, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <typename Ctx, class Body>
+        requires CtxMayAcquire<Ctx, Strategy> && LockedStoringBody<Body, T>
+    void with(Ctx const& ctx, Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <typename Ctx, class Body>
+        requires CtxMayAcquire<Ctx, Strategy> && LockedStoringBody<Body, T const>
+    void with(Ctx const& ctx, Body&& body) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 private:
     friend typename detail::start_or_end_owner<Tag>::type;

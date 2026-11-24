@@ -7383,6 +7383,11 @@ fixy_neg_compile_test(neg_locked_read_with_no_guard
 fixy_neg_compile_test(neg_locked_body_gives_the_data_out
   "use of deleted function"
   "the result of a body of a lock leaves the lock, so it holds no reference and no address")
+# A body of a Locked that keeps a Ref of the data in a capture binds to the
+# store twin: the Ref would name the data after the unlock.
+fixy_neg_compile_test(neg_locked_body_keeps_a_ref_of_the_data
+  "use of deleted function .void fixy::spin::Locked<T, Tag, Strategy>::with\\(const Ctx&, Body&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
 fixy_neg_compile_test(neg_locked_start_or_end_door_of_another_class
   "is private within this context"
   "with_at_owner_start_or_end")
