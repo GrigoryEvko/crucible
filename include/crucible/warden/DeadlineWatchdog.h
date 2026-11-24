@@ -46,16 +46,18 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::warden {
 
 // The verdict, WatchdogVerdict, is in crucible/warden/WatchdogVerdict.h.
 
-// The telemetry source is borrowed, and it must outlive the watchdog.
-// It is an Option of a Ref, because a watchdog with no source is part of
-// the contract: a host without the telemetry capability, or a test of the
-// degraded path, gives no source on purpose.  The Option has the size of
-// one pointer.
+// The watchdog owns its telemetry source: the Box of the Senses moves into
+// the watchdog, and the two end together.  So no object holds a borrow of
+// the source that can outlive it.  The source is an Option of a Box, because
+// a watchdog with no source is part of the contract: a host without the
+// telemetry capability, or a test of the degraded path, gives no source on
+// purpose.
 
 // A poll belongs to a background, start-up or test context. The hot
 // foreground is rejected.  A poll reads the boot clock, so the gate is
@@ -75,8 +77,8 @@ concept CtxFitsDeadlineWatchdogMint =
 
 class DeadlineWatchdog;
 
-// The telemetry source of a watchdog, or no source.
-using WatchdogSource = ::fixy::Option<::fixy::Ref<::crucible::perf::Senses const>>;
+// The telemetry source that a watchdog owns, or no source.
+using WatchdogSource = ::fixy::Option<::fixy::Box<::crucible::perf::Senses>>;
 
 template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
@@ -87,7 +89,7 @@ class DeadlineWatchdog {
     // The constructor is private, and the mint is its one friend.  So a
     // watchdog comes only from a context that owns the Init atom.
     constexpr explicit DeadlineWatchdog(WatchdogSource senses, const Policy& policy) noexcept
-        : senses_{senses},
+        : senses_{std::move(senses)},
           miss_budget_{policy.deadline_miss_budget},
           window_ns_{static_cast<uint64_t>(policy.watchdog_window_sec) * 1000000000ull} {
         // The body is empty on purpose. The telemetry source may still
@@ -138,7 +140,7 @@ public:
         // to load it.  That is an absence of signal, not evidence of
         // health.
         auto sched = senses_.match(
-            [](::fixy::Ref<::crucible::perf::Senses const> senses) noexcept { return senses->sched_switch(); },
+            [](::fixy::Box<::crucible::perf::Senses> const& senses) noexcept { return senses->sched_switch(); },
             []() noexcept { return ::fixy::Option<::fixy::Ref<::crucible::perf::SchedSwitch const>>{}; });
         if (sched.is_none()) {
             return WatchdogVerdict::InsufficientData;
@@ -246,7 +248,7 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsDeadlineWatchdogMint<Ctx>
 [[nodiscard]] constexpr DeadlineWatchdog mint_deadline_watchdog(Ctx const&, WatchdogSource senses,
                                                                 const Policy& policy) noexcept {
-    return DeadlineWatchdog{senses, policy};
+    return DeadlineWatchdog{std::move(senses), policy};
 }
 
 // The order a caller steps through after a Downgrade verdict. The

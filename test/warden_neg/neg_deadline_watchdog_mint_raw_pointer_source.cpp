@@ -1,7 +1,7 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// The source of a watchdog is an Option of a Ref, so a watchdog with no
-// source says none.  A raw pointer is no source, so a call with a null
+// The source of a watchdog is an Option of a Box that the watchdog owns, so
+// a watchdog with no source says none.  A raw pointer is no source, so a call with a null
 // pointer finds no matching function.  The check file of the header holds
 // the same rule for a pointer to a Senses.
 

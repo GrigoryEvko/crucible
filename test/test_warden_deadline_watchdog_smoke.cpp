@@ -243,14 +243,16 @@ int main() {
         // failed read changes nothing.  The source needs a BPF load, so a
         // process with the BPF capabilities must load it, and a process
         // without them skips this part.
-        const ::crucible::perf::Senses senses =
+        ::fixy::Box<::crucible::perf::Senses> senses = ::fixy::mint_box<::crucible::perf::Senses>(
+            ::foundation::effects::testing::test().alloc,
             ::crucible::perf::Senses::load_subset(::fixy::InitLoadCtx{::foundation::effects::testing::init()},
-                                                  ::crucible::perf::SensesMask{.sched_switch = true});
-        if (senses.sched_switch().is_none()) {
+                                                  ::crucible::perf::SensesMask{.sched_switch = true}));
+        if (senses->sched_switch().is_none()) {
             failures += crucible::test::verdict_of_no_load("warden::DeadlineWatchdog with a sched_switch source");
         } else {
-            DeadlineWatchdog sensing = mint_deadline_watchdog(
-                startup, crucible::warden::WatchdogSource::some(::fixy::erase_brand(::fixy::to(senses))), policy);
+            // The watchdog takes the Senses, and the test reads them no more.
+            DeadlineWatchdog sensing =
+                mint_deadline_watchdog(startup, crucible::warden::WatchdogSource::some(std::move(senses)), policy);
             const auto boot_clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Boot>(runner);
             const auto reading = boot_clock.read(
                 ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(runner));

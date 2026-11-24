@@ -66,21 +66,14 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     // without a null check.  Attach failure is not an error here: every
     // observation then returns InsufficientData.
     if (cfg_.enable_deadline_watchdog) {
-        // senses_ holds the Box first, and the watchdog then borrows the
-        // object of that Box.  senses_ comes before wd_, so the object
-        // outlives each read of the watchdog.
-        senses_ = ::fixy::some(::fixy::mint_box<::crucible::perf::Senses>(
+        // The Box of the Senses moves into the watchdog, which owns it.
+        ::crucible::warden::WatchdogSource senses =
+            ::crucible::warden::WatchdogSource::some(::fixy::mint_box<::crucible::perf::Senses>(
+                startup.cap().alloc,
+                ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true})));
+        wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
             startup.cap().alloc,
-            ::crucible::perf::Senses::load_subset(startup, ::crucible::perf::SensesMask{.sched_switch = true})));
-        senses_.with_mut(
-            [this, &startup](auto senses) noexcept {
-                wd_ = ::fixy::some(::fixy::mint_box<::crucible::warden::DeadlineWatchdog>(
-                    startup.cap().alloc,
-                    ::crucible::warden::mint_deadline_watchdog(
-                        startup, ::crucible::warden::WatchdogSource::some(::fixy::erase_brand((*senses).view())),
-                        cfg_.watchdog_policy)));
-            },
-            [] noexcept {});
+            ::crucible::warden::mint_deadline_watchdog(startup, std::move(senses), cfg_.watchdog_policy)));
     }
 
     eager_ = cfg_.eager;

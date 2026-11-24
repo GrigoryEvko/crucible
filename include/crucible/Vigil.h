@@ -1734,22 +1734,19 @@ private:
                   "Vigil::LOAD_SLOTS must exceed the count of regions that the holders name by one");
     HeldRegions held_regions_;
 
-    // senses_ must precede wd_, which holds a borrow of it, so that reverse
-    // destruction order tears the borrower down first.
-    //
-    // Both must precede bg_.  The background thread's region-ready callback
-    // observes through wd_, which reads senses_.  Destroying bg_ first joins
-    // that thread, after which no observation can start, and only then does
-    // the subprogram unload.
+    // The watchdog owns its telemetry source, the Senses, so the two end
+    // together.  wd_ must precede bg_.  The background thread's region-ready
+    // callback observes through wd_.  Destroying bg_ first joins that thread,
+    // after which no observation can start, and only then does the
+    // subprogram unload.
     //
     // The counters have no lifetime constraint of their own, but sit here
     // for locality: the background thread writes them in the same frame it
     // drives the watchdog.
     //
-    // The constructor makes the two objects only when the configuration
-    // asks for the watchdog, and each Option is empty otherwise.  The two
-    // members have no initializer, for the reason that cipher_ gives.
-    ::fixy::Option<::fixy::Box<::crucible::perf::Senses>> senses_;
+    // The constructor makes the watchdog only when the configuration asks
+    // for it, and the Option is empty otherwise.  The member has no
+    // initializer, for the reason that cipher_ gives.
     ::fixy::Option<::fixy::Box<::crucible::warden::DeadlineWatchdog>> wd_;
     ::fixy::Atomic<::crucible::warden::WatchdogVerdict> wd_last_verdict_{
         ::crucible::warden::WatchdogVerdict::InsufficientData};
