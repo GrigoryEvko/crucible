@@ -5136,6 +5136,19 @@ foundation_neg_compile_test(neg_core_find_if_linear_capture
 foundation_neg_compile_test(neg_core_sort_less_linear_capture
   "use of deleted function .void foundation::core::find_lower_bound\\(View<T, Extent>, "
   "the body holds a linear value by value, and the door calls it with no consume")
+# The function of a walk, the less function of a sort or a search, and the
+# combine of a tree or a scan store no borrow outside the door: each can read
+# a value that ends in the door (StoresNoBorrowOutside of
+# foundation/core/CaptureStore.h).
+foundation_neg_compile_test(neg_core_walk_map_keeps_an_element
+  "no matching function for call to .*::map\\("
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_sort_less_keeps_an_element
+  "no matching function for call to .find_lower_bound\\("
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_reduce_combine_keeps_an_operand
+  "no matching function for call to .reduce_by_tree\\("
+  "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_seat_step_linear_capture
   "use of deleted function .void foundation::core::Seat<T>::step\\(Fn&&\\) &"
   "the body holds a linear value by value, and the door calls it with no consume")

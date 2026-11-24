@@ -124,6 +124,7 @@
 #include <foundation/Simd.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Number.h>
@@ -146,11 +147,13 @@ concept TreeValue = std::is_object_v<T> && !std::is_array_v<T> && !std::is_const
 // A combine of a tree: it takes the left operand and the right operand, gives
 // a value of the same type, does not throw, and holds no linear value by value
 // (HoldsNoLinearValue of foundation/Linear.h).  A door calls the combine many
-// times and ends it, and a call is no consume.
+// times and ends it, and a call is no consume.  The combine stores no borrow
+// outside the door (StoresNoBorrowOutside of foundation/core/CaptureStore.h):
+// an operand can be a partial value of the tree, which ends in the door.
 template <class Combine, class T>
 concept TreeCombine = std::is_nothrow_invocable_v<Combine&, T const&, T const&>
                    && std::same_as<std::invoke_result_t<Combine&, T const&, T const&>, T>
-                   && ::foundation::linear::HoldsNoLinearValue<Combine>;
+                   && ::foundation::linear::HoldsNoLinearValue<Combine> && StoresNoBorrowOutside<Combine>;
 
 // A combine that holds a linear value by value: the deleted twin of each
 // door of a tree and of a scan binds to it.

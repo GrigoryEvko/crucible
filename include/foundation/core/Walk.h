@@ -110,6 +110,7 @@
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Quantity.h>
@@ -175,25 +176,31 @@ using walk_value_t = std::remove_cvref_t<typename Stage::element_reference>;
 // A function of map: it takes an element and gives a value, with no throw.
 // Each function of a walk holds no linear value by value
 // (HoldsNoLinearValue of foundation/Linear.h): the walk calls it and ends it
-// with the walk, and a call is no consume.
+// with the walk, and a call is no consume.  Each function also stores no
+// borrow outside the walk (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h): an element of a map, a filter or a flat
+// map can be a value of the walk, which ends at the next element.
 template <class Fn, class Element>
 concept WalkMapping =
     std::is_nothrow_invocable_v<Fn const&, Element> && !std::is_void_v<std::invoke_result_t<Fn const&, Element>>
-    && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
+    && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
+    && StoresNoBorrowOutside<Fn>;
 
 // A test of filter, any_of and all_of: it reads an element through a const
 // reference and gives a bool, with no throw.
 template <class Fn, class Value>
-concept WalkPredicate = std::is_nothrow_invocable_v<Fn const&, Value const&>
-                     && std::same_as<std::invoke_result_t<Fn const&, Value const&>, bool>
-                     && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
+concept WalkPredicate =
+    std::is_nothrow_invocable_v<Fn const&, Value const&>
+    && std::same_as<std::invoke_result_t<Fn const&, Value const&>, bool> && std::is_nothrow_move_constructible_v<Fn>
+    && ::foundation::linear::HoldsNoLinearValue<Fn> && StoresNoBorrowOutside<Fn>;
 
 // A function of flat_map: it takes an element and gives a walk, with no
 // throw.
 template <class Fn, class Element>
 concept WalkExpansion = std::is_nothrow_invocable_v<Fn const&, Element>
                      && ::foundation::reflect::IsInstanceOf<std::invoke_result_t<Fn const&, Element>, ^^Walk>
-                     && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>;
+                     && std::is_nothrow_move_constructible_v<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
+                     && StoresNoBorrowOutside<Fn>;
 
 // A function of a walk that holds a linear value by value: the deleted twin
 // of each adapter and each terminal binds to it.
@@ -841,7 +848,7 @@ public:
     template <class Accumulator, class Step>
         requires std::is_nothrow_invocable_r_v<Accumulator, Step const&, Accumulator&&, Element>
               && std::is_nothrow_move_constructible_v<Accumulator> && std::is_nothrow_move_assignable_v<Accumulator>
-              && ::foundation::linear::HoldsNoLinearValue<Step>
+              && ::foundation::linear::HoldsNoLinearValue<Step> && StoresNoBorrowOutside<Step>
     [[nodiscard]] constexpr Accumulator fold(Accumulator init, Step step) && noexcept {
         Accumulator acc = static_cast<Accumulator&&>(init);
         auto folded = [&acc, &step] [[gnu::always_inline]] (Element element) noexcept {

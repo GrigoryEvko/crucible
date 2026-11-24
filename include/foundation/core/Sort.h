@@ -82,6 +82,7 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Quantity.h>
 #include <foundation/core/Region.h>
@@ -128,11 +129,13 @@ struct Ascending {
 // A less function of the elements: it takes two elements and gives a bool,
 // with no throw.  It holds no linear value by value (HoldsNoLinearValue of
 // foundation/Linear.h): a sort or a search calls it many times and ends it,
-// and a call is no consume.
+// and a call is no consume.  It stores no borrow outside the sort
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h): an element that
+// it reads can be a copy in the scratch or on the stack of the sort.
 template <class Less, class T>
 concept StrictOrder = std::is_nothrow_invocable_v<Less&, T const&, T const&>
                    && std::same_as<std::invoke_result_t<Less&, T const&, T const&>, bool>
-                   && ::foundation::linear::HoldsNoLinearValue<Less>;
+                   && ::foundation::linear::HoldsNoLinearValue<Less> && StoresNoBorrowOutside<Less>;
 
 // A less function that holds a linear value by value: the deleted twin of
 // each sort and each search binds to it, so the refusal gives its reason.
@@ -180,7 +183,7 @@ using projected_key_t =
 template <class Project, class T>
 concept KeyProjection =
     (std::is_member_object_pointer_v<Project> || std::is_nothrow_invocable_v<Project const&, T const&>)
-    && AscendingElement<detail::projected_key_t<Project, T>>;
+    && AscendingElement<detail::projected_key_t<Project, T>> && StoresNoBorrowOutside<Project>;
 
 // The order of the elements by their keys: Ascending on the keys, or its
 // reverse.  Two elements of one key are equivalent, so a stable sort keeps
