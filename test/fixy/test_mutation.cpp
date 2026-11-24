@@ -411,19 +411,31 @@ int check_wide_monotonic() {
     return 0;
 }
 
+// The value of a filled slot.  An empty slot ends the test.  The value lives
+// in the slot, so the twin refuses a temporary slot.
+template <class Slot>
+[[nodiscard]] auto const& value_of(Slot const& slot) {
+    return *slot.get().expect("the slot of the test holds a value");
+}
+template <class Slot>
+void value_of(Slot const&&) = delete("a temporary slot ends at the end of the statement, and its value with it");
+
 int check_write_once() {
     WriteOnce<int> slot = ::fixy::mint_write_once<int>();
     if (slot.has_value()) return 60;
     if (static_cast<bool>(slot)) return 61;
-    if (!slot.try_set(33)) return 62;
+    // A read before the set gives no value.
+    if (slot.get().is_some()) return 65;
+    if (*slot.try_set(33).expect("the first try_set fills the slot") != 33) return 62;
     if (!slot.has_value()) return 63;
-    if (slot.get() != 33) return 64;
-    if (slot.try_set(99)) return 66;
-    if (slot.get() != 33) return 67;
+    if (value_of(slot) != 33) return 64;
+    if (slot.try_set(99).is_some()) return 66;
+    if (value_of(slot) != 33) return 67;
 
+    // The set gives the view of the value that it stored.
     WriteOnce<int> direct = ::fixy::mint_write_once<int>();
-    direct.set(7);
-    if (direct.get() != 7) return 68;
+    auto const stored = direct.set(7);
+    if (*stored != 7 || &*stored != &value_of(direct)) return 68;
     return 0;
 }
 
@@ -820,15 +832,15 @@ int check_contracts_abort() {
         kStartAtLimit);
     if (wide.get() != 0) return 202;
 
+    // A read of an empty slot gives none in the test process, and a second
+    // set ends the child process.
     WriteOnce<int> once = ::fixy::mint_write_once<int>();
+    if (once.get().is_some()) return 169;
+    static_cast<void>(once.set(1));
     expect_dies(
-        test, [&once] noexcept { (void)once.get(); },
-        ::fixy::TextView{"foundation: contract violation: value_.has_value()"});
-    once.set(1);
-    expect_dies(
-        test, [&once] noexcept { once.set(2); },
+        test, [&once] noexcept { static_cast<void>(once.set(2)); },
         ::fixy::TextView{"foundation: contract violation: !value_.has_value()"});
-    if (once.get() != 1) return 170;
+    if (value_of(once) != 1) return 170;
 
     int target = 0;
     WriteOnceNonNull<int*> slot = ::fixy::mint_write_once_non_null<int*>();

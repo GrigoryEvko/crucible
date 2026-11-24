@@ -270,14 +270,15 @@ fixy_neg_compile_test(neg_qtt_grade_that_only_compares_equal
 
 # A body CRUCIBLE_PRE reaches its consteval trap when a constant
 # expression steps a Monotonic backward, sets a WriteOnce or a
-# WriteOnceNonNull twice, or sets a WriteOnceNonNull to null.
+# WriteOnceNonNull twice, or sets a WriteOnceNonNull to null.  The set of a
+# temporary WriteOnce is deleted.
 fixy_neg_compile_test(neg_mutation_monotonic_step_backward
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .counter\\.fixy::Monotonic<unsigned int(, std::less<unsigned int> )?>::advance\\(5\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_mutation_write_once_twice
   "non-constant condition for static assertion"
-  "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set\\(2\\)."
+  "in .constexpr. expansion of .slot\\.fixy::WriteOnce<int>::set(<>)?\\(2\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
 fixy_neg_compile_test(neg_mutation_write_once_non_null_twice
   "non-constant condition for static assertion"
@@ -287,6 +288,9 @@ fixy_neg_compile_test(neg_mutation_write_once_non_null_null
   "non-constant condition for static assertion"
   "in .constexpr. expansion of .slot\\.fixy::WriteOnceNonNull<int\\*>::set\\(0\\)."
   "fixy/Mutation\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE.")
+fixy_neg_compile_test(neg_mutation_write_once_view_of_temporary
+  "use of deleted function .void fixy::WriteOnce<T>::set\\(Rest&& \\.\\.\\.\\) &&"
+  "a temporary slot ends at the end of the statement")
 
 # No mutation wrapper is assignable.  An assignment moves a counter
 # backward, empties a set slot, or drops every element of a log, so each

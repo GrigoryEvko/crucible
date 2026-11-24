@@ -6,8 +6,7 @@
 
 int main() {
     auto slot = fixy::mint_write_once<int>();
-    slot.set(1);
+    static_cast<void>(slot.set(1));
     slot = fixy::mint_write_once<int>();
-    slot.set(2);
-    return slot.get();
+    return slot.has_value() ? 0 : 1;
 }

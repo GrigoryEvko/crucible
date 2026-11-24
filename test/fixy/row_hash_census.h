@@ -1021,6 +1021,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::SchedProofRefDoor,
      "a door of the frames of a scheduling proof to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::LazyRefDoor, "a door of Lazy to the door of a Ref: static members only, never a value"},
+    {^^::foundation::core::WriteOnceRefDoor,
+     "a door of the two write-once slots to the door of a Ref: static members only, never a value"},
     {^^::foundation::core::RegionFrameKeyDoor,
      "a door of the Region family to the key of the frame doors: static members only, never a value"},
     {^^::foundation::core::ArrayFrameKeyDoor,

@@ -9,8 +9,8 @@ namespace {
 
 [[nodiscard]] constexpr int under_test() noexcept {
     fixy::WriteOnce<int> slot = fixy::mint_write_once<int>();
-    slot.set(1);
-    slot.set(2);
+    static_cast<void>(slot.set(1));
+    static_cast<void>(slot.set(2));
     return 0;
 }
 

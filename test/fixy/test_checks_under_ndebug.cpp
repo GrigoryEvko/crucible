@@ -11,7 +11,7 @@
 //   AtomicMonotonic::advance_sole_writer_from
 //                                        a current value that is not the
 //                                        stored value
-//   WriteOnce::get                       a read of an empty slot
+//   WriteOnce::set                       a second set of a slot
 
 #include <foundation/Platform.h>
 
@@ -87,11 +87,12 @@ void test_stale_current_of_a_sole_writer_ends_the_process(TestRunnerCtx const& t
     CRUCIBLE_FATAL_INVARIANT(counter.get() == 6);
 }
 
-void test_read_of_an_empty_slot_ends_the_process(TestRunnerCtx const& test) {
-    auto const slot = ::fixy::mint_write_once<std::uint32_t>();
+void test_second_set_of_a_slot_ends_the_process(TestRunnerCtx const& test) {
+    auto slot = ::fixy::mint_write_once<std::uint32_t>();
+    static_cast<void>(slot.set(opaque(std::uint32_t{1})));
     expect_dies(
-        test, [&slot] noexcept { (void)slot.get(); },
-        ::fixy::TextView{"foundation: contract violation: value_.has_value()"});
+        test, [&slot] noexcept { static_cast<void>(slot.set(opaque(std::uint32_t{2}))); },
+        ::fixy::TextView{"foundation: contract violation: !value_.has_value()"});
 }
 
 }  // namespace
@@ -101,6 +102,6 @@ int main() {
     test_poisoned_effect_mask_ends_the_process(test);
     test_atom_past_the_last_ends_the_process(test);
     test_stale_current_of_a_sole_writer_ends_the_process(test);
-    test_read_of_an_empty_slot_ends_the_process(test);
+    test_second_set_of_a_slot_ends_the_process(test);
     return 0;
 }

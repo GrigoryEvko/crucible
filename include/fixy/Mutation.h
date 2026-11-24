@@ -1,8 +1,10 @@
 #pragma once
 
 #include <fixy/GradedFacade.h>
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Lifetime.h>
+#include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
 #include <foundation/SoleWriterProof.h>
@@ -14,7 +16,9 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Number.h>
+#include <foundation/core/Ref.h>
 #include <foundation/reflect/Instance.h>
 
 #include <atomic>
@@ -34,6 +38,34 @@ template <typename T>
 class WriteOnce;
 template <typename Ptr>
 class WriteOnceNonNull;
+
+}  // namespace fixy
+
+namespace foundation::core {
+
+// The door of the two write-once slots to the door of a Ref (the doors of the
+// owners above foundation/core/Ref.h).  Its one member is private, and
+// WriteOnce and WriteOnceNonNull are its friends.  The invariant: a slot lends
+// its value only after the test that a set filled it, or in the set that
+// fills it, the value lives as long as the slot, and the brand is the fresh
+// brand of the call or the brand of the Ref that the set took.  A home owner
+// row of utils/rule-table.txt keeps this definition in this header.
+class WriteOnceRefDoor final : ::foundation::NoObject<WriteOnceRefDoor> {
+    template <typename T>
+    friend class ::fixy::WriteOnce;
+    template <typename Ptr>
+    friend class ::fixy::WriteOnceNonNull;
+
+    // The value of a filled slot, as a Ref of the brand.
+    template <::foundation::brand::IsBrand Brand, RefTarget T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr Ref<T, Brand> lend_(T& object) noexcept {
+        return detail::RefDoor::lend<Brand>(object);
+    }
+};
+
+}  // namespace foundation::core
+
+namespace fixy {
 
 // The type of an AtomicMonotonic names the writer of the counter (the writer
 // of a counter, at AtomicMonotonic).  void names a counter that each thread
@@ -703,27 +735,53 @@ public:
     WriteOnce& operator=(WriteOnce&&) =
         delete("WriteOnce is set at most once. An assignment would empty or overwrite a set slot.");
 
-    constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    // Sets the value one time, and gives the view of it: a Ref of the value
+    // with the fresh brand of the call, so the setter reads the value with no
+    // test.  A second set ends the process.  The pack refuses each explicit
+    // argument, so no caller names the brand.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    constexpr ::foundation::core::Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>
+    set(T v) & noexcept(std::is_nothrow_move_constructible_v<T>) {
         CRUCIBLE_PRE(!value_.has_value());
         value_.emplace(std::move(v));
         CRUCIBLE_POST(0, value_.has_value());
+        return ::foundation::core::WriteOnceRefDoor::lend_<Fresh>(*std::as_const(value_));
     }
+    template <class... Rest>
+    void set(Rest&&...) && = delete("a temporary slot ends at the end of the statement, and the view of its value "
+                                    "with it: set a slot that has a name");
 
-    // The post holds on both paths: either this call emplaced, or an
-    // earlier one did, because otherwise claimed would be true.
-    constexpr bool try_set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        bool const claimed = !value_.has_value();
-        if (claimed) {
-            value_.emplace(std::move(v));
-        }
-        CRUCIBLE_POST(claimed, value_.has_value());
-        return claimed;
+    // Sets the value when the slot is empty, and gives its view.  A slot that
+    // holds a value gives none and keeps its value.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    constexpr ::foundation::core::Option<
+        ::foundation::core::Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    try_set(T v) & noexcept(std::is_nothrow_move_constructible_v<T>) {
+        using Held = ::foundation::core::Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>;
+        if (value_.has_value()) return ::foundation::core::Option<Held>{::foundation::core::none};
+        value_.emplace(std::move(v));
+        return ::foundation::core::Option<Held>::some(
+            ::foundation::core::WriteOnceRefDoor::lend_<Fresh>(*std::as_const(value_)));
     }
+    template <class... Rest>
+    void try_set(Rest&&...) && = delete("a temporary slot ends at the end of the statement, and the view of its "
+                                        "value with it: set a slot that has a name");
 
-    [[nodiscard]] constexpr const T& get() const noexcept {
-        CRUCIBLE_PRE(value_.has_value());
-        return *value_;
+    // The view of the value, or none before the set.
+    template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
+        requires(sizeof...(Refused) == 0)
+    [[nodiscard]] constexpr ::foundation::core::Option<
+        ::foundation::core::Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
+    get() const& noexcept {
+        using Held = ::foundation::core::Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>;
+        if (!value_.has_value()) return ::foundation::core::Option<Held>{::foundation::core::none};
+        return ::foundation::core::Option<Held>::some(::foundation::core::WriteOnceRefDoor::lend_<Fresh>(*value_));
     }
+    template <class... Rest>
+    void get(Rest&&...) const&& = delete("a temporary slot ends at the end of the statement, and the view of its "
+                                         "value with it: read a slot that has a name");
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.has_value(); }

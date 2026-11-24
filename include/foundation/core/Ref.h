@@ -334,6 +334,7 @@ class ChaseLevDequeRefDoor;
 class SpscSplitRefDoor;
 class SchedProofRefDoor;
 class LazyRefDoor;
+class WriteOnceRefDoor;
 
 namespace detail {
 
@@ -401,6 +402,7 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
     friend class ::foundation::core::SpscSplitRefDoor;
     friend class ::foundation::core::SchedProofRefDoor;
     friend class ::foundation::core::LazyRefDoor;
+    friend class ::foundation::core::WriteOnceRefDoor;
 
     template <::foundation::brand::IsBrand Brand, RefTarget T>
     [[nodiscard]] static constexpr Ref<T, Brand> lend(T& object) noexcept {
