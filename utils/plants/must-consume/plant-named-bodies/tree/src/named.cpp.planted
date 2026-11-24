@@ -53,4 +53,21 @@ int generic_ignoring_body() { return ::foundation::linear::call_once(GenericIgno
 
 void one_path_body() { ::foundation::linear::call_once(OnePathBody{Token{3}}); }
 
+// A body with a plain call operator, which a second call can run again, and
+// a body whose call operator && has no body in the unit.  No summary reads
+// either one, so each fails closed.
+struct PlainCallBody {
+    Token token;
+    void operator()() noexcept { sink(Token{4}); }
+};
+
+struct ForeignBody {
+    Token token;
+    void operator()() && noexcept;
+};
+
+void plain_call_body() { ::foundation::linear::call_once(PlainCallBody{Token{5}}); }
+
+void foreign_body() { ::foundation::linear::call_once(ForeignBody{Token{6}}); }
+
 }  // namespace planted

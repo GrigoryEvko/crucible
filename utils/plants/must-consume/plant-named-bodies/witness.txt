@@ -2,16 +2,21 @@
 # closure, and its call operator && leaves a linear field live.  A body that
 # ignores its token (line 27), a class template whose call operator template
 # ignores its token (33), and a body that consumes its token on one path
-# (41).  Each line is at the name of the class.  The directory src/ has the
-# enforce mode error, and the tree holds no ledger of must-consume, so each
-# counted line is a compile error.  The plugin of main gave none of these
-# lines, and the unit compiled.
+# (41).  A body with a plain call operator (59) and a body whose call
+# operator && has no body in the unit (64) fail closed.  Each line is at the
+# name of the class.  The directory src/ has the enforce mode error, and the
+# tree holds no ledger of must-consume, so each counted line is a compile
+# error.  The plugin of main gave none of these lines, and the unit compiled.
 compile named src/named.cpp must-consume=on
 flag named -freflection
 exit named fail
 finding named must-consume capture-unconsumed src/named.cpp:27:8 | named body (planted::IgnoringBody)
 finding named must-consume capture-unconsumed src/named.cpp:33:8 | named body (planted::GenericIgnoringBody<planted::Token>)
 finding named must-consume capture-unconsumed src/named.cpp:41:8 | named body (planted::OnePathBody)
+finding named must-consume capture-unconsumed src/named.cpp:59:8 | named body (planted::PlainCallBody)
+finding named must-consume capture-unconsumed src/named.cpp:64:8 | named body (planted::ForeignBody)
 error named src/named.cpp:27 | quarantine: capture-unconsumed named body (planted::IgnoringBody); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error named src/named.cpp:33 | quarantine: capture-unconsumed named body (planted::GenericIgnoringBody<planted::Token>); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
 error named src/named.cpp:41 | quarantine: capture-unconsumed named body (planted::OnePathBody); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error named src/named.cpp:59 | quarantine: capture-unconsumed named body (planted::PlainCallBody); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error
+error named src/named.cpp:64 | quarantine: capture-unconsumed named body (planted::ForeignBody); the ledger of the rule must-consume counts no line of this kind in src/, whose enforce mode is error

@@ -472,7 +472,10 @@
 //     of the once door whose body has the fact gives the kind
 //     capture-unconsumed at the name of the class, with the entity named body
 //     (TYPE).  A body whose call operator has no fact at the walk waits for
-//     the end of the unit, as a generic closure does.
+//     the end of the unit, as a generic closure does.  A body that no summary
+//     read by then fails closed with the same line: a class with a plain call
+//     operator, which a second call can run again, or with no body of its call
+//     operator && in the unit.
 //
 // Self-moves
 //     A move assignment whose target and source are one object is the kind
@@ -1650,6 +1653,9 @@ struct PendingFinding {
     // had no fact at the walk, or 0.  Such a line waits for the end of the
     // unit (the generic closures).
     unsigned waits_for_closure_type = 0;
+    // The line stays when no summary read the call operator by the end of the
+    // unit (the named bodies).
+    bool fails_closed = false;
 };
 
 // One finding of a walk of a body, with its place, before the rule adds it.
@@ -1679,9 +1685,11 @@ std::vector<DeferredFindings> deferred_findings;
 
 // A line of the kind capture-unconsumed that waits for the end of the unit:
 // the once door owns a closure whose call operator had no fact at the walk
-// (the generic closures).
+// (the generic closures).  A named body with no summary at the end keeps its
+// line (the named bodies).
 struct WaitingOwnedClosure {
     unsigned closure_type = 0;
+    bool fails_closed = false;
     WalkFinding finding;
 };
 
@@ -3605,7 +3613,7 @@ private:
             return;
         }
         pending_.push_back(
-            PendingFinding{Kind::linear_capture_unconsumed, where, std::move(entity), DoorEnd::exempt, body});
+            PendingFinding{Kind::linear_capture_unconsumed, where, std::move(entity), DoorEnd::exempt, body, true});
     }
 
     // True when the closure CLOSURE_TYPE holds a linear capture by value (the
@@ -4139,8 +4147,8 @@ private:
         if (place.file == nullptr) {
             return;
         }
-        waiting_owned_closures.push_back(
-            WaitingOwnedClosure{finding.waits_for_closure_type, WalkFinding{finding.kind, place, finding.entity}});
+        waiting_owned_closures.push_back(WaitingOwnedClosure{finding.waits_for_closure_type, finding.fails_closed,
+                                                             WalkFinding{finding.kind, place, finding.entity}});
     }
 
     void record(Kind kind, location_t location, const std::string& entity, DoorEnd door_end = DoorEnd::exempt) {
@@ -6446,12 +6454,17 @@ void report_self_move(const Finding& finding) {
 
 // The generic closures: each waiting line of a once door whose closure type
 // leaves a linear capture live in one instance of its call operator.  The
-// two walks of one body give the same line, so the end keeps it one time.
-// Complexity: quadratic in the waiting lines, which are few in a unit.
+// named bodies: each waiting line of a named body whose call operator && no
+// summary read in the unit, as a body with a plain call operator or with no
+// body in the unit, fails closed.  The two walks of one body give the same
+// line, so the end keeps it one time.  Complexity: quadratic in the waiting
+// lines, which are few in a unit.
 void judge_waiting_owned_closures() {
     std::vector<WalkFinding> owned;
     for (const WaitingOwnedClosure& waiting : waiting_owned_closures) {
-        if (closure_types_leave_capture.count(waiting.closure_type) != 0
+        bool const leaves_capture = closure_types_leave_capture.count(waiting.closure_type) != 0;
+        bool const has_no_summary = waiting.fails_closed && named_bodies_summarized.count(waiting.closure_type) == 0;
+        if ((leaves_capture || has_no_summary)
             && std::find(owned.begin(), owned.end(), waiting.finding) == owned.end()) {
             owned.push_back(waiting.finding);
         }
