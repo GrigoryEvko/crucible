@@ -1,0 +1,13 @@
+# A move through a pointer that an accessor of the base gives, also with an
+# index, is the finding borrow-move-out when the accessor has no annotation,
+# and when the storage door is called on another object than the object of
+# the function (the moves through a borrow of linear.cpp).  The rule is in
+# report mode, and the module judges each line against the empty ledger of
+# the plant.
+
+compile uses src/uses.cpp must-consume=on
+flag uses -freflection
+exit uses pass
+judge uses
+finding uses must-consume borrow-move-out include/fixy/Ring.h:24:55 | planted::Ring::take_plain: *plain_first_() (planted::Token)
+finding uses must-consume borrow-move-out include/fixy/Ring.h:26:49 | planted::Ring::take_other: *own_first_() (planted::Token)

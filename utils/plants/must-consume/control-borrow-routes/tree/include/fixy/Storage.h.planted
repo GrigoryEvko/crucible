@@ -1,0 +1,29 @@
+#pragma once
+
+// A base header with a body that moves a token out of its own frame.  It
+// carries the annotation moves_own_storage, which the rule trusts in a base
+// file.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void take(Token&& token) noexcept;
+
+struct Cell {
+    Token* slot = nullptr;
+};
+
+// A body that moves storage: only this body empties the slot of the frame.
+template <class Frame>
+[[= ::foundation::linear::moves_own_storage{}]] void run_frame(Frame& frame) noexcept {
+    take(static_cast<Token&&>(*frame.slot));
+}
+
+}  // namespace planted

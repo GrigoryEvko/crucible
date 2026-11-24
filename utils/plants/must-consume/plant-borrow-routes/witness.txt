@@ -1,0 +1,22 @@
+# A move of a linear value out of a place that no frame of the function owns
+# is the finding borrow-move-out (the moves through a borrow of linear.cpp):
+# a reference that a function gives back, a class that refers to the value, a
+# dereference of a pointer, a local reference to a field and a static.  A
+# function outside the base with the annotation moves_own_storage keeps each
+# line, in its body and at a call of it.  The rule is in report mode, and the
+# module judges each line against the empty ledger of the plant.  The plugin
+# of main gave none of the lines of must-consume.
+
+compile routes src/routes.cpp must-consume=on
+flag routes -freflection
+exit routes pass
+judge routes
+finding routes process-wide-state unmarked-static src/routes.cpp:36:7 | planted::kept
+finding routes must-consume borrow-move-out src/routes.cpp:42:9 | planted::two_from_one_holder: token_of() (planted::Token)
+finding routes must-consume borrow-move-out src/routes.cpp:47:9 | planted::through_an_alias: get() (planted::Token)
+finding routes quarantine raw-pointer-object src/routes.cpp:50:31 | pointer
+finding routes must-consume borrow-move-out src/routes.cpp:51:9 | planted::through_a_pointer: *pointer (planted::Token)
+finding routes must-consume borrow-move-out src/routes.cpp:57:9 | planted::through_a_field_reference: field (planted::Token)
+finding routes must-consume borrow-move-out src/routes.cpp:61:39 | planted::out_of_a_static: kept (planted::Token)
+finding routes must-consume borrow-move-out src/routes.cpp:64:9 | planted::annotated_outside_the_base: get() (planted::Token)
+finding routes must-consume borrow-move-out src/routes.cpp:69:9 | planted::through_an_annotated_call: stored_in() (planted::Token)

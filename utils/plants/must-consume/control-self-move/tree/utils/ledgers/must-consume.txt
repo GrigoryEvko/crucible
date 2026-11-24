@@ -1,0 +1,4 @@
+# The ledger of the control.  It counts the moves through a borrow of src/moves.cpp.
+format 1
+rule must-consume
+src/ | borrow-move-out | 5 | - | the moves out of an element of an array parameter, out of the object of a pointer, and through a reference into either

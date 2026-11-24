@@ -6,15 +6,25 @@
 # an unknown pointer is no self-move, and neither is a move through a
 # reference whose pointer or index changes before the move.  The move
 # assignment of a session handle keeps its guard of a self-move as the
-# run-time backstop of that alias (fixy/session/Handle.h).
+# run-time backstop of that alias (fixy/session/Handle.h).  A move out of an
+# element of an array parameter, out of the object of a pointer, and through
+# a reference into either, names a place that no frame of the function owns,
+# so it is the kind borrow-move-out (the moves through a borrow of
+# linear.cpp).  The ledger of this tree counts the five such lines, and the
+# module of the rule judges the count, which holds.
 
 compile moves src/moves.cpp must-consume=on
 flag moves -freflection
 exit moves pass
 judge moves
 finding moves quarantine c-array-object src/moves.cpp:44:28 | row
+finding moves must-consume borrow-move-out src/moves.cpp:44:85 | planted::two_elements: element (planted::Handle)
 finding moves quarantine c-array-object src/moves.cpp:46:27 | row
+finding moves must-consume borrow-move-out src/moves.cpp:46:116 | planted::two_indices: element (planted::Handle)
 finding moves quarantine raw-pointer-object src/moves.cpp:52:57 | source
+finding moves must-consume borrow-move-out src/moves.cpp:54:43 | planted::through_an_unknown_pointer: *source (planted::Handle)
 finding moves quarantine raw-pointer-object src/moves.cpp:60:51 | first
 finding moves quarantine raw-pointer-object src/moves.cpp:60:66 | second
+finding moves must-consume borrow-move-out src/moves.cpp:63:40 | planted::a_reference_before_the_pointer_moves: kept (planted::Handle)
 finding moves quarantine c-array-object src/moves.cpp:66:50 | row
+finding moves must-consume borrow-move-out src/moves.cpp:69:44 | planted::a_reference_before_the_index_moves: kept (planted::Handle)

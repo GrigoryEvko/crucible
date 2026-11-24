@@ -452,7 +452,11 @@
 //                           parameter that its caller lends, a reference that
 //                           is not const or the object of a plain member
 //                           function, and leaves it spent at an exit (the
-//                           lent parameters of linear.cpp)
+//                           lent parameters of linear.cpp), and a move of a
+//                           linear value out of a place that no frame of the
+//                           function owns, such as a reference that a function
+//                           gives back or a Ref (the moves through a borrow of
+//                           linear.cpp)
 //     closure-move-out      a call of a closure whose call operator moves a
 //                           linear capture out, outside a once door, so a
 //                           second call gives a second value (the closures that

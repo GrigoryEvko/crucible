@@ -1,0 +1,46 @@
+// Moves out of places that a frame owns, or that a function of the base with
+// the annotation moves_own_storage owns, give no line of borrow-move-out: a
+// body of the base that empties its frame, a parameter by value and by an
+// rvalue reference, a local, a reference that extends a temporary, a binding
+// of a structured binding, a temporary, the object of a member function &&,
+// and a move constructor.  control-storage-doors holds the storage doors.
+#include <fixy/Storage.h>
+
+namespace planted {
+
+constexpr Token mint() noexcept { return Token{}; }
+
+struct Pair {
+    Token first{};
+    Token second{};
+};
+
+[[nodiscard]] Pair two_tokens() noexcept;
+
+struct Owner {
+    Token token{};
+
+    Owner() noexcept = default;
+    Owner(Owner&& other) noexcept : token{static_cast<Token&&>(other.token)} {}
+
+    Token release() && noexcept { return static_cast<Token&&>(token); }
+};
+
+void through_a_base_frame(Cell& cell) noexcept { run_frame(cell); }
+
+void owned_forms(Token by_value, Token&& by_rvalue) noexcept {
+    take(static_cast<Token&&>(by_value));
+    take(static_cast<Token&&>(by_rvalue));
+    Token local = mint();
+    take(static_cast<Token&&>(local));
+    Token&& extended = mint();
+    take(static_cast<Token&&>(extended));
+    auto [first, second] = two_tokens();
+    take(static_cast<Token&&>(first));
+    take(static_cast<Token&&>(second));
+    take(mint());
+    Owner owner{};
+    take(static_cast<Owner&&>(owner).release());
+}
+
+}  // namespace planted

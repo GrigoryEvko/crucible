@@ -1,0 +1,12 @@
+// A quarantined unit that makes the instances of the members of the base
+// ring fixy/Ring.h with a linear element.
+#include <fixy/Ring.h>
+
+namespace planted {
+
+void use(Ring<Token>& ring, Ring<Token>& other) noexcept {
+    ring.take_plain(1);
+    ring.take_other(other);
+}
+
+}  // namespace planted

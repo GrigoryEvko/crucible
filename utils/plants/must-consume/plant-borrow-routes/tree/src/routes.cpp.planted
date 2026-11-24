@@ -1,0 +1,73 @@
+// Moves of a linear value out of a place that no frame of the function owns.
+// Each is the finding borrow-move-out, because a second move gives a second
+// value of one value: a move through a reference that a function gives back
+// (line 42), through a class that refers to the value and holds no linear
+// part (47), through a dereference of a pointer (51), through a local
+// reference to a field (57), and out of a static (61).  A function outside
+// the base with the annotation moves_own_storage keeps its lines: a move in
+// its body (64), and a move through a call of it (69).  The plugin of main
+// gave none of these lines.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+constexpr Token mint() noexcept { return Token{}; }
+void take(Token&& token) noexcept;
+
+struct Holder {
+    Token token{};
+};
+
+Token& token_of(Holder& holder) noexcept;
+
+struct Alias {
+    Token& target;
+
+    Token& get() const noexcept { return target; }
+};
+
+Token kept{};
+
+[[= ::foundation::linear::moves_own_storage{}]] Token& stored_in(Holder& holder) noexcept;
+
+void two_from_one_holder() {
+    Holder holder{mint()};
+    take(static_cast<Token&&>(token_of(holder)));
+    take(static_cast<Token&&>(holder.token));
+}
+
+void through_an_alias(Alias const& alias) noexcept {
+    take(static_cast<Token&&>(alias.get()));
+}
+
+void through_a_pointer(Token* pointer) noexcept {
+    take(static_cast<Token&&>(*pointer));
+}
+
+void through_a_field_reference() {
+    Holder holder{mint()};
+    Token& field = holder.token;
+    take(static_cast<Token&&>(field));
+    take(static_cast<Token&&>(holder.token));
+}
+
+void out_of_a_static() noexcept { take(static_cast<Token&&>(kept)); }
+
+[[= ::foundation::linear::moves_own_storage{}]] void annotated_outside_the_base(Alias const& alias) noexcept {
+    take(static_cast<Token&&>(alias.get()));
+}
+
+void through_an_annotated_call() {
+    Holder holder{mint()};
+    take(static_cast<Token&&>(stored_in(holder)));
+    take(static_cast<Token&&>(holder.token));
+}
+
+}  // namespace planted

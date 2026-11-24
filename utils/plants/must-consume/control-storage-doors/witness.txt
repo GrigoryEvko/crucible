@@ -1,0 +1,11 @@
+# A storage door of the base with the annotation moves_own_storage, on the
+# object of the function, gives a place that the base owns, also through the
+# pointer that it gives and with an index.  A static storage door in a member
+# of its own class does too.  So no move here is a finding of borrow-move-out
+# (the moves through a borrow of linear.cpp).  The rule is in report mode, and
+# the module judges each line against the empty ledger of the control.
+
+compile uses src/uses.cpp must-consume=on
+flag uses -freflection
+exit uses pass
+judge uses

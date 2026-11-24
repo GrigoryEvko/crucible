@@ -1,0 +1,9 @@
+# A move out of a place that a frame of the function owns is no move through
+# a borrow, and neither is a move in a body of the base with the annotation
+# moves_own_storage (the moves through a borrow of linear.cpp).  The rule is in report mode, and the module judges
+# each line against the empty ledger of the control.
+
+compile owned src/owned.cpp must-consume=on
+flag owned -freflection
+exit owned pass
+judge owned

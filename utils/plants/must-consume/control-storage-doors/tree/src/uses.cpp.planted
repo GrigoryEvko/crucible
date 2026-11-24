@@ -1,0 +1,13 @@
+// A quarantined unit that makes the instances of the members of the base
+// ring and of the factory of fixy/Ring.h with a linear element.
+#include <fixy/Ring.h>
+
+namespace planted {
+
+void use(Ring<Token>& ring, Cell<Token>& cell) noexcept {
+    ring.take_own(1);
+    ring.take_first();
+    Factory::step(cell);
+}
+
+}  // namespace planted

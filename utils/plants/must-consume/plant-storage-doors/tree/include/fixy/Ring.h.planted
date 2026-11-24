@@ -1,0 +1,37 @@
+#pragma once
+
+// A base container whose members move an element out of storage through a
+// pointer.  The accessor of take_plain has no annotation, so its move is the
+// finding borrow-move-out (line 24).  take_other calls the storage door of
+// another ring, which names a place of another frame, so its move is the
+// finding too (line 26).
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void take(Token&& token) noexcept;
+
+template <class T>
+class Ring {
+public:
+    void take_plain(unsigned position) noexcept { take(static_cast<T&&>(plain_first_()[position])); }
+
+    void take_other(Ring& other) noexcept { take(static_cast<T&&>(other.own_first_()[0])); }
+
+private:
+    T* storage_ = nullptr;
+
+    T* plain_first_() noexcept { return storage_; }
+
+    // A storage door: the elements are in the storage that the ring owns.
+    [[= ::foundation::linear::moves_own_storage{}]] T* own_first_() noexcept { return storage_; }
+};
+
+}  // namespace planted

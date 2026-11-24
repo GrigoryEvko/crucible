@@ -6,6 +6,9 @@
 # unit was the known gap of the route in the control control-known-gaps of
 # must-consume.  Each global holds a linear sum too, so the kind option-static
 # of must-consume refuses each one in each mode (linear.cpp, the sum holders).
+# Each take moves the sum out of a global, which no frame of the function
+# owns, so it is the kind borrow-move-out of must-consume too (linear.cpp, the
+# moves through a borrow).
 compile static_route src/static_route.cpp must-consume=on errors=static_route
 flag static_route -freflection
 exit static_route fail
@@ -15,3 +18,5 @@ finding static_route process-wide-state thread-bound-static src/static_route.cpp
 finding static_route process-wide-state unmarked-static src/static_route.cpp:36:19 | planted::g_slot
 finding static_route process-wide-state thread-bound-static src/static_route.cpp:37:8 | planted::g_parked
 finding static_route process-wide-state unmarked-static src/static_route.cpp:37:8 | planted::g_parked
+finding static_route must-consume borrow-move-out src/static_route.cpp:43:70 | planted::take_on_another_thread: g_slot (foundation::core::Option<planted::PinnedEnd>)
+finding static_route must-consume borrow-move-out src/static_route.cpp:47:73 | planted::take_from_the_class: end (foundation::core::Option<planted::PinnedEnd>)

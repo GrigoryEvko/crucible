@@ -1,0 +1,54 @@
+#pragma once
+
+// A base container that moves an element out of its own storage through the
+// pointer of a storage door, also with an index, and a factory whose static
+// step reads its own static storage door.  The rule trusts each annotation,
+// so neither move is a finding.
+#include <foundation/Linear.h>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+void take(Token&& token) noexcept;
+
+template <class T>
+class Ring {
+public:
+    void take_own(unsigned position) noexcept { take(static_cast<T&&>(own_first_()[position])); }
+
+    void take_first() noexcept { take(static_cast<T&&>(*own_first_())); }
+
+private:
+    T* storage_ = nullptr;
+
+    // A storage door: the elements are in the storage that the ring owns.
+    [[= ::foundation::linear::moves_own_storage{}]] T* own_first_() noexcept { return storage_; }
+};
+
+template <class T>
+struct Cell {
+    T* held = nullptr;
+};
+
+class Factory {
+public:
+    template <class T>
+    static void step(Cell<T>& cell) noexcept {
+        take(static_cast<T&&>(*held_of_(cell)));
+    }
+
+private:
+    // A storage door: the factory owns the cell of each of its steps.
+    template <class T>
+    [[= ::foundation::linear::moves_own_storage{}]] static T* held_of_(Cell<T>& cell) noexcept {
+        return cell.held;
+    }
+};
+
+}  // namespace planted

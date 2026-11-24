@@ -142,7 +142,9 @@
 //     option-static        an object of static or thread storage duration that
 //                          is or holds a linear sum (the sum holders)
 //     borrow-move-out      a consume of a lent object that a path keeps to
-//                          an exit (the lent parameters)
+//                          an exit (the lent parameters), and a move out of
+//                          a place that no frame of the function owns (the
+//                          moves through a borrow)
 //     closure-move-out     a call of a closure that moves a linear capture
 //                          out, outside a once door (the closures that move a
 //                          capture)
@@ -295,6 +297,45 @@
 //     gives borrow-move-out, because a second call would give a moved-from
 //     member.  A member function that gives up its object states &&, and its
 //     object is no lent object.
+//
+// Moves through a borrow
+//     A move can name a place that no tracked object holds: a reference that
+//     a function gives back, a dereference of a Ref or of a pointer, a local
+//     lvalue reference, or a part of an object that the rule does not track.
+//     Two such moves give two values of one value, as two moves of
+//     token_of(holder) do.  Rust refuses a move out of a borrow.  So at a
+//     consume that names no tracked object (an argument of a parameter && or
+//     by value, the object of a member function &&, a declaration, an
+//     assignment, a return and an element of a braced list), a move of a
+//     linear lvalue gives the kind borrow-move-out when no frame of the
+//     function owns its place (borrowed_place).  The walk goes through the
+//     casts, std::move, the reference helpers, a member, an element and a
+//     binding of a structured binding, and from a local lvalue reference to
+//     its initializer.  A call that gives a reference names a part of its
+//     object, or of its first argument that refers to a class, when that
+//     class is linear.  Each other call that gives a reference, such as
+//     operator* of a Ref, names a place of another frame.
+//     These places are owned, and give no line: a temporary, a local or a
+//     parameter by value or by an rvalue reference, a reference that extends
+//     a temporary, a capture, and the object of a lambda, of a constructor,
+//     of a destructor, of a member function && and of an explicit object
+//     parameter by value or by an rvalue reference.  A tracked object is
+//     owned when it is no lent object and the walk does not reach it behind a
+//     call or a local reference: the rule consumes no part of the object for
+//     such a move, so a second move would give a second value.  A transfer
+//     function gives no line, and neither does the body of a door (the
+//     doors).
+//     The base moves a payload out of its own storage and out of its erased
+//     frames.  The annotation moves_own_storage of include/foundation/Linear.h
+//     states it, and the rule trusts it only on a function of a base file.  A
+//     call of such a function on the object of the function of the walk, or
+//     of a static one in a member of its own class, names a place that the
+//     base owns, such as the payload of an Option, also through the pointer
+//     that it gives, such as a slot of a list (is_own_storage_call).  The
+//     same call on another object names a place of another frame.  A move in
+//     the body of such a function gives no line, such as the take of the
+//     body of a thread from its frame.  A function outside the base with the annotation keeps its
+//     lines (plant-own-storage-outside).
 //
 // Base doors
 //     A member function of a base class gets the base subobject as its object.
@@ -675,6 +716,9 @@ struct LinearNames {
     // The annotation of the once door (the doors, the closures that move a
     // capture).
     tree once_door = NULL_TREE;
+    // The annotation of a storage door or a frame of the base (the moves
+    // through a borrow).
+    tree moves_own_storage = NULL_TREE;
 };
 
 LinearNames linear_names;
@@ -955,6 +999,15 @@ bool is_linear_or_reference(tree type) {
         type = TREE_TYPE(type);
     }
     return is_linear_type(type);
+}
+
+// True when TYPE is an rvalue reference to a linear class: the type of a move
+// of a linear value.  A body with such a move and no linear object gets the
+// walk too, because the move can name a place that no frame of the body owns
+// (the moves through a borrow).
+bool is_linear_move_type(tree type) {
+    return type != NULL_TREE && TYPE_P(type) && TYPE_REF_P(type) && TYPE_REF_IS_RVALUE(type)
+        && is_linear_type(TREE_TYPE(type));
 }
 
 // True when TYPE is a linear sum (the sums): a linear class that carries the
@@ -1779,6 +1832,16 @@ bool is_transfer_function(tree function) {
     return is_special && scope != NULL_TREE && TYPE_P(scope) && linearity_of(scope) == Linearity::direct;
 }
 
+// True when FUNCTION carries the annotation moves_own_storage and a base file
+// declares it (the moves through a borrow).  A function outside the base can
+// carry the annotation, but the rule does not trust it there.
+bool moves_own_storage(tree function) {
+    if (!carries_linear_annotation(function, linear_names.moves_own_storage)) {
+        return false;
+    }
+    return place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine).file_class == FileClass::base;
+}
+
 tree capture_field_of(tree node, tree closure);
 void collect_brands(tree type, std::vector<tree>& out, int depth);
 
@@ -1926,6 +1989,9 @@ private:
     // (self_move_place), also when the rule tracks no object of it (the
     // self-moves).
     std::unordered_map<tree, tree> alias_place_of_;
+    // Each local lvalue reference and its initializer (the moves through a
+    // borrow).
+    std::unordered_map<tree, tree> reference_initial_;
     std::vector<std::vector<std::size_t>> scopes_;
     std::vector<Target*> targets_;
     std::vector<SwitchContext*> switches_;
@@ -3112,6 +3178,9 @@ private:
             tree decl_type = TREE_TYPE(decl);
             bool is_borrow = decl_type != NULL_TREE && TYPE_REF_P(decl_type) && !TYPE_REF_IS_RVALUE(decl_type)
                           && !(DECL_DECOMPOSITION_P(decl) && DECL_DECOMP_IS_BASE(decl));
+            if (is_borrow) {
+                reference_initial_[decl] = initial;
+            }
             // A reference to a field, also the base of a structured binding,
             // borrows the field and consumes nothing (the fields).
             bool is_field_borrow =
@@ -3149,6 +3218,9 @@ private:
             } else if (source != NULL_TREE && source != decl && !is_borrow && !is_field_borrow
                        && (saw_rvalue || is_linear_or_reference(decl_type))) {
                 consume(source, field, state, location_or(initial, DECL_SOURCE_LOCATION(decl)));
+            } else if (source == NULL_TREE && decl_type != NULL_TREE && !TYPE_REF_P(decl_type)
+                       && !TYPE_PTR_P(decl_type)) {
+                check_borrow_route(initial, location_or(initial, DECL_SOURCE_LOCATION(decl)), state);
             }
         }
         std::size_t slot = 0;
@@ -3455,6 +3527,11 @@ private:
             if (decl == NULL_TREE) {
                 if (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) {
                     record_discarded(location, linear_temporary_type(argument));
+                }
+                bool const takes_value = (TYPE_REF_P(parameter_type) && TYPE_REF_IS_RVALUE(parameter_type))
+                                      || (!TYPE_REF_P(parameter_type) && CLASS_TYPE_P(parameter_type));
+                if (takes_value) {
+                    check_borrow_route(argument, location, state);
                 }
                 // The aliases: the result of a callee that gives a sum back,
                 // which a callee that can keep it takes by a reference that
@@ -3884,6 +3961,9 @@ private:
             if (!FUNCTION_RVALUE_QUALIFIED(type) && !ends_each_capture) {
                 record_discarded(location, linear_temporary_type(argument));
             }
+            if (FUNCTION_RVALUE_QUALIFIED(type) && !is_assignment) {
+                check_borrow_route(argument, location, state);
+            }
             return;
         }
         check_known_content(decl, field, callee, location, state);
@@ -3915,6 +3995,10 @@ private:
         }
         if (is_init && stripped_target != NULL_TREE && VAR_P(stripped_target)) {
             note_given_back_alias(stripped_target, value, state);
+            tree reference_type = TREE_TYPE(stripped_target);
+            if (reference_type != NULL_TREE && TYPE_REF_P(reference_type) && !TYPE_REF_IS_RVALUE(reference_type)) {
+                reference_initial_[stripped_target] = value;
+            }
         }
         tree tracked_target =
             stripped_target != NULL_TREE && slot_of_.count(stripped_target) != 0 ? stripped_target : NULL_TREE;
@@ -3972,6 +4056,9 @@ private:
         } else if (source != NULL_TREE && source != tracked_target && (saw_rvalue || is_linear_target)
                    && !is_lent_borrow(source, saw_rvalue, target_type)) {
             consume(source, field, state, location);
+        } else if (source == NULL_TREE && target_type != NULL_TREE && !TYPE_REF_P(target_type)
+                   && !TYPE_PTR_P(target_type)) {
+            check_borrow_route(value, location, state);
         }
         if (tracked_target != NULL_TREE && state.is_reachable) {
             if (is_init) {
@@ -3996,6 +4083,355 @@ private:
     bool is_lent_borrow(tree source, bool saw_rvalue, tree target_type) const {
         return !saw_rvalue && target_type != NULL_TREE && TYPE_REF_P(target_type) && !TYPE_REF_IS_RVALUE(target_type)
             && slots_[slot_of_.at(source)].is_lent;
+    }
+
+    // The moves through a borrow: true when INITIAL, the initializer of a
+    // local reference, gives the address of a temporary or of the hidden
+    // variable of one.
+    static bool binds_temporary(tree initial) {
+        tree node = initial;
+        bool saw_address = false;
+        for (int depth = 0; node != NULL_TREE && node != error_mark_node && depth < kTypeDepth; ++depth) {
+            node = tree_strip_any_location_wrapper(node);
+            switch (TREE_CODE(node)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case CLEANUP_POINT_EXPR:
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case COMPOUND_EXPR:
+                    node = TREE_OPERAND(node, 1);
+                    continue;
+                case ADDR_EXPR:
+                    saw_address = true;
+                    node = TREE_OPERAND(node, 0);
+                    continue;
+                case TARGET_EXPR:
+                    return true;
+                case VAR_DECL:
+                    return saw_address && DECL_ARTIFICIAL(node) && !TREE_STATIC(node) && !DECL_DECOMPOSITION_P(node)
+                        && !DECL_HAS_VALUE_EXPR_P(node);
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    // The moves through a borrow: true when CALL calls a storage door of the
+    // base (moves_own_storage) on the object of this function.  A member door
+    // needs an object that is the object parameter or a member of it, as
+    // slot_.payload_() of an Option.  A static door needs a caller that is a
+    // member of the same class, as the steps of a factory that read their
+    // own slots.  A door on another object names a place of another frame.
+    bool is_own_storage_call(tree call, tree callee) const {
+        if (!moves_own_storage(callee)) {
+            return false;
+        }
+        bool const is_member = TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE || DECL_XOBJ_MEMBER_FUNCTION_P(callee);
+        if (!is_member) {
+            tree scope = DECL_CONTEXT(callee);
+            tree own_scope = DECL_CONTEXT(function_);
+            return scope != NULL_TREE && own_scope != NULL_TREE && TYPE_P(scope) && TYPE_P(own_scope)
+                && TYPE_MAIN_VARIANT(scope) == TYPE_MAIN_VARIANT(own_scope);
+        }
+        tree object = call_expr_nargs(call) > 0 ? CALL_EXPR_ARG(call, 0) : NULL_TREE;
+        for (int depth = 0; object != NULL_TREE && depth < kTypeDepth; ++depth) {
+            object = tree_strip_any_location_wrapper(object);
+            switch (TREE_CODE(object)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case VIEW_CONVERT_EXPR:
+                case ADDR_EXPR:
+                case INDIRECT_REF:
+                case COMPONENT_REF:
+                    object = TREE_OPERAND(object, 0);
+                    continue;
+                case PARM_DECL:
+                    return is_object_parameter(object);
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    // The moves through a borrow: the text of a dereference of POINTER, which
+    // names a place of another frame, or an empty text when the walk reads
+    // on: POINTER is the object parameter or an address, a reference that
+    // the front end converts through a pointer type, or a pointer that a
+    // storage door of the base gives.  An index on a pointer names a place
+    // of the same storage as the pointer.
+    std::string dereferenced_place(tree pointer) const {
+        tree stripped = tree_strip_nop_conversions(tree_strip_any_location_wrapper(pointer));
+        for (int depth = 0; TREE_CODE(stripped) == POINTER_PLUS_EXPR && depth < kTypeDepth; ++depth) {
+            stripped = tree_strip_nop_conversions(tree_strip_any_location_wrapper(TREE_OPERAND(stripped, 0)));
+        }
+        tree stripped_type = TREE_TYPE(stripped);
+        bool const is_object = TREE_CODE(stripped) == PARM_DECL && is_object_parameter(stripped);
+        if (is_object || TREE_CODE(stripped) == ADDR_EXPR || stripped_type == NULL_TREE || !TYPE_PTR_P(stripped_type)) {
+            return std::string{};
+        }
+        tree named = TREE_CODE(stripped) == COMPONENT_REF ? TREE_OPERAND(stripped, 1) : stripped;
+        if (TREE_CODE(named) == CALL_EXPR) {
+            tree called = cp_get_callee_fndecl_nofold(named);
+            if (is_own_storage_call(named, called)) {
+                return std::string{};
+            }
+            return "*" + (called != NULL_TREE ? simple_name(called) : std::string{"call"}) + "()";
+        }
+        return "*" + (DECL_P(named) ? simple_name(named) : std::string{"pointer"});
+    }
+
+    // The moves through a borrow: the text of the place that VALUE moves a
+    // linear value out of, when no frame of this function owns that place,
+    // or an empty text.  The walk goes from VALUE to the object that holds
+    // the place, through the casts, std::move, a reference helper, a member,
+    // an element, a binding of a structured binding, a local lvalue reference
+    // to its initializer, and a call that gives a reference to its object or
+    // to its first argument that refers to a linear class.  Complexity: at
+    // most kTypeDepth steps.
+    std::string borrowed_place(tree value) const {
+        bool saw_rvalue = false;
+        bool is_behind_borrow = false;
+        std::string place;
+        for (int depth = 0; value != NULL_TREE && depth < kTypeDepth; ++depth) {
+            value = tree_strip_any_location_wrapper(unfolded(value, NULL_TREE));
+            switch (TREE_CODE(value)) {
+                case NOP_EXPR:
+                case CONVERT_EXPR:
+                case NON_LVALUE_EXPR:
+                case VIEW_CONVERT_EXPR:
+                case IMPLICIT_CONV_EXPR:
+                case STATIC_CAST_EXPR: {
+                    tree type = TREE_TYPE(value);
+                    if (type != NULL_TREE && TYPE_REF_P(type) && TYPE_REF_IS_RVALUE(type)) {
+                        saw_rvalue = true;
+                    }
+                    // A conversion of a pointer to a reference is a hidden
+                    // dereference, such as the fold of &*pointer.
+                    tree operand = TREE_OPERAND(value, 0);
+                    bool const is_dereference = type != NULL_TREE && TYPE_REF_P(type) && TREE_TYPE(operand) != NULL_TREE
+                                             && TYPE_PTR_P(TREE_TYPE(operand));
+                    std::string const pointed = is_dereference ? dereferenced_place(operand) : std::string{};
+                    if (!pointed.empty()) {
+                        return saw_rvalue ? (place.empty() ? pointed : place) : std::string{};
+                    }
+                    value = operand;
+                    continue;
+                }
+                case INDIRECT_REF: {
+                    tree pointer = TREE_OPERAND(value, 0);
+                    bool const is_pointer = TREE_TYPE(pointer) != NULL_TREE && TYPE_PTR_P(TREE_TYPE(pointer));
+                    std::string const pointed = is_pointer ? dereferenced_place(pointer) : std::string{};
+                    if (!pointed.empty()) {
+                        return saw_rvalue ? (place.empty() ? pointed : place) : std::string{};
+                    }
+                    value = pointer;
+                    continue;
+                }
+                case ADDR_EXPR:
+                case CLEANUP_POINT_EXPR:
+                case SAVE_EXPR:
+                case PAREN_EXPR:
+                    value = TREE_OPERAND(value, 0);
+                    continue;
+                case COMPOUND_EXPR: {
+                    bool is_empty_argument =
+                        TREE_CODE(tree_strip_any_location_wrapper(TREE_OPERAND(value, 1))) == EMPTY_CLASS_EXPR;
+                    value = TREE_OPERAND(value, is_empty_argument ? 0 : 1);
+                    continue;
+                }
+                case TARGET_EXPR:
+                    value = TARGET_EXPR_INITIAL(value);
+                    continue;
+                case COMPONENT_REF: {
+                    tree member = TREE_OPERAND(value, 1);
+                    if (place.empty() && TREE_CODE(member) == FIELD_DECL && !DECL_FIELD_IS_BASE(member)) {
+                        place = simple_name(member);
+                    }
+                    value = TREE_OPERAND(value, 0);
+                    continue;
+                }
+                case ARRAY_REF:
+                    if (place.empty()) {
+                        place = "element";
+                    }
+                    value = TREE_OPERAND(value, 0);
+                    continue;
+                case CALL_EXPR: {
+                    tree callee = cp_get_callee_fndecl_nofold(value);
+                    if (is_std_move_cast(callee) && call_expr_nargs(value) >= 1) {
+                        tree result = TREE_TYPE(value);
+                        saw_rvalue = saw_rvalue || DECL_NAME(callee) != linear_names.forward
+                                  || (result != NULL_TREE && TYPE_REF_P(result) && TYPE_REF_IS_RVALUE(result));
+                        value = CALL_EXPR_ARG(value, 0);
+                        continue;
+                    }
+                    int const forwarded = forwarded_parameter_index(callee);
+                    if (forwarded != kNoParameter && forwarded < call_expr_nargs(value)) {
+                        value = CALL_EXPR_ARG(value, forwarded);
+                        continue;
+                    }
+                    // A call that gives a value gives a temporary.  A storage
+                    // door of the base gives a place that the base owns.
+                    tree result = TREE_TYPE(value);
+                    if (result == NULL_TREE || !TYPE_REF_P(result)) {
+                        return std::string{};
+                    }
+                    saw_rvalue = saw_rvalue || TYPE_REF_IS_RVALUE(result);
+                    if (!saw_rvalue || is_own_storage_call(value, callee)) {
+                        return std::string{};
+                    }
+                    is_behind_borrow = true;
+                    if (place.empty()) {
+                        place = (callee != NULL_TREE ? simple_name(callee) : std::string{"call"}) + "()";
+                    }
+                    tree next = referred_argument(value, callee);
+                    // A class that holds no linear part, such as a Ref,
+                    // refers to a place of another frame.
+                    if (next == NULL_TREE || !is_linear_type(TREE_TYPE(TREE_TYPE(next)))) {
+                        return place;
+                    }
+                    value = next;
+                    continue;
+                }
+                case VAR_DECL:
+                case PARM_DECL: {
+                    if (!saw_rvalue) {
+                        return std::string{};
+                    }
+                    // A binding of a structured binding names a part of its
+                    // hidden object.  Each other proxy is a capture.
+                    if (DECL_HAS_VALUE_EXPR_P(value)) {
+                        if (VAR_P(value) && DECL_DECOMPOSITION_P(value) && !DECL_DECOMP_IS_BASE(value)) {
+                            value = DECL_VALUE_EXPR(value);
+                            continue;
+                        }
+                        return std::string{};
+                    }
+                    if (place.empty()) {
+                        place = simple_name(value);
+                    }
+                    if (VAR_P(value)) {
+                        tree initial = local_reference_initial(value);
+                        if (initial != NULL_TREE) {
+                            is_behind_borrow = true;
+                            value = initial;
+                            continue;
+                        }
+                    }
+                    return is_borrowed_root(value, is_behind_borrow) ? place : std::string{};
+                }
+                default:
+                    return std::string{};
+            }
+        }
+        return std::string{};
+    }
+
+    // The moves through a borrow: the argument of CALL that the reference of
+    // its result names: the object of a member function, or the first
+    // argument of a free function that refers to a class.
+    static tree referred_argument(tree call, tree callee) {
+        bool const is_member =
+            callee != NULL_TREE && (TREE_CODE(TREE_TYPE(callee)) == METHOD_TYPE || DECL_XOBJ_MEMBER_FUNCTION_P(callee));
+        for (int index = 0; index < call_expr_nargs(call); ++index) {
+            tree argument = CALL_EXPR_ARG(call, index);
+            tree argument_type = TREE_TYPE(argument);
+            bool const refers = argument_type != NULL_TREE && (TYPE_REF_P(argument_type) || TYPE_PTR_P(argument_type))
+                             && CLASS_TYPE_P(TREE_TYPE(argument_type));
+            if (refers) {
+                return argument;
+            }
+            if (is_member) {
+                return NULL_TREE;
+            }
+        }
+        return NULL_TREE;
+    }
+
+    // The moves through a borrow: the initializer of the local lvalue
+    // reference LOCAL that the walk read, or null.  A local by value, a local
+    // rvalue reference and a reference that extends a temporary own their
+    // object, so they give null.
+    tree local_reference_initial(tree local) const {
+        tree type = TREE_TYPE(local);
+        if (type == NULL_TREE || !TYPE_REF_P(type) || TYPE_REF_IS_RVALUE(type) || TREE_STATIC(local)
+            || DECL_EXTERNAL(local)) {
+            return NULL_TREE;
+        }
+        auto known = reference_initial_.find(local);
+        if (known == reference_initial_.end() || binds_temporary(known->second)) {
+            return NULL_TREE;
+        }
+        return known->second;
+    }
+
+    // The moves through a borrow: true when no frame of this function owns
+    // ROOT, the object at the end of the walk.  The object of a lambda, of a
+    // constructor, of a destructor and of a member function && is owned, and
+    // so is an explicit object parameter by value or by an rvalue reference.
+    // A parameter by value or by an rvalue reference is owned, and so is a
+    // local by value or by an rvalue reference.  A tracked object is owned
+    // unless it is lent, or the walk reached it behind a call or a local
+    // reference (IS_BEHIND_BORROW): the rule consumes no part of the object
+    // for such a move, so a second move would give a second value.
+    bool is_borrowed_root(tree root, bool is_behind_borrow) const {
+        if (slot_of_.count(root) != 0 || referent_of_.count(root) != 0) {
+            auto referent = referent_of_.find(root);
+            tree object = referent != referent_of_.end() ? referent->second : root;
+            bool const is_lent = slot_of_.count(object) != 0 && slots_[slot_of_.at(object)].is_lent;
+            return is_behind_borrow || is_lent;
+        }
+        tree type = TREE_TYPE(root);
+        bool const is_reference = type != NULL_TREE && TYPE_REF_P(type);
+        bool const is_given_up = !is_reference || TYPE_REF_IS_RVALUE(type);
+        if (TREE_CODE(root) == PARM_DECL && is_object_parameter(root)) {
+            bool const is_owned_object =
+                LAMBDA_FUNCTION_P(function_) || DECL_CONSTRUCTOR_P(function_) || DECL_DESTRUCTOR_P(function_)
+                || (DECL_XOBJ_MEMBER_FUNCTION_P(function_) && is_given_up)
+                || (DECL_IOBJ_MEMBER_FUNCTION_P(function_) && FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function_)));
+            return !is_owned_object;
+        }
+        if (VAR_P(root) && (TREE_STATIC(root) || DECL_EXTERNAL(root) || DECL_THREAD_LOCAL_P(root))) {
+            return true;
+        }
+        if (!is_given_up && TREE_CODE(root) == VAR_DECL && local_reference_initial(root) == NULL_TREE) {
+            // A local reference that extends a temporary owns it.  One whose
+            // initializer the walk did not read names a place of another
+            // frame.
+            auto known = reference_initial_.find(root);
+            return known == reference_initial_.end() || !binds_temporary(known->second);
+        }
+        return !is_given_up;
+    }
+
+    // The moves through a borrow: at a consume of VALUE that names no tracked
+    // object, a move of a linear lvalue out of a place that no frame of this
+    // function owns gives the kind borrow-move-out (borrowed_place).  A
+    // transfer function and a function with the annotation moves_own_storage
+    // give none, and the body of a door gives none (the doors).
+    void check_borrow_route(tree value, location_t location, const FlowState& state) {
+        if (value == NULL_TREE || !state.is_reachable || purpose_ == WalkPurpose::summary || is_exempt_function()
+            || moves_own_storage(function_)) {
+            return;
+        }
+        tree type = TREE_TYPE(value);
+        if (type != NULL_TREE && (TYPE_REF_P(type) || TYPE_PTR_P(type))) {
+            type = TREE_TYPE(type);
+        }
+        if (type == NULL_TREE || !is_linear_type(type)) {
+            return;
+        }
+        std::string const place = borrowed_place(value);
+        if (place.empty()) {
+            return;
+        }
+        add_pending(Kind::linear_borrow_move_out, location,
+                    function_text(function_) + ": " + place + " (" + linear_type_text(type) + ")");
     }
 
     void walk_constructor(tree node, FlowState& state) {
@@ -4061,6 +4497,8 @@ private:
             tree source = strip_to_tracked(value, saw_rvalue, &source_field);
             if (source != NULL_TREE && (saw_rvalue || is_linear_type(value_type))) {
                 consume(source, source_field, state, location_or(value, location_or(node, function_location())));
+            } else if (source == NULL_TREE && !TYPE_REF_P(value_type)) {
+                check_borrow_route(value, location_or(value, location_or(node, function_location())), state);
             }
         }
     }
@@ -5668,7 +6106,7 @@ tree walk_shapes(tree* node_pointer, int* walk_subtrees, void* data) {
             break;
     }
     if ((EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) && TREE_TYPE(node) != NULL_TREE
-        && is_linear_type(TREE_TYPE(node))) {
+        && (is_linear_type(TREE_TYPE(node)) || is_linear_move_type(TREE_TYPE(node)))) {
         walk.has_linear = true;
     }
     if (is_move_assignment_call(node) || calls_with_moving_closure(node)) {
@@ -5728,7 +6166,7 @@ tree find_linear(tree* node_pointer, int* walk_subtrees, void*) {
         }
     }
     if ((EXPR_P(node) || TREE_CODE(node) == CONSTRUCTOR) && TREE_TYPE(node) != NULL_TREE
-        && is_linear_type(TREE_TYPE(node))) {
+        && (is_linear_type(TREE_TYPE(node)) || is_linear_move_type(TREE_TYPE(node)))) {
         return node;
     }
     if (is_move_assignment_call(node) || calls_with_moving_closure(node)) {
@@ -6529,6 +6967,7 @@ void register_linear(const char* plugin_name, bool checks_must_consume, bool che
     linear_names.needs_full = get_identifier("needs_full");
     linear_names.needs_empty = get_identifier("needs_empty");
     linear_names.once_door = get_identifier("once_door");
+    linear_names.moves_own_storage = get_identifier("moves_own_storage");
     if (checks_must_consume) {
         register_callback(plugin_name, PLUGIN_FOLDED_INITIALIZER, on_folded_initializer, nullptr);
         register_callback(plugin_name, PLUGIN_EMPTY_CLASS_ASSIGNMENT, on_empty_class_assignment, nullptr);
