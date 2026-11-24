@@ -93,6 +93,22 @@ int main() {
         CRUCIBLE_TEST_ASSERT(kTest, decoder.complete());
         auto decoded = decoder.extract_decoded().expect("the decoder is complete");
         CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(payload.view(), decoded));
+
+        // The copy of the source bytes into the run of a frame gives the same
+        // bytes.  A run of another count gives InvalidOutputSize and writes
+        // nothing.
+        Bytes<payload.size()> copied{};
+        bool const is_copied =
+            copied.with_mut([&decoder](auto run) noexcept { return decoder.extract_decoded(std::move(run)).is_ok(); });
+        CRUCIBLE_TEST_ASSERT(kTest, is_copied && ::fixy::equal(payload.view(), copied.view()));
+        Bytes<payload.size() + 1> longer{};
+        bool const is_refused = longer.with_mut([&decoder](auto run) noexcept {
+            return decoder.extract_decoded(std::move(run))
+                .match([](::fixy::Unit) noexcept { return false; },
+                       [](ci::FountainError error) noexcept { return error == ci::FountainError::InvalidOutputSize; });
+        });
+        Bytes<payload.size() + 1> const untouched{};
+        CRUCIBLE_TEST_ASSERT(kTest, is_refused && ::fixy::equal(untouched.view(), longer.view()));
     }
 
     {

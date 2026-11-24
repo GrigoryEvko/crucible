@@ -402,16 +402,22 @@ public:
         return decoded_.view().window(0, source_bytes_.value()).expect("the source bytes fit in the decoded symbols");
     }
 
+    // Copies the decoded source bytes into the run of a frame.  The copy
+    // takes the ViewMut of the frame by move, so it is the one writer of the
+    // run.  A run of another count gives InvalidOutputSize and writes nothing.
+    template <class Brand, std::size_t Extent>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FountainError>
-    extract_decoded(::fixy::View<std::byte> output) const noexcept {
+    extract_decoded(::fixy::ViewMut<std::byte, Brand, Extent> output) const noexcept {
         if (!complete()) {
             return ::fixy::err(FountainError::DecodeIncomplete);
         }
-        if (output.size() != source_bytes_.value()) {
+        const std::size_t count = output.size();
+        if (count != source_bytes_.value()) {
             return ::fixy::err(FountainError::InvalidOutputSize);
         }
-        ::fixy::copy(output, decoded_.view().window(0, output.size()).expect("the output fits in the decoded symbols"))
-            .expect("the two Views have the count of the source bytes");
+        ::fixy::copy(std::move(output),
+                     decoded_.view().window(0, count).expect("the output fits in the decoded symbols"))
+            .expect("the run and the View have the count of the source bytes");
         return ::fixy::Unit{};
     }
 
