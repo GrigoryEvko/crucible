@@ -244,7 +244,7 @@ static void test_t10_codec_round_trip() {
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     ASSERT_TRUE(written.is_ok());
 
@@ -268,19 +268,19 @@ static void test_t11_cross_row_on_wire_distinct() {
 
     auto w0 = buf_r0.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), ::fixy::View<std::byte const>{});
+            local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
     auto wb = buf_rbg.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBg, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), ::fixy::View<std::byte const>{});
+            local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
     auto wi = buf_rio.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RIO, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), ::fixy::View<std::byte const>{});
+            local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
     auto wbi = buf_rbgio.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), ::fixy::View<std::byte const>{});
+            local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
     ASSERT_TRUE(w0.is_ok());
     ASSERT_TRUE(wb.is_ok());
@@ -327,7 +327,7 @@ static void test_t15_payload_aliases_input() {
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     ASSERT_TRUE(written.is_ok());
 
@@ -356,7 +356,7 @@ static void test_t16_content_addressed_payload_elision() {
     Bytes<kHeader + 16> full_buf{};
     auto full_written = full_buf.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), Payload{body.view()});
+            local_cipher_permission(), test_hash_key(), std::move(run), Payload{body.view()});
     });
     ASSERT_TRUE(full_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(full_written) == fed::FEDERATION_HEADER_BYTES + body.size());
@@ -364,7 +364,7 @@ static void test_t16_content_addressed_payload_elision() {
     Bytes<kHeader + 16> hash_only_buf{};
     auto hash_only_written = hash_only_buf.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), Payload::hash_only());
+            local_cipher_permission(), test_hash_key(), std::move(run), Payload::hash_only());
     });
     ASSERT_TRUE(hash_only_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(hash_only_written) == fed::FEDERATION_HEADER_BYTES);
@@ -388,7 +388,7 @@ static void test_wire_byte_offset_stability() {
     Bytes<kHeader> buf{};
     auto written = buf.with_mut([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), ::fixy::View<std::byte const>{});
+            local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
     ASSERT_TRUE(written.is_ok());
     ASSERT_TRUE(value_of(written) == fed::FEDERATION_HEADER_BYTES);  // empty payload
@@ -420,7 +420,7 @@ static void test_cross_universe_cardinality_rejection() {
 
     auto written = buf.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     ASSERT_TRUE(written.is_ok());
 
@@ -453,11 +453,11 @@ static void test_row_permutation_byte_invariance() {
 
     auto wa = buf_bgio.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     auto wb = buf_iobg.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RIOBg, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
@@ -478,7 +478,7 @@ static void test_saturation_row_round_trip() {
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&body](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
-            local_cipher_permission(), test_hash_key(), run.view(), body.view());
+            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
     });
     ASSERT_TRUE(written.is_ok());
 

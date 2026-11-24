@@ -38,7 +38,7 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
         ::foundation::core::FixedArray<std::byte, fed::FEDERATION_HEADER_BYTES + 16> entry{};
         auto written = entry.with_mut([&body, count](auto run) noexcept {
             return fed::serialize_federation_entry(
-                run.view(), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
+                std::move(run), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
                 ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
         });
         const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
@@ -80,7 +80,7 @@ inline void run_federation(::fixy::View<std::byte const> bytes) noexcept {
     ::fixy::HeapArray<std::byte> blank =
         ::fixy::mint_heap_array(test_alloc(), fed::FEDERATION_HEADER_BYTES + view.payload.size(), std::byte{0});
     auto [written, out] = ::fixy::with_mut(std::move(blank), [&key, &view](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, view.payload);
+        return fed::serialize_federation_entry(std::move(run), key, view.payload);
     });
     CRUCIBLE_FUZZ_CLAIM("federation", written.is_ok());
     CRUCIBLE_FUZZ_CLAIM("federation", std::move(written).expect("an accepted entry writes back") == out.size());

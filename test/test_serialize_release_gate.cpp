@@ -34,7 +34,9 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 
 // Returns the number of bytes written, or zero if the region could not be
 // built.  The op, its arrays and the region are in an arena of the call.
-[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg, ::fixy::View<std::byte> out_buf) {
+template <class Brand, std::size_t Extent>
+[[nodiscard]] size_t build_and_serialize(::foundation::effects::Test bg,
+                                         ::fixy::ViewMut<std::byte, Brand, Extent> out_buf) {
     ::fixy::BumpArena<crucible::DagArena> dag_arena =
         ::fixy::mint_bump_arena<crucible::DagArena>(Bytes{size_t{1} << 16});
     const auto ops_run = dag_arena.array<crucible::TraceEntry>(bg.alloc, 1, crucible::TraceEntry{});
@@ -61,7 +63,7 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
                   ::fixy::check::run_of(kTest, bg.alloc, dag_arena, crucible::SlotId{}));
 
     const crucible::DagRef<crucible::RegionNode> region = crucible::make_region(bg.alloc, dag_arena, ops_run);
-    return crucible::serialize_region(::fixy::to(*region), out_buf);
+    return crucible::serialize_region(::fixy::to(*region), std::move(out_buf));
 }
 
 // The wire layout, little-endian, restated here as this test's ground
@@ -115,7 +117,7 @@ constexpr size_t kMetaFlags = kMetaGrad + 1;  // flags byte
     auto bg = ::foundation::effects::testing::test();
 
     auto [n, buf] = ::fixy::with_mut(::fixy::mint_heap_array(bg.alloc, 65536, std::byte{0}),
-                                     [bg](auto run) noexcept { return build_and_serialize(bg, run.view()); });
+                                     [bg](auto run) noexcept { return build_and_serialize(bg, std::move(run)); });
     if (n == 0) {
         ::fixy::report(::fixy::Sink::Err, "serialize failed\n");
         return 1;

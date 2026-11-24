@@ -109,26 +109,52 @@ static constexpr uint32_t CDAG_MAX_BRANCH_ARMS = 1u << 16;
 
 namespace detail_ser {
 
-// The writer of an image.  It writes each value as its bytes, the low byte
-// first, which is the layout that the reader reads.  A write past the end of
-// the image clears has_room, and the serialize function then gives zero.
+// The writer of an image into the run of a frame.  It writes each value as
+// its bytes, the low byte first, which is the layout that the reader reads.
+// The writer holds the ViewMut of the frame, so it is the one writer of the
+// run, and the brand keeps it in the frame body.  A write past the end of the
+// image clears has_room, and the serialize function then gives zero.
+template <class Brand, std::size_t Extent>
 struct Writer {
-    ::fixy::View<std::byte> image{};
+    ::fixy::ViewMut<std::byte, Brand, Extent> image;
     size_t pos = 0;
     bool has_room = true;
+
+    // Gives write the Count bytes at pos, and moves pos past them.  A
+    // reborrow lends the run to the window, and the run comes back to image
+    // after the write.  When the bytes do not fit, the function clears
+    // has_room and writes nothing.  Complexity: O(1), and the cost of write.
+    template <size_t Count, class Write>
+    void write_window(Write const& write) noexcept {
+        const size_t at = pos;
+        bool is_written = false;
+        image = ::fixy::reborrow(std::move(image), [at, &write, &is_written](auto lent) noexcept {
+            ::fixy::take_window<Count>(std::move(lent), at)
+                .match(
+                    [&write, &is_written](auto window) noexcept {
+                        write(std::move(window));
+                        is_written = true;
+                    },
+                    []() noexcept {});
+        });
+        if (is_written) {
+            pos += Count;
+        } else {
+            has_room = false;
+        }
+    }
 
     // One unsigned word as its sizeof(Word) bytes.  Complexity:
     // O(sizeof(Word)).
     template <::fixy::UnsignedInteger Word>
-    void write_word(Word word) {
-        image.template window<sizeof(Word)>(pos).match(
-            [this, word](::fixy::View<std::byte, sizeof(Word)> bytes) noexcept {
-                for (const auto index : bytes.indices()) {
-                    bytes.at(index) = static_cast<std::byte>(static_cast<uint8_t>(word >> (8 * index.raw())));
-                }
-                pos += sizeof(Word);
-            },
-            [this] noexcept { has_room = false; });
+    void write_word(Word word) noexcept {
+        write_window<sizeof(Word)>([word](auto bytes) noexcept {
+            size_t shift = 0;
+            for (std::byte& slot : bytes) {
+                slot = static_cast<std::byte>(static_cast<uint8_t>(word >> shift));
+                shift += 8;
+            }
+        });
     }
 
     // An integer, a bool, an enumerator or a float.  An enumerator gives its
@@ -161,14 +187,9 @@ struct Writer {
     // declaration order, the low byte first, with no padding byte.
     // Complexity: O(encoded_size_v<T>).
     template <::fixy::Encodable T>
-    void write_image(T const& value) {
-        constexpr size_t bytes = ::fixy::encoded_size_v<T>;
-        image.template window<bytes>(pos).match(
-            [this, &value](::fixy::View<std::byte, bytes> window) noexcept {
-                ::fixy::encode(value, window);
-                pos += bytes;
-            },
-            [this] noexcept { has_room = false; });
+    void write_image(T const& value) noexcept {
+        write_window<::fixy::encoded_size_v<T>>(
+            [&value](auto window) noexcept { ::fixy::encode(value, std::move(window)); });
     }
 };
 
@@ -338,7 +359,10 @@ struct Reader {
 // The data pointer, the storage generation and the hash of the grad_fn are
 // local parts of a TensorMeta, so the image holds no byte of them, and no
 // image can carry an address or an identity of one process to another.
-inline void write_meta(Writer& w, const TensorMeta& m) { w.write_image(m); }
+template <class Brand, std::size_t Extent>
+inline void write_meta(Writer<Brand, Extent>& w, const TensorMeta& m) {
+    w.write_image(m);
+}
 
 // The reader decodes the image as an UncheckedTensorMeta, whose image has the
 // same bytes, and decode_tensor_meta makes the TensorMeta of it.  That door
@@ -369,11 +393,13 @@ inline constexpr size_t kTensorSlotWireBytes = ::fixy::encoded_size_v<TensorSlot
 // The zero bytes between the node kind and the merkle hash of a header.
 inline constexpr size_t kHeaderPadBytes = 7;
 
-inline void write_header(Writer& w, TraceNodeKind kind, MerkleHash merkle_hash, ContentHash content_hash) {
+template <class Brand, std::size_t Extent>
+inline void write_header(Writer<Brand, Extent>& w, TraceNodeKind kind, MerkleHash merkle_hash,
+                         ContentHash content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION.value());
     w.w(std::to_underlying(kind));
-    w.write_zero_pad<kHeaderPadBytes>();
+    w.template write_zero_pad<kHeaderPadBytes>();
     w.w(merkle_hash.raw());
     w.w(content_hash.raw());
 }
@@ -487,10 +513,13 @@ concept SerializedNode = std::same_as<std::remove_const_t<Node>, Kind>;
 
 namespace detail_ser {
 
-// The body of serialize_region.  It is no template, so the callers of each
-// brand share one copy of it.
-CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& region, ::fixy::View<std::byte> image) {
-    Writer w{.image = image};
+// The body of serialize_region.  It takes the ViewMut of the frame, so it is
+// a template on the brand of the frame, and each frame of a caller makes one
+// copy of it.
+template <class Brand, std::size_t Extent>
+CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& region,
+                                                             ::fixy::ViewMut<std::byte, Brand, Extent> image) {
+    Writer<Brand, Extent> w{.image = std::move(image)};
 
     write_header(w, TraceNodeKind::REGION, region.merkle_hash, region.content_hash);
 
@@ -512,7 +541,7 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
         w.w(plan.num_external);
         w.w(plan.device_type);
         w.w(plan.device_idx);
-        w.write_zero_pad<sizeof(plan.pad0)>();
+        w.template write_zero_pad<sizeof(plan.pad0)>();
         w.w(plan.device_capability);
         w.w(plan.rank);
         w.w(plan.world_size);
@@ -567,8 +596,8 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
     // The checksum of each byte before it is the last field (the checksum of
     // a region image).
     if (w.has_room) {
-        const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> checksum =
-            region_checksum(image.window(0, w.pos).expect("the writer wrote inside its image"));
+        const ::fixy::FixedArray<std::byte, kRegionChecksumBytes> checksum = region_checksum(
+            ::fixy::View<const std::byte>{w.image.view()}.window(0, w.pos).expect("the writer wrote inside its image"));
         for (const std::byte byte : checksum) {
             w.write_word(static_cast<uint8_t>(byte));
         }
@@ -577,10 +606,13 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
     return w.has_room ? w.pos : 0;
 }
 
-// The body of serialize_branch.  It is no template, so the callers of each
-// brand share one copy of it.
-[[nodiscard]] inline size_t write_branch_image(const BranchNode& branch, ::fixy::View<std::byte> image) {
-    Writer w{.image = image};
+// The body of serialize_branch.  It takes the ViewMut of the frame, so it is
+// a template on the brand of the frame, and each frame of a caller makes one
+// copy of it.
+template <class Brand, std::size_t Extent>
+[[nodiscard]] inline size_t write_branch_image(const BranchNode& branch,
+                                               ::fixy::ViewMut<std::byte, Brand, Extent> image) {
+    Writer<Brand, Extent> w{.image = std::move(image)};
 
     // A branch node repurposes the header's content-hash field to hold the
     // merkle hash of the continuation, the suffix the arms merge back into.
@@ -606,14 +638,16 @@ CRUCIBLE_COLD [[nodiscard]] inline size_t write_region_image(const RegionNode& r
 
 }  // namespace detail_ser
 
-// Writes the image of the region into the first bytes of image.  Returns the
-// byte count written, or zero if image was too small.  Each entry of the
-// region carries its own tensor metadata, so the function reads no metadata
-// log.  The serialize reads the region only as const.
-template <class Region, ::foundation::brand::IsBrand Brand>
+// Writes the image of the region into the first bytes of the run of image,
+// the ViewMut of a frame.  Returns the byte count written, or zero if image
+// was too small.  Each entry of the region carries its own tensor metadata,
+// so the function reads no metadata log.  The serialize reads the region
+// only as const.
+template <class Region, ::foundation::brand::IsBrand Brand, class ImageBrand, std::size_t Extent>
     requires SerializedNode<Region, RegionNode>
-[[nodiscard]] inline size_t serialize_region(::fixy::Ref<Region, Brand> node, ::fixy::View<std::byte> image) {
-    return detail_ser::write_region_image(*node, image);
+[[nodiscard]] inline size_t serialize_region(::fixy::Ref<Region, Brand> node,
+                                             ::fixy::ViewMut<std::byte, ImageBrand, Extent> image) {
+    return detail_ser::write_region_image(*node, std::move(image));
 }
 
 // Gives the region of the image, or the reason that refused the image: a
@@ -904,13 +938,14 @@ deserialize_region(::foundation::effects::Alloc a, ::fixy::View<const std::byte>
     return checksum_fault(image, image.size() - kRegionChecksumBytes);
 }
 
-// Writes the image of the branch into the first bytes of image.  Returns the
-// byte count written, or zero if image was too small.  The serialize reads
-// the branch only as const.
-template <class Branch, ::foundation::brand::IsBrand Brand>
+// Writes the image of the branch into the first bytes of the run of image,
+// the ViewMut of a frame.  Returns the byte count written, or zero if image
+// was too small.  The serialize reads the branch only as const.
+template <class Branch, ::foundation::brand::IsBrand Brand, class ImageBrand, std::size_t Extent>
     requires SerializedNode<Branch, BranchNode>
-[[nodiscard]] inline size_t serialize_branch(::fixy::Ref<Branch, Brand> node, ::fixy::View<std::byte> image) {
-    return detail_ser::write_branch_image(*node, image);
+[[nodiscard]] inline size_t serialize_branch(::fixy::Ref<Branch, Brand> node,
+                                             ::fixy::ViewMut<std::byte, ImageBrand, Extent> image) {
+    return detail_ser::write_branch_image(*node, std::move(image));
 }
 
 // The resolver turns each persisted merkle hash back into a link to a node,

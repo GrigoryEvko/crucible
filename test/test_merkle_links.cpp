@@ -149,7 +149,7 @@ namespace {
     // target, and the image of the loaded branch writes zero for it.
     auto [written, image] =
         ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&branch](auto run) noexcept {
-            return crucible::serialize_branch(::fixy::to(branch), run.view());
+            return crucible::serialize_branch(::fixy::to(branch), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written > 0);
     crucible::BranchNode& loaded =
@@ -166,7 +166,7 @@ namespace {
 
     auto [written_again, image_again] =
         ::fixy::with_mut(::fixy::mint_heap_array(test.alloc, 4096, std::byte{0}), [&loaded](auto run) noexcept {
-            return crucible::serialize_branch(::fixy::to(loaded), run.view());
+            return crucible::serialize_branch(::fixy::to(loaded), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, written_again == written);
     // The hash of the second target is the last eight bytes of the image.
@@ -214,7 +214,7 @@ namespace {
     // collect_regions reads the region of each arm.
     ::foundation::core::FixedArray<crucible::RegionNode*, 4> collected{};
     CRUCIBLE_TEST_ASSERT(kTest, collected.with_mut([&branch](auto run) noexcept {
-        return crucible::collect_regions(branch, run.view());
+        return crucible::collect_regions(branch, run);
     }) == 2);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_merkle_hash(branch) == branch.merkle_hash);
 

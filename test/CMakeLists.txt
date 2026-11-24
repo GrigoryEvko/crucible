@@ -2292,6 +2292,12 @@ crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
 crucible_neg_compile_test(neg_deserialize_region_cross_tag
   "conversion from .Tagged<\\[...\\],fixy::tags::source::Loaded>. to non-scalar type .Tagged<\\[...\\],fixy::tags::source::External>. requested"
   "neg_deserialize_region_cross_tag.cpp:27")
+# The writer of an image holds the ViewMut of a frame, so its type names the
+# brand of the frame, and a body that returns it binds to the refused twin of
+# the frame door.
+crucible_neg_compile_test(neg_serialize_writer_leaves_its_frame
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of the frame")
 
 # kSchemaNameLenRange is the typed gate of a .crtrace schema-name
 # length, in_range<1, 65535>.  load_trace takes each length only through
@@ -4001,7 +4007,12 @@ crucible_neg_compile_test(neg_computation_cache_federation_non_fn
   "required for the satisfaction of .IsCacheableFunction<FnPtr>. .with FnPtr = 42.")
 crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
   "no matching function for call to .serialize_computation_cache_federation_entry<neg_payload, foundation::effects::Row<>, int>\\("
-  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, const FederationHashKey&, foundation::core::View<std::byte>")
+  "serialize_computation_cache_federation_entry\\(LocalCipherPermission<Brand>&, const FederationHashKey&, foundation::core::ViewMut<std::byte, OutBrand, OutExtent>")
+# serialize_federation_entry takes the ViewMut of a frame by value, so a call
+# with the named ViewMut of a body copies it, and the copy is deleted.
+crucible_neg_compile_test(neg_federation_entry_copies_a_named_view_mut
+  "use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
+  "initializing argument 1 of .* crucible::cipher::federation::serialize_federation_entry\\(foundation::core::ViewMut<std::byte, Brand, Extent>")
 
 # ─── The row gates of MetaLog and TraceRing ─────────────────────────
 # MetaLog::try_append_pure, TraceRing::try_append_pure and

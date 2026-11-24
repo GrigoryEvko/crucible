@@ -34,7 +34,7 @@ namespace crucible::fuzz::boundary {
     // The body takes the node by reference, and the serializer reads it as
     // const.
     const auto [written, image] = ::fixy::with_mut(std::move(blank), [&node = *branch](auto run) noexcept {
-        return serialize_branch(::fixy::to(node), run.view());
+        return serialize_branch(::fixy::to(node), std::move(run));
     });
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
@@ -80,7 +80,7 @@ inline void run_branch(::fixy::View<std::byte const> bytes) noexcept {
 
         ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 256, std::byte{0});
         const auto [written, image] = ::fixy::with_mut(std::move(blank), [&branch](auto run) noexcept {
-            return serialize_branch(::fixy::to(*branch), run.view());
+            return serialize_branch(::fixy::to(*branch), std::move(run));
         });
         CRUCIBLE_FUZZ_CLAIM("branch", written > 0);
         const ::fixy::Option<DagRef<BranchNode>> reloaded =

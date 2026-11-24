@@ -231,13 +231,14 @@ int main() {
 
     ::foundation::core::FixedArray<Hist::LogEncodedBucket, 2> partial_export{};
     const auto partial_result =
-        partial_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(run.view()); });
+        partial_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, partial_result.written == partial_export.size());
     CRUCIBLE_TEST_ASSERT(kTest, partial_result.required == nonzero);
     CRUCIBLE_TEST_ASSERT(kTest, !partial_result.complete());
 
     ::foundation::core::FixedArray<Hist::LogEncodedBucket, Hist::bucket_slots> full_export{};
-    const auto full_result = full_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(run.view()); });
+    const auto full_result =
+        full_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, full_result.complete());
     CRUCIBLE_TEST_ASSERT(kTest, full_result.written == nonzero);
     std::uint64_t serialized_count = 0;

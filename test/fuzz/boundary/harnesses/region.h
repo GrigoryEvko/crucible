@@ -132,8 +132,9 @@ inline constexpr ::fixy::Quantity<::fixy::unit::Byte, std::size_t> kRegionArenaB
 // The image of a region, as the writer writes it.
 [[nodiscard]] inline SeedBytes region_image(const RegionNode& region) noexcept {
     ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(test_alloc(), std::size_t{1} << 16, std::byte{0});
-    const auto [written, image] = ::fixy::with_mut(
-        std::move(blank), [&region](auto run) noexcept { return serialize_region(::fixy::to(region), run.view()); });
+    const auto [written, image] = ::fixy::with_mut(std::move(blank), [&region](auto run) noexcept {
+        return serialize_region(::fixy::to(region), std::move(run));
+    });
     return copy_seed(
         ::fixy::View<std::byte const>{image.view()}.window(0, written).expect("the writer writes inside its image"));
 }
@@ -202,7 +203,7 @@ inline void run_region(::fixy::View<std::byte const> bytes) noexcept {
         // region: the loader keeps every field the writer reads.
         ::fixy::HeapArray<std::byte> blank = ::fixy::mint_heap_array(alloc, input.size() + 4096, std::byte{0});
         const auto [written, image] = ::fixy::with_mut(std::move(blank), [&region](auto run) noexcept {
-            return serialize_region(::fixy::to(region), run.view());
+            return serialize_region(::fixy::to(region), std::move(run));
         });
         CRUCIBLE_FUZZ_CLAIM("region", written > 0);
         const ::fixy::Option<LoadedRegionNode> reloaded =

@@ -262,8 +262,11 @@ enum class FederationError : std::uint8_t {
 // too small, or a key it forgot to fill in, deserves an error it can
 // route, not a terminated process.
 
+// The entry goes into the run of out_buf, the ViewMut of a frame: the header
+// in the first bytes, and the payload after it.
+template <class Brand, std::size_t Extent>
 [[nodiscard]] inline ::fixy::Result<std::size_t, FederationError>
-serialize_federation_entry(::fixy::View<std::byte> out_buf, FederationKey const& key,
+serialize_federation_entry(::fixy::ViewMut<std::byte, Brand, Extent> out_buf, FederationKey const& key,
                            ::fixy::View<std::byte const> payload) noexcept {
     if (key.is_sentinel()) {
         return ::fixy::err(FederationError::SentinelKey);
@@ -292,14 +295,16 @@ serialize_federation_entry(::fixy::View<std::byte> out_buf, FederationKey const&
         .key = key,
         .reserved = 0,
     };
-    ::fixy::encode(
-        hdr, out_buf.window<FEDERATION_HEADER_BYTES>(0).expect("the size check puts the header inside the buffer"));
+    auto [header_bytes, rest] = ::fixy::split_at(std::move(out_buf), FEDERATION_HEADER_BYTES)
+                                    .expect("the size check puts the header inside the buffer");
+    ::fixy::encode(hdr, ::fixy::take_window<FEDERATION_HEADER_BYTES>(std::move(header_bytes), 0)
+                            .expect("the header part holds the header"));
 
     // An entry with no payload bytes is valid and meaningful. It
     // announces the key, and the receiver looks the artifact up in its
     // own store from the key.
     if (payload.size() != 0) {
-        ::fixy::copy(out_buf.window(FEDERATION_HEADER_BYTES, payload.size())
+        ::fixy::copy(::fixy::take_window(std::move(rest), 0, payload.size())
                          .expect("the size check puts the payload inside the buffer"),
                      payload)
             .expect("the window holds the count of the payload");

@@ -297,16 +297,17 @@ public:
         return emitted;
     }
 
-    // Writes each nonzero bucket that fits into out, in slot order, and
-    // counts each nonzero bucket.
-    SerializeResult serialize_log_into(::fixy::View<LogEncodedBucket> out) const noexcept {
+    // Writes each nonzero bucket that fits into the run of out, the ViewMut
+    // of a frame, in slot order, and counts each nonzero bucket.
+    template <class Brand, std::size_t Extent>
+    SerializeResult serialize_log_into(::fixy::ViewMut<LogEncodedBucket, Brand, Extent> out) const noexcept {
         SerializeResult result{.written = 0, .required = 0};
         for (auto const [index, cell] : counts_.enumerate()) {
             const std::uint64_t count = cell->load_acquire();
             if (count == 0) {
                 continue;
             }
-            out.get(result.written)
+            out.get_mut(result.written)
                 .match(
                     [&](auto slot) noexcept {
                         *slot = LogEncodedBucket{

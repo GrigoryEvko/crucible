@@ -802,7 +802,7 @@ ContentHash Cipher::store_(FileCtx const& file_ctx, OpenView const&, ContentAddr
     const size_t cap = estimate_serial_size(region).value();
     auto [n, image] =
         ::fixy::with_mut(::fixy::mint_heap_array(allocation_, cap, std::byte{0}),
-                         [&region](auto run) noexcept { return serialize_region(::fixy::to(region), run.view()); });
+                         [&region](auto run) noexcept { return serialize_region(::fixy::to(region), std::move(run)); });
     if (n == 0) return ContentHash{};
     const ::fixy::View<const std::byte> written =
         image.view().window(0, n).expect("the writer writes inside its image");
@@ -937,7 +937,7 @@ Cipher::PersistResult Cipher::persist_session_events_(FileCtx const& file_ctx, O
     auto [entry_written, encoded_entry] = ::fixy::with_mut(
         ::fixy::mint_heap_array(allocation, cipher::federation::FEDERATION_HEADER_BYTES + payload_bytes, std::byte{0}),
         [&key, &payload](auto run) noexcept {
-            return cipher::federation::serialize_federation_entry(run.view(), key, payload.view())
+            return cipher::federation::serialize_federation_entry(std::move(run), key, payload.view())
                 .map_err(
                     [](cipher::federation::FederationError) noexcept { return PersistRefusal::entry_encode_failed; });
         });

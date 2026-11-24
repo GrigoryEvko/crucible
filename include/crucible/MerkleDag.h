@@ -1315,17 +1315,23 @@ inline void recompute_merkle(TraceNode& node) {
 }
 
 // Writes the region of each node of the chain that starts at first, and of
-// the arms and the bodies on it, after the first count entries of out.
-// Returns the count of entries, at most the size of out.
-[[nodiscard]] inline uint32_t collect_regions(TraceNode& first, ::fixy::View<RegionNode*> out, uint32_t count = 0) {
+// the arms and the bodies on it, after the first count entries of out, the
+// ViewMut of a frame.  The walk recurses into the arms and the bodies, so it
+// takes out by reference.  Returns the count of entries, at most the size of
+// out.
+template <class Brand, std::size_t Extent>
+[[nodiscard]] inline uint32_t collect_regions(TraceNode& first, ::fixy::ViewMut<RegionNode*, Brand, Extent>& out,
+                                              uint32_t count = 0) {
     TraceLink walk = make_link(first);
     while (walk.is_some() && count < out.size()) {
         const DagRef<TraceNode> node = TraceLink{walk}.expect("the condition of the loop tests the link");
         switch (node->kind) {
-            case TraceNodeKind::REGION:
-                *out.get(count).expect("the count is below the size of out") = &*node->expect_region();
+            case TraceNodeKind::REGION: {
+                auto element = out.get_mut(count).expect("the count is below the size of out");
+                *element = &*node->expect_region();
                 ++count;
                 break;
+            }
             case TraceNodeKind::BRANCH: {
                 for (BranchNode::Arm& arm : node->expect_branch()->arms())
                     for (const DagRef<TraceNode>& target : arm.target())

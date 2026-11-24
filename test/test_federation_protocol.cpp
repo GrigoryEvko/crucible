@@ -209,7 +209,7 @@ static void test_round_trip_basic() {
 
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES + payload.size());
@@ -241,7 +241,7 @@ static void test_round_trip_empty_payload() {
 
     Bytes<kHeader> buf{};
     auto written = buf.with_mut(
-        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, kNoPayload); });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == fed::FEDERATION_HEADER_BYTES);  // header only
 
@@ -261,7 +261,7 @@ static void test_round_trip_empty_payload() {
 static void test_serialize_rejects_sentinel() {
     Bytes<kHeader> buf{};
     auto written = buf.with_mut([](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), fed::FederationKey::sentinel(), kNoPayload);
+        return fed::serialize_federation_entry(std::move(run), fed::FederationKey::sentinel(), kNoPayload);
     });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::SentinelKey);
@@ -279,7 +279,7 @@ static void test_serialize_rejects_zero() {
 
     Bytes<kHeader> buf{};
     auto written = buf.with_mut(
-        [&zero](auto run) noexcept { return fed::serialize_federation_entry(run.view(), zero, kNoPayload); });
+        [&zero](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), zero, kNoPayload); });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::ZeroKey);
 
@@ -294,15 +294,16 @@ static void test_serialize_rejects_undersized_buffer() {
 
     Bytes<kHeader + 8> buf{};  // 48 + 8 < 48 + 16
     auto written = buf.with_mut([&payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), HeaderSpec{}.key, payload.view());
     });
     ASSERT_TRUE(!written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(written) == fed::FederationError::OutputBufferTooSmall);
 
     // Smaller than the header alone.
     Bytes<16> tiny_buf{};
-    auto tiny_written = tiny_buf.with_mut(
-        [](auto run) noexcept { return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, kNoPayload); });
+    auto tiny_written = tiny_buf.with_mut([](auto run) noexcept {
+        return fed::serialize_federation_entry(std::move(run), HeaderSpec{}.key, kNoPayload);
+    });
     ASSERT_TRUE(!tiny_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(tiny_written) == fed::FederationError::OutputBufferTooSmall);
 
@@ -559,10 +560,10 @@ static void test_serialize_is_deterministic() {
     Bytes<kHeader + 16> buf_a{};
     Bytes<kHeader + 16> buf_b{};
     auto wa = buf_a.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     auto wb = buf_b.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
@@ -603,7 +604,7 @@ static void test_header_overload_agreement() {
     {
         Bytes<kHeader> buf{};
         auto written = buf.with_mut([](auto run) noexcept {
-            return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, kNoPayload);
+            return fed::serialize_federation_entry(std::move(run), HeaderSpec{}.key, kNoPayload);
         });
         ASSERT_TRUE(written.is_ok());
 
@@ -671,7 +672,7 @@ static void test_round_trip_full_byte_range() {
 
     Bytes<fed::FEDERATION_HEADER_BYTES + 256> buf{};
     auto written = buf.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     ASSERT_TRUE(written.is_ok());
 
@@ -691,7 +692,7 @@ static void test_view_payload_aliases_input() {
     const auto payload = bytes_of(1, 2, 3, 4, 5, 6, 7, 8);
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), HeaderSpec{}.key, payload.view());
     });
     ASSERT_TRUE(written.is_ok());
 
@@ -720,9 +721,9 @@ static void test_digest_on_wire() {
     Bytes<kHeader> buf_n{};
     Bytes<kHeader> buf_s{};
     auto wn = buf_n.with_mut(
-        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, kNoPayload); });
     auto ws = buf_s.with_mut(
-        [&swapped](auto run) noexcept { return fed::serialize_federation_entry(run.view(), swapped, kNoPayload); });
+        [&swapped](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), swapped, kNoPayload); });
     ASSERT_TRUE(wn.is_ok());
     ASSERT_TRUE(ws.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(wn) == value_of(ws));  // same byte count
@@ -769,7 +770,7 @@ static void test_codec_is_noexcept() {
     Bytes<kHeader> buf{};
     const fed::FederationKey key = HeaderSpec{}.key;
     buf.with_mut([&key](auto run) noexcept {
-        static_assert(noexcept(fed::serialize_federation_entry(run.view(), key, kNoPayload)));
+        static_assert(noexcept(fed::serialize_federation_entry(std::move(run), key, kNoPayload)));
     });
     static_assert(noexcept(fed::deserialize_federation_header(kNoPayload, std::uint16_t{6})));
     static_assert(noexcept(fed::deserialize_untrusted_federation_entry(kNoPayload, std::uint16_t{6})));
@@ -815,14 +816,14 @@ static void test_buffer_exactly_fits() {
 
     Bytes<kHeader + 16> buf{};  // 48 + 16, exactly
     auto written = buf.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 16);
 
     Bytes<kHeader + 15> short_buf{};
     auto rejected = short_buf.with_mut([&key, &payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), key, payload.view());
     });
     ASSERT_TRUE(!rejected.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, error_of(rejected) == fed::FederationError::OutputBufferTooSmall);
@@ -830,7 +831,7 @@ static void test_buffer_exactly_fits() {
     // The same boundary with no payload at all.
     Bytes<kHeader> tight_buf{};
     auto tight = tight_buf.with_mut(
-        [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+        [&key](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, kNoPayload); });
     ASSERT_TRUE(tight.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(tight) == kHeader);
 
@@ -847,7 +848,7 @@ static void test_extra_bytes_at_end() {
 
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut([&payload](auto run) noexcept {
-        return fed::serialize_federation_entry(run.view(), HeaderSpec{}.key, payload.view());
+        return fed::serialize_federation_entry(std::move(run), HeaderSpec{}.key, payload.view());
     });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == kHeader + 4);
@@ -884,7 +885,7 @@ static void test_partial_sentinel_accepted() {
 
         Bytes<kHeader> buf{};
         auto written = buf.with_mut(
-            [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+            [&key](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, kNoPayload); });
         ASSERT_TRUE(written.is_ok());
 
         auto view = fed::deserialize_untrusted_federation_entry(buf.view(), fed::FEDERATION_UNIVERSE_CARDINALITY);
@@ -899,7 +900,7 @@ static void test_partial_sentinel_accepted() {
 
         Bytes<kHeader> buf{};
         auto written = buf.with_mut(
-            [&key](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, kNoPayload); });
+            [&key](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, kNoPayload); });
         ASSERT_TRUE(written.is_ok());
     }
 
@@ -1061,7 +1062,7 @@ static void test_heap_buffer_round_trip() {
     auto [written, buf] =
         ::fixy::with_mut(::fixy::mint_heap_array(alloc, fed::FEDERATION_HEADER_BYTES + payload.size(), std::byte{0}),
                          [&key, &payload](auto run) noexcept {
-                             return fed::serialize_federation_entry(run.view(), key, payload.view());
+                             return fed::serialize_federation_entry(std::move(run), key, payload.view());
                          });
     ASSERT_TRUE(written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(written) == buf.size());
@@ -1112,7 +1113,7 @@ static void test_permissioned_decode_tags_the_view() {
     const auto body = bytes_of(1, 2, 3, 4);
     Bytes<kHeader + 16> buf{};
     auto written = buf.with_mut(
-        [&key, &body](auto run) noexcept { return fed::serialize_federation_entry(run.view(), key, body.view()); });
+        [&key, &body](auto run) noexcept { return fed::serialize_federation_entry(std::move(run), key, body.view()); });
     ASSERT_TRUE(written.is_ok());
 
     auto tagged =

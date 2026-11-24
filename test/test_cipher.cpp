@@ -576,7 +576,7 @@ static void test_store_leaves_the_file_of_another_writer(::fixy::TextView root) 
     variant.variant_id.advance(7);
     auto [variant_bytes, variant_image] =
         ::fixy::with_mut(::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&variant](auto run) noexcept {
-            return crucible::serialize_region(::fixy::to(variant), run.view());
+            return crucible::serialize_region(::fixy::to(variant), std::move(run));
         });
     CRUCIBLE_TEST_ASSERT(kTest, variant_bytes > 0);
     write_object_file(cipher.root(), variant.content_hash,
@@ -772,7 +772,7 @@ int main() {
         const crucible::RegionNode& other_region = *make_test_region(reason_dag_arena, 0x5E);
         auto [image_bytes, image] = ::fixy::with_mut(
             ::fixy::mint_heap_array(g_test.alloc, 4096, std::byte{0}), [&other_region](auto run) noexcept {
-                return crucible::serialize_region(::fixy::to(other_region), run.view());
+                return crucible::serialize_region(::fixy::to(other_region), std::move(run));
             });
         CRUCIBLE_TEST_ASSERT(kTest, image_bytes > 0);
         const ::fixy::View<const std::byte> sound =

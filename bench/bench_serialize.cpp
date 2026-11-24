@@ -68,9 +68,17 @@ static DagRef<RegionNode> synth_region(::fixy::BumpArena<DagArena>& dag_arena, u
 // After such a call in main, GCC takes the rows for cold code, and a timed
 // body of only such a call is cold code too (the print doors of
 // bench/bench_harness.h).  The call of a noipa function can end its block,
-// so the rows and the timed body around it stay in hot code.
-[[gnu::noipa]] static size_t serialize_through_call(DagRef<RegionNode> region, ::fixy::View<std::byte> image) {
-    return serialize_region(::fixy::to(*region), image);
+// so the rows and the timed body around it stay in hot code.  A reborrow
+// lends the run of image to the serialize, and the run comes back to image,
+// so each call writes the same run.
+template <class Brand, std::size_t Extent>
+[[gnu::noipa]] static size_t serialize_through_call(DagRef<RegionNode> region,
+                                                    ::fixy::ViewMut<std::byte, Brand, Extent>& image) {
+    auto [written, back] = ::fixy::reborrow(std::move(image), [region](auto lent) noexcept {
+        return serialize_region(::fixy::to(*region), std::move(lent));
+    });
+    image = std::move(back);
+    return written;
 }
 
 int main() {
@@ -105,12 +113,12 @@ int main() {
         auto [serial_len, buf] =
             ::fixy::with_mut(std::move(blank), [&reports, &label_ser, &region](auto wire) noexcept {
                 bench::add_report(reports, bench::run(label_ser, [&] {
-                                      size_t n = serialize_through_call(region, wire.view());
+                                      size_t n = serialize_through_call(region, wire);
                                       bench::do_not_optimize(n);
                                   }));
 
                 // Prime the buffer once — deserialize consumes stable bytes.
-                return serialize_through_call(region, wire.view());
+                return serialize_through_call(region, wire);
             });
         if (serial_len == 0) {
             ::fixy::fatal("serialize_region wrote no byte for a region of {} ops", num_ops);

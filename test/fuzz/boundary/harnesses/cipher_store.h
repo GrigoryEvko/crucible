@@ -164,7 +164,7 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
             test_alloc(), cipher::federation::FEDERATION_HEADER_BYTES + records.size(), std::byte{0});
         auto [written, entry] = ::fixy::with_mut(std::move(blank), [&records](auto run) noexcept {
             return cipher::federation::serialize_federation_entry(
-                run.view(), Cipher::session_event_batch_key(records.view()), records.view());
+                std::move(run), Cipher::session_event_batch_key(records.view()), records.view());
         });
         if (written.is_ok()) {
             const detail::HexName batch_name = detail::hex16(batch_hash.raw());

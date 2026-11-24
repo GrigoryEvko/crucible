@@ -114,7 +114,7 @@ using crucible::SchemaHash;
 
     ::foundation::core::FixedArray<crucible::RegionNode*, 16> collected{};
     uint32_t n_collected =
-        collected.with_mut([&loop](auto run) noexcept { return crucible::collect_regions(loop, run.view()); });
+        collected.with_mut([&loop](auto run) noexcept { return crucible::collect_regions(loop, run); });
     // Two body regions, counted once, plus the region after the loop.
     CRUCIBLE_TEST_ASSERT(kTest, n_collected == 3);
     CRUCIBLE_TEST_ASSERT(kTest, collected.at(::fixy::index<0>()) == &body_r1);
