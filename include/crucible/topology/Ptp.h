@@ -360,9 +360,10 @@ namespace detail {
 
 // The packet of one receive of recv_with_hw_timestamp.  The raw hardware
 // stamp wins over the software stamp, and a stamp of zero is no stamp.  A
-// receive of no bytes gives RecvFailed.  The payload borrows buffer.
+// receive of no bytes gives RecvFailed.  The payload of the packet is the
+// payload of the receive, and it borrows the buffer of the receive.
 [[nodiscard]] ::fixy::Result<TimestampedPacket, PtpError>
-packet_of_receive(::fixy::View<std::byte> buffer, ::fixy::net::TimestampedReceive const& received) noexcept;
+packet_of_receive(::fixy::net::TimestampedReceive<::fixy::View<std::byte>> const& received) noexcept;
 
 }  // namespace detail
 
@@ -402,8 +403,8 @@ recv_with_hw_timestamp(Ctx const& ctx, cntp::SocketFd socket, ::fixy::View<std::
     // The packet borrows buffer, so the match reads a named Result.
     auto const received = ::fixy::net::receive_with_timestamps(ctx, socket, buffer);
     return received.match(
-        [buffer](::fixy::net::TimestampedReceive const& receive) -> Received {
-            return detail::packet_of_receive(buffer, receive);
+        [](::fixy::net::TimestampedReceive<::fixy::View<std::byte>> const& receive) -> Received {
+            return detail::packet_of_receive(receive);
         },
         [](::foundation::os::Errno) -> Received { return ::fixy::err(PtpError::RecvFailed); });
 }

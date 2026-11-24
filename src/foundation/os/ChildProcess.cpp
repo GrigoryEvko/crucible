@@ -84,7 +84,9 @@ void make_child_dumpable_() noexcept {
     }
 }
 
-core::Result<std::size_t, Errno> read_child_output_(std::int32_t error_output, core::View<char> bytes) noexcept {
+// The kernel writes at most the size of the request, and prefix_up_to holds
+// that bound with one compare.
+core::Result<core::View<char>, Errno> read_child_output_(std::int32_t error_output, core::View<char> bytes) noexcept {
     char* const first = first_of_(core::detail::BaseLayerRead{}, bytes);
     long taken = raw_syscall(Syscall::read, error_output, first, bytes.size());
     while (taken == -static_cast<long>(Errno::eintr)) {
@@ -93,7 +95,7 @@ core::Result<std::size_t, Errno> read_child_output_(std::int32_t error_output, c
     if (taken < 0) {
         return core::err(static_cast<Errno>(-taken));
     }
-    return static_cast<std::size_t>(taken);
+    return bytes.prefix_up_to(static_cast<std::size_t>(taken));
 }
 
 void close_child_output_(std::int32_t error_output) noexcept { close_descriptor(error_output); }

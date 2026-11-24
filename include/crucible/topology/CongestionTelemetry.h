@@ -218,12 +218,12 @@ decode_tcp_sample(::fixy::View<std::byte const> info, ::fixy::View<std::byte con
                   cntp::CcAlgorithm algorithm) noexcept;
 
 // The first count bytes of buffer: the bytes that the kernel wrote.  The
-// kernel writes at most the size of the buffer, so a larger count does not
-// occur, and it gives no bytes.
+// count is the size of the part that the read door filled, so it is at most
+// the size of the buffer.
 template <std::size_t Size>
 [[nodiscard]] constexpr ::fixy::View<std::byte const>
 written_bytes(::fixy::FixedArray<std::byte, Size> const& buffer CRUCIBLE_LIFETIMEBOUND, std::size_t count) noexcept {
-    return ::fixy::View<std::byte const>{buffer.view()}.window(0, count).value_or(::fixy::View<std::byte const>{});
+    return ::fixy::View<std::byte const>{buffer.view()}.prefix_up_to(count);
 }
 template <class Buffer, class... Rest>
 void written_bytes(Buffer const&&, Rest&&...) =
@@ -269,17 +269,23 @@ template <::foundation::effects::IsExecCtx Ctx>
     requires cntp::CtxFitsSocketOption<Ctx>
 [[nodiscard]] ::fixy::Result<TcpInfoSnapshot, TelemetryError> harvest_socket(Ctx const& ctx,
                                                                              cntp::SocketFd fd) noexcept {
+    // The part that each read filled names the brand of its frame, so its
+    // size leaves the frame, and a failed read gives the size zero.
     ::fixy::FixedArray<std::byte, detail::tcp_info_bytes> info{};
     std::size_t const info_count = info.with_mut([ctx, fd](auto run) noexcept {
-        return ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::info, std::move(run)).value_or(0);
+        auto const read = ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::info, std::move(run));
+        return read.match([](auto const& written) noexcept { return written.size(); },
+                          [](::foundation::os::Errno) noexcept { return std::size_t{0}; });
     });
     cntp::CcAlgorithm const algorithm = cntp::query_cc_selection_for_socket(ctx, fd)
                                             .map([](cntp::CcSelection selected) noexcept { return selected.algorithm; })
                                             .value_or(cntp::CcAlgorithm::Custom);
     ::fixy::FixedArray<std::byte, detail::cc_info_bytes> congestion_info{};
     std::size_t const congestion_count = congestion_info.with_mut([ctx, fd](auto run) noexcept {
-        return ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::congestion_info, std::move(run))
-            .value_or(0);
+        auto const read =
+            ::fixy::net::read_tcp_option(ctx, fd, ::fixy::net::TcpOption::congestion_info, std::move(run));
+        return read.match([](auto const& written) noexcept { return written.size(); },
+                          [](::foundation::os::Errno) noexcept { return std::size_t{0}; });
     });
     return detail::decode_tcp_sample(detail::written_bytes(info, info_count),
                                      detail::written_bytes(congestion_info, congestion_count), algorithm);

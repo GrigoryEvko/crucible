@@ -272,20 +272,19 @@ template <class Ctx, ::fixy::os::RightSet Rights>
         std::int64_t end = size.raw();
         while (end > 0) {
             const std::int64_t start = ::fixy::max(end - static_cast<std::int64_t>(kTailChunkBytes), std::int64_t{0});
+            // The count is at most one chunk, so each prefix of the count is
+            // the whole request.
             const std::size_t count = static_cast<std::size_t>(end - start);
             auto [read, chunk_run] = ::fixy::reborrow(std::move(run), [&ctx, file, start, count](auto lent) noexcept {
-                return ::fixy::fs::read_full_at(
-                           ctx, file,
-                           ::fixy::take_window(std::move(lent), 0, count).expect("a read takes at most one chunk"),
-                           ::fixy::fs::FileOffset{start})
+                return ::fixy::fs::read_full_at(ctx, file, ::fixy::take_prefix_up_to(std::move(lent), count),
+                                                ::fixy::fs::FileOffset{start})
                     .value_or(0);
             });
             run = std::move(chunk_run);
             if (read != count) {
                 return ::fixy::none;
             }
-            const ::fixy::View<std::byte const> part =
-                run.view().window(0, count).expect("a read takes at most one chunk");
+            const ::fixy::View<std::byte const> part = run.view().prefix_up_to(count);
             for (std::size_t back = count; back > 0; --back) {
                 if (*part.get(back - 1).expect("the position is inside the chunk") == std::byte{'\n'}) {
                     return ::fixy::some(::fixy::fs::FileOffset{start + static_cast<std::int64_t>(back)});

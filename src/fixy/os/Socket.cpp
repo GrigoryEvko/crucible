@@ -168,8 +168,8 @@ UnitResult set_hardware_timestamping_(int socket, core::TextView interface_name)
     return unit_of(word);
 }
 
-core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket, void* first, std::size_t count,
-                                                                     int flags) noexcept {
+core::Result<TimestampedCount, os::Errno> receive_with_timestamps_(int socket, void* first, std::size_t count,
+                                                                   int flags) noexcept {
     if (is_closed(socket)) {
         return core::err(os::Errno::ebadf);
     }
@@ -187,12 +187,13 @@ core::Result<TimestampedReceive, os::Errno> receive_with_timestamps_(int socket,
     do {
         word = os::raw_syscall(os::Syscall::recvmsg, socket, static_cast<void const*>(&message), flags);
     } while (word == kInterrupted);
+    // The kernel writes at most the control capacity, and prefix_up_to holds
+    // that bound with one compare.
     return count_of(word).map([&message, &control, count](std::size_t received) noexcept {
-        std::size_t const written = core::min(static_cast<std::size_t>(message.control_length), control.size());
-        return TimestampedReceive{
+        return TimestampedCount{
             .count = core::min(received, count),
-            .control = read_timestamp_control_(
-                control.view().window(0, written).expect("the kernel writes at most the control capacity")),
+            .control =
+                read_timestamp_control_(control.view().prefix_up_to(static_cast<std::size_t>(message.control_length))),
         };
     });
 }

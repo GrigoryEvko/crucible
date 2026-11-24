@@ -175,11 +175,13 @@ struct LinkDumpRequest final {
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, socket, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 13;
     foundation::core::FixedArray<std::byte, 8192> reply{};
-    std::size_t const received = reply.with_mut([&ctx, &socket](auto run) noexcept {
-        return fixy::net::receive_bytes(ctx, socket, std::move(run)).value_or(0);
+    // The part that the receive filled names the brand of the frame, so the
+    // check reads it in the frame.
+    return reply.with_mut([&ctx, &socket](auto run) noexcept -> int {
+        auto const received = fixy::net::receive_bytes(ctx, socket, std::move(run));
+        return received.match([](auto const& part) noexcept { return part.size() < 16 ? 14 : 0; },
+                              [](foundation::os::Errno) noexcept { return 14; });
     });
-    if (received < 16) return 14;
-    return 0;
 }
 
 // The congestion control of a TCP socket reads back as the door set it, so
@@ -210,15 +212,15 @@ struct LinkDumpRequest final {
     // The kernel struct tcp_info starts with eight one-byte fields, and the
     // kernel writes at least them into a buffer that holds them.  qemu user
     // mode answers TCP_INFO with the four bytes of one int.
+    // The part that the read filled names the brand of the frame, so the
+    // check reads it in the frame.
     foundation::core::FixedArray<std::byte, 256> info{};
-    auto const info_read = info.with_mut([&ctx, &socket](auto run) noexcept {
-        return fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, std::move(run));
+    return info.with_mut([&ctx, &socket](auto run) noexcept -> int {
+        auto const info_read = fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, std::move(run));
+        return info_read.match(
+            [](auto const& written) noexcept { return written.size() < 8 && !kIsUnderEmulator ? 28 : 0; },
+            [](foundation::os::Errno) noexcept { return 28; });
     });
-    std::size_t const info_bytes = info_read.match([](std::size_t count) noexcept { return count; },
-                                                   [](foundation::os::Errno) noexcept { return std::size_t{0}; });
-    bool const is_emulator_answer = kIsUnderEmulator && info_read.is_ok();
-    if (info_bytes < 8 && !is_emulator_answer) return 28;
-    return 0;
 }
 
 // The door sets SO_TIMESTAMPING, and the kernel reads back the flags of
@@ -358,14 +360,49 @@ struct LinkDumpRequest final {
     }
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 54;
-    auto received = reply.with_mut([&ctx, &netlink](auto run) noexcept {
-        return fixy::net::receive_with_timestamps(ctx, netlink, std::move(run));
+    // The payload names the brand of the frame, so the check reads the
+    // message in the frame.
+    return reply.with_mut([&ctx, &netlink](auto run) noexcept -> int {
+        auto const received = fixy::net::receive_with_timestamps(ctx, netlink, std::move(run));
+        return received.match(
+            [](auto const& message) noexcept -> int {
+                if (message.payload.size() < 16) return 56;
+                if (!message.control.template is<fixy::net::NoTimestampMessage>()) return 57;
+                return 0;
+            },
+            [](foundation::os::Errno) noexcept -> int { return 55; });
     });
-    if (received.is_err()) return 55;
-    fixy::net::TimestampedReceive const message = std::move(received).expect("the receive gave a message");
-    if (message.count < 16 || message.count > reply.size()) return 56;
-    if (!message.control.is<fixy::net::NoTimestampMessage>()) return 57;
-    return 0;
+}
+
+// The View form of the receive with stamps gives the part of a plain View that
+// the kernel wrote: the reply of a dump request, which holds at least one
+// message header and fits the View.  The View is the run of an arena, which
+// no frame lends.
+[[nodiscard]] int check_receive_with_timestamps_into_view() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    NetlinkSocket const handle = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::NetlinkRoute>(ctx));
+    if (!handle.is_open()) return 101;
+    auto const netlink = handle.ref();
+    if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 102;
+    LinkDumpRequest const request{};
+    if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) {
+        return 103;
+    }
+    constexpr std::size_t kReplyBytes = 8192;
+    return ::fixy::with_bump_arena(
+        eff::testing::test().alloc, ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{2 * kReplyBytes},
+        [&ctx, &netlink](auto& arena) noexcept -> int {
+            auto const reply_run = arena.array(eff::testing::test().alloc, kReplyBytes, std::byte{0});
+            fixy::View<std::byte> const reply = reply_run.view();
+            auto const received = fixy::net::receive_with_timestamps(ctx, netlink, reply);
+            return received.match(
+                [](fixy::net::TimestampedReceive<fixy::View<std::byte>> const& message) noexcept -> int {
+                    if (message.payload.size() < 16 || message.payload.size() > kReplyBytes) return 105;
+                    if (!message.control.is<fixy::net::NoTimestampMessage>()) return 106;
+                    return 0;
+                },
+                [](foundation::os::Errno) noexcept -> int { return 104; });
+        });
 }
 
 // A send to a TCP socket with no connection gives epipe, and the kernel
@@ -420,6 +457,7 @@ int main() {
     if (failed == 0) failed = check_stale_shared_socket();
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
+    if (failed == 0) failed = check_receive_with_timestamps_into_view();
     if (failed == 0) failed = check_send_raises_no_signal();
     if (failed == 0) failed = check_write_raises_no_signal();
     if (failed != 0) {

@@ -57,18 +57,18 @@ timestamp_from_stamp(::foundation::os::KernelTimespec const& stamp) noexcept {
         .map_err(timestamp_error);
 }
 
-// The door gives a count of at most the size of buffer, so the window of
-// the payload fits.
+// The door gives the part of the buffer that the kernel wrote, so the
+// payload of the packet is that part.
 ::fixy::Result<TimestampedPacket, PtpError>
-detail::packet_of_receive(::fixy::View<std::byte> buffer, ::fixy::net::TimestampedReceive const& received) noexcept {
+detail::packet_of_receive(::fixy::net::TimestampedReceive<::fixy::View<std::byte>> const& received) noexcept {
     using Packet = ::fixy::Result<TimestampedPacket, PtpError>;
-    if (received.count == 0) {
+    if (received.payload.size() == 0) {
         return ::fixy::err(PtpError::RecvFailed);
     }
     return received.control.match(
         [](::fixy::net::NoTimestampMessage) -> Packet { return ::fixy::err(PtpError::NoTimestamp); },
         [](::fixy::net::ShortTimestampMessage) -> Packet { return ::fixy::err(PtpError::MalformedTimestampControl); },
-        [buffer, &received](::fixy::net::ReceiveStamps const& stamps) -> Packet {
+        [&received](::fixy::net::ReceiveStamps const& stamps) -> Packet {
             bool const has_hardware = is_stamped(stamps.raw_hardware);
             bool const has_software = is_stamped(stamps.software);
             if (!has_hardware && !has_software) {
@@ -76,8 +76,8 @@ detail::packet_of_receive(::fixy::View<std::byte> buffer, ::fixy::net::Timestamp
             }
             CRUCIBLE_TRY(timestamp, timestamp_from_stamp(has_hardware ? stamps.raw_hardware : stamps.software));
             return TimestampedPacket{
-                .payload = buffer.window(0, received.count).expect("the door gives at most the size of the buffer"),
-                .size = received.count,
+                .payload = received.payload,
+                .size = received.payload.size(),
                 .timestamp_ns = timestamp,
                 .hardware = has_hardware,
             };

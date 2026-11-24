@@ -302,6 +302,23 @@ template <typename Kind, ::fixy::os::RightSet Rights>
     return ForeignSocketDoor::descriptor_of(socket);
 }
 
+// The part of the run of buffer that a call of the kernel filled, with the
+// brand of the frame: the first count bytes when the call gave the count, or
+// the error of the call.  The kernel writes at most the size of the run, and
+// take_prefix_up_to holds that bound with one compare.  The part borrows the
+// run, so the match reads the named count of the caller.
+template <class Brand, std::size_t Extent>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::ViewMut<std::byte, Brand>, ::foundation::os::Errno>
+filled_part_(::foundation::core::ViewMut<std::byte, Brand, Extent>&& buffer,
+             ::foundation::core::Result<std::size_t, ::foundation::os::Errno> const& counted) noexcept {
+    using Filled = ::foundation::core::Result<::foundation::core::ViewMut<std::byte, Brand>, ::foundation::os::Errno>;
+    return counted.match(
+        [run = std::move(buffer)](std::size_t count) mutable noexcept -> Filled {
+            return ::foundation::core::take_prefix_up_to(std::move(run), count);
+        },
+        [](::foundation::os::Errno error) noexcept -> Filled { return ::foundation::core::err(error); });
+}
+
 }  // namespace detail
 
 // The Kind parameter precedes Ctx because the caller names it explicitly
@@ -421,20 +438,23 @@ read_tcp_congestion(Ctx const&, Borrow socket) noexcept {
 }
 
 // Reads a TCP option of a socket into the run of a frame, and gives the
-// count of the bytes that the kernel wrote.  The door takes the ViewMut of
-// the frame by value, as fill does, so the read is the one writer of the
-// run.  An option that the kernel gives as a fixed struct, such as tcp_info
-// (TcpOption::info) or tcp_cc_info (TcpOption::congestion_info), reads into
-// a run of its size, and a kernel with a shorter struct writes fewer bytes.
+// ViewMut of the part that the kernel wrote, with the brand of the frame.
+// The door takes the ViewMut of the frame by value, as fill does, so the read
+// is the one writer of the run.  An option that the kernel gives as a fixed
+// struct, such as tcp_info (TcpOption::info) or tcp_cc_info
+// (TcpOption::congestion_info), reads into a run of its size, and a kernel
+// with a shorter struct writes fewer bytes.
 template <eff::IsExecCtx Ctx, typename Borrow, class Brand, std::size_t Extent>
     requires CtxFitsSocketCall<Ctx> && TcpBorrowWith<Borrow, ::fixy::os::RightSet::ioctl_socket>
-[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::ViewMut<std::byte, Brand>, ::foundation::os::Errno>
 read_tcp_option(Ctx const&, Borrow socket, TcpOption option,
                 ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
     std::size_t const size = buffer.size();
     std::uint32_t const capacity = size < 0xFFFFFFFFU ? static_cast<std::uint32_t>(size) : 0xFFFFFFFFU;
-    return detail::read_tcp_option_(detail::socket_descriptor_of(socket), option,
-                                    first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), capacity);
+    ::foundation::core::Result<std::size_t, ::foundation::os::Errno> const read =
+        detail::read_tcp_option_(detail::socket_descriptor_of(socket), option,
+                                 first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), capacity);
+    return detail::filled_part_(std::move(buffer), read);
 }
 
 // Sets the least retransmission timeout of a TCP socket in microseconds
@@ -484,17 +504,21 @@ send_bytes(Ctx const&, SocketRef<Kind, Rights> socket, ::foundation::core::View<
 }
 
 // Receives the bytes that the socket holds into the run of a frame, at most
-// the size of the run, and gives their count.  The door takes the ViewMut of
-// the frame by value, as fill does, so the receive is the one writer of the
-// run.  It does not wait: a socket with no bytes gives eagain.
+// the size of the run, and gives the ViewMut of the part that they filled,
+// with the brand of the frame.  The door takes the ViewMut of the frame by
+// value, as fill does, so the receive is the one writer of the run.  The
+// kernel writes at most the size of the run, and take_prefix_up_to holds
+// that bound with one compare.  It does not wait: a socket with no bytes
+// gives eagain.
 template <typename Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
     requires CtxFitsSocketCallWith<Ctx, Rights, ::fixy::os::RightSet::read>
-[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<::foundation::core::ViewMut<std::byte, Brand>, ::foundation::os::Errno>
 receive_bytes(Ctx const&, SocketRef<Kind, Rights> socket,
               ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
-    return detail::receive_with_flags_(::fixy::os::detail::HandleDoor::descriptor_of(socket),
-                                       first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
-                                       detail::no_wait_flag);
+    ::foundation::core::Result<std::size_t, ::foundation::os::Errno> const received = detail::receive_with_flags_(
+        ::fixy::os::detail::HandleDoor::descriptor_of(socket),
+        first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(), detail::no_wait_flag);
+    return detail::filled_part_(std::move(buffer), received);
 }
 
 // The longest name of a network interface of the kernel, with no zero
@@ -527,31 +551,58 @@ set_hardware_timestamping(Ctx const&, Borrow socket, ::foundation::core::TextVie
 }
 
 // Receives one datagram into buffer with the stamps of its control data
-// (SCM_TIMESTAMPING).  The count is the count of the bytes that the kernel
-// wrote into buffer, at most its size.  It does not wait: a socket with no
-// datagram gives eagain.  The control data holds no stamp when the socket
-// has no SO_TIMESTAMPING (set_socket_timestamping).  This form takes a plain
-// View that no frame lends, such as the View of an arena run.
+// (SCM_TIMESTAMPING).  The payload is the part of buffer that the kernel
+// wrote, and it borrows buffer.  The kernel writes at most the size of
+// buffer, and prefix_up_to holds that bound with one compare.  It does not
+// wait: a socket with no datagram gives eagain.  The control data holds no
+// stamp when the socket has no SO_TIMESTAMPING (set_socket_timestamping).
+// This form takes a plain View that no frame lends, such as the View of an
+// arena run.
 template <eff::IsExecCtx Ctx, typename Borrow>
     requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::read>
-[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive<::foundation::core::View<std::byte>>,
+                                                ::foundation::os::Errno>
 receive_with_timestamps(Ctx const&, Borrow socket, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
-                                            first_of_(::foundation::core::detail::BaseLayerRead{}, buffer),
-                                            buffer.size(), detail::no_wait_flag);
+    using Received =
+        ::foundation::core::Result<TimestampedReceive<::foundation::core::View<std::byte>>, ::foundation::os::Errno>;
+    ::foundation::core::Result<detail::TimestampedCount, ::foundation::os::Errno> const received =
+        detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
+                                         first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
+                                         detail::no_wait_flag);
+    return received.match(
+        [buffer](detail::TimestampedCount const& counted) noexcept -> Received {
+            return TimestampedReceive<::foundation::core::View<std::byte>>{
+                .payload = buffer.prefix_up_to(counted.count),
+                .control = counted.control,
+            };
+        },
+        [](::foundation::os::Errno error) noexcept -> Received { return ::foundation::core::err(error); });
 }
 
-// The receive with stamps into the run of a frame.  The door takes the
-// ViewMut of the frame by value, as fill does, so the receive is the one
-// writer of the run.
+// The receive with stamps into the run of a frame.  The payload is the
+// ViewMut of the part that the kernel wrote, with the brand of the frame.
+// The door takes the ViewMut of the frame by value, as fill does, so the
+// receive is the one writer of the run.
 template <eff::IsExecCtx Ctx, typename Borrow, class Brand, std::size_t Extent>
     requires CtxFitsSocketCall<Ctx> && SocketBorrowWith<Borrow, ::fixy::os::RightSet::read>
-[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
+[[nodiscard]] inline ::foundation::core::Result<TimestampedReceive<::foundation::core::ViewMut<std::byte, Brand>>,
+                                                ::foundation::os::Errno>
 receive_with_timestamps(Ctx const&, Borrow socket,
                         ::foundation::core::ViewMut<std::byte, Brand, Extent> buffer) noexcept {
-    return detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
-                                            first_of_(::foundation::core::detail::BaseLayerRead{}, buffer),
-                                            buffer.size(), detail::no_wait_flag);
+    using Payload = ::foundation::core::ViewMut<std::byte, Brand>;
+    using Received = ::foundation::core::Result<TimestampedReceive<Payload>, ::foundation::os::Errno>;
+    ::foundation::core::Result<detail::TimestampedCount, ::foundation::os::Errno> const received =
+        detail::receive_with_timestamps_(detail::socket_descriptor_of(socket),
+                                         first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
+                                         detail::no_wait_flag);
+    return received.match(
+        [run = std::move(buffer)](detail::TimestampedCount const& counted) mutable noexcept -> Received {
+            return TimestampedReceive<Payload>{
+                .payload = ::foundation::core::take_prefix_up_to(std::move(run), counted.count),
+                .control = counted.control,
+            };
+        },
+        [](::foundation::os::Errno error) noexcept -> Received { return ::foundation::core::err(error); });
 }
 
 }  // namespace fixy::net

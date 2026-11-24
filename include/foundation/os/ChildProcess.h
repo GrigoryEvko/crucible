@@ -91,10 +91,11 @@ struct ChildStart {
 void make_child_dumpable_() noexcept;
 
 // Reads the next bytes of the standard error of a child into bytes, again
-// after an eintr.  The count is zero at the end of the output, when the
-// child and each copy of the write end are closed.
-[[nodiscard]] core::Result<std::size_t, Errno> read_child_output_(std::int32_t error_output,
-                                                                  core::View<char> bytes) noexcept;
+// after an eintr, and gives the part of bytes that the read filled.  The part
+// is empty at the end of the output, when the child and each copy of the
+// write end are closed.
+[[nodiscard]] core::Result<core::View<char>, Errno> read_child_output_(std::int32_t error_output,
+                                                                       core::View<char> bytes) noexcept;
 
 // Closes the read end that start_child_ gave.
 void close_child_output_(std::int32_t error_output) noexcept;

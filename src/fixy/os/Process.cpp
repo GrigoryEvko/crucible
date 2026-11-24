@@ -73,19 +73,27 @@ struct OutputRing {
 // each copy of the write end are closed.  Gives the read error, or none.
 // The descriptor stays open.  Complexity: O(n) in the bytes of the output.
 [[nodiscard]] core::Option<os::Errno> read_output_to_end(std::int32_t error_output, OutputRing& ring) noexcept {
+    // The end of the reads: the error of a failed read, or no error at the
+    // end of the output.  No end means that the output goes on.
+    using ReadEnd = core::Option<core::Option<os::Errno>>;
     core::FixedArray<char, kReadChunk> chunk{};
     return chunk.with_mut([error_output, &ring](auto run) noexcept -> core::Option<os::Errno> {
         for (;;) {
-            core::Result<std::size_t, os::Errno> taken =
+            core::Result<core::View<char>, os::Errno> const taken =
                 os::detail::read_child_output_(error_output, core::detail::run_of_(run));
-            if (taken.is_err()) {
-                return taken.err();
-            }
-            std::size_t const count = std::move(taken).value_or(0);
-            if (count == 0) {
-                return core::none;
-            }
-            ring.put(run.view().window(0, count).expect("a read gives at most the size of its buffer"));
+            ReadEnd const end = taken.match(
+                [&ring](core::View<char> filled) noexcept -> ReadEnd {
+                    if (filled.size() == 0) {
+                        return ReadEnd::some(core::Option<os::Errno>{core::none});
+                    }
+                    ring.put(filled);
+                    return ReadEnd{core::none};
+                },
+                [](os::Errno error) noexcept -> ReadEnd {
+                    return ReadEnd::some(core::Option<os::Errno>::some(error));
+                });
+            for (core::Option<os::Errno> const& reached : end)
+                return reached;
         }
     });
 }

@@ -64,10 +64,13 @@ struct ReceiveStamps final {
 // What the control data of a receive tells about the time of the datagram.
 using TimestampControl = ::foundation::core::OneOf<NoTimestampMessage, ShortTimestampMessage, ReceiveStamps>;
 
-// One receive of receive_with_timestamps: the count of the bytes that the
-// kernel wrote into the buffer, and the stamps of the control data.
+// One receive of receive_with_timestamps: the part of the buffer that the
+// kernel wrote, and the stamps of the control data.  The payload borrows the
+// buffer of the receive.  It is a View for a buffer that no frame lends, and
+// the ViewMut of the frame, with its brand, for the run of a frame.
+template <class Payload>
 struct TimestampedReceive final {
-    std::size_t count = 0;
+    Payload payload{};
     TimestampControl control{NoTimestampMessage{}};
 };
 
@@ -281,9 +284,17 @@ receive_with_flags_(int socket, void* first, std::size_t count, int flags) noexc
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_hardware_timestamping_(int socket, ::foundation::core::TextView interface_name) noexcept;
 
+// One receive of receive_with_timestamps_: the count of the bytes that the
+// kernel wrote at first, and the stamps of the control data.  The doors of
+// fixy/os/Socket.h give the part of the buffer that the count names.
+struct TimestampedCount final {
+    std::size_t count = 0;
+    TimestampControl control{NoTimestampMessage{}};
+};
+
 // Receives at most count bytes at first with the given flags, and reads the
 // stamps of the control data (recvmsg with one buffer and no address).
-[[nodiscard]] ::foundation::core::Result<TimestampedReceive, ::foundation::os::Errno>
+[[nodiscard]] ::foundation::core::Result<TimestampedCount, ::foundation::os::Errno>
 receive_with_timestamps_(int socket, void* first, std::size_t count, int flags) noexcept;
 
 }  // namespace fixy::net::detail

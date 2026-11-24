@@ -277,19 +277,27 @@ template <::foundation::effects::IsExecCtx Ctx>
         return ::fixy::err(PacingError::NetlinkSendFailed);
     }
 
+    // The scan reads the part that each receive filled, in the frame of the
+    // reply.  A failed receive and an empty part end the dump.
+    using Answer = ::fixy::Result<Qdisc, PacingError>;
     ::fixy::FixedArray<std::byte, detail::qdisc_reply_bytes> reply{};
     for (;;) {
-        std::size_t const received = reply.with_mut(
-            [&ctx, nl](auto run) noexcept { return ::fixy::net::receive_bytes(ctx, nl, std::move(run)).value_or(0); });
-        if (received == 0) {
-            return ::fixy::err(PacingError::NetlinkReceiveFailed);
-        }
-        ::fixy::Option<::fixy::Result<Qdisc, PacingError>> answer = detail::scan_qdisc_reply(
-            reply.view().window(0, received).expect("the kernel gives at most the bytes of the buffer"),
-            interface_index);
-        if (answer.is_some()) {
-            return std::move(answer).expect("the part holds the answer of the dump");
-        }
+        ::fixy::Option<Answer> const answer =
+            reply.with_mut([&ctx, nl, interface_index](auto run) noexcept -> ::fixy::Option<Answer> {
+                auto const received = ::fixy::net::receive_bytes(ctx, nl, std::move(run));
+                return received.match(
+                    [interface_index](auto const& part) noexcept -> ::fixy::Option<Answer> {
+                        if (part.size() == 0) {
+                            return ::fixy::some(Answer{::fixy::err(PacingError::NetlinkReceiveFailed)});
+                        }
+                        return detail::scan_qdisc_reply(part.view(), interface_index);
+                    },
+                    [](::foundation::os::Errno) noexcept -> ::fixy::Option<Answer> {
+                        return ::fixy::some(Answer{::fixy::err(PacingError::NetlinkReceiveFailed)});
+                    });
+            });
+        for (Answer const& found : answer)
+            return found;
     }
 }
 
