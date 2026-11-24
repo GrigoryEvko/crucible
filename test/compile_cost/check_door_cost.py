@@ -81,16 +81,17 @@ CEILING_RATIO = 1.10
 ARRAY_LOOP_RATIO = {"DoorWriter": 13.14, "DoorSummer": 4.92}
 # The margin of an absolute ceiling over its measure.
 MARGIN = 1.10
-# The measure of one call of each door, in G, on main df8fb4e97 with the doors of this series.  An optimized
-# build has one measure for each target level of its last -march word, because the level changes the cost:
-# release, bench, verify and vessel (native), release-v4, release-v3, release-v2 and release-v1.
+# The measure of one call of each door, in G, with the store check of the body of a frame door
+# (StoresNoBorrowOutside of foundation/core/CaptureStore.h), on main fae4f7ff7 with the commits of that check.
+# An optimized build has one measure for each target level of its last -march word, because the level changes
+# the cost: release, bench, verify and vessel (native), release-v4, release-v3, release-v2 and release-v1.
 MEASURED_CALLS = {
-    "tsan": {"DoorWriter": 0.0250, "DoorSummer": 0.0302},
-    "optimized native": {"DoorWriter": 0.0271, "DoorSummer": 0.0345},
-    "optimized x86-64-v4": {"DoorWriter": 0.0271, "DoorSummer": 0.0345},
-    "optimized x86-64-v3": {"DoorWriter": 0.0278, "DoorSummer": 0.0352},
-    "optimized x86-64-v2": {"DoorWriter": 0.0308, "DoorSummer": 0.0383},
-    "optimized x86-64": {"DoorWriter": 0.0308, "DoorSummer": 0.0383},
+    "tsan": {"DoorWriter": 0.0282, "DoorSummer": 0.0336},
+    "optimized native": {"DoorWriter": 0.0303, "DoorSummer": 0.0379},
+    "optimized x86-64-v4": {"DoorWriter": 0.0303, "DoorSummer": 0.0379},
+    "optimized x86-64-v3": {"DoorWriter": 0.0311, "DoorSummer": 0.0387},
+    "optimized x86-64-v2": {"DoorWriter": 0.0341, "DoorSummer": 0.0418},
+    "optimized x86-64": {"DoorWriter": 0.0341, "DoorSummer": 0.0418},
 }
 ABSOLUTE_CEILINGS = {kind: {door: MARGIN * value for door, value in doors.items()}
                      for kind, doors in MEASURED_CALLS.items()}
