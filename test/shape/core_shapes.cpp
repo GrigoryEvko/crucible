@@ -1457,6 +1457,16 @@ result_or_else_raw(fixy::Result<std::uint32_t, Code32> result) noexcept {
     }
 }
 
+// match_enum over the four kinds, one arm each: one compare for each kind
+// and one branch to the fatal exit, where the hand switch reads a table of
+// values.
+[[gnu::used]] std::uint32_t enum_match_kind(Kind kind) noexcept {
+    return fixy::match_enum(kind, fixy::arm<Kind::first>([] noexcept { return std::uint32_t{11}; }),
+                            fixy::arm<Kind::second>([] noexcept { return std::uint32_t{23}; }),
+                            fixy::arm<Kind::third>([] noexcept { return std::uint32_t{37}; }),
+                            fixy::arm<Kind::fourth>([] noexcept { return std::uint32_t{41}; }));
+}
+
 // ── Record ──────────────────────────────────────────────────────────────────
 
 // Two empty parts of different types.
@@ -2715,6 +2725,22 @@ struct RawReading final {
 }
 
 [[gnu::used]] std::uint32_t switch_unreachable_raw(Kind kind) noexcept {
+    switch (kind) {
+        case Kind::first:
+            return 11;
+        case Kind::second:
+            return 23;
+        case Kind::third:
+            return 37;
+        case Kind::fourth:
+            return 41;
+        default:
+            std::unreachable();
+    }
+}
+
+// The raw form of a match over the four kinds is the hand switch.
+[[gnu::used]] std::uint32_t enum_match_kind_raw(Kind kind) noexcept {
     switch (kind) {
         case Kind::first:
             return 11;

@@ -1399,6 +1399,14 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::Side,
      "a value in a role: the role is a part of its type, and it makes no claim that a grade carries"},
     {^^::foundation::core::Digest, "a hash whose kind is its tag: a value, which makes no claim that a grade carries"},
+    // The EnumMatch family.
+    {^^::foundation::core::Enumerators,
+     "a stated set of enumerators: a template argument of an arm of match_enum, never a value in a kernel signature"},
+    {^^::foundation::core::EnumArm,
+     "an arm of match_enum: it holds the body of the arm for one call of the match, and it makes no claim"},
+    {^^::foundation::core::OtherArm,
+     "the arm otherwise of match_enum: it holds the body of the arm for one call of the match, and it makes no "
+     "claim"},
     {^^::foundation::core::Hash256, "the 32 bytes of a keyed hash: a value, which makes no claim that a grade carries"},
     {^^::foundation::core::KeyedHashKeyBytes,
      "the 32 bytes of the key of a keyed hash: a value, which makes no claim that a grade carries"},

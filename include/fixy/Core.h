@@ -31,6 +31,7 @@
 #include <foundation/core/Compare.h>
 #include <foundation/core/Convert.h>
 #include <foundation/core/DataAddress.h>
+#include <foundation/core/EnumMatch.h>
 #include <foundation/core/FixedHeapArray.h>
 #include <foundation/core/Float.h>
 #include <foundation/core/Format.h>
@@ -304,6 +305,13 @@ using ::foundation::core::FullField;
 using ::foundation::core::for_each_base;
 using ::foundation::core::for_each_field;
 using ::foundation::core::OpenEnumeration;
+
+using ::foundation::core::are_disjoint;
+using ::foundation::core::arm;
+using ::foundation::core::Enumerators;
+using ::foundation::core::enumerators;
+using ::foundation::core::match_enum;
+using ::foundation::core::otherwise;
 
 using ::foundation::core::Arithmetic;
 using ::foundation::core::fits_each_value;

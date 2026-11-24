@@ -1122,6 +1122,15 @@ PROBES: tuple[Probe, ...] = (
         "-O1, std::unreachable stops the process with a trap after the same compare",
         checks=("fatal",),
     ),
+    # The EnumMatch family.
+    Probe(
+        "enum_match_kind",
+        "match_enum over the four kinds finds the arm with one compare for each kind, and a value with no kind goes "
+        "to the fatal exit.  The hand switch reads a table of values, so the family side has a decision tree in "
+        "place of the table",
+        checks=("fatal",),
+        branches=True,
+    ),
     # The Record family.
     Probe("record_return", "a Record of two words returns in two registers, as a struct of the same members does"),
     Probe("record_binding", "a binding of a Record reads each part in place, as a member access of a struct does"),

@@ -557,7 +557,7 @@ test/fixy/neg/ | std-object | 24 | - | -
 test/forge_neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/ | c-array-object | 6 | - | -
 test/foundation/ | c-library-call | 2 | - | -
-test/foundation/ | enum-cast | 26 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
+test/foundation/ | enum-cast | 27 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/ | opted-out | 12 | ABI: the linker gives the bounds of a section as the C symbols __start_ and __stop_ | -
 test/foundation/ | opted-out | 32 | ABI: the linker wrap of the allocator of the C library counts the calls of the door | the test of the credit counts the calls of the allocation door through the linker wrap of the allocator of the C library, so the wrappers have the C signatures of that allocator
 test/foundation/ | opted-out | 27 | ORACLE: GCC <cpuid.h> and __builtin_cpu_supports give the x86-64 features | test_os_x86_level takes the bits of each x86-64 feature from GCC <cpuid.h> and the features of this host from __builtin_cpu_supports, as an oracle outside the level door.  test_target_units takes the address of the exact form of fp::fma in each of its units.  The level probe of the vessel gives Python the level of the host through a C entry
@@ -764,7 +764,7 @@ test/session_oracle/ | raw-pointer-object | 7 | - | -
 test/session_oracle/ | std-entity | 25 | - | -
 test/session_oracle/ | std-object | 1382 | - | -
 test/shape/ | enum-cast | 2 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
-test/shape/ | opted-out | 332 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array
+test/shape/ | opted-out | 333 | ORACLE: the raw form that the shape of each family probe is compared with | the oracle region of test/shape/core_shapes.cpp covers the raw forms of the probe pairs of the keyed frame doors: the pop, the memcpy of a copy, the restrict loop of write_each and the copy into a keyed heap array, and the hand switch over the four kinds that match_enum replaces
 test/shape/ | opted-out | 2 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call
 test/shape/ | region | 1 | ORACLE: the raw form that the shape of each family probe is compared with | -
 test/shape/ | region | 1 | PROBE: the probe measures the moves of the core state of an owner through registers | the probe owner_take_and_end declares its three-word owner in a namespace of the base, because the owner core takes only a class of the base as its Owner, and no owner of the base has a state of three words with a release of no call

@@ -174,6 +174,15 @@ static_assert(::fixy::bit_cast<std::uint32_t>(1.0f) == 0x3F800000u
               && ::fixy::BitValid<float> && !::fixy::BitValid<bool>);
 static_assert(::fixy::DecodableFrom<bool, std::uint8_t> && !::fixy::Enumerated<int>);
 static_assert(!::fixy::OpenEnumeration<int> && !::fixy::ClosedEnumeration<int>);
+enum class CoreSide : std::uint8_t {
+    left,
+    right
+};
+inline constexpr ::fixy::Enumerators<CoreSide, 1> kCoreLeft = ::fixy::enumerators<CoreSide::left>;
+static_assert(::fixy::are_disjoint<kCoreLeft, ::fixy::enumerators<CoreSide::right>>());
+static_assert(::fixy::match_enum(CoreSide::right, ::fixy::arm<kCoreLeft>([] noexcept { return 1; }),
+                                 ::fixy::arm<CoreSide::right>([] noexcept { return 2; }))
+              == 2);
 struct CoreFields {
     std::uint32_t first = 3;
     std::uint32_t second = 4;

@@ -4080,6 +4080,38 @@ foundation_neg_compile_test(neg_core_enum_from_field_bool_word
   "no matching function for call to .enum_from_field<Side, 1>\\(const bool&\\)."
   "the expression .!\\(same_as<Word, bool>\\) \\[with Word = bool\\]. evaluated to .false.")
 
+# ── The EnumMatch family: match_enum, arm, otherwise and enumerators ──
+#
+# A match over a closed enumeration names each enumerator in one arm, and a
+# match over an open enumeration takes one arm otherwise.  A stated set names
+# each enumerator one time.  A forged value of a closed enumeration ends the
+# process.
+foundation_test(test_core_enum_match)
+foundation_neg_compile_test(neg_core_match_enum_missing_enumerator
+  "static assertion failed: match_enum: no arm names the enumerator"
+  "the enumerator seq_cst of Strength")
+foundation_neg_compile_test(neg_core_match_enum_named_twice
+  "static assertion failed: match_enum: the arms name one value two times"
+  "the enumerator acquire of Strength")
+foundation_neg_compile_test(neg_core_match_enum_otherwise_closed
+  "static assertion failed: match_enum: a closed enumeration takes no arm otherwise"
+  "name each enumerator in an arm")
+foundation_neg_compile_test(neg_core_match_enum_open_without_otherwise
+  "static assertion failed: match_enum: an open enumeration takes one arm otherwise"
+  "for each value that no other arm names")
+foundation_neg_compile_test(neg_core_match_enum_foreign_arm
+  "no matching function for call to .match_enum\\(Strength"
+  "ArmOf<E, typename std::remove_cvref<Arms>::type> && \\.\\.\\.\\) .with E = Strength")
+foundation_neg_compile_test(neg_core_match_enum_result_types
+  "static assertion failed: match_enum: each arm gives one result type"
+  "match_enum\\(E, Arms&& \\.\\.\\.\\) .with E = Strength")
+foundation_neg_compile_test(neg_core_enumerators_twice
+  "static assertion failed: enumerators: a stated set names each enumerator of its enumeration one time"
+  "make_enumerators_\\(\\) .with auto First = Strength::acquire")
+foundation_neg_compile_test(neg_core_match_enum_linear_capture
+  "use of deleted function .void foundation::core::arm\\(Body&&\\)"
+  "the body holds a linear value by value, and the door calls it with no consume")
+
 # The gates of a number and the arithmetic.  bool, a character type and
 # long double are no number of the family.  The two operands of an
 # operation have one type, and widening_mul takes unsigned operands.
@@ -5800,7 +5832,7 @@ foundation_neg_compile_test(neg_net_reflect_growth_without_door
 # links fixy.
 foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
-    test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_list
+    test_core_enum_match test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_list
     test_core_masked_array test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref
