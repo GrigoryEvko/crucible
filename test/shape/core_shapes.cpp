@@ -1515,9 +1515,9 @@ struct[[= fixy::derive_protocol{}]] ProtocolRecord final {
 // multiply.
 [[gnu::used]] std::uint64_t protocol_hash(ProtocolRecord const& value) noexcept { return fixy::hash(value).raw(); }
 
-// encode writes each part as its bytes.
-[[gnu::used]] void protocol_encode(ProtocolRecord const& value, fixy::View<std::byte, 16> out) noexcept {
-    fixy::encode(value, out);
+// encode writes each part as its bytes into the run of the frame of out.
+[[gnu::used]] void protocol_encode(ProtocolRecord const& value, fixy::FixedArray<std::byte, 16>& out) noexcept {
+    out.with_mut([&value](auto run) noexcept { fixy::encode(value, std::move(run)); });
 }
 
 // decode reads each part, and it refuses an enumeration value that names no

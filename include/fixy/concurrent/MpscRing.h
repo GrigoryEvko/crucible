@@ -196,39 +196,18 @@ public:
     }
 
     // A batch pop takes the proof of the one consumer, and it is a merge, as
-    // a pop is, so it takes the bare tag of Nondet.  The pop takes the
-    // published cells from the tail up to the first cell that is not
-    // published, and at most out.size() of them.  The ring holds at most
-    // Capacity items, so the scan stops after Capacity cells, before it wraps
-    // to a cell that it took.  Complexity: linear in the items taken.
-
+    // a pop is, so it takes the bare tag of Nondet.  The door takes the
+    // ViewMut of a frame by value, as fill does, so the pop is the one writer
+    // of the run.  The pop takes the published cells from the tail up to the
+    // first cell that is not published, and at most out.size() of them.  The
+    // ring holds at most Capacity items, so the scan stops after Capacity
+    // cells, before it wraps to a cell that it took.  The door of each brand
+    // calls one body (try_pop_batch_).  Complexity: linear in the items taken.
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(consumer_proof const& /*proof*/,
                                                       ::foundation::effects::cap::Nondet,
-                                                      ::foundation::core::View<T> out) noexcept {
-        const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
-        if (cap == 0) return 0;
-
-        const std::uint64_t pos0 = tail_.peek_relaxed();
-        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
-        std::size_t R = 0;
-        while (R < cap) {
-            CellTicket const ticket{pos0 + R};
-            if (!cells_.is_published(ticket)) break;
-            target[R] = cells_.take(read_ticket_(ticket));
-            ++R;
-        }
-        if (R == 0) return 0;
-        tail_.advance_sole_writer_from(prove_consumer_(), pos0, pos0 + R);
-        return R;
-    }
-
-    // The pop into the run of a frame.  The door takes the ViewMut of the
-    // frame by value, as fill does, so the pop is the one writer of the run.
-    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(consumer_proof const& proof,
-                                                      ::foundation::effects::cap::Nondet nondet,
                                                       ::foundation::core::ViewMut<T, Brand, Extent> out) noexcept {
-        return try_pop_batch(proof, nondet, ::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
+        return try_pop_batch_(::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
     }
 
     // A snapshot reads cells and indexes that the producers write, and the
@@ -266,6 +245,27 @@ private:
         const T item = cells_.take(read_ticket_(ticket));
         tail_.advance_sole_writer_from(prove_consumer_(), pos, pos + 1);
         return ::foundation::core::Option<T>::some(item);
+    }
+
+    // The body of the batch pop (try_pop_batch).  The door of each brand
+    // calls this one body, and out is the run of the frame of the door.  Only
+    // a door that takes the proof of the consumer calls it.
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch_(::foundation::core::View<T> out) noexcept {
+        const std::size_t cap = Capacity < out.size() ? Capacity : out.size();
+        if (cap == 0) return 0;
+
+        const std::uint64_t pos0 = tail_.peek_relaxed();
+        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
+        std::size_t R = 0;
+        while (R < cap) {
+            CellTicket const ticket{pos0 + R};
+            if (!cells_.is_published(ticket)) break;
+            target[R] = cells_.take(read_ticket_(ticket));
+            ++R;
+        }
+        if (R == 0) return 0;
+        tail_.advance_sole_writer_from(prove_consumer_(), pos0, pos0 + R);
+        return R;
     }
 
     // The write ticket of a ticket that the compare-and-swap of the head won,

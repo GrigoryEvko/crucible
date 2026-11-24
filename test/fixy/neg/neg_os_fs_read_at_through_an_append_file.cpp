@@ -19,6 +19,8 @@ int main() {
     IoBlockCtx ctx{eff::testing::test()};
     fs::FileOf<WriteAppend> const file{};
     foundation::core::FixedArray<std::byte, 4> buffer{};
-    [[maybe_unused]] auto read = fs::read_full_at(ctx, file.ref(), buffer.view(), fs::FileOffset{0});
+    buffer.with_mut([&ctx, &file](auto run) noexcept {
+        [[maybe_unused]] auto read = fs::read_full_at(ctx, file.ref(), std::move(run), fs::FileOffset{0});
+    });
     return 0;
 }

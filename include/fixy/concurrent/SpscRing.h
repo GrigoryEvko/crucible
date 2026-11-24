@@ -253,42 +253,15 @@ public:
         return count;
     }
 
-    // The pop reads the head again only when the cached head gives fewer
-    // items than the View holds, for the reason of the push.  The cells are
-    // free for the producer at the one release store of the tail.
-    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::View<T> out) noexcept {
-        if (out.size() == 0) [[unlikely]]
-            return 0;
-        const std::uint64_t t = own_tail_.get();
-        std::uint64_t available = cached_head_.get() - t;
-        if (available < out.size()) [[unlikely]] {
-            available = items_after_head_load_();
-        }
-        if (available == 0) [[unlikely]]
-            return 0;
-        const std::size_t count = available < out.size() ? available : out.size();
-
-        const std::uint64_t start_pos = t & MASK;
-        const std::size_t room_to_end = Capacity - start_pos;
-        const std::size_t first = room_to_end < count ? room_to_end : count;
-        const std::size_t second = count - first;
-
-        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
-        std::memcpy(target, buffer_.data() + start_pos, first * sizeof(T));
-        if (second > 0) [[unlikely]] {
-            std::memcpy(target + first, buffer_.data(), second * sizeof(T));
-        }
-
-        tail_.advance_sole_writer_from(prove_tail_writer_(), t, t + count);
-        own_tail_.advance(t + count);
-        return count;
-    }
-
     // The pop into the run of a frame.  The door takes the ViewMut of the
     // frame by value, as fill does, so the pop is the one writer of the run.
+    // The pop reads the head again only when the cached head gives fewer
+    // items than the run holds, for the reason of the push.  The cells are
+    // free for the producer at the one release store of the tail.  The door
+    // of each brand calls one body (try_pop_batch_).
     template <::foundation::brand::IsBrand Brand, std::size_t Extent>
     [[nodiscard, gnu::hot]] std::size_t try_pop_batch(::foundation::core::ViewMut<T, Brand, Extent> out) noexcept {
-        return try_pop_batch(::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
+        return try_pop_batch_(::foundation::core::View<T>{::foundation::core::detail::run_of_(out)});
     }
 
     // A snapshot reads the index of the other side, and the schedule decides
@@ -384,6 +357,36 @@ private:
         const std::uint64_t t = own_tail_.get();
         store_tail_<Publish>(t - deferred_pops_, t);
         deferred_pops_ = 0;
+    }
+
+    // The body of the batch pop (try_pop_batch).  The door of each brand
+    // calls this one body, and out is the run of the frame of the door.
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch_(::foundation::core::View<T> out) noexcept {
+        if (out.size() == 0) [[unlikely]]
+            return 0;
+        const std::uint64_t t = own_tail_.get();
+        std::uint64_t available = cached_head_.get() - t;
+        if (available < out.size()) [[unlikely]] {
+            available = items_after_head_load_();
+        }
+        if (available == 0) [[unlikely]]
+            return 0;
+        const std::size_t count = available < out.size() ? available : out.size();
+
+        const std::uint64_t start_pos = t & MASK;
+        const std::size_t room_to_end = Capacity - start_pos;
+        const std::size_t first = room_to_end < count ? room_to_end : count;
+        const std::size_t second = count - first;
+
+        T* const target = first_of_(::foundation::core::detail::BaseLayerRead{}, out);
+        std::memcpy(target, buffer_.data() + start_pos, first * sizeof(T));
+        if (second > 0) [[unlikely]] {
+            std::memcpy(target + first, buffer_.data(), second * sizeof(T));
+        }
+
+        tail_.advance_sole_writer_from(prove_tail_writer_(), t, t + count);
+        own_tail_.advance(t + count);
+        return count;
     }
 
     // The free slots of the ring after a fresh acquire load of the tail into

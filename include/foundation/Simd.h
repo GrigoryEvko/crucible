@@ -377,36 +377,17 @@ CRUCIBLE_INLINE void store_aligned(V value, typename V::value_type* ptr) noexcep
     std::memcpy(aligned, &raw, sizeof(raw));
 }
 
-// The store of a vector into the bytes of one register, the lowest lane
-// first.  The type of the View proves the count, so the copy has no check,
-// and the bytes need no alignment.
-template <typename V, typename Byte, std::size_t Bytes>
-    requires RegisterBytes<V, Byte, Bytes> && (!std::is_const_v<Byte>)
-CRUCIBLE_INLINE void store(V value, core::View<Byte, Bytes> bytes) noexcept {
-    const typename V::raw_type raw = value.raw();
-    __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, bytes), &raw, sizeof(raw));
-}
-
-// A View of the lanes of one register of V that a store can write: the lanes
-// of RegisterLanes, and no lane is const.
+// The lanes of one register of V that a store can write: the lanes of
+// RegisterLanes, and no lane is const.
 template <typename V, typename Lane, std::size_t Lanes>
 concept WritableRegisterLanes = RegisterLanes<V, Lane, Lanes> && !std::is_const_v<Lane>;
 
-// The store of a vector into the lanes of one register, the lowest lane
-// first: the mirror of the load from lanes.  The type of the View proves the
-// count, so the copy has no check, and the lanes need no alignment beyond the
-// alignment of their type.  A View of bytes takes the store of RegisterBytes.
-template <typename V, typename Lane, std::size_t Lanes>
-    requires WritableRegisterLanes<V, Lane, Lanes>
-CRUCIBLE_INLINE void store(V value, core::View<Lane, Lanes> lanes) noexcept {
-    const typename V::raw_type raw = value.raw();
-    __builtin_memcpy(first_of_(core::detail::BaseLayerRead{}, lanes), &raw, sizeof(raw));
-}
-
 // The store of a vector into the bytes or the lanes of one register of the
-// run of a frame, the lowest lane first.  The door takes the ViewMut of the
-// frame by value, as fill does, so the store is the one writer of the run.
-// The type of the ViewMut proves the count, so the copy has no check.
+// run of a frame, the lowest lane first.  The store is the mirror of the
+// load.  The door takes the ViewMut of the frame by value, as fill does, so
+// the store is the one writer of the run.  The type of the ViewMut proves the
+// count, so the copy has no check.  The bytes need no alignment, and the
+// lanes need no alignment beyond the alignment of their type.
 template <typename V, typename Lane, ::foundation::brand::IsBrand Brand, std::size_t Lanes>
     requires RegisterBytes<V, Lane, Lanes> || WritableRegisterLanes<V, Lane, Lanes>
 CRUCIBLE_INLINE void store(V value, core::ViewMut<Lane, Brand, Lanes> lanes) noexcept {
@@ -508,17 +489,10 @@ template <typename V, typename Lane>
     return load_prefix<V>(first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
 }
 
-// The prefix store into the lanes of a View: the first lanes.size() lanes of
-// value, and no other byte.
-template <typename V, typename Lane>
-    requires std::is_same_v<Lane, typename V::value_type>
-CRUCIBLE_INLINE void store_prefix(V value, core::View<Lane> lanes) noexcept {
-    store_prefix(value, first_of_(core::detail::BaseLayerRead{}, lanes), lanes.size());
-}
-
 // The prefix store into the run of a frame: the first lanes.size() lanes of
 // value, and no other byte.  The door takes the ViewMut of the frame by
-// value, as fill does, so the store is the one writer of the run.
+// value, as fill does, so the store is the one writer of the run.  A run of
+// more lanes than V holds ends the process in each build.
 template <typename V, typename Lane, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     requires std::is_same_v<Lane, typename V::value_type>
 CRUCIBLE_INLINE void store_prefix(V value, core::ViewMut<Lane, Brand, Extent> lanes) noexcept {

@@ -10,7 +10,8 @@
 //                       class, such as an integer or an enumeration
 //   encoded_size_v<T>   the count of bytes of the image of a T
 //   hash(value)         the Digest<T> of the value: 64 bits, with no key
-//   encode(value, out)  writes the image of the value into out
+//   encode(value, out)  writes the image of the value into out, the ViewMut
+//                       of a frame
 //   decode<T>(bytes)    the T of an image, or the DecodeFault of the first
 //                       part that holds no value
 //   format(out, value)  writes each part of the value with its name into a
@@ -1684,10 +1685,10 @@ constexpr void fold_heap_part_(HeapFold& fold, T const& part) noexcept {
     }
 }
 
-// Ends the process: encode of an image of run-time size got a View of a
+// Ends the process: encode of an image of run-time size got a run of a
 // different size, or the image holds more bytes than the cap.
 [[noreturn]] CRUCIBLE_COLD inline void refuse_heap_encode_(std::size_t given, std::size_t needed) noexcept {
-    fatal("encode got a View of {} bytes for an image of {} bytes, and an image of run-time size holds at most {} "
+    fatal("encode got a run of {} bytes for an image of {} bytes, and an image of run-time size holds at most {} "
           "bytes",
           given, needed, max_image_bytes);
 }
@@ -1894,13 +1895,6 @@ template <Hashable T>
     return Digest<T>{state.accumulator};
 }
 
-// Writes the image of the value into out (the image).  Complexity: one pass
-// over the parts.
-template <Encodable T>
-constexpr void encode(T const& value, View<std::byte, encoded_size_v<T>> out) noexcept {
-    detail::encode_part_(value, first_of_(detail::BaseLayerRead{}, out));
-}
-
 // Writes the image of the value into the run of a frame (the image).  The
 // door takes the ViewMut of the frame by value, as fill does, so the encode
 // is the one writer of the run.  Complexity: one pass over the parts.
@@ -1954,23 +1948,12 @@ template <HeapEncodable T>
     return detail::heap_size_(value);
 }
 
-// Writes the image of the value into out (the heap parts).  out holds
-// exactly encoded_size(value) bytes, and the image holds at most
-// max_image_bytes bytes, or the process ends.  Complexity: one store for
-// each byte of the image.
-template <HeapEncodable T>
-constexpr void encode(T const& value, View<std::byte> out) noexcept {
-    std::size_t const needed = detail::heap_size_(value);
-    if (out.size() != needed || needed > detail::max_image_bytes) [[unlikely]] {
-        detail::refuse_heap_encode_(out.size(), needed);
-    }
-    if (needed != 0) detail::encode_heap_part_(value, first_of_(detail::BaseLayerRead{}, out));
-}
-
-// Writes the image of the value into the run of a frame (the heap parts), as
-// the form above does.  The door takes the ViewMut of the frame by value, as
-// fill does, so the encode is the one writer of the run.  Complexity: one
-// store for each byte of the image.
+// Writes the image of the value into out, the run of a frame (the heap
+// parts).  The door takes the ViewMut of the frame by value, as fill does,
+// so the encode is the one writer of the run.  out holds exactly
+// encoded_size(value) bytes, and the image holds at most max_image_bytes
+// bytes, or the process ends.  Complexity: one store for each byte of the
+// image.
 template <HeapEncodable T, class Brand, std::size_t Extent>
 constexpr void encode(T const& value, ViewMut<std::byte, Brand, Extent> out) noexcept {
     std::size_t const needed = detail::heap_size_(value);

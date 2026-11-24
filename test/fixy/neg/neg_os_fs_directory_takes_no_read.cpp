@@ -16,6 +16,8 @@ int main() {
     IoBlockCtx ctx{eff::testing::test()};
     fs::DirectoryHandle const dir{};
     foundation::core::FixedArray<std::byte, 4> bytes{};
-    [[maybe_unused]] auto read = fs::read_full(ctx, dir.ref(), bytes.view());
+    bytes.with_mut([&ctx, &dir](auto run) noexcept {
+        [[maybe_unused]] auto read = fs::read_full(ctx, dir.ref(), std::move(run));
+    });
     return 0;
 }

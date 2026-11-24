@@ -93,7 +93,7 @@ using Lanes = ::fixy::FixedArray<std::int64_t, kMaxTensorNDim>;
 // refused read gives the default descriptor.
 [[nodiscard]] bool is_read(UncheckedTensorMeta const& fields) noexcept {
     ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<UncheckedTensorMeta>> image{};
-    image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, run.view()); });
+    image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
     ::crucible::detail_ser::Reader reader{.image = image.view()};
     TensorMeta const meta = ::crucible::detail_ser::read_meta(reader);
     return reader.refusal.is_none() && meta.ndim == fields.ndim;

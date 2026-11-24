@@ -1479,9 +1479,10 @@ sweep_temporary_directories(Ctx const& ctx) noexcept {
 // The calls below read and write through a handle that is open.  A signal
 // that interrupts a read or a write restarts it, and every other error
 // returns.  read_full stops at the end of the file, so it returns fewer
-// bytes than the View holds only there.  A write_full to a pipe or a socket
-// with no reader gives epipe, and the process gets no SIGPIPE.  The bytes
-// are a View of the base, or the characters of a TextView.
+// bytes than the run holds only there.  A write_full to a pipe or a socket
+// with no reader gives epipe, and the process gets no SIGPIPE.  A read
+// writes into the ViewMut of a frame.  A write reads a View of the base, or
+// the characters of a TextView.
 //
 // Each takes the borrow of a file, and the context that the other calls in
 // this header take, because each call can park the caller on the disk.  A
@@ -1496,24 +1497,14 @@ file_size(Ctx const&, FileRef<Rights> file) noexcept {
     return detail::file_size_(::fixy::os::detail::HandleDoor::descriptor_of(file));
 }
 
-// Reads into buffer from the byte offset of the file, until the buffer is
-// full or the file ends, and gives the count of the bytes.  The read does not
-// move the offset of the file, so a reader of one part of a file needs no
-// state of its position.  A read at an offset is a positioned access, so it
-// asks for the read and the seek rights.  A file of an append open holds no
-// seek right, and a reader of such a file opens it again for reading.
-template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
-    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek>
-[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_full_at(Ctx const&, FileRef<Rights> file, ::foundation::core::View<std::byte> buffer, FileOffset offset) noexcept {
-    return detail::read_full_at_(::fixy::os::detail::HandleDoor::descriptor_of(file),
-                                 first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size(),
-                                 offset.raw());
-}
-
-// The read at an offset into the run of a frame.  The door takes the ViewMut
-// of the frame by value, as fill does, so the read is the one writer of the
-// run.
+// Reads into the run of a frame from the byte offset of the file, until the
+// run is full or the file ends.  It gives the count of the bytes.  The door
+// takes the ViewMut of the frame by value, as fill does, so the read is the
+// one writer of the run.  The read does not move the offset of the file, so
+// a reader of one part of a file needs no state of its position.  A read at
+// an offset is a positioned access, so it asks for the read and the seek
+// rights.  A file of an append open holds no seek right, and a reader of
+// such a file opens it again for reading.
 template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
@@ -1537,16 +1528,8 @@ set_file_size(Ctx const&, FileRef<Rights> file, FileOffset length) noexcept {
 
 // A read and a write take the borrow of a handle of each kind that holds the
 // right: a file, a socket or a perf event.  A directory holds neither right.
-template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
-    requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read>
-[[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
-read_full(Ctx const&, ::fixy::os::HandleRef<Kind, Rights> handle, ::foundation::core::View<std::byte> buffer) noexcept {
-    return detail::read_full_(::fixy::os::detail::HandleDoor::descriptor_of(handle),
-                              first_of_(::foundation::core::detail::BaseLayerRead{}, buffer), buffer.size());
-}
-
-// The read into the run of a frame.  The door takes the ViewMut of the frame
-// by value, as fill does, so the read is the one writer of the run.
+// The read takes the ViewMut of a frame by value, as fill does, so the read
+// is the one writer of the run.
 template <class Kind, ::fixy::os::RightSet Rights, eff::IsExecCtx Ctx, class Brand, std::size_t Extent>
     requires CtxFitsHandleCall<Ctx, Rights, ::fixy::os::RightSet::read>
 [[nodiscard]] inline ::foundation::core::Result<std::size_t, ::foundation::os::Errno>
