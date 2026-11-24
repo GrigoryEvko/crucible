@@ -42,7 +42,8 @@ template <std::size_t N>
 template <std::size_t N>
 void poison_shard(Bytes<N>& encoded, std::size_t shard, std::size_t shard_bytes, std::byte fill) {
     encoded.with_mut([shard, shard_bytes, fill](auto run) noexcept {
-        ::fixy::fill(run.view().window(shard * shard_bytes, shard_bytes).expect("the shard lies inside the block"),
+        ::fixy::fill(::fixy::take_window(std::move(run), shard * shard_bytes, shard_bytes)
+                         .expect("the shard lies inside the block"),
                      fill);
     });
 }
@@ -52,7 +53,7 @@ void poison_shard(Bytes<N>& encoded, std::size_t shard, std::size_t shard_bytes,
 template <typename Codec, std::size_t EncodedBytes>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, ci::FecError>
 encode_into(Codec const& codec, ::fixy::View<std::byte const> input, Bytes<EncodedBytes>& encoded) noexcept {
-    return encoded.with_mut([&codec, input](auto run) noexcept { return codec.encode(input, run.view()); });
+    return encoded.with_mut([&codec, input](auto run) noexcept { return codec.encode(input, std::move(run)); });
 }
 
 // The decode of the received block into decoded, through the frame door of
@@ -62,7 +63,7 @@ template <typename Codec, std::size_t DecodedBytes>
 decode_into(Codec const& codec, ::fixy::View<std::byte const> received, ::fixy::View<bool const> erasures,
             Bytes<DecodedBytes>& decoded) noexcept {
     return decoded.with_mut(
-        [&codec, received, erasures](auto run) noexcept { return codec.decode(received, erasures, run.view()); });
+        [&codec, received, erasures](auto run) noexcept { return codec.decode(received, erasures, std::move(run)); });
 }
 
 template <typename Codec, std::size_t InputBytes, std::size_t EncodedBytes>
@@ -128,8 +129,9 @@ void verify_mul_xor_against_scalar_product() {
                 }
                 auto const source = source_seed.view().window(offset, len).expect("the run lies inside the source");
                 target.with_mut([offset, len, source, factor](auto run) noexcept {
-                    detail::mul_xor(run.view().window(offset, len).expect("the run lies inside the target"), source,
-                                    factor);
+                    auto part =
+                        ::fixy::take_window(std::move(run), offset, len).expect("the run lies inside the target");
+                    detail::mul_xor(part, source, factor);
                 });
                 CRUCIBLE_TEST_ASSERT(kTest, expected == target);
             }
@@ -160,6 +162,9 @@ int main() {
                                ::foundation::effects::ConcurrentRow<::foundation::effects::SmBudget<1>>>);
     static_assert(ci::ByteContiguousBuffer<Bytes<8>> && ci::ByteContiguousBuffer<::fixy::View<std::byte const>>);
     static_assert(ci::MutableByteContiguousBuffer<Bytes<8>> && !ci::MutableByteContiguousBuffer<Bytes<8> const>);
+    static_assert(ci::MutableByteContiguousBuffer<::foundation::core::FixedArray<unsigned char, 8>>);
+    static_assert(!ci::MutableByteContiguousBuffer<::fixy::View<std::byte>>
+                  && !ci::MutableByteContiguousBuffer<::foundation::core::FixedArray<int, 8>>);
 
     auto rs42 = ci::mint_reed_solomon<4, 2>(::foundation::effects::testing::init());
 
@@ -242,6 +247,15 @@ int main() {
         Bytes<Rs42::encoded_size_for(payload.size())> encoded{};
         CRUCIBLE_TEST_ASSERT(kTest, rs42.encode_owned(std::move(owned_payload), encoded).is_ok());
 
+        // An owner of unsigned chars lends its bytes through byte_view, and
+        // gets the same bytes.
+        ::foundation::core::FixedArray<unsigned char, Rs42::encoded_size_for(payload.size())> encoded_chars{};
+        auto payload_again = ::fixy::mint_linear<Bytes<payload.size()>>(payload);
+        CRUCIBLE_TEST_ASSERT(kTest, rs42.encode_owned(std::move(payload_again), encoded_chars).is_ok());
+        for (auto index : encoded.indices()) {
+            CRUCIBLE_TEST_ASSERT(kTest, static_cast<std::byte>(encoded_chars.at(index)) == encoded.at(index));
+        }
+
         auto owned_encoded = ::fixy::mint_linear<decltype(encoded)>(encoded);
         Flags<Rs42::total_shards> erasures{};
         Bytes<payload.size()> decoded{};
@@ -250,7 +264,11 @@ int main() {
     }
 
     {
-        auto rejected = rs42.encode(::fixy::View<std::byte const>{}, ::fixy::View<std::byte>{});
+        Bytes<1> block{};
+        auto rejected = block.with_mut([&rs42](auto run) noexcept {
+            return rs42.encode(::fixy::View<std::byte const>{},
+                               ::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
+        });
         CRUCIBLE_TEST_ASSERT(kTest,
                              rejected.err().expect("an empty input is refused") == ci::FecError::InvalidInputSize);
     }

@@ -196,8 +196,16 @@ template <std::size_t SourceSymbols>
         const auto j = i + static_cast<std::size_t>(product >> 64U);
         [[assume(j < SourceSymbols)]];
         const auto draw = ::fixy::Index<SourceSymbols>::check(j).expect("the draw is a remaining symbol");
-        permutation.with_mut(
-            [step, draw](auto run) noexcept { ::fixy::swap(run.view().at(step), run.view().at(draw)); });
+        // A draw of the step itself leaves the permutation as it is, so the
+        // swap takes two different elements, each with one writer.
+        permutation.with_mut([step, draw](auto run) noexcept {
+            if (draw == step) {
+                return;
+            }
+            auto stepped = run.get_mut(step.raw()).expect("the step is a symbol of the permutation");
+            auto drawn = run.get_mut(draw.raw()).expect("the draw is a symbol of the permutation");
+            ::fixy::swap(*stepped, *drawn);
+        });
         mask |= std::uint64_t{1} << permutation.at(step);
     }
     return mask;
@@ -218,7 +226,7 @@ template <std::size_t SymbolBytes>
 CRUCIBLE_HOT void copy_symbol(::fixy::View<std::byte const> input, std::size_t symbol,
                               FountainSymbol<SymbolBytes>& out) noexcept {
     out.with_mut([input, symbol](auto run) noexcept {
-        ::fixy::fill(run.view(), std::byte{0});
+        run = ::fixy::reborrow(std::move(run), [](auto lent) noexcept { ::fixy::fill(std::move(lent), std::byte{0}); });
 
         const auto start = symbol * SymbolBytes;
         if (start >= input.size()) {
@@ -226,7 +234,7 @@ CRUCIBLE_HOT void copy_symbol(::fixy::View<std::byte const> input, std::size_t s
         }
 
         const auto live = ::fixy::min(SymbolBytes, input.size() - start);
-        ::fixy::copy(run.view().window(0, live).expect("the live bytes fit in a symbol"),
+        ::fixy::copy(::fixy::take_window(std::move(run), 0, live).expect("the live bytes fit in a symbol"),
                      input.window(start, live).expect("the live bytes lie inside the input"))
             .expect("the two windows have the count of the live bytes");
     });
@@ -328,7 +336,7 @@ private:
             const auto source = static_cast<std::size_t>(::fixy::countr_zero(remaining));
             fountain_detail::copy_symbol(input, source, symbol);
             packet.payload.with_mut(
-                [source_bytes = symbol.view()](auto run) noexcept { detail::mul_xor(run.view(), source_bytes, 1); });
+                [source_bytes = symbol.view()](auto run) noexcept { detail::mul_xor(run, source_bytes, 1); });
             remaining &= remaining - 1U;
         }
 
@@ -475,9 +483,8 @@ private:
         auto overlap = equation.mask & decoded_mask_;
         while (overlap != 0) {
             auto const symbol = symbol_of(overlap);
-            equation.payload.with_mut([source_bytes = decoded_symbol(symbol)](auto run) noexcept {
-                detail::mul_xor(run.view(), source_bytes, 1);
-            });
+            equation.payload.with_mut(
+                [source_bytes = decoded_symbol(symbol)](auto run) noexcept { detail::mul_xor(run, source_bytes, 1); });
             equation.mask &= ~(std::uint64_t{1} << symbol.raw());
             overlap &= overlap - 1U;
         }

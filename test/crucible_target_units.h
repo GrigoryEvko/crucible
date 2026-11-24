@@ -22,20 +22,24 @@ inline constexpr std::uint64_t philox_home_bit = std::uint64_t{1} << 1;
 inline constexpr std::uint64_t fec_home_bit = std::uint64_t{1} << 2;
 inline constexpr std::uint64_t fountain_home_bit = std::uint64_t{1} << 3;
 
+// The brand of the run of the probed body of mul_xor.  The two units and the
+// test name this one class, so the two bodies have one type.
+struct TargetUnitBrand {};
+
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body tells which unit of the link holds it")
 
 // The record of one unit:
 //   - homes: the home bits of the headers whose probed names are in the
 //     target namespace of the unit
-//   - mul_xor_body: the body of crucible::cntp::detail::mul_xor, whose type
-//     reads no target
+//   - mul_xor_body: the body of crucible::cntp::detail::mul_xor for a run of
+//     the brand TargetUnitBrand, whose type reads no target
 //   - kernel_bits_body: the bits of the kernels of the three headers on fixed
 //     inputs, by the body of the unit.  The unit of x86-64-v4 runs only on
 //     such a processor.
 struct CrucibleTargetUnit {
     std::uint64_t homes = 0;
-    void (*mul_xor_body)(::foundation::core::View<std::byte>, ::foundation::core::View<std::byte const>,
-                         std::uint8_t) noexcept = nullptr;
+    void (*mul_xor_body)(::foundation::core::ViewMut<std::byte, TargetUnitBrand>&,
+                         ::foundation::core::View<std::byte const>, std::uint8_t) noexcept = nullptr;
     std::uint64_t (*kernel_bits_body)() noexcept = nullptr;
 };
 

@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <utility>
 
 namespace crucible::test {
 namespace {
@@ -94,7 +95,7 @@ template <std::meta::info Home>
     });
     ::fixy::FixedArray<std::byte, 96> encoded{};
     bool const is_encoded = encoded.with_mut(
-        [&codec, &payload](auto run) noexcept { return codec.encode(payload.view(), run.view()).is_ok(); });
+        [&codec, &payload](auto run) noexcept { return codec.encode(payload.view(), std::move(run)).is_ok(); });
     digest = fold_word(digest, is_encoded ? 1u : 0u);
     for (std::byte const byte : encoded) {
         digest = fold_word(digest, static_cast<std::uint8_t>(byte));
@@ -132,7 +133,7 @@ template <std::meta::info Home>
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the address of a body tells which unit of the link holds it")
     return CrucibleTargetUnit{
         .homes = homes_of_this_unit(),
-        .mul_xor_body = &::crucible::cntp::detail::mul_xor<void>,
+        .mul_xor_body = &::crucible::cntp::detail::mul_xor<void, TargetUnitBrand>,
         .kernel_bits_body = &kernel_bits_of_this_unit,
     };
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING

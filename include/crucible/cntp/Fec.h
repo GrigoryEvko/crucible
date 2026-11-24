@@ -50,25 +50,24 @@ concept ByteContiguousBuffer =
 
 namespace detail {
 
-// A body of the frame door of an owner of bytes, for the test of the door.
+// A body of the frame door of an owner of bytes, for the test of the door: it
+// takes the ViewMut of a run of std::byte or of unsigned char.
 struct ByteRunProbe final {
     template <class Run>
+        requires std::same_as<typename Run::element_type, std::byte>
+              || std::same_as<typename Run::element_type, unsigned char>
     constexpr void operator()(Run /*run*/) const noexcept {}
 };
 
 }  // namespace detail
 
-// A buffer whose bytes a codec can write: a View of bytes, an owner whose
-// view() gives a View that writes, or an owner that lends its bytes in place
-// through its member frame door with_mut, such as a FixedArray of bytes.
+// A buffer whose bytes a codec can write: an owner that lends its run of
+// std::byte or of unsigned char in place through its member frame door
+// with_mut, such as a FixedArray of bytes.  The frame door gives the ViewMut
+// of the run, the one writer of the bytes.  A View and an owner whose view()
+// writes give no ViewMut, so the concept refuses them.
 template <typename Buffer>
-concept MutableByteContiguousBuffer =
-    std::convertible_to<Buffer&, ::fixy::View<std::byte>> || requires(Buffer& buffer) {
-        { buffer.view() } -> std::convertible_to<::fixy::View<std::byte>>;
-    } || requires(Buffer& buffer) {
-        { buffer.view() } -> std::convertible_to<::fixy::View<std::byte const>>;
-        buffer.with_mut(detail::ByteRunProbe{});
-    };
+concept MutableByteContiguousBuffer = requires(Buffer& buffer) { buffer.with_mut(detail::ByteRunProbe{}); };
 
 namespace detail {
 
@@ -172,6 +171,14 @@ template <class Field = void>
     return static_cast<std::byte>(static_cast<std::uint8_t>(lhs) ^ rhs);
 }
 
+// The op of write_each that gives the exclusive or of the byte of a target
+// and the byte of a source at one position.
+struct XorBytes final {
+    [[nodiscard]] constexpr std::byte operator()(std::byte target, std::byte source) const noexcept {
+        return xor_byte(target, static_cast<std::uint8_t>(source));
+    }
+};
+
 template <std::size_t N>
 using SquareMatrix = ::fixy::FixedArray<::fixy::FixedArray<std::uint8_t, N>, N>;
 
@@ -230,15 +237,15 @@ template <std::size_t N>
     // Adds the product of factor and each entry of pivot to the same entry of a row.  The row is not the pivot.
     auto const eliminate_row = [](Row& entries, Row const& pivot, std::uint8_t factor) noexcept {
         entries.with_mut([&pivot, factor](auto run) noexcept {
-            auto const out = run.view();
             for (auto j : pivot.indices()) {
-                out.at(j) = static_cast<std::uint8_t>(out.at(j) ^ mul(factor, pivot.at(j)));
+                auto entry = run.get_mut(j.raw()).expect("an index of the pivot is an index of the row");
+                *entry = static_cast<std::uint8_t>(*entry ^ mul(factor, pivot.at(j)));
             }
         });
     };
     for (auto row : inverse.indices()) {
         inverse.with_element(row, [row](Row& entries) noexcept {
-            entries.with_mut([](auto run) noexcept { ::fixy::fill(run.view(), std::uint8_t{0}); });
+            entries.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), std::uint8_t{0}); });
             entries.with_element(row, [](std::uint8_t& entry) noexcept { entry = 1; });
         });
     }
@@ -250,14 +257,17 @@ template <std::size_t N>
         }
         auto const pivot = std::move(found).expect("the search found a pivot");
         if (pivot != col) {
-            // The type of the two indexes proves that each names a row, so the swap takes no check.
+            // The type of the two indexes proves that each names a row, so the optimizer removes the check of each
+            // get_mut.  The two rows differ, so each has one writer.
             input.with_mut([pivot, col](auto run) noexcept {
-                auto const rows = run.view();
-                ::fixy::swap(rows.at(pivot), rows.at(col));
+                auto pivot_row = run.get_mut(pivot.raw()).expect("the pivot is a row of the matrix");
+                auto col_row = run.get_mut(col.raw()).expect("the column is a row of the matrix");
+                ::fixy::swap(*pivot_row, *col_row);
             });
             inverse.with_mut([pivot, col](auto run) noexcept {
-                auto const rows = run.view();
-                ::fixy::swap(rows.at(pivot), rows.at(col));
+                auto pivot_row = run.get_mut(pivot.raw()).expect("the pivot is a row of the matrix");
+                auto col_row = run.get_mut(col.raw()).expect("the column is a row of the matrix");
+                ::fixy::swap(*pivot_row, *col_row);
             });
         }
 
@@ -285,6 +295,23 @@ template <std::size_t N>
     }
     return true;
 }
+
+inline namespace CRUCIBLE_SIMD_TARGET {
+
+// The product of each byte of src and coeff, added into the byte of dst at
+// the same position, one byte at a time.  The parts of one byte of
+// for_each_chunk_pair count the bytes, so the loop has no check, and two
+// counts that differ end the process before the loop.
+template <class Field = void, class Brand, std::size_t Extent>
+CRUCIBLE_HOT void mul_xor_scalar(::fixy::ViewMut<std::byte, Brand, Extent> dst, ::fixy::View<std::byte const> src,
+                                 std::uint8_t coeff) noexcept {
+    static_cast<void>(::fixy::for_each_chunk_pair<1>(std::move(dst), src, [coeff](auto target, auto source) noexcept {
+        auto element = target.get_mut(0).expect("a part holds one byte");
+        *element = xor_byte(*element, mul<Field>(static_cast<std::uint8_t>(source.at(::fixy::index<0>())), coeff));
+    }));
+}
+
+}  // namespace CRUCIBLE_SIMD_TARGET
 
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
 // The products of coeff and each low nibble, and of coeff and each high
@@ -322,16 +349,20 @@ using KernelHalfwords = ::foundation::simd::vec<std::uint16_t, 8>;
 #endif
 using NibbleTableBytes = ::foundation::simd::vec<std::uint8_t, 16>;
 
-CRUCIBLE_HOT void xor_bytes_simd(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
+template <class Brand, std::size_t Extent>
+CRUCIBLE_HOT void xor_bytes_simd(::fixy::ViewMut<std::byte, Brand, Extent> dst,
+                                 ::fixy::View<std::byte const> src) noexcept {
     namespace simd = ::foundation::simd;
-    auto const [target_rest, source_rest] =
-        simd::for_each_register_run<KernelBytes>(dst, src, [](auto target, auto source) noexcept {
-            simd::store(simd::load<KernelBytes>(target) ^ simd::load<KernelBytes>(source), target);
+    auto [target_rest, source_rest] =
+        simd::for_each_register_run<KernelBytes>(std::move(dst), src, [](auto target, auto source) noexcept {
+            KernelBytes const sum = simd::load<KernelBytes>(target.view()) ^ simd::load<KernelBytes>(source);
+            simd::store(sum, std::move(target));
         });
-    for (auto [target, source] :
-         target_rest.walk().try_zip(source_rest.walk()).expect("the two rests have one count")) {
-        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
-    }
+    // The counted loop of write_each has no check in it, so GCC vectorizes the
+    // rest as it does the loop of two Views.
+    ::fixy::View<std::byte const> const target_old = target_rest.view();
+    ::fixy::write_each(std::move(target_rest), XorBytes{}, target_old, source_rest)
+        .expect("the two rests have one count");
 }
 
 // The product of each byte and coeff is the exclusive or of the products
@@ -342,15 +373,15 @@ CRUCIBLE_HOT void xor_bytes_simd(::fixy::View<std::byte> dst, ::fixy::View<std::
 // bits that come from the next byte are above them.  That shift is one
 // vpsrlw with AVX2.  A shift of each byte is a slower affine instruction
 // on a host with GFNI.
-template <class Field = void>
-CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src,
+template <class Field = void, class Brand, std::size_t Extent>
+CRUCIBLE_HOT void mul_xor_simd(::fixy::ViewMut<std::byte, Brand, Extent> dst, ::fixy::View<std::byte const> src,
                                std::uint8_t coeff) noexcept {
     namespace simd = ::foundation::simd;
     if (coeff == 0) {
         return;
     }
     if (coeff == 1) {
-        xor_bytes_simd(dst, src);
+        xor_bytes_simd(std::move(dst), src);
         return;
     }
 
@@ -358,47 +389,52 @@ CRUCIBLE_HOT void mul_xor_simd(::fixy::View<std::byte> dst, ::fixy::View<std::by
     const NibbleTableBytes lo_table = simd::load<NibbleTableBytes>(tables.lo.view());
     const NibbleTableBytes hi_table = simd::load<NibbleTableBytes>(tables.hi.view());
 
-    auto const [target_rest, source_rest] =
-        simd::for_each_register_run<KernelBytes>(dst, src, [&](auto target, auto source) noexcept {
+    auto [target_rest, source_rest] =
+        simd::for_each_register_run<KernelBytes>(std::move(dst), src, [&](auto target, auto source) noexcept {
             const KernelBytes bytes = simd::load<KernelBytes>(source);
             const KernelBytes high = simd::bit_cast<KernelBytes>(simd::bit_cast<KernelHalfwords>(bytes) >> 4);
             const KernelBytes prod = simd::lookup_nibbles(lo_table, bytes) ^ simd::lookup_nibbles(hi_table, high);
-            simd::store(simd::load<KernelBytes>(target) ^ prod, target);
+            const KernelBytes sum = simd::load<KernelBytes>(target.view()) ^ prod;
+            simd::store(sum, std::move(target));
         });
-    for (auto [target, source] :
-         target_rest.walk().try_zip(source_rest.walk()).expect("the two rests have one count")) {
-        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
-    }
+    mul_xor_scalar<Field>(std::move(target_rest), source_rest, coeff);
 }
 
 }  // namespace CRUCIBLE_SIMD_TARGET
 #endif
 
-CRUCIBLE_HOT void xor_bytes_scalar(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src) noexcept {
-    for (auto [target, source] : dst.walk().try_zip(src.walk()).expect("the two shards have one count")) {
-        *target = xor_byte(*target, static_cast<std::uint8_t>(*source));
-    }
+// The exclusive or of each byte of dst and the byte of src at the same
+// position, into dst.  write_each reads each byte of old before it writes the
+// byte of dst at that position.
+template <class Brand, std::size_t Extent>
+CRUCIBLE_HOT void xor_bytes_scalar(::fixy::ViewMut<std::byte, Brand, Extent> dst,
+                                   ::fixy::View<std::byte const> src) noexcept {
+    ::fixy::View<std::byte const> const old = dst.view();
+    ::fixy::write_each(std::move(dst), XorBytes{}, old, src).expect("the two shards have one count");
 }
 
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The product of each byte of src and coeff, added into the byte of dst at
-// the same position.  The two Views have one count.
-template <class Field = void>
-CRUCIBLE_HOT void mul_xor(::fixy::View<std::byte> dst, ::fixy::View<std::byte const> src, std::uint8_t coeff) noexcept {
+// the same position.  The two runs have one count.  Each caller adds some
+// products into one shard, so the kernel takes the ViewMut of the shard by
+// reference and writes it through reborrow.
+template <class Field = void, class Brand, std::size_t Extent>
+CRUCIBLE_HOT void mul_xor(::fixy::ViewMut<std::byte, Brand, Extent>& dst, ::fixy::View<std::byte const> src,
+                          std::uint8_t coeff) noexcept {
     if (coeff == 0) {
         return;
     }
 #if defined(__AVX2__) || ((defined(__ARM_NEON) || defined(__ARM_NEON__)) && defined(__aarch64__))
-    mul_xor_simd<Field>(dst, src, coeff);
+    dst = ::fixy::reborrow(std::move(dst),
+                           [src, coeff](auto lent) noexcept { mul_xor_simd<Field>(std::move(lent), src, coeff); });
 #else
     if (coeff == 1) {
-        xor_bytes_scalar(dst, src);
+        dst = ::fixy::reborrow(std::move(dst), [src](auto lent) noexcept { xor_bytes_scalar(std::move(lent), src); });
         return;
     }
-    for (auto [target, source] : dst.walk().try_zip(src.walk()).expect("the two shards have one count")) {
-        *target = xor_byte(*target, mul<Field>(static_cast<std::uint8_t>(*source), coeff));
-    }
+    dst = ::fixy::reborrow(std::move(dst),
+                           [src, coeff](auto lent) noexcept { mul_xor_scalar<Field>(std::move(lent), src, coeff); });
 #endif
 }
 
@@ -416,19 +452,19 @@ template <ByteContiguousBuffer Buffer>
 void bytes(Buffer const&&) =
     delete("the View borrows the buffer, and a temporary buffer ends with the full expression");
 
-// Gives body the View of the bytes of buffer that writes them, for the time of
-// the call, and gives the result of body.  An owner with a member frame door
-// lends its bytes in place through that door.
+// Gives body the ViewMut of the bytes of the frame of buffer, for the time of
+// the call, and gives the result of body.  The owner lends its bytes in place
+// through its member frame door, and a run of unsigned chars gives its bytes
+// through byte_view.
 template <MutableByteContiguousBuffer Buffer, class Body>
 [[nodiscard]] constexpr auto with_mutable_bytes(Buffer& buffer, Body&& body) noexcept {
-    if constexpr (std::convertible_to<Buffer&, ::fixy::View<std::byte>>) {
-        return static_cast<Body&&>(body)(::fixy::View<std::byte>{buffer});
-    } else if constexpr (requires { buffer.with_mut(ByteRunProbe{}); }) {
-        return buffer.with_mut(
-            [&body](auto run) noexcept { return static_cast<Body&&>(body)(::fixy::View<std::byte>{run.view()}); });
-    } else {
-        return static_cast<Body&&>(body)(::fixy::View<std::byte>{buffer.view()});
-    }
+    return buffer.with_mut([&body](auto run) noexcept {
+        if constexpr (std::same_as<typename decltype(run)::element_type, unsigned char>) {
+            return static_cast<Body&&>(body)(::foundation::core::byte_view(std::move(run)));
+        } else {
+            return static_cast<Body&&>(body)(std::move(run));
+        }
+    });
 }
 
 }  // namespace detail
@@ -464,9 +500,13 @@ public:
     }
 
     // Each shard of the output is checked as a window of the output, one
-    // compare for each shard and none in the byte loops.
+    // compare for each shard and none in the byte loops.  The split at the
+    // end of the data shards gives the parity shards one writer, and the data
+    // shards a read through the const view of their part.
+    template <class Brand, std::size_t Extent>
     [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError>
-    encode(::fixy::View<std::byte const> input, ::fixy::View<std::byte> output_with_parity) const noexcept {
+    encode(::fixy::View<std::byte const> input,
+           ::fixy::ViewMut<std::byte, Brand, Extent> output_with_parity) const noexcept {
         if (input.size() == 0) {
             return ::fixy::err(FecError::InvalidInputSize);
         }
@@ -479,25 +519,36 @@ public:
             return ::fixy::err(FecError::InvalidOutputSize);
         }
 
-        ::fixy::fill(output_with_parity, std::byte{0});
-        ::fixy::copy(output_with_parity.window(0, input.size()).expect("the input fits in the data shards"), input)
-            .expect("the window has the count of the input");
+        output_with_parity = ::fixy::reborrow(std::move(output_with_parity),
+                                              [](auto lent) noexcept { ::fixy::fill(std::move(lent), std::byte{0}); });
+        output_with_parity = ::fixy::reborrow(std::move(output_with_parity), [input](auto lent) noexcept {
+            ::fixy::copy(
+                ::fixy::take_window(std::move(lent), 0, input.size()).expect("the input fits in the data shards"),
+                input)
+                .expect("the window has the count of the input");
+        });
 
+        auto [data, parity] = ::fixy::split_at(std::move(output_with_parity), static_cast<std::size_t>(K) * shard_bytes)
+                                  .expect("the data shards lie inside the output");
+        ::fixy::View<std::byte const> const data_bytes = data.view();
         for (::fixy::Index<M> parity_shard : ::fixy::IndexRange<M>{}) {
             auto const& row = generator().at(row_of(static_cast<std::size_t>(K) + parity_shard.raw()));
-            auto const parity =
-                shard_of(output_with_parity, static_cast<std::size_t>(K) + parity_shard.raw(), shard_bytes);
-            for (::fixy::Index<K> data_shard : ::fixy::IndexRange<K>{}) {
-                detail::mul_xor(parity, shard_of(output_with_parity, data_shard.raw(), shard_bytes),
-                                row.at(data_shard));
-            }
+            parity =
+                ::fixy::reborrow(std::move(parity), [&row, data_bytes, parity_shard, shard_bytes](auto lent) noexcept {
+                    auto shard = ::fixy::take_window(std::move(lent), parity_shard.raw() * shard_bytes, shard_bytes)
+                                     .expect("the shard lies inside the parity shards");
+                    for (::fixy::Index<K> data_shard : ::fixy::IndexRange<K>{}) {
+                        detail::mul_xor(shard, shard_of(data_bytes, data_shard.raw(), shard_bytes), row.at(data_shard));
+                    }
+                });
         }
         return ::fixy::Unit{};
     }
 
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError> decode(::fixy::View<std::byte const> received,
-                                                                ::fixy::View<bool const> erasure_mask,
-                                                                ::fixy::View<std::byte> output) const noexcept {
+    template <class Brand, std::size_t Extent>
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, FecError>
+    decode(::fixy::View<std::byte const> received, ::fixy::View<bool const> erasure_mask,
+           ::fixy::ViewMut<std::byte, Brand, Extent> output) const noexcept {
         if (received.size() == 0 || (received.size() % total_shards) != 0) {
             return ::fixy::err(FecError::InvalidInputSize);
         }
@@ -548,14 +599,19 @@ public:
                 break;
             }
             const auto live_bytes = ::fixy::min(shard_bytes, output.size() - out_offset);
-            auto const dst = output.window(out_offset, live_bytes).expect("the live bytes lie inside the output");
-            ::fixy::fill(dst, std::byte{0});
+            output = ::fixy::reborrow(std::move(output), [&selected, &inverse, received, out_shard, out_offset,
+                                                          live_bytes, shard_bytes](auto lent) noexcept {
+                auto dst = ::fixy::take_window(std::move(lent), out_offset, live_bytes)
+                               .expect("the live bytes lie inside the output");
+                dst = ::fixy::reborrow(std::move(dst),
+                                       [](auto zeroed) noexcept { ::fixy::fill(std::move(zeroed), std::byte{0}); });
 
-            for (::fixy::Index<K> src : ::fixy::IndexRange<K>{}) {
-                auto const shard = received.window(selected.at(src) * shard_bytes, live_bytes)
-                                       .expect("a selected shard lies inside the received block");
-                detail::mul_xor(dst, shard, inverse.at(out_shard).at(src));
-            }
+                for (::fixy::Index<K> src : ::fixy::IndexRange<K>{}) {
+                    auto const shard = received.window(selected.at(src) * shard_bytes, live_bytes)
+                                           .expect("a selected shard lies inside the received block");
+                    detail::mul_xor(dst, shard, inverse.at(out_shard).at(src));
+                }
+            });
         }
         return ::fixy::Unit{};
     }
@@ -567,7 +623,7 @@ public:
                                                                       Output& output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(input.peek());
         auto result = detail::with_mutable_bytes(
-            output, [this, source](::fixy::View<std::byte> target) noexcept { return encode(source, target); });
+            output, [this, source](auto target) noexcept { return encode(source, std::move(target)); });
         drop(std::move(input));
         return result;
     }
@@ -577,10 +633,9 @@ public:
                                                                       ::fixy::View<bool const> erasure_mask,
                                                                       Output& output) const noexcept {
         ::fixy::View<std::byte const> const source = detail::bytes(received.peek());
-        auto result =
-            detail::with_mutable_bytes(output, [this, source, erasure_mask](::fixy::View<std::byte> target) noexcept {
-                return decode(source, erasure_mask, target);
-            });
+        auto result = detail::with_mutable_bytes(output, [this, source, erasure_mask](auto target) noexcept {
+            return decode(source, erasure_mask, std::move(target));
+        });
         drop(std::move(received));
         return result;
     }
@@ -602,8 +657,8 @@ private:
     }
 
     // The bytes of the shard at position shard of a block of shards.
-    [[nodiscard]] static constexpr ::fixy::View<std::byte> shard_of(::fixy::View<std::byte> block, std::size_t shard,
-                                                                    std::size_t shard_bytes) noexcept {
+    [[nodiscard]] static constexpr ::fixy::View<std::byte const>
+    shard_of(::fixy::View<std::byte const> block, std::size_t shard, std::size_t shard_bytes) noexcept {
         return block.window(shard * shard_bytes, shard_bytes).expect("the shard lies inside the block");
     }
 };
