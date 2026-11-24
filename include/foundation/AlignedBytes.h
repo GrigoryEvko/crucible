@@ -46,12 +46,13 @@
 // door.
 //
 // Windows
-//   with_mut_windows<T>(block, windows, body)
-//                   the frame door of some windows of a named block, as
+//   with_mut_windows<T>(std::move(block), windows, body)
+//                   the frame door of some windows of a block, as
 //                   slice::get_disjoint_mut of Rust (1.86) gives one unique
 //                   borrow for each of some indexes.  body gets one ViewMut<T>
 //                   for each window, with the brand of the frame, and the door
-//                   gives the result of body.  A window is the offset of its
+//                   gives a Record of the Result of body and the block, also
+//                   after a refused window.  A window is the offset of its
 //                   first byte and its count of bytes (ByteWindow).  The door
 //                   checks each window in each build: inside the block, its
 //                   first byte aligned for T, a whole count of T, and no byte
@@ -60,7 +61,7 @@
 //                   window gives a WindowRefusal and not an end of the process.
 //                   A call takes at most max_block_windows windows, and the
 //                   check of overlap compares each pair of them
-//   with_mut_windows<T>(block, fixed_windows, body)
+//   with_mut_windows<T>(std::move(block), fixed_windows, body)
 //                   the same door over a FixedArray of N windows, for a
 //                   count that the caller knows at compile time.  body gets N
 //                   arguments, one ViewMut<T> for each window, so no array of
@@ -68,9 +69,17 @@
 //                   and each pair at a fixed position, with no loop over a
 //                   run-time count, and it gives the same refusals in the
 //                   same order
-// The block stays with the caller while body runs, so the door holds no
-// proof that body reads no byte of the block through a second name.  The
-// windows do not overlap, so two ViewMuts of one call never share a byte.
+//   with_mut_windows<T>(keyed, key, windows, body)
+//                   the two doors over a KeyedBytes with its LoanKey
+// The block moves into the frame of the door, so the caller holds no name for
+// its bytes while body runs.  Thus a body opens no second frame of the block,
+// the door takes no key, and two ViewMuts of two frames never share a byte.  A
+// second call on the name that the caller moved from finds an empty block, and
+// it refuses each window that holds an element.  The move takes three words in
+// and three out, and the bytes stay where they are.  So a View of the bytes
+// that the caller made before the call stays valid in the body.  A View has no
+// brand, so it proves no difference from a window.  The windows of one call do
+// not overlap, so two ViewMuts of one call never share a byte either.
 //
 // The header also holds the arithmetic of an aligned allocation, which the
 // block and SwissTableBuffer share, and the size of one huge page.  The
@@ -495,6 +504,11 @@ namespace detail {
 template <class Given>
 using window_frame_value_t = std::conditional_t<std::is_void_v<Given>, core::Unit, std::remove_cv_t<Given>>;
 
+// What a door of windows that holds its owner gives back: the Result of the
+// body or the refusal, and the owner.
+template <class Given, class Owner>
+using window_frame_return_t = core::Record<core::Result<window_frame_value_t<Given>, WindowRefusal>, Owner>;
+
 // True when the two windows share a byte.  A window of no byte shares none.
 // Each window is inside its block, so no end wraps.
 [[nodiscard]] constexpr bool windows_overlap_(ByteWindow const& first, ByteWindow const& second) noexcept {
@@ -580,10 +594,9 @@ template <class T, class... Refused, std::size_t N, class Body,
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
          && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
          && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
-[[nodiscard]] core::Result<
-    detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
-    WindowRefusal>
-with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
+[[nodiscard]] detail::window_frame_return_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>,
+                                            AlignedBytes>
+with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept;
 
 template <class T, class... Refused, std::size_t N, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
@@ -591,9 +604,9 @@ template <class T, class... Refused, std::size_t N, class Body,
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
          && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
-[[nodiscard]] core::Result<
-    detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
-with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept;
+[[nodiscard]] detail::window_frame_return_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>,
+                                            AlignedBytes>
+with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept;
 
 template <class T, class... Refused, std::size_t N, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
@@ -671,8 +684,8 @@ class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
 
 // The door of the frame doors of the windows of a block to the key of the
 // frame doors (the doors of the owners above foundation/core/Frame.h).  Its
-// one member is private.  The invariant: a frame door of a named block lends
-// the windows of the block that its caller names, with the scope brand of its
+// one member is private.  The invariant: a frame door of a block holds the
+// block by move in its frame, and lends its windows with the scope brand of its
 // call.  A keyed frame door takes the LoanKey of the brand of its keyed block
 // first, so no second frame of the windows of the block is open.  The six
 // frame doors of the windows are its friends.  Each door passes the key to the
@@ -685,21 +698,20 @@ class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameK
              && std::is_nothrow_invocable_v<Body&&, FixedList<ViewMut<T, Fresh>, N>&>
              && FrameResult<std::invoke_result_t<Body&&, FixedList<ViewMut<T, Fresh>, N>&>, Fresh>
              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
-    friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows,
+    friend auto ::foundation::with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows,
                                                Body&& body) noexcept
-        -> core::Result<
-            detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
-            WindowRefusal>;
+        -> detail::window_frame_return_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>,
+                                         AlignedBytes>;
     template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
              && UniqueTarget<T> && lifetime::ImplicitLifetimeThroughout<T>
              && ::foundation::detail::WindowBody<Body&&, ViewMut<T, Fresh>, N>
              && FrameResult<::foundation::detail::window_body_result_t<Body&&, ViewMut<T, Fresh>, N>, Fresh>
              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
-    friend auto ::foundation::with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows,
+    friend auto ::foundation::with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows,
                                                Body&& body) noexcept
-        -> core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
-                        WindowRefusal>;
+        -> detail::window_frame_return_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>,
+                                         AlignedBytes>;
     template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
              && ::foundation::detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
@@ -803,9 +815,10 @@ lend_listed_windows_(core::detail::FrameKey const& key, AlignedBytes& block,
 
 }  // namespace detail
 
-// The frame door of some windows of a named block (the windows).  body gets
+// The frame door of some windows of a block (the windows).  The block moves
+// into the frame, and the door gives it back after the Result.  body gets
 // a reference to a FixedList of one ViewMut<T, Fresh> for each window, in the
-// order of the windows, and the door gives its result, or Unit for a body
+// order of the windows, and the Result holds its result, or Unit for a body
 // that gives void.  A ViewMut does not copy, so a body that takes the list by
 // value does not fit, and the list never moves out of the frame.
 // A refused window gives its WindowRefusal, and body does not run.  Each
@@ -821,12 +834,13 @@ template <class T, class... Refused, std::size_t N, class Body, ::foundation::br
          && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
          && core::FrameResult<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>
          && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
-[[nodiscard]] core::Result<
-    detail::window_frame_value_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>>,
-    WindowRefusal>
-with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_listed_windows_<T, Fresh>(core::AlignedBytesFrameKeyDoor::key_(), block, windows,
-                                                  static_cast<Body&&>(body));
+[[nodiscard]] detail::window_frame_return_t<std::invoke_result_t<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>,
+                                            AlignedBytes>
+with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) noexcept {
+    AlignedBytes held{std::move(block)};
+    return {detail::lend_listed_windows_<T, Fresh>(core::AlignedBytesFrameKeyDoor::key_(), held, windows,
+                                                   static_cast<Body&&>(body)),
+            std::move(held)};
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds
@@ -836,20 +850,22 @@ template <class T, class... Refused, std::size_t N, class Body,
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows) && core::UniqueTarget<T>
              && std::is_nothrow_invocable_v<Body&&, core::FixedList<core::ViewMut<T, Fresh>, N>&>
              && (!core::FrameResult<std::invoke_result_t<Body &&, core::FixedList<core::ViewMut<T, Fresh>, N>&>, Fresh>)
-void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) = delete(
+void with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
 
 // More windows than the check of overlap compares bind to this overload.
 template <class T, class... Refused, std::size_t N, class Body>
     requires(N > max_block_windows)
-void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
+void with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
     delete("with_mut_windows takes at most max_block_windows windows, because its check of overlap compares each pair");
 
-// A temporary block gives its bytes back at the end of the full expression.
+// A named block stays with the caller while the body runs, so the body could
+// open a second frame of its windows, or end its bytes.
 template <class T, class... Refused, std::size_t N, class Body>
-void with_mut_windows(AlignedBytes&& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
-    delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
+void with_mut_windows(AlignedBytes& block, core::FixedList<ByteWindow, N> const& windows, Body&& body) =
+    delete("with_mut_windows takes the block into its frame and gives it back after the Result: pass std::move(block), "
+           "and keep the block that the call returns");
 
 // ── The windows of a static count ──────────────────────────────────────────
 
@@ -991,13 +1007,14 @@ lend_tested_windows_(core::detail::FrameKey const& key, core::View<std::uint8_t>
 
 }  // namespace detail
 
-// The frame door of a static count of windows of a named block (the
-// windows).  The count N is a template parameter, and the windows are a
+// The frame door of a static count of windows of a block (the windows).  The
+// block moves into the frame, and the door gives it back after the Result.
+// The count N is a template parameter, and the windows are a
 // FixedArray of N, so the door tests each window and each pair at a fixed
 // position, with no loop over a run-time count.  body gets N arguments, one
 // ViewMut<T, Fresh> for each window, in the order of the windows, so it
 // takes each by value or by a forwarding reference.  No array of views
-// lives in the frame.  The door gives the result of body, or Unit for a body
+// lives in the frame.  The Result holds the result of body, or Unit for a body
 // that gives void.  The tests and the refusals are those of the form of a
 // list, in the same order: the tests of each window in order, then the
 // pairs.  Complexity: N tests and N(N-1)/2 compares, with N at most
@@ -1007,11 +1024,13 @@ template <class T, class... Refused, std::size_t N, class Body, ::foundation::br
          && lifetime::ImplicitLifetimeThroughout<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
          && core::FrameResult<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>, Fresh>
          && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>
-[[nodiscard]] core::Result<
-    detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
-with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
-    return detail::lend_tested_windows_<T, Fresh, 0>(core::AlignedBytesFrameKeyDoor::key_(), block.view(), windows,
-                                                     static_cast<Body&&>(body));
+[[nodiscard]] detail::window_frame_return_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>,
+                                            AlignedBytes>
+with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept {
+    AlignedBytes held{std::move(block)};
+    return {detail::lend_tested_windows_<T, Fresh, 0>(core::AlignedBytesFrameKeyDoor::key_(), held.view(), windows,
+                                                      static_cast<Body&&>(body)),
+            std::move(held)};
 }
 
 // A body whose result holds a borrow or names the brand of the frame binds
@@ -1021,34 +1040,38 @@ template <class T, class... Refused, std::size_t N, class Body,
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
              && core::UniqueTarget<T> && detail::WindowBody<Body&&, core::ViewMut<T, Fresh>, N>
              && (!core::FrameResult<detail::window_body_result_t<Body &&, core::ViewMut<T, Fresh>, N>, Fresh>)
-void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) = delete(
+void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) = delete(
     "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
     "the frame: give a plain value");
 
 // More windows than the check of overlap compares bind to this overload.
 template <class T, class... Refused, std::size_t N, class Body>
     requires(N > max_block_windows)
-void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
+void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
     delete("with_mut_windows takes at most max_block_windows windows, because its check of overlap compares each pair");
 
-// A temporary block gives its bytes back at the end of the full expression.
+// A named block stays with the caller while the body runs, so the body could
+// open a second frame of its windows, or end its bytes.
 template <class T, class... Refused, std::size_t N, class Body>
-void with_mut_windows(AlignedBytes&& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
-    delete("a ViewMut of a temporary block points into bytes that the full expression gives back: name the block");
+void with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) =
+    delete("with_mut_windows takes the block into its frame and gives it back after the Result: pass std::move(block), "
+           "and keep the block that the call returns");
 
 // A body that holds a linear value by value binds to this overload, for the
 // windows of a list and of a static count, so the refusal gives its reason.
 template <class T, class... Refused, class Windows, class Body>
     requires(!::foundation::linear::HoldsNoLinearValue<Body>)
-void with_mut_windows(AlignedBytes& block, Windows const& windows, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+void with_mut_windows(AlignedBytes&& block, Windows const& windows, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
 // ── The keyed block ────────────────────────────────────────────────────────
 
 // A block that opens the frames of its windows only with its LoanKey (the
-// loan key of foundation/core/Frame.h).  It holds an AlignedBytes by value, so
-// a move takes three words.  It reads its bytes through view() const&, and it
-// gives no View that writes them, so a body of a frame of its windows writes
-// the bytes only through the ViewMuts of the frame.
+// loan key of foundation/core/Frame.h).  It holds an AlignedBytes by value.  It
+// reads its bytes through view() const&, and it gives no View that writes
+// them, so a body of a frame of its windows writes the bytes only through the
+// ViewMuts of the frame.  It does not move and takes no assignment: a body of
+// a frame can reach it by a name, and a move out of that name could end the
+// bytes under the ViewMuts.
 template <class Brand>
     requires core::IsKeyBrand<Brand>
 class [[nodiscard]][[= core::loan_key_mark{}]] KeyedBytes final {
@@ -1062,8 +1085,10 @@ public:
     KeyedBytes(KeyedBytes const&) = delete("a KeyedBytes owns its block alone: a copy would give it back two times");
     KeyedBytes&
     operator=(KeyedBytes const&) = delete("a KeyedBytes owns its block alone: a copy would give it back two times");
-    KeyedBytes(KeyedBytes&&) noexcept = default;
-    KeyedBytes& operator=(KeyedBytes&&) noexcept = default;
+    KeyedBytes(KeyedBytes&&) = delete("a KeyedBytes holds its block from its mint to its end: a move in a frame of its "
+                                      "windows could end the bytes of the frame");
+    KeyedBytes& operator=(KeyedBytes&&) = delete("a KeyedBytes holds its block from its mint to its end: an assignment "
+                                                 "in a frame of its windows could end the bytes of the frame");
     ~KeyedBytes() = default;
 
     // The count of bytes that the mint of the block asked for, and the

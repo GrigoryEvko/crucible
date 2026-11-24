@@ -4428,6 +4428,13 @@ crucible_neg_compile_test(neg_crucible_context_compiled_view_other_brand
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::BrandedFg<.anonymous.::Stranger>, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_crucible_context_compiled_view_other_brand.cpp:15")
 
+# A body of with_output_views opens no second frame of the outputs: the frame
+# door of the windows refuses a capture of the context that is not const.
+crucible_neg_compile_test(neg_crucible_context_nested_output_views
+  "no matching function for call to .with_mut_windows<float>\\("
+  "no matching function for call to .foundation::core::Result<foundation::core::FixedList<foundation::ByteWindow, 8>, crucible::OutputRefusal>::and_then\\("
+  "StoresNoBorrowOutside")
+
 # mint_external_slot gives the ExternalSlotId of a slot that the plan marks
 # external, and the address form of register_external takes only that type.
 # Two fixtures cover its two gates:

@@ -218,6 +218,15 @@ constexpr ByteWindow kAt2Of4{side_as<Start>(ByteCount{2}), side_as<Length>(ByteC
 constexpr ByteWindow kFirst6{side_as<Start>(ByteCount{0}), side_as<Length>(ByteCount{6})};
 constexpr ByteWindow kAt8Empty{side_as<Start>(ByteCount{8}), side_as<Length>(ByteCount{0})};
 
+// Lends the windows of a block to body through the frame door, puts the block
+// back in its name, and gives the Result.
+template <class T, class Windows, class Body>
+[[nodiscard]] auto lend_windows(AlignedBytes& block, Windows const& windows, Body&& body) noexcept {
+    auto [result, back] = with_mut_windows<T>(std::move(block), windows, static_cast<Body&&>(body));
+    block = std::move(back);
+    return std::move(result);
+}
+
 // The door lends one ViewMut for each window, in the order of the windows,
 // and each ViewMut writes only the bytes of its window.  A second call reads
 // the values back.  A body that gives void gives Unit.
@@ -225,7 +234,7 @@ void test_windows_lend_disjoint_views() {
     auto const alloc = ::foundation::effects::testing::test().alloc;
     AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
     FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
-    auto const written = with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+    auto const written = lend_windows<float>(block, windows, [](auto& views) noexcept {
         float value = 1.5f;
         std::size_t count = 0;
         for (auto& view : views) {
@@ -238,7 +247,7 @@ void test_windows_lend_disjoint_views() {
         return count;
     });
     CRUCIBLE_FATAL_INVARIANT(written.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
-    auto const matched = with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+    auto const matched = lend_windows<float>(block, windows, [](auto& views) noexcept {
         using ::foundation::core::bit_cast;
         float expected = 1.5f;
         std::size_t count = 0;
@@ -257,8 +266,39 @@ void test_windows_lend_disjoint_views() {
         nonzero_between += byte != 0 ? 1u : 0u;
     }
     CRUCIBLE_FATAL_INVARIANT(nonzero_between == 0);
-    auto const empty = with_mut_windows<float>(block, windows, [](auto&) noexcept {});
+    auto const empty = lend_windows<float>(block, windows, [](auto&) noexcept {});
     CRUCIBLE_FATAL_INVARIANT(empty.is_ok());
+}
+
+// A body that opens a second frame of the name of its block finds the block
+// in the frame of the first door.  So the second door refuses each window that
+// holds an element, and its body does not run.  The block comes back with its
+// bytes, and a View of the bytes that the caller made before the frame reads
+// them in the body.
+void test_nested_windows_find_no_block() {
+    auto const alloc = ::foundation::effects::testing::test().alloc;
+    AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
+    FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
+    ::foundation::core::View<std::uint8_t const> const before = block.view();
+    int inner_runs = 0;
+    auto [outer, back] = with_mut_windows<float>(
+        std::move(block), windows, [&block, &windows, &inner_runs, before](auto& views) noexcept {
+            auto [inner, inner_back] =
+                with_mut_windows<float>(std::move(block), windows, [&inner_runs](auto&) noexcept { ++inner_runs; });
+            block = std::move(inner_back);
+            bool const is_refused = inner.match(
+                [](::foundation::core::Unit const&) noexcept { return false; },
+                [](WindowRefusal const& refusal) noexcept { return refusal == WindowRefusal::outside_block; });
+            for (auto& view : views) {
+                for (float& element : view)
+                    element = 1.5f;
+            }
+            bool const is_written =
+                before.window<4>(0).expect("four bytes fit").at(::foundation::core::index<3>()) != 0;
+            return is_refused && is_written;
+        });
+    CRUCIBLE_FATAL_INVARIANT(outer.is_ok_and([](bool const& is_held) noexcept { return is_held; }));
+    CRUCIBLE_FATAL_INVARIANT(inner_runs == 0 && block.size() == 0 && back.size() == 256);
 }
 
 // A keyed block lends its windows with its LoanKey.  The key moves into the
@@ -316,7 +356,7 @@ void test_windows_refusals() {
     AlignedBytes block = mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64}));
     int runs = 0;
     auto const refusal_of = [&block, &runs](FixedList<ByteWindow, 2> const& windows) noexcept {
-        return with_mut_windows<float>(block, windows, [&runs](auto&) noexcept { ++runs; })
+        return lend_windows<float>(block, windows, [&runs](auto&) noexcept { ++runs; })
             .err()
             .expect("the door refuses the windows");
     };
@@ -327,9 +367,9 @@ void test_windows_refusals() {
     CRUCIBLE_FATAL_INVARIANT(refusal_of(make_windows(kAt32Of16, kFirst36)) == WindowRefusal::overlap);
     CRUCIBLE_FATAL_INVARIANT(runs == 0);
     auto const touching =
-        with_mut_windows<float>(block, make_windows(kFirst16, kAt16Of16), [&runs](auto&) noexcept { ++runs; });
+        lend_windows<float>(block, make_windows(kFirst16, kAt16Of16), [&runs](auto&) noexcept { ++runs; });
     auto const nothing =
-        with_mut_windows<float>(block, make_windows(kAt8Empty, kFirst16), [&runs](auto&) noexcept { ++runs; });
+        lend_windows<float>(block, make_windows(kAt8Empty, kFirst16), [&runs](auto&) noexcept { ++runs; });
     CRUCIBLE_FATAL_INVARIANT(touching.is_ok() && nothing.is_ok() && runs == 2);
 }
 
@@ -356,7 +396,7 @@ void test_static_windows_agree_with_the_list() {
         FixedArray<ByteWindow, 2>{kFirst16, kAt8Of16},  FixedArray<ByteWindow, 2>{kAt32Of16, kFirst36},
         FixedArray<ByteWindow, 2>{kFirst16, kAt16Of16}, FixedArray<ByteWindow, 2>{kAt8Empty, kFirst16}};
     for (FixedArray<ByteWindow, 2> const& pair : pairs) {
-        auto const listed = with_mut_windows<float>(
+        auto const listed = lend_windows<float>(
             block, make_windows(pair.at(::foundation::core::index<0>()), pair.at(::foundation::core::index<1>())),
             [](auto& views) noexcept {
                 std::size_t count = 0;
@@ -364,20 +404,20 @@ void test_static_windows_agree_with_the_list() {
                     count += view.size();
                 return count;
             });
-        auto const fixed = with_mut_windows<float>(
+        auto const fixed = lend_windows<float>(
             block, pair, [](auto first, auto second) noexcept { return first.size() + second.size(); });
         CRUCIBLE_FATAL_INVARIANT(code_of(listed) == code_of(fixed));
     }
 
-    auto const written = with_mut_windows<float>(block, FixedArray<ByteWindow, 2>{kFirst16, kAt64Of32},
-                                                 [](auto first, auto second) noexcept {
-                                                     for (float& element : first)
-                                                         element = 1.5f;
-                                                     for (float& element : second)
-                                                         element = 2.5f;
-                                                 });
+    auto const written = lend_windows<float>(block, FixedArray<ByteWindow, 2>{kFirst16, kAt64Of32},
+                                             [](auto first, auto second) noexcept {
+                                                 for (float& element : first)
+                                                     element = 1.5f;
+                                                 for (float& element : second)
+                                                     element = 2.5f;
+                                             });
     CRUCIBLE_FATAL_INVARIANT(written.is_ok());
-    auto const matched = with_mut_windows<float>(block, make_windows(kFirst16, kAt64Of32), [](auto& views) noexcept {
+    auto const matched = lend_windows<float>(block, make_windows(kFirst16, kAt64Of32), [](auto& views) noexcept {
         using ::foundation::core::bit_cast;
         float expected = 1.5f;
         std::size_t count = 0;
@@ -391,13 +431,13 @@ void test_static_windows_agree_with_the_list() {
     });
     CRUCIBLE_FATAL_INVARIANT(matched.is_ok_and([](std::size_t const& count) noexcept { return count == 12; }));
 
-    auto const one = with_mut_windows<float>(block, FixedArray<ByteWindow, 1>{kAt32Of16},
-                                             [](auto only) noexcept { return only.size(); });
-    auto const three = with_mut_windows<float>(
+    auto const one = lend_windows<float>(block, FixedArray<ByteWindow, 1>{kAt32Of16},
+                                         [](auto only) noexcept { return only.size(); });
+    auto const three = lend_windows<float>(
         block, FixedArray<ByteWindow, 3>{kFirst16, kAt32Of16, kAt64Of32},
         [](auto first, auto second, auto third) noexcept { return first.size() + second.size() + third.size(); });
-    auto const three_overlap = with_mut_windows<float>(block, FixedArray<ByteWindow, 3>{kFirst16, kAt64Of32, kAt8Of16},
-                                                       [](auto, auto, auto) noexcept {});
+    auto const three_overlap = lend_windows<float>(block, FixedArray<ByteWindow, 3>{kFirst16, kAt64Of32, kAt8Of16},
+                                                   [](auto, auto, auto) noexcept {});
     CRUCIBLE_FATAL_INVARIANT(code_of(one) == 4 && code_of(three) == 16);
     CRUCIBLE_FATAL_INVARIANT(
         three_overlap.match([](::foundation::core::Unit const&) noexcept { return false; },
@@ -415,6 +455,7 @@ int main() {
     test_move();
     test_layouts_refuse_bad_requests();
     test_windows_lend_disjoint_views();
+    test_nested_windows_find_no_block();
     test_keyed_windows();
     test_windows_refusals();
     test_static_windows_agree_with_the_list();

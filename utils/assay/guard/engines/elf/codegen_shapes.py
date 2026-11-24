@@ -585,6 +585,17 @@ PROBES: tuple[Probe, ...] = (
         "pointer and the copy of the raw form: a key is empty, and the door lends the run in place",
         calls=("memmove",),
     ),
+    Probe("fixed_array_set", "set of a FixedArray at a proven index is one store, with no check"),
+    Probe(
+        "heap_array_copy_window",
+        "copy_window of a FixedHeapArray is the two compares of the bound of the window and one memmove",
+        branches=True,
+        calls=("memmove",),
+    ),
+    Probe(
+        "build_array_words",
+        "build_fixed_array writes the array in the object of the result, with no copy",
+    ),
     Probe(
         "window_loan_open",
         "the window door of a WindowStack is the window test and the step of the top of the raw stack, with the "
@@ -840,9 +851,11 @@ PROBES: tuple[Probe, ...] = (
     ),
     Probe(
         "aligned_bytes_two_windows",
-        "with_mut_windows of two windows of a named block is the raw form of two pointer windows: for each window the "
+        "with_mut_windows of two windows of a block is the raw form of two pointer windows: for each window the "
         "compare with the bytes of the block, the test of a whole count of floats and the test of the alignment, then "
-        "the four compares of the pair and the store of the body into each window, with no call.  The list of the "
+        "the four compares of the pair and the store of the body into each window.  The block moves into the frame "
+        "and back, so its three words are read, emptied and written again, and the write back tests the name of the "
+        "caller, with a call of the release door when the body put a block there.  The list of the "
         "views lives in the frame, because the body takes it by reference, so the function takes the canary of the "
         "stack protector.  The start of the lifetime of each window keeps the checks of start_as_array, with a "
         "branch to the exit of CRUCIBLE_FATAL_INVARIANT, where the optimizer does not fold them into the tests of "
@@ -850,18 +863,21 @@ PROBES: tuple[Probe, ...] = (
         "into a trap",
         checks=("fatal", "stack"),
         branches=True,
+        calls=("foundation::core::detail::heap_release_",),
     ),
     Probe(
         "aligned_bytes_two_windows_static",
         "with_mut_windows of a FixedArray of two windows is the raw form of two pointer windows: the tests of each "
         "window and the four compares of the pair at fixed positions, and the store of the body into each window, "
-        "with no loop and no canary of the stack protector.  The tests of each window give a tested window, whose "
+        "with no loop and no canary of the stack protector.  The block moves into the frame and back, as in the "
+        "form of a list.  The tests of each window give a tested window, whose "
         "start of its elements has no check.  The body reads the first element through get, and the asm "
         "statement of the start hides the pointer of the window, so the Ref of each element takes a test and a "
         "branch to a fatal path.  A window of no element takes a branch of its own, and starts no lifetime.  In a "
         "unit with -fharden-compares, the compares of the door that give a value take a second test into a trap",
         checks=("fatal",),
         branches=True,
+        calls=("foundation::core::detail::heap_release_",),
     ),
     Probe(
         "box_read",

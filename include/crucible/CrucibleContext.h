@@ -399,6 +399,10 @@ struct CrucibleContext {
     // result of body, or Unit for a body that gives void.  The views come
     // from the frame door with_mut_windows of the bytes of the pool
     // (foundation/AlignedBytes.h), so each lives for the call of body alone.
+    // The block of the pool moves into the frame and comes back after body, so
+    // body reads the inputs through input_view, whose Views stay valid, and
+    // the pool lends no block to a second call: with_output_views in body
+    // gives OutsidePool for an output that holds an element.
     // The window of each output comes from the plan of the active region.
     // An external output gives ExternalOutput, an output with no slot
     // NoSlot, more outputs than max_block_windows TooManyOutputs, and a
@@ -410,8 +414,11 @@ struct CrucibleContext {
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] auto with_output_views(CompiledView const&, Body&& body) & {
         return output_windows_().and_then([this, &body](OutputWindows windows) noexcept {
-            return ::foundation::with_mut_windows<T>(pool_.pool_, windows, static_cast<Body&&>(body))
-                .map_err([](::foundation::WindowRefusal refusal) noexcept { return output_refusal_of_(refusal); });
+            auto [written, block] =
+                ::foundation::with_mut_windows<T>(std::move(pool_.pool_), windows, static_cast<Body&&>(body));
+            pool_.pool_ = std::move(block);
+            return std::move(written).map_err(
+                [](::foundation::WindowRefusal refusal) noexcept { return output_refusal_of_(refusal); });
         });
     }
 

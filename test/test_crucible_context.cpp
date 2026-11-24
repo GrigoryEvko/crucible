@@ -724,6 +724,17 @@ static void test_slot_views() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, in_place.is_ok_and([](std::size_t const& matched) noexcept { return matched == 64; }));
 
+    // The body reads the inputs of the op, whose Views stay valid while the
+    // block of the pool is in the frame, and the pool holds its block again
+    // after the call.
+    const uint64_t pool_bytes = ctx.pool().pool_bytes();
+    const auto read = ctx.with_output_views<float>(
+        cv, [&ctx = ::fixy::as_const(ctx), &cv = ::fixy::as_const(cv)](auto& views) noexcept {
+            return views.size() > 0 && ctx.input_view<float>(InputPosition{0}, cv).is_some();
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, read.is_ok_and([](bool const& is_read) noexcept { return is_read; }));
+    CRUCIBLE_TEST_ASSERT(kTest, pool_bytes > 0 && ctx.pool().pool_bytes() == pool_bytes);
+
     int runs = 0;
     const auto refusal_of = [&ctx, &cv, &runs]() noexcept {
         return ctx.with_output_views<float>(cv, [&runs](auto&) noexcept { ++runs; })

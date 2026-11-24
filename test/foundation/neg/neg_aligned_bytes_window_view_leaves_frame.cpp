@@ -18,7 +18,8 @@ int main() {
             .append(::foundation::ByteWindow{core::side_as<core::side::WindowStart>(core::ByteCount{0}),
                                              core::side_as<core::side::WindowLength>(core::ByteCount{16})})
             .expect("the list holds one window"));
-    auto kept = ::foundation::with_mut_windows<float>(
-        block, windows, [](auto& views) noexcept { return views.take_last().expect("the list holds one view"); });
-    return kept.is_ok() ? 0 : 1;
+    auto kept = ::foundation::with_mut_windows<float>(std::move(block), windows, [](auto& views) noexcept {
+        return views.take_last().expect("the list holds one view");
+    });
+    return kept.size() == 2 ? 0 : 1;
 }

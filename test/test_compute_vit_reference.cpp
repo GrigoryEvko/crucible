@@ -43,17 +43,18 @@ template <std::uint64_t Key, class ValueOf>
                                     .append(::foundation::ByteWindow{::fixy::side_as<Start>(::fixy::ByteCount{0}),
                                                                      ::fixy::side_as<Length>(bytes)})
                                     .is_ok());
-    const auto drawn = ::foundation::with_mut_windows<float>(block, windows, [&value_of](auto& views) noexcept {
-        std::uint64_t draw = 0;
-        for (auto& view : views) {
-            for (float& element : view) {
-                element = value_of(draw_weight<Key>(Draw{draw}));
-                ++draw;
+    auto [drawn, drawn_block] =
+        ::foundation::with_mut_windows<float>(std::move(block), windows, [&value_of](auto& views) noexcept {
+            std::uint64_t draw = 0;
+            for (auto& view : views) {
+                for (float& element : view) {
+                    element = value_of(draw_weight<Key>(Draw{draw}));
+                    ++draw;
+                }
             }
-        }
-    });
+        });
     CRUCIBLE_TEST_ASSERT(kTest, drawn.is_ok());
-    return block;
+    return std::move(drawn_block);
 }
 
 }  // namespace

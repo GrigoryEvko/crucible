@@ -50,7 +50,7 @@ template <std::uint64_t Key>
                                         ::fixy::side_as<Start>(::fixy::ByteCount{0}),
                                         ::fixy::side_as<Length>(::fixy::ByteCount{count.raw() * sizeof(float)})})
                                     .is_ok());
-    const auto drawn = ::foundation::with_mut_windows<float>(block, windows, [](auto& views) noexcept {
+    auto [drawn, back] = ::foundation::with_mut_windows<float>(std::move(block), windows, [](auto& views) noexcept {
         std::uint64_t draw = 0;
         for (auto& view : views) {
             for (float& element : view) {
@@ -61,7 +61,7 @@ template <std::uint64_t Key>
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, drawn.is_ok());
-    return block;
+    return std::move(back);
 }
 
 }  // namespace

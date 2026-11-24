@@ -54,12 +54,15 @@
 //     list.with_element(position, on_some, on_none)   the element at a
 //                       position of a GrowList (Grow.h) or of a HeapArray
 //                       (Array.h), given to an arm in place, with no key
-//     with_mut_windows<T>(block, windows, body)   one ViewMut<T> for each of
-//                       some disjoint windows of a named AlignedBytes
+//     with_mut_windows<T>(std::move(block), windows, body)   one ViewMut<T> for
+//                       each of some disjoint windows of an AlignedBytes
 //                       (foundation/AlignedBytes.h), as slice::get_disjoint_mut
-//                       of Rust gives one unique borrow for each of some indexes.
-//                       The block stays with the caller, so its frame proves
-//                       only that its windows do not overlap
+//                       of Rust gives one unique borrow for each of some
+//                       indexes.  The block moves into the frame and comes
+//                       back, with no key
+//     build_fixed_array<T, N>(body)   a new FixedArray (Array.h): the array is a
+//                       local of the door while body runs, so no name of it is
+//                       in the scope of the caller, and it takes no key
 //
 // A borrow of a run that other frames of the same storage nest inside, such
 // as the records of one op that runs other ops, takes a window door of a

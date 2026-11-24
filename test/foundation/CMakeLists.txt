@@ -2333,14 +2333,14 @@ foundation_neg_compile_test(neg_aligned_bytes_without_allocation_marker
 foundation_neg_compile_test(neg_aligned_bytes_view_of_temporary
   "use of deleted function .void foundation::AlignedBytes::view\\(\\) &&."
   "a view of a temporary AlignedBytes points into a block that the full expression gives back")
-# with_mut_windows lends its ViewMuts for the call of the body only, and only
-# from a named block.
+# with_mut_windows lends its ViewMuts for the call of the body only, and it
+# takes the block by move, so a body opens no second frame of the block.
 foundation_neg_compile_test(neg_aligned_bytes_window_view_leaves_frame
   "use of deleted function .void foundation::with_mut_windows"
   "the result of a frame door leaves the frame, so it holds no reference and no address")
-foundation_neg_compile_test(neg_aligned_bytes_windows_of_temporary
-  "use of deleted function .void foundation::with_mut_windows"
-  "a ViewMut of a temporary block points into bytes that the full expression gives back")
+foundation_neg_compile_test(neg_aligned_bytes_windows_of_named_block
+  "use of deleted function .void foundation::with_mut_windows\\(AlignedBytes&, const core::FixedArray<ByteWindow, N>&, Body&&\\)"
+  "with_mut_windows takes the block into its frame and gives it back after the Result")
 # The static form over a FixedArray of windows has the same gates: a body
 # result that names the brand of the frame, and more windows than the check
 # of overlap compares.
@@ -2353,7 +2353,14 @@ foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
 # A keyed block (the loan key of foundation/core/Frame.h) lends its windows only
 # with its LoanKey, and the gate refuses a body that opens a second frame of
 # the windows with the key that it captures.  The maker of a keyed block takes
-# the block only by move.
+# the block only by move.  A keyed block does not move and takes no
+# assignment, so a body of a frame of its windows does not end its bytes.
+foundation_neg_compile_test(neg_core_keyed_bytes_moved_in_its_frame
+  "use of deleted function .foundation::KeyedBytes<Brand>::KeyedBytes\\(foundation::KeyedBytes<Brand>&&\\)"
+  "a KeyedBytes holds its block from its mint to its end: a move in a frame")
+foundation_neg_compile_test(neg_core_keyed_bytes_assigned
+  "use of deleted function .foundation::KeyedBytes<Brand>& foundation::KeyedBytes<Brand>::operator=\\(foundation::KeyedBytes<Brand>&&\\)"
+  "a KeyedBytes holds its block from its mint to its end: an assignment in a frame")
 foundation_neg_compile_test(neg_core_keyed_windows_nested
   "use of deleted function .void foundation::with_mut_windows\\(KeyedBytes<Brand>&, Key&&, const core::FixedArray<ByteWindow, N>&, Body&&\\)"
   "a body of a keyed frame reaches a LoanKey of the brand of its block")

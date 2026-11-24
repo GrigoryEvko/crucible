@@ -466,6 +466,29 @@ struct ShapeHeapBrand final {};
     target.with_mut(key, [words](auto run) noexcept { fixy::copy(std::move(run), words); });
 }
 
+// One element through the value door set, as the trace ring writes its slot.
+[[gnu::used]] void fixed_array_set(fixy::FixedArray<std::uint64_t, 64>& array, fixy::Index<64> index,
+                                   std::uint64_t value) noexcept {
+    array.set(index, value);
+}
+
+// A run into a window of a heap array through the value door copy_window, as
+// the metadata log writes its ring.
+[[gnu::used]] bool heap_array_copy_window(::foundation::core::FixedHeapArray<std::uint64_t, 64>& target,
+                                          std::size_t start, fixy::View<std::uint64_t const> words) noexcept {
+    return target.copy_window(start, words).is_ok();
+}
+
+// Eight words of one value through the build door, which builds the array in
+// the object of the result.
+[[gnu::used]] fixy::FixedArray<std::uint64_t, 8> build_array_words(std::uint64_t word) noexcept {
+    return fixy::build_fixed_array<std::uint64_t, 8>([word](auto run) noexcept {
+        for (std::uint64_t& element : run) {
+            element = word;
+        }
+    });
+}
+
 // The open of a window of count elements through the window door, a read of
 // its count, and its end, as the record of one op opens its frame of records.
 [[gnu::used]] std::uint64_t window_loan_open(::foundation::core::WindowStack<std::uint64_t, 64>& stack,
@@ -952,7 +975,9 @@ namespace {
             view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
         }
     };
-    return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
+    auto [written, back] = foundation::with_mut_windows<float>(std::move(block), windows, write_first);
+    block = std::move(back);
+    return written.is_ok();
 }
 
 // The same two output windows through the door of a static count.  The
@@ -968,7 +993,9 @@ namespace {
         first_view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
         second_view.get_mut(0).match([value](auto element) noexcept { *element = value; }, []() noexcept {});
     };
-    return foundation::with_mut_windows<float>(block, windows, write_first).is_ok();
+    auto [written, back] = foundation::with_mut_windows<float>(std::move(block), windows, write_first);
+    block = std::move(back);
+    return written.is_ok();
 }
 
 // ── Ref, Choice and Report ──────────────────────────────────────────────────
@@ -2020,6 +2047,29 @@ struct RawHeapWords final {
 // and one copy.
 [[gnu::used]] void keyed_heap_array_frame_copy_raw(RawHeapWords& target, std::uint64_t const* words) noexcept {
     std::memmove(target.first, words, 64 * sizeof(std::uint64_t));
+}
+
+// One store at a proven index.
+[[gnu::used]] void fixed_array_set_raw(std::array<std::uint64_t, 64>& array, std::uint32_t index,
+                                       std::uint64_t value) noexcept {
+    array[index] = value;
+}
+
+// The bound test of a window and one copy.
+[[gnu::used]] bool heap_array_copy_window_raw(RawHeapWords& target, std::size_t start, std::uint64_t const* words,
+                                              std::size_t count) noexcept {
+    if (start > 64 || count > 64 - start) return false;
+    std::memmove(target.first + start, words, count * sizeof(std::uint64_t));
+    return true;
+}
+
+// Eight stores into the object of the result.
+[[gnu::used]] std::array<std::uint64_t, 8> build_array_words_raw(std::uint64_t word) noexcept {
+    std::array<std::uint64_t, 8> words{};
+    for (std::uint64_t& element : words) {
+        element = word;
+    }
+    return words;
 }
 
 // The stack and the frame of the records of an op before the window stack:

@@ -16,6 +16,6 @@ int main() {
                                          core::side_as<core::side::WindowLength>(core::ByteCount{0})};
     core::FixedArray<::foundation::ByteWindow, 9> const windows{empty, empty, empty, empty, empty,
                                                                 empty, empty, empty, empty};
-    auto done = ::foundation::with_mut_windows<float>(block, windows, [](auto...) noexcept {});
-    return done.is_ok() ? 0 : 1;
+    auto done = ::foundation::with_mut_windows<float>(std::move(block), windows, [](auto...) noexcept {});
+    return done.size() == 2 ? 0 : 1;
 }
