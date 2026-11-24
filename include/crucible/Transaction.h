@@ -210,8 +210,8 @@ private:
 //   No door gives a reference to a transaction out.
 //
 // Key
-//   A log of a key brand comes from build_transaction_log, over a ring of
-//   mint_cyclic_buffer, whose LoanKey is the key of the log.
+//   A log of a key brand comes from the mint of foundation/core/KeyedMint.h
+//   through the maker transaction_log_owner, with the LoanKey of the log.
 //   begin_tx takes the key by move, the draft holds it, and commit and abandon
 //   give it back.  Each other door that writes or reads a transaction borrows
 //   the key, so no door opens while a draft lives.  The doors with no key of a
@@ -260,15 +260,13 @@ public:
         requires(!is_keyed_)
     = default;
 
-    // The log that takes the place of a new keyed ring of mint_cyclic_buffer,
-    // which build_transaction_log gives.  The log takes the brand of the
-    // ring, so the key of the ring opens the log, and it starts empty, as the
-    // new ring is.
-    explicit TransactionLog(::fixy::CyclicBuffer<Transaction, N, KeyBrand>&& minted) noexcept
+    // The empty log of a key brand, with the proof of the mint of the brand
+    // that only the mint of foundation/core/KeyedMint.h makes.  The maker
+    // transaction_log_owner builds it, and the mint gives the key of the log
+    // beside it.
+    explicit TransactionLog(::foundation::core::MintedBrand<KeyBrand> /*proof*/) noexcept
         requires is_keyed_
-    {
-        static_cast<void>(minted);
-    }
+    {}
 
     TransactionLog(const TransactionLog&) = delete("TransactionLog holds the one active transaction of its ring");
     TransactionLog&
@@ -711,16 +709,20 @@ private:
     ::fixy::Monotonic<uint64_t> events_ = ::fixy::mint_monotonic<uint64_t>(0);
 };
 
-// A keyed TransactionLog over a keyed ring of mint_cyclic_buffer (the key):
-//   auto [ring, key] = ::fixy::mint_cyclic_buffer<Transaction, 16>();
-//   auto log = build_transaction_log<Owner>(std::move(ring));
-// The log takes the ring and its brand, so the key of the ring is the key of
-// the log.  The log does not move, so it comes back as a prvalue.
-template <OwnerProof Owner, std::size_t RingCount, ::foundation::brand::IsBrand Brand>
-    requires ::foundation::core::IsKeyBrand<Brand>
-[[nodiscard]] TransactionLog<static_cast<uint32_t>(RingCount), Owner, Brand>
-build_transaction_log(::fixy::CyclicBuffer<Transaction, RingCount, Brand>&& ring) noexcept {
-    return TransactionLog<static_cast<uint32_t>(RingCount), Owner, Brand>{std::move(ring)};
-}
+// The maker of a keyed TransactionLog of N slots, for the mint of
+// foundation/core/KeyedMint.h (the key):
+//   auto [log, key] = ::fixy::mint_keyed_owner(transaction_log_owner<16, Owner>);
+// The log does not move, so it comes back as a prvalue part of the Record.
+template <uint32_t N, OwnerProof Owner>
+struct TransactionLogOwner final {
+    template <::foundation::core::IsKeyBrand Brand>
+    [[nodiscard]] TransactionLog<N, Owner, Brand>
+    operator()(::foundation::core::MintedBrand<Brand> proof) const noexcept {
+        return TransactionLog<N, Owner, Brand>{proof};
+    }
+};
+
+template <uint32_t N, OwnerProof Owner>
+inline constexpr TransactionLogOwner<N, Owner> transaction_log_owner{};
 
 }  // namespace crucible

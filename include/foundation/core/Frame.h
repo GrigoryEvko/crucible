@@ -152,12 +152,13 @@
 //   frame of the same owner would give a second ViewMut of a different brand
 //   over the same run, and the alias proof would be false.  So a keyed owner
 //   opens a frame only with a LoanKey<Brand> of its own brand:
-//     auto [array, key] = mint_fixed_array<int, 64>();
+//     auto [array, key] = mint_keyed_owner(fixed_array_owner<int, 64>);
 //     key = array.with_mut(std::move(key), body);   the key moves into the
 //                       door, and the door gives it back after the body
 //     array.with_mut(key, body);                     the door borrows the key
 //                       for the call
-//   A key is a linear class with no state.  Only a mint or a root door makes
+//   A key is a linear class with no state.  Only the mint of a keyed owner
+//   (mint_keyed_owner of foundation/core/KeyedMint.h) or a root door makes
 //   one, with the key of the frame doors that the door class of its header
 //   gives (the doors of the owners above this header), so no body makes a
 //   key.  A spelling with no key brand, such as FixedArray<T, N>, has the
@@ -259,6 +260,7 @@ class ProtocolFrameKeyDoor;
 class AlignedBytesFrameKeyDoor;
 class OwnedRegionFrameKeyDoor;
 class CyclicBufferFrameKeyDoor;
+class KeyedMintFrameKeyDoor;
 class ThreadTasksFrameKeyDoor;
 class ParallelForFrameKeyDoor;
 class LaneRingFrameKeyDoor;
@@ -306,6 +308,7 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::AlignedBytesFrameKeyDoor;
     friend class ::foundation::core::OwnedRegionFrameKeyDoor;
     friend class ::foundation::core::CyclicBufferFrameKeyDoor;
+    friend class ::foundation::core::KeyedMintFrameKeyDoor;
     friend class ::foundation::core::ThreadTasksFrameKeyDoor;
     friend class ::foundation::core::ParallelForFrameKeyDoor;
     friend class ::foundation::core::LaneRingFrameKeyDoor;

@@ -7,7 +7,6 @@
 
 #include <crucible/Transaction.h>
 #include <fixy/Core.h>
-#include <fixy/CyclicBuffer.h>
 
 #include <utility>
 
@@ -24,9 +23,7 @@ private:
 
 int main() {
     const Owner owner = Owner::claim();
-    auto minted = ::fixy::mint_cyclic_buffer<crucible::Transaction, 4>();
-    auto log = crucible::build_transaction_log<Owner>(std::move(minted.at(::fixy::index<0>())));
-    auto& key = minted.at(::fixy::index<1>());
+    auto [log, key] = ::fixy::mint_keyed_owner(crucible::transaction_log_owner<4, Owner>);
     auto committed = log.active(key, owner);
     auto step = log.with_tx(owner, std::move(committed).expect("a test of the compile"),
                             [](crucible::Transaction const& tx) noexcept { return tx.step_id.get(); });

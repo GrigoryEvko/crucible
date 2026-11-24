@@ -267,8 +267,8 @@ void test_windows_lend_disjoint_views() {
 // ViewMut for each window as an argument.
 void test_keyed_windows() {
     auto const alloc = ::foundation::effects::testing::test().alloc;
-    auto [block, key] =
-        ::foundation::mint_keyed_bytes(mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64})));
+    auto [block, key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::keyed_bytes_owner, mint_aligned_bytes_zeroed(alloc, layout_of(ByteCount{256}, Alignment{64})));
     CRUCIBLE_FATAL_INVARIANT(block.size() == 256 && block.alignment() == 64);
     FixedList<ByteWindow, 2> const windows = make_windows(kFirst16, kAt64Of32);
     auto [written, back] = with_mut_windows<float>(block, std::move(key), windows, [](auto& views) noexcept {

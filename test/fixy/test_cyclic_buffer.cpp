@@ -112,7 +112,7 @@ struct Step {
 // A keyed ring takes its key at each door that writes.  The move form gives
 // the key back, and the borrow form keeps it with the caller.
 [[nodiscard]] int keyed_ring_writes_with_its_key() {
-    auto [ring, key] = ::fixy::mint_cyclic_buffer<std::uint64_t, 4>();
+    auto [ring, key] = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<std::uint64_t, 4>);
     auto back = ring.with_claim(std::move(key), [](std::uint64_t& slot) noexcept { slot = 41; });
     ring.with_claim(back, [](std::uint64_t& slot) noexcept { slot = 42; });
     ring.push(back, std::uint64_t{43});

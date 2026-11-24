@@ -527,7 +527,7 @@ home owner foundation::core::SchedProofRefDoor include/fixy/os/Sched.h | the doo
 home owner foundation::core::LazyRefDoor include/fixy/handle/Once.h | the door of a Lazy to the door of a Ref: RefDoor befriends it, and its one definition lends the value of a built Lazy only to Lazy
 home owner foundation::core::WriteOnceRefDoor include/fixy/Mutation.h | the door of the two write-once slots to the door of a Ref: RefDoor befriends it, and its one definition lends the value of a filled slot only to WriteOnce and WriteOnceNonNull
 home owner foundation::core::RegionFrameKeyDoor include/foundation/core/Region.h | the door of the Region family to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to ViewMut, ViewMutChunks, the two forms of split_at, split_chunks, the two forms of take_window, take_prefix_up_to, for_each_chunk, for_each_chunk_pair, the byte_view of a ViewMut and reborrow, which each hold a ViewMut
-home owner foundation::core::ArrayFrameKeyDoor include/foundation/core/Array.h | the door of the arrays of Array.h to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to FixedArray, mint_fixed_array and the free frame door of a heap array
+home owner foundation::core::ArrayFrameKeyDoor include/foundation/core/Array.h | the door of the arrays of Array.h to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to FixedArray and the free frame door of a heap array
 home owner foundation::core::ListFrameKeyDoor include/foundation/core/List.h | the door of the frame door of a FixedList to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to that door, which holds the list by move
 home owner foundation::core::GrowFrameKeyDoor include/foundation/core/Grow.h | the door of the frame door of a GrowList to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to that door, which holds the list by move
 home owner foundation::core::SmallListFrameKeyDoor include/foundation/core/SmallList.h | the door of the frame door of a SmallList to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to that door, which holds the list by move
@@ -540,9 +540,10 @@ home owner foundation::core::WindowLoanFrameKeyDoor include/foundation/core/Wind
 home owner foundation::core::SortFrameKeyDoor include/foundation/core/Sort.h | the door of the sorts of Sort.h to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to plan_sort_network, StableSort and radix_sort_, for their own arrays
 home owner foundation::core::ReduceFrameKeyDoor include/foundation/core/Reduce.h | the door of the plan of a tree to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to plan_tree, for its own array
 home owner foundation::core::ProtocolFrameKeyDoor include/foundation/core/Protocol.h | the door of the writers of the images of parts to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to the five writers, for their own arrays
-home owner foundation::core::AlignedBytesFrameKeyDoor include/foundation/AlignedBytes.h | the door of the frame doors of the windows of a block to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to the six frame doors of the windows and to mint_keyed_bytes
+home owner foundation::core::AlignedBytesFrameKeyDoor include/foundation/AlignedBytes.h | the door of the frame doors of the windows of a block to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to the six frame doors of the windows
 home owner foundation::core::OwnedRegionFrameKeyDoor include/fixy/OwnedRegion.h | the door of the frame door of a region and of the region scope door over a HeapArray to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to the two doors
-home owner foundation::core::CyclicBufferFrameKeyDoor include/fixy/CyclicBuffer.h | the door of a CyclicBuffer and its mint to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to CyclicBuffer and mint_cyclic_buffer
+home owner foundation::core::CyclicBufferFrameKeyDoor include/fixy/CyclicBuffer.h | the door of a CyclicBuffer to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to CyclicBuffer, for its own storage
+home owner foundation::core::KeyedMintFrameKeyDoor include/foundation/core/KeyedMint.h | the door of the mint of a keyed owner to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key and the proof of the brand only to mint_keyed_owner
 home owner foundation::core::ThreadTasksFrameKeyDoor include/fixy/os/ThreadTasks.h | the door of the counted door beside the caller to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to run_beside_each, for its own arrays
 home owner foundation::core::ParallelForFrameKeyDoor include/fixy/concurrent/Spawn.h | the door of the runner of a parallel loop to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to ParallelForRunner, for the runs of the shards
 home owner foundation::core::LaneRingFrameKeyDoor include/fixy/concurrent/LaneRing.h | the door of a ring of lanes to the key of the frame doors: FrameDoor befriends it, and its one definition gives the key only to LaneRing, for the run of its lanes
@@ -984,9 +985,13 @@ witness <foundation/core/CallRef.h> private | foundation::core::ErasedAddress | 
 witness <foundation/AlignedBytes.h> no-match | foundation::AlignedBytes | foundation::AlignedBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> no-match | foundation::UnwrittenBytes | foundation::UnwrittenBytes{forge::rvalue<unsigned long>(), forge::rvalue<unsigned long>()}
 witness <foundation/AlignedBytes.h> private | foundation::detail::AlignedBytesKey | foundation::detail::AlignedBytesKey{}
-# A keyed block comes only from mint_keyed_bytes, with its key, so no caller
-# makes a keyed block with no key.
+# A keyed block comes only from its maker inside the mint of a keyed owner,
+# with its key, so no caller makes a keyed block with no key.  Its constructor
+# takes the proof of the brand that only the mint makes.
 witness <foundation/AlignedBytes.h> no-match | foundation::KeyedBytes<forge::brand> | foundation::KeyedBytes<forge::brand>{forge::rvalue<foundation::AlignedBytes>()}
+# The proof of the brand of a mint of a keyed owner: only the mint makes one,
+# so no maker builds an owner outside a mint (foundation/core/KeyedMint.h).
+witness <foundation/core/KeyedMint.h> private | foundation::core::MintedBrand<forge::brand> | foundation::core::MintedBrand<forge::brand>{}
 # The key of a binding to a channel: only the channel builds one, for the
 # handles that it makes (foundation/ChannelBinding.h).
 witness <foundation/ChannelBinding.h> private | foundation::BindingKey<int> | foundation::BindingKey<int>{}
@@ -1019,6 +1024,7 @@ witness <fixy/concurrent/SpscEnds.h> deleted | foundation::core::SpscSplitRefDoo
 witness <fixy/CyclicBuffer.h> deleted | foundation::core::CyclicBufferFrameKeyDoor | foundation::core::CyclicBufferFrameKeyDoor{}
 witness <foundation/AlignedBytes.h> deleted | foundation::core::AlignedBytesFrameKeyDoor | foundation::core::AlignedBytesFrameKeyDoor{}
 witness <foundation/core/Array.h> deleted | foundation::core::ArrayFrameKeyDoor | foundation::core::ArrayFrameKeyDoor{}
+witness <foundation/core/KeyedMint.h> deleted | foundation::core::KeyedMintFrameKeyDoor | foundation::core::KeyedMintFrameKeyDoor{}
 # A ViewMut, the chunks of its split and a RefMut come only from a frame door
 # or a split, so no pointer, no count and no object that a caller holds become
 # a unique borrow.  Each constructor takes the key that only FrameDoor builds.

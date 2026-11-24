@@ -3,7 +3,7 @@
 #include <foundation/core/FixedHeapArray.h>
 #include <foundation/effects/Effect.h>
 int main() {
-    auto [paired, key] = ::foundation::core::mint_fixed_array<int, 1>();
+    auto [paired, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 1>);
     using Brand = typename decltype(key)::brand_type;
     auto words = ::foundation::core::mint_fixed_heap_array<int, 4, alignof(int), Brand>(
         ::foundation::effects::testing::test().alloc, 0);

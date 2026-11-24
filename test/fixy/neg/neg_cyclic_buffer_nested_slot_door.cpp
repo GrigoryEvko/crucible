@@ -9,7 +9,7 @@
 #include <utility>
 
 int main() {
-    auto minted = ::fixy::mint_cyclic_buffer<std::uint64_t, 4>();
+    auto minted = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<std::uint64_t, 4>);
     auto& ring = minted.at(::fixy::index<0>());
     auto& key = minted.at(::fixy::index<1>());
     key = ring.with_claim(std::move(key), [&ring, &key](std::uint64_t& claimed) noexcept {

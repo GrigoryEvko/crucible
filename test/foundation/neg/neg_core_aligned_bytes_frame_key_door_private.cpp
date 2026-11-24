@@ -1,7 +1,7 @@
 // A unit of the base that is no friend of the door of AlignedBytes.h calls its
 // member, and builds a ViewMut of a brand that it names over a run of its own.
-// The six frame doors of the windows and mint_keyed_bytes are the friends of
-// the door, so its member is private here.
+// The six frame doors of the windows are the friends of the door, so its
+// member is private here.
 
 #include <foundation/AlignedBytes.h>
 #include <foundation/core/List.h>

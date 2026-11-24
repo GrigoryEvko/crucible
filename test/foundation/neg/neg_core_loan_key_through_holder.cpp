@@ -16,7 +16,7 @@ struct Holder {
 }  // namespace
 
 int main() {
-    auto [array, key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
     Holder<decltype(key)&> const holder{key};
     key = array.with_mut(std::move(key), [&holder](auto run) noexcept {
         static_cast<void>(holder);

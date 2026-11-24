@@ -116,7 +116,7 @@ void test_fixed_array() {
 // no element, and a copy between the frames of two keyed arrays of two mints
 // takes the memcpy of the alias proof.
 void test_keyed_array() {
-    auto [array, key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
     key = array.with_mut(std::move(key), [](auto out) noexcept {
         CRUCIBLE_TEST_ASSERT(kTest, out.size() == 4);
         int next = 1;
@@ -143,7 +143,7 @@ void test_keyed_array() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, third == 31 && array.at(::foundation::core::index<2>()) == 31);
 
-    auto [target, target_key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto [target, target_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
     auto& lent_key = target_key;
     auto& lent_target = target;
     array.with_mut(back, [&lent_target, &lent_key](auto source_view) noexcept {

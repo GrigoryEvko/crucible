@@ -2162,8 +2162,8 @@ crucible_neg_compile_test(neg_transaction_draft_moves_out_of_a_reference
 # A CommittedTx of a keyed log holds the brand of its log, so a CommittedTx
 # of a second log reaches no door of the first.
 crucible_neg_compile_test(neg_transaction_committed_of_another_log
-  "no matching function for call to .crucible::TransactionLog<4, Owner, fixy::<lambda\\(\\)> >::activate\\(foundation::core::LoanKey<fixy::<lambda\\(\\)> >&, const Owner&, crucible::CommittedTx<4, fixy::<lambda\\(\\)> >\\)."
-  "no known conversion for argument 3 from .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>. to .CommittedTx<\\[\\.\\.\\.\\],fixy::<lambda\\(\\)>>.")
+  "no matching function for call to .crucible::TransactionLog<4, Owner, foundation::core::<lambda\\(\\)> >::activate\\(.*, const Owner&, crucible::CommittedTx<4, foundation::core::<lambda\\(\\)> >\\)."
+  "no known conversion for argument 3 from .CommittedTx<\\[\\.\\.\\.\\],foundation::core::<lambda\\(\\)>>. to .CommittedTx<\\[\\.\\.\\.\\],foundation::core::<lambda\\(\\)>>.")
 
 # A keyed log lends a committed transaction only with its LoanKey, so the
 # keyless read door of a log of Unkeyed refuses it with its reason.

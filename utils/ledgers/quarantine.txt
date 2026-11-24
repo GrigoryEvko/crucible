@@ -389,7 +389,7 @@ test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a r
 test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 58 | - | -
-test/fixy/ | c-library-call | 968 | - | -
+test/fixy/ | c-library-call | 967 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
 test/fixy/ | enum-cast | 5 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
@@ -463,8 +463,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 2001 | - | -
-test/fixy/ | std-object | 645 | - | -
+test/fixy/ | std-entity | 1999 | - | -
+test/fixy/ | std-object | 643 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 346 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core

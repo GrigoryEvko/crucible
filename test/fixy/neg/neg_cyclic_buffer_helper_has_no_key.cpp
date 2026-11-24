@@ -17,7 +17,7 @@ void write_without_key(Ring& ring) noexcept {
 }  // namespace
 
 int main() {
-    auto minted = ::fixy::mint_cyclic_buffer<std::uint64_t, 4>();
+    auto minted = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<std::uint64_t, 4>);
     auto& ring = minted.at(::fixy::index<0>());
     auto& key = minted.at(::fixy::index<1>());
     ring.with_claim(key, [&ring](std::uint64_t& claimed) noexcept {

@@ -386,8 +386,7 @@ void draft_goes_stale_on_a_log_of_unkeyed(::foundation::effects::Alloc alloc, co
 void keyed_log_passes_its_key(::foundation::effects::Alloc alloc, const SoloOwner& owner) {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{size_t{1} << 12});
     crucible::RegionNode* const region = region_of_step(alloc, arena, 1);
-    auto [ring, key] = ::fixy::mint_cyclic_buffer<crucible::Transaction, 4>();
-    auto log = crucible::build_transaction_log<SoloOwner>(std::move(ring));
+    auto [log, key] = ::fixy::mint_keyed_owner(crucible::transaction_log_owner<4, SoloOwner>);
 
     auto draft = log.begin_tx(std::move(key), owner, ::fixy::session::StepId{1});
     auto committed =
@@ -414,7 +413,7 @@ using RunStamps = ::fixy::FixedArray<uint64_t, kRunSteps>;
 [[nodiscard]] RunStamps publish_and_stamp(::foundation::effects::Alloc alloc, ::fixy::BumpArena<DagArena>& arena,
                                           const SoloOwner& owner) {
     Log log{};
-    auto minted = ::foundation::core::mint_fixed_array<::fixy::Option<Log::Committed>, kRunSteps>();
+    auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<::fixy::Option<Log::Committed>, kRunSteps>);
     auto& txs = minted.at(::fixy::index<0>());
     auto& key = minted.at(::fixy::index<1>());
     for (const ::fixy::Index<kRunSteps> slot : ::fixy::IndexRange<kRunSteps>{}) {

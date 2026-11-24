@@ -6,7 +6,7 @@
 #include <foundation/core/Array.h>
 
 int main() {
-    auto [array, key] = ::foundation::core::mint_fixed_array<int, 4>();
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
     key = array.with_mut(std::move(key), [&array, &key](auto outer) noexcept {
         key = array.with_mut(std::move(key), [](auto inner) noexcept { static_cast<void>(inner.size()); });
         static_cast<void>(outer.size());

@@ -10,9 +10,12 @@
 namespace fc = ::foundation::core;
 
 int main() {
-    auto [block, key] = ::foundation::mint_keyed_bytes(::foundation::mint_aligned_bytes_zeroed(
-        ::foundation::effects::testing::test().alloc,
-        ::foundation::alloc::mint_layout(fc::ByteCount{256}, ::foundation::alloc::Alignment{64}).expect("a layout")));
+    auto [block, key] = fc::mint_keyed_owner(
+        ::foundation::keyed_bytes_owner,
+        ::foundation::mint_aligned_bytes_zeroed(
+            ::foundation::effects::testing::test().alloc,
+            ::foundation::alloc::mint_layout(fc::ByteCount{256}, ::foundation::alloc::Alignment{64})
+                .expect("a layout")));
     fc::FixedArray<::foundation::ByteWindow, 1> const windows{::foundation::ByteWindow{
         fc::side_as<fc::side::WindowStart>(fc::ByteCount{0}), fc::side_as<fc::side::WindowLength>(fc::ByteCount{64})}};
     auto const outcome =

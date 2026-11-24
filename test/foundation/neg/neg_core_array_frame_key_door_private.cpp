@@ -1,7 +1,7 @@
 // A unit of the base that is no friend of the door of Array.h calls its
 // member, and builds a ViewMut of a brand that it names over a run of its own.
-// FixedArray, mint_fixed_array and the free frame door of a heap array are the
-// friends of the door, so its member is private here.
+// FixedArray and the free frame door of a heap array are the friends of the
+// door, so its member is private here.
 
 #include <foundation/core/Array.h>
 #include <foundation/core/List.h>

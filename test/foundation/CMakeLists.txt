@@ -2352,17 +2352,14 @@ foundation_neg_compile_test(neg_aligned_bytes_static_windows_too_many
   "with_mut_windows takes at most max_block_windows windows")
 # A keyed block (the loan key of foundation/core/Frame.h) lends its windows only
 # with its LoanKey, and the gate refuses a body that opens a second frame of
-# the windows with the key that it captures.  The two fixtures of
-# mint_keyed_bytes: a named block, and a brand that the caller names.
+# the windows with the key that it captures.  The maker of a keyed block takes
+# the block only by move.
 foundation_neg_compile_test(neg_core_keyed_windows_nested
   "use of deleted function .void foundation::with_mut_windows\\(KeyedBytes<Brand>&, Key&&, const core::FixedArray<ByteWindow, N>&, Body&&\\)"
   "a body of a keyed frame reaches a LoanKey of the brand of its block")
-foundation_neg_compile_test(neg_core_mint_keyed_bytes_named_block
-  "use of deleted function .void foundation::mint_keyed_bytes\\(Block&&\\)"
-  "mint_keyed_bytes takes the block into the keyed block: pass std::move\\(block\\)")
-foundation_neg_compile_test(neg_core_mint_keyed_bytes_names_brand
-  "no matching function for call to .mint_keyed_bytes<.anonymous.::HeldBrand>\\(foundation::AlignedBytes\\)."
-  "CanMintKeyedBytes")
+foundation_neg_compile_test(neg_core_keyed_bytes_owner_named_block
+  "no matching function for call to .mint_keyed_owner\\(const foundation::KeyedBytesOwner&, foundation::AlignedBytes&\\)."
+  "keyed_bytes_owner takes the block into the keyed block: pass std::move\\(block\\)")
 # A tested window starts its elements with no check, so only the tests of the
 # static form make one: its constructor from a first byte and a count is
 # private.
@@ -2938,7 +2935,8 @@ foundation_neg_compile_test(neg_core_frame_door_lookalike
   "Frame\\.h:[0-9]+:[0-9]+: note: declared private here")
 foreach(_frame_key_door region:Region array:Array list:List grow:Grow small_list:SmallList
         fixed_heap_array:FixedHeapArray box:Box choice:Choice one_of:OneOf root_keys:RootKeys
-        window_loan:WindowLoan sort:Sort reduce:Reduce protocol:Protocol aligned_bytes:AlignedBytes)
+        window_loan:WindowLoan sort:Sort reduce:Reduce protocol:Protocol aligned_bytes:AlignedBytes
+        keyed_mint:KeyedMint)
   string(REPLACE ":" ";" _frame_key_parts "${_frame_key_door}")
   list(GET _frame_key_parts 0 _frame_key_file)
   list(GET _frame_key_parts 1 _frame_key_class)
@@ -4622,14 +4620,29 @@ foundation_neg_compile_test(neg_core_keyed_element_without_key
 foundation_neg_compile_test(neg_core_loan_key_copied
   "use of deleted function .foundation::core::LoanKey<Brand>::LoanKey\\(const foundation::core::LoanKey<Brand>&\\)"
   "a loan key opens one frame at a time: a copy would open a second frame of an owner")
-# The two fixtures of mint_fixed_array: a brand that the caller names, and an
-# element with no default constructor.
-foundation_neg_compile_test(neg_core_mint_fixed_array_names_brand
-  "no matching function for call to .mint_fixed_array<int, 4, .anonymous.::HeldBrand>\\(\\)."
-  "CanMintFixedArray")
-foundation_neg_compile_test(neg_core_mint_fixed_array_no_default
-  "no matching function for call to .mint_fixed_array<.anonymous.::NoDefault, 4>\\(\\)."
-  "is_nothrow_default_constructible_v")
+# The fixtures of mint_keyed_owner (foundation/core/KeyedMint.h): a brand that
+# the caller names, a maker whose owner carries no key brand, a maker with
+# state, a maker that holds a linear value, and the private proof of the door
+# of the mint.  The maker of a keyed FixedArray refuses an element with no
+# default constructor.
+foundation_neg_compile_test(neg_core_mint_keyed_owner_names_brand
+  "no matching function for call to .mint_keyed_owner<.anonymous.::HeldBrand>\\(const foundation::core::FixedArrayOwner<int, 4>&\\)."
+  "the expression .sizeof \\.\\.\\. \\(Refused \\.\\.\\.\\) == 0 \\[with Refused = .<unnamed>::HeldBrand.\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_mint_keyed_owner_unkeyed_owner
+  "no matching function for call to .mint_keyed_owner\\(.anonymous.::UnkeyedArrayOwner\\)."
+  "the expression .is_keyed_owner_of_")
+foundation_neg_compile_test(neg_core_mint_keyed_owner_maker_with_state
+  "no matching function for call to .mint_keyed_owner\\(.anonymous.::FilledArrayOwner\\)."
+  "the expression .is_empty_v<Make> \\[with Make = <unnamed>::FilledArrayOwner\\]. evaluated to .false.")
+foundation_neg_compile_test(neg_core_mint_keyed_owner_linear_maker
+  "use of deleted function .void foundation::core::mint_keyed_owner\\(const Make&, Arguments&& ...\\) \\[with Refused = \\{\\}; Make = TokenArrayOwner; Arguments = \\{\\}\\]."
+  "the body holds a linear value by value, and the door calls it with no consume")
+foundation_neg_compile_test(neg_core_keyed_mint_proof_private
+  "static constexpr foundation::core::MintedBrand<Brand> foundation::core::KeyedMintFrameKeyDoor::proof_\\(\\) \\[with Brand = NamedBrand\\]. is private within this context"
+  "neg_core_keyed_mint_proof_private\\.cpp:[0-9]+:[0-9]+: error")
+foundation_neg_compile_test(neg_core_fixed_array_owner_no_default
+  "no matching function for call to .mint_keyed_owner\\(const foundation::core::FixedArrayOwner<.anonymous.::NoDefault, 4>&\\)."
+  "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::NoDefault\\]. evaluated to .false.")
 # A window stack does not copy, because each open window points into it.  Only
 # the window doors of a stack make a loan: the witness fixture of WindowLoan
 # in test/fixy/neg refuses a loan outside them.

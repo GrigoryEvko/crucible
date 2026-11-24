@@ -682,6 +682,11 @@
       "constructor": "(?<!~)\\bIndexCursor\\("
     },
     {
+      "name": "neg_witness_core_keyedmintframekeydoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bKeyedMintFrameKeyDoor\\("
+    },
+    {
       "name": "neg_witness_core_loankey_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bLoanKey\\("
@@ -690,6 +695,11 @@
       "name": "neg_witness_core_maskedarray_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bMaskedArray\\("
+    },
+    {
+      "name": "neg_witness_core_mintedbrand_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bMintedBrand\\("
     },
     {
       "name": "neg_witness_core_niche_key_direct_construction",
@@ -2235,6 +2245,10 @@
       "header": "foundation/AlignedBytes.h"
     },
     {
+      "type": "foundation::core::MintedBrand<forge::brand>",
+      "header": "foundation/core/KeyedMint.h"
+    },
+    {
       "type": "foundation::BindingKey<int>",
       "header": "foundation/ChannelBinding.h"
     },
@@ -2313,6 +2327,10 @@
     {
       "type": "foundation::core::ArrayFrameKeyDoor",
       "header": "foundation/core/Array.h"
+    },
+    {
+      "type": "foundation::core::KeyedMintFrameKeyDoor",
+      "header": "foundation/core/KeyedMint.h"
     },
     {
       "type": "foundation::core::ViewMut<int, forge::brand>",

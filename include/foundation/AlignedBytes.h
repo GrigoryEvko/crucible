@@ -83,6 +83,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Bits.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
@@ -544,11 +545,6 @@ template <class Brand>
     requires core::IsKeyBrand<Brand>
 class KeyedBytes;
 
-// The gate of mint_keyed_bytes: an AlignedBytes that the caller gives up, and
-// no explicit argument.
-template <class Block, class... Refused>
-concept CanMintKeyedBytes = (sizeof...(Refused) == 0) && std::is_same_v<Block, AlignedBytes>;
-
 namespace detail {
 
 // The body of a keyed frame of the windows of the form of a list: the body
@@ -573,10 +569,10 @@ concept KeyedWindowElement =
 
 }  // namespace detail
 
-// The frame doors of the windows of a block and of a keyed block, and the
-// mint of a keyed block (the definitions below).  AlignedBytesFrameKeyDoor
-// names them as friends, so these declarations stand before the door, and the
-// default argument of the brand belongs to them.
+// The frame doors of the windows of a block and of a keyed block (the
+// definitions below).  AlignedBytesFrameKeyDoor names them as friends, so
+// these declarations stand before the door, and the default argument of the
+// brand belongs to them.
 template <class T, class... Refused, std::size_t N, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (N <= max_block_windows)
@@ -598,12 +594,6 @@ template <class T, class... Refused, std::size_t N, class Body,
 [[nodiscard]] core::Result<
     detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>, WindowRefusal>
 with_mut_windows(AlignedBytes& block, core::FixedArray<ByteWindow, N> const& windows, Body&& body) noexcept;
-
-template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-    requires CanMintKeyedBytes<Block, Refused...>
-[[nodiscard]] core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
-                           core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
-mint_keyed_bytes(Block&& block) noexcept;
 
 template <class T, class... Refused, std::size_t N, class Brand, class Body,
           ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
@@ -684,11 +674,9 @@ class TestedWindowDoor final : ::foundation::NoObject<TestedWindowDoor> {
 // one member is private.  The invariant: a frame door of a named block lends
 // the windows of the block that its caller names, with the scope brand of its
 // call.  A keyed frame door takes the LoanKey of the brand of its keyed block
-// first, so no second frame of the windows of the block is open.  The mint of
-// a keyed block gives the one key of the fresh brand of its call, with the new
-// block of that brand.  The six frame doors of the windows and
-// mint_keyed_bytes are its friends.  Each door passes the key to the lend of
-// its windows, which builds each ViewMut.  A home owner row of
+// first, so no second frame of the windows of the block is open.  The six
+// frame doors of the windows are its friends.  Each door passes the key to the
+// lend of its windows, which builds each ViewMut.  A home owner row of
 // utils/rule-table.txt keeps this definition in this header.
 class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameKeyDoor> {
     template <class T, class... Refused, std::size_t N, class Body, ::foundation::brand::IsBrand Fresh>
@@ -712,11 +700,6 @@ class AlignedBytesFrameKeyDoor final : ::foundation::NoObject<AlignedBytesFrameK
                                                Body&& body) noexcept
         -> core::Result<detail::window_frame_value_t<detail::window_body_result_t<Body&&, core::ViewMut<T, Fresh>, N>>,
                         WindowRefusal>;
-    template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh>
-        requires CanMintKeyedBytes<Block, Refused...>
-    friend auto ::foundation::mint_keyed_bytes(Block&& block) noexcept
-        -> core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
-                        core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
     template <class T, class... Refused, std::size_t N, class Brand, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && ::foundation::detail::KeyedWindowElement<T, N>
              && ::foundation::detail::KeyedListedWindowBody<Body, T, Brand, Fresh, N>
@@ -1072,8 +1055,9 @@ class [[nodiscard]][[= core::loan_key_mark{}]] KeyedBytes final {
     AlignedBytes bytes_{};
 
 public:
-    // The block of the bytes, with the key that only AlignedBytesDoor builds.
-    KeyedBytes(detail::AlignedBytesKey const& /*key*/, AlignedBytes&& bytes) noexcept : bytes_{std::move(bytes)} {}
+    // The block of the bytes, with the proof of the mint of the brand that
+    // only the mint of foundation/core/KeyedMint.h makes.
+    KeyedBytes(core::MintedBrand<Brand> /*proof*/, AlignedBytes&& bytes) noexcept : bytes_{std::move(bytes)} {}
 
     KeyedBytes(KeyedBytes const&) = delete("a KeyedBytes owns its block alone: a copy would give it back two times");
     KeyedBytes&
@@ -1099,25 +1083,24 @@ public:
     }
 };
 
-// A keyed block of the bytes of block, and its LoanKey: auto [keyed, key] =
-// mint_keyed_bytes(std::move(block)).  The brand is the fresh brand of the
-// call site, in undeducible_brand_t.  Complexity: O(1), a move of three words.
-template <class... Refused, class Block, ::foundation::brand::IsBrand Fresh>
-    requires CanMintKeyedBytes<Block, Refused...>
-[[nodiscard]] core::Record<KeyedBytes<::foundation::brand::undeducible_brand_t<Fresh>>,
-                           core::LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
-mint_keyed_bytes(Block&& block) noexcept {
-    return {KeyedBytes<Fresh>{detail::AlignedBytesDoor::key(), static_cast<Block&&>(block)},
-            core::LoanKey<Fresh>{core::AlignedBytesFrameKeyDoor::key_()}};
-}
+// The maker of a keyed block of the bytes of a block, for the mint of
+// foundation/core/KeyedMint.h: auto [keyed, key] =
+// mint_keyed_owner(keyed_bytes_owner, std::move(block)).  The maker takes the
+// block by move: a named block would stay with the caller, and the keyed block
+// would share its bytes with a second name.  Complexity: O(1), a move of three
+// words.
+struct KeyedBytesOwner final {
+    template <core::IsKeyBrand Brand>
+    [[nodiscard]] KeyedBytes<Brand> operator()(core::MintedBrand<Brand> proof, AlignedBytes&& block) const noexcept {
+        return KeyedBytes<Brand>{proof, std::move(block)};
+    }
 
-// A named block stays with the caller, so the keyed block would share its
-// bytes with a second name.
-template <class... Refused, class Block>
-    requires(std::is_lvalue_reference_v<Block> || std::is_const_v<std::remove_reference_t<Block>>)
-             && std::is_same_v<std::remove_cvref_t<Block>, AlignedBytes>
-void mint_keyed_bytes(Block&& block) =
-    delete("mint_keyed_bytes takes the block into the keyed block: pass std::move(block)");
+    template <core::IsKeyBrand Brand>
+    void operator()(core::MintedBrand<Brand> /*proof*/, AlignedBytes const& /*block*/) const =
+        delete("keyed_bytes_owner takes the block into the keyed block: pass std::move(block)");
+};
+
+inline constexpr KeyedBytesOwner keyed_bytes_owner{};
 
 // The keyed frame door of some windows of a keyed block (the windows, the
 // loan key).  It gives the views as with_mut_windows of an AlignedBytes does,

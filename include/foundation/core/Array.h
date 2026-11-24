@@ -111,6 +111,9 @@
 //                       The move takes a pointer and a count
 // foundation/core/Frame.h gives the rules of the two forms.  The member door
 // carries the annotation borrow_match, as the element door does.
+//   mint_keyed_owner(fixed_array_owner<T, N>)   a keyed FixedArray and its
+//                       LoanKey of the fresh brand of the call
+//                       (foundation/core/KeyedMint.h)
 //
 // Element door
 //   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
@@ -160,6 +163,7 @@
 #include <foundation/core/Frame.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
@@ -241,13 +245,6 @@ template <class T, std::size_t Align>
     requires OwnedElement<T> && detail::HeapArrayAlignment<T, Align>
 class MaskedArray;
 
-// The gate of mint_fixed_array: an element that a FixedArray of N holds and
-// that has a default constructor with no throw, and no explicit argument
-// after T and N.
-template <class T, std::size_t N, class... Refused>
-concept CanMintFixedArray = (sizeof...(Refused) == 0) && OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
-                         && std::is_nothrow_default_constructible_v<T>;
-
 // The arrays that the free frame door takes (foundation/core/Frame.h).  Each
 // owns its elements on the heap alone, and a move gives the storage to the
 // target with no copy of an element.  A FixedArray holds its elements inline,
@@ -265,16 +262,9 @@ inline constexpr std::size_t frame_extent_v = decltype(std::declval<Owner const&
 
 }  // namespace detail
 
-// The mint of a keyed FixedArray and the free frame door of a heap array (the
-// definitions below).  ArrayFrameKeyDoor names them as friends, so these
-// declarations stand before the door, and the default argument of the brand
-// belongs to them.
-template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
-    requires CanMintFixedArray<T, N, Refused...>
-[[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
-                               LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
-mint_fixed_array() noexcept;
-
+// The free frame door of a heap array (the definition below).
+// ArrayFrameKeyDoor names it as a friend, so this declaration stands before
+// the door, and the default argument of the brand belongs to it.
 template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
     requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
          && ArrayFrameOwner<Owner>
@@ -287,21 +277,14 @@ with_mut(Owner&& owner, Body&& body) noexcept;
 // doors of the owners above foundation/core/Frame.h).  Its one member is
 // private.  The invariant: a FixedArray lends its own elements in place, in
 // the frame of a door of the array, with the scope brand of the call of the
-// door.  mint_fixed_array gives the one key of the fresh brand of its call,
-// with the new array of that brand.  The free frame door holds a HeapArray or
-// a MaskedArray by move in its frame, and lends its run with the scope brand
-// of its call.  FixedArray, mint_fixed_array and the free frame door are its
-// friends.  A home owner row of utils/rule-table.txt keeps this definition in
-// this header.
+// door.  The free frame door holds a HeapArray or a MaskedArray by move in its
+// frame, and lends its run with the scope brand of its call.  FixedArray and
+// the free frame door are its friends.  A home owner row of
+// utils/rule-table.txt keeps this definition in this header.
 class ArrayFrameKeyDoor final : ::foundation::NoObject<ArrayFrameKeyDoor> {
     template <class T, std::size_t N, ::foundation::brand::IsBrand KeyBrand>
         requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
     friend class FixedArray;
-    template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
-        requires CanMintFixedArray<T, N, Refused...>
-    friend constexpr auto ::foundation::core::mint_fixed_array() noexcept
-        -> Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
-                  LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>;
     template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
              && ArrayFrameOwner<Owner>
@@ -859,19 +842,26 @@ public:
     }
 };
 
-// A keyed FixedArray of N value-initialized elements and its LoanKey (the
-// loan key of foundation/core/Frame.h): auto [array, key] =
-// mint_fixed_array<T, N>().  The brand is the fresh brand of the call site, in
-// undeducible_brand_t, so no caller names it, and no target type sets it.
-// The array comes back as a prvalue part of the Record, so no element moves.
-// Complexity: O(N) for the value-initialization.
-template <class T, std::size_t N, class... Refused, ::foundation::brand::IsBrand Fresh>
-    requires CanMintFixedArray<T, N, Refused...>
-[[nodiscard]] constexpr Record<FixedArray<T, N, ::foundation::brand::undeducible_brand_t<Fresh>>,
-                               LoanKey<::foundation::brand::undeducible_brand_t<Fresh>>>
-mint_fixed_array() noexcept {
-    return {FixedArray<T, N, Fresh>{}, LoanKey<Fresh>{ArrayFrameKeyDoor::key_()}};
-}
+// The maker of a keyed FixedArray of N value-initialized elements, for the
+// mint of foundation/core/KeyedMint.h (the loan key of
+// foundation/core/Frame.h): auto [array, key] =
+// mint_keyed_owner(fixed_array_owner<T, N>).  The maker takes the proof of the
+// brand of the mint, so it builds an array only inside a mint.  The array
+// comes back as a prvalue, so no element moves.  Complexity: O(N) for the
+// value-initialization.
+template <class T, std::size_t N>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+struct FixedArrayOwner final {
+    template <IsKeyBrand Brand>
+        requires std::is_nothrow_default_constructible_v<T>
+    [[nodiscard]] constexpr FixedArray<T, N, Brand> operator()(MintedBrand<Brand> /*proof*/) const noexcept {
+        return FixedArray<T, N, Brand>{};
+    }
+};
+
+template <class T, std::size_t N>
+    requires OwnedElement<T> && IndexCount<N> && ViewExtent<T, N>
+inline constexpr FixedArrayOwner<T, N> fixed_array_owner{};
 
 // ── HeapArray ──────────────────────────────────────────────────────────────
 

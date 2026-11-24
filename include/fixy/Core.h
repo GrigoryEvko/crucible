@@ -39,6 +39,7 @@
 #include <foundation/core/Grow.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
+#include <foundation/core/KeyedMint.h>
 #include <foundation/core/Link.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
@@ -230,6 +231,7 @@ using ::foundation::core::find_lower_bound_by_key;
 using ::foundation::core::for_each_chunk;
 using ::foundation::core::for_each_chunk_pair;
 using ::foundation::core::FixedArray;
+using ::foundation::core::fixed_array_owner;
 using ::foundation::core::FixedHeapArray;
 using ::foundation::core::FixedList;
 using ::foundation::core::ForeignElement;
@@ -254,6 +256,7 @@ using ::foundation::core::mint_heap_array_written;
 using ::foundation::core::mint_heap_array_zeroed;
 using ::foundation::core::mint_bit_set_from_bits;
 using ::foundation::core::mint_heap_bit_set;
+using ::foundation::core::mint_keyed_owner;
 using ::foundation::core::mint_masked_array;
 using ::foundation::core::mint_slot_map;
 using ::foundation::core::mint_small_list;

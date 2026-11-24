@@ -19,7 +19,7 @@ struct Holder {
 };
 
 // A keyed array and its key in a global.
-auto g_pair = core::mint_fixed_array<int, 4>();
+auto g_pair = core::mint_keyed_owner(core::fixed_array_owner<int, 4>);
 
 // A holder in a global, in a thread_local object, and behind a function.
 Holder g_holder{};

@@ -85,7 +85,7 @@ void test_doors_write_in_place() {
 // brand.  The writes are in place, and the key comes back from each door.
 void test_keyed_doors() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    auto [paired, key] = ::foundation::core::mint_fixed_array<int, 1>();
+    auto [paired, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 1>);
     using Brand = typename decltype(key)::brand_type;
     FixedHeapArray<std::uint64_t, 4, alignof(std::uint64_t), Brand> words =
         mint_fixed_heap_array<std::uint64_t, 4, alignof(std::uint64_t), Brand>(alloc, std::uint64_t{1});
