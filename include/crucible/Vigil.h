@@ -558,15 +558,23 @@ public:
     template <class Ctx>
         requires ::crucible::CtxFitsCipherPersistence<Ctx>
     [[nodiscard, gnu::cold]] bool persist(Ctx const& ctx) {
-        // The body reads the Vigil through a const reference, so it writes
-        // no borrow of its frame into the Vigil.
-        Vigil const& vigil = *this;
+        // The body takes the step and the active region as values, and no
+        // part of the Vigil.  The store is made only from open(), so holding
+        // one proves that it is open, and one mint of the open view serves
+        // the store of the region and the record of its event.
+        uint64_t const step = current_step();
+        ::fixy::Option<DagRef<const RegionNode>> const active = active_region();
         return cipher_.with_mut(
-            [&vigil, &ctx](auto cipher) noexcept {
-                for (const DagRef<const RegionNode> region : vigil.active_region()) {
-                    return vigil.persist_into_(ctx, **cipher, region);
-                }
-                return false;
+            [&ctx, active, step](auto cipher) noexcept {
+                auto& store = **cipher;
+                return active.match(
+                    [&ctx, &store, step](DagRef<const RegionNode> region) noexcept {
+                        auto open_view = store.mint_open_view(ctx);
+                        const ContentHash hash = store.store(ctx, open_view, store.content_addressed(region));
+                        if (!hash) return false;
+                        return store.record_event(ctx, open_view, hash, step).is_ok();
+                    },
+                    [] noexcept { return false; });
             },
             [] noexcept { return false; });
     }
@@ -853,21 +861,9 @@ private:
         return taken_region_.load_acquire();
     }
 
-    // The store parts of persist and load.  The store is a template
-    // parameter, so each member of the store resolves where a caller
-    // instantiates persist or load, and this header needs only the
-    // declaration of the store.
-    //
-    // The store is only ever made from open(), so holding one already
-    // proves it is open.  One mint of the open view serves both calls.
-    template <class Ctx, class Store>
-    [[nodiscard]] bool persist_into_(Ctx const& ctx, Store& store, DagRef<const RegionNode> region) const {
-        auto open_view = store.mint_open_view(ctx);
-        const ContentHash hash = store.store(ctx, open_view, Store::content_addressed(region));
-        if (!hash) return false;
-        return store.record_event(ctx, open_view, hash, step_.get()).is_ok();
-    }
-
+    // The store part of load.  The store is a template parameter, so each
+    // member of the store resolves where a caller instantiates load, and
+    // this header needs only the declaration of the store.
     template <class Ctx, class Store>
     [[nodiscard]] static ::fixy::Option<DagRef<RegionNode>>
     load_head_(Ctx const& ctx, ::foundation::effects::Alloc a, Store& store, ::fixy::BumpArena<DagArena>& arena) {
@@ -954,28 +950,17 @@ private:
         }
     }
 
-    // True when a cell of held_regions_ names region.  The producer thread
-    // writes the cells at the end of each cold path that changes a holder,
-    // so on that thread the cells name each region that the foreground
-    // holds.  Complexity: O(HeldRegions::CAP).
-    [[nodiscard]] bool is_held_by_foreground_(ConstRegionLink region) const noexcept {
-        for (const ::fixy::Atomic<ConstRegionLink>& cell : held_regions_.cells) {
-            if (::fixy::same_target(cell.load_acquire(), region)) return true;
-        }
-        return false;
-    }
-
     // Ends the arena of each load whose region no holder of the foreground
     // names.  Runs on the producer thread before each load.  Complexity:
     // O(LOAD_SLOTS * HeldRegions::CAP).
     [[gnu::cold]] void release_unheld_loads_() noexcept {
-        // The body reads the Vigil through a const reference, so it writes
-        // no borrow of its frame into the Vigil.
-        Vigil const& vigil = *this;
-        loads_.with_mut([&vigil](auto slots) noexcept {
+        // The body reads only the cells of the holders, through a const
+        // reference, and no other part of the Vigil.
+        HeldRegions const& held = held_regions_;
+        loads_.with_mut([&held](auto slots) noexcept {
             for (::fixy::Option<LoadedRegion>& load : slots) {
-                const bool is_unheld = load.is_some_and(
-                    [&vigil](const LoadedRegion& kept) noexcept { return !vigil.is_held_by_foreground_(kept.region); });
+                const bool is_unheld =
+                    load.is_some_and([&held](const LoadedRegion& kept) noexcept { return !held.holds(kept.region); });
                 if (is_unheld) load = ::fixy::none;
             }
         });
@@ -1756,6 +1741,17 @@ private:
         static constexpr uint32_t CAP = 3 + RegionCache::CAP;
         ::fixy::Atomic<uint64_t> sequence{};
         ::fixy::FixedArray<::fixy::Atomic<ConstRegionLink>, CAP> cells{};
+
+        // True when a cell names region.  The producer thread writes the
+        // cells at the end of each cold path that changes a holder, so on
+        // that thread the cells name each region that the foreground holds.
+        // Complexity: O(CAP).
+        [[nodiscard]] bool holds(ConstRegionLink region) const noexcept {
+            for (const ::fixy::Atomic<ConstRegionLink>& cell : cells) {
+                if (::fixy::same_target(cell.load_acquire(), region)) return true;
+            }
+            return false;
+        }
     };
     static_assert(LOAD_SLOTS == HeldRegions::CAP + 1,
                   "Vigil::LOAD_SLOTS must exceed the count of regions that the holders name by one");
