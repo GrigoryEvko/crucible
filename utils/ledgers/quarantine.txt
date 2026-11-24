@@ -184,10 +184,9 @@ include/fixy/atoms/ | base-std-entity | 45 | - | -
 include/fixy/atoms/ | base-std-object | 10 | - | -
 include/fixy/atoms/ | replace-pending:<array> | 3 | - | -
 include/fixy/atoms/ | replace-pending:<tuple> | 16 | - | -
-include/fixy/channels/ | base-std-entity | 17 | - | -
-include/fixy/channels/ | base-std-object | 3 | - | -
+include/fixy/channels/ | base-std-entity | 14 | - | -
+include/fixy/channels/ | base-std-object | 2 | - | -
 include/fixy/channels/ | replace-pending:<atomic> | 1 | - | -
-include/fixy/channels/ | replace-pending:<expected> | 1 | - | -
 include/fixy/channels/ | replace-pending:<optional> | 1 | - | -
 include/fixy/channels/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/channels/ | replace-pending:<tuple> | 1 | - | -
@@ -229,8 +228,8 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 1 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 369 | - | -
-include/fixy/session/ | base-std-object | 145 | - | -
+include/fixy/session/ | base-std-entity | 356 | - | -
+include/fixy/session/ | base-std-object | 143 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -238,14 +237,14 @@ include/fixy/session/ | replace-pending:<bit> | 1 | - | -
 include/fixy/session/ | replace-pending:<cstdio> | 5 | - | -
 include/fixy/session/ | replace-pending:<cstdlib> | 6 | - | -
 include/fixy/session/ | replace-pending:<expected> | 1 | - | -
-include/fixy/session/ | replace-pending:<functional> | 5 | - | -
+include/fixy/session/ | replace-pending:<functional> | 4 | - | -
 include/fixy/session/ | replace-pending:<limits> | 1 | - | -
-include/fixy/session/ | replace-pending:<optional> | 5 | - | -
+include/fixy/session/ | replace-pending:<optional> | 3 | - | -
 include/fixy/session/ | replace-pending:<source_location> | 3 | - | -
 include/fixy/session/ | replace-pending:<span> | 5 | - | -
 include/fixy/session/ | replace-pending:<string> | 6 | - | -
 include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
-include/fixy/session/ | replace-pending:<tuple> | 7 | - | -
+include/fixy/session/ | replace-pending:<tuple> | 6 | - | -
 include/fixy/session/ | replace-pending:<vector> | 9 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
 include/foundation/ | base-std-entity | 17 | - | -
@@ -329,7 +328,7 @@ test/ | opted-out | 4 | ABI: the case gives two CrucibleHandle values of vessel_
 test/ | opted-out | 2 | ABI: the case writes the data pointer of a CrucibleMeta of vessel_api.h | -
 test/ | opted-out | 3 | ABI: the case writes the data pointers of the CrucibleMeta records of vessel_api.h | -
 test/ | opted-out | 13 | ORACLE: the block of std::philox4x32 is the reference of the block of the base | -
-test/ | opted-out | 2 | PROBE: a nested publish job names the thread with no capture, in a child process | the test of a nested publish job of test_transaction_owner keeps a static BackgroundThread and a static TraceRig in the child of expect_dies.  Outside a region the plugin refuses each one time: the thread owns two epoch arenas (arena-member), and the rig holds the held splits of a trace ring and a metadata log, which reach a loan key (loan-key-static)
+test/ | opted-out | 5 | PROBE: a nested publish job names the thread with no capture, in a child process | the test of a nested publish job of test_transaction_owner keeps a static TraceRig and a static BackgroundThread in the child of expect_dies.  Outside a region the plugin refuses the rig two times: it holds the held splits of a trace ring and a metadata log, which reach a loan key (loan-key-static), and it holds a borrow in an object of static storage (static-borrow).  It refuses the thread three times: it owns two epoch arenas (arena-member), it holds const Refs of the sides of the rig, which reach a loan key because the const of a Ref is shallow (loan-key-static), and it holds a borrow in an object of static storage (static-borrow)
 test/ | opted-out | 2 | PROBE: probe of the run-time check of a thread-bound object | -
 test/ | opted-out | 2 | PROBE: the address of a body tells which unit of the link holds it | PROBE: test_crucible_target_units reads the address of a kernel in each of two units of two targets, a probe of the raw behavior of the link.  The test test_target_units of foundation holds the same regions
 test/ | opted-out | 1 | PROBE: the case compares the bytes of a typed data pointer with the C pointer | -
@@ -343,7 +342,7 @@ test/ | opted-out | 6 | PROBE: the test sets the current directory, the modes an
 test/ | opted-out | 26 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | raw-function-pointer | 1 | - | -
 test/ | raw-new-delete | 2 | - | -
-test/ | raw-pointer-object | 123 | - | -
+test/ | raw-pointer-object | 121 | - | -
 test/ | region | 1 | ABI: dlsym finds each entry point of a test library by its C name | the case fallbacks of test_process_wide_across_libraries finds the two entry points of each test library by their C names with dlsym, as Python finds the entry points of the vessel, so the two declarations have C linkage
 test/ | region | 1 | ABI: the case calls the C entries of the vessel library with raw pointers | the tests of the C entries of the vessel call the entries of libcrucible_vessel.so with the raw pointers and the counts of a C caller, and the door test gives misaligned and null pointers
 test/ | region | 1 | ABI: the case gives a CrucibleHandle of vessel_api.h to the typed door | -
@@ -369,8 +368,8 @@ test/ | region | 1 | PROBE: the test sets the current directory, the modes and t
 test/ | region | 1 | PROBE: the trace shows the directory of each sync of the Cipher store | The child door moved the forks of three tests, so each of their PROBE regions shrank and got a reason that tells what stays: the raw probe of the system calls and of /proc in a traced store, the dumpable flag and the system call numbers of a traced child, and the full pipe and the timer of a blocked report
 test/ | replace-pending:<limits> | 7 | - | -
 test/ | replace-pending:std::bit_cast | 24 | - | -
-test/ | std-entity | 318 | - | -
-test/ | std-object | 108 | - | -
+test/ | std-entity | 313 | - | -
+test/ | std-object | 107 | - | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/cipher_neg/ | opted-out | 2 | PROBE: the fixture keys a closure through the raw pointer of its static invoker | -
 test/cipher_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
@@ -389,7 +388,7 @@ test/dag_neg/ | opted-out | 1 | PROBE: the fixture reads a typed result into a r
 test/dag_neg/ | region | 2 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/dag_neg/ | region | 1 | PROBE: the fixture reads a typed result into a raw pointer | -
 test/fixy/ | c-array-object | 58 | - | -
-test/fixy/ | c-library-call | 967 | - | -
+test/fixy/ | c-library-call | 962 | - | -
 test/fixy/ | c-library-object | 6 | - | -
 test/fixy/ | door-header | 8 | - | -
 test/fixy/ | enum-cast | 5 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
@@ -416,6 +415,7 @@ test/fixy/ | opted-out | 1 | PROBE: cheat 36 forges is_stale_v, and IsStale must
 test/fixy/ | opted-out | 1 | PROBE: cheat 42 forges is_owned_region_v, and IsOwnedRegion must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 45 forges the is_writeonce struct, and is_writeonce_v must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeSpec must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/ | opted-out | 6 | PROBE: the attack moves a session handle through a global slot | the attacks of test_session_handle_attacks move a session handle through six global slots, where no fork put it, in one PROBE region of each attack.  A session handle holds a borrow, so the kind static-borrow of the rule view-escape refuses each slot outside the region, with std::mutex and std::optional of the slot
 test/fixy/ | opted-out | 6 | PROBE: the callable of a transform reads the payload in the buffer of the Secret | The witness fixtures of the two handles of the MPSC Box channel name the witness tag and brand of fixy::concurrent::detail::mpsc_channel_witness for their probe.  The PROBE region of test_secret_carrier_zeroize reads the address of the parameter of a transform and the bytes of the buffer of a Secret
 test/fixy/ | opted-out | 11 | PROBE: the seal test forges each payload view, gate and cell for a refused payload | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | opted-out | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -427,7 +427,7 @@ test/fixy/ | opted-out | 2 | PROBE: the test states a payload rule of the role d
 test/fixy/ | opted-out | 4 | PROBE: two threads with no happens-before edge, and a close of the C library | -
 test/fixy/ | raw-function-pointer | 30 | - | -
 test/fixy/ | raw-new-delete | 9 | - | -
-test/fixy/ | raw-pointer-object | 122 | - | -
+test/fixy/ | raw-pointer-object | 120 | - | -
 test/fixy/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the storage float tests read the PyTorch tables through #embed, run the conversion instructions and the half casts of the host, and take the arguments of main
 test/fixy/ | region | 1 | ORACLE: sched_getcpu of the C library is the oracle of the current CPU | the raw measurements of the bench harness and of two benches, and the C library as the oracle of the door of the current CPU and of Fixed and Padded
 test/fixy/ | region | 2 | ORACLE: the C library reports the attributes of the calling thread | -
@@ -451,6 +451,7 @@ test/fixy/ | region | 1 | PROBE: cheat 36 forges is_stale_v, and IsStale must re
 test/fixy/ | region | 1 | PROBE: cheat 42 forges is_owned_region_v, and IsOwnedRegion must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 45 forges the is_writeonce struct, and is_writeonce_v must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: cheat 55 forges is_recipe_spec_v, and IsRecipeSpec must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
+test/fixy/ | region | 2 | PROBE: the attack moves a session handle through a global slot | the attacks of test_session_handle_attacks move a session handle through six global slots, where no fork put it, in one PROBE region of each attack.  A session handle holds a borrow, so the kind static-borrow of the rule view-escape refuses each slot outside the region, with std::mutex and std::optional of the slot
 test/fixy/ | region | 1 | PROBE: the callable of a transform reads the payload in the buffer of the Secret | The witness fixtures of the two handles of the MPSC Box channel name the witness tag and brand of fixy::concurrent::detail::mpsc_channel_witness for their probe.  The PROBE region of test_secret_carrier_zeroize reads the address of the parameter of a transform and the bytes of the buffer of a Secret
 test/fixy/ | region | 1 | PROBE: the seal test forges each payload view, gate and cell for a refused payload | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
 test/fixy/ | region | 1 | PROBE: the test forges stdio::write for a private stream, and IsAtom must refuse it | each forged specialization of an attack test stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -463,8 +464,8 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 1999 | - | -
-test/fixy/ | std-object | 643 | - | -
+test/fixy/ | std-entity | 1966 | - | -
+test/fixy/ | std-object | 619 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 346 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core
@@ -640,7 +641,7 @@ test/foundation/ | std-entity | 118 | - | -
 test/foundation/ | std-object | 28 | - | -
 test/foundation/neg/ | c-array-object | 21 | - | -
 test/foundation/neg/ | c-library-call | 2 | - | -
-test/foundation/neg/ | detail-use | 167 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type, a range or a cursor that the fixture forges, a private door that the fixture calls from a unit that is no friend, or the key of a removed door, which the fixture shows refused
+test/foundation/neg/ | detail-use | 166 | - | each fixture uses a private name of the base for its probe, such as a check, a context key, a test lattice, the range type of a target type, a range or a cursor that the fixture forges, a private door that the fixture calls from a unit that is no friend, or the key of a removed door, which the fixture shows refused
 test/foundation/neg/ | door-use | 2 | - | the fixture defines a door owner again, and its probe shows that the build refuses the second definition
 test/foundation/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/neg/ | lifetime-start | 11 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
@@ -688,13 +689,15 @@ test/foundation/neg/ | region | 1 | PROBE: the probe specializes the Ref door to
 test/foundation/neg/ | std-entity | 43 | - | -
 test/foundation/neg/ | std-object | 6 | - | -
 test/fuzz/boundary/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
+test/fuzz/boundary/ | opted-out | 1 | ABI: the death callback of the sanitizer reads the input in flight | the boundary runner keeps the input in flight in the global current_input of runner_main.h, in one ABI region, because the death callback of the sanitizer takes no argument.  The input is a View, so the kind static-borrow of the rule view-escape refuses the global outside the region
 test/fuzz/boundary/ | opted-out | 15 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | opted-out | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
 test/fuzz/boundary/ | region | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
+test/fuzz/boundary/ | region | 1 | ABI: the death callback of the sanitizer reads the input in flight | the boundary runner keeps the input in flight in the global current_input of runner_main.h, in one ABI region, because the death callback of the sanitizer takes no argument.  The input is a View, so the kind static-borrow of the rule view-escape refuses the global outside the region
 test/fuzz/boundary/ | region | 1 | ABI: the death path runs in a signal handler and in the death callback of the sanitizer | the boundary runner takes the arguments of main in one ABI region of fuzz_main.cpp, and its death path writes the input in flight in a second ABI region, with the calls of the C library that are safe in the handler of SIGABRT and in the death callback of the sanitizer
 test/fuzz/boundary/ | region | 1 | ABI: the fuzzer gives its input as a pointer to raw bytes and a count | the entry view_entry.cpp of a fuzz harness of base types takes the input and the seeds of the runner as a std::span and a std::vector in one ABI region, and the test of the cap of a heap image takes a View of a map of 4 GiB of the guarded region door in one ABI region
 test/fuzz/boundary/harnesses/ | opted-out | 5 | ABI: the harness reads and writes the fields of a CrucibleMeta of a C caller | the fuzz harness of the C entries of the vessel reads and writes the C arrays and the pointer of a CrucibleMeta record of a C caller, and gives the door of the arrays the bits of a pointer of the input, which no code reads through
-test/fuzz/boundary/harnesses/ | opted-out | 2 | PROBE: the harness keeps one Vigil of its thread for each input, as the vessel does | the harness of the vessel entries keeps one thread_local Vigil for each input, as the vessel keeps one Vigil for each thread.  Outside a region the plugin refuses it two times: the Vigil owns two epoch arenas through its background thread (arena-member), and it holds a held trace ring and a held metadata log, which reach a loan key (loan-key-static)
+test/fuzz/boundary/harnesses/ | opted-out | 3 | PROBE: the harness keeps one Vigil of its thread for each input, as the vessel does | the harness of the vessel entries keeps one thread_local Vigil for each input, as the vessel keeps one Vigil for each thread.  Outside a region the plugin refuses it three times: the Vigil owns two epoch arenas through its background thread (arena-member), it holds a held trace ring and a held metadata log, which reach a loan key (loan-key-static), and it holds a borrow in an object of thread storage (static-borrow)
 test/fuzz/boundary/harnesses/ | region | 2 | ABI: the harness reads and writes the fields of a CrucibleMeta of a C caller | the fuzz harness of the C entries of the vessel reads and writes the C arrays and the pointer of a CrucibleMeta record of a C caller, and gives the door of the arrays the bits of a pointer of the input, which no code reads through
 test/fuzz/boundary/harnesses/ | region | 1 | PROBE: the harness keeps one Vigil of its thread for each input, as the vessel does | the harness of the vessel entries keeps one thread_local Vigil for each input, as the vessel does, which the rule brand-escape refuses outside a region, because the Vigil owns two epoch arenas through its background thread
 test/fuzz/property/ | opted-out | 1 | ABI: main takes the arguments of the C runtime as a count and an array of texts | the property tests take the arguments of main in one ABI region of property_main.cpp, and the saturating test keeps the overflow builtins of GCC as its reference in one ORACLE region
