@@ -12,13 +12,15 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include <utility>
+
 namespace eff = ::foundation::effects;
 
 namespace {
 
 void drain_from_an_allocating_caller(::fixy::BgDrainCtx const&, crucible::TraceRing& ring) {
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure(out.view());
+    out.with_mut([&ring](auto run) noexcept -> void { (void)ring.drain_pure(std::move(run)); });
 }
 
 }  // namespace

@@ -9,6 +9,8 @@
 
 #include <fixy/os/ThreadTasks.h>
 
+#include <utility>
+
 namespace {
 
 // The context of the test, which each check of the Check family takes.
@@ -43,10 +45,32 @@ template <typename Ctx>
 concept AppendsPure = requires(crucible::TraceRing& ring, Ctx const& ctx, crucible::TraceRing::Entry const& entry) {
     ring.try_append_pure(ctx, entry);
 };
+// The brand of the runs of the checks below.  A check names only the type of
+// a run, so no run of this brand exists.
+struct GateRunBrand final {};
+using EntryRun = ::fixy::ViewMut<crucible::TraceRing::Entry, GateRunBrand>;
+using MetaRun = ::fixy::ViewMut<MetaIndex, GateRunBrand>;
+using ScopeRun = ::fixy::ViewMut<ScopeHash, GateRunBrand>;
+using CallsiteRun = ::fixy::ViewMut<CallsiteHash, GateRunBrand>;
+using DepthRun = ::fixy::ViewMut<crucible::OpDepth, GateRunBrand>;
+
 template <typename Ctx>
-concept DrainsPure = requires(crucible::TraceRing& ring, Ctx const& ctx, ::fixy::View<crucible::TraceRing::Entry> out) {
-    ring.drain_pure(ctx, out);
+concept DrainsPure =
+    requires(crucible::TraceRing& ring, Ctx const& ctx, EntryRun out) { ring.drain_pure(ctx, std::move(out)); };
+
+// True when a drain takes the runs as its parallel outputs.
+template <typename... Parallel>
+concept DrainsInto = requires(crucible::TraceRing& ring, EntryRun out, Parallel... parallel) {
+    ring.drain(std::move(out), std::move(parallel)...);
 };
+
+// The parallel outputs of a drain are a prefix of the four arrays, in their
+// order.  A drain that skips a middle output, or that takes two outputs in
+// another order, does not compile.
+static_assert(DrainsInto<> && DrainsInto<MetaRun> && DrainsInto<MetaRun, ScopeRun>);
+static_assert(DrainsInto<MetaRun, ScopeRun, CallsiteRun> && DrainsInto<MetaRun, ScopeRun, CallsiteRun, DepthRun>);
+static_assert(!DrainsInto<ScopeRun> && !DrainsInto<MetaRun, CallsiteRun> && !DrainsInto<ScopeRun, MetaRun>);
+static_assert(!DrainsInto<MetaRun, ScopeRun, CallsiteRun, DepthRun, DepthRun>);
 static_assert(AppendsPure<::fixy::HotFgCtx>);
 static_assert(DrainsPure<::fixy::HotFgCtx>);
 static_assert(!AppendsPure<::fixy::TestRunnerCtx>);
@@ -78,7 +102,8 @@ void single_thread_cases() {
         return meta.with_mut([&](auto meta_run) noexcept {
             return scope.with_mut([&](auto scope_run) noexcept {
                 return callsite.with_mut([&](auto callsite_run) noexcept {
-                    return ring->drain(out_run.view(), meta_run.view(), scope_run.view(), callsite_run.view());
+                    return ring->drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                       std::move(callsite_run));
                 });
             });
         });
@@ -100,7 +125,7 @@ void single_thread_cases() {
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1000);
 
     ::fixy::FixedArray<crucible::TraceRing::Entry, 2048> batch{};
-    n = batch.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); });
+    n = batch.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, n == 1000);
     for (uint32_t i = 0; i < 1000; i++)
         CRUCIBLE_TEST_ASSERT(
@@ -114,7 +139,9 @@ void single_thread_cases() {
     static_assert(sizeof(crucible::TraceRing::Entry) == 64);
 
     // An empty output drains nothing.
-    uint32_t zero = ring->drain(::fixy::View<crucible::TraceRing::Entry>{});
+    uint32_t zero = batch.with_mut([&ring](auto run) noexcept {
+        return ring->drain(::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
+    });
     CRUCIBLE_TEST_ASSERT(kTest, zero == 0);
 
     // Wrap-around: drive head/tail past CAPACITY so drain() exercises the
@@ -128,8 +155,8 @@ void single_thread_cases() {
         }
         // A buffer of the whole ring is too large for the stack.
         static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> big{};
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             big.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); }) == CAP - 100);
+        CRUCIBLE_TEST_ASSERT(kTest, big.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); })
+                                        == CAP - 100);
 
         // head = tail = CAP - 100, so the next 200 appends straddle the wrap.
         for (uint32_t i = 0; i < 200; i++) {
@@ -137,7 +164,7 @@ void single_thread_cases() {
             wr.schema_hash = SchemaHash{100000 + i};
             CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(wr));
         }
-        uint32_t n_wrap = big.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); });
+        uint32_t n_wrap = big.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); });
         CRUCIBLE_TEST_ASSERT(kTest, n_wrap == 200);
         for (uint32_t i = 0; i < 200; i++)
             CRUCIBLE_TEST_ASSERT(
@@ -193,7 +220,8 @@ void concurrent_raw_case() {
                     return batch_meta.with_mut([&](auto meta_run) noexcept {
                         return batch_scope.with_mut([&](auto scope_run) noexcept {
                             return batch_csite.with_mut([&](auto csite_run) noexcept {
-                                return ring->drain(out_run.view(), meta_run.view(), scope_run.view(), csite_run.view());
+                                return ring->drain(std::move(out_run), std::move(meta_run), std::move(scope_run),
+                                                   std::move(csite_run));
                             });
                         });
                     });
@@ -277,8 +305,8 @@ void pure_facade_cases() {
                 return batch_meta.with_mut([&](auto meta_run) noexcept {
                     return batch_scope.with_mut([&](auto scope_run) noexcept {
                         return batch_csite.with_mut([&](auto csite_run) noexcept {
-                            return ring->drain_pure(kPure, out_run.view(), meta_run.view(), scope_run.view(),
-                                                    csite_run.view());
+                            return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
+                                                    std::move(scope_run), std::move(csite_run));
                         });
                     });
                 });
@@ -298,7 +326,11 @@ void pure_facade_cases() {
         }
 
         {
-            uint32_t zero_drained = ring->drain_pure(kPure, ::fixy::View<crucible::TraceRing::Entry>{});
+            ::fixy::FixedArray<crucible::TraceRing::Entry, 1> empty_out{};
+            uint32_t zero_drained = empty_out.with_mut([&ring](auto run) noexcept {
+                return ring->drain_pure(kPure,
+                                        ::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
+            });
             CRUCIBLE_TEST_ASSERT(kTest, zero_drained == 0);
         }
 
@@ -312,11 +344,11 @@ void pure_facade_cases() {
             CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(e6));
 
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one{};
-            uint32_t g1 = one.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, run.view()); });
+            uint32_t g1 = one.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, g1 == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0005});
 
-            uint32_t g2 = one.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); });
+            uint32_t g2 = one.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, g2 == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).schema_hash == SchemaHash{0xCAFE0006});
         }
@@ -374,8 +406,8 @@ void concurrent_pure_case() {
                     return pure_meta.with_mut([&](auto meta_run) noexcept {
                         return pure_scope.with_mut([&](auto scope_run) noexcept {
                             return pure_csite.with_mut([&](auto csite_run) noexcept {
-                                return ring->drain_pure(kPure, out_run.view(), meta_run.view(), scope_run.view(),
-                                                        csite_run.view());
+                                return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
+                                                        std::move(scope_run), std::move(csite_run));
                             });
                         });
                     });
@@ -436,7 +468,8 @@ void pure_edge_cases() {
             CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
 
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> one_a{};
-            uint32_t got_a = one_a.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, run.view()); });
+            uint32_t got_a =
+                one_a.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_a == 1);
             CRUCIBLE_TEST_ASSERT(kTest, one_a.at(index<0>()).schema_hash == SchemaHash{0xA0AA});
             CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
@@ -463,7 +496,7 @@ void pure_edge_cases() {
             // A buffer of the whole ring is too large for the stack.
             static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> full_drain{};
             uint32_t got_b =
-                full_drain.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, run.view()); });
+                full_drain.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_b == CAP);
             for (uint32_t i = 0; i < CAP; ++i) {
                 CRUCIBLE_TEST_ASSERT(
@@ -484,7 +517,7 @@ void pure_edge_cases() {
             }
             static ::fixy::FixedArray<crucible::TraceRing::Entry, CAP> pad_drain{};
             uint32_t got_pad =
-                pad_drain.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, run.view()); });
+                pad_drain.with_mut([&ring](auto run) noexcept { return ring->drain_pure(kPure, std::move(run)); });
             CRUCIBLE_TEST_ASSERT(kTest, got_pad == CAP - 100);
 
             for (uint32_t i = 0; i < 200; ++i) {
@@ -501,8 +534,8 @@ void pure_edge_cases() {
                 return wrap_meta.with_mut([&](auto meta_run) noexcept {
                     return wrap_scope.with_mut([&](auto scope_run) noexcept {
                         return wrap_csite.with_mut([&](auto csite_run) noexcept {
-                            return ring->drain_pure(kPure, out_run.view(), meta_run.view(), scope_run.view(),
-                                                    csite_run.view());
+                            return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run),
+                                                    std::move(scope_run), std::move(csite_run));
                         });
                     });
                 });
@@ -525,7 +558,9 @@ void pure_edge_cases() {
             }
         }
 
-        // Each parallel output is optional on its own: an empty View skips it.
+        // The parallel outputs are a prefix of the four arrays.  A drain fills
+        // the outputs that it takes, and it drops the slots of the other
+        // arrays.
         {
             crucible::TraceRing::Entry mix_e{};
             mix_e.schema_hash = SchemaHash{0xD0D0};
@@ -534,19 +569,14 @@ void pure_edge_cases() {
 
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> mix_out{};
             ::fixy::FixedArray<MetaIndex, 1> mix_meta{};
-            ::fixy::FixedArray<CallsiteHash, 1> mix_csite{};
             uint32_t got_mix = mix_out.with_mut([&](auto out_run) noexcept {
                 return mix_meta.with_mut([&](auto meta_run) noexcept {
-                    return mix_csite.with_mut([&](auto csite_run) noexcept {
-                        return ring->drain_pure(kPure, out_run.view(), meta_run.view(),
-                                                /*out_scope_hashes=*/::fixy::View<ScopeHash>{}, csite_run.view());
-                    });
+                    return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run));
                 });
             });
             CRUCIBLE_TEST_ASSERT(kTest, got_mix == 1);
             CRUCIBLE_TEST_ASSERT(kTest, mix_out.at(index<0>()).schema_hash == SchemaHash{0xD0D0});
             CRUCIBLE_TEST_ASSERT(kTest, mix_meta.at(index<0>()) == MetaIndex{42});
-            CRUCIBLE_TEST_ASSERT(kTest, mix_csite.at(index<0>()) == CallsiteHash{0xBEEF});
 
             crucible::TraceRing::Entry mix_e2{};
             mix_e2.schema_hash = SchemaHash{0xD2D2};
@@ -554,16 +584,18 @@ void pure_edge_cases() {
                 kTest, ring->try_append_pure(kPure, mix_e2, MetaIndex{99}, ScopeHash{0xCAFE}, CallsiteHash{0xF00D}));
 
             ::fixy::FixedArray<crucible::TraceRing::Entry, 1> mix_out2{};
+            ::fixy::FixedArray<MetaIndex, 1> mix_meta2{};
             ::fixy::FixedArray<ScopeHash, 1> mix_scope2{};
             uint32_t got_mix2 = mix_out2.with_mut([&](auto out_run) noexcept {
-                return mix_scope2.with_mut([&](auto scope_run) noexcept {
-                    return ring->drain_pure(kPure, out_run.view(),
-                                            /*out_meta_starts=*/::fixy::View<MetaIndex>{}, scope_run.view(),
-                                            /*out_callsite_hashes=*/::fixy::View<CallsiteHash>{});
+                return mix_meta2.with_mut([&](auto meta_run) noexcept {
+                    return mix_scope2.with_mut([&](auto scope_run) noexcept {
+                        return ring->drain_pure(kPure, std::move(out_run), std::move(meta_run), std::move(scope_run));
+                    });
                 });
             });
             CRUCIBLE_TEST_ASSERT(kTest, got_mix2 == 1);
             CRUCIBLE_TEST_ASSERT(kTest, mix_out2.at(index<0>()).schema_hash == SchemaHash{0xD2D2});
+            CRUCIBLE_TEST_ASSERT(kTest, mix_meta2.at(index<0>()) == MetaIndex{99});
             CRUCIBLE_TEST_ASSERT(kTest, mix_scope2.at(index<0>()) == ScopeHash{0xCAFE});
             CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
         }

@@ -11,12 +11,14 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include <utility>
+
 namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::BgLoadCtx load{eff::testing::bg()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure(load, out.view());
+    out.with_mut([&](auto run) noexcept -> void { (void)ring.drain_pure(load, std::move(run)); });
     return 0;
 }

@@ -12,6 +12,7 @@
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
 
 #include <cstdint>
+#include <utility>
 
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
@@ -363,8 +364,8 @@ int run_bench(::fixy::os::Args const& arguments) {
                 return scope_batch.with_mut([&](auto scope_run) noexcept {
                     return callsite_batch.with_mut([&](auto callsite_run) noexcept {
                         return depth_batch.with_mut([&](auto depth_run) noexcept {
-                            return ring.drain(batch_run.view(), meta_run.view(), scope_run.view(), callsite_run.view(),
-                                              depth_run.view());
+                            return ring.drain(std::move(batch_run), std::move(meta_run), std::move(scope_run),
+                                              std::move(callsite_run), std::move(depth_run));
                         });
                     });
                 });

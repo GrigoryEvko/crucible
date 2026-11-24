@@ -10,12 +10,16 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Ctx.h>
 
+#include <utility>
+
 namespace eff = ::foundation::effects;
 
 int main() {
     const ::fixy::TestRunnerCtx test{eff::testing::test()};
     crucible::TraceRing ring;
     ::fixy::FixedArray<crucible::TraceRing::Entry, 1> out{};
-    (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>(), out.view());
+    out.with_mut([&](auto run) noexcept -> void {
+        (void)ring.drain_pure(test.in_row<eff::Row<eff::Effect::IO, eff::Effect::Block>>(), std::move(run));
+    });
     return 0;
 }

@@ -318,8 +318,8 @@ namespace {
             return batch.scope_hashes.with_mut([&](auto scope_hashes) noexcept {
                 return batch.callsite_hashes.with_mut([&](auto callsite_hashes) noexcept {
                     return batch.depths.with_mut([&](auto depths) noexcept {
-                        return ring.try_pop_batch(entries.view(), meta_starts.view(), scope_hashes.view(),
-                                                  callsite_hashes.view(), depths.view());
+                        return ring.try_pop_batch(std::move(entries), std::move(meta_starts), std::move(scope_hashes),
+                                                  std::move(callsite_hashes), std::move(depths));
                     });
                 });
             });

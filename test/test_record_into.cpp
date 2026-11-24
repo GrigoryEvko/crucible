@@ -19,6 +19,7 @@
 #include "test_harness.h"
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -73,7 +74,7 @@ FillRun& fill_run() {
     ::fixy::FixedArray<MetaIndex, 1> meta_starts{};
     uint32_t const drained = entries.with_mut([&](auto entry_run) noexcept {
         return meta_starts.with_mut(
-            [&](auto meta_run) noexcept { return ring.drain(entry_run.view(), meta_run.view()); });
+            [&](auto meta_run) noexcept { return ring.drain(std::move(entry_run), std::move(meta_run)); });
     });
     CRUCIBLE_TEST_ASSERT(kTest, drained == 1);
     out_entry = entries.at(::fixy::index<0>());

@@ -11,6 +11,7 @@
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -53,12 +54,15 @@ static CallsiteHash make_callsite(uint64_t i) noexcept { return CallsiteHash{i ^
 // as a different depth at most positions.
 static OpDepth make_depth(uint64_t i) noexcept { return OpDepth{static_cast<uint16_t>(i % 7)}; }
 
-// The one call of try_pop_batch in this file.  The batch drain inlines with
-// its copies, and one copy of it keeps the object below its size limit.
-[[gnu::noinline]] static uint32_t pop_batch(TraceRing& ring, ::fixy::View<TraceRing::Entry> entries,
-                                            ::fixy::View<MetaIndex> metas, ::fixy::View<ScopeHash> scopes,
-                                            ::fixy::View<CallsiteHash> calls, ::fixy::View<OpDepth> depths) noexcept {
-    return ring.try_pop_batch(entries, metas, scopes, calls, depths);
+// The call of try_pop_batch of this file.  The batch drain inlines with its
+// copies, and the function is not inlined, so each caller holds one call.
+// Each frame gives its runs a brand of their own, so each caller has its own
+// instance.
+template <class Entries, class Metas, class Scopes, class Calls, class Depths>
+[[gnu::noinline]] static uint32_t pop_batch(TraceRing& ring, Entries entries, Metas metas, Scopes scopes, Calls calls,
+                                            Depths depths) noexcept {
+    return ring.try_pop_batch(std::move(entries), std::move(metas), std::move(scopes), std::move(calls),
+                              std::move(depths));
 }
 
 static void test_empty_returns_zero() {
@@ -75,8 +79,8 @@ static void test_empty_returns_zero() {
             return out_scopes.with_mut([&](auto scope_run) noexcept {
                 return out_calls.with_mut([&](auto call_run) noexcept {
                     return out_depths.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
-                                         depth_run.view());
+                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
+                                         std::move(call_run), std::move(depth_run));
                     });
                 });
             });
@@ -97,8 +101,27 @@ static void test_max_count_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(7)));
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
 
-    uint32_t n = pop_batch(*ring, ::fixy::View<TraceRing::Entry>{}, ::fixy::View<MetaIndex>{},
-                           ::fixy::View<ScopeHash>{}, ::fixy::View<CallsiteHash>{}, ::fixy::View<OpDepth>{});
+    // Five empty windows of five frames.
+    ::fixy::FixedArray<TraceRing::Entry, 1> out_entries{};
+    ::fixy::FixedArray<MetaIndex, 1> out_metas{};
+    ::fixy::FixedArray<ScopeHash, 1> out_scopes{};
+    ::fixy::FixedArray<CallsiteHash, 1> out_calls{};
+    ::fixy::FixedArray<OpDepth, 1> out_depths{};
+    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
+        return out_metas.with_mut([&](auto meta_run) noexcept {
+            return out_scopes.with_mut([&](auto scope_run) noexcept {
+                return out_calls.with_mut([&](auto call_run) noexcept {
+                    return out_depths.with_mut([&](auto depth_run) noexcept {
+                        return pop_batch(*ring, ::fixy::take_window(std::move(entry_run), 0, 0).expect("empty"),
+                                         ::fixy::take_window(std::move(meta_run), 0, 0).expect("empty"),
+                                         ::fixy::take_window(std::move(scope_run), 0, 0).expect("empty"),
+                                         ::fixy::take_window(std::move(call_run), 0, 0).expect("empty"),
+                                         ::fixy::take_window(std::move(depth_run), 0, 0).expect("empty"));
+                    });
+                });
+            });
+        });
+    });
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);  // entry not drained
 
@@ -126,8 +149,8 @@ static void test_single_thread_fifo() {
             return out_scopes.with_mut([&](auto scope_run) noexcept {
                 return out_calls.with_mut([&](auto call_run) noexcept {
                     return out_depths.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
-                                         depth_run.view());
+                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
+                                         std::move(call_run), std::move(depth_run));
                     });
                 });
             });
@@ -190,11 +213,12 @@ static void test_multi_batch_drain() {
                 return out_scopes.with_mut([&](auto scope_run) noexcept {
                     return out_calls.with_mut([&](auto call_run) noexcept {
                         return out_depths.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(*ring, entry_run.view().window(total, batch).expect("the batch fits"),
-                                             meta_run.view().window(total, batch).expect("the batch fits"),
-                                             scope_run.view().window(total, batch).expect("the batch fits"),
-                                             call_run.view().window(total, batch).expect("the batch fits"),
-                                             depth_run.view().window(total, batch).expect("the batch fits"));
+                            return pop_batch(
+                                *ring, ::fixy::take_window(std::move(entry_run), total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(meta_run), total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(scope_run), total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(call_run), total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(depth_run), total, batch).expect("the batch fits"));
                         });
                     });
                 });
@@ -245,8 +269,8 @@ static void test_wrap_around() {
                 return half_s.with_mut([&](auto scope_run) noexcept {
                     return half_c.with_mut([&](auto call_run) noexcept {
                         return half_d.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(),
-                                             call_run.view(), depth_run.view());
+                            return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
+                                             std::move(call_run), std::move(depth_run));
                         });
                     });
                 });
@@ -273,8 +297,8 @@ static void test_wrap_around() {
             return s.with_mut([&](auto scope_run) noexcept {
                 return c.with_mut([&](auto call_run) noexcept {
                     return d.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, entry_run.view(), meta_run.view(), scope_run.view(), call_run.view(),
-                                         depth_run.view());
+                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
+                                         std::move(call_run), std::move(depth_run));
                     });
                 });
             });
@@ -338,11 +362,13 @@ static void test_equivalence_with_single_pop() {
                 return a_scopes.with_mut([&](auto scope_run) noexcept {
                     return a_calls.with_mut([&](auto call_run) noexcept {
                         return a_depths.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(*ring_a, entry_run.view().window(a_total, batch).expect("the batch fits"),
-                                             meta_run.view().window(a_total, batch).expect("the batch fits"),
-                                             scope_run.view().window(a_total, batch).expect("the batch fits"),
-                                             call_run.view().window(a_total, batch).expect("the batch fits"),
-                                             depth_run.view().window(a_total, batch).expect("the batch fits"));
+                            return pop_batch(
+                                *ring_a,
+                                ::fixy::take_window(std::move(entry_run), a_total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(meta_run), a_total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(scope_run), a_total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(call_run), a_total, batch).expect("the batch fits"),
+                                ::fixy::take_window(std::move(depth_run), a_total, batch).expect("the batch fits"));
                         });
                     });
                 });
@@ -358,11 +384,12 @@ static void test_equivalence_with_single_pop() {
                 return b_scopes.with_mut([&](auto scope_run) noexcept {
                     return b_calls.with_mut([&](auto call_run) noexcept {
                         return b_depths.with_mut([&](auto depth_run) noexcept {
-                            return ring_b->drain(entry_run.view().window(i, 1).expect("one entry fits"),
-                                                 meta_run.view().window(i, 1).expect("one entry fits"),
-                                                 scope_run.view().window(i, 1).expect("one entry fits"),
-                                                 call_run.view().window(i, 1).expect("one entry fits"),
-                                                 depth_run.view().window(i, 1).expect("one entry fits"));
+                            return ring_b->drain(
+                                ::fixy::take_window(std::move(entry_run), i, 1).expect("one entry fits"),
+                                ::fixy::take_window(std::move(meta_run), i, 1).expect("one entry fits"),
+                                ::fixy::take_window(std::move(scope_run), i, 1).expect("one entry fits"),
+                                ::fixy::take_window(std::move(call_run), i, 1).expect("one entry fits"),
+                                ::fixy::take_window(std::move(depth_run), i, 1).expect("one entry fits"));
                         });
                     });
                 });
@@ -453,13 +480,22 @@ static void test_spsc_stress() {
                     return out_scopes.with_mut([&](auto scope_run) noexcept {
                         return out_calls.with_mut([&](auto call_run) noexcept {
                             return out_depths.with_mut([&](auto depth_run) noexcept {
-                                const auto entries = entry_run.view().window(0, batch).expect("the batch fits");
-                                const auto metas = meta_run.view().window(0, batch).expect("the batch fits");
-                                const auto scopes = scope_run.view().window(0, batch).expect("the batch fits");
-                                const auto calls = call_run.view().window(0, batch).expect("the batch fits");
-                                const auto depths = depth_run.view().window(0, batch).expect("the batch fits");
-                                return is_pop_batch ? pop_batch(*ring, entries, metas, scopes, calls, depths)
-                                                    : ring->drain(entries, metas, scopes, calls, depths);
+                                auto entries =
+                                    ::fixy::take_window(std::move(entry_run), 0, batch).expect("the batch fits");
+                                auto metas =
+                                    ::fixy::take_window(std::move(meta_run), 0, batch).expect("the batch fits");
+                                auto scopes =
+                                    ::fixy::take_window(std::move(scope_run), 0, batch).expect("the batch fits");
+                                auto calls =
+                                    ::fixy::take_window(std::move(call_run), 0, batch).expect("the batch fits");
+                                auto depths =
+                                    ::fixy::take_window(std::move(depth_run), 0, batch).expect("the batch fits");
+                                if (is_pop_batch) {
+                                    return pop_batch(*ring, std::move(entries), std::move(metas), std::move(scopes),
+                                                     std::move(calls), std::move(depths));
+                                }
+                                return ring->drain(std::move(entries), std::move(metas), std::move(scopes),
+                                                   std::move(calls), std::move(depths));
                             });
                         });
                     });
@@ -484,10 +520,10 @@ static void test_spsc_stress() {
             if (got > 0) {
                 mirror = ::fixy::with_mut(std::move(mirror), [&out_entries, received, got](auto run) noexcept {
                     for (uint32_t i = 0; i < got; ++i) {
-                        *run.get(received + i).expect("the ring delivers at most N entries") =
-                            out_entries.get(i)
-                                .expect("a test reads an element at or past the count of its array")
-                                ->schema_hash.raw();
+                        auto slot = run.get_mut(received + i).expect("the ring delivers at most N entries");
+                        *slot = out_entries.get(i)
+                                    .expect("a test reads an element at or past the count of its array")
+                                    ->schema_hash.raw();
                     }
                 });
                 received += got;

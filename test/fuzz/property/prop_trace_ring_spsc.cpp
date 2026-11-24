@@ -52,6 +52,7 @@
 #include <crucible/Types.h>
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -178,7 +179,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
         ::fixy::FixedArray<TraceRing::Entry, PREFILL> discard{};
-        const uint32_t discarded = discard.with_mut([&ring](auto run) noexcept { return ring->drain(run.view()); });
+        const uint32_t discarded = discard.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); });
         CRUCIBLE_FATAL_INVARIANT(discarded == PREFILL);
 
         // Fill to exactly CAPACITY.
@@ -217,8 +218,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     return out_s.with_mut([&](auto run_s) noexcept {
                         return out_c.with_mut([&](auto run_c) noexcept {
                             return out_d.with_mut([&](auto run_d) noexcept {
-                                return ring->drain(run_e.view(), run_m.view(), run_s.view(), run_c.view(),
-                                                   run_d.view());
+                                return ring->drain(std::move(run_e), std::move(run_m), std::move(run_s),
+                                                   std::move(run_c), std::move(run_d));
                             });
                         });
                     });
@@ -332,12 +333,16 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                             return out_s.with_mut([&](auto run_s) noexcept {
                                 return out_c.with_mut([&](auto run_c) noexcept {
                                     return out_d.with_mut([&](auto run_d) noexcept {
-                                        return ring->drain(
-                                            run_e.view().window(0, want).expect("a phase fits the buffer"),
-                                            run_m.view().window(0, want).expect("a phase fits the buffer"),
-                                            run_s.view().window(0, want).expect("a phase fits the buffer"),
-                                            run_c.view().window(0, want).expect("a phase fits the buffer"),
-                                            run_d.view().window(0, want).expect("a phase fits the buffer"));
+                                        return ring->drain(::fixy::take_window(std::move(run_e), 0, want)
+                                                               .expect("a phase fits the buffer"),
+                                                           ::fixy::take_window(std::move(run_m), 0, want)
+                                                               .expect("a phase fits the buffer"),
+                                                           ::fixy::take_window(std::move(run_s), 0, want)
+                                                               .expect("a phase fits the buffer"),
+                                                           ::fixy::take_window(std::move(run_c), 0, want)
+                                                               .expect("a phase fits the buffer"),
+                                                           ::fixy::take_window(std::move(run_d), 0, want)
+                                                               .expect("a phase fits the buffer"));
                                     });
                                 });
                             });

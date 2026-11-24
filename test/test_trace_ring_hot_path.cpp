@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -53,9 +54,14 @@ TraceRing::Entry make_entry(std::uint64_t schema_seed) noexcept {
 template <class Ctx>
 concept AppendsToRing = requires(TraceRing& ring, Ctx const& ctx) { ring.try_append_pure(ctx, make_entry(0)); };
 
+// The brand of the run of the check below.  The check names only the type
+// of a run, so no run of this brand exists.
+struct DrainRunBrand final {};
+
 template <class Ctx>
-concept DrainsRing =
-    requires(TraceRing& ring, Ctx const& ctx) { ring.drain_pure(ctx, ::fixy::View<TraceRing::Entry>{}); };
+concept DrainsRing = requires(TraceRing& ring, Ctx const& ctx, ::fixy::ViewMut<TraceRing::Entry, DrainRunBrand> out) {
+    ring.drain_pure(ctx, std::move(out));
+};
 
 template <class Ctx>
 concept AppendsToLog =
@@ -83,10 +89,10 @@ void test_ring_append_under_the_foreground() {
         kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
     ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
     CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
-        return ring->drain_pure(foreground, run.view());
+        return ring->drain_pure(foreground, std::move(run));
     }) == 1u);
     CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
-        return ring->drain_pure(foreground, run.view());
+        return ring->drain_pure(foreground, std::move(run));
     }) == 0u);
 }
 
