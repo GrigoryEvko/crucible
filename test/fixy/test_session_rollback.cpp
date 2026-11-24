@@ -362,12 +362,13 @@ template <typename UserHandle, typename ServiceHandle>
 int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& trace) {
     auto service_meta = std::move(service).send(Text{"meta"}, push_text);
     auto [meta, user_meta] = std::move(user).recv(pop_text);
-    if (meta.view() != "meta") return 1;
+    if (meta.view() != "meta") ::fixy::fatal("the user did not receive the metadata of the service");
 
     if (round == 0) {
-        // HD, then roll.
+        // HD, then roll.  Each handler owns the handle of the other side, and
+        // the branch calls it one time.
         auto user_hd = std::move(user_meta).template select<0>(push_label);
-        return std::move(service_meta).branch(pop_label, [&](auto service_choice) -> int {
+        auto on_choice = [&trace, user_hd = std::move(user_hd)](auto service_choice) mutable -> int {
             using Head = typename decltype(service_choice)::protocol;
             if constexpr (std::is_same_v<Head, s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Roll>>>) {
                 auto service_test = std::move(service_choice).send(Text{"clip"}, push_text);
@@ -376,23 +377,25 @@ int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& 
                 auto user_rolled = std::move(user_test).template select<1>(push_label);
                 static_assert(std::is_same_v<decltype(user_rolled), UserHandle>,
                               "a roll returns the user to the handle it had at its checkpoint");
-                return std::move(service_test).branch(pop_label, [&](auto service_after) -> int {
+                auto on_label = [&trace, user_rolled = std::move(user_rolled)](auto service_after) mutable -> int {
                     if constexpr (std::is_same_v<decltype(service_after), ServiceHandle>) {
                         ++trace.rolls;
                         return run_from_metadata(std::move(user_rolled), std::move(service_after), 1, trace);
                     } else {
                         unreachable_branch("the service after the test clip in round 0");
                     }
-                });
+                };
+                return std::move(service_test).branch(pop_label, std::move(on_label));
             } else {
                 unreachable_branch("the service quality choice in round 0");
             }
-        });
+        };
+        return std::move(service_meta).branch(pop_label, std::move(on_choice));
     }
 
     // SD.  In round 1 abort, in round 2 watch.
     auto user_sd = std::move(user_meta).template select<1>(push_label);
-    return std::move(service_meta).branch(pop_label, [&](auto service_choice) -> int {
+    auto on_choice = [&trace, round, user_sd = std::move(user_sd)](auto service_choice) mutable -> int {
         using Head = typename decltype(service_choice)::protocol;
         if constexpr (std::is_same_v<Head, s::Send<Text, s::Offer<s::Send<Text, s::End>, s::Abort>>>) {
             auto service_test = std::move(service_choice).send(Text{"clip"}, push_text);
@@ -400,7 +403,8 @@ int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& 
             (void)clip;
             if (round == 1) {
                 auto user_restarted = std::move(user_test).template select<1>(push_label);
-                return std::move(service_test).branch(pop_label, [&](auto service_after) -> int {
+                auto on_label = [&trace,
+                                 user_restarted = std::move(user_restarted)](auto service_after) mutable -> int {
                     using After = typename decltype(service_after)::protocol;
                     if constexpr (std::is_same_v<After, ServiceC>) {
                         ++trace.aborts;
@@ -408,10 +412,11 @@ int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& 
                     } else {
                         unreachable_branch("the service after the SD clip in round 1");
                     }
-                });
+                };
+                return std::move(service_test).branch(pop_label, std::move(on_label));
             }
             auto user_watch = std::move(user_test).template select<0>(push_label);
-            return std::move(service_test).branch(pop_label, [&](auto service_after) -> int {
+            auto on_label = [&trace, user_watch = std::move(user_watch)](auto service_after) mutable -> int {
                 using After = typename decltype(service_after)::protocol;
                 if constexpr (std::is_same_v<After, s::Send<Text, s::End>>) {
                     auto service_end = std::move(service_after).send(Text{"clip"}, push_text);
@@ -424,11 +429,13 @@ int run_from_metadata(UserHandle user, ServiceHandle service, int round, Trace& 
                 } else {
                     unreachable_branch("the service after the SD clip in round 2");
                 }
-            });
+            };
+            return std::move(service_test).branch(pop_label, std::move(on_label));
         } else {
             unreachable_branch("the service quality choice in an SD round");
         }
-    });
+    };
+    return std::move(service_meta).branch(pop_label, std::move(on_choice));
 }
 
 template <typename UserHandle, typename ServiceHandle>
@@ -438,7 +445,7 @@ int run_session(UserHandle user, ServiceHandle service, int round, Trace& trace)
     (void)request;
     auto service_priced = std::move(service_asked).send(7, push_int);
     auto [price, user_priced] = std::move(user_asked).recv(pop_int);
-    if (price != 7) return 1;
+    if (price != 7) ::fixy::fatal("the user did not receive the price of the service");
 
     // S commits, then U commits.  Each handler has one branch, so it can
     // return the handle.
@@ -484,14 +491,14 @@ int run_loop_rollback() {
 
     auto left_saved = std::move(left).template select<0>(push_label);
     int rc = 1;
-    std::move(right).branch(pop_label, [&](auto right_saved) {
+    std::move(right).branch(pop_label, [&, left_saved = std::move(left_saved)](auto right_saved) mutable {
         if constexpr (std::is_same_v<typename decltype(right_saved)::protocol, s::Recv<int, s::Continue>>) {
             auto left_sent = std::move(left_saved).send(1, push_int);
             auto [first, right_got] = std::move(right_saved).recv(pop_int);
             auto left_back = std::move(left_sent).template select<1>(push_label);
             static_assert(std::is_same_v<decltype(left_back), decltype(left_saved)>,
                           "a roll inside a loop returns to the handle at the checkpoint");
-            std::move(right_got).branch(pop_label, [&](auto right_next) {
+            std::move(right_got).branch(pop_label, [&, left_back = std::move(left_back)](auto right_next) mutable {
                 if constexpr (std::is_same_v<decltype(right_next), decltype(right_saved)>) {
                     // Each side built its handle again at the checkpoint.  A
                     // handle that the roll built holds a record in the watch,
@@ -565,7 +572,7 @@ void run_roll_at_start() {
     using RightStart = decltype(right);
     auto left_back = std::move(left).template select<1>(push_label);
     static_assert(std::is_same_v<decltype(left_back), LeftStart>, "a pinned Roll returns the decider to its start");
-    std::move(right).branch(pop_label, [&](auto right_back) {
+    std::move(right).branch(pop_label, [left_back = std::move(left_back)](auto right_back) mutable {
         static_assert(is_unpinned_head<decltype(right_back)>, "no head of a checkpoint handle holds a vendor pin");
         if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
             finish_at_end<0>(std::move(left_back), std::move(right_back));
@@ -586,12 +593,12 @@ void run_roll_after_pinned_commit() {
     using RightStart = decltype(right);
     auto left_saved = std::move(left).select<0>(push_label);
     static_assert(is_unpinned_head<decltype(left_saved)>, "no head of a checkpoint handle holds a vendor pin");
-    std::move(right).branch(pop_label, [&](auto right_saved) {
+    std::move(right).branch(pop_label, [left_saved = std::move(left_saved)](auto right_saved) mutable {
         if constexpr (!std::is_same_v<decltype(right_saved), RightStart>) {
             auto left_back = std::move(left_saved).template select<1>(push_label);
             static_assert(std::is_same_v<decltype(left_back), decltype(left_saved)>,
                           "a Roll after a pinned Commit returns the decider to the checkpoint of the Commit");
-            std::move(right_saved).branch(pop_label, [&](auto right_back) {
+            std::move(right_saved).branch(pop_label, [left_back = std::move(left_back)](auto right_back) mutable {
                 if constexpr (std::is_same_v<decltype(right_back), decltype(right_saved)>) {
                     finish_at_end<0>(std::move(left_back), std::move(right_back));
                 } else {
@@ -614,12 +621,12 @@ void run_pinned_abort() {
     using LeftStart = decltype(left);
     using RightStart = decltype(right);
     auto left_saved = std::move(left).select<0>(push_label);
-    std::move(right).branch(pop_label, [&](auto right_saved) {
+    std::move(right).branch(pop_label, [left_saved = std::move(left_saved)](auto right_saved) mutable {
         if constexpr (s::is_offer_v<typename decltype(right_saved)::protocol>) {
             auto left_back = std::move(left_saved).template select<1>(push_label);
             static_assert(std::is_same_v<decltype(left_back), LeftStart>,
                           "a pinned Abort returns the decider to its start");
-            std::move(right_saved).branch(pop_label, [&](auto right_back) {
+            std::move(right_saved).branch(pop_label, [left_back = std::move(left_back)](auto right_back) mutable {
                 if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
                     finish_at_end<1>(std::move(left_back), std::move(right_back));
                 } else {
@@ -656,7 +663,7 @@ void run_pinned_loop_branch() {
     static_assert(std::is_same_v<typename decltype(left_loop)::protocol,
                                  s::Select<s::Commit<s::Send<int, s::Continue>>, s::Roll, s::End>>,
                   "the pinned Loop branch enters the body of the loop");
-    std::move(right).branch(pop_label, [&](auto right_loop) {
+    std::move(right).branch(pop_label, [left_loop = std::move(left_loop)](auto right_loop) mutable {
         if constexpr (s::is_offer_v<typename decltype(right_loop)::protocol>) {
             finish_at_end<2>(std::move(left_loop), std::move(right_loop));
         } else {

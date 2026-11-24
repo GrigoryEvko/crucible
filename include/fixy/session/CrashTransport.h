@@ -146,6 +146,7 @@
 #include <fixy/session/Entry.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -805,6 +806,26 @@ struct [[nodiscard]] CrashSend {
 
 namespace detail::crash_transport {
 
+// The parts of a crash session that each step copies to its successor.  No
+// part of it is linear, so the closure of a step can hold a copy.
+template <typename Ctx>
+struct session_frame {
+    // The cell of the pair of the peer and this endpoint.  The session reads
+    // the crash of the peer and the count of its messages there.
+    const CrashCellCore* peer_cell;
+    // The cell of the pair of this endpoint and the peer.  The session
+    // counts its messages to the peer there, and its crash reports there.
+    // The mint took the one writer of the cell, so no other session counts
+    // into it.
+    CrashCellCore* own_cell;
+    // The cell of the pair of this endpoint and the third role that the
+    // protocol sends to, or null when it sends to no third role.  The mint
+    // took its one writer too.
+    CrashCellCore* third_cell;
+    // The context of the mint.  The door enters a crash branch with it.
+    [[no_unique_address]] Ctx ctx;
+};
+
 // The counts after a step that moved one more message the given way.
 [[nodiscard]] constexpr message_counts one_more_sent(message_counts counts) noexcept {
     return {counts.received, counts.sent + 1};
@@ -846,14 +867,22 @@ template <typename Resource, typename Transport>
 // The decorator forwards each step here, so a direct call is the same
 // operation as the method.  No object of the class exists.
 class CrashSessionDoor final : ::foundation::NoObject<CrashSessionDoor> {
-    // Wraps the successor of `from` with the counts after the step, and
-    // records where it stands inside a message.
+    // Wraps the successor of a step in the frame of its session, with the
+    // counts after the step, and records where it stands inside a message.
+    template <typename Self, typename Peer, typename Reliable,
+              typename NextPosition = detail::crash_transport::between_messages, typename Next, typename Ctx>
+    [[nodiscard]] static constexpr auto wrap_in_(detail::crash_transport::session_frame<Ctx> const& frame, Next next,
+                                                 detail::crash_transport::message_counts counts) noexcept {
+        return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{
+            std::move(next), *frame.peer_cell, *frame.own_cell, frame.third_cell, frame.ctx, counts};
+    }
+
+    // The same for the successor of `from`.
     template <typename NextPosition = detail::crash_transport::between_messages, typename Next, typename Handle,
               typename Self, typename Peer, typename Reliable, typename Ctx, typename Position>
     [[nodiscard]] static constexpr auto wrap_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& from,
                                               Next next, detail::crash_transport::message_counts counts) noexcept {
-        return CrashWatched<Next, Self, Peer, Reliable, Ctx, NextPosition>{
-            std::move(next), *from.peer_cell_, *from.own_cell_, from.third_cell_, from.ctx_, counts};
+        return wrap_in_<Self, Peer, Reliable, NextPosition>(from.frame_, std::move(next), counts);
     }
 
     // The counts after one more message that this endpoint finished to
@@ -868,11 +897,11 @@ class CrashSessionDoor final : ::foundation::NoObject<CrashSessionDoor> {
     [[nodiscard]] static detail::crash_transport::message_counts
     one_more_sent_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& watched) noexcept {
         constexpr bool is_to_peer = std::is_same_v<Receiver, Peer>;
-        CrashCellCore* const counted = is_to_peer ? watched.own_cell_ : watched.third_cell_;
+        CrashCellCore* const counted = is_to_peer ? watched.frame_.own_cell : watched.frame_.third_cell;
         // The mint took the writer of the third pair when the protocol sends
         // to a third role, so a message to that role has its cell.
         CRUCIBLE_FATAL_INVARIANT(counted != nullptr);
-        const CrashCellCore* const other = is_to_peer ? watched.third_cell_ : watched.own_cell_;
+        const CrashCellCore* const other = is_to_peer ? watched.frame_.third_cell : watched.frame_.own_cell;
         const bool is_counted_before_a_report = counted->count_one_sent_();
         if (!is_counted_before_a_report || (other != nullptr && other->has_crashed())) [[unlikely]]
             detail::crash_transport::abort_on_reported_endpoint();
@@ -891,7 +920,7 @@ class CrashSessionDoor final : ::foundation::NoObject<CrashSessionDoor> {
     [[nodiscard]] static constexpr const CrashCellCore*
     receiver_cell_(const CrashWatched<Handle, Self, Peer, Reliable, Ctx, Position>& watched) noexcept {
         if constexpr (std::is_same_v<Receiver, Peer>) {
-            return watched.peer_cell_;
+            return watched.frame_.peer_cell;
         } else {
             return nullptr;
         }
@@ -942,8 +971,8 @@ public:
         using Resource = typename Handle::resource_type;
         Resource resource = std::forward<Resource>(watched.inner_.resource());
         std::move(watched.inner_).detach(detach_reason::LocalCrashStop{});
-        static_cast<void>(watched.own_cell_->publish_(cause));
-        if (watched.third_cell_ != nullptr) static_cast<void>(watched.third_cell_->publish_(cause));
+        static_cast<void>(watched.frame_.own_cell->publish_(cause));
+        if (watched.frame_.third_cell != nullptr) static_cast<void>(watched.frame_.third_cell->publish_(cause));
         return std::forward<Resource>(resource);
     }
 
@@ -1020,13 +1049,10 @@ public:
         // its receiver.
         const detail::crash_transport::message_counts counts =
             (is_written && !keyed_step_has_value_v<P>) ? one_more_sent_<Receiver>(watched) : watched.counts_;
-        auto wrapped = [&] {
-            if constexpr (keyed_step_has_value_v<P>) {
-                return wrap_<detail::crash_transport::payload_to_send<Receiver>>(watched, std::move(next), counts);
-            } else {
-                return wrap_(watched, std::move(next), counts);
-            }
-        }();
+        using NextPosition =
+            std::conditional_t<keyed_step_has_value_v<P>, detail::crash_transport::payload_to_send<Receiver>,
+                               detail::crash_transport::between_messages>;
+        auto wrapped = wrap_<NextPosition>(watched, std::move(next), counts);
         ::fixy::Option<std::size_t> undelivered =
             is_written ? ::fixy::Option<std::size_t>{} : ::fixy::Option<std::size_t>::some(step_wire_word_v<P>);
         return CrashSend<decltype(wrapped), std::size_t>{std::move(wrapped), std::move(undelivered)};
@@ -1097,7 +1123,7 @@ public:
                       "no value otherwise.");
         using Sender = typename detail::crash_transport::payload_sender<Position, Peer>::type;
         ::fixy::Option<T> payload = detail::crash_transport::await_payload<Position, Peer, Sender>(
-            read, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
+            read, watched.inner_.resource(), *watched.frame_.peer_cell, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto [value, next] =
             std::move(watched.inner_)
@@ -1135,7 +1161,7 @@ public:
         // The word and the value come from the role that the message names.
         using Sender = detail::crash_transport::keyed_sender_t<P, Peer>;
         const ::fixy::Option<std::size_t> word = detail::crash_transport::await_payload<Position, Peer, Sender>(
-            poll, watched.inner_.resource(), *watched.peer_cell_, watched.counts_.received,
+            poll, watched.inner_.resource(), *watched.frame_.peer_cell, watched.counts_.received,
             watched.inner_.watch_endpoint());
         auto next =
             std::move(watched.inner_).recv([&word](Resource&) noexcept -> ::fixy::Option<std::size_t> { return word; });
@@ -1160,20 +1186,64 @@ public:
         static_assert(std::is_same_v<typename Record::peer, Peer>,
                       "fixy::session::diagnostic [Crash_Branch_Unwatched]: this crash branch names a role other "
                       "than the watched peer, so no detector can have triggered it.");
-        const CrashCause cause = watched.peer_cell_->crash_cause().value_or(CrashCause::Unknown);
+        const CrashCause cause = watched.frame_.peer_cell->crash_cause().value_or(CrashCause::Unknown);
         auto [record, next] = std::move(watched.inner_).recv([cause](Resource&) noexcept -> ::fixy::Option<Record> {
             return ::fixy::some(Record{cause});
         });
         return ::foundation::core::Record{record, wrap_(watched, std::move(next), watched.counts_)};
     }
 
+private:
+    // Enters the label branch that `word` names and gives its handle to the
+    // handler.  The inner handle takes the word that the poll read.  A
+    // positional branch that opens with a reception, and a keyed branch whose
+    // payload is not void, still wait for the rest of the message of the
+    // label.  The closure of the branch owns the handler and a copy of the
+    // frame, so the step holds no reference to the decorator.
+    template <typename Self, typename Peer, typename Reliable, typename OfferSender, typename Handle, typename Ctx,
+              typename Handler>
+        requires(!std::is_reference_v<Handle> && !std::is_reference_v<Handler>)
+    static constexpr auto take_word_(detail::crash_transport::session_frame<Ctx> const& frame, Handle&& inner,
+                                     std::size_t word, detail::crash_transport::message_counts counts,
+                                     Handler&& handler) {
+        using P = typename Handle::protocol;
+        if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
+            detail::crash_transport::abort_on_crash_label(word,
+                                                          detail::crash_transport::message_branch_count<P>::value);
+        return std::move(inner).branch_indexed(
+            [word](typename Handle::resource_type&) noexcept -> ::fixy::Option<std::size_t> {
+                return ::fixy::some(word);
+            },
+            [frame, counts, handler = std::move(handler)]<std::size_t I>(std::integral_constant<std::size_t, I>,
+                                                                         auto branch_handle) mutable {
+                using Head = typename decltype(branch_handle)::protocol;
+                constexpr bool is_inside_message = [] {
+                    if constexpr (is_keyed_choice_v<P>) {
+                        return keyed_step_has_value_v<std::tuple_element_t<I, typename P::branches_tuple>>;
+                    } else if constexpr (is_recv_v<Head>) {
+                        return !is_crash_payload_v<typename Head::message_type>;
+                    } else {
+                        return false;
+                    }
+                }();
+                using NextPosition =
+                    std::conditional_t<is_inside_message, detail::crash_transport::payload_to_receive<OfferSender>,
+                                       detail::crash_transport::between_messages>;
+                return ::foundation::linear::call_once(
+                    std::move(handler),
+                    wrap_in_<Self, Peer, Reliable, NextPosition>(frame, std::move(branch_handle), counts));
+            });
+    }
+
+public:
     // ── branch ───────────────────────────────────────────────────────
     //
     // The index of the branch decides where its handle stands inside the
     // message, and not the type of the handle.  In a keyed choice, one
     // branch can stand at the value step Recv<U, K> while another branch
     // with a payload of void continues with the same Recv<U, K> as a new
-    // message.
+    // message.  The call owns the handler and calls it one time through the
+    // once door, so the handler can hold a linear value by move.
     template <typename Handle, typename Self, typename Peer, typename Reliable, typename Ctx, typename Position,
               typename Poll, typename Handler>
         requires is_offer_v<typename Handle::protocol> && ::foundation::linear::HoldsNoLinearValue<Poll>
@@ -1187,7 +1257,6 @@ public:
                       "when a message is queued, and no value otherwise.");
         using OfferSender =
             std::conditional_t<std::is_same_v<offer_sender_t<P>, AnonymousPeer>, Peer, offer_sender_t<P>>;
-        constexpr std::size_t message_branches = detail::crash_transport::message_branch_count<P>::value;
         constexpr bool is_watched = !reliable_set_contains_v<Reliable, OfferSender>;
         static_assert(!is_watched || std::is_same_v<OfferSender, Peer>,
                       "fixy::session::diagnostic [Crash_Sender_Unwatched]: this Offer has an unreliable sender "
@@ -1198,42 +1267,6 @@ public:
         // the crash of the peer.
         constexpr bool is_from_peer = std::is_same_v<OfferSender, Peer>;
 
-        // A word of the peer is one more message received.  The crash branch
-        // receives none: it runs because the count of the report was reached.
-        const auto take_word = [&watched, &handler](std::size_t word) {
-            if (!detail::crash_transport::names_message_branch<P>(word)) [[unlikely]]
-                detail::crash_transport::abort_on_crash_label(word, message_branches);
-            const detail::crash_transport::message_counts counts =
-                is_from_peer ? detail::crash_transport::one_more_received(watched.counts_) : watched.counts_;
-            // The inner handle takes the word that the poll read, and enters
-            // the label branch that it names.  A positional branch that opens
-            // with a reception, and a keyed branch whose payload is not void,
-            // still wait for the rest of the message of the label.
-            return std::move(watched.inner_)
-                .branch_indexed(
-                    [word](typename Handle::resource_type&) noexcept -> ::fixy::Option<std::size_t> {
-                        return ::fixy::some(word);
-                    },
-                    [&watched, &handler, counts]<std::size_t I>(std::integral_constant<std::size_t, I>,
-                                                                auto branch_handle) {
-                        using Head = typename decltype(branch_handle)::protocol;
-                        constexpr bool is_inside_message = [] {
-                            if constexpr (is_keyed_choice_v<P>) {
-                                return keyed_step_has_value_v<std::tuple_element_t<I, typename P::branches_tuple>>;
-                            } else if constexpr (is_recv_v<Head>) {
-                                return !is_crash_payload_v<typename Head::message_type>;
-                            } else {
-                                return false;
-                            }
-                        }();
-                        if constexpr (is_inside_message) {
-                            return std::invoke(handler, wrap_<detail::crash_transport::payload_to_receive<OfferSender>>(
-                                                            watched, std::move(branch_handle), counts));
-                        } else {
-                            return std::invoke(handler, wrap_(watched, std::move(branch_handle), counts));
-                        }
-                    });
-        };
         auto& resource = watched.inner_.resource();
         ::fixy::Option<std::size_t> word{};
         {
@@ -1247,7 +1280,7 @@ public:
                 // empty, and a word that the transport still reports was never
                 // sent.
                 if constexpr (is_from_peer) {
-                    const std::optional<CrashWitness> witness = watched.peer_cell_->witness();
+                    const std::optional<CrashWitness> witness = watched.frame_.peer_cell->witness();
                     if (detail::crash_transport::queue_is_drained(witness, watched.counts_.received)) break;
                 }
                 // A read of another shape already failed the assertion above.
@@ -1260,15 +1293,25 @@ public:
                 wait->poll();
             }
         }
-        if (word.is_some()) return take_word(std::move(word).expect("the poll read a word"));
+        if (word.is_some()) {
+            // A word of the peer is one more message received.  The crash
+            // branch receives none: it runs because the count of the report
+            // was reached.
+            const detail::crash_transport::message_counts counts =
+                is_from_peer ? detail::crash_transport::one_more_received(watched.counts_) : watched.counts_;
+            return take_word_<Self, Peer, Reliable, OfferSender>(watched.frame_, std::move(watched.inner_),
+                                                                 std::move(word).expect("the poll read a word"), counts,
+                                                                 std::move(handler));
+        }
         if constexpr (is_watched) {
             // The crash branch is no label, so no word names it.  The handle
             // enters it through recover, with the context of the mint.
             constexpr std::size_t crash_branch = detail::crash::crash_branch_position(^^P, ^^Peer);
-            return std::invoke(
-                handler,
-                wrap_(watched, HandleFactory::template recover<crash_branch>(watched.ctx_, std::move(watched.inner_)),
-                      watched.counts_));
+            auto recovered =
+                HandleFactory::template recover<crash_branch>(watched.frame_.ctx, std::move(watched.inner_));
+            return ::foundation::linear::call_once(
+                std::move(handler),
+                wrap_in_<Self, Peer, Reliable>(watched.frame_, std::move(recovered), watched.counts_));
         } else {
             detail::crash_transport::abort_on_reliable_peer_crash();
         }
@@ -1282,20 +1325,7 @@ class [[nodiscard]] CrashWatched {
                   "Reliable must be a ReliableSet<Roles...>.");
 
     Handle inner_;
-    // The cell of the pair of the peer and this endpoint.  The session reads
-    // the crash of the peer and the count of its messages there.
-    const CrashCellCore* peer_cell_;
-    // The cell of the pair of this endpoint and the peer.  The session
-    // counts its messages to the peer there, and its crash reports there.
-    // The mint took the one writer of the cell, so no other session counts
-    // into it.
-    CrashCellCore* own_cell_;
-    // The cell of the pair of this endpoint and the third role that the
-    // protocol sends to, or null when it sends to no third role.  The mint
-    // took its one writer too.
-    CrashCellCore* third_cell_;
-    // The context of the mint.  The door enters a crash branch with it.
-    [[no_unique_address]] Ctx ctx_;
+    detail::crash_transport::session_frame<Ctx> frame_;
     detail::crash_transport::message_counts counts_{};
 
     // The one friend.  The door builds each decorator and does each step,
@@ -1305,12 +1335,7 @@ class [[nodiscard]] CrashWatched {
     constexpr CrashWatched(Handle inner, const CrashCellCore& peer_cell, CrashCellCore& own_cell,
                            CrashCellCore* third_cell, const Ctx& ctx,
                            detail::crash_transport::message_counts counts = {}) noexcept
-        : inner_{std::move(inner)},
-          peer_cell_{&peer_cell},
-          own_cell_{&own_cell},
-          third_cell_{third_cell},
-          ctx_{ctx},
-          counts_{counts} {}
+        : inner_{std::move(inner)}, frame_{&peer_cell, &own_cell, third_cell, ctx}, counts_{counts} {}
 
 public:
     using handle_type = Handle;
@@ -1335,7 +1360,7 @@ public:
     CrashWatched& operator=(const CrashWatched&) = delete("a crash-watched handle is linear, like the handle it wraps");
     ~CrashWatched() = default;
 
-    [[nodiscard]] bool peer_has_crashed() const noexcept { return peer_cell_->has_crashed(); }
+    [[nodiscard]] bool peer_has_crashed() const noexcept { return frame_.peer_cell->has_crashed(); }
 
     // The messages this session received from the peer and sent to it, a
     // label with the payload of its branch counted once.

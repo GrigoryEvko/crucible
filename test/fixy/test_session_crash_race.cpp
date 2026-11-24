@@ -21,6 +21,7 @@
 //     survivor, so a report that does not release is a data race, and tsan
 //     stops the test.
 
+#include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/session/CrashTransport.h>
 
@@ -209,24 +210,28 @@ int run_reports_race_sends() {
         detector_q.join();
         detector_r.join();
 
+        // Each session ends first, so no check leaves with a live handle.
+        const int outcome_q = check_send_outcome(sent_q, to_q, 100 + run);
+        const int outcome_r = check_send_outcome(sent_r, to_r, 200 + run);
+        const bool is_crash_of_q = take_crash_branch(std::move(sent_q.next)) == s::CrashCause::Abort;
+        const bool is_crash_of_r = take_crash_branch(std::move(sent_r.next)) == s::CrashCause::Throw;
         if (!is_first_report_q || !is_first_report_r) return fail("the one report of a cell was refused");
-        if (const int rc = check_send_outcome(sent_q, to_q, 100 + run); rc != 0) return rc;
-        if (const int rc = check_send_outcome(sent_r, to_r, 200 + run); rc != 0) return rc;
-        if (take_crash_branch(std::move(sent_q.next)) != s::CrashCause::Abort)
-            return fail("the session to q did not take the crash branch with the cause of its report");
-        if (take_crash_branch(std::move(sent_r.next)) != s::CrashCause::Throw)
-            return fail("the session to r did not take the crash branch with the cause of its report");
+        if (outcome_q != 0) return outcome_q;
+        if (outcome_r != 0) return outcome_r;
+        if (!is_crash_of_q) return fail("the session to q did not take the crash branch with the cause of its report");
+        if (!is_crash_of_r) return fail("the session to r did not take the crash branch with the cause of its report");
 
         // The join made the report of q visible, so this session writes nothing.
         auto late = s::mint_crash_session<Asks<Q>, P, Q>(bg_ctx(), Port{&from_late, &to_late}, cell_q,
                                                          s::mint_crash_writer(cell_p_late));
         auto sent_late = send_value(std::move(late), 300 + run);
-        if (sent_late.undelivered != ::fixy::some(300 + run))
-            return fail("a send to a peer that crashed before it did not give the payload back");
+        const bool is_given_back = sent_late.undelivered == ::fixy::some(300 + run);
+        const std::uint64_t counted_late = sent_late.next.messages_sent();
+        const bool is_late_crash = take_crash_branch(std::move(sent_late.next)) == s::CrashCause::Abort;
+        if (!is_given_back) return fail("a send to a peer that crashed before it did not give the payload back");
         if (!to_late.slots.empty()) return fail("a send to a crashed peer reached its queue");
-        if (sent_late.next.messages_sent() != 0) return fail("a label that was not written was counted");
-        if (take_crash_branch(std::move(sent_late.next)) != s::CrashCause::Abort)
-            return fail("the late session did not take the crash branch");
+        if (counted_late != 0) return fail("a label that was not written was counted");
+        if (!is_late_crash) return fail("the late session did not take the crash branch");
     }
     return 0;
 }
@@ -256,11 +261,12 @@ int run_crash_inside_send_transport() {
         });
         detector.join();
 
+        const bool is_reported = sent.next.peer_has_crashed();
+        const bool is_crash = take_crash_branch(std::move(sent.next)) == s::CrashCause::Abort;
         if (sent.undelivered.is_some()) return fail("a payload that the transport took came back");
         if (to_q.slots.size() != 2) return fail("the label and the value did not both reach the queue");
-        if (!sent.next.peer_has_crashed()) return fail("the report did not reach the session");
-        if (take_crash_branch(std::move(sent.next)) != s::CrashCause::Abort)
-            return fail("the reception after the send did not take the crash branch");
+        if (!is_reported) return fail("the report did not reach the session");
+        if (!is_crash) return fail("the reception after the send did not take the crash branch");
     }
     return 0;
 }
@@ -278,7 +284,7 @@ int run_crash_inside_branch_poll() {
             s::mint_crash_session<Streams, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
         auto chosen = std::move(streaming).select<0>(push_label);
         auto q_sent = std::move(chosen).send(500 + run, push_int);
-        if (q_sent.undelivered.is_some()) return fail("a payload to a live peer came back");
+        if (q_sent.undelivered.is_some()) ::fixy::fatal("a payload to a live peer came back");
 
         auto draining =
             s::mint_crash_session<Drains, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p));
@@ -289,30 +295,28 @@ int run_crash_inside_branch_poll() {
         });
 
         int value = -1;
-        std::optional<DrainHandle> after;
-        std::move(draining).branch(
+        DrainHandle after = std::move(draining).branch(
             [&barrier](Port& port) noexcept -> ::fixy::Option<std::size_t> {
                 barrier.is_running.store(true, std::memory_order_release);
                 wait_for(barrier.is_released);
                 return poll_word(port);
             },
-            [&](auto branch) {
+            [&](auto branch) -> DrainHandle {
                 using Head = typename decltype(branch)::protocol;
                 if constexpr (s::is_crash_branch_v<Head>) {
-                    std::fprintf(stderr, "test_session_crash_race: the crash branch won over a queued message\n");
-                    std::abort();
+                    ::fixy::fatal("the crash branch won over a queued message");
                 } else {
                     auto [received, next] = std::move(branch).recv(read_int);
                     value = received;
-                    after.emplace(std::move(next));
+                    return std::move(next);
                 }
             });
         peer.join();
 
-        if (value != 500 + run) return fail("the message that q finished before its crash did not arrive");
-        if (after->messages_received() != 1) return fail("the message was not counted");
+        if (value != 500 + run) ::fixy::fatal("the message that q finished before its crash did not arrive");
+        if (after.messages_received() != 1) ::fixy::fatal("the message was not counted");
         bool took_crash_branch = false;
-        std::move(*after).branch(poll_word, [&](auto branch) {
+        std::move(after).branch(poll_word, [&](auto branch) {
             using Head = typename decltype(branch)::protocol;
             if constexpr (s::is_crash_branch_v<Head>) {
                 auto [record, end] = std::move(branch).recv();
@@ -358,25 +362,28 @@ int run_report_publishes_earlier_messages() {
         int received = 0;
         bool is_in_order = true;
         bool took_crash_branch = false;
-        std::optional<DrainHandle> current{std::move(draining)};
-        bool is_done = false;
-        while (!is_done) {
-            DrainHandle step = std::move(*current);
-            current.reset();
-            std::move(step).branch(poll_word, [&](auto branch) {
-                using Head = typename decltype(branch)::protocol;
-                if constexpr (s::is_crash_branch_v<Head>) {
-                    auto [record, end] = std::move(branch).recv();
-                    took_crash_branch = record.cause == s::CrashCause::Abort;
-                    (void)std::move(end).close();
-                    is_done = true;
-                } else {
-                    auto [value, next] = std::move(branch).recv(read_int);
-                    is_in_order = is_in_order && value == received;
-                    ++received;
-                    current.emplace(std::move(next));
-                }
-            });
+        // Each turn gives the handle of the next turn, or no handle once the
+        // crash branch ran.
+        ::fixy::Option<DrainHandle> current = ::fixy::Option<DrainHandle>::some(std::move(draining));
+        for (;;) {
+            DrainHandle step = current.take().expect("each turn starts with a handle");
+            ::fixy::Option<DrainHandle> next_turn =
+                std::move(step).branch(poll_word, [&](auto branch) -> ::fixy::Option<DrainHandle> {
+                    using Head = typename decltype(branch)::protocol;
+                    if constexpr (s::is_crash_branch_v<Head>) {
+                        auto [record, end] = std::move(branch).recv();
+                        took_crash_branch = record.cause == s::CrashCause::Abort;
+                        (void)std::move(end).close();
+                        return ::fixy::none;
+                    } else {
+                        auto [value, next] = std::move(branch).recv(read_int);
+                        is_in_order = is_in_order && value == received;
+                        ++received;
+                        return ::fixy::Option<DrainHandle>::some(std::move(next));
+                    }
+                });
+            if (next_turn.is_none()) break;
+            current.fill(std::move(next_turn).expect("the test above found the handle"));
         }
         peer.join();
 

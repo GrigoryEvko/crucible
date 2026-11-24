@@ -141,7 +141,6 @@
 #include <cstdlib>
 #include <meta>
 #include <new>
-#include <optional>
 #include <source_location>
 #include <type_traits>
 #include <utility>
@@ -983,9 +982,19 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
     // branch type, and every branch must give the handler the same return
     // type, or all of them void.
     template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy,
-              typename PS, typename Handler, std::size_t... Is>
+              typename PS, typename Handler>
     static constexpr auto dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, detail::step_origin origin,
-                                    Handler handler, std::index_sequence<Is...>);
+                                    Handler handler);
+
+    // Enters the branch `index` of the branches from First on, and calls the
+    // handler with its handle.  Each level tests one index, and the last
+    // level tests none, so the Resource, the slots and the handler go to
+    // exactly one branch on each path.  `index` is at least First and below
+    // the branch count.  Complexity: linear in the branches.
+    template <bool PassesIndex, typename Choice, std::size_t First, typename Resource, typename LoopCtx,
+              AbandonmentPolicy Policy, typename PS, typename Handler>
+    static constexpr auto dispatch_from_(std::size_t index, Resource&& res, HoldSlots<PS>&& slots,
+                                         detail::step_origin origin, Handler&& handler);
 
     // Calls the handler for branch I, with the index first when PassesIndex
     // holds.  The branch owns its handler and calls it one time through the
@@ -1614,9 +1623,8 @@ public:
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
         auto [resource, slots] = std::move(handle).release_parts_();
-        return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
-            word, std::forward<Resource>(resource), std::move(slots), origin, std::move(handler),
-            std::make_index_sequence<Choice::branch_count>{});
+        return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(word, std::forward<Resource>(resource),
+                                                                       std::move(slots), origin, std::move(handler));
     }
 
     template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
@@ -1641,8 +1649,7 @@ public:
         const detail::step_origin origin = core.step_origin_();
         auto [resource, slots] = std::move(handle).release_parts_();
         return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(word, std::forward<Resource>(resource),
-                                                                      std::move(slots), origin, std::move(handler),
-                                                                      std::make_index_sequence<Choice::branch_count>{});
+                                                                      std::move(slots), origin, std::move(handler));
     }
 
     template <typename... Branches, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
@@ -2588,52 +2595,34 @@ HandleFactory::enter_(Resource r, HoldSlots<PS> slots,
     }
 }
 
+// The deduced result type enforces the same-return-type rule: two branches
+// whose handlers return different types give two deductions of one function.
+template <bool PassesIndex, typename Choice, std::size_t First, typename Resource, typename LoopCtx,
+          AbandonmentPolicy Policy, typename PS, typename Handler>
+constexpr auto HandleFactory::dispatch_from_(std::size_t index, Resource&& res, HoldSlots<PS>&& slots,
+                                             detail::step_origin origin, Handler&& handler) {
+    if constexpr (First + 1 < Choice::branch_count) {
+        if (index != First) {
+            return dispatch_from_<PassesIndex, Choice, First + 1, Resource, LoopCtx, Policy, PS>(
+                index, std::forward<Resource>(res), std::move(slots), origin, std::move(handler));
+        }
+    }
+    return call_branch_<PassesIndex, First>(
+        std::move(handler),
+        enter_<Choice, First, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(res), std::move(slots), origin));
+}
+
 // A word that names no branch ends the process with Word_Names_No_Branch.
-// The result type comes from branch 0.  A branch whose handler returns a
-// different type then fails to convert into the single optional below,
-// which is what enforces the same-return-type rule.
 template <bool PassesIndex, typename Choice, typename Resource, typename LoopCtx, AbandonmentPolicy Policy, typename PS,
-          typename Handler, std::size_t... Is>
+          typename Handler>
 constexpr auto HandleFactory::dispatch_(std::size_t word, Resource res, HoldSlots<PS> slots, detail::step_origin origin,
-                                        Handler handler, std::index_sequence<Is...>) {
-    const std::size_t idx = branch_of_wire_word<Choice>(word);
-    if (idx >= Choice::branch_count) [[unlikely]] {
+                                        Handler handler) {
+    const std::size_t index = branch_of_wire_word<Choice>(word);
+    if (index >= Choice::branch_count) [[unlikely]] {
         detail::report_word_names_no_branch(word, Choice::branch_count, type_display_text_v<Choice>);
     }
-    using FirstHandle = decltype(enter_<Choice, 0, Resource, LoopCtx, Policy, PS>(
-        std::declval<Resource>(), std::declval<HoldSlots<PS>>(), origin));
-    using Result = decltype(call_branch_<PassesIndex, 0>(std::declval<Handler&&>(), std::declval<FirstHandle>()));
-
-    if constexpr (std::is_void_v<Result>) {
-        bool dispatched = false;
-        (
-            [&]() {
-                if (!dispatched && idx == Is) {
-                    call_branch_<PassesIndex, Is>(std::move(handler),
-                                                  enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(
-                                                      std::forward<Resource>(res), std::move(slots), origin));
-                    dispatched = true;
-                }
-            }(),
-            ...);
-    } else {
-        std::optional<Result> result;
-        bool dispatched = false;
-        (
-            [&]() {
-                if (!dispatched && idx == Is) {
-                    result.emplace(call_branch_<PassesIndex, Is>(
-                        std::move(handler), enter_<Choice, Is, Resource, LoopCtx, Policy, PS>(
-                                                std::forward<Resource>(res), std::move(slots), origin)));
-                    dispatched = true;
-                }
-            }(),
-            ...);
-        // An index below the branch count names one of the indices of the
-        // fold above, so a branch ran.
-        CRUCIBLE_FATAL_INVARIANT(result.has_value());
-        return std::move(*result);
-    }
+    return dispatch_from_<PassesIndex, Choice, 0, Resource, LoopCtx, Policy, PS>(
+        index, std::forward<Resource>(res), std::move(slots), origin, std::move(handler));
 }
 
 // ── Viewing a position ───────────────────────────────────────────────

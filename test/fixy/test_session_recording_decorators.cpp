@@ -40,11 +40,11 @@ int check_crash_recording() {
     if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop
         || log_q[0].stop_reason() != s::StopReasonKind::LocalAbort || log_q[0].crash_cause() != s::CrashCause::Throw
         || log_q[0].stopped_role() != kPeer)
-        return fail("the local crash was not recorded as a LocalAbort stop");
+        ::fixy::fatal("the local crash was not recorded as a LocalAbort stop");
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, lost] = std::move(p_sent).send(3, push_int);
-    if (lost != ::fixy::some(3)) return fail("the lost payload did not come back through the recorder");
+    if (lost != ::fixy::some(3)) ::fixy::fatal("the lost payload did not come back through the recorder");
     bool took_crash = false;
     std::move(p_wait).branch(pop_label, [&](auto branch) {
         if constexpr (std::is_same_v<typename decltype(branch)::protocol, s::Recv<s::Crash<Q>, s::End>>) {
@@ -110,7 +110,7 @@ int check_checkpoint_recording() {
                                  s::mint_session_event_writer(log_right), kPeer, kSelf);
     auto left_saved = std::move(left).select<0>(push_label);
     int got = 0;
-    std::move(right).branch(pop_label, [&](auto branch) {
+    std::move(right).branch(pop_label, [&got, left_saved = std::move(left_saved)](auto branch) mutable {
         if constexpr (std::is_same_v<typename decltype(branch)::protocol, s::Recv<int, s::End>>) {
             auto left_end = std::move(left_saved).send(4, push_int);
             auto [value, right_end] = std::move(branch).recv(pop_int);
@@ -150,7 +150,7 @@ int check_pinned_roll_recording() {
     using RightStart = decltype(right);
     auto left_back = std::move(left).select<1>(push_label);
     bool is_closed = false;
-    std::move(right).branch(pop_label, [&](auto right_back) {
+    std::move(right).branch(pop_label, [&is_closed, left_back = std::move(left_back)](auto right_back) mutable {
         if constexpr (std::is_same_v<decltype(right_back), RightStart>) {
             auto left_end = std::move(left_back).template select<0>(push_label);
             std::move(right_back).branch(pop_label, [&](auto right_end) {

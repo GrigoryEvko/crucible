@@ -12,6 +12,7 @@
 // message label.  Here that is an Offer with one message branch, and the
 // sender takes it with a Select of one branch, so the label travels.
 
+#include <fixy/Core.h>
 #include <fixy/session/CrashTransport.h>
 #include <fixy/session/Delegate.h>
 #include <fixy/session/Projection.h>
@@ -344,7 +345,7 @@ int run_without_crash() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (p_undelivered.is_some()) return fail("a payload to a live peer came back");
+    if (p_undelivered.is_some()) ::fixy::fatal("a payload to a live peer came back");
 
     int reply = 0;
     std::move(q).branch(poll_label, [&](auto q_branch) {
@@ -384,14 +385,14 @@ int run_receiver_crashes_first() {
     auto q = s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q));
 
     const Port q_port = std::move(q).crash(s::CrashCause::Throw);
-    if (q_port.in != &to_q) return fail("crash() did not give back the resource");
+    if (q_port.in != &to_q) ::fixy::fatal("crash() did not give back the resource");
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
     const bool is_payload_back = p_undelivered.match([](Text const& text) noexcept { return text.view() == "abc"; },
                                                      []() noexcept { return false; });
-    if (!is_payload_back) return fail("the lost payload did not come back");
-    if (!to_q.slots.empty()) return fail("a message reached the queue of a crashed peer");
+    if (!is_payload_back) ::fixy::fatal("the lost payload did not come back");
+    if (!to_q.slots.empty()) ::fixy::fatal("a message reached the queue of a crashed peer");
 
     bool took_crash_branch = false;
     std::move(p_wait).branch(poll_label, [&](auto p_branch) {
@@ -419,13 +420,13 @@ int run_sender_crashes_after_send() {
 
     auto p_sent = std::move(p).select<0>(push_label);
     auto [p_wait, p_undelivered] = std::move(p_sent).send(Text{"abc"}, push_text);
-    if (p_undelivered.is_some()) return fail("a payload to a live peer came back");
+    if (p_undelivered.is_some()) ::fixy::fatal("a payload to a live peer came back");
     (void)std::move(p_wait).crash(s::CrashCause::Abort);
     // The label and its payload are one message, and the session of p
     // wrote the count that the report of its crash carries.
     const std::optional<s::CrashWitness> p_witness = cell_p.witness();
     if (!p_witness || std::to_underlying(p_witness->messages_sent) != 1)
-        return fail("the report did not carry the count that the session of p wrote");
+        ::fixy::fatal("the report did not carry the count that the session of p wrote");
 
     bool took_message = false;
     std::move(q).branch(poll_label, [&](auto q_branch) {
@@ -508,25 +509,25 @@ int run_stream_across_threads() {
         bool took_crash_branch = false;
 
         std::jthread receiver([&] {
-            std::optional<StreamQHandle> q{s::mint_crash_session<StreamQ, Q, P>(bg_ctx(), WirePort{&to_q, &to_p},
-                                                                                cell_p, s::mint_crash_writer(cell_q))};
-            bool is_done = false;
-            while (!is_done) {
-                StreamQHandle current = std::move(*q);
-                q.reset();
-                std::move(current).branch(
+            // Each turn gives the handle of the next turn, or no handle once
+            // the crash branch ran.
+            ::fixy::Option<StreamQHandle> q = ::fixy::Option<StreamQHandle>::some(s::mint_crash_session<StreamQ, Q, P>(
+                bg_ctx(), WirePort{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)));
+            for (;;) {
+                StreamQHandle current = q.take().expect("each turn starts with a handle");
+                ::fixy::Option<StreamQHandle> next_turn = std::move(current).branch(
                     [](WirePort& port) noexcept -> ::fixy::Option<std::size_t> {
                         const auto word = port.in->pop();
                         if (!word) return ::fixy::none;
                         return ::fixy::some(static_cast<std::size_t>(*word));
                     },
-                    [&](auto branch) {
+                    [&](auto branch) -> ::fixy::Option<StreamQHandle> {
                         using Head = typename decltype(branch)::protocol;
                         if constexpr (s::is_crash_branch_v<Head>) {
                             auto [record, end] = std::move(branch).recv();
                             took_crash_branch = record.cause == s::CrashCause::Abort;
                             (void)std::move(end).close();
-                            is_done = true;
+                            return ::fixy::none;
                         } else {
                             auto [value, next] =
                                 std::move(branch).recv([](WirePort& port) noexcept -> ::fixy::Option<int> {
@@ -536,9 +537,11 @@ int run_stream_across_threads() {
                                 });
                             is_in_order = is_in_order && value == received;
                             ++received;
-                            q.emplace(std::move(next));
+                            return ::fixy::Option<StreamQHandle>::some(std::move(next));
                         }
                     });
+                if (next_turn.is_none()) break;
+                q.fill(std::move(next_turn).expect("the test above found the handle"));
             }
         });
 

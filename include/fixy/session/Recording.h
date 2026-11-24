@@ -55,6 +55,7 @@
 #include <fixy/session/EventLog.h>
 #include <fixy/session/Handle.h>
 
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/core/Record.h>
 #include <foundation/reflect/Hash.h>
@@ -314,18 +315,27 @@ class RecordingDoor final : ::foundation::NoObject<RecordingDoor> {
         return wrap_(recorder, std::move(next));
     }
 
-    template <typename Branches, typename Inner, std::size_t... Is>
-    static void record_passive_checkpoint_(Recorded<Inner>& recorder, std::size_t taken, std::index_sequence<Is...>) {
-        (
-            [&] {
-                using Branch = std::tuple_element_t<Is, Branches>;
-                if (taken == Is) {
-                    if (const auto event = detail::recording::checkpoint_event<Branch>(recorder.self_, recorder.peer_,
-                                                                                       CheckpointRole::Passive))
-                        record_(recorder, *event);
-                }
-            }(),
-            ...);
+    // The parts of a recorder that the step of a branch moves to the closure
+    // of its handler: the one writer of the log, and the two roles.
+    struct seat {
+        SessionEventWriter writer;
+        RoleTagId self;
+        RoleTagId peer;
+    };
+
+    // Records the passive checkpoint of branch I, when the peer took that
+    // branch and it opens one.
+    template <typename Branch, std::size_t I>
+    static void record_passive_branch_(seat& held, std::size_t taken) {
+        if (taken != I) return;
+        if (const auto event =
+                detail::recording::checkpoint_event<Branch>(held.self, held.peer, CheckpointRole::Passive))
+            held.writer.record_now(*event);
+    }
+
+    template <typename Branches, std::size_t... Is>
+    static void record_passive_checkpoint_(seat& held, std::size_t taken, std::index_sequence<Is...>) {
+        (record_passive_branch_<std::tuple_element_t<Is, Branches>, Is>(held, taken), ...);
     }
 
 public:
@@ -498,25 +508,33 @@ public:
         std::optional<std::uint64_t> word;
         auto marked = detail::observed_read<std::size_t, typename Inner::resource_type>(
             reader, [&word](std::size_t read) noexcept { word = read; });
-        return std::move(recorder.inner_).branch(marked, [&recorder, &handler, &word](auto next) {
-            // No word was read only when a crash-watched handle took the
-            // crash branch.
-            std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
-            LabelWord label{};
-            if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
-            if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
-                using Head = typename decltype(next)::protocol;
-                if constexpr (is_crash_branch_v<Head>) {
-                    using PeerRole = typename Inner::peer_role;
-                    taken = detail::crash::crash_branch_position(^^P, ^^PeerRole);
-                    label = LabelWord{};
+        // The closure owns the handler, the writer and the roles, so the step
+        // holds no reference to the recorder.  The inner handle calls the
+        // closure one time through the once door, and the closure calls the
+        // handler one time through it, so the handler can hold a linear value
+        // by move.
+        return std::move(recorder.inner_)
+            .branch(marked, [held = seat{std::move(recorder.writer_), recorder.self_, recorder.peer_},
+                             handler = std::move(handler), &word](auto next) mutable {
+                using Next = decltype(next);
+                // No word was read only when a crash-watched handle took the
+                // crash branch.
+                std::size_t taken = word ? branch_of_wire_word<Wire>(*word) : no_branch;
+                LabelWord label{};
+                if (word && is_keyed_choice_v<Wire>) label = LabelWord{*word};
+                if constexpr (detail::recording::is_crash_watched_shape<Inner>::value) {
+                    if constexpr (is_crash_branch_v<typename Next::protocol>) {
+                        using PeerRole = typename Inner::peer_role;
+                        taken = detail::crash::crash_branch_position(^^P, ^^PeerRole);
+                        label = LabelWord{};
+                    }
                 }
-            }
-            record_(recorder,
-                    SessionEvent::offer(recorder.self_, recorder.peer_, static_cast<std::uint8_t>(taken), label));
-            record_passive_checkpoint_<Branches>(recorder, taken, std::make_index_sequence<count>{});
-            return std::invoke(handler, wrap_(recorder, std::move(next)));
-        });
+                held.writer.record_now(
+                    SessionEvent::offer(held.self, held.peer, static_cast<std::uint8_t>(taken), label));
+                record_passive_checkpoint_<Branches>(held, taken, std::make_index_sequence<count>{});
+                return ::foundation::linear::call_once(
+                    std::move(handler), Recorded<Next>{std::move(next), std::move(held.writer), held.self, held.peer});
+            });
     }
 };
 

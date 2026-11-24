@@ -82,18 +82,16 @@
 #include <fixy/session/Handle.h>
 #include <fixy/session/Registry.h>
 
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
-#include <foundation/contracts/Armed.h>
+#include <foundation/core/Record.h>
 #include <foundation/permissions/PermSet.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <functional>
 #include <meta>
-#include <optional>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -942,14 +940,6 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
         return CheckpointHandle<Next, typename Resolved::head, typename Resolved::loop, NewFrame>{std::move(next)};
     }
 
-    // The plain handle that a branch reaches: Commit<K> reaches K, and
-    // Roll and Abort reach End.  It is the handle at the erased protocol
-    // of the branch, with the erased loop context of the position.
-    template <typename Branch, typename Inner, typename HeadLoop>
-    using inner_branch_t =
-        HandleFactory::handle_at<checkpoint_erase_t<Branch>, typename Inner::resource_type,
-                                 detail::checkpoint::erase_loop_t<HeadLoop>, typename Inner::abandonment_policy>;
-
     // Rebuilds the plain handle at the checkpoint, or at the start, from
     // the handle at End that the Roll or the Abort reached.  The rewind of
     // fixy/session/Handle.h opens a new session at that position.
@@ -979,51 +969,6 @@ class CheckpointDoor final : ::foundation::NoObject<CheckpointDoor> {
             return wrap_<K, HeadLoop, Saved>(std::move(next));
         } else {
             return wrap_<Branch, HeadLoop, Frame>(std::move(next));
-        }
-    }
-
-    // The plain handle cannot say which label it took when two branches
-    // erase to one type, so the branch that the wire word names decides.
-    // The plain handle refuses a word that names no branch first
-    // (Word_Names_No_Branch), and the erasure keeps the count and the order
-    // of the branches.  So the label names a branch whose plain handle is
-    // Next, and a dispatch that runs no branch is a broken invariant.
-    template <typename Branches, typename Inner, typename HeadLoop, typename Frame, typename Next, typename Handler,
-              std::size_t... Is>
-    static constexpr auto dispatch_(std::size_t label, Next next, Handler& handler, std::index_sequence<Is...>) {
-        using First = std::tuple_element_t<0, Branches>;
-        using Result = std::invoke_result_t<Handler&, decltype(take_branch_<First, HeadLoop, Frame>(
-                                                          std::declval<inner_branch_t<First, Inner, HeadLoop>>()))>;
-        bool is_dispatched = false;
-        if constexpr (std::is_void_v<Result>) {
-            (
-                [&] {
-                    using Branch = std::tuple_element_t<Is, Branches>;
-                    if constexpr (std::is_same_v<inner_branch_t<Branch, Inner, HeadLoop>, Next>) {
-                        if (!is_dispatched && label == Is) {
-                            is_dispatched = true;
-                            std::invoke(handler, take_branch_<Branch, HeadLoop, Frame>(std::move(next)));
-                        }
-                    }
-                }(),
-                ...);
-            CRUCIBLE_FATAL_INVARIANT(is_dispatched);
-        } else {
-            std::optional<Result> result;
-            (
-                [&] {
-                    using Branch = std::tuple_element_t<Is, Branches>;
-                    if constexpr (std::is_same_v<inner_branch_t<Branch, Inner, HeadLoop>, Next>) {
-                        if (!is_dispatched && label == Is) {
-                            is_dispatched = true;
-                            result.emplace(
-                                std::invoke(handler, take_branch_<Branch, HeadLoop, Frame>(std::move(next))));
-                        }
-                    }
-                }(),
-                ...);
-            CRUCIBLE_FATAL_INVARIANT(is_dispatched);
-            return std::move(*result);
         }
     }
 
@@ -1058,7 +1003,8 @@ public:
     [[nodiscard]] static constexpr auto recv(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle,
                                              Transport transport) {
         auto [value, next] = std::move(handle.inner_).recv(std::move(transport));
-        return std::pair{std::move(value), wrap_<typename Head::next, HeadLoop, Frame>(std::move(next))};
+        return ::foundation::core::Record{std::move(value),
+                                          wrap_<typename Head::next, HeadLoop, Frame>(std::move(next))};
     }
 
     // A keyed message is its label word and then the value of its payload
@@ -1098,25 +1044,21 @@ public:
     // for the branch that the word names.  A Commit, Roll or Abort takes
     // effect before the call.  Every branch must give the handler the
     // same return type.  The word is the word of the erased protocol that
-    // the plain handle runs, so the branch comes from that protocol
-    // (branch_of_wire_word in fixy/session/Transport.h).  The erasure
-    // keeps the count and the order of the branches.
+    // the plain handle runs, and the erasure keeps the count and the order
+    // of the branches.  So the index that the plain handle gives names the
+    // branch of this head, also when two branches erase to one type.  The
+    // call owns the handler and calls it one time through the once door, so
+    // the handler can hold a linear value by move.
     template <typename Inner, typename Head, typename HeadLoop, typename Frame, typename Transport, typename Handler>
         requires is_offer_v<Head> && ReadTransport<Transport, typename Inner::resource_type, std::size_t>
     static constexpr auto branch(CheckpointHandle<Inner, Head, HeadLoop, Frame>&& handle, Transport transport,
                                  Handler handler) {
-        constexpr std::size_t count = std::tuple_size_v<typename Head::branches_tuple>;
-        using Branches = typename decltype([]<std::size_t... Is>(std::index_sequence<Is...>) {
-            return std::type_identity<std::tuple<branch_landing_t<Head, Is>...>>{};
-        }(std::make_index_sequence<count>{}))::type;
-        std::size_t label = count;
-        auto read_label = ::fixy::session::detail::observed_read<std::size_t, typename Inner::resource_type>(
-            transport,
-            [&label](std::size_t word) noexcept { label = branch_of_wire_word<typename Inner::protocol>(word); });
-        return std::move(handle.inner_).branch(read_label, [&handler, &label](auto next) {
-            return dispatch_<Branches, Inner, HeadLoop, Frame>(label, std::move(next), handler,
-                                                               std::make_index_sequence<count>{});
-        });
+        return std::move(handle.inner_)
+            .branch_indexed(std::move(transport), [handler = std::move(handler)]<std::size_t I>(
+                                                      std::integral_constant<std::size_t, I>, auto next) mutable {
+                return ::foundation::linear::call_once(
+                    std::move(handler), take_branch_<branch_landing_t<Head, I>, HeadLoop, Frame>(std::move(next)));
+            });
     }
 };
 
