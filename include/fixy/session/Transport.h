@@ -187,7 +187,8 @@ wait_for_room(Transport& transport, Resource& resource, T& value,
 
 // The same for a trying write of a linear payload: `back` holds the value
 // that the write gave back, and each try moves it in again, until the write
-// takes it.
+// takes it.  The first retry comes before the first pause, as in each other
+// wait, so room that came while the scope opened costs no pause.
 template <typename Transport, typename Resource, typename T>
 [[gnu::cold, gnu::noinline]] void
 wait_for_room_moved(Transport& transport, Resource& resource, ::fixy::Option<T> back,
@@ -197,10 +198,10 @@ wait_for_room_moved(Transport& transport, Resource& resource, ::fixy::Option<T> 
     // empty Option again with the value that the write gave back.
     watch::wait_scope wait{endpoint};
     for (;;) {
-        wait.poll();
         ::fixy::Option<T> again = transport(resource, back.take().expect("the write gave the value back"));
         if (again.is_none()) return;
         back.fill(again.take().expect("the test above found the value"));
+        wait.poll();
     }
 }
 
