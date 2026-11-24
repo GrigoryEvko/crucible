@@ -2,8 +2,10 @@
 //
 // run_on_publish_stage gives a job the view of the publish stage and its proof
 // as parameters, and it checks the closure of the job with the closure model.
-// A job runs on the thread of the publish stage, so a capture of `this` of its
-// owner, a plain address of an object that the caller owns, is refused.
+// The job uses its captures on the thread of the publish stage, so the door
+// refuses a capture of `this` when the type of the owner is not Sendable.  The
+// owner of this fixture holds a BackgroundThread, so it is not Sendable.  The
+// door admits the same capture of an owner with only a count.
 
 #include "../trace_rig.h"
 

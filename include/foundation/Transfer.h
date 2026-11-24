@@ -288,12 +288,12 @@
 //     claim of that step.
 //
 // Exemption
-//     The check does not read the doors of crucible::BackgroundThread.  Nine
-//     of its doors take no proof, and plant 06 of the audit of the threads,
-//     where two bodies of run_joined call set_numerics, proves the race.  The
-//     keyed doors of the owner-key member series replace those doors, and
-//     that series removes the exemption and the test that pins it to one
-//     class.
+//     The check does not read the doors of crucible::BackgroundThread.  Some
+//     of its doors take no proof (the comment of the class names them), and
+//     plant 06 of the audit of the threads, where two bodies of run_joined
+//     call set_numerics, proves the race.  The keyed doors of the owner-key
+//     member series replace those doors, and that series removes the
+//     exemption and the test that pins it to one class.
 //
 // Opaque types
 //     A class that is only declared, such as a handle whose definition is out

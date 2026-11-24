@@ -124,13 +124,12 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // (prove_quiescence), and at() of the uncompiled queue takes the
 // publish-stage proof.  The mailbox of the publish stage and its two
 // sentinels are private.  The requests, the flush and rearm_stop write only
-// atomic cells, so they are const.  Six doors take no proof that the check
+// atomic cells, so they are const.  These doors take no proof that the check
 // of the statement reads: set_numerics, start, stop, run_on_publish_stage,
-// run_in_row and trace_build_state.
-// compute_memory_plan is static and takes no BackgroundThread, so it is no
-// door.  The check exempts this one class until the keyed doors
-// of the owner-key member series replace those doors (the exemption of
-// foundation/Transfer.h).
+// run_in_row and trace_build_state.  compute_memory_plan is static and takes
+// no BackgroundThread, so it is no door.  The check exempts this one class
+// until the keyed doors of the owner-key member series replace those doors
+// (the exemption of foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
