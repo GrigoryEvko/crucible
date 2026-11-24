@@ -1698,7 +1698,7 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
     static Ret call(c10::DispatchKeySet dispatch_keys, Args... args) {
         const ::fixy::Option<::fixy::Ref<crucible::Vigil>> vigil = recording_vigil();
         return vigil.match(
-            [&](const ::fixy::Ref<crucible::Vigil>& recorder) -> Ret {
+            [&](::fixy::Ref<crucible::Vigil> recorder) -> Ret {
                 return call_recording(*recorder, dispatch_keys, args...);
             },
             [&]() -> Ret { return Op::redispatch(dispatch_keys & kAfterCrucibleKeyset, args...); });
