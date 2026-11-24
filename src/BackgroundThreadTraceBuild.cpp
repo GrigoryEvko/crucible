@@ -588,14 +588,12 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
         ++slot_idx;
     }
 
-    const TraceGraphRef graph = alloc_trace_graph(a, scratch);
+    const TraceGraphRef graph = build_trace_graph(
+        a, scratch, TraceGraphShape{.num_ops = count, .num_slots = num_slots, .max_meta_end = max_meta_end},
+        local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"));
     graph->ops = op_arena_run;
     graph->slots = tensor_slots_run;
-    graph->num_slots.set(num_slots);
     graph->content_hash = content_fold.finish();
-    graph->max_meta_end.set(max_meta_end);
-    build_csr(a, scratch, *graph,
-              local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"), count);
 
     // The arena moves into the region with its runs.  A move of a Box moves
     // no byte of the arena.

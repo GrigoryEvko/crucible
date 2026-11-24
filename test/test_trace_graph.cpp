@@ -7,7 +7,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <type_traits>
 
 namespace {
 
@@ -36,10 +35,8 @@ static void test_empty_graph() {
     auto t = ::foundation::effects::testing::test();
     TraceScratch scratch{Bytes{size_t{1} << 16}};
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, ::fixy::View<const Edge>{}, 0);
-        static_assert(std::is_same_v<TraceGraph::BuiltCount, ::fixy::WriteOnce<uint32_t>>);
-        CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 0);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{}, ::fixy::View<const Edge>{});
+        CRUCIBLE_FATAL_INVARIANT(g.num_edges == 0 && g.num_ops == 0);
     });
     ::fixy::check::pass(kTest, "  test_empty:                     PASSED\n");
 }
@@ -49,9 +46,8 @@ static void test_single_edge_fwd_rev() {
     TraceScratch scratch{Bytes{size_t{1} << 16}};
     const ::fixy::FixedArray<Edge, 1> edges{E(0, 1)};
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, edges.view(), /*num_ops=*/2);
-        CRUCIBLE_FATAL_INVARIANT(g.num_edges.get() == 1);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 2}, edges.view());
+        CRUCIBLE_FATAL_INVARIANT(g.num_edges == 1);
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 1);
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{1}) == 0);
         CRUCIBLE_TEST_ASSERT(kTest, first_of(g.fwd_of(OpIndex{0})).dst == OpIndex{1});
@@ -68,8 +64,7 @@ static void test_counting_sort_groups_by_src() {
     TraceScratch scratch{Bytes{size_t{1} << 16}};
     const ::fixy::FixedArray<Edge, 6> edges{E(2, 3), E(0, 1), E(2, 4), E(1, 2), E(0, 2), E(2, 5)};
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, edges.view(), /*num_ops=*/6);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 6}, edges.view());
 
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 2);
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{1}) == 1);
@@ -104,8 +99,7 @@ static void test_edge_kind_preserved() {
         E(0, 2, EdgeKind::CONTROL_FLOW),
     };
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, edges.view(), /*num_ops=*/3);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 3}, edges.view());
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 3);
 
         bool saw_df = false, saw_alias = false, saw_cf = false;
@@ -130,8 +124,7 @@ static void test_offsets_prefix_sum_invariant() {
         edges.with_element(index, [edge = E(from, from + 1)](Edge& held) noexcept { held = edge; });
     }
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, edges.view(), /*num_ops=*/10);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 10}, edges.view());
 
         CRUCIBLE_TEST_ASSERT(kTest, g.fwd_offsets.size() == 11 && g.rev_offsets.size() == 11);
         for (uint32_t i = 1; i <= 10; ++i) {
@@ -154,8 +147,7 @@ static void test_fanout_node_has_multiple_edges() {
                            [edge = E(0, static_cast<uint32_t>(index.raw()) + 1)](Edge& held) noexcept { held = edge; });
     }
     scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-        TraceGraph g{};
-        build_csr(t.alloc, epoch, g, edges.view(), /*num_ops=*/10);
+        TraceGraph const& g = *build_trace_graph(t.alloc, epoch, TraceGraphShape{.num_ops = 10}, edges.view());
 
         CRUCIBLE_TEST_ASSERT(kTest, g.out_degree(OpIndex{0}) == 9);
         for (uint32_t i = 1; i < 10; ++i) {

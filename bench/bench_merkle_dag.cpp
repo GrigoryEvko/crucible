@@ -4,7 +4,7 @@
 //   - compute_content_hash() at 3 region sizes (8, 481, 1110 ops)
 //   - make_region() construction
 //   - compute_merkle_hash() on a built RegionNode
-//   - build_csr() adjacency construction
+//   - build_trace_graph() adjacency construction
 //   - compute_memory_plan() sweep-line
 //   - build_trace_from() full pipeline (arena + PtrMap + slot tracking + CSR)
 //   - optional: build_trace from loaded .crtrace file(s) (pass as argv)
@@ -242,8 +242,8 @@ int run_bench(::fixy::os::Args const& arguments) {
             report = ::fixy::Option<bench::Report>::some(bench::run("build_csr (481 ops, 900 edges)", [&] {
                 TraceScratch csr_scratch{Bytes{size_t{1} << 16}};
                 csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-                    const TraceGraphRef graph = alloc_trace_graph(test.alloc, epoch);
-                    build_csr(test.alloc, epoch, *graph, edges, NUM_OPS);
+                    const TraceGraphRef graph =
+                        build_trace_graph(test.alloc, epoch, TraceGraphShape{.num_ops = NUM_OPS}, edges);
                     bench::do_not_optimize(graph);
                 });
             }));

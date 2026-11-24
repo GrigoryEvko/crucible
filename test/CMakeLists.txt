@@ -2355,16 +2355,15 @@ crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "__builtin_trap.*is not a constant expression"
   "mint_refined<BoundedAbove<66048>\\(\\), unsigned int>\\(4294967295\\)")
 
-# TraceGraph build counters are
-# WriteOnce<uint32_t>.  The fixtures pin both soundness directions:
-# producers cannot raw-assign a counter, and consumers cannot read one
-# through an implicit uint32_t conversion.
+# The counts of a TraceGraph are const, and build_trace_graph gives them when
+# it makes the graph.  The fixtures refuse the two writes of a count after
+# the build: an assignment of one count, and an assignment of a whole graph.
 crucible_neg_compile_test(neg_trace_graph_num_ops_assign_raw
-  "no match for .operator=. .operand types are .crucible::TraceGraph::BuiltCount. .aka .fixy::WriteOnce<unsigned int>.. and .unsigned int.."
-  "no known conversion for argument 1 from .unsigned int. to .const fixy::WriteOnce<unsigned int>&.")
-crucible_neg_compile_test(neg_trace_graph_num_edges_implicit_raw
-  "cannot convert .crucible::TraceGraph::BuiltCount."
-  ".aka .fixy::WriteOnce<unsigned int>.. to .uint32_t. .aka .unsigned int.. in initialization")
+  "assignment of read-only member .crucible::TraceGraph::num_ops."
+  "neg_trace_graph_num_ops_assign_raw.cpp:13")
+crucible_neg_compile_test(neg_trace_graph_assign_over_built
+  "use of deleted function .crucible::TraceGraph& crucible::TraceGraph::operator=\\(const crucible::TraceGraph&\\)."
+  "non-static const member .const uint(32|64)_t crucible::TraceGraph::(num_ops|num_edges|num_slots|max_meta_end).")
 
 # ─── ValidMetaAppendCount negative-compile fixtures ──────────────────
 #

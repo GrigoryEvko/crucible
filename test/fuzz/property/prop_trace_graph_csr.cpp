@@ -1,8 +1,8 @@
 // ═══════════════════════════════════════════════════════════════════
 // prop_trace_graph_csr.cpp — structural-correctness fuzzer for
-// build_csr (TraceGraph.h, L6 Graphs).
+// build_trace_graph (TraceGraph.h, L6 Graphs).
 //
-// build_csr turns a flat Edge[] into a bidirectional CSR (forward,
+// build_trace_graph turns a flat Edge[] into a bidirectional CSR (forward,
 // sorted by src; reverse, sorted by dst) via counting sort, O(V+E),
 // once per recorded iteration on the background thread.  Fusion,
 // scheduling, and buffer allocation all index into that CSR — a
@@ -14,7 +14,7 @@
 //   (A) Offset shape: fwd_offsets/rev_offsets have num_ops+1 entries
 //       with offsets[0]==0, offsets[num_ops]==num_edges, and are
 //       monotonically non-decreasing (so every per-op slice is valid).
-//   (B) Bucketing + stability + preservation: build_csr is a STABLE
+//   (B) Bucketing + stability + preservation: build_trace_graph is a STABLE
 //       counting sort, so the forward CSR must equal the input edges
 //       stable-sorted by src, and the reverse CSR stable-sorted by dst.
 //       The oracle uses std::stable_sort over edge INDICES — an
@@ -28,7 +28,7 @@
 //   (D) Determinism (DetSafe): the same edge set built twice on two
 //       fresh arenas yields byte-identical offsets and edge order.
 //
-// build_csr takes a plain Edge[] + counts (no recorded-trace
+// build_trace_graph takes a plain Edge[] + counts (no recorded-trace
 // dependency), so it fuzzes in isolation like compute_memory_plan.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -89,7 +89,7 @@ using EdgeOrder = ::fixy::FixedArray<uint32_t, kMaxEdges>;
 // from 0 to num_ops - 1 in turn, and for each key the positions in input
 // order.  That is the order of a stable sort of the positions by the key,
 // built by a scan with no sort and no count, apart from the counting sort
-// of build_csr.  Each key is below num_ops, so the order holds each
+// of build_trace_graph.  Each key is below num_ops, so the order holds each
 // position one time.  Complexity: O(num_ops * num_edges).
 template <class KeyOf>
 [[nodiscard]] EdgeOrder stable_order_by(const GraphSpec& spec, KeyOf const& key_of) noexcept {
@@ -170,8 +170,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     using crucible::Edge;
     using crucible::OpIndex;
     using crucible::TraceGraph;
+    using crucible::TraceGraphShape;
     using crucible::TraceScratch;
-    using crucible::build_csr;
+    using crucible::build_trace_graph;
 
     const Config cfg = parse_args(arguments, 20000);  // O(V·E) per iter
 
@@ -214,8 +215,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             TraceScratch scratch{Bytes{size_t{1} << 16}};
             const bool is_first_build_correct =
                 scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept -> bool {
-                    TraceGraph graph{};
-                    build_csr(test.alloc, epoch, graph, in_run, num_ops);
+                    TraceGraph const& graph =
+                        *build_trace_graph(test.alloc, epoch, TraceGraphShape{.num_ops = num_ops}, in_run);
 
                     // (A) Offset shape — forward and reverse.
                     const ::fixy::View<const uint32_t> fwd = graph.fwd_offsets.view();
@@ -241,7 +242,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     }
 
                     // (B) Bucketing + stability + preservation via an INDEPENDENT
-                    //     stable order of the edge indices (vs build_csr's counting
+                    //     stable order of the edge indices (vs build_trace_graph's counting
                     //     sort).  Forward = stable-by-src, reverse = stable-by-dst.
                     if (num_edges > 0) {
                         // Forward: the stable order of the indices by src.
@@ -279,8 +280,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const ::fixy::FixedArray<Edge, kMaxEdges>& fwd_edges = fwd_edges_copy;
             const ::fixy::FixedArray<Edge, kMaxEdges>& rev_edges = rev_edges_copy;
             return scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept -> bool {
-                TraceGraph graph2{};
-                build_csr(test.alloc, epoch, graph2, in_run2, num_ops);
+                TraceGraph const& graph2 =
+                    *build_trace_graph(test.alloc, epoch, TraceGraphShape{.num_ops = num_ops}, in_run2);
                 for (uint32_t v = 0; v <= num_ops; ++v) {
                     if (offset_at(graph2.fwd_offsets.view(), v) != offset_at(fwd.view(), v)) return false;
                     if (offset_at(graph2.rev_offsets.view(), v) != offset_at(rev.view(), v)) return false;

@@ -1,5 +1,5 @@
 // The cold bodies of crucible/TraceGraph.h: the reads of the edges of an op,
-// the allocation of a graph and the counting sort of its CSR arrays.  A unit
+// and the build of a graph with the counting sort of its CSR arrays.  A unit
 // that includes the header then compiles no part of them.
 
 #include <crucible/TraceGraph.h>
@@ -35,19 +35,19 @@ uint32_t TraceGraph::offset_(::fixy::View<const uint32_t> offsets, uint32_t inde
         .expect("the offsets of an op bound a run of its CSR edges");
 }
 
-TraceGraphRef alloc_trace_graph(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch) noexcept {
-    return epoch.make<TraceGraph>(a);
-}
-
-void build_csr(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, TraceGraph& graph,
-               ::fixy::View<const Edge> edges, uint32_t num_ops) {
+TraceGraphRef build_trace_graph(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, TraceGraphShape shape,
+                                ::fixy::View<const Edge> edges) {
     const uint32_t num_edges =
         ::fixy::narrow<uint32_t>(edges.size()).expect("the build of a trace gives at most 2^32 - 1 edges");
-    graph.num_edges.set(num_edges);
-    graph.num_ops.set(num_ops);
+    const uint32_t num_ops = shape.num_ops;
+    const TraceGraphRef made = epoch.make<TraceGraph>(a, TraceGraph{.num_ops = num_ops,
+                                                                    .num_edges = num_edges,
+                                                                    .num_slots = shape.num_slots,
+                                                                    .max_meta_end = shape.max_meta_end});
+    TraceGraph& graph = *made;
 
     // A graph with no ops has no offset arrays.
-    if (num_ops == 0) return;
+    if (num_ops == 0) return made;
 
     graph.fwd_edges = epoch.array(a, num_edges, Edge{});
     graph.fwd_offsets = epoch.array<uint32_t>(a, num_ops + 1, 0);
@@ -84,6 +84,7 @@ void build_csr(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, Trace
         detail::csr_element_(fwd_edges, detail::csr_element_(fwd_cursor, edge.src.raw())++) = edge;
         detail::csr_element_(rev_edges, detail::csr_element_(rev_cursor, edge.dst.raw())++) = edge;
     }
+    return made;
 }
 
 }  // namespace crucible

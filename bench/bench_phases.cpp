@@ -20,7 +20,7 @@
 //   P2c PtrMap lookup  DFG edge building (input ptr_map_lookup)
 //   P2d PtrMap insert  output slot tracking (ptr_map_insert + aliases)
 //   P3  Slot copy      scratch SlotInfo → arena TensorSlot
-//   P4  build_csr      CSR property graph construction
+//   P4  build_trace_graph  CSR property graph construction
 //   P5  memory_plan    counting sort + sweep-line offset assignment
 //
 // The Phase 2 sub-parts (P2a–P2d) are measured by running the main loop
@@ -254,7 +254,7 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
                  ::fixy::Fixed<1>{*sorted.get(sorted.size() / 2).expect("the middle sample of the run")},
                  ::fixy::Fixed<1>{*sorted.get(sorted.size() - 1).expect("the last sample of the run")});
 
-    // Isolated build_csr + compute_memory_plan.
+    // Isolated build_trace_graph + compute_memory_plan.
     double ns_csr = 0;
     double ns_memplan = 0;
     {
@@ -270,8 +270,8 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         ref_scratch.arena.with_epoch([&state, &log, &trace, numerics, &num_ops, &num_slots, &saved_edges,
                                       &ref_region](TraceScratch::Epoch& epoch) noexcept {
             auto [ref, region] = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds");
-            num_ops = ref->num_ops.get();
-            num_slots = ref->num_slots.get();
+            num_ops = ref->num_ops;
+            num_slots = ref->num_slots;
             // The forward edges are in the order of their sources.
             saved_edges = ::fixy::mint_heap_array_copy<Edge>(A, ref->fwd_edges.view());
             ref_region = std::move(region);
@@ -279,14 +279,14 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
 
         const ::fixy::View<const TensorSlot> saved_slots = ref_region.slots();
 
-        // build_csr, with fresh blocks in each iteration
+        // build_trace_graph, with fresh blocks in each iteration.  The time
+        // holds the bump of the graph in the epoch and the counting sort.
         for (uint32_t iter = 0; iter < iters; iter++) {
             TraceScratch csr_scratch{Bytes{size_t{1} << 18}};
             ns_csr += csr_scratch.arena.with_epoch([&](TraceScratch::Epoch& epoch) noexcept {
-                const TraceGraphRef graph2 = alloc_trace_graph(A, epoch);
-
                 const uint64_t t0 = bench::rdtsc_start();
-                build_csr(A, epoch, *graph2, saved_edges.view(), num_ops);
+                const TraceGraphRef graph2 =
+                    build_trace_graph(A, epoch, TraceGraphShape{.num_ops = num_ops}, saved_edges.view());
                 const uint64_t t1 = bench::rdtsc_end();
 
                 bench::do_not_optimize(graph2);

@@ -1,16 +1,15 @@
 // Negative-compile test.  This file must fail to compile.
 //
-// The build counters of TraceGraph are
-// TraceGraph::BuiltCount = fixy::WriteOnce<uint32_t>.  `build_csr`
-// publishes num_ops exactly once; raw assignment would bypass the
-// single-publication lifecycle gate.
+// build_trace_graph gives a graph its counts when it makes the graph, and
+// each count of TraceGraph is const.  So no code writes a count after the
+// build, and an assignment to num_ops does not compile.
 //
-// Expected diagnostic: no assignment operator from raw uint32_t.
+// Expected diagnostic: an assignment of the read-only member num_ops.
 
 #include <crucible/TraceGraph.h>
 
 int main() {
-    crucible::TraceGraph g{};
-    g.num_ops = 1u;
+    crucible::TraceGraph graph{};
+    graph.num_ops = 1u;
     return 0;
 }

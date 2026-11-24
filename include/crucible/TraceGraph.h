@@ -4,7 +4,6 @@
 
 #include <crucible/MerkleDag.h>
 #include <fixy/Core.h>
-#include <fixy/Mutation.h>
 #include <fixy/Refined.h>
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
@@ -68,13 +67,16 @@ public:
 // member of a class that does not state the brand, and an epoch refuses a
 // graph as the result of its body.  The ops and the slots are runs of the DAG
 // arena of the region of the build, which outlives the epoch.
+//
+// The four counts are const.  build_trace_graph makes the graph when the build
+// knows each count, so no count changes after the build, and an assignment
+// of a graph does not compile.
 struct TraceGraph {
     using brand_type = ::fixy::EpochOf<TraceScratch::Arena>;
-    using BuiltCount = ::fixy::WriteOnce<uint32_t>;
 
     // The ops in trace order.
     ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
-    BuiltCount num_ops = ::fixy::mint_write_once<uint32_t>();
+    uint32_t const num_ops = 0;
 
     // Sorted by source, so a walk answers which ops consume a given output.
     ::fixy::ArenaRun<Edge, brand_type> fwd_edges{};
@@ -84,17 +86,17 @@ struct TraceGraph {
     ::fixy::ArenaRun<Edge, brand_type> rev_edges{};
     ::fixy::ArenaRun<uint32_t, brand_type> rev_offsets{};  // num_ops + 1 entries
 
-    BuiltCount num_edges = ::fixy::mint_write_once<uint32_t>();
+    uint32_t const num_edges = 0;
 
     ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
-    BuiltCount num_slots = ::fixy::mint_write_once<uint32_t>();  // count of distinct storages, not of tensors
+    uint32_t const num_slots = 0;  // count of distinct storages, not of tensors
 
-    ContentHash content_hash;
+    ContentHash content_hash{};
 
     // The end of the run of the metadata log that this trace read, as a count
     // of records (MetaLog::head).  The ops hold a copy of that run in the
     // arena.  The owner of the log can release the run after the build.
-    ::fixy::WriteOnce<uint64_t> max_meta_end = ::fixy::mint_write_once<uint64_t>();
+    uint64_t const max_meta_end = 0;
 
     // The edges whose source is op i.  The arrays are in the arena, and not
     // in this struct.  The four bodies are in src/TraceGraph.cpp, because no
@@ -124,7 +126,7 @@ private:
     // wraps to the largest uint32_t and the range check then admits every
     // index.
     [[nodiscard, gnu::pure]] uint32_t checked_index_(OpIndex i) const noexcept {
-        const uint32_t n_ops = num_ops.get();
+        const uint32_t n_ops = num_ops;
         CRUCIBLE_PRE(n_ops > 0u);
         CRUCIBLE_PRE(::foundation::decide::in_range<std::uint32_t>(i.raw(), 0u, n_ops - 1u));
         return i.raw();
@@ -142,17 +144,13 @@ private:
 // A Ref of a graph, with the brand of the epoch that holds it.
 using TraceGraphRef = ::fixy::Ref<TraceGraph, TraceGraph::brand_type>;
 
-// The graph is in the epoch, and the build stage keeps its Ref for the length
-// of the epoch.  The bodies of this function and of build_csr are in
-// src/TraceGraph.cpp, so a unit that includes this header compiles no part of
-// the build.
-[[nodiscard]] TraceGraphRef alloc_trace_graph(::foundation::effects::Alloc a,
-                                              TraceScratch::Epoch& epoch CRUCIBLE_LIFETIMEBOUND) noexcept;
-
-// The graph is in the epoch, and an epoch lives only in the frame of
-// with_epoch.  This twin refuses a temporary epoch.
-void alloc_trace_graph(::foundation::effects::Alloc, TraceScratch::Epoch&&) =
-    delete("a temporary epoch releases the graph at the end of the statement. Use the epoch that with_epoch gives");
+// The counts of a trace graph that its build knows before the graph exists.
+// build_trace_graph counts the edges itself.
+struct TraceGraphShape {
+    uint32_t num_ops = 0;
+    uint32_t num_slots = 0;  // count of distinct storages, not of tensors
+    uint64_t max_meta_end = 0;
+};
 
 namespace detail {
 
@@ -165,10 +163,19 @@ template <class T>
 
 }  // namespace detail
 
-// Counting sort into both adjacency arrays, linear in ops plus edges. The
-// caller owns the graph struct. Only the arrays inside it are allocated here.
-// The source and the destination of each edge are below num_ops.
-void build_csr(::foundation::effects::Alloc a, TraceScratch::Epoch& epoch, TraceGraph& graph,
-               ::fixy::View<const Edge> edges, uint32_t num_ops);
+// Makes the graph in the epoch with the counts of the shape and the count of
+// the edges, and builds both adjacency arrays with a counting sort, linear in
+// ops plus edges.  The source and the destination of each edge are below
+// num_ops.  The build stage keeps the Ref of the graph for the length of the
+// epoch.  The body is in src/TraceGraph.cpp, so a unit that includes this
+// header compiles no part of the build.
+[[nodiscard]] TraceGraphRef build_trace_graph(::foundation::effects::Alloc a,
+                                              TraceScratch::Epoch& epoch CRUCIBLE_LIFETIMEBOUND, TraceGraphShape shape,
+                                              ::fixy::View<const Edge> edges);
+
+// The graph is in the epoch, and an epoch lives only in the frame of
+// with_epoch.  This twin refuses a temporary epoch.
+void build_trace_graph(::foundation::effects::Alloc, TraceScratch::Epoch&&, TraceGraphShape, ::fixy::View<const Edge>) =
+    delete("a temporary epoch releases the graph at the end of the statement. Use the epoch that with_epoch gives");
 
 }  // namespace crucible
