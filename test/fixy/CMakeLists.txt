@@ -4970,6 +4970,29 @@ fixy_test(test_lanes_channel)
 # The wait of the consumer handle: each item in order, then the end, with no
 # lost wake, and no policy that parks for a context of the hot path.
 fixy_test(test_channel_wait)
+# The parked form owns the counts of its waits: no lost wake for each pop
+# door, the end of the consumer ends a parked producer, and a release keeps
+# the stream open.
+fixy_test(test_parked_channel)
+# No door of a parked end takes an event count, and a parked handle keeps the
+# scope brand of its frame.
+fixy_neg_compile_test(neg_parked_receive_waiting_with_a_count
+  "no matching function for call to .*receive_waiting<fixy::concurrent::SpinThenPark<0> >"
+  "candidate expects 1 argument, 2 provided")
+fixy_neg_compile_test(neg_parked_push_waiting_with_a_count
+  "no matching function for call to .*push_waiting<fixy::concurrent::SpinThenPark<0> >"
+  "candidate expects 2 arguments, 3 provided")
+fixy_neg_compile_test(neg_parked_handle_leaves_its_frame
+  "no matching function for call to .with_producer\\("
+  "FrameResult")
+# A parked handle owes a consume, so the generic drop door and end_unrun_body
+# refuse it.
+fixy_neg_compile_test(neg_parked_handle_generic_drop
+  "use of deleted function"
+  "the drop door ends no class that owes a consume at its end")
+fixy_neg_compile_test(neg_parked_handle_unrun_body
+  "use of deleted function"
+  "the door ends a body only when each linear value that the body holds states its own end")
 fixy_neg_compile_test(neg_channel_receive_waiting_park_from_the_foreground
   "template constraint failure|constraints not satisfied|no matching function"
   "CtxFitsWaitPolicy")

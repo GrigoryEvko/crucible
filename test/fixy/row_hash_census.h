@@ -40,6 +40,7 @@
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/HandleTraits.h>
 #include <fixy/concurrent/LaneRing.h>
+#include <fixy/concurrent/ParkedChannel.h>
 #include <fixy/concurrent/MpscRing.h>
 #include <fixy/concurrent/PayloadRow.h>
 #include <fixy/concurrent/PermissionFork.h>
@@ -1495,6 +1496,13 @@ inline constexpr StatedZero kZeros[] = {
      "kernel signature argument"},
     {^^::fixy::concurrent::SpscSplitBrand,
      "the brand of the Ref of an end: an empty class that is never a value, and the end folds it"},
+    {^^::fixy::concurrent::ParkedChannel,
+     "the parked form of a wire: the wire and the two event counts of its waits, an owner of a background "
+     "stage and never a kernel signature argument"},
+    {^^::fixy::concurrent::ParkedProducerHandle,
+     "the producer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
+    {^^::fixy::concurrent::ParkedConsumerHandle,
+     "the consumer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
     {^^::fixy::concurrent::SpscSplit,
      "the split of an SPSC owner: the Box of the owner and its two ends, which a body borrows through a frame door"},
     {^^::fixy::concurrent::SpscHeldSplit,
