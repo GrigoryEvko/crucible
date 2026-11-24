@@ -166,13 +166,15 @@ constexpr std::uint64_t kBulkParcels = 100000;
 
 // The producer thread of the bulk test.  It owns its handle and pushes each
 // label in order.  A full ring gives the Box back, and the next push takes it.
+// The thread calls the feeder one time as an rvalue, and the feeder ends its
+// handle at the drop door.
 template <class Producer>
 struct ParcelFeeder {
     Producer handle;
 
     explicit ParcelFeeder(Producer&& producer) noexcept : handle{std::move(producer)} {}
 
-    void operator()() noexcept {
+    void operator()() && noexcept {
         for (std::uint64_t label = 0; label < kBulkParcels; ++label) {
             fixy::Box<Parcel> parcel = make_parcel(label);
             for (;;) {
@@ -182,6 +184,7 @@ struct ParcelFeeder {
                 CRUCIBLE_SPIN_PAUSE;
             }
         }
+        ::foundation::linear::drop(std::move(handle));
     }
 };
 
@@ -194,14 +197,15 @@ struct ParcelCount {
 
 // The consumer thread of the bulk test.  It owns its handle, pops each Box,
 // and counts the labels that arrive out of order.  It gives back its count,
-// which the caller reads after the join.
+// which the caller reads after the join.  The thread calls the drain one time
+// as an rvalue, and the drain ends its handle at the drop door.
 template <class Consumer>
 struct ParcelDrain {
     Consumer handle;
 
     explicit ParcelDrain(Consumer&& consumer) noexcept : handle{std::move(consumer)} {}
 
-    [[nodiscard]] ParcelCount operator()() noexcept {
+    [[nodiscard]] ParcelCount operator()() && noexcept {
         ParcelCount count{};
         while (count.received < kBulkParcels) {
             fixy::Option<fixy::Box<Parcel>> const parcel = handle.try_pop();
@@ -212,6 +216,7 @@ struct ParcelDrain {
             if (label_of(parcel) != count.received) ++count.out_of_order;
             ++count.received;
         }
+        ::foundation::linear::drop(std::move(handle));
         return count;
     }
 };

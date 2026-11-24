@@ -346,7 +346,8 @@ struct ParcelCount {
 // The consumer thread of the bulk test.  It owns its handle, receives each
 // Box until the end of the stream, and counts the labels that arrive out of
 // the order of their producer.  It gives back its count, which the caller
-// reads after the join.
+// reads after the join.  The thread calls the drain one time as an rvalue, and
+// the drain ends its handle at the drop door.
 template <class Consumer>
 struct ParcelDrain {
     Consumer handle;
@@ -354,12 +355,15 @@ struct ParcelDrain {
 
     explicit ParcelDrain(Consumer&& consumer) noexcept : handle{std::move(consumer)} {}
 
-    [[nodiscard]] ParcelCount operator()() noexcept {
+    [[nodiscard]] ParcelCount operator()() && noexcept {
         ParcelCount count{};
         for (;;) {
             fixy::Result<fixy::Box<Parcel>, c::NoItem> parcel = handle.try_receive(eff::testing::test().nondet);
             if (parcel.is_err()) {
-                if (std::move(parcel).err() == fixy::some(c::NoItem::Closed)) return count;
+                if (std::move(parcel).err() == fixy::some(c::NoItem::Closed)) {
+                    ::foundation::linear::drop(std::move(handle));
+                    return count;
+                }
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }

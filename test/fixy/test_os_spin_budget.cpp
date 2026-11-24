@@ -179,7 +179,9 @@ struct StreamDrain {
     StreamDrain(Consumer&& consumer, SpinBudget spin_budget) noexcept
         : handle{std::move(consumer)}, budget{spin_budget} {}
 
-    [[nodiscard]] Received operator()(::fixy::BgLoadCtx const& thread_ctx) noexcept {
+    // The thread calls the drain one time as an rvalue, and the drain ends
+    // its handle at the drop door.
+    [[nodiscard]] Received operator()(::fixy::BgLoadCtx const& thread_ctx) && noexcept {
         Received received{};
         eff::cap::Nondet const nondet = eff::extract_bare_from_ctx<eff::Effect::Nondet>(thread_ctx);
         auto const sleeper = spin::mint_bounded_sleep<kSleepNanos>(thread_ctx);
@@ -196,6 +198,7 @@ struct StreamDrain {
             }
             received.hash = fold(received.hash, std::move(item).expect("the loop ends with an item"));
         }
+        ::foundation::linear::drop(std::move(handle));
         return received;
     }
 };

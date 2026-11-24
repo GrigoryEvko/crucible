@@ -311,7 +311,9 @@ struct RoundDrain {
     RoundDrain(Consumer&& consumer, ::fixy::Ref<Atomic<int>, Brand> ended, int producer_count) noexcept
         : handle{std::move(consumer)}, ended_producers{ended}, producers{producer_count} {}
 
-    [[nodiscard]] DrainCount operator()() noexcept {
+    // The thread calls the drain one time as an rvalue, and the drain ends
+    // its handle at the drop door.
+    [[nodiscard]] DrainCount operator()() && noexcept {
         int received = 0;
         int failures = 0;
         bool is_draining = true;
@@ -337,6 +339,7 @@ struct RoundDrain {
                 ++received;
             }
         }
+        ::foundation::linear::drop(std::move(handle));
         return DrainCount{.received = received, .failures = failures};
     }
 };
