@@ -1,7 +1,8 @@
 // A class that is not the friend of a branded strided view takes the name of
 // the mint in its own namespace, and builds a branded strided view of a brand
-// that it names.  The friends are foundation::core::mint_strided_scope and
-// each branded strided view, so the constructor is private here.
+// that it names.  The friends that build one are the two forms of
+// foundation::core::mint_strided_scope and each branded strided view, so the
+// constructor is private here.
 
 #include <foundation/core/Strided.h>
 

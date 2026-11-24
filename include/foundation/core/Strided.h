@@ -100,6 +100,12 @@
 // of a static rank.  The doors that borrow it for one call write through it:
 // the walk and the scope below, and the pointwise walk of
 // foundation/core/Pointwise.h.
+//   erase_brand(std::move(unique))
+//                       the unique view of the same elements on the erased
+//                       identity DefaultBrand (foundation/Brand.h), for a
+//                       fixed kernel ABI that cannot name the brand of a
+//                       frame.  The door consumes unique, so the erased view
+//                       stays the one writer
 //
 // Walk
 //   walk(body, views...)
@@ -145,7 +151,9 @@
 //                       view of Brand.  An index holds coordinates, and not an
 //                       offset, so one index reads each parallel view
 // The operations of a branded strided view:
-//   view(), rank(), sizes()
+//   view()              the plain view of const elements, with no brand.  It
+//                       reads, and it writes nothing
+//   rank(), sizes()
 //   index(coordinates)  Option<StridedIndex<Rank, Brand>>: one compare for
 //                       each axis
 //   indices()           each StridedIndex<Rank, Brand>, in the row-major order
@@ -453,6 +461,13 @@ namespace detail {
 template <class T, std::size_t Rank, class Brand>
 [[nodiscard]] constexpr StridedView<T, Rank> writable_view_of_(StridedViewMut<T, Rank, Brand>& view) noexcept;
 
+// The plain view of the elements of a branded strided view, with the element
+// type of the branded view.  Only the walk over the branded views of one
+// scope reads it, for the call, so the plain view is a part of the branded
+// view of the scope.
+template <class T, std::size_t Rank, class Brand>
+[[nodiscard]] constexpr StridedView<T, Rank> writable_view_of_(BrandedStridedView<T, Rank, Brand> const& view) noexcept;
+
 }  // namespace detail
 
 // The arguments of mint_strided_view: sizes and strides of std::size_t, with
@@ -476,10 +491,12 @@ inline constexpr std::size_t minted_rank = SizesExtent != dynamic_extent ? Sizes
 // Doors of the parts
 //   A view and a unique view of raw parts check nothing, so their
 //   constructors from parts are private.  The friends that make a view are
-//   the two mints below, which check the parts, and the views themselves,
-//   whose operations keep the invariant.  A reader of the parts of a view
-//   makes no view.  The friends are declared here, with the mints, so no
-//   header outside this one names them.
+//   the two mints below, which check the parts, detail::erased_view_mut_, the
+//   body of erase_brand, which takes the parts of a unique view, and the
+//   views themselves, whose operations keep
+//   the invariant.  A reader of the parts of a view makes no view.  The
+//   friends are declared here, with the mints, so no header outside this one
+//   names them.
 template <class T, std::size_t RunExtent, class S, std::size_t SizesExtent, class D, std::size_t StridesExtent>
     requires CanMintStridedView<S, SizesExtent, D, StridesExtent>
 [[nodiscard]] constexpr Option<StridedView<T, detail::minted_rank<SizesExtent, StridesExtent>>>
@@ -492,6 +509,15 @@ template <class T, class Brand, std::size_t RunExtent, class S, std::size_t Size
 [[nodiscard]] constexpr Option<StridedViewMut<T, detail::minted_rank<SizesExtent, StridesExtent>, Brand>>
 mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> sizes, View<D, StridesExtent> strides,
                       std::size_t offset) noexcept;
+
+namespace detail {
+
+// The unique view of the same elements on DefaultBrand: the body of
+// erase_brand below, which is its one caller (the definition below).
+template <class T, std::size_t Rank, class Brand>
+[[nodiscard]] constexpr auto erased_view_mut_(StridedViewMut<T, Rank, Brand>&& view) noexcept;
+
+}  // namespace detail
 
 template <class T, std::size_t Rank>
     requires ViewElement<T> && StridedRank<Rank>
@@ -940,9 +966,10 @@ template <class Lanes>
 // ViewMut of foundation/core/Region.h.  No two indexes of the view name one
 // element, so a write at one index changes no other index.  The brand is the
 // brand of the frame, so two unique views of two brands name runs that do not
-// overlap (the alias proof in foundation/core/Frame.h).  A StridedViewMut does
-// not copy.  A move leaves the source with its parts, and the rule
-// use-after-move refuses a later use of the source.
+// overlap (the alias proof in foundation/core/Frame.h).  The erased view of
+// erase_brand has the brand DefaultBrand, which proves no such difference.  A
+// StridedViewMut does not copy.  A move leaves the source with its parts, and
+// the rule use-after-move refuses a later use of the source.
 //
 //   rank(), count(), sizes(), strides(), size(axis), stride(axis), is_dense()
 //                       as the StridedView of the same parts gives them
@@ -974,12 +1001,16 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] StridedViewMut 
                                 View<D, StridesExtent> strides, std::size_t offset) noexcept;
 
     template <class U, std::size_t OtherRank, class OtherBrand>
+    friend constexpr auto detail::erased_view_mut_(StridedViewMut<U, OtherRank, OtherBrand>&& view) noexcept;
+
+    template <class U, std::size_t OtherRank, class OtherBrand>
     friend constexpr StridedView<U, OtherRank>
     detail::writable_view_of_(StridedViewMut<U, OtherRank, OtherBrand>& view) noexcept;
 
     // The unique view of view, with no check (the doors of the parts).  The
     // mint proves that no two indexes of view name one element and that the
-    // run of view belongs to the frame of Brand.
+    // run of view belongs to the frame of Brand.  erase_brand takes the parts
+    // of a unique view, so its result keeps that proof of the elements.
     constexpr explicit StridedViewMut(StridedView<T, Rank> view) noexcept : view_{view} {}
 
 public:
@@ -1068,6 +1099,41 @@ mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> siz
     }
     return Minted::some(StridedViewMut<T, rank, Brand>{view});
 }
+
+// The door that drops the brand of a unique view.  It consumes view, and it
+// gives the unique view of the same elements on the erased identity
+// DefaultBrand (foundation/Brand.h).  The door drops the proof that two runs
+// differ: two erased views of one element type and one rank have one type.
+// The erased view stays the one writer of its elements, because the door
+// consumes view and a unique view does not copy.  A fixed kernel ABI cannot
+// name the brand of a frame, so such an ABI takes the erased writer.  Nothing
+// gives an erased view a brand back.  The constraint refuses a view that is
+// on DefaultBrand.  The body of detail::erased_view_mut_ names the brand of
+// the result, so the erased brand has one spelling in this door.  O(1).
+namespace detail {
+
+template <class T, std::size_t Rank, class Brand>
+constexpr auto erased_view_mut_(StridedViewMut<T, Rank, Brand>&& view) noexcept {
+    return StridedViewMut<T, Rank, ::foundation::brand::DefaultBrand>{view.view_};
+}
+
+}  // namespace detail
+
+template <class T, std::size_t Rank, ::foundation::brand::IsFreshBrand Brand>
+[[nodiscard]] constexpr auto erase_brand(StridedViewMut<T, Rank, Brand>&& view) noexcept {
+    return detail::erased_view_mut_(std::move(view));
+}
+
+// The door consumes the one writer, so a named unique view that stays with
+// its holder gives no writer to it.  A const unique view writes nothing, so it
+// gives no writer to the door.
+template <class T, std::size_t Rank, ::foundation::brand::IsFreshBrand Brand>
+void erase_brand(StridedViewMut<T, Rank, Brand>& view) =
+    delete("erase_brand consumes the one writer, and a named StridedViewMut stays with its holder: pass "
+           "std::move(view)");
+template <class T, std::size_t Rank, ::foundation::brand::IsFreshBrand Brand>
+void erase_brand(StridedViewMut<T, Rank, Brand> const& view) =
+    delete("a const StridedViewMut writes nothing, so it gives no writer to erase_brand");
 
 // ── The walk ────────────────────────────────────────────────────────────
 
@@ -1517,8 +1583,8 @@ concept CanMintStridedScope =
 // The arguments of the scope of a unique view: the arguments of
 // mint_strided_scope, and a result of the body that holds no borrow
 // (HoldsNoBorrow of foundation/core/Choice.h).  The branded view of the scope
-// writes, so a plain view or a reference in the result would be a writer
-// that outlives the borrow of the call.
+// writes, so a reference in the result would be a writer that outlives the
+// borrow of the call, and a plain view would read the elements after it.
 template <class T, std::size_t Rank, class Body, class Brand>
 concept CanMintUniqueStridedScope = CanMintStridedScope<T, Rank, Body, Brand>
                                  && HoldsNoBorrow<std::invoke_result_t<Body&&, BrandedStridedView<T, Rank, Brand>>>;
@@ -1556,6 +1622,9 @@ class BrandedStridedView final {
     template <class U, std::size_t OtherRank, ::foundation::brand::IsBrand OtherBrand>
         requires ViewElement<U> && StridedRank<OtherRank>
     friend class BrandedStridedView;
+    template <class U, std::size_t OtherRank, class OtherBrand>
+    friend constexpr StridedView<U, OtherRank>
+    detail::writable_view_of_(BrandedStridedView<U, OtherRank, OtherBrand> const& view) noexcept;
 
     constexpr explicit BrandedStridedView(StridedView<T, Rank> view) noexcept : view_{view} {}
 
@@ -1571,9 +1640,11 @@ class BrandedStridedView final {
     }
 
 public:
-    // The plain view.  It has no brand, so an index of the scope proves
-    // nothing about it.
-    [[nodiscard]] constexpr StridedView<T, Rank> view() const noexcept { return view_; }
+    // The plain view of the elements, for a read.  A plain view copies, so a
+    // plain view that writes would be a second writer after the scope, and
+    // the elements of this view are const.  It has no brand, so an index of
+    // the scope proves nothing about it.
+    [[nodiscard]] constexpr StridedView<T const, Rank> view() const noexcept { return view_; }
 
     [[nodiscard]] constexpr std::size_t rank() const noexcept { return view_.rank(); }
     [[nodiscard]] constexpr View<std::size_t const> sizes() const& noexcept { return view_.sizes(); }
@@ -1649,6 +1720,15 @@ public:
     }
 };
 
+namespace detail {
+
+template <class T, std::size_t Rank, class Brand>
+constexpr StridedView<T, Rank> writable_view_of_(BrandedStridedView<T, Rank, Brand> const& view) noexcept {
+    return view.view_;
+}
+
+}  // namespace detail
+
 // Calls body with the branded view of view, with the fresh brand of the
 // instance of the mint, and gives the result of body.  The pack refuses each
 // explicit argument, so no caller names the brand.
@@ -1706,13 +1786,14 @@ void mint_strided_scope(StridedViewMut<T, Rank, Brand>&& view, Body&& body) =
 // row-major order, with the element at that index of each view: the walk,
 // with its plan and its loops.  Each branded view of a brand has the sizes of
 // the view of the scope, because parallel() compared them, so the walk has no
-// compare and gives no error.  O(count) calls of body, and O(rank * views)
-// for the plan.
+// compare and gives no error.  The walk reads the plain view of each branded
+// view for the call, so body writes the elements of a branded view that
+// writes.  O(count) calls of body, and O(rank * views) for the plan.
 template <class Body, class First, class... Rest, std::size_t Rank, ::foundation::brand::IsBrand Brand>
     requires CanWalk<Body, First, Rest...>
 constexpr void walk(Body&& body, BrandedStridedView<First, Rank, Brand> const& first,
                     BrandedStridedView<Rest, Rank, Brand> const&... rest) noexcept {
-    detail::walk_equal_views_(body, first.view(), rest.view()...);
+    detail::walk_equal_views_(body, detail::writable_view_of_(first), detail::writable_view_of_(rest)...);
 }
 
 // A body that holds a linear value by value binds to this overload, so the

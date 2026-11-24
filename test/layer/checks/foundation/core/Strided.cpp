@@ -95,18 +95,35 @@ static_assert(!std::is_default_constructible_v<StridedViewMut<int, 2, CheckBrand
 static_assert(
     std::is_same_v<decltype(std::declval<StridedViewMut<int, 2, CheckBrand>&>().view()), StridedView<int const, 2>>);
 
+// The plain view of a branded view reads: its elements are const, also for
+// a branded view whose elements are not const.  A copy of a plain view that
+// writes would be a second writer after the scope.
+static_assert(std::is_same_v<decltype(std::declval<BrandedStridedView<int, 2, CheckBrand> const&>().view()),
+                             StridedView<int const, 2>>);
+
 // The body of the scope of a unique view gives a value that holds no borrow,
-// so the result holds no plain view of the branded view, which writes.  The
-// scope of a plain view takes that body.
+// so the result holds no plain view of the branded view, which reads the
+// elements after the borrow.  The scope of a plain view takes that body.
 struct GivesView final {
     template <class Brand>
-    constexpr StridedView<int, 2> operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
+    constexpr StridedView<int const, 2> operator()(BrandedStridedView<int, 2, Brand> view) const noexcept {
         return view.view();
     }
 };
 static_assert(CanMintUniqueStridedScope<int, 2, GivesCount, CheckBrand>);
 static_assert(CanMintStridedScope<int, 2, GivesView, CheckBrand>);
 static_assert(!CanMintUniqueStridedScope<int, 2, GivesView, CheckBrand>);
+
+// erase_brand takes a unique view of a fresh brand by move, and it gives the
+// unique view of the same element type and rank on the erased identity.  The
+// constraint of the door refuses the brand of the result, so no view is
+// erased two times.  The fixtures neg_core_strided_erase_brand_named and
+// neg_core_strided_erase_brand_const hold the refusal of a named view and of
+// a const view.
+using ErasedView = decltype(::foundation::core::erase_brand(std::declval<StridedViewMut<int, 2, CheckBrand>&&>()));
+static_assert(::foundation::brand::IsErased<ErasedView>);
+static_assert(std::is_same_v<ErasedView::element_type, int> && ErasedView::static_rank == 2);
+static_assert(!::foundation::brand::IsFreshBrand<ErasedView::brand_type>);
 
 // The test of no overlap: a dense matrix and its transpose pass, a stride
 // that steps inside the span of a smaller axis and a stride of zero fail,
@@ -157,6 +174,30 @@ static_assert(matrix_sum() == 66);
     });
 }
 static_assert(scope_sum() == 66);
+
+// The erased view of the same matrix stays the writer of its elements: the
+// scope on it adds one to each element, and a walk of its view reads them.
+[[nodiscard]] consteval int erased_scope_sum() noexcept {
+    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    FixedArray<std::size_t, 2> const sizes{3, 4};
+    FixedArray<std::size_t, 2> const strides{4, 1};
+    return values.with_mut([&sizes, &strides](auto run) noexcept {
+        auto erased = erase_brand(
+            mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits"));
+        int const added = mint_strided_scope(erased, [](auto branded) noexcept {
+            int count = 0;
+            for (auto const index : branded.indices()) {
+                branded.at(index) += 1;
+                ++count;
+            }
+            return count;
+        });
+        int total = 0;
+        if (walk([&total](int const& element) noexcept { total += element; }, erased.view()).is_err()) return -1;
+        return added == 12 ? total : -1;
+    });
+}
+static_assert(erased_scope_sum() == 78);
 
 // A strided view refers to its elements (the transfer).  A walk writes each
 // element through a const view of int, so a const view of

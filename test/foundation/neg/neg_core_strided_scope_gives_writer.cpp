@@ -1,6 +1,6 @@
 // The body of the scope of a unique strided view gives the plain view of its
-// branded view.  That plain view writes and copies, so it would be a second
-// writer after the call.  The scope of a unique view takes only a body whose
+// branded view.  That plain view copies, so it would read the elements after
+// the borrow of the call.  The scope of a unique view takes only a body whose
 // result holds no borrow.
 
 #include <foundation/core/Array.h>

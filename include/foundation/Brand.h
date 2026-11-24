@@ -80,12 +80,13 @@
 // an owned region never drop their brand.  A permission token is on the
 // erased identity only as the singleton root of its tag, the one live root
 // of that tag.  No Ref converts to its erased spelling: erase_brand of
-// foundation/core/Ref.h is the one door of a Ref, and erase_brand of
-// fixy/ScopedView.h is the one door of a view.  Nothing converts an erased
-// value back to a brand, so no caller can give an erased value to code that
-// asks for a brand.  The rule erased-brand (utils/assay/guard/engines/tsast/
-// erased_brand.py) counts each spelling on DefaultBrand, and the count of
-// those sites can only decrease.
+// foundation/core/Ref.h is the one door of a Ref, erase_brand of
+// fixy/ScopedView.h is the one door of a view, and erase_brand of
+// foundation/core/Strided.h is the one door of a unique strided view, which
+// it consumes.  Nothing converts an erased value back to a brand, so no
+// caller can give an erased value to code that asks for a brand.  The rule
+// erased-brand (utils/assay/guard/engines/tsast/erased_brand.py) counts each
+// spelling on DefaultBrand, and the count of those sites can only decrease.
 
 #include <foundation/Platform.h>
 

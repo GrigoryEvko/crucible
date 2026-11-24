@@ -5116,6 +5116,18 @@ foundation_neg_compile_test(neg_core_strided_scope_const_unique
 foundation_neg_compile_test(neg_core_strided_scope_gives_writer
   "no matching function for call to .mint_strided_scope\\(foundation::core::StridedViewMut<int, 2, main\\(\\)::<lambda\\(\\)> >&, "
   "CanMintUniqueStridedScope<T, Rank, Body, Fresh>\\)\\) constexpr auto foundation::core::mint_strided_scope\\(StridedViewMut<T, Rank, Brand>&, Body&&\\)")
+# The plain view of a branded view reads, so a body that keeps it through a
+# reference capture writes nothing after the scope.  erase_brand consumes the
+# one writer, so it refuses a named and a const unique view.
+foundation_neg_compile_test(neg_core_strided_scope_view_writes_after
+  "no matching function for call to .foundation::core::Option<foundation::core::StridedView<int, 2> >::fill\\(foundation::core::StridedView<const int, 2>\\)."
+  "no matching function for call to .foundation::core::StridedView<int, 2>::StridedView\\(foundation::core::StridedView<const int, 2>\\).")
+foundation_neg_compile_test(neg_core_strided_erase_brand_named
+  "use of deleted function .void foundation::core::erase_brand\\(StridedViewMut<T, Rank, Brand>&\\)"
+  "erase_brand consumes the one writer, and a named StridedViewMut stays with its holder: pass std::move\\(view\\)")
+foundation_neg_compile_test(neg_core_strided_erase_brand_const
+  "use of deleted function .void foundation::core::erase_brand\\(const StridedViewMut<T, Rank, Brand>&\\)"
+  "a const StridedViewMut writes nothing, so it gives no writer to erase_brand")
 
 # The offset of a row in one view does not read another view, and the body
 # of a walk of rows gives no value, so no index of the walk leaves it.

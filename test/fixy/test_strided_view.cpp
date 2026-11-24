@@ -630,6 +630,38 @@ void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
     pass(test, "  unique_view_writes: PASSED\n");
 }
 
+// The erased writer of a unique view keeps its layout and writes the run of
+// its frame.  A scope on the erased writer writes each element in row-major
+// order, and the frame holds the bits after the door gives the run back.
+void erased_writer_writes(::fixy::TestRunnerCtx const& test) noexcept {
+    ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
+    ::fixy::FixedArray<std::size_t, 2> const column_major{1, 3};
+    bool const is_written = values.with_mut([&sizes, &column_major](auto run) noexcept {
+        auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), column_major.view(), 0)
+                          .expect("a column-major matrix has no overlap");
+        auto erased = ::fixy::erase_brand(std::move(unique));
+        bool const is_shaped = erased.count() == 12 && erased.rank() == 2 && !erased.is_dense()
+                            && erased.size(::fixy::index<0>()) == 3 && erased.stride(::fixy::index<1>()) == 3;
+        std::size_t const visits = ::fixy::mint_strided_scope(erased, [](auto target) noexcept {
+            std::size_t visit = 0;
+            for (auto const index : target.indices()) {
+                target.at(index) = target.at(index) * 100 + static_cast<int>(visit);
+                ++visit;
+            }
+            return visit;
+        });
+        return is_shaped && visits == 12;
+    });
+    // The element at (i, j) is at the position i + 3 * j, and the scope visits
+    // it as the visit 4 * i + j.
+    CRUCIBLE_TEST_ASSERT(
+        test,
+        is_written
+            && values == (::fixy::FixedArray<int, 12>{0, 104, 208, 301, 405, 509, 602, 706, 810, 903, 1007, 1111}));
+    pass(test, "  erased_writer_writes: PASSED\n");
+}
+
 // A cursor of a scope never leaves its loop: a read and a step with no index
 // left end the process in each build.
 void read_past_the_end() noexcept {
@@ -1060,6 +1092,7 @@ int main() {
     scope_and_parallel(test);
     unique_door_cases(test);
     unique_view_writes(test);
+    erased_writer_writes(test);
     expect_dies(test, read_past_the_end,
                 ::fixy::TextView{"a read through the end cursor of a loop over the indexes of a strided view"});
     expect_dies(test, step_past_the_end,

@@ -27,6 +27,7 @@
 #include <fixy/Fn.h>
 #include <fixy/Role.h>
 #include <fixy/Tags.h>
+#include <foundation/Brand.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -55,10 +56,17 @@ struct FirstMoment final {};
 struct SecondMoment final {};
 }  // namespace buffer_role
 
-using Parameters = ::fixy::Side<buffer_role::Parameters, ::fixy::StridedView<float, 1>>;
+//
+// The three buffers that the step writes are erased writers of the runs of
+// their frames: the unique view of each run on the erased brand.  The binding
+// exists before the frames of the buffers, so the signature cannot name their
+// brands.  The step takes each writer by move, so it is the one writer of its
+// buffer for the call.
+using ErasedLine = ::fixy::StridedViewMut<float, 1, ::foundation::brand::DefaultBrand>;
+using Parameters = ::fixy::Side<buffer_role::Parameters, ErasedLine>;
 using Gradients = ::fixy::Side<buffer_role::Gradients, ::fixy::StridedView<float const, 1>>;
-using FirstMoment = ::fixy::Side<buffer_role::FirstMoment, ::fixy::StridedView<float, 1>>;
-using SecondMoment = ::fixy::Side<buffer_role::SecondMoment, ::fixy::StridedView<float, 1>>;
+using FirstMoment = ::fixy::Side<buffer_role::FirstMoment, ErasedLine>;
+using SecondMoment = ::fixy::Side<buffer_role::SecondMoment, ErasedLine>;
 
 // The hyperparameters of one step, each with its name at the call.  step is
 // the iteration count of the bias correction, from 1.
@@ -74,8 +82,8 @@ struct AdamHyperparameters {
 // moments stay alive across calls as the running state of the optimizer,
 // and the gradients come from the backward pass of each step.  The count of
 // the parameters comes from the views.
-using AdamStepPtr = void (*)(Parameters const& params, FirstMoment const& m, SecondMoment const& v,
-                             Gradients const& grad, AdamHyperparameters const& hyper) noexcept;
+using AdamStepPtr = void (*)(Parameters params, FirstMoment m, SecondMoment v, Gradients const& grad,
+                             AdamHyperparameters const& hyper) noexcept;
 
 // The roles of the two operands of a power.  Each operand is a Side of its
 // role, so a call states which number is the base and which is the exponent.
@@ -99,9 +107,11 @@ using PowerExponent = ::fixy::Side<power_role::Exponent, std::uint32_t>;
 }
 
 // The step of each parameter, in the order of the parameters.  The
-// precondition states that the four buffers hold one count.  Complexity:
-// O(N) in the count of the parameters.
-void adam_step_ref(Parameters const& params, FirstMoment const& m, SecondMoment const& v, Gradients const& grad,
+// precondition states that the four buffers hold one count.  A walk takes one
+// writer, so the step opens a scope on each of the three writers, and it
+// writes each element through the index of each scope.  Complexity: O(N) in
+// the count of the parameters.
+void adam_step_ref(Parameters params, FirstMoment m, SecondMoment v, Gradients const& grad,
                    AdamHyperparameters const& hyper) noexcept {
     std::size_t const count = params.value().count();
     CRUCIBLE_PRE(m.value().count() == count && v.value().count() == count && grad.value().count() == count);
@@ -115,9 +125,32 @@ void adam_step_ref(Parameters const& params, FirstMoment const& m, SecondMoment 
         const float v_hat = v_i / bias2;
         param -= hyper.learning_rate * m_hat / (::fixy::fp::sqrt(v_hat) + hyper.epsilon);
     };
-    if (::fixy::walk(step, params.value(), m.value(), v.value(), grad.value()).is_err()) [[unlikely]] {
-        ::fixy::fatal("adam_step_ref: the precondition holds, so the four buffers have one count");
-    }
+    ErasedLine params_line = std::move(params).take();
+    ErasedLine first_moment_line = std::move(m).take();
+    ErasedLine second_moment_line = std::move(v).take();
+    static_cast<void>(::fixy::mint_strided_scope(params_line, [&](auto const params_scope) noexcept {
+        auto const grads = params_scope.parallel(grad.value()).expect("the precondition gives the gradients the count");
+        return ::fixy::mint_strided_scope(first_moment_line, [&](auto const first_moment_scope) noexcept {
+            return ::fixy::mint_strided_scope(second_moment_line, [&](auto const second_moment_scope) noexcept {
+                // The invariant carries the equal counts of the three runs.
+                // It checks in each build, so the optimizer folds the index
+                // checks of m and v in the loop into it.
+                CRUCIBLE_FATAL_INVARIANT(params_scope.view().count() == count
+                                         && first_moment_scope.view().count() == count
+                                         && second_moment_scope.view().count() == count);
+                for (std::size_t position = 0; position < count; ++position) {
+                    auto const index = params_scope.index(position).expect("the position is below the count");
+                    step(params_scope.at(index),
+                         first_moment_scope.at(
+                             first_moment_scope.index(position).expect("the precondition bounds the position of m")),
+                         second_moment_scope.at(
+                             second_moment_scope.index(position).expect("the precondition bounds the position of v")),
+                         grads.at(index));
+                }
+                return ::fixy::Unit{};
+            });
+        });
+    }));
 }
 
 // The rank-1 view of the elements of run, in order.
@@ -198,31 +231,21 @@ int main() {
     ::fixy::FixedArray<float, N> v{};
     const ::fixy::FixedArray<float, N> grad{0.1f, -0.2f, 0.05f, 0.0f};
 
-    // The step writes the three state arrays through the runs that their frame doors lend.  The scope of
-    // the unique view of each run gives the step the plain view that writes, for the call of the scope only.
+    // The step writes the three state arrays through the runs that their frame doors lend.  The caller gives the
+    // step the erased writer of each run by move, so the step is the one writer of each array for the call.
     params.with_mut([&bound, &m, &v, &grad](auto params_run) noexcept {
         auto params_line = line_of(std::move(params_run));
         m.with_mut([&bound, &v, &grad, &params_line](auto first_moment_run) noexcept {
             auto first_moment_line = line_of(std::move(first_moment_run));
             v.with_mut([&bound, &grad, &params_line, &first_moment_line](auto second_moment_run) noexcept {
                 auto second_moment_line = line_of(std::move(second_moment_run));
-                static_cast<void>(::fixy::mint_strided_scope(params_line, [&](auto const params_scope) noexcept {
-                    return ::fixy::mint_strided_scope(first_moment_line, [&](auto const first_moment_scope) noexcept {
-                        return ::fixy::mint_strided_scope(
-                            second_moment_line, [&](auto const second_moment_scope) noexcept {
-                                bound.value()(::fixy::side_as<buffer_role::Parameters>(params_scope.view()),
-                                              ::fixy::side_as<buffer_role::FirstMoment>(first_moment_scope.view()),
-                                              ::fixy::side_as<buffer_role::SecondMoment>(second_moment_scope.view()),
-                                              ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
-                                              AdamHyperparameters{.learning_rate = 0.01f,
-                                                                  .beta1 = 0.9f,
-                                                                  .beta2 = 0.999f,
-                                                                  .epsilon = 1e-8f,
-                                                                  .step = 1});
-                                return ::fixy::Unit{};
-                            });
-                    });
-                }));
+                bound.value()(
+                    ::fixy::side_as<buffer_role::Parameters>(::fixy::erase_brand(std::move(params_line))),
+                    ::fixy::side_as<buffer_role::FirstMoment>(::fixy::erase_brand(std::move(first_moment_line))),
+                    ::fixy::side_as<buffer_role::SecondMoment>(::fixy::erase_brand(std::move(second_moment_line))),
+                    ::fixy::side_as<buffer_role::Gradients>(line_of(grad.view())),
+                    AdamHyperparameters{
+                        .learning_rate = 0.01f, .beta1 = 0.9f, .beta2 = 0.999f, .epsilon = 1e-8f, .step = 1});
             });
         });
     });

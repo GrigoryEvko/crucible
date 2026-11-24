@@ -25,6 +25,7 @@
 #include <fixy/Fn.h>
 #include <fixy/Reductions.h>
 #include <fixy/Tags.h>
+#include <foundation/Brand.h>
 #include <foundation/contracts/Pre.h>
 
 #include <cstddef>
@@ -49,13 +50,19 @@ using ::fixy::strict_pole_t;
 // B of the sizes [K, N].  The two factors take the roles LeftFactor and
 // RightFactor, so a call cannot swap them, and the sizes M, N and K come
 // from the views.
-using GemmFp32Ptr = void (*)(::fixy::StridedView<float, 2> c, ::fixy::LeftFactorOf<float> const& a,
+//
+// C is the erased writer of the run of a frame: the unique view of the run on
+// the erased brand.  The binding exists before the frame of C, so the
+// signature cannot name the brand of that frame.  The kernel takes the writer
+// by move, so it is the one writer of C for the call.
+using ErasedMatrix = ::fixy::StridedViewMut<float, 2, ::foundation::brand::DefaultBrand>;
+using GemmFp32Ptr = void (*)(ErasedMatrix c, ::fixy::LeftFactorOf<float> const& a,
                              ::fixy::RightFactorOf<float> const& b) noexcept;
 
 // C = A @ B.  Each output is the sum of its products in the order of k, from
 // zero.  The precondition states that the sizes of the three views agree.
 // Complexity: O(M N K).
-void scalar_gemm_ref(::fixy::StridedView<float, 2> c, ::fixy::LeftFactorOf<float> const& a,
+void scalar_gemm_ref(ErasedMatrix c, ::fixy::LeftFactorOf<float> const& a,
                      ::fixy::RightFactorOf<float> const& b) noexcept {
     ::fixy::StridedView<float const, 2> const left = a.value();
     ::fixy::StridedView<float const, 2> const right = b.value();
@@ -176,18 +183,14 @@ int main() {
     ::fixy::FixedArray<float, M * N> c{};
 
     // The kernel writes C through the run that the frame door of c lends.  The
-    // scope of the unique view of the run gives the kernel the plain view that
-    // writes, for the call of the scope only.
+    // caller gives the kernel the erased writer of the run by move, so the
+    // kernel is the one writer of C for the call.
     c.with_mut([&bound, &a, &b](auto run) noexcept {
         auto out = matrix_of(std::move(run), ::fixy::FixedArray<std::size_t, 2>{M, N});
-        static_cast<void>(::fixy::mint_strided_scope(out, [&bound, &a, &b](auto const target) noexcept {
-            bound.value()(target.view(),
-                          ::fixy::side_as<::fixy::side::LeftFactor>(
-                              matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
-                          ::fixy::side_as<::fixy::side::RightFactor>(
-                              matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
-            return ::fixy::Unit{};
-        }));
+        bound.value()(
+            ::fixy::erase_brand(std::move(out)),
+            ::fixy::side_as<::fixy::side::LeftFactor>(matrix_of(a.view(), ::fixy::FixedArray<std::size_t, 2>{M, K})),
+            ::fixy::side_as<::fixy::side::RightFactor>(matrix_of(b.view(), ::fixy::FixedArray<std::size_t, 2>{K, N})));
     });
 
     // C = [[1*5 + 2*7, 1*6 + 2*8], [3*5 + 4*7, 3*6 + 4*8]] = [[19, 22], [43, 50]].
