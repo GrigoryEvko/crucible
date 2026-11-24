@@ -153,6 +153,80 @@ static_assert(
     std::is_same_v<decltype(std::declval<BumpArena<Family>&>().array(std::declval<Alloc>(), std::size_t{4}, 0)),
                    ArenaRun<int, Family>>);
 
+// build_array takes an element with a trivial destructor that holds no
+// linear value, and a callable that gives each element as a value of the
+// element type with no throw, from the position of the element.  The element
+// needs no copy, so a class that copies only from an object that is not
+// const fits, and the fill of array does not take it.
+struct CopiesFromWritable {
+    int value = 0;
+    CopiesFromWritable() noexcept = default;
+    CopiesFromWritable(CopiesFromWritable&) noexcept = default;
+    CopiesFromWritable(CopiesFromWritable&&) noexcept = default;
+};
+
+// A linear class.  A make that holds one by value binds to the deleted twin
+// of build_array, and a run does not hold one as an element.
+struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] LinearEnd {
+    int handle = 0;
+    constexpr explicit LinearEnd(int value) noexcept : handle{value} {}
+    constexpr LinearEnd(LinearEnd&&) noexcept = default;
+    constexpr LinearEnd& operator=(LinearEnd&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    LinearEnd(LinearEnd const&) = delete("a linear end of the check does not copy");
+    LinearEnd& operator=(LinearEnd const&) = delete("a linear end of the check does not copy");
+};
+
+using MakesPlain = decltype([](RunStart) noexcept { return Plain{}; });
+using MakesCopier = decltype([](RunStart) noexcept { return CopiesFromWritable{}; });
+using MakesMoveOnly = decltype([](RunStart) noexcept { return MoveOnly{}; });
+using MakesEnded = decltype([](RunStart) noexcept { return Ended{}; });
+using MakesLinear = decltype([](RunStart) noexcept { return LinearEnd{1}; });
+using MakesThrowing = decltype([](RunStart) { return Plain{}; });
+using TakesNoPosition = decltype([]() noexcept { return Plain{}; });
+using HoldsEnd = decltype([held = LinearEnd{1}](RunStart) noexcept {
+    return Plain{.key = static_cast<std::uint64_t>(held.handle), .count = 0, .flags = 0};
+});
+using GivesReference = decltype([](Plain const& kept) noexcept {
+    return [&kept](RunStart) noexcept -> Plain const& { return kept; };
+}(std::declval<Plain const&>()));
+static_assert(CanBuildArenaArray<Plain, Alloc, MakesPlain>);
+static_assert(CanBuildArenaArray<CopiesFromWritable, Alloc, MakesCopier>);
+static_assert(CanBuildArenaArray<MoveOnly, Alloc, MakesMoveOnly>);
+static_assert(!CanFillArenaArray<CopiesFromWritable, Alloc>);
+static_assert(!CanBuildArenaArray<Plain, NoMarker, MakesPlain>);
+static_assert(!CanBuildArenaArray<Plain const, Alloc, MakesPlain>);
+static_assert(!CanBuildArenaArray<Ended, Alloc, MakesEnded>);
+static_assert(!CanBuildArenaArray<LinearEnd, Alloc, MakesLinear>);
+static_assert(!CanBuildArenaArray<Plain, Alloc, MakesThrowing>);
+static_assert(!CanBuildArenaArray<Plain, Alloc, TakesNoPosition>);
+static_assert(!CanBuildArenaArray<Plain, Alloc, GivesReference>);
+static_assert(!CanBuildArenaArray<CopiesFromWritable, Alloc, MakesPlain>);
+
+// build_array gives a run of the brand of the arena or of the epoch.  It
+// takes the count as an ElementCount, and no arena of a temporary, no epoch
+// arena and no make that holds a linear value.
+template <class Arena, class Make, class Count = ElementCount>
+concept BuildsPlains = requires {
+    std::declval<Arena>().template build_array<Plain>(std::declval<Alloc>(), std::declval<Count>(),
+                                                      std::declval<Make>());
+};
+static_assert(BuildsPlains<BumpArena<Family>&, MakesPlain> && !BuildsPlains<BumpArena<Family>&&, MakesPlain>);
+static_assert(!BuildsPlains<BumpArena<Family>&, MakesPlain, std::size_t>);
+static_assert(!BuildsPlains<BumpArena<Family>&, HoldsEnd> && !BuildsPlains<BumpArena<Family>&, HoldsEnd&>);
+static_assert(BuildsPlains<Epoch<EpochOf<Owner::Member>>&, MakesPlain>
+              && !BuildsPlains<Epoch<EpochOf<Owner::Member>>&&, MakesPlain>);
+static_assert(!BuildsPlains<Epoch<EpochOf<Owner::Member>>&, HoldsEnd>);
+static_assert(!BuildsPlains<EpochArena<Owner::Member>&, MakesPlain>);
+static_assert(std::is_same_v<decltype(std::declval<BumpArena<Family>&>().build_array<Plain>(
+                                 std::declval<Alloc>(), ElementCount{2}, std::declval<MakesPlain>())),
+                             ArenaRun<Plain, Family>>);
+static_assert(std::is_same_v<decltype(std::declval<Epoch<EpochOf<Owner::Member>>&>().build_array<Plain>(
+                                 std::declval<Alloc>(), ElementCount{2}, std::declval<MakesPlain>())),
+                             ArenaRun<Plain, EpochOf<Owner::Member>>>);
+
 // An epoch arena has no make and no array.  Its epoch gives them with the
 // epoch brand.
 static_assert(!MakesInt<EpochArena<Owner::Member>&> && !FillsInts<EpochArena<Owner::Member>&>);
@@ -222,7 +296,7 @@ static_assert(EpochResult<int, Member> && EpochResult<void, Member>);
 
 // The closed surface of each arena.
 inline constexpr TextView bump_arena_names{
-    "BumpArena make array retained_bytes max_blocks block_alignment brand_type position_of"};
+    "BumpArena make array build_array retained_bytes max_blocks block_alignment brand_type position_of"};
 CRUCIBLE_CLOSED_SURFACE(bump_arena_names, BumpArena<Family>);
 inline constexpr TextView epoch_arena_names{"EpochArena with_epoch retained_bytes set_retained_limit retained_limit "
                                             "default_retained_bytes_limit max_blocks block_alignment brand_type"};

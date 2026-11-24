@@ -14,11 +14,16 @@
 //   arena.array(alloc, count, fill)    count copies of fill in the arena, as an
 //                                      ArenaRun<T, Brand>.  A count of zero
 //                                      gives the empty run and takes no bytes
+//   arena.build_array<T>(alloc, count, make)
+//                                      count elements in the arena, each the
+//                                      value that make(RunStart) gives for its
+//                                      position, built in its place with no
+//                                      copy, as an ArenaRun<T, Brand>
 //   mint_epoch_arena<Tag>(block_size)  an EpochArena<Tag> of a member tag
 //   arena.with_epoch(body)             calls body with the Epoch of a new
 //                                      epoch, and then ends each byte that the
 //                                      epoch gave out
-//   epoch.make<T>(...), epoch.array(...)
+//   epoch.make<T>(...), epoch.array(...), epoch.build_array<T>(...)
 //                                      as above, with the brand EpochOf<Tag>
 //   retained_bytes()                   the bytes of each block of the arena
 //   arena.position_of(object)          the ArenaPosition of an object that the
@@ -43,8 +48,9 @@
 // is no template, detail::BumpArenaCore, so each brand shares one copy of
 // the cold code.
 //
-// The arena ends no object, so make and array take only a type with a
-// trivial destructor.  A Ref or an ArenaRun of an arena owns nothing, and its
+// The arena ends no object, so make, array and build_array take only a type
+// with a trivial destructor, and build_array only an element that holds no
+// linear value.  A Ref or an ArenaRun of an arena owns nothing, and its
 // bytes die when the arena ends, or when the epoch that gave them ends.
 //
 // Brands of an arena
@@ -62,8 +68,8 @@
 //     - The scope brand of with_bump_arena.  The arena lives in the frame of
 //       the door, and the result of the body holds no borrow and names no
 //       brand of the scope.
-//   make and array take the arena by a parameter that CRUCIBLE_LIFETIMEBOUND
-//   marks.  So the rule view-escape refuses a return of a Ref or a run of a
+//   make, array and build_array take the arena by a parameter that
+//   CRUCIBLE_LIFETIMEBOUND marks.  So the rule view-escape refuses a return of a Ref or a run of a
 //   local arena.  erase_brand of foundation/core/Ref.h refuses the scope
 //   brand and each brand of an arena: a member tag, a family tag and an
 //   epoch brand.  So a Ref of an arena keeps the brand of its arena.  Two
@@ -71,8 +77,8 @@
 //   apart.
 //
 // Epochs
-//   An EpochArena<Tag> of a member tag has no make and no array.  It gives
-//   them only in with_epoch(body), through the Epoch<EpochOf<Tag>> that the
+//   An EpochArena<Tag> of a member tag has no make, no array and no
+//   build_array.  It gives them only in with_epoch(body), through the Epoch<EpochOf<Tag>> that the
 //   body takes by reference.  So the arena holds no byte when an epoch opens,
 //   and the epoch covers each byte that the arena gives out during the body.
 //   After the body, each of those bytes dies, and the arena keeps its blocks
@@ -201,6 +207,18 @@ struct RunStart final {};
 // elements.  The count of the window is an ElementCount, so the two arguments
 // of window have two types.
 using RunStart = Side<side::RunStart, ElementCount>;
+
+// The arguments of build_array: an element that the arena can hold and that
+// holds no linear value, because the arena ends no object, and a callable
+// that gives the element of each position as a value of the element type,
+// with no throw.  The value builds the element in its place, so the element
+// needs no copy and no move.  The door calls make one time for each element,
+// and a call is no consume, so the door also asks that make holds no linear
+// value (the deleted twin of build_array).
+template <class T, class Marker, class Make>
+concept CanBuildArenaArray = ViewElement<T> && !std::is_const_v<T> && std::is_trivially_destructible_v<T>
+                          && ::foundation::linear::HoldsNoLinearValue<T> && std::is_nothrow_invocable_v<Make&, RunStart>
+                          && std::same_as<std::invoke_result_t<Make&, RunStart>, T> && AllocationCapability<Marker>;
 
 // The door of a BumpArena and an Epoch to the door of a Ref (the doors of the
 // owners above foundation/core/Ref.h).  Its one member is private, and the
@@ -445,25 +463,52 @@ private:
 
     // count copies of fill in new bytes, at the alignment of T, as a run of
     // the brand.  A count of zero gives the empty run and takes no bytes.  A
-    // count past the largest count of a View ends the process.  The callers
-    // give counts of run time from their data, so no type holds the bound.
-    // The check runs one time for each call, before the loop, and its
-    // refusal is cold and out of line.  Complexity: O(count).
+    // count past the largest count of a View ends the process
+    // (run_storage_).  Complexity: O(count).
     template <class T, class Brand>
     [[nodiscard]] ArenaRun<T, Brand> fill_(std::size_t count, T const& fill) noexcept {
         if (count == 0) {
             return ArenaRun<T, Brand>{};
         }
+        T* const first = run_storage_<T>(count);
+        for (std::size_t position = 0; position != count; ++position) {
+            ::new(static_cast<void*>(first + position)) T(fill);
+        }
+        return ArenaArrayDoor::built_run_<T, Brand>(first, count);
+    }
+
+    // count elements in new bytes, at the alignment of T, as a run of the
+    // brand.  make gives the element of each position as a value of T, from
+    // the first position to the last, and the value builds the element in
+    // its place, so no element copies or moves.  A count of zero gives the
+    // empty run, takes no bytes and calls make no time.  A count past the
+    // largest count of a View ends the process (run_storage_).  Complexity:
+    // O(count) calls of make.
+    template <class T, class Brand, class Make>
+    [[nodiscard]] ArenaRun<T, Brand> build_run_(std::size_t count, Make& make) noexcept {
+        if (count == 0) {
+            return ArenaRun<T, Brand>{};
+        }
+        T* const first = run_storage_<T>(count);
+        for (std::size_t position = 0; position != count; ++position) {
+            ::new(static_cast<void*>(first + position)) T(make(RunStart{ElementCount{position}}));
+        }
+        return ArenaArrayDoor::built_run_<T, Brand>(first, count);
+    }
+
+    // The bytes of count elements of T, above zero, at the alignment of T.  A
+    // count past the largest count of a View ends the process.  The callers
+    // give counts of run time from their data, so no type holds the bound.
+    // The check runs one time for each run, before the loop of the caller,
+    // and its refusal is cold and out of line.
+    template <class T>
+    [[nodiscard, gnu::always_inline]] T* run_storage_(std::size_t count) noexcept {
         if (count > max_view_count(sizeof(T))) [[unlikely]] {
             refuse_arena_array_(count, sizeof(T));
         }
         std::size_t const bytes =
             checked_mul(count, sizeof(T)).expect("the bytes of an array below the largest View fit in size_t");
-        T* const first = static_cast<T*>(bump_(bytes, alignof(T)));
-        for (std::size_t position = 0; position != count; ++position) {
-            ::new(static_cast<void*>(first + position)) T(fill);
-        }
-        return ArenaArrayDoor::built_run_<T, Brand>(first, count);
+        return static_cast<T*>(bump_(bytes, alignof(T)));
     }
 
     // The bump: bytes bytes at the alignment, from the current block.  bytes
@@ -608,6 +653,31 @@ public:
     void array(this BumpArena&& self, Marker, std::size_t,
                T const&) = delete("a temporary arena gives back its blocks at the end of the statement");
 
+    // count elements in new bytes of the arena, at the alignment of T, as a
+    // run of the brand of the arena.  make gives the element of each
+    // position as a value of T, from the first position to the last, and
+    // the value builds the element in its place.  So a run can hold an
+    // element that does not copy from a const object, such as a class that
+    // holds a Link.  A count of zero gives the empty run and calls make no
+    // time.  A count past the largest count of a View ends the process.
+    // Complexity: O(count) calls of make.
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+    [[nodiscard]] ArenaRun<T, Brand> build_array(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
+                                                 ElementCount count, Make&& make) noexcept {
+        return self.core_.template build_run_<T, Brand>(count.raw(), make);
+    }
+
+    // A make that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && (!::foundation::linear::HoldsNoLinearValue<Make>)
+    void build_array(this BumpArena& self, Marker, ElementCount, Make&&) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    template <class T, class Marker, class Make>
+    void build_array(this BumpArena&& self, Marker, ElementCount,
+                     Make&&) = delete("a temporary arena gives back its blocks at the end of the statement");
+
     // The bytes of each block that the arena holds.
     [[nodiscard]] std::size_t retained_bytes() const noexcept { return core_.retained_bytes_; }
 
@@ -658,8 +728,8 @@ private:
     Identity identity_;
 };
 
-// The epoch of an EpochArena (epochs above): the one door of make and array
-// of the arena while the body of with_epoch runs.  It cannot copy or move, and
+// The epoch of an EpochArena (epochs above): the one door of make, array and
+// build_array of the arena while the body of with_epoch runs.  It cannot copy or move, and
 // only with_epoch builds it, in its own frame.
 template <EpochBrand Brand>
 class Epoch final {
@@ -697,6 +767,26 @@ public:
     template <class T, class Marker>
     void array(this Epoch&& self, Marker, std::size_t,
                T const&) = delete("an epoch lives in the frame of with_epoch: take it by reference");
+
+    // count elements in new bytes of the epoch, each the value that make
+    // gives for its position, as a run of the epoch brand (build_array of
+    // BumpArena).  Complexity: O(count) calls of make.
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && ::foundation::linear::HoldsNoLinearValue<Make>
+    [[nodiscard]] ArenaRun<T, Brand> build_array(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
+                                                 ElementCount count, Make&& make) noexcept {
+        return (*self.core_).template build_run_<T, Brand>(count.raw(), make);
+    }
+
+    // A make that holds a linear value by value binds to this overload, so
+    // the refusal gives its reason.
+    template <class T, class Marker, class Make>
+        requires CanBuildArenaArray<T, Marker, Make> && (!::foundation::linear::HoldsNoLinearValue<Make>)
+    void build_array(this Epoch& self, Marker, ElementCount, Make&&) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    template <class T, class Marker, class Make>
+    void build_array(this Epoch&& self, Marker, ElementCount,
+                     Make&&) = delete("an epoch lives in the frame of with_epoch: take it by reference");
 
 private:
     template <ArenaMemberTag Tag>

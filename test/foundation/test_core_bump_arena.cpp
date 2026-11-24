@@ -147,6 +147,63 @@ void test_empty_array_takes_no_bytes() {
     });
 }
 
+// An element that copies only from an element that is not const, as a class
+// that holds a Link does.  array cannot fill a run with it.
+struct Numbered {
+    std::uint64_t position = 0;
+    std::uint64_t order = 0;
+
+    constexpr Numbered(std::uint64_t at, std::uint64_t made) noexcept : position{at}, order{made} {}
+    Numbered(Numbered&) noexcept = default;
+    Numbered(Numbered&&) noexcept = default;
+    Numbered& operator=(Numbered&) noexcept = default;
+    Numbered& operator=(Numbered&&) noexcept = default;
+    ~Numbered() = default;
+};
+
+// build_array builds each element in its place from the value that make
+// gives for its position, from the first position to the last.  A count of
+// zero calls make no time and takes no bytes.  An epoch builds its runs in
+// the same way.
+void test_build_array_builds_each_element() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    BumpArena<TestFamily> arena = ::foundation::core::mint_bump_arena<TestFamily>(Bytes{4096});
+    std::uint64_t calls = 0;
+    ArenaRun<Numbered, TestFamily> run =
+        arena.build_array<Numbered>(alloc, ElementCount{5}, [&calls](RunStart at) noexcept {
+            std::uint64_t const made = calls++;
+            return Numbered{at.value().raw(), made};
+        });
+    CRUCIBLE_FATAL_INVARIANT(run.size() == 5 && calls == 5);
+    std::uint64_t expected = 0;
+    for (Numbered const& element : run.view()) {
+        CRUCIBLE_FATAL_INVARIANT(element.position == expected && element.order == expected);
+        ++expected;
+    }
+
+    ::foundation::core::with_bump_arena(alloc, Bytes{4096}, [alloc, &calls](auto& scoped) noexcept {
+        auto const empty = scoped.template build_array<Numbered>(alloc, ElementCount{0}, [&calls](RunStart) noexcept {
+            ++calls;
+            return Numbered{0, 0};
+        });
+        CRUCIBLE_FATAL_INVARIANT(empty.size() == 0 && scoped.retained_bytes() == 0);
+    });
+    CRUCIBLE_FATAL_INVARIANT(calls == 5);
+
+    Scratch scratch{Bytes{4096}};
+    std::uint64_t const total = scratch.arena.with_epoch([alloc](ScratchEpoch& epoch) noexcept {
+        auto const lines = epoch.build_array<Wide>(alloc, ElementCount{3}, [](RunStart at) noexcept {
+            return Wide{.first = at.value().raw() + 1, .middle = 0, .last = 0};
+        });
+        std::uint64_t sum = 0;
+        for (Wide const& line : lines.view()) {
+            sum += line.first;
+        }
+        return sum;
+    });
+    CRUCIBLE_FATAL_INVARIANT(total == 6);
+}
+
 // A request larger than a block takes a block of its own size, and the arena
 // then serves from that block.
 void test_large_request_takes_its_own_block() {
@@ -373,6 +430,7 @@ int main() {
     test_array_fills_each_element();
     test_window_keeps_the_run();
     test_empty_array_takes_no_bytes();
+    test_build_array_builds_each_element();
     test_large_request_takes_its_own_block();
     test_family_arena_lives_in_a_box();
     test_position_names_its_object_in_its_arena();
