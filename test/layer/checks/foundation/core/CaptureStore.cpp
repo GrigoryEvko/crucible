@@ -6,6 +6,7 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/BumpArena.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Link.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
@@ -32,7 +33,6 @@ private:
 struct Cell {
     mutable View<int> cache{};
 };
-struct Opaque;
 template <class Tag>
 struct Tagged {
     int value = 0;
@@ -71,8 +71,10 @@ static_assert(are_slot_captures_refused());
 
 // The same slots behind an indirection: the field of [this] of an object that
 // holds a View, a Ref of it by value, an owner of Views by reference, a
-// mutable member of a const object, a class that the walk cannot read, and
-// the elements of a ViewMut of an outer frame that are Views.
+// mutable member of a const object, and the elements of a ViewMut of an outer
+// frame that are Views.  A class that is incomplete in the unit stops the
+// build with its name, so the fixture
+// neg_core_store_capture_reaches_an_incomplete_class pins that refusal.
 struct HolderWithBody {
     View<int> view{};
     [[nodiscard]] consteval auto body() {
@@ -89,9 +91,6 @@ struct OwnerOfViews {
 struct ConstCell {
     Cell const& cell;
 };
-struct RefOfOpaque {
-    Ref<Opaque, CheckBrand> opaque;
-};
 // A frame door gives its body the scope brand of the frame, so the shapes of
 // an outer frame take the brand as a template argument, and the brand stays in
 // the body of the check that makes it.
@@ -104,7 +103,48 @@ consteval bool is_outer_run_of_views_refused() {
     return is_refused<OuterRunOfViews<FrameScope>>();
 }
 static_assert(is_refused<ThisOfHolder>() && is_refused<RefOfHolder>() && is_refused<OwnerOfViews>());
-static_assert(is_refused<ConstCell>() && is_refused<RefOfOpaque>() && is_outer_run_of_views_refused());
+static_assert(is_refused<ConstCell>() && is_outer_run_of_views_refused());
+
+// C++ const does not go through a reference member, the target of a pointer
+// or a mutable member of a part, so a capture by const reference still
+// reaches the slots there: a reference member to a holder of a View, the
+// pointer of [this] of a closure to a holder of a View, and a mutable View in
+// a member by value.
+struct HolderByReference {
+    Holder& holder;
+};
+struct CellInside {
+    Cell cell;
+};
+struct ConstHolderByReference {
+    HolderByReference const& part;
+};
+struct ConstThisOfHolder {
+    ThisOfHolder const& body;
+};
+struct ConstCellInside {
+    CellInside const& part;
+};
+static_assert(is_refused<ConstHolderByReference>() && is_refused<ConstThisOfHolder>());
+static_assert(is_refused<ConstCellInside>());
+
+// A const Link of the base gives its target only as const (the check file of
+// foundation/core/Link.h pins each door), so the walk reads the target as
+// const: a capture by const reference of a node with a View behind a Link
+// passes.  A const Ref gives its target as it is, so the same node behind a
+// Ref refuses the body.
+struct LinkedHolder {
+    using brand_type = CheckBrand;
+    View<int> view{};
+    Link<LinkedHolder, CheckBrand> next{};
+};
+struct ConstLinkOfHolder {
+    Link<LinkedHolder, CheckBrand> const& link;
+};
+struct ConstRefOfHolder {
+    Ref<LinkedHolder, CheckBrand> const& ref;
+};
+static_assert(!is_refused<ConstLinkOfHolder>() && is_refused<ConstRefOfHolder>());
 
 // A capture that writes no borrow slot passes: an int by reference, a View by
 // const reference or by value, an inline owner of ints, an owner of ints on
@@ -240,6 +280,15 @@ consteval bool is_stash_refused() {
 }
 static_assert(is_stash_refused<OwnerStash>() && is_stash_refused<ArgumentsStash>());
 static_assert(is_stash_refused<CellStash>() && is_stash_refused<SynchronizedStash>());
+
+// The walk trusts refers_deep{} only on a class of the base, so a borrow
+// outside the base that states it and gives its target as it is refuses a
+// capture by const reference that reaches a View through it.
+template <class Target>
+struct[[= transfer::refers_deep{}]] OutsideDeep {
+    core::View<Target> targets{};
+};
+static_assert(is_stash_refused<OutsideDeep<core::Option<core::View<int>>> const>());
 
 // The test of the namespace walks up through each enclosing class and
 // function, and an unnamed namespace and the global namespace are outside the

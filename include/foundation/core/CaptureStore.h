@@ -18,16 +18,16 @@
 //     owned      the body owns the object: a capture by value, and each part
 //                of it.  A write of it stays in the body
 //     read_only  the body reads the object through a const reference, a
-//                pointer to const or a borrow of a const element.  The walk
-//                takes const as deep: a write through a borrow that the object
-//                holds is a write of the owner of that borrow, and each owner
-//                of the base gives a const view of its parts.  So the walk
-//                reads only the mutable members of such an object itself,
-//                and not the mutable members of its parts
+//                pointer to const or a borrow of a const element.  C++ const
+//                does not go through a reference member, the target of a
+//                pointer or a borrow, or a mutable member, so the walk reads
+//                each part of such an object as C++ does: each one stays
+//                writable when its type is not const
 //     writable   the body writes the object, and the caller can read it after
 //                the call: the target of a capture by a reference that is not
 //                const, of a pointer to an object that is not const, or of a
-//                borrow of an element that is not const
+//                borrow of an element that is not const, also inside a
+//                read_only object
 //   A borrow slot in the writable region refuses the body.  A borrow slot is
 //   a pointer to an object, a class that states refers{}, refers_unique{} or
 //   refers_deep{} (foundation/Transfer.h), such as a View or a Ref, and a
@@ -42,10 +42,19 @@
 //     * a member by value and a base keep the region of their class.  A
 //       mutable member is writable.  A member by reference, the target of a
 //       pointer and the target of a borrow are writable unless they are
-//       const, and read_only then.  The walk follows no reference, pointer or
-//       borrow of a read_only object
+//       const, and read_only then.  This holds in each region, also behind a
+//       const pointer and in a read_only object.  A pointer is a borrow slot
+//       only in the writable region
 //     * a borrow names its target: the first type argument of a View or a
-//       Ref
+//       Ref.  A class of the base that states refers_deep{}, such as a Link,
+//       gives only const access to its target when it is const, so its target
+//       is read_only in a read_only object
+//     * a class whose state the walk cannot read is a borrow slot in each
+//       region, because a const object of it can still hold a reference
+//       member.  A class that is incomplete in the unit stops the build in
+//       each region, with an error that names the class and the cause.  A
+//       unit that captures such an object includes the header that completes
+//       its class
 //     * a borrow of a frame, a class whose type arguments name a scope brand
 //       (foundation/Brand.h), is no borrow slot.  Only that frame makes a
 //       value of its brand, so a body of an inner frame writes none into it.
@@ -72,11 +81,12 @@
 // Such a body captures the parts that it writes.
 //
 // The walk is a function that is no template, so no unit can specialize what
-// it admits.  It reads each pair of a type and a region one time, and the
-// memo keeps the verdict of each captured type and each target of an
-// indirection for the translation unit.  Complexity: linear in the distinct
-// pairs that the body reaches, times the scan of the visited list, at compile
-// time only.
+// it admits.  It reads each pair of a type and a region one time.  It follows
+// each pointer, borrow and borrow of a frame in its own visited lists, so a
+// class that reaches itself ends the walk, and the memo keeps the verdict of
+// each captured type for the translation unit.  Complexity: linear in the
+// distinct pairs that the body reaches, times the scan of the visited list,
+// at compile time only.
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
@@ -197,6 +207,43 @@ enum class Annotated : unsigned char {
             || tr::detail::states(type, ^^tr::refers_deep));
 }
 
+// True for a borrow whose const object gives only const access to its
+// target: a class of the base (is_class_of_the_base_ of
+// foundation/core/Owner.h) that states refers_deep{}.  The walk trusts the
+// mark only in the base, and the check file of each such class pins that
+// each const door gives a borrow of a const target.
+[[nodiscard]] consteval bool gives_const_access_(std::meta::info type, Annotated annotated) {
+    namespace tr = ::foundation::transfer;
+    return annotated == Annotated::yes && is_class_of_the_base_(type) && tr::detail::states(type, ^^tr::refers_deep);
+}
+
+// The refusal of a capture that reaches the class Type, whose definition the
+// unit does not see.  The walk instantiates it only for such a class, and the
+// two assertions then stop the build: the first gives the cause and the cure,
+// and the second names the class.  So the walk fails closed on such a class in
+// each region, and the error names the class.  The condition depends on Type
+// and is false for each class.
+template <std::meta::info Type>
+consteval bool refuse_incomplete_class_() {
+    static_assert(Type == std::meta::info{},
+                  "the store check of a frame door: a capture of the body reaches a class, and the definition of that "
+                  "class is not visible in this unit.  The check reads each part of a capture, so it refuses a class "
+                  "whose parts it cannot read.  Include the header that defines the class.  The next message names "
+                  "the class");
+    static_assert(Type == std::meta::info{}, std::meta::display_string_of(Type));
+    return true;
+}
+
+template <std::meta::info Type>
+inline constexpr bool refuses_incomplete_class_v = refuse_incomplete_class_<Type>();
+
+// Stops the build with the name of the class type, whose definition the unit
+// does not see (refuse_incomplete_class_).
+[[nodiscard]] consteval bool refuse_incomplete_capture_(std::meta::info type) {
+    std::meta::info const arguments[] = {std::meta::reflect_constant(type)};
+    return std::meta::extract<bool>(std::meta::substitute(^^refuses_incomplete_class_v, arguments));
+}
+
 // The visited lists of the walk, one for each region, and the next node of
 // each list.
 class StoreWalk {
@@ -245,11 +292,10 @@ private:
 
 // True when the walk from the start type in the start region reaches a
 // borrow slot in the writable region.  The start type is bare, and a class
-// type is complete or the walk refuses it.  The walk asks the memo for the
-// target of each pointer, borrow and borrow of a frame, so the walk of one
-// target type runs one time in a translation unit.  A cycle of the memo would
-// need a class that holds a borrow of a frame of its own type, and such a
-// cycle stops the build with no verdict.
+// type is complete or the walk refuses it.  The walk pushes the target of each
+// pointer, borrow and borrow of a frame into its own lists, so a type that
+// reaches itself, such as a node with a pointer to its parent, ends with the
+// visited lists and asks no memo in the middle of its own walk.
 [[nodiscard]] consteval bool reaches_slot_from_(std::meta::info start_type, StoreRegion start) {
     namespace refl = ::foundation::reflect;
     constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
@@ -262,13 +308,12 @@ private:
         StoreRegion const region = walk.next_region();
         refl::TypeNode const node = walk.take(region);
         std::meta::info const type = node.type;
-        bool const is_read_only = region == read_only;
         if (std::meta::is_pointer_type(type)) {
             std::meta::info const pointee = std::meta::remove_pointer(type);
-            if (std::meta::is_function_type(pointee) || is_read_only) continue;
+            if (std::meta::is_function_type(pointee)) continue;
             if (region == writable) return true;
             refl::TypeNode const target = refl::node_reached_indirectly(pointee, read);
-            if (reaches_slot_(target.type, target_region_(target))) return true;
+            walk.push(target_region_(target), target);
             continue;
         }
         if (std::meta::is_array_type(type)) {
@@ -278,27 +323,23 @@ private:
         }
         bool const is_class = std::meta::is_class_type(type) || std::meta::is_union_type(type);
         if (!is_class) continue;
-        if (is_read_only) {
-            if (!node.may_read_members) continue;
-            for (refl::TypeNode const& member : refl::member_components_of(node, read)) {
-                if (member.is_mutable) walk.push(writable, member);
-            }
-            continue;
-        }
-        if (!node.may_read_members || refl::holds_unreadable_state(node)) return true;
+        if (!node.may_read_members) return refuse_incomplete_capture_(type);
+        if (refl::holds_unreadable_state(node)) return true;
         if (is_frame_borrow_(type)) {
             for (refl::TypeNode const& argument : refl::argument_components_of(node, read)) {
                 if (holds_no_value_of_(argument) || is_scope_brand_(argument.type)) continue;
-                if (reaches_slot_(argument.type, target_region_(argument))) return true;
+                walk.push(target_region_(argument), refl::node_reached_indirectly(argument.type, read));
             }
             continue;
         }
         Annotated const annotated = std::meta::annotations_of(type).size() != 0 ? Annotated::yes : Annotated::no;
         if (is_borrow_(type, annotated)) {
             if (region == writable) return true;
+            bool const gives_const = region == read_only && gives_const_access_(type, annotated);
             for (refl::TypeNode const& argument : refl::argument_components_of(node, read)) {
                 if (argument.is_value_argument) continue;
-                if (reaches_slot_(argument.type, target_region_(argument))) return true;
+                walk.push(gives_const ? read_only : target_region_(argument),
+                          refl::node_reached_indirectly(argument.type, read));
                 break;
             }
             continue;

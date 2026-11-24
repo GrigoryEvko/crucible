@@ -3559,6 +3559,28 @@ foundation_neg_compile_test(neg_core_grow_list_view_kept_past_its_frame
 foundation_neg_compile_test(neg_core_grow_text_view_kept_past_its_frame
   "no matching function for call to .foundation::core::GrowText::with_view"
   "StoresNoBorrowOutside")
+# C++ const does not go through a reference member, a pointer or a mutable
+# member, so the store check reads each of them as writable also in a const
+# object: a body that calls a const closure that keeps the View (the control
+# gives that closure as the body itself), the pointer of [this] of a const
+# closure, and a mutable member of a part of a const object.  A capture that
+# reaches a class with no visible definition stops the build with its name.
+foundation_neg_compile_test(neg_core_store_const_closure_keeps_the_view
+  "neg_core_store_const_closure_keeps_the_view\\.cpp:2[0-9]:[0-9]+: error: no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_store_closure_body_keeps_the_view
+  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_store_pointer_member_of_a_const_object
+  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_store_mutable_member_of_a_const_part
+  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "StoresNoBorrowOutside")
+foundation_neg_compile_test(neg_core_store_capture_reaches_an_incomplete_class
+  "a capture of the body reaches a class, and the definition of that class is not visible in this unit"
+  "static assertion failed: .anonymous.::Hidden"
+  "no matching function for call to .foundation::core::GrowList<int>::with_view")
 # The value door build_at of a FixedArray builds an element in its place, so
 # its function holds no state and no argument reaches the array.
 foundation_neg_compile_test(neg_core_fixed_array_build_at_fn_with_state

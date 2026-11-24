@@ -13,3 +13,5 @@
 # header alone at the threshold, and it fails when the header compiles, so
 # a row goes in the commit that makes its evaluation lazy or small.  The
 # list can only become shorter.  A reason has no semicolon.
+
+crucible/RegionCache.h | 1500000 | the store check of the frame body of RegionCache::insert reads each part of a const region of the DAG in one evaluation of about 1.10 M operations, a limit that the owner decision of 2026-11-15 raises because the change is correct

@@ -7,6 +7,8 @@
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Text.h>
+#include <foundation/core/Verbs.h>
 
 #include <type_traits>
 #include <utility>
@@ -88,6 +90,18 @@ static_assert(MatchesLink<NodeLink&, HoldsNothing> && MatchesLink<NodeLink&&, Ho
               && MatchesLink<NodeLink const&, HoldsNothing>);
 static_assert(!MatchesLink<NodeLink&, HoldsEnd> && !MatchesLink<NodeLink&&, HoldsEnd>
               && !MatchesLink<NodeLink const&, HoldsEnd>);
+
+// The store check of foundation/core/CaptureStore.h reads the target of a
+// const Link as const (gives_const_access_), because each door of a const
+// Link gives only a Ref of a const target: option, expect, the pass above,
+// match and is_some_and.  An arm of the match of a const Link takes no Ref of
+// a writable target, and the closed surface below makes a new door of Link
+// come with its own pin here.
+using TakesWritable = decltype([](Ref<Node, Chain> const&) noexcept { return 0; });
+using TakesConst = decltype([](Ref<Node const, Chain> const&) noexcept { return 0; });
+static_assert(MatchesLink<NodeLink const&, TakesConst> && !MatchesLink<NodeLink const&, TakesWritable>);
+inline constexpr TextView link_names{"Link is_some is_none option expect match is_some_and begin end"};
+CRUCIBLE_CLOSED_SURFACE(link_names, NodeLink);
 
 // The transfer facts of refers_deep{}: a const Link is Shareable when its
 // object is, and a Link is Sendable only when two threads can write its

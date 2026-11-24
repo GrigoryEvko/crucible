@@ -106,6 +106,10 @@ static_assert(!std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Fami
 static_assert(std::is_constructible_v<ArenaRun<int, Family>, ArenaRun<int, Family>&>);
 static_assert(!std::is_assignable_v<ArenaRun<int, Family>&, ArenaRun<int, Family> const&>);
 static_assert(sizeof(ArenaRun<int const, Family>) == sizeof(View<int const>));
+// The closed surface of a run makes a new door of it come with its own pin
+// of the const form here.
+inline constexpr TextView arena_run_names{"ArenaRun brand_type view window size"};
+CRUCIBLE_CLOSED_SURFACE(arena_run_names, ArenaRun<int, Family>);
 
 // A window takes its start and its count in two types, so no call swaps the
 // two, and a plain number is neither.  The start is a Side of the count, and
