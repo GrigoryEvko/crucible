@@ -926,13 +926,16 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         auto& core = core_(pinned);
         core.require_live_();
         const detail::step_origin origin = core.turn_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
         if constexpr (std::is_same_v<Proto, End>) {
+            // The mark is read before the release, which consumes the handle.
+            auto const mark = pinned.mark_;
+            auto [resource, slots] = std::move(pinned).release_parts_();
             auto back = make_<Proto, Resource, LoopCtx, Tracked, PS>(std::forward<Resource>(resource), std::move(slots),
                                                                      origin);
-            back.mark_ = pinned.mark_;
+            back.mark_ = mark;
             return back;
         } else {
+            auto [resource, slots] = std::move(pinned).release_parts_();
             return make_<Proto, Resource, LoopCtx, Tracked, PS>(std::forward<Resource>(resource), std::move(slots),
                                                                 origin);
         }
@@ -1027,7 +1030,7 @@ class HandleFactory final : ::foundation::NoObject<HandleFactory> {
         core.require_live_();
         const watch::endpoint_id endpoint = core.session_().endpoint;
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, held_slots] = std::move(core).release_parts_();
+        auto [resource, held_slots] = std::move(handle).release_parts_();
         if constexpr (slot_form_v<T> != SlotForm::Plain) {
             auto [message, next_slots] = HoldFactory::message_from_slots<T>(std::move(held_slots), std::move(value));
             if constexpr (std::is_same_v<Stop, detail::no_write_stop>) {
@@ -1169,7 +1172,7 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return enter_<Offer<Branches...>, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
                                                                             std::move(slots), origin);
     }
@@ -1253,7 +1256,7 @@ public:
         core.require_live_();
         core.hold_on_this_thread_();
         const detail::step_origin origin = core.turn_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return make_<Proto, Resource, LoopCtx, check::detail::pinned_policy<Action>, PS>(
             std::forward<Resource>(resource), std::move(slots), origin);
     }
@@ -1362,7 +1365,7 @@ public:
         core.require_live_();
         const watch::endpoint_id endpoint = core.session_().endpoint;
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, held_slots] = std::move(core).release_parts_();
+        auto [resource, held_slots] = std::move(handle).release_parts_();
         auto [token, rest] = HoldFactory::take_slot<detail::token_tag_t<T>>(std::move(held_slots));
         detail::write_through<T>(transport, resource, token, endpoint);
         return step_<R, Resource, LoopCtx, Policy, Next>(std::forward<Resource>(resource),
@@ -1401,7 +1404,7 @@ public:
         std::size_t word = step_word;
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return step_<keyed_landing_t<Send<T, R>>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
                                                                                  std::move(slots), origin);
     }
@@ -1453,7 +1456,7 @@ public:
         core.require_live_();
         const watch::endpoint_id endpoint = core.session_().endpoint;
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, held_slots] = std::move(core).release_parts_();
+        auto [resource, held_slots] = std::move(handle).release_parts_();
         T value = read_value_<T, Resource>(resource, std::forward<Source>(source), endpoint);
         if constexpr (slot_form_v<T> == SlotForm::Token) {
             HoldSlots<Next> slots =
@@ -1507,7 +1510,7 @@ public:
             detail::report_foreign_label_word(word, step_word, type_display_text_v<Recv<T, R>>);
         }
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return step_<keyed_landing_t<Recv<T, R>>, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource),
                                                                                  std::move(slots), origin);
     }
@@ -1555,7 +1558,7 @@ public:
         std::size_t word = detail::branch_wire_word_of<Choice, I>();
         detail::write_through<std::size_t>(transport, core.live_resource_(), word, core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
                                                                 origin);
     }
@@ -1585,7 +1588,7 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
                                                                 origin);
     }
@@ -1609,7 +1612,7 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return dispatch_<false, Choice, Resource, LoopCtx, Policy, PS>(
             word, std::forward<Resource>(resource), std::move(slots), origin, std::move(handler),
             std::make_index_sequence<Choice::branch_count>{});
@@ -1635,7 +1638,7 @@ public:
         const std::size_t word =
             detail::read_through<std::size_t>(transport, core.live_resource_(), core.session_().endpoint);
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return dispatch_<true, Choice, Resource, LoopCtx, Policy, PS>(word, std::forward<Resource>(resource),
                                                                       std::move(slots), origin, std::move(handler),
                                                                       std::make_index_sequence<Choice::branch_count>{});
@@ -1669,7 +1672,7 @@ public:
         auto& core = core_(handle);
         core.require_live_();
         const detail::step_origin origin = core.step_origin_();
-        auto [resource, slots] = std::move(core).release_parts_();
+        auto [resource, slots] = std::move(handle).release_parts_();
         return enter_<Choice, I, Resource, LoopCtx, Policy, PS>(std::forward<Resource>(resource), std::move(slots),
                                                                 origin);
     }
