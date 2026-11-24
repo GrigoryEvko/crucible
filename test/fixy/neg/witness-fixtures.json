@@ -1132,6 +1132,11 @@
       "constructor": "(?<!~)\\bOwnedRegion\\("
     },
     {
+      "name": "neg_witness_pages_pagerange_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bPageRange\\("
+    },
+    {
       "name": "neg_witness_perf_perfeventdoor_direct_construction",
       "reason": "use of deleted function",
       "constructor": "(?<!~)\\bPerfEventDoor\\("
@@ -2593,6 +2598,10 @@
     {
       "type": "fixy::os::LibraryFunction<int() noexcept, forge::brand>",
       "header": "fixy/os/Loader.h"
+    },
+    {
+      "type": "fixy::pages::PageRange",
+      "header": "fixy/os/Pages.h"
     },
     {
       "type": "fixy::thread::QuiescenceProof<int>",
