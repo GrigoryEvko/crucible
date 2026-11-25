@@ -30,6 +30,7 @@ using A_Locked = ::fixy::atom::mmap::with_share<share::Locked>;
 using A_Exec = ::fixy::atom::mmap::with_prot<prot::Exec>;
 using A_Jit = ::fixy::atom::mmap::trusted_jit;
 using A_Faults = ::fixy::atom::mmap::faults_on_truncate;
+using A_Unchanged = ::fixy::atom::mmap::unchanged_file;
 
 static_assert(::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_RO, A_Shared>);
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_Shared>);
@@ -91,7 +92,11 @@ inline constexpr ::fixy::os::RightSet kMapRight = ::fixy::os::RightSet::map;
 static_assert(CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Shared, A_Faults>);
 static_assert(!CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Shared>,
               "a shared map of a regular file needs the atom faults_on_truncate.");
-static_assert(CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Private>);
+static_assert(CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Private, A_Unchanged>);
+static_assert(!CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Private>,
+              "a private map of a regular file needs the atom unchanged_file.");
+static_assert(!CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Shared, A_Unchanged>,
+              "the atom of a private map is no licence of a shared one.");
 static_assert(CtxFitsFileMmapMint<IoBlockCtx, SealedKind, kMapRight, A_RO, A_Shared>);
 static_assert(!CtxFitsFileMmapMint<IoBlockCtx, SealedKind, kMapRight, A_RO, A_Private>,
               "sealed memory has only shared maps.");

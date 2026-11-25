@@ -58,10 +58,25 @@
 //   shared maps: a private map of it can read a page that another process
 //   writes, and a plain View of that page is a race.
 //
-//   A private map of a regular file also faults past the end of a file that
-//   another process made shorter, and no gate asks for a licence of it.
 //   map_foreign_region asks for no licence: the caller of the C library
 //   states the size of its object.
+//
+// Private map of a file
+//   A private map of a regular file faults past the end of a file that another
+//   process made shorter, also in a page that this process wrote, because the
+//   kernel takes each page past the new end.  And a write of another process to
+//   the file shows through the map until this process writes the page, so a
+//   plain View of the map races with it, and a value can change between a check
+//   and its use.  The gate asks for the atom unchanged_file, which states that
+//   no process changes the file.  faults_on_truncate says nothing of the bytes,
+//   so it is no licence of a private map, and unchanged_file is none of a shared
+//   one.
+//
+//   mint_file_copy of fixy/os/Mmap.h is the form with no licence: it reads the
+//   range into memory of its own, which is read-only, and it gives the error of
+//   the read and enxio for a file that ends before the range.  A file that
+//   another process changes during the read can give a mix of two states, and
+//   the copy never changes after it.
 //
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
@@ -160,11 +175,13 @@ template <typename Share>
 concept PrimaryShare = MappedShare<Share> && ::fixy::atom_pack::names_tag(primary_share_tags, ^^Share);
 
 // A licence of a region adds no bit to its map: trusted_jit licenses an
-// executable page, and faults_on_truncate a shared map of a regular file (the
-// end of a shared file).
+// executable page, faults_on_truncate a shared map of a regular file (the end
+// of a shared file), and unchanged_file a private one (the private map of a
+// file).
 template <typename Modifier>
 concept RegionLicence = std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>
-                     || std::is_same_v<Modifier, ::fixy::atom::mmap::faults_on_truncate>;
+                     || std::is_same_v<Modifier, ::fixy::atom::mmap::faults_on_truncate>
+                     || std::is_same_v<Modifier, ::fixy::atom::mmap::unchanged_file>;
 
 // A modifier of a region is a share flag that stacks on the primary, or a
 // licence.
@@ -218,6 +235,13 @@ map_region_(std::size_t length, int protection, int flags, int descriptor, std::
 // answer stays true for the life of the map (the end of a shared file).
 [[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
 map_sealed_region_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
+
+// Maps length bytes of memory with no file, as map_region_ does with the MAP_*
+// word flags, reads them from offset of the file of descriptor, and gives them
+// the PROT_* word protection.  A file that ends before the range gives enxio,
+// and each error unmaps the memory (the private map of a file).
+[[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
+map_file_copy_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
 
 // Unmaps the length bytes at address, which a call of map_region_ gave.  The
 // kernel refuses an unmap only for an address or a length that no map
@@ -377,13 +401,27 @@ template <typename Kind, typename Share, typename... Modifiers>
 concept SharedFileMapIsLicensed = !std::same_as<Kind, ::fixy::os::kind::File> || !std::is_same_v<Share, share::Shared>
                                || (std::is_same_v<Modifiers, ::fixy::atom::mmap::faults_on_truncate> || ...);
 
+// A private map of a regular file needs the licence unchanged_file (the
+// private map of a file).
+template <typename Kind, typename Share, typename... Modifiers>
+concept PrivateFileMapIsLicensed = !std::same_as<Kind, ::fixy::os::kind::File> || !std::is_same_v<Share, share::Private>
+                                || (std::is_same_v<Modifiers, ::fixy::atom::mmap::unchanged_file> || ...);
+
 // The gate of the map of a file through a handle of the kind Kind with the
 // rights Held.
 template <typename Ctx, typename Prot, typename Share, typename Kind, ::fixy::os::RightSet Held, typename... Modifiers>
 concept CtxFitsFileRegionMint =
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && !std::is_same_v<Share, share::Anonymous>
     && MappedFileKind<Kind> && SealedMapIsShared<Kind, Share> && SharedFileMapIsLicensed<Kind, Share, Modifiers...>
+    && PrivateFileMapIsLicensed<Kind, Share, Modifiers...>
     && ::fixy::os::HoldsRights<Held, file_map_rights<Prot, Share>()>;
+
+// The gate of the copy of a file through a handle with the rights Held (the
+// private map of a file): read-only anonymous memory, and the positioned reads
+// of the range.
+template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held>
+concept CtxFitsFileCopyMint = CtxFitsAnonRegionMint<Ctx, Prot, Share> && std::is_same_v<Prot, prot::ReadOnly>
+                           && ::fixy::os::HoldsRights<Held, ::fixy::os::RightSet::read | ::fixy::os::RightSet::seek>;
 
 // A descriptor that a C library opened, such as the descriptor of the map of a
 // BPF object (the source of a map).  It holds the int of the C library and owns
@@ -899,9 +937,9 @@ class [[nodiscard]] OwnedMmap final
                   "OwnedMmap<Tag, Prot, Share, Brand>: Share must be a primary share tag of fixy::mmap::share: "
                   "Private, Shared or Anonymous.  The type is the claim of the share mode.");
 
-    // Private, and mint_region is its only caller.  A public one lets any
-    // address be claimed, and the destructor unmaps whatever it was
-    // claimed over.
+    // Private, and the map of the doors below is its only caller.  A public
+    // one lets any address be claimed, and the destructor unmaps whatever it
+    // was claimed over.
     explicit OwnedMmap(void* address, std::size_t length) noexcept : Core{State{address, length}} {}
 
     // The map of the doors below.  It maps with the bits of Prot, Share and
@@ -909,9 +947,9 @@ class [[nodiscard]] OwnedMmap final
     // returned.  On failure it returns the error of the kernel and builds no
     // region.  The map reads the file of descriptor from the byte at offset,
     // and an anonymous map takes the descriptor -1 and the offset 0.  Door is
-    // the call of the door file that maps: map_region_, or map_sealed_region_
-    // for sealed memory.  The body deduces the return type
-    // Result<OwnedMmap, Errno>, for the reason that the doors below give.
+    // the call of the door file that maps: map_region_, map_sealed_region_ for
+    // sealed memory, or map_file_copy_ for a copy.  The body deduces the return
+    // type Result<OwnedMmap, Errno>, for the reason that the doors below give.
     template <auto Door, typename... Modifiers>
     [[nodiscard]] static auto map_(int descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
         // The body deduces its return type, and CRUCIBLE_TRY returns the error
@@ -973,6 +1011,21 @@ public:
         } else {
             return map_<&mmap::detail::map_region_, Modifiers...>(descriptor, length, offset);
         }
+    }
+
+    // A copy of length bytes of the file of a handle from the byte at offset, in
+    // read-only memory with no file (the private map of a file).  The borrow of
+    // an empty handle gives ebadf, and a file that ends before the range gives
+    // enxio.  The permission is read as in the anonymous form.  Complexity:
+    // linear in length.
+    template <::foundation::effects::IsExecCtx Ctx, ::fixy::os::RightSet Rights>
+        requires mmap::CtxFitsFileCopyMint<Ctx, Prot, Share, Rights>
+    [[nodiscard]] static auto
+    mint_file_copy(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+                   ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file, ::foundation::core::ByteCount length,
+                   ::fixy::fs::FileOffset offset) noexcept {
+        return map_<&mmap::detail::map_file_copy_>(::fixy::os::detail::HandleDoor::descriptor_of(file), length.raw(),
+                                                   offset);
     }
 
     // The map of a descriptor that a C library opened, such as the map of a

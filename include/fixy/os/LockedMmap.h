@@ -64,7 +64,8 @@
 //   - An object that gets shorter later.  Memory with a seal cannot, and the
 //     atom faults_on_truncate states the risk
 //   The mint of a file of a Handle makes no test.  A shared map takes sealed
-//   memory or the atom faults_on_truncate.  A Handle of the kind File is a
+//   memory or the atom faults_on_truncate, and a private map of a regular file
+//   takes the atom unchanged_file.  A Handle of the kind File is a
 //   regular file, because its open read the type (the opened descriptor of
 //   fixy/os/Fd.h), and no door maps a character device.  The page cache holds
 //   the pages of a regular file of a disk or of a tmpfs, so a page that a

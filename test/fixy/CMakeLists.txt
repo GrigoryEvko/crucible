@@ -6739,6 +6739,24 @@ fixy_neg_compile_test(neg_os_mmap_shared_file_without_licence
   "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
   "required for the satisfaction of .SharedFileMapIsLicensed<Kind, ")
 
+# A private map of a regular file shows the writes of another process and
+# faults past a new end, so the pack names the atom unchanged_file (the private
+# map of a file of fixy/os/OwnedMmap.h).  Neither licence is the other one.  The
+# copy of a file is the form with no atom: it needs the read right and a context
+# with Block.
+fixy_neg_compile_test(neg_os_mmap_private_file_with_shared_licence
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Private, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .PrivateFileMapIsLicensed<Kind, ")
+fixy_neg_compile_test(neg_os_mmap_shared_file_with_private_licence
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Unchanged>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .SharedFileMapIsLicensed<Kind, ")
+fixy_neg_compile_test(neg_os_file_copy_lacks_read_right
+  "no matching function for call to .mint_file_copy\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .HoldsRights<Held, \\(fixy::os::RightSet\\)5>. \\[with Held = fixy::os::RightSet::map\\]")
+fixy_neg_compile_test(neg_os_file_copy_ctx_lacks_block
+  "no matching function for call to .mint_file_copy\\(\\{anonymous\\}::IoOnlyCtx&, "
+  "required for the satisfaction of .CtxAdmitsMapping<Ctx, Prot, Share, Modifiers \\.\\.\\.>.")
+
 fixy_neg_compile_test(neg_os_mmap_non_ctx
   "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(const foundation::effects::Test&"
   "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = foundation::effects::Test.")
@@ -6946,6 +6964,20 @@ fixy_neg_compile_test(neg_owned_mmap_region_shared_file_without_licence
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Shared, "
   "required for the satisfaction of .SharedFileMapIsLicensed<Kind, Share, Modifiers \\.\\.\\.>.")
 
+# The copy of a file is read-only memory with no file, so a region that writes
+# and a region of the share Private take no copy.
+fixy_neg_compile_test(neg_owned_mmap_file_copy_writable
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, "
+  "the expression .is_same_v<Prot, fixy::mmap::prot::ReadOnly> \\[with Prot = fixy::mmap::prot::WriteCopy\\]. evaluated to .false.")
+fixy_neg_compile_test(neg_owned_mmap_file_copy_private
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
+  "the expression .is_same_v<Share, fixy::mmap::share::Anonymous> \\[with Share = fixy::mmap::share::Private\\]. evaluated to .false.")
+
+# A private map of a regular file needs the licence unchanged_file.
+fixy_neg_compile_test(neg_owned_mmap_region_private_file_without_licence
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
+  "required for the satisfaction of .PrivateFileMapIsLicensed<Kind, Share, Modifiers \\.\\.\\.>.")
+
 fixy_neg_compile_test(neg_owned_mmap_private_map_of_sealed_memory
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
   "required for the satisfaction of .SealedMapIsShared<Kind, Share>.")
@@ -7028,7 +7060,7 @@ fixy_neg_compile_test(neg_os_handle_kind_without_a_proof
   "template constraint failure for .template<class Kind, fixy::os::RightSet Rights>  requires  HandleKind<Kind> class fixy::os::Handle."
   "the expression .kind_row_of_\\(.* < fixy::os::detail::kind_count \\[with Kind = .*BlockDevice\\]. evaluated to .false.")
 fixy_neg_compile_test(neg_os_mmap_of_a_character_device
-  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Private>\\("
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Private, \\{anonymous\\}::Unchanged>\\("
   "fixy::os::kind::CharacterDevice")
 fixy_neg_compile_test(neg_os_fs_file_size_of_a_character_device
   "no matching function for call to .file_size\\(\\{anonymous\\}::IoBlockCtx&, fixy::os::HandleRef<fixy::os::kind::CharacterDevice"
@@ -7077,6 +7109,10 @@ fixy_neg_compile_test(neg_os_handle_ref_of_local
 fixy_neg_compile_test(neg_os_handle_ref_stored_from_local
   "neg_os_handle_ref_stored_from_local\\.cpp:19:[0-9]+: error: this function stores a borrow of the local owner into the parameter kept"
   "and the borrowed object ends with the frame of the function")
+
+# The copy of a file holds its range after the file changes, and refuses a range
+# outside the file.  The control shows the two risks of a private map.
+fixy_test(test_os_file_copy)
 
 # The duplicate of a handle: the use of it after the first handle closed, the
 # borrow that is not open, and a duplicate of a second thread.  The tsan preset

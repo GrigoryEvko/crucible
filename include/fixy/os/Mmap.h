@@ -11,12 +11,11 @@
 // Design notes:
 //
 //  1. The atoms fixy::atom::mmap::{with_prot, with_share, trusted_jit,
-//     faults_on_truncate} carry the axis and the row.  The context gate
-//     reads the row off the pack instead of naming IO and Block by hand.
-//     The two answers agree, and a pin in the check file of this header
-//     says so.  They stop agreeing the moment
-//     an atom lifts to something else, and the derived one is the one
-//     that stays right.
+//     faults_on_truncate, unchanged_file} carry the axis and the row.  The
+//     context gate reads the row off the pack instead of naming IO and Block
+//     by hand.  The two answers agree, and a pin in the check file of this
+//     header says so.  They stop agreeing the moment an atom lifts to
+//     something else, and the derived one is the one that stays right.
 //
 //  2. No atom carries an advice tag: advise takes an Advice directly.
 //     The tags themselves are declared in fixy/atoms/Os.h beside the
@@ -296,14 +295,16 @@ concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has
 
 // The gate of the map of a file through a handle of the kind Kind with the
 // rights Held: the gate of the pack, no anonymous share, the two rules of the
-// end of a shared file, and the rights that file_map_rights of
-// fixy/os/OwnedMmap.h names.  The last clause is the gate of the region door,
-// and the two clauses before it name the rule of a refusal.
+// end of a shared file, the rule of the private map of a file, and the rights
+// that file_map_rights of fixy/os/OwnedMmap.h names.  The last clause is the
+// gate of the region door, and the three clauses before it name the rule of a
+// refusal.
 template <typename Ctx, typename Kind, ::fixy::os::RightSet Held, typename... Atoms>
 concept CtxFitsFileMmapMint =
     CtxFitsMmapMint<Ctx, Atoms...> && !detail::pack_has_anonymous_v<Atoms...> && MappedFileKind<Kind>
     && SealedMapIsShared<Kind, detail::primary_share_of_t<Atoms...>>
     && SharedFileMapIsLicensed<Kind, detail::primary_share_of_t<Atoms...>, std::remove_cvref_t<Atoms>...>
+    && PrivateFileMapIsLicensed<Kind, detail::primary_share_of_t<Atoms...>, std::remove_cvref_t<Atoms>...>
     && detail::file_region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Kind,
                                          Held, detail::region_modifiers_t<Atoms...>>;
 
@@ -333,7 +334,9 @@ concept CtxFitsSafeAdvise = CtxAdmitsAdvise<Ctx> && KnownAdvice<Advice> && !Disc
 // and also read and write for a shared map that writes (the source of a map
 // of fixy/os/OwnedMmap.h).  A shared map takes sealed memory, or a regular
 // file with the atom faults_on_truncate in the pack (the end of a shared
-// file).  The map reads the file from the byte at offset.
+// file).  A private map takes a regular file with the atom unchanged_file (the
+// private map of a file), and mint_file_copy is the form with no atom.  The map
+// reads the file from the byte at offset.
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand, class Kind,
           ::fixy::os::RightSet Rights>
     requires CtxFitsFileMmapMint<Ctx, Kind, Rights, Atoms...>
@@ -350,6 +353,24 @@ mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> cons
     // adds is the atom pack: which atoms, and the row they lift to.
     return detail::linear_region_<Region>(
         detail::mint_region_with_<Region>(detail::region_modifiers_t<Atoms...>{}, ctx, owner, file, length, offset));
+}
+
+// A copy of length bytes of a regular file from the byte at offset, in
+// read-only memory of its own (the private map of a file of
+// fixy/os/OwnedMmap.h).  No later change of the file changes the copy, and no
+// read of it faults past an end.  The handle holds the read and the seek right,
+// because the reads are positioned, and they leave the position of the file.  A
+// file that ends before the range gives enxio, and an empty handle gives ebadf.
+// The permission is read as in mint_mmap.  Complexity: linear in length.
+template <::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand, ::fixy::os::RightSet Rights>
+    requires CtxFitsFileCopyMint<Ctx, prot::ReadOnly, share::Anonymous, Rights>
+[[nodiscard]] inline ::foundation::core::Result<Linear<OwnedMmap<Tag, prot::ReadOnly, share::Anonymous, Brand>>,
+                                                ::foundation::os::Errno>
+mint_file_copy(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
+               ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file, ::foundation::core::ByteCount length,
+               ::fixy::fs::FileOffset offset = ::fixy::fs::FileOffset{0}) noexcept {
+    using Region = OwnedMmap<Tag, prot::ReadOnly, share::Anonymous, Brand>;
+    return detail::linear_region_<Region>(Region::mint_file_copy(ctx, owner, file, length, offset));
 }
 
 // An anonymous mapping maps no file.  The permission is read as in

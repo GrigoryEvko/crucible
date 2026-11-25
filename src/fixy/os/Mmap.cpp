@@ -1,8 +1,8 @@
-// The map door of fixy (fixy/os/OwnedMmap.h and fixy/os/Mmap.h): the map,
-// the unmap and the advice of a region.  It issues the raw primitive of
-// foundation/os/Syscall.h, and foundation/os/MapWords.h gives the words of
-// a map, so this file includes no system header.  The size of sealed memory
-// comes from the file door (fixy/os/Fs.h).
+// The map door of fixy (fixy/os/OwnedMmap.h and fixy/os/Mmap.h): the map, the
+// copy of a file, the unmap and the advice of a region.  It issues the raw
+// primitive of foundation/os/Syscall.h, and foundation/os/MapWords.h gives the
+// words of a map, so this file includes no system header.  The size of sealed
+// memory and the reads of a copy come from the file door (fixy/os/Fs.h).
 
 #include <fixy/os/OwnedMmap.h>
 
@@ -22,6 +22,25 @@ namespace {
 
 namespace core = ::foundation::core;
 namespace os = ::foundation::os;
+
+// The end of a step of the copy of a file.
+using Copied = core::Result<core::Unit, os::Errno>;
+
+// Reads length bytes from offset of the file of descriptor into the memory at
+// address.  A file that ends before the range gives enxio.
+[[nodiscard]] Copied read_range(void* address, std::size_t length, int descriptor, std::int64_t offset) noexcept {
+    return ::fixy::fs::detail::read_full_at_(descriptor, address, length, offset)
+        .and_then([length](std::size_t read) noexcept -> Copied {
+            if (read != length) return core::err(os::Errno::enxio);
+            return core::Unit{};
+        });
+}
+
+// Gives the length bytes at address the PROT_* word protection.
+[[nodiscard]] Copied protect(void* address, std::size_t length, int protection) noexcept {
+    return os::result_of(os::raw_syscall(os::Syscall::mprotect, address, length, protection))
+        .map([](std::uint64_t) noexcept { return core::Unit{}; });
+}
 
 // The verdict of the test of a foreign object.
 using Tested = core::Result<core::Unit, ForeignTestFault>;
@@ -90,6 +109,19 @@ core::Result<void*, os::Errno> map_sealed_region_(std::size_t length, int protec
         return core::err(os::Errno::enxio);
     }
     return map_region_(length, protection, flags, descriptor, offset);
+}
+
+core::Result<void*, os::Errno> map_file_copy_(std::size_t length, int protection, int flags, int descriptor,
+                                              std::int64_t offset) noexcept {
+    CRUCIBLE_TRY(address, map_region_(length, os::kProtectReadWrite, flags, -1, 0));
+    Copied const copied = read_range(address, length, descriptor, offset).and_then([=](core::Unit) noexcept {
+        return protect(address, length, protection);
+    });
+    if (copied.is_err()) {
+        unmap_region_(address, length);
+        return core::err(copied.err().value_or(os::Errno::eio));
+    }
+    return address;
 }
 
 void unmap_region_(void* address, std::size_t length) noexcept {

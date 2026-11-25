@@ -17,12 +17,13 @@ struct DeviceRegion final {
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
 using ReadOnly = fixy::atom::mmap::with_prot<fixy::mmap::prot::ReadOnly>;
 using Private = fixy::atom::mmap::with_share<fixy::mmap::share::Private>;
+using Unchanged = fixy::atom::mmap::unchanged_file;
 }  // namespace
 
 int main() {
     IoBlockCtx ctx{eff::testing::test()};
     auto const owner = foundation::permissions::mint_permission_root<DeviceRegion>();
     fs::CharacterDevice<fs::DeviceAccess::read_only> const device{};
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Private>(ctx, owner, device.ref(), 4096);
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Private, Unchanged>(ctx, owner, device.ref(), 4096);
     return 0;
 }

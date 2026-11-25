@@ -1366,9 +1366,10 @@ witness <fixy/os/Handle.h> private | fixy::os::HandleRef<fixy::os::kind::File, f
 # stamp is private, and its one friend is the door that share_socket and
 # admit_foreign_socket call.
 witness <fixy/os/Socket.h> private | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read> | fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream, fixy::os::RightSet::read>{forge::rvalue<fixy::fs::DescriptorStamp>()}
-# The four doors of a descriptor handle.  No object of a door exists, its
-# members are private, and its friends are the gated mints that open a
+# The doors of a descriptor handle.  No object of a door exists, its members
+# are private, and its friends are the gated mints that open or duplicate a
 # descriptor.
+witness <fixy/os/Handle.h> deleted | fixy::os::DuplicateDoor | fixy::os::DuplicateDoor{}
 witness <fixy/os/Fs.h> deleted | fixy::fs::FileDoor | fixy::fs::FileDoor{}
 witness <fixy/os/Fs.h> deleted | fixy::fs::TemporaryDirectoryDoor | fixy::fs::TemporaryDirectoryDoor{}
 witness <fixy/os/Socket.h> deleted | fixy::net::SocketDoor | fixy::net::SocketDoor{}

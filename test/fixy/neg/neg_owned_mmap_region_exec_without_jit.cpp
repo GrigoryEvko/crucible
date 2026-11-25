@@ -24,6 +24,7 @@ int main() {
     using Brand = std::remove_cvref_t<decltype(owner)>::brand_type;
     using ExecRegion = fixy::OwnedMmap<Region, fixy::mmap::prot::Exec, fixy::mmap::share::Private, Brand>;
     fixy::fs::TemporaryFile const file{};
-    [[maybe_unused]] auto refused = ExecRegion::mint_region(ctx, owner, file.ref(), 4096, fixy::fs::FileOffset{0});
+    [[maybe_unused]] auto refused = ExecRegion::mint_region<fixy::atom::mmap::unchanged_file>(
+        ctx, owner, file.ref(), 4096, fixy::fs::FileOffset{0});
     return 0;
 }

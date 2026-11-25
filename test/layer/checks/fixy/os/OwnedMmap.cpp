@@ -116,7 +116,6 @@ template <class Prot, class Share, class Kind, RightSet Held, class... Modifiers
 inline constexpr bool maps_file = mmap::CtxFitsFileRegionMint<IoBlockCtx, Prot, Share, Kind, Held, Modifiers...>;
 
 static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::map, Faults>);
-static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Private, FileKind, RightSet::map>);
 static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::write, Faults>,
               "a handle with no map right maps nothing.");
 static_assert(!maps_file<mmap::prot::ReadWrite, mmap::share::Shared, FileKind, RightSet::map, Faults>,
@@ -137,6 +136,34 @@ static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Private, SealedKind,
               "sealed memory has only shared maps.");
 static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, os::kind::Directory, RightSet::map, Faults>,
               "a map of a file takes a regular file or sealed memory.");
+
+// The private map of a file: it needs its own licence, and no licence of
+// another map is one.
+using Unchanged = ::fixy::atom::mmap::unchanged_file;
+static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Private, FileKind, RightSet::map, Unchanged>);
+static_assert(maps_file<mmap::prot::WriteCopy, mmap::share::Private, FileKind, RightSet::map, Unchanged>);
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Private, FileKind, RightSet::map>,
+              "a private map of a regular file needs the licence unchanged_file.");
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Private, FileKind, RightSet::map, Faults>,
+              "the licence of a shared map says nothing of the bytes of the file.");
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::map, Unchanged>,
+              "the licence of a private map is none of a shared one.");
+static_assert(!maps_file<mmap::prot::Exec, mmap::share::Private, FileKind, RightSet::map, Jit>,
+              "the licence of an executable page is none of the private map of its file.");
+static_assert(maps_file<mmap::prot::Exec, mmap::share::Private, FileKind, RightSet::map, Jit, Unchanged>);
+
+// The copy of a file: read-only memory with no file, and the positioned reads.
+inline constexpr RightSet kReadAt = RightSet::read | RightSet::seek;
+static_assert(mmap::CtxFitsFileCopyMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Anonymous, kReadAt>);
+static_assert(!mmap::CtxFitsFileCopyMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Anonymous, RightSet::read>,
+              "a positioned read needs the seek right.");
+static_assert(!mmap::CtxFitsFileCopyMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Anonymous, RightSet::map>,
+              "a copy maps no file, so the map right gives none.");
+static_assert(!mmap::CtxFitsFileCopyMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous, kReadAt>,
+              "a copy is read-only.");
+static_assert(!mmap::CtxFitsFileCopyMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private, kReadAt>);
+static_assert(!mmap::CtxFitsFileCopyMint<IoOnlyCtx, mmap::prot::ReadOnly, mmap::share::Anonymous, kReadAt>,
+              "a copy reads the file, so its context admits a call that can wait.");
 static_assert(mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous>);
 static_assert(!mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private>);
 static_assert(mmap::CtxFitsForeignRegionMap<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared>);
@@ -150,8 +177,10 @@ static_assert(!mmap::MappedProt<NotAProt> && !mmap::MappedProt<const mmap::prot:
 static_assert(mmap::MappedProt<ReadOnlyAlias>);
 static_assert(mmap::PrimaryShare<mmap::share::Anonymous> && !mmap::PrimaryShare<mmap::share::Locked>);
 static_assert(mmap::RegionModifier<mmap::share::Locked> && !mmap::RegionModifier<mmap::share::Private>);
-static_assert(mmap::RegionModifier<Jit> && mmap::RegionModifier<Faults> && !mmap::RegionLicence<mmap::share::Locked>);
-static_assert(mmap::detail::modifier_flags<Faults>() == 0 && mmap::detail::modifier_flags<Jit>() == 0,
+static_assert(mmap::RegionModifier<Jit> && mmap::RegionModifier<Faults> && mmap::RegionModifier<Unchanged>
+              && !mmap::RegionLicence<mmap::share::Locked>);
+static_assert(mmap::detail::modifier_flags<Faults>() == 0 && mmap::detail::modifier_flags<Jit>() == 0
+                  && mmap::detail::modifier_flags<Unchanged>() == 0,
               "a licence adds no bit to the map");
 
 // The W^X rule reads the bits of each row: no row writes and executes,
