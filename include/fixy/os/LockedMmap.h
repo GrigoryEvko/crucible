@@ -23,7 +23,8 @@
 // with_read and with_write are the doors of SharedLocked
 // (fixy/os/SharedLocked.h), with their gates: the result of a body holds no
 // borrow, and a door never waits.  A body gets a LockedRegion, which gives the
-// views of the pages and the advices that discard no page.
+// views of the pages and the advices that discard no page.  The region of a
+// write body also sets the memory policy of the pages.
 //
 // A mint maps the pages into the object, so no code has the mapping before
 // the lock.  A LockedRegion does not move and takes no assignment, so no body
@@ -33,7 +34,7 @@
 // capture in a type that names no brand, as with each body of SharedLocked.
 //
 // The mapping stays in the object until its end.  So a door that takes the
-// mapping by move has no form here: the NUMA placement
+// mapping by move has no form here: the owner of a NUMA placement
 // (fixy/os/NumaPlacement.h) and the release of OwnedMmap.  The two mints map a
 // file of a Handle or no file, and not a descriptor of a C library.
 //
@@ -45,6 +46,7 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Handle.h>
 #include <fixy/os/Mmap.h>
+#include <fixy/os/NumaPlacement.h>
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/os/SharedLocked.h>
 #include <foundation/Brand.h>
@@ -108,6 +110,12 @@ template <typename Ctx, typename Advice, typename Tag>
 concept CtxFitsReleaseAwareAdvise =
     CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice> && ::foundation::permissions::PoolCtx<Tag, Ctx>;
 
+// The gate of the memory policy of a region: the rows of mbind(2), and an
+// anonymous mapping, because the kernel keeps a policy for no other range
+// (fixy/os/NumaPlacement.h).
+template <typename Ctx, typename Share>
+concept CtxFitsRegionPolicy = ::fixy::numa::CtxFitsNumaBind<Ctx> && std::is_same_v<Share, share::Anonymous>;
+
 class LockedMmapDoor;
 
 // The key of the constructor of a LockedMmap and of its region.  The door of
@@ -152,6 +160,23 @@ public:
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
     advise(Ctx const& ctx) const noexcept {
         return ::fixy::mmap::advise<Advice>(ctx, mapping_);
+    }
+
+    // Sets the memory policy Policy over nodes for the pages, and moves the
+    // pages that the region holds to the nodes of the policy.  The refusals
+    // are those of fixy::numa::mint_numa_policy.  The kernel keeps the policy
+    // over a discard.  A read body gets a const region, so no reader moves the
+    // pages of the other readers.
+    //
+    // The call gives no proof of the policy, and it makes no claim false.  A
+    // NumaPlacement and a NumaPolicyPlacement own the mapping of their claim,
+    // and no door puts an existing mapping into a LockedMmap.  So no placement
+    // states a claim about the pages of a live LockedMmap.
+    template <NumaPolicy Policy, ::foundation::effects::IsExecCtx Ctx>
+        requires CtxFitsRegionPolicy<Ctx, Share>
+    [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+    set_memory_policy(Ctx const& /*ctx*/, NumaNodeMask const& nodes) & noexcept {
+        return ::fixy::detail::set_range_policy_<Policy>(mapping_.data(), mapping_.size(), nodes);
     }
 
     template <typename T>

@@ -9,6 +9,8 @@
 //   - An advice that discards no page is a call of the region in a body.
 //   - A write body and a read body get a View of a range of the pages, of a
 //     counted extent and of a fixed extent.  A range past the end gives none.
+//   - A write body sets the memory policy of the pages, and the policy stays
+//     over a discard.  It refuses the masks that the policy mint refuses.
 //   - A shared mapping of sealed memory keeps its bytes over a discard,
 //     because the kernel reads them again from the memory.
 
@@ -18,6 +20,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/Fs.h>
+#include <fixy/os/NumaPlacement.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Errno.h>
@@ -229,6 +232,81 @@ void a_body_gets_a_view_of_a_range() {
     CRUCIBLE_TEST_ASSERT(kTest, is_past_the_end_refused == ::fixy::some(true));
 }
 
+// Sets the policy over nodes in a write body.  No reader and no writer is in
+// the region of the object.
+template <::fixy::NumaPolicy Policy, class Locked>
+[[nodiscard]] ::fixy::Result<::fixy::Unit, ::foundation::os::Errno> set_policy(Locked& locked,
+                                                                               ::fixy::NumaNodeMask const& nodes) {
+    return locked
+        .with_write(kCtx,
+                    [nodes](auto& region) noexcept { return region.template set_memory_policy<Policy>(kCtx, nodes); })
+        .expect("no reader and no writer is in the region");
+}
+
+// True when the one page of the object is on no node other than node.  No
+// value when the kernel refuses the query.
+template <class Locked>
+[[nodiscard]] ::fixy::Option<bool> is_page_on_node(Locked& locked, ::fixy::NumaNodeId node) {
+    return locked
+        .with_read(kCtx,
+                   [node](auto const& region) noexcept {
+                       ::fixy::Option<bool> is_on_node = ::fixy::none;
+                       for (auto const bytes : region.template view<std::uint8_t const>())
+                           for (auto const& census : ::fixy::numa::census_page_nodes(kCtx, bytes).ok())
+                               is_on_node = ::fixy::some(census.pages() == 1 && census.pages_off(node) == 0);
+                       return is_on_node;
+                   })
+        .expect("no writer is in the region");
+}
+
+// Binds the one page of the object to node, and writes it before and after a
+// discard.  False when the kernel of the host sets no policy.  The object has
+// no page at the call of the policy, so the call moves none.
+template <class Locked>
+[[nodiscard]] bool bind_page_to_node(Locked& locked, ::fixy::NumaNodeId node) {
+    CRUCIBLE_TEST_ASSERT(kTest, locked.template advise_release_aware<DontNeed>(kCtx).is_ok());
+    auto const set = set_policy<::fixy::NumaPolicy::bind>(
+        locked, ::fixy::make_numa_node_mask(node).expect("an allowed node is concrete"));
+    if (set.err() == ::fixy::some(::foundation::os::Errno::enosys)
+        || set.err() == ::fixy::some(::foundation::os::Errno::eperm)) {
+        return false;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, set.is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(locked, std::uint8_t{0x3C}));
+    CRUCIBLE_TEST_ASSERT(kTest, is_page_on_node(locked, node) == ::fixy::some(true));
+    CRUCIBLE_TEST_ASSERT(kTest, locked.template advise_release_aware<DontNeed>(kCtx).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(locked, std::uint8_t{0xA5}));
+    CRUCIBLE_TEST_ASSERT(kTest, is_page_on_node(locked, node) == ::fixy::some(true));
+    return true;
+}
+
+void a_write_body_sets_a_memory_policy() {
+    auto locked =
+        mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
+            .expect("an anonymous mapping of one page");
+    ::fixy::NumaNodeMask two_nodes{};
+    CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{0}).is_ok());
+    CRUCIBLE_TEST_ASSERT(kTest, two_nodes.insert(::fixy::NumaNodeId{1}).is_ok());
+    auto const empty_mask = set_policy<::fixy::NumaPolicy::bind>(*locked, ::fixy::NumaNodeMask{});
+    auto const two_preferred = set_policy<::fixy::NumaPolicy::preferred>(*locked, two_nodes);
+    CRUCIBLE_TEST_ASSERT(kTest, empty_mask.err() == ::fixy::some(::foundation::os::Errno::einval));
+    CRUCIBLE_TEST_ASSERT(kTest, two_preferred.err() == ::fixy::some(::foundation::os::Errno::einval));
+
+    ::fixy::NumaNodeMask const allowed =
+        ::fixy::numa::read_allowed_numa_nodes(kCtx).expect("the status of the process holds its allowed nodes");
+    auto const slots = allowed.slots();
+    CRUCIBLE_TEST_ASSERT(kTest, slots.size() > 0);
+    bool const is_each_policy_set = slots.with_keys([&locked](auto const& keys) noexcept {
+        for (::fixy::NumaNodeMask::Slot const slot : keys) {
+            if (!bind_page_to_node(*locked, ::fixy::numa_node_of_slot(slot))) return false;
+        }
+        return true;
+    });
+    if (!is_each_policy_set) {
+        ::fixy::report(::fixy::Sink::Err, "[skipped] the kernel of this host sets no memory policy\n");
+    }
+}
+
 // The bytes of a shared mapping of sealed memory live in the memory.  A
 // discard drops the pages of the mapping alone, and the next read loads the
 // bytes again.
@@ -275,6 +353,7 @@ int main() {
     a_failed_map_gives_the_exclusive_back();
     an_advice_that_discards_nothing_runs_in_a_body();
     a_body_gets_a_view_of_a_range();
+    a_write_body_sets_a_memory_policy();
     a_shared_mapping_keeps_its_bytes();
     ::fixy::check::pass(kTest, "test_os_locked_mmap: PASSED\n");
     return 0;

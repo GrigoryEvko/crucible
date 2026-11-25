@@ -33,6 +33,13 @@ static_assert(!CtxFitsReleaseAwareAdvise<NoPoolCtx, advice::DontNeed, ProbeRegio
 static_assert(!CtxFitsReleaseAwareAdvise<NoBlockCtx, advice::DontNeed, ProbeRegion>,
               "the system call can park the caller, so the context owns Block.");
 
+// A memory policy asks for the rows of mbind(2) and for an anonymous mapping,
+// and it asks for no row of the pool, because a body already holds the lease.
+static_assert(CtxFitsRegionPolicy<AllRowsCtx, share::Anonymous> && CtxFitsRegionPolicy<NoPoolCtx, share::Anonymous>);
+static_assert(!CtxFitsRegionPolicy<NoBlockCtx, share::Anonymous>);
+static_assert(!CtxFitsRegionPolicy<AllRowsCtx, share::Shared> && !CtxFitsRegionPolicy<AllRowsCtx, share::Private>,
+              "the kernel keeps a policy for an anonymous private range only.");
+
 // The object is pinned.  No code outside the mints builds one, because no
 // code outside their door builds the key.
 static_assert(!std::is_move_constructible_v<Locked> && !std::is_copy_constructible_v<Locked>);

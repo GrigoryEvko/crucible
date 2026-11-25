@@ -6499,7 +6499,8 @@ fixy_neg_compile_test(neg_os_io_uring_ring_repeated_flag
 # fixtures show the routes that stay closed: a discard of a plain mapping
 # with a token from outside, an object that no mint made, a View of the
 # pages out of a read body, a mapping that a write body puts into the lock,
-# and an advice on the release-aware door that discards no page.
+# an advice on the release-aware door that discards no page, a memory policy
+# that a read body sets, and a memory policy of a shared mapping.
 fixy_test(test_os_locked_mmap)
 fixy_neg_compile_test(neg_os_locked_mmap_discard_of_a_plain_mapping
   "neg_os_locked_mmap_discard_of_a_plain_mapping\\.cpp:37:[0-9]+: error:"
@@ -6516,6 +6517,12 @@ fixy_neg_compile_test(neg_os_locked_mmap_write_body_assigns_the_region
 fixy_neg_compile_test(neg_os_locked_mmap_safe_advice_on_release_door
   "advise_release_aware<fixy::mmap::advice::WillNeed>\\(const \\{anonymous\\}::MapCtx&\\)."
   "required for the satisfaction of .DiscardsPages<Advice>. .with Advice = fixy::mmap::advice::WillNeed.")
+fixy_neg_compile_test(neg_os_locked_mmap_policy_in_a_read_body
+  "neg_os_locked_mmap_policy_in_a_read_body\\.cpp:29:[0-9]+: error: passing .const fixy::mmap::LockedRegion<.*. as .this. argument discards qualifiers"
+  "in call to .*fixy::mmap::LockedRegion<Tag, Prot, Share, Brand>::set_memory_policy\\(const Ctx&, const fixy::NumaNodeMask&\\) &")
+fixy_neg_compile_test(neg_os_locked_mmap_policy_of_a_shared_mapping
+  "neg_os_locked_mmap_policy_of_a_shared_mapping\\.cpp:30:[0-9]+: error: no matching function for call to .fixy::mmap::LockedRegion<.*::set_memory_policy<fixy::NumaPolicy::bind>"
+  "required for the satisfaction of .CtxFitsRegionPolicy<Ctx, Share>.*Share = fixy::mmap::share::Shared")
 # The two mints of a LockedMmap have the gates of the mints of a mapping.
 # Two fixtures for each mint: a context without Block, and the licence of a
 # shared file or the fresh brand of the exclusive.

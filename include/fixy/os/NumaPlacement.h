@@ -221,6 +221,20 @@ inline constexpr std::size_t numa_mask_word_bits = sizeof(unsigned long) * CHAR_
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 mbind_sys(void* address, std::size_t length, NumaPolicy policy, NumaNodeMask const& nodes) noexcept;
 
+// Sets the policy Policy over nodes for the range, as mbind_sys does.  An
+// empty mask and a preferred policy over more than one node give einval, and
+// the call makes no system call.  mint_numa_policy and the region of a
+// LockedMmap (fixy/os/LockedMmap.h) set a policy through this helper.
+template <NumaPolicy Policy>
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
+set_range_policy_(void* address, std::size_t length, NumaNodeMask const& nodes) noexcept {
+    bool const is_one_node_policy = Policy == NumaPolicy::preferred;
+    if (nodes.is_empty() || (is_one_node_policy && nodes.size() != 1)) {
+        return ::foundation::core::err(::foundation::os::Errno::einval);
+    }
+    return mbind_sys(address, length, Policy, nodes);
+}
+
 }  // namespace detail
 
 template <typename Tag, typename Prot, typename Brand>
@@ -409,12 +423,11 @@ mint_numa_policy(Ctx const&, ::fixy::Linear<::fixy::NumaBindableRegion<Tag, Prot
                  NumaNodeMask const& nodes) noexcept {
     // The region leaves the Linear first, as in mint_numa_placement.
     ::fixy::NumaBindableRegion<Tag, Prot, Brand> owned = std::move(region).consume();
-    bool const is_one_node_policy = Policy == NumaPolicy::preferred;
-    if (nodes.is_empty() || (is_one_node_policy && nodes.size() != 1) || !owned.is_mapped()) {
+    if (!owned.is_mapped()) {
         return ::foundation::core::err(::foundation::os::Errno::einval);
     }
     ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno> const set =
-        ::fixy::detail::mbind_sys(owned.data(), owned.size(), Policy, nodes);
+        ::fixy::detail::set_range_policy_<Policy>(owned.data(), owned.size(), nodes);
     for (::foundation::os::Errno const error : set.err()) {
         return ::foundation::core::err(error);
     }
