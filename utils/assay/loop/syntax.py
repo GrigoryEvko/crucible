@@ -673,8 +673,8 @@ def run(build_dir: Path, root: Path, jobs: int) -> int:
     kept = sum(1 for result in results if result.is_kept)
     check_report.write_line(
         f"loop syntax: {len(results) - len(failed)} of {len(results)} units parse, {kept} of them with the kept report "
-        f"of an earlier parse, in {wall_s:.1f} s of wall time and {cpu_s:.1f} s of CPU time with {jobs} jobs.  The "
-        f"input targets took {input_s:.1f} s"
+        f"of an earlier parse, in {wall_s:.1f} s of wall time and {cpu_s:.1f} s of CPU time, at most {jobs} at one "
+        f"time and fewer when a jobserver gives fewer slots.  The input targets took {input_s:.1f} s"
     )
     return 1 if failed else 0
 
