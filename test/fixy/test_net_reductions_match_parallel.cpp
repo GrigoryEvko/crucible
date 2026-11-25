@@ -154,23 +154,27 @@ template <class T>
 // The combine of the symbolic run.  A combine of left and right takes the step
 // that reads left on its left port, when that step reads right on its right
 // port, and gives the node of the step.  Each other combine is stray: it adds
-// one to strays and gives no_add, which no step reads.  Each shard combines
-// with a copy, so the counts are atomic.
+// one to strays and gives no_add, which no step reads.  Each thread combines
+// with a copy, so the counts are atomic.  The two tables that the combine only
+// reads hold atomic cells too: a combine of a parallel form holds no borrow of
+// plain elements (the inputs of the shards of fixy/concurrent/ParallelTree.h).
 struct PlanCombine {
-    View<core::TreeStep const> steps;
-    View<std::uint32_t const> step_of_left;
+    View<Atomic<std::uint32_t> const> right_of_step;
+    View<Atomic<std::uint32_t> const> step_of_left;
     View<Atomic<std::uint32_t>> fired;
     View<Atomic<std::uint32_t>> strays;
     std::uint32_t leaves = 0;
 
     [[nodiscard]] Symbol operator()(Symbol const& left, Symbol const& right) const noexcept {
-        std::uint32_t const held =
-            left.node < step_of_left.size()
-                ? *step_of_left.get(left.node).expect("a test reads an element at or past the count of its View")
-                : 0;
+        std::uint32_t const held = left.node < step_of_left.size()
+                                     ? step_of_left.get(left.node)
+                                           .expect("a test reads an element at or past the count of its View")
+                                           ->load_acquire()
+                                     : 0;
         if (held != 0
-            && static_cast<std::uint32_t>(
-                   steps.get(held - 1).expect("a test reads an element at or past the count of its View")->right)
+            && right_of_step.get(held - 1)
+                       .expect("a test reads an element at or past the count of its View")
+                       ->load_acquire()
                    == right.node) {
             static_cast<void>(fired.get(held - 1)
                                   .expect("a test reads an element at or past the count of its View")
@@ -188,20 +192,26 @@ struct PlanCombine {
 // on each coupling.
 [[nodiscard]] bool does_parallel_reduce_follow(View<Symbol const> run) noexcept {
     HeapArray<core::TreeStep> const steps = plan_tree_of(run);
-    HeapArray<std::uint32_t> step_of_left =
-        ::fixy::mint_heap_array(tree::test_alloc(), ::fixy::strict_add(run.size(), steps.size()), std::uint32_t{0});
+    View<core::TreeStep const> const planned{steps.view()};
+    HeapArray<Atomic<std::uint32_t>> right_of_step = ::foundation::core::mint_heap_array_with<Atomic<std::uint32_t>>(
+        tree::test_alloc(), steps.size(), [planned](std::size_t index) noexcept {
+            return Atomic<std::uint32_t>{static_cast<std::uint32_t>(
+                planned.get(index).expect("a test reads an element at or past the count of its View")->right)};
+        });
+    auto const zero = [](std::size_t) noexcept { return Atomic<std::uint32_t>{0}; };
+    HeapArray<Atomic<std::uint32_t>> step_of_left = ::foundation::core::mint_heap_array_with<Atomic<std::uint32_t>>(
+        tree::test_alloc(), ::fixy::strict_add(run.size(), steps.size()), zero);
     std::uint32_t step = 0;
-    step_of_left = ::fixy::with_mut(std::move(step_of_left), [&steps, &step](auto lefts) noexcept {
-        for (core::TreeStep const& one : steps) {
+    step_of_left = ::fixy::with_mut(std::move(step_of_left), [planned, &step](auto lefts) noexcept {
+        for (core::TreeStep const& one : planned) {
             ++step;
             auto left = lefts.get_mut(static_cast<std::size_t>(one.left))
                             .expect("a test reads an element at or past the count of its View");
-            *left = step;
+            left->store_release(step);
         }
     });
     auto const leaves = static_cast<std::uint32_t>(run.size());
     std::uint32_t const root = leaves + step - 1;
-    auto const zero = [](std::size_t) noexcept { return Atomic<std::uint32_t>{0}; };
     return is_each_coupling([&]<spawn::BodyCoupling Coupling, std::size_t Shards>() noexcept {
         tree::BgCtx const ctx{tree::eff::testing::bg()};
         HeapArray<Atomic<std::uint32_t>> fired =
@@ -211,19 +221,19 @@ struct PlanCombine {
         // The combine keeps a View of each table of counts, so each call of
         // the combine runs in the frames of the two tables.
         Symbol result{};
-        fired = ::fixy::with_mut(
-            std::move(fired), [&strays, &result, &steps, &step_of_left, &ctx, leaves, run](auto fired_counts) noexcept {
-                strays = ::fixy::with_mut(std::move(strays), [&fired_counts, &result, &steps, &step_of_left, &ctx,
-                                                              leaves, run](auto stray_counts) noexcept {
-                    PlanCombine const combine{View<core::TreeStep const>{steps.view()},
-                                              View<std::uint32_t const>{step_of_left.view()},
-                                              ::foundation::core::share_atomic_cells(fired_counts),
-                                              ::foundation::core::share_atomic_cells(stray_counts), leaves};
-                    result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(),
-                                                                                              run, combine)
-                                 .expect("the run has leaves");
-                });
+        fired = ::fixy::with_mut(std::move(fired), [&strays, &result, &right_of_step, &step_of_left, &ctx, leaves,
+                                                    run](auto fired_counts) noexcept {
+            strays = ::fixy::with_mut(std::move(strays), [&fired_counts, &result, &right_of_step, &step_of_left, &ctx,
+                                                          leaves, run](auto stray_counts) noexcept {
+                PlanCombine const combine{View<Atomic<std::uint32_t> const>{right_of_step.view()},
+                                          View<Atomic<std::uint32_t> const>{step_of_left.view()},
+                                          ::foundation::core::share_atomic_cells(fired_counts),
+                                          ::foundation::core::share_atomic_cells(stray_counts), leaves};
+                result = ::fixy::concurrent::reduce_by_tree_in_parallel<Coupling, Shards>(ctx, tree::test_alloc(), run,
+                                                                                          combine)
+                             .expect("the run has leaves");
             });
+        });
         bool is_each_fired =
             strays.view().get(0).expect("a test reads an element at or past the count of its View")->load_acquire()
             == 0;

@@ -7593,6 +7593,39 @@ fixy_neg_compile_test(neg_spawn_reads_with_a_name
 fixy_neg_compile_test(neg_spawn_reads_beside_a_region_of_boxes
   "static assertion failed: mint_parallel_for: an input of reads\\(\\) takes a compare of bytes with the region"
   "an element of the region names an object past its own bytes")
+# A body of a parallel loop captures no borrow of plain elements, because a
+# second shard can write the element that the body reads.  Each fixture holds
+# one form of the borrow, and the message names the capture and reads().
+fixy_neg_compile_test(neg_spawn_parallel_for_captured_view
+  "static assertion failed: mint_parallel_for: the body captures .view. \\(field __view, type const foundation::core::View<const long unsigned int>\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_view_by_reference
+  "static assertion failed: mint_parallel_for: the body captures .view. \\(field __view, type const foundation::core::View<const long unsigned int>&\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_captured_borrow_of_region
+  "static assertion failed: mint_parallel_for: the body captures .borrow. \\(field __borrow, type const foundation::core::View<const long unsigned int>\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_borrow_of_region_by_reference
+  "static assertion failed: mint_parallel_for: the body captures .borrow. \\(field __borrow, type const foundation::core::View<const long unsigned int>&\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_captured_strided_view
+  "static assertion failed: mint_parallel_for: the body captures .strided. \\(field __strided, type const foundation::core::StridedView<const long unsigned int, 1>\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_captured_ref
+  "static assertion failed: mint_parallel_for: the body captures .last. \\(field __last, type const foundation::core::Ref<const long unsigned int"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_view_in_a_captured_closure
+  "static assertion failed: mint_parallel_for: the body captures .first_of_run. \\(field __first_of_run, type const main\\(\\)::<lambda\\(\\)>\\)"
+  "The first part that refuses it: foundation::core::View<const long unsigned int>")
+fixy_neg_compile_test(neg_spawn_parallel_for_const_reference_to_an_owner
+  "static assertion failed: mint_parallel_for: the body captures .owner. \\(field __owner, type const foundation::core::FixedArray<long unsigned int, 64"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_spawn_parallel_for_input_not_in_reads
+  "static assertion failed: mint_parallel_for: the body captures .unnamed. \\(field __unnamed, type const foundation::core::View<const long unsigned int>\\)"
+  "Give the run to the door in reads\\(\\)")
+fixy_neg_compile_test(neg_parallel_reduce_combine_holds_a_view
+  "static assertion failed: mint_parallel_for: the body captures .combine. \\(field __combine, type \\{anonymous\\}::AddsTheFirstPartial\\)"
+  "The first part that refuses it: foundation::core::View<const long unsigned int>")
 
 # The parallel tree tests run the parallel tree sum and segmented sum, the
 # sum scans, and the reduce on 1, 2, 4, 8 and 64 threads, and compare each

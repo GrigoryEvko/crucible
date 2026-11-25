@@ -31,6 +31,17 @@ inline constexpr std::size_t kShards = 2;
     return ::fixy::mint_heap_array(eff::testing::test().alloc, kCount, Word{1});
 }
 
+// Moves items into a region of Written, and gives body the region and the
+// borrow.  The plugin refuses a borrow of an owner in the closure of a door
+// that the owner moved into, when the borrow and the move are in one function.
+// Here the borrow is a parameter, which that rule does not see, so a fixture
+// fails only for its own reason.
+template <class Borrow, class Body>
+void give_region_and_borrow(::fixy::HeapArray<Word>& items, Borrow const& borrow, Body body) noexcept {
+    items = ::fixy::with_region<Written>(
+        std::move(items), [&borrow, body](auto region) noexcept { return body(std::move(region), borrow); });
+}
+
 // The loop over the region with the inputs and the body.
 template <class Region, class Body, class... Inputs>
 [[nodiscard]] Region loop_over(Region region, Body body, Inputs const&... inputs) noexcept {

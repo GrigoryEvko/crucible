@@ -697,11 +697,18 @@ template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Wh
 concept CtxFitsParallelForWithThreadOptions =
     CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
 
-// The policy of the body of the parallel loop (foundation/Closure.h): the
-// workers run at the same time, each copies the one body object, and a
-// worker calls its copy for each of its shards.
+// The policy of the body of the parallel loop over a region of the elements T
+// (foundation/Closure.h): the workers run at the same time, each copies the
+// one body object, and a worker calls its copy for each of its shards.  The
+// loop lends each body the run of its shard, which only this body writes
+// (design note 6).  The shards of a region of const elements write no run.
+template <typename T>
 inline constexpr ::foundation::closure::DoorPolicy parallel_for_body_policy{
-    ::foundation::closure::Crossing::ConcurrentThreads, ::foundation::closure::QttGrade::Omega, true};
+    .crossing = ::foundation::closure::Crossing::ConcurrentThreads,
+    .calls = ::foundation::closure::QttGrade::Omega,
+    .calls_one_object_concurrently = true,
+    .lends_runs = std::is_const_v<T> ? ::foundation::closure::RunLoan::None : ::foundation::closure::RunLoan::Exclusive,
+};
 
 // Declared before the runner so that its friend declarations name these
 // two mints and nothing else.
@@ -760,6 +767,16 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
         std::size_t worker = 0;
         std::size_t threads = 1;
     };
+
+    // Refuses a body that the policy of the loop refuses, with the message of
+    // the verdict.  The assertion stands in a function of its own, so a refused
+    // body gives no second error in the function that splits the region.
+    template <typename T, typename Body>
+    static void check_body_() noexcept {
+        constexpr ::foundation::closure::ClosureVerdict verdict =
+            ::foundation::closure::check_closure(^^Body, parallel_for_body_policy<T>, "mint_parallel_for");
+        static_assert(verdict.is_admitted(), verdict);
+    }
 
     // The runs of the inputs, in their order (design note 6).  The runner
     // reads each input here, so an input that a door consumed gives an empty
@@ -898,9 +915,7 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
     run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
          Reads<Inputs...> const& inputs, Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
-        constexpr ::foundation::closure::ClosureVerdict verdict =
-            ::foundation::closure::check_closure(^^Body, parallel_for_body_policy, "mint_parallel_for");
-        static_assert(verdict.is_admitted(), verdict);
+        check_body_<T, Body>();
         auto const runs = open_inputs_(inputs, std::index_sequence_for<Inputs...>{});
         check_inputs_apart_<T, Inputs...>(runs, ::fixy::mint_borrowed(region), std::index_sequence_for<Inputs...>{});
         auto parts = ::fixy::mint_split<N>(std::move(region));
