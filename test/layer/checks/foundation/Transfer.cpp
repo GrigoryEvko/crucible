@@ -114,6 +114,17 @@ static_assert(Shareable<ReadRuns> && Sendable<ReadRuns> && !SendableBeside<ReadR
 static_assert(Shareable<CellRuns> && Sendable<CellRuns> && SendableBeside<CellRuns>);
 static_assert(!Shareable<AddressRuns> && first_refusal(^^AddressRuns, Property::Share) == ^^HoldsBorrow);
 static_assert(!Synchronized<ReadRuns>, "two threads cannot write the counts of one set");
+// A set of runs of an arena holds the same properties.
+struct RunsArena {};
+using ArenaWritableRuns = ::foundation::core::ArenaRunSet<unsigned short, RunsArena, ::foundation::core::RunOf<int, 0>>;
+using ArenaReadRuns =
+    ::foundation::core::ArenaRunSet<unsigned short, RunsArena, ::foundation::core::RunOf<int const, 0>>;
+using ArenaAddressRuns =
+    ::foundation::core::ArenaRunSet<unsigned short, RunsArena, ::foundation::core::RunOf<HoldsBorrow const, 0>>;
+static_assert(!Shareable<ArenaWritableRuns> && !Sendable<ArenaWritableRuns>);
+static_assert(Shareable<ArenaReadRuns> && Sendable<ArenaReadRuns> && !SendableBeside<ArenaReadRuns>);
+static_assert(!Shareable<ArenaAddressRuns> && first_refusal(^^ArenaAddressRuns, Property::Share) == ^^HoldsBorrow);
+static_assert(!Synchronized<ArenaReadRuns>, "two threads cannot write the counts of one set");
 
 // Rule 7: a lambda with no capture holds each property.  A capture by
 // reference of a plain int holds none: a compiler that hides the capture

@@ -5828,6 +5828,14 @@ foundation_neg_compile_test(neg_core_run_set_two_writing_views
 foundation_neg_compile_test(neg_core_run_set_writing_view_taken
   "conversion from .View<const int,\\[...\\]>. to non-scalar type .View<int,\\[...\\]>. requested"
   "neg_core_run_set_writing_view_taken\\.cpp:[0-9]+:[0-9]+: error")
+# A set of runs of an arena keeps only runs of that arena, so a record of the
+# set names the owner of its arrays.
+foundation_neg_compile_test(neg_core_arena_run_set_takes_a_view
+  "use of deleted function .void foundation::core::ArenaRunSet<Count, Brand, Runs>::set\\(foundation::core::View<"
+  "a View names no arena, and a set of an arena keeps only runs of that arena")
+foundation_neg_compile_test(neg_core_arena_run_set_takes_a_run_of_another_arena
+  "no matching function for call to .foundation::core::ArenaRunSet<short unsigned int, SetArena, foundation::core::RunOf<const int, 0> >::set<0>\\(foundation::core::ArenaRun<const int, OtherArena>&\\)"
+  "neg_core_arena_run_set_takes_a_run_of_another_arena\\.cpp:[0-9]+:[0-9]+: error")
 foundation_neg_compile_test(neg_core_tested_window_door_forged
   "foundation::core::TestedWindowDoor::started_run_\\(uint8_t\\*, std::size_t\\) \\[with T = int; uint8_t = unsigned char; std::size_t = long unsigned int\\]. is private within this context"
   "AlignedBytes\\.h:[0-9]+:[0-9]+: note: declared private here")

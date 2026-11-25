@@ -40,17 +40,17 @@ int g_failures = 0;
 
 // The rosters, pinned.  A new family is one roster line plus one pin
 // here, which is what puts it in front of a reviewer.  The three rosters
-// hold eighteen entries, because one Graded entry stands for every band
+// hold twenty-two entries, because one Graded entry stands for every band
 // spelling.
 static_assert(std::size(c::detail::row_carrying_payload_families) == 2,
               "Two families carry a row of their own: a Computation carries the row it was produced under, "
               "and a Capability conveys the effect it authorizes.  A third means a new kind of payload "
               "whose rule has to be written beside its roster entry.");
-static_assert(sizeof(c::detail::transparent_payload_families) == 16 * sizeof(std::meta::info),
-              "Sixteen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
-              "The six containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRun, std::vector) hide their "
-              "elements, a Box hides its object, and an Option hides its payload.  A new wrapper that unwraps "
-              "is one line here.");
+static_assert(sizeof(c::detail::transparent_payload_families) == 17 * sizeof(std::meta::info),
+              "Seventeen families hide a payload and add nothing.  The Graded entry covers every band spelling. "
+              "The seven containers (WriteOnce, FixedArray, HeapArray, RunSet, ArenaRunSet, ArenaRun, std::vector) "
+              "hide their elements, a Box hides its object, and an Option hides its payload.  A new wrapper that "
+              "unwraps is one line here.");
 static_assert(std::size(c::detail::leaf_payload_families) == 3,
               "Three families are admitted as leaves: a Saturated value, a PackedWord and a BumpArena.  Every "
               "entry is a claim that the template hides no effect row, which is why a leaf needs a line rather "
@@ -139,9 +139,14 @@ void a_container_reports_its_element() {
     using ::foundation::core::RunSet;
     EXPECT((std::is_same_v<c::payload_row_t<RunSet<std::uint16_t, RunOf<std::uint32_t, 0>, RunOf<BgComp, 0>>>,
                            eff::Row<eff::Effect::Bg>>));
+    using ::foundation::core::ArenaRunSet;
+    EXPECT((std::is_same_v<c::payload_row_t<ArenaRunSet<std::uint16_t, MessageArena, RunOf<BgComp, 0>>>,
+                           eff::Row<eff::Effect::Bg>>));
 
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::WriteOnce<std::uint32_t>>, eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<RunSet<std::uint16_t, RunOf<std::int64_t, 0>>>, eff::Row<>>));
+    EXPECT((std::is_same_v<c::payload_row_t<ArenaRunSet<std::uint16_t, MessageArena, RunOf<std::int64_t, 0>>>,
+                           eff::Row<>>));
     EXPECT((std::is_same_v<c::payload_row_t<::fixy::FixedArray<std::int64_t, 5>>, eff::Row<>>));
     // The walk reaches an array that a class holds as a member.  A pad of
     // bytes carries nothing, and an array of computations carries their row.

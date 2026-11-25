@@ -16,6 +16,7 @@
 
 namespace {
 
+using ::foundation::core::ArenaRunSet;
 using ::foundation::core::BumpArena;
 using ::foundation::core::RunOf;
 using ::foundation::core::RunSet;
@@ -35,6 +36,10 @@ struct Meta {
 // 1 counts the outputs, and slot 2 counts the scalars.
 using OpRuns = RunSet<std::uint16_t, RunOf<std::uint32_t, 1>, RunOf<std::uint32_t, 0>, RunOf<Meta, 0>, RunOf<Meta, 1>,
                       RunOf<std::int64_t, 2>>;
+
+// The shape above for const elements, with each run of an arena of RunArena.
+using ArenaOpRuns = ArenaRunSet<std::uint16_t, RunArena, RunOf<std::uint32_t const, 1>, RunOf<std::uint32_t const, 0>,
+                                RunOf<Meta const, 0>, RunOf<Meta const, 1>, RunOf<std::int64_t const, 2>>;
 
 // The sum of the elements of a View.
 template <class T>
@@ -143,6 +148,36 @@ void test_copy_holds_the_same_runs() {
     CRUCIBLE_FATAL_INVARIANT(assigned.has_run<4>() && assigned.view<4>().size() == 2);
 }
 
+// A set of an arena holds the runs that its arena gave: an absent run, a run
+// of no elements, a full run, a new count that drops the runs of its slot, and
+// a copy of the set in the arena itself.
+void test_arena_set_holds_runs_of_its_arena() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    BumpArena<RunArena> arena = ::foundation::core::mint_bump_arena<RunArena>(Bytes{4096});
+    ArenaOpRuns runs{};
+    runs.set_count<0>(2);
+    runs.set_count<1>(3);
+    CRUCIBLE_FATAL_INVARIANT(!runs.has_run<1>() && !runs.has_run<0>() && runs.has_run<4>());
+    CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 0 && runs.view<4>().size() == 0);
+    auto inputs = arena.array<std::uint32_t>(alloc, 2, 9);
+    auto outputs = arena.array<std::uint32_t>(alloc, 3, 5);
+    runs.set<1>(inputs);
+    runs.set<0>(outputs);
+    runs.set<2>(arena.array(alloc, 2, Meta{.key = 7}));
+    runs.set<4>(arena.array<std::int64_t>(alloc, 0, 0));
+    CRUCIBLE_FATAL_INVARIANT(runs.has_run<0>() && runs.has_run<1>() && runs.has_run<2>() && !runs.has_run<3>());
+    CRUCIBLE_FATAL_INVARIANT(sum_of(runs.view<0>()) == 15 && sum_of(runs.view<1>()) == 18);
+    CRUCIBLE_FATAL_INVARIANT(runs.view<2>().get(1).expect("the run holds two elements")->key == 7);
+    // A write by the owner of the run reaches the set.
+    *outputs.view().get(0).expect("the run holds three elements") = 1;
+    CRUCIBLE_FATAL_INVARIANT(sum_of(runs.view<0>()) == 11);
+    auto const held = arena.array(alloc, 1, runs);
+    ArenaOpRuns const& copy = *held.view().get(0).expect("the run holds one set");
+    runs.set_count<0>(0);
+    CRUCIBLE_FATAL_INVARIANT(runs.view<1>().size() == 0 && runs.view<2>().size() == 0 && runs.has_run<0>());
+    CRUCIBLE_FATAL_INVARIANT(copy.count<0>() == 2 && sum_of(copy.view<1>()) == 18);
+}
+
 // A View of a different count ends the process.  Each set runs in a child
 // through expect_dies of the Check family.
 void test_wrong_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
@@ -169,6 +204,13 @@ void test_wrong_count_ends_the_process(::fixy::TestRunnerCtx const& test) {
         ::foundation::core::TextView{
             "foundation: fatal: RunSet::set got a run of 0 elements for a slot of the count 3"});
     CRUCIBLE_FATAL_INVARIANT(!runs.has_run<1>() && runs.count<0>() == 3);
+    ArenaOpRuns arena_runs{};
+    arena_runs.set_count<0>(3);
+    ::fixy::check::expect_dies(
+        test, [&arena_runs, &short_arena_run] noexcept { arena_runs.set<1>(short_arena_run); },
+        ::foundation::core::TextView{
+            "foundation: fatal: RunSet::set got a run of 2 elements for a slot of the count 3"});
+    CRUCIBLE_FATAL_INVARIANT(!arena_runs.has_run<1>() && arena_runs.count<0>() == 3);
 }
 
 }  // namespace
@@ -180,6 +222,7 @@ int main() {
     test_full_run_gives_its_elements();
     test_new_count_drops_the_runs_of_its_slot();
     test_copy_holds_the_same_runs();
+    test_arena_set_holds_runs_of_its_arena();
     test_wrong_count_ends_the_process(test);
     return 0;
 }

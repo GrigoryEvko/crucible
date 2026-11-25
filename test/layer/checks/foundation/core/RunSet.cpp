@@ -2,7 +2,9 @@
 
 #include <foundation/core/RunSet.h>
 
+#include <foundation/Brand.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/core/Region.h>
 
 #include <cstddef>
@@ -53,15 +55,46 @@ static_assert(CanSet<std::uint16_t, RunOf<int, 0>> && CanSet<std::size_t, RunOf<
 static_assert(!CanSet<int, RunOf<int, 0>> && !CanSet<bool, RunOf<int, 0>> && !CanSet<std::uint16_t, int>);
 static_assert(!CanSet<std::uint16_t>);
 
+// A set of an arena has the layout of a set of any owner, and it copies as
+// that set does.  Each of its first elements states the brand of the arena.
+struct[[= ::foundation::brand::arena_family_brand{}]] CheckArena final {};
+struct[[= ::foundation::brand::arena_family_brand{}]] OtherArena final {};
+template <class Brand>
+using MixedOf = ArenaRunSet<std::uint16_t, Brand, RunOf<std::uint32_t, 0>, RunOf<Wide, 0>, RunOf<std::uint64_t, 1>>;
+using ArenaMixed = MixedOf<CheckArena>;
+static_assert(sizeof(ArenaMixed) == sizeof(Mixed) && alignof(ArenaMixed) == alignof(Mixed));
+static_assert(ArenaMixed::slot_count == 2 && ArenaMixed::run_count == 3 && ArenaMixed::slot_of<2> == 1);
+static_assert(std::is_nothrow_copy_constructible_v<ArenaMixed> && std::is_nothrow_copy_assignable_v<ArenaMixed>);
+static_assert(std::is_trivially_destructible_v<ArenaMixed> && !std::is_trivially_copyable_v<ArenaMixed>);
+static_assert(std::is_same_v<ArenaMixed::brand_type, CheckArena>);
+static_assert(std::is_same_v<RunFirst_<int, CheckArena, 0>::brand_type, CheckArena>);
+
+// Only an ArenaRun of the brand of the set gives a run to it.  A run of the
+// elements of another arena, a View, and a run of other elements do not.  The
+// set of any owner takes a View and no ArenaRun.  A set names an arena, so the
+// erased brand gives no set of an arena.
+template <class Set, class Run>
+concept TakesSecond = requires(Set& set, Run& run) { set.template set<1>(run); };
+static_assert(TakesSecond<ArenaMixed, ArenaRun<Wide, CheckArena>> && TakesSecond<Mixed, View<Wide>>);
+static_assert(!TakesSecond<ArenaMixed, ArenaRun<Wide, OtherArena>> && !TakesSecond<ArenaMixed, View<Wide>>);
+static_assert(!TakesSecond<ArenaMixed, ArenaRun<Wide const, CheckArena>>);
+static_assert(!TakesSecond<ArenaMixed, ArenaRun<std::uint32_t, CheckArena>>);
+static_assert(!TakesSecond<Mixed, ArenaRun<Wide, CheckArena>>);
+template <class Brand>
+concept CanNameArena = requires { typename MixedOf<Brand>; };
+static_assert(CanNameArena<CheckArena> && !CanNameArena<::foundation::brand::DefaultBrand> && !CanNameArena<int>);
+
 // view<I>() gives a View of const elements, also of a set that is not const,
 // so no door of a set writes an element.  The View of a temporary set is
 // refused.
 static_assert(std::is_same_v<decltype(std::declval<Mixed&>().view<1>()), View<Wide const>>);
 static_assert(std::is_same_v<decltype(std::declval<Mixed const&>().view<1>()), View<Wide const>>);
+static_assert(std::is_same_v<decltype(std::declval<ArenaMixed&>().view<1>()), View<Wide const>>);
 template <class Set>
 concept ViewsFirst = requires { std::declval<Set>().template view<0>(); };
 static_assert(ViewsFirst<Mixed&> && ViewsFirst<Mixed const&>);
 static_assert(!ViewsFirst<Mixed&&> && !ViewsFirst<Mixed const&&>);
+static_assert(ViewsFirst<ArenaMixed const&> && !ViewsFirst<ArenaMixed&&> && !ViewsFirst<ArenaMixed const&&>);
 
 // An index past the runs and a slot past the table do not compile.
 template <class Set>

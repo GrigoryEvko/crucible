@@ -195,9 +195,10 @@ private:
     // The members after this one take the two bytes of pad at its end, so a
     // TraceEntry stays 96 bytes with the tags of its scalars.
     //
-    // An entry only reads its arrays, so each run holds const elements.
-    [[no_unique_address]] ::fixy::RunSet<
-        uint16_t, ::fixy::RunOf<SlotId const, kOutputCount>, ::fixy::RunOf<SlotId const, kInputCount>,
+    // An entry only reads its arrays, so each run holds const elements.  The
+    // set takes only a run of a DAG arena, and its type names the brand.
+    [[no_unique_address]] ::fixy::ArenaRunSet<
+        uint16_t, DagArena, ::fixy::RunOf<SlotId const, kOutputCount>, ::fixy::RunOf<SlotId const, kInputCount>,
         ::fixy::RunOf<OpIndex const, kInputCount>, ::fixy::RunOf<TensorMeta const, kInputCount>,
         ::fixy::RunOf<TensorMeta const, kOutputCount>, ::fixy::RunOf<int64_t const, kScalarCount>> arrays_{};
 
@@ -246,9 +247,9 @@ public:
                     ::fixy::ArenaRun<OpIndex const, DagArena> producers,
                     ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
         arrays_.set_count<kInputCount>(count_of_(metas.size()));
-        arrays_.set<kInputMetas>(metas.view());
-        arrays_.set<kInputTraceIndices>(producers.view());
-        arrays_.set<kInputSlotIds>(slot_ids.view());
+        arrays_.set<kInputMetas>(metas);
+        arrays_.set<kInputTraceIndices>(producers);
+        arrays_.set<kInputSlotIds>(slot_ids);
     }
 
     // The outputs: the metadata and the slot of each output, each a run of a
@@ -256,14 +257,14 @@ public:
     void set_outputs(::fixy::ArenaRun<TensorMeta const, DagArena> metas,
                      ::fixy::ArenaRun<SlotId const, DagArena> slot_ids) noexcept {
         arrays_.set_count<kOutputCount>(count_of_(metas.size()));
-        arrays_.set<kOutputMetas>(metas.view());
-        arrays_.set<kOutputSlotIds>(slot_ids.view());
+        arrays_.set<kOutputMetas>(metas);
+        arrays_.set<kOutputSlotIds>(slot_ids);
     }
 
     // The scalar arguments, a run of a DAG arena.
     void set_scalar_args(::fixy::ArenaRun<int64_t const, DagArena> scalars) noexcept {
         arrays_.set_count<kScalarCount>(count_of_(scalars.size()));
-        arrays_.set<kScalarArgs>(scalars.view());
+        arrays_.set<kScalarArgs>(scalars);
     }
 
 private:

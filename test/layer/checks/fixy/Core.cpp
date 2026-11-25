@@ -106,6 +106,11 @@ static_assert(std::is_same_v<::fixy::ViewMutChunks<int, CoreCheckChunksBrand>,
                              ::foundation::core::ViewMutChunks<int, CoreCheckChunksBrand>>);
 static_assert(std::is_same_v<::fixy::RunSet<std::uint16_t, ::fixy::RunOf<int, 0>>,
                              ::foundation::core::RunSet<std::uint16_t, ::foundation::core::RunOf<int, 0>>>);
+// The brand of an arena of the check.
+struct CoreCheckArena final {};
+static_assert(
+    std::is_same_v<::fixy::ArenaRunSet<std::uint16_t, CoreCheckArena, ::fixy::RunOf<int, 0>>,
+                   ::foundation::core::ArenaRunSet<std::uint16_t, CoreCheckArena, ::foundation::core::RunOf<int, 0>>>);
 static_assert(::fixy::ForeignElement<float> && !::fixy::ForeignElement<bool>);
 static_assert(std::is_same_v<decltype(::fixy::mint_foreign_view(static_cast<float const*>(nullptr), 0)),
                              ::fixy::View<float const>>);

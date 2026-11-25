@@ -8,13 +8,18 @@
 // its inputs and two arrays of its outputs holds five pointers and two
 // counts, and no View of 16 bytes for each array.
 //
+//   RunSet<Count, Runs...>              a set of runs of any owner
+//   ArenaRunSet<Count, Brand, Runs...>  a set of runs of the arenas of the
+//                                       brand (foundation/core/BumpArena.h)
+//
 //   count<Slot>()       the count at the slot
 //   set_count<Slot>(n)  the count n at the slot.  Each run of the slot drops
 //                       its elements, so no run keeps elements of a
 //                       different count
-//   set<I>(run)         the elements of a View for the run at index I.  A
-//                       View whose count is not the count of the slot ends
-//                       the process in each build
+//   set<I>(run)         the elements of run for the run at index I.  A RunSet
+//                       takes a View, and an ArenaRunSet takes an ArenaRun of
+//                       its brand.  A run whose count is not the count of the
+//                       slot ends the process in each build
 //   has_run<I>()        true when the run holds the count of its slot: the
 //                       count is zero, or set<I> gave the run its elements
 //   view<I>()           the run at index I as a View of const elements, so
@@ -27,19 +32,23 @@
 // never gives a View of the count over no elements.
 //
 // The set pairs each first element with its count itself, through the door
-// of the base layer.  The only write of a first element takes a View of the
+// of the base layer.  The only write of a first element takes a run of the
 // count of its slot, and the only write of a count drops the runs of its
-// slot.  So each View that view<I>() gives holds elements that a View held.
+// slot.  So each View that view<I>() gives holds elements that a run held.
 // The seal refuses std::bit_cast and a lifetime start over bytes, as for a
-// View, so no bytes become a RunSet with a pointer that no View gave.
+// View, so no bytes become a set with a pointer that no run gave.
 //
 // The layout: the pointer of each run in the order of the runs, then the
 // counts.  A set owns nothing, so its runs dangle when their owner ends.
 //
+// A RunSet names no owner of its runs.  Each first element of an ArenaRunSet
+// states the brand of its set, so a record of such a set holds only bytes of
+// an arena of the brand, and its type says so.
+//
 // A copy of a set refers to the same runs, and a set holds no unique borrow of
 // them, so it lends no writing View.  Two writing Views of one run would be two
 // writers of one element.  The owner of a run writes its elements, such as an
-// ArenaRun, before it gives the View of the run to set<I>.
+// ArenaRun, before it gives the run to set<I>.
 //
 // The first element of each run states refers{} (foundation/Transfer.h), so
 // the walk of the transfer facts reads a run of T as a reference to T.  The
@@ -49,10 +58,12 @@
 // elements, also through a copy, so two threads can read a set of such runs
 // when two threads can read each element.
 
+#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/NoObject.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Record.h>
@@ -66,8 +77,8 @@
 
 namespace foundation::core {
 
-// A run of a RunSet: elements of type T, with the count at index Slot of
-// the table of counts.
+// A run of a set: elements of type T, with the count at index Slot of the
+// table of counts.
 template <class T, std::size_t Slot>
     requires ViewElement<T>
 struct RunOf final {
@@ -83,22 +94,29 @@ inline constexpr bool is_run_of_ = false;
 template <class T, std::size_t Slot>
 inline constexpr bool is_run_of_<RunOf<T, Slot>> = true;
 
+// The brand of the runs of a RunSet, which names no owner of them.
+struct RunsOfAnyOwner final {};
+
 // The first element of the run at index I, or the null pointer when the set
 // holds no elements for the run.  The index keeps two runs of one element
 // type in two distinct bases.  The pointer refers to the elements of the run
 // as a reference does, so the class states refers{} over its first argument.
-template <class T, std::size_t I>
+// The elements are bytes of an owner of the brand.
+template <class T, class Brand, std::size_t I>
 struct[[= ::foundation::transfer::refers{}]] RunFirst_ {
+    using brand_type = Brand;
+
     T* first_ = nullptr;
 };
 
-template <class Positions, class... Runs>
+template <class Brand, class Positions, class... Runs>
 struct RunFirsts_;
 
 // One base for each run, in the order of the runs.  So the pointers come
 // first in the layout, and the counts after them.
-template <std::size_t... Positions, class... Runs>
-struct RunFirsts_<std::index_sequence<Positions...>, Runs...> : RunFirst_<typename Runs::element_type, Positions>... {};
+template <class Brand, std::size_t... Positions, class... Runs>
+struct RunFirsts_<Brand, std::index_sequence<Positions...>, Runs...>
+    : RunFirst_<typename Runs::element_type, Brand, Positions>... {};
 
 // The count of slots: one more than the largest slot of a run.
 template <class... Runs>
@@ -108,40 +126,49 @@ template <class... Runs>
     return largest + 1;
 }
 
+// The runs of a set: one run or more, and each a RunOf.
+template <class... Runs>
+concept RunsOfSet = sizeof...(Runs) > 0 && (is_run_of_<Runs> && ...);
+
+template <UnsignedInteger Count, class Brand, class... Runs>
+    requires RunsOfSet<Runs...>
+class RunTable_;
+
 }  // namespace detail
 
-template <UnsignedInteger Count, class... Runs>
-    requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
-class RunSet;
-
-// The door of a RunSet to the raw constructors of a View (the doors of the
+// The door of a set to the raw constructors of a View (the doors of the
 // owners above this header of foundation/core/Region.h).  The set keeps the
 // first element of each run beside one table of counts, so its layout holds
 // one pointer for each run, and a View for each run would move it.  The
-// invariant: set<I> takes the first element of a View whose count is the count
+// invariant: set<I> takes the first element of a run whose count is the count
 // of the slot of the run, and set_count drops each run of the slot.  So a run
 // with a first element holds the count of its slot, and the View of the two
-// borrows the elements that the View of set<I> borrowed.  RunSet is the one
-// friend, and a home owner row of utils/rule-table.txt keeps this definition
-// in this header.
+// borrows the elements that the run of set<I> borrowed.  The table of a set
+// is the one friend, and a home owner row of utils/rule-table.txt keeps this
+// definition in this header.
 class RunSetLayoutDoor final : ::foundation::NoObject<RunSetLayoutDoor> {
-    template <UnsignedInteger Count, class... Runs>
-        requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
-    friend class RunSet;
+    template <UnsignedInteger Count, class Brand, class... Runs>
+        requires detail::RunsOfSet<Runs...>
+    friend class detail::RunTable_;
 
-    // The count elements from first, which set<I> took from a View.
+    // The count elements from first, which set<I> took from a run.
     template <class Element>
     [[nodiscard]] static constexpr View<Element> held_run_(Element* first, std::size_t count) noexcept {
         return View<Element>{first, count};
     }
 };
 
-template <UnsignedInteger Count, class... Runs>
-    requires(sizeof...(Runs) > 0 && (detail::is_run_of_<Runs> && ...))
-class RunSet final : private detail::RunFirsts_<std::index_sequence_for<Runs...>, Runs...> {
+namespace detail {
+
+// The table of a set: the first element of each run and the counts, and each
+// door of the family other than set<I>.  Only the two sets derive from it, and
+// only their set<I> keeps a run.
+template <UnsignedInteger Count, class Brand, class... Runs>
+    requires RunsOfSet<Runs...>
+class RunTable_ : private RunFirsts_<Brand, std::index_sequence_for<Runs...>, Runs...> {
 public:
     // The count of slots in the table of counts.
-    static constexpr std::size_t slot_count = detail::run_slot_count_<Runs...>();
+    static constexpr std::size_t slot_count = run_slot_count_<Runs...>();
 
     // The count of runs.
     static constexpr std::size_t run_count = sizeof...(Runs);
@@ -165,7 +192,7 @@ public:
 
 private:
     template <std::size_t I>
-    using First_ = detail::RunFirst_<element_t<I>, I>;
+    using First_ = RunFirst_<element_t<I>, Brand, I>;
 
     // Drops the elements of each run of the slot.
     template <std::size_t Slot, std::size_t... Positions>
@@ -184,10 +211,27 @@ private:
     FixedArray<Count, slot_count> counts_{};
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 
-public:
-    // A set with each count zero and no elements for each run.
-    constexpr RunSet() noexcept = default;
+protected:
+    // A table with each count zero and no elements for each run.
+    constexpr RunTable_() noexcept = default;
+    constexpr RunTable_(RunTable_ const&) noexcept = default;
+    constexpr RunTable_(RunTable_&&) noexcept = default;
+    constexpr RunTable_& operator=(RunTable_ const&) noexcept = default;
+    constexpr RunTable_& operator=(RunTable_&&) noexcept = default;
+    constexpr ~RunTable_() = default;
 
+    // Keeps the elements of run for the run at index I.  The run holds the
+    // count of its slot, or the process ends in each build.
+    template <std::size_t I>
+    constexpr void keep_run_(View<element_t<I>> run) noexcept {
+        std::size_t const count = counts_.at(index<slot_of<I>>());
+        if (run.size() != count) [[unlikely]] {
+            fatal("RunSet::set got a run of {} elements for a slot of the count {}", run.size(), count);
+        }
+        static_cast<First_<I>&>(*this).first_ = first_of_(BaseLayerRead{}, run);
+    }
+
+public:
     // The count at the slot.
     template <std::size_t Slot>
         requires(Slot < slot_count)
@@ -201,18 +245,6 @@ public:
     constexpr void set_count(Count count) noexcept {
         drop_runs_of_<Slot>(std::index_sequence_for<Runs...>{});
         counts_.set(index<Slot>(), count);
-    }
-
-    // The elements of run for the run at index I.  The View holds the count
-    // of the slot of the run, or the process ends in each build.
-    template <std::size_t I>
-        requires(I < sizeof...(Runs))
-    constexpr void set(View<element_t<I>> run) noexcept {
-        std::size_t const count = counts_.at(index<slot_of<I>>());
-        if (run.size() != count) [[unlikely]] {
-            fatal("RunSet::set got a run of {} elements for a slot of the count {}", run.size(), count);
-        }
-        static_cast<First_<I>&>(*this).first_ = first_of_(detail::BaseLayerRead{}, run);
     }
 
     // True when the run at index I holds the count of its slot: the count
@@ -236,6 +268,55 @@ public:
     void view() && = delete("a View of a temporary RunSet dangles when the owner of its runs ends");
     template <std::size_t I>
     void view() const&& = delete("a View of a temporary RunSet dangles when the owner of its runs ends");
+};
+
+}  // namespace detail
+
+// A set of runs that names no owner of them.
+template <UnsignedInteger Count, class... Runs>
+    requires detail::RunsOfSet<Runs...>
+class RunSet final : public detail::RunTable_<Count, detail::RunsOfAnyOwner, Runs...> {
+    using Table = detail::RunTable_<Count, detail::RunsOfAnyOwner, Runs...>;
+
+public:
+    // A set with each count zero and no elements for each run.
+    constexpr RunSet() noexcept = default;
+
+    // The elements of run for the run at index I.  The View holds the count
+    // of the slot of the run, or the process ends in each build.
+    template <std::size_t I>
+        requires(I < sizeof...(Runs))
+    constexpr void set(View<typename Table::template element_t<I>> run) noexcept {
+        this->template keep_run_<I>(run);
+    }
+};
+
+// A set of runs of the arenas of the brand.  Only an ArenaRun of the brand
+// gives a run to the set.
+template <UnsignedInteger Count, ::foundation::brand::IsFreshBrand Brand, class... Runs>
+    requires detail::RunsOfSet<Runs...>
+class ArenaRunSet final : public detail::RunTable_<Count, Brand, Runs...> {
+    using Table = detail::RunTable_<Count, Brand, Runs...>;
+
+public:
+    using brand_type = Brand;
+
+    // A set with each count zero and no elements for each run.
+    constexpr ArenaRunSet() noexcept = default;
+
+    // The elements of run for the run at index I.  The run holds the count of
+    // the slot, or the process ends in each build.
+    template <std::size_t I>
+        requires(I < sizeof...(Runs))
+    constexpr void set(ArenaRun<typename Table::template element_t<I>, Brand> run) noexcept {
+        this->template keep_run_<I>(run.view());
+    }
+
+    // A View binds to this overload, so the refusal gives its reason.
+    template <std::size_t I>
+        requires(I < sizeof...(Runs))
+    void set(View<typename Table::template element_t<I>>) =
+        delete("a View names no arena, and a set of an arena keeps only runs of that arena: give the ArenaRun");
 };
 
 }  // namespace foundation::core

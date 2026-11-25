@@ -142,6 +142,7 @@ inline constexpr std::meta::info transparent_payload_families[] = {
     ^^::foundation::core::FixedArray,  // the elements; the count holds no row
     ^^::foundation::core::HeapArray,  // the elements; the alignment holds no row
     ^^::foundation::core::RunSet,  // the element of each run; the counts hold no row
+    ^^::foundation::core::ArenaRunSet,  // as a RunSet; the brand holds no row
     ^^::foundation::core::ArenaRun,  // the elements of one run of an arena; the brand holds no row
     ^^::foundation::core::Box,  // the one object that the Box owns
     ^^::foundation::core::Option,  // the payload, held by value; an Option of an address is refused

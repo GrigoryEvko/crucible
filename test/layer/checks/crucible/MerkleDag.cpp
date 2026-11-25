@@ -23,9 +23,9 @@ static_assert(sizeof(MemoryPlan) == 48, "MemoryPlan must be 48 bytes — the on-
 static_assert(std::is_trivially_destructible_v<MemoryPlan>, "an arena ends no MemoryPlan");
 static_assert(std::is_standard_layout_v<MemoryPlan>, "MemoryPlan must be standard-layout");
 
-// The arrays of an entry are one RunSet of six pointers and three counts, so
-// the entry takes 96 bytes.  A RunSet refuses a byte copy, as a View does, so
-// an entry is not trivially copyable.  An arena ends no entry.
+// The arrays of an entry are one ArenaRunSet of six pointers and three counts,
+// so the entry takes 96 bytes.  The set refuses a byte copy, as a View does,
+// so an entry is not trivially copyable.  An arena ends no entry.
 static_assert(sizeof(TraceEntry) == 96, "TraceEntry must be 96 bytes: the replay reads one entry for each op");
 static_assert(std::is_trivially_destructible_v<TraceEntry>, "an arena ends no TraceEntry");
 static_assert(std::is_nothrow_copy_constructible_v<TraceEntry>, "a TraceEntry copies with no throw");

@@ -156,6 +156,7 @@ using ::foundation::core::BoxWord;
 using ::foundation::core::ArenaBlockSize;
 using ::foundation::core::ArenaPosition;
 using ::foundation::core::ArenaRun;
+using ::foundation::core::ArenaRunSet;
 using ::foundation::core::RunStart;
 using ::foundation::core::BumpArena;
 using ::foundation::core::EpochArena;

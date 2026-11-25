@@ -1245,6 +1245,9 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::RunSet,
      "a borrow of some runs of elements and their counts: it owns nothing and makes no claim about what the "
      "elements hold"},
+    {^^::foundation::core::ArenaRunSet,
+     "a RunSet whose runs are runs of an arena: the brand names the owner of the runs, and it makes no claim about "
+     "what the elements hold"},
     {^^::foundation::core::RunOf, "the element type and the slot of one run of a RunSet: it holds no value"},
     {^^::foundation::core::TextView,
      "a borrow of a run of characters: it owns nothing and makes no claim about what the characters hold"},
