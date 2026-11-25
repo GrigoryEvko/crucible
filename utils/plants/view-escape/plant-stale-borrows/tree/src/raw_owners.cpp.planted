@@ -1,0 +1,90 @@
+// The owners of the base that keep their blocks, and whose blocks can hold an object of
+// each type.  A class holds each owner behind a Box, and it holds a count of the type
+// int.  The result names an int.  So only the raw blocks of the owner put it on the
+// route of the result, and the end of the Box in a callee with no body ends the borrow.
+// No code can move the arenas and the source, but the Box ends them.  A list whose
+// elements are bytes has raw blocks too.
+#include <foundation/Brand.h>
+#include <foundation/alloc/Window.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/BumpArena.h>
+#include <foundation/core/Owner.h>
+#include <foundation/core/Ref.h>
+
+namespace foundation::core {
+
+template <class Event>
+class[[= owns_its_storage{}]] EventList final {
+public:
+    Event const& at(unsigned long position) const& noexcept;
+
+private:
+    HeapArray<Event> events_{};
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct[[= ::foundation::brand::arena_family_brand{}]] Family final {};
+
+struct Scratch {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Arena final {};
+};
+
+struct BumpHolder {
+    fc::Box<fc::BumpArena<Family>> owner;
+    int count = 0;
+};
+
+struct EpochHolder {
+    fc::Box<fc::EpochArena<Scratch::Arena>> owner;
+    int count = 0;
+};
+
+struct SourceHolder {
+    fc::Box<::foundation::alloc::ChunkSource> owner;
+    int count = 0;
+};
+
+struct ByteListHolder {
+    fc::EventList<unsigned char> owner{};
+    int count = 0;
+};
+
+int const& word_of(BumpHolder const& holder) noexcept;
+int const& word_of(EpochHolder const& holder) noexcept;
+int const& word_of(SourceHolder const& holder) noexcept;
+int const& word_of(ByteListHolder const& holder) noexcept;
+void change(BumpHolder& holder) noexcept;
+void change(EpochHolder& holder) noexcept;
+void change(SourceHolder& holder) noexcept;
+void change(ByteListHolder& holder) noexcept;
+
+int bump_arena(BumpHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+int epoch_arena(EpochHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+int chunk_source(SourceHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+int list_of_bytes(ByteListHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+}  // namespace planted

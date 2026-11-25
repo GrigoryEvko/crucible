@@ -10,8 +10,9 @@
 //     nothing.  A class that states owns_its_storage{} of foundation/core/Owner.h
 //     keeps each block until its own end, so it is one owner with no owner behind
 //     it.  When no code can move or assign such a class, a call through a reference
-//     to it ends nothing.  An owner of the base that keeps its elements behind a
-//     pointer to void owns the types of its arguments (escape.cpp, the borrow).
+//     to it ends nothing.  Behind a pointer it ends with the owner of the pointer.  An
+//     owner of the base that keeps its elements behind a pointer to void owns the types
+//     of its arguments (escape.cpp, the borrow).
 //
 // Targets
 //     The targets of a result are the types that its pointers name, also in the
@@ -121,11 +122,12 @@ std::uint64_t pair_key(tree first, tree second) {
     return (static_cast<std::uint64_t>(TYPE_UID(first)) << 32) | TYPE_UID(second);
 }
 
-// The classes that one walk visited, with one property of the visit.
+// The classes that one walk visited, with two properties of the visit.
 class Visits {
 public:
-    bool enter(tree type, bool property = false) {
-        return seen_.insert((static_cast<std::uint64_t>(TYPE_UID(type)) << 1) | (property ? 1U : 0U)).second;
+    bool enter(tree type, bool first = false, bool second = false) {
+        unsigned const properties = (first ? 1U : 0U) | (second ? 2U : 0U);
+        return seen_.insert((static_cast<std::uint64_t>(TYPE_UID(type)) << 2) | properties).second;
     }
 
 private:
@@ -450,8 +452,10 @@ bool is_fixed_class(tree type) {
     return true;
 }
 
-// Adds each owner that an object of TYPE is or owns to OWNERS.
-void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool is_in_owner) {
+// Adds each owner that an object of TYPE is or owns to OWNERS.  IS_BEHIND tells that
+// the object is behind a pointer, so the end of the owner of the pointer ends it, also
+// when no code can move it.
+void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool is_in_owner, bool is_behind) {
     tree const object = element_class(type);
     type = readable_class(object);
     // In a wide reading an incomplete class is an owner of each object.
@@ -464,19 +468,19 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
     }
     bool const is_owner = is_owner_class(type);
     bool const owns_pointers = is_in_owner || is_owner;
-    if (!visits.enter(type, owns_pointers)) {
+    if (!visits.enter(type, owns_pointers, is_behind)) {
         return;
     }
     if (is_owner) {
         unsigned const id = TYPE_UID(type);
         bool const keeps_blocks = keeps_its_blocks(type);
-        bool is_known = false;
-        for (const OwnerClass& owner : owners) {
-            is_known = is_known || owner.id == id;
-        }
-        if (!is_known) {
-            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks && has_raw_blocks(type),
-                                        keeps_blocks && is_fixed_class(type)});
+        bool const is_fixed = keeps_blocks && !is_behind && is_fixed_class(type);
+        auto const known =
+            std::find_if(owners.begin(), owners.end(), [id](const OwnerClass& owner) { return owner.id == id; });
+        if (known == owners.end()) {
+            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks && has_raw_blocks(type), is_fixed});
+        } else {
+            known->is_fixed = known->is_fixed && is_fixed;
         }
         if (keeps_blocks) {
             return;
@@ -485,13 +489,13 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
     visit_fields(type, [&](tree field) {
         tree held = TREE_TYPE(field);
         if (!is_indirect_type(held)) {
-            add_owners(held, owners, visits, owns_pointers);
+            add_owners(held, owners, visits, owns_pointers, is_behind);
         } else if (owns_pointers) {
-            add_owners(TREE_TYPE(held), owners, visits, false);
+            add_owners(TREE_TYPE(held), owners, visits, false, true);
         }
     });
     if (is_owner && has_id(types_behind(type), kVoidStorage)) {
-        visit_owner_arguments(type, [&](tree argument) { add_owners(argument, owners, visits, false); });
+        visit_owner_arguments(type, [&](tree argument) { add_owners(argument, owners, visits, false, true); });
     }
 }
 
@@ -499,7 +503,7 @@ const std::vector<OwnerClass>& owners_of(tree type) {
     return owner_answers.get(TYPE_UID(type), [type] {
         std::vector<OwnerClass> owners;
         Visits visits;
-        add_owners(type, owners, visits, false);
+        add_owners(type, owners, visits, false, false);
         return owners;
     });
 }

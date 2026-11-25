@@ -3,7 +3,8 @@
 # returns, a move that keeps the storage, a frame that gives the owner back, a call
 # by a const reference, a change of a different owner, and a call with an arena
 # that keeps its blocks.  The unit blocks has a result that names a store, and not an
-# element of the list that the store holds.
+# element of the list that the store holds.  The unit typed_owners has owners of the
+# base that keep their blocks and that hold no raw block.
 
 compile live src/live.cpp
 flag live -freflection
@@ -12,3 +13,7 @@ exit live pass
 compile blocks src/blocks.cpp
 flag blocks -freflection
 exit blocks pass
+
+compile typed_owners src/typed_owners.cpp
+flag typed_owners -freflection
+exit typed_owners pass

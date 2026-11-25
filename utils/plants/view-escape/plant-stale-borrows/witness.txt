@@ -12,8 +12,11 @@
 # opted-out.
 #
 # The unit owners has owners that are no plain array.  The unit marked has a class
-# that keeps its blocks and that a caller can move (46), and a class that no code can
-# move.  The unit blocks has the blocks of an owner that a caller can move: the bytes
+# that keeps its blocks and that a caller can move (47), a class that no code can move,
+# and such a class outside the base that states the mark (75).  The unit raw_owners has
+# each owner of the base with raw blocks behind a Box: an arena (69), an arena of epochs
+# (75), a source of chunks (81), and a list of bytes (87).
+# The unit blocks has the blocks of an owner that a caller can move: the bytes
 # behind a pointer (81), an array of bytes in a class behind a pointer (87), the storage
 # at an address that is a number (93), and an element of a list (99).  The unit early
 # has a class that the unit completes after the body that reads it (27), and a class
@@ -108,8 +111,22 @@ error owners src/owners.cpp:120 | this use reads a borrow of items in a closure 
 compile marked src/marked.cpp
 flag marked -freflection
 exit marked fail
-finding marked view-escape stale-borrow src/marked.cpp:46:12 | borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
-error marked src/marked.cpp:46 | this use reads a borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+finding marked view-escape stale-borrow src/marked.cpp:47:12 | borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+finding marked view-escape stale-borrow src/marked.cpp:75:12 | borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+error marked src/marked.cpp:47 | this use reads a borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+error marked src/marked.cpp:75 | this use reads a borrow of blocks in view after a call of planted::change with blocks, which reaches a function with no body in this unit
+
+compile raw_owners src/raw_owners.cpp
+flag raw_owners -freflection
+exit raw_owners fail
+finding raw_owners view-escape stale-borrow src/raw_owners.cpp:69:12 | borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+finding raw_owners view-escape stale-borrow src/raw_owners.cpp:75:12 | borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+finding raw_owners view-escape stale-borrow src/raw_owners.cpp:81:12 | borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+finding raw_owners view-escape stale-borrow src/raw_owners.cpp:87:12 | borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+error raw_owners src/raw_owners.cpp:69 | this use reads a borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+error raw_owners src/raw_owners.cpp:75 | this use reads a borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+error raw_owners src/raw_owners.cpp:81 | this use reads a borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
+error raw_owners src/raw_owners.cpp:87 | this use reads a borrow of holder in word after a call of planted::change with holder, which reaches a function with no body in this unit
 
 compile blocks src/blocks.cpp
 flag blocks -freflection

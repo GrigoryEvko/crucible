@@ -1,0 +1,77 @@
+// The owners of the base that keep their blocks, and whose blocks hold the types that
+// their pointers name.  A class holds each owner behind a Box, and it holds a count of
+// the type int.  The result names an int, which no block of the owner holds, so the
+// end of the owner ends no borrow.
+#include <fixy/concurrent/SpscEnds.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Owner.h>
+#include <foundation/core/Ref.h>
+
+namespace foundation::core {
+
+template <class Event>
+class[[= owns_its_storage{}]] EventList final {
+public:
+    Event const& at(unsigned long position) const& noexcept;
+
+private:
+    HeapArray<Event> events_{};
+};
+
+struct PaddedEvent final {
+    unsigned long value = 0;
+    FixedArray<unsigned char, 8> padding{};
+};
+
+}  // namespace foundation::core
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+class Log final {
+public:
+    struct producer_state {
+        ~producer_state();
+    };
+    struct consumer_state {
+        ~consumer_state();
+    };
+
+    Log() noexcept = default;
+    Log(Log const&) = delete("a log keeps its place");
+    Log(Log&&) = delete("a log keeps its place");
+    ~Log();
+
+private:
+    unsigned long written_ = 0;
+};
+
+struct EndHolder {
+    fc::Box<::fixy::concurrent::ProducerEnd<Log>> owner;
+    int count = 0;
+};
+
+struct ListHolder {
+    fc::EventList<fc::PaddedEvent> owner{};
+    int count = 0;
+};
+
+int const& word_of(EndHolder const& holder) noexcept;
+int const& word_of(ListHolder const& holder) noexcept;
+void change(EndHolder& holder) noexcept;
+void change(ListHolder& holder) noexcept;
+
+int end_of_a_log(EndHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+int list_of_padded_events(ListHolder& holder) noexcept {
+    int const& word = word_of(holder);
+    change(holder);
+    return word;
+}
+
+}  // namespace planted

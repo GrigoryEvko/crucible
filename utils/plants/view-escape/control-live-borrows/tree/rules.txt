@@ -1,11 +1,12 @@
 # The rule table of the control control-live-borrows of the rule view-escape.  The
-# unit of src/ is quarantined.  The headers of the repository are outside the
+# units of src/ are quarantined.  The headers of the repository are outside the
 # root of the plant, so the table admits the names of the base that the
 # planted code uses.
 
 admit foundation::core | the owners, the arena, the Ref and the View whose borrows the planted code reads
 admit foundation::effects | the capability of an allocation
 admit foundation::brand | the annotation of the family tag of the planted arena
+admit fixy | the end of a channel
 admit std::move | a cast to an rvalue reference
 
 quarantine src/
