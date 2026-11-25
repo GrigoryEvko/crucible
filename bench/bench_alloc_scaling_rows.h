@@ -129,7 +129,9 @@
 //   the flag with acquire order and then takes the owner.  The rings of
 //   fixy/concurrent/ hold only trivially copyable values, and the Box
 //   channel holds only a Box, so the base has no channel of an owner of
-//   bytes.  Each allocator goes through the same Mailbox.
+//   bytes.  Each allocator goes through the same Mailbox.  The cells and the
+//   slots of a row lie on the heap, one pointer away from their owner.  So a
+//   row of a tree whose cells lie inline is not in one series with these rows.
 //
 // Threads of a row
 //   A row of N threads runs on the CPUs of the slots 0 to N - 1 of the
