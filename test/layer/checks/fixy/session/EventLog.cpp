@@ -7,7 +7,11 @@
 #include <foundation/core/AllocTag.h>
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
+#include <foundation/reflect/Annotation.h>
+
+#include <cstddef>
 
 namespace fixy::session {
 
@@ -68,29 +72,55 @@ static_assert(StoresNoBorrowOutside<ReachesLog> && StoresNoBorrowOutside<HoldsWr
 static_assert(StoresNoBorrowOutside<HoldsEvents> && !StoresNoBorrowOutside<ReachesEvents>);
 static_assert(!StoresNoBorrowOutside<ReachesWriter>);
 
-// A log gives a const event and the const list of its events, and a temporary
-// log gives none.  The appends of a writer do not throw.
+// A log gives a const event and a prefix of its events, and a temporary log
+// gives none.  No verb of a log gives its events away.  The appends of a writer
+// do not throw.
 template <class Log>
 concept Reads = requires(Log&& log) {
     { static_cast<Log&&>(log)[std::size_t{0}] } noexcept -> std::same_as<SessionEvent const&>;
     { static_cast<Log&&>(log).back() } noexcept -> std::same_as<SessionEvent const&>;
-    { static_cast<Log&&>(log).events() } noexcept -> std::same_as<SessionEventLog::storage_type const&>;
+    {
+        static_cast<Log&&>(log).events()
+    } noexcept -> std::same_as<::foundation::core::SegmentPrefix<SessionEvent const>>;
 };
+template <class Log>
+concept Drains = requires(Log&& log) { static_cast<Log&&>(log).drain(); };
 static_assert(Reads<SessionEventLog&> && Reads<SessionEventLog const&>);
 static_assert(!Reads<SessionEventLog> && !Reads<SessionEventLog const>);
+static_assert(!Drains<SessionEventLog> && !Drains<SessionEventLog&>);
 static_assert(noexcept(std::declval<SessionEventWriter&>().record_now(std::declval<SessionEvent>()))
               && noexcept(std::declval<SessionEventWriter&>().record(std::declval<SessionEvent>())));
 static_assert(sizeof(SessionEventWriter) == sizeof(SessionEventLog*),
               "the allocation capability of a writer must take no byte");
 
-// The bodies of run_joined can read one log through references to const, and
-// no body can hold the writer of a log.  A body beside its caller can hold no
-// reference to a log, because the caller can append to it.
+// A log is the lines of its LiveList, and one line for the session, the step
+// counter and the claim of the writer.
+static_assert(sizeof(SessionEventLog) == 7 * 64 && alignof(SessionEventLog) == 64);
+
+// A body beside its caller can hold a reference to a log and read it, while the
+// caller appends to it through the writer.  Two threads can hold a log that is
+// not const too: each append needs the writer, and the claim of the mint keeps
+// one.  No body can hold the writer of a log.
 static_assert(::foundation::transfer::Shareable<SessionEventLog>
-              && ::foundation::transfer::Sendable<SessionEventLog const&>);
+              && ::foundation::transfer::Synchronized<SessionEventLog>);
+static_assert(::foundation::transfer::Sendable<SessionEventLog const&>
+              && ::foundation::transfer::SendableBeside<SessionEventLog const&>
+              && ::foundation::transfer::SendableBeside<SessionEventLog&>);
 static_assert(!::foundation::transfer::Sendable<SessionEventWriter>
               && !::foundation::transfer::Sendable<SessionEventWriter&>);
-static_assert(!::foundation::transfer::SendableBeside<SessionEventLog const&>);
+
+// A call of a function with no body in the unit ends no borrow of a log, which
+// states that it keeps its storage and which no code can move or assign.  The
+// rule view-escape reads the body, and nothing calls it.
+static_assert(::foundation::reflect::carries_annotation(^^SessionEventLog, ^^::foundation::core::owns_its_storage));
+static_assert(!std::is_move_constructible_v<SessionEventLog> && !std::is_move_assignable_v<SessionEventLog>);
+void record_out_of_line(SessionEventLog& log) noexcept;
+[[nodiscard]] inline std::size_t read_across_a_call(SessionEventLog& log) noexcept {
+    SessionEventLog::events_type const events = log.events();
+    auto const first = events.get(0).expect("the log holds an event");
+    record_out_of_line(log);
+    return events.size() + first->step_id().raw();
+}
 
 // Only the allocation capability mints a writer.
 template <class Marker, class Log>

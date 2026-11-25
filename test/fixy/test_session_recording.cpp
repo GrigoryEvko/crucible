@@ -243,8 +243,10 @@ int check_log_steps() {
     if (log.size() != 2) return fail("the log lost an event");
     if (log[0].step_id().raw() != 1 || log[1].step_id().raw() != 2) return fail("the steps are not 1 and 2");
     if (log[1].session().value != 77) return fail("record_now did not stamp the session");
-    const auto drained = std::move(log).drain();
-    return drained.size() == 2 ? 0 : fail("the drain lost an event");
+    std::size_t drained = 0;
+    for (::fixy::View<s::SessionEvent const> const run : log.events().segments())
+        drained += run.size();
+    return drained == 2 ? 0 : fail("the segments of the log lost an event");
 }
 
 }  // namespace

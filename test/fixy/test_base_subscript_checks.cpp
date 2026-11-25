@@ -5,9 +5,10 @@
 // runs the tests, the release preset too.  The child must end by SIGABRT with
 // the text of the check.  The controls then read each run inside its bounds.
 //
-// The subscripts: AppendOnly (operator[], front and back), OrderedAppendOnly
-// and SessionEventLog, which read through AppendOnly, static_run, and the
-// lane of a mask and of a vector of the Simd facade.  A SharedRead has no
+// The subscripts: AppendOnly (operator[], front and back), OrderedAppendOnly,
+// which reads through AppendOnly, static_run, and the lane of a mask and of a
+// vector of the Simd facade.  test_session_event_log_writers.cpp holds the
+// deaths of the subscripts of a SessionEventLog.  A SharedRead has no
 // subscript: its element door compares the position with the count and runs
 // on_none past the end, and test_shared_region.cpp holds that control.
 

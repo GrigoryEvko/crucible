@@ -63,21 +63,33 @@
 // from each handle to the next, so one handle at a time appends.  Each
 // endpoint of a run records into its own log.
 //
+// The writer is the owner of the proof of the one writer of its log
+// (foundation/SoleWriterProof.h).  It makes the proof in each append, for the
+// list and the step counter of the one log that it names.  So the claim of the
+// mint is the one test for a second writer, and no append tests for one.
+//
 // An append can allocate.  A step of a recorded session runs in a context with
 // no Alloc, such as a foreground context.  So the mint of the writer takes the
 // allocation capability, and the writer keeps it for its appends.
 //
 // ── The read of a log ───────────────────────────────────────────────
 //
-// No append moves an event, so the thread of the writer can keep a reference to
-// an event, and a View of a segment, across its appends.  A read writes no state
-// of the log, so a log is Shareable, and the bodies of run_joined read one
-// finished log through references to const.  The writer of a log is not
-// Sendable, so no body of a thread door appends while another body reads.
+// A log keeps its events in a LiveList (foundation/core/LiveList.h).  Readers on
+// other threads read the events that the writer published, while the writer
+// appends.  Each read of a log reads one prefix of it: the events that the writer
+// published before the read.  events() gives that prefix for more than one read.
+// A log that a reader reads two times can have more events at the second read.
+//
+// No append moves an event, and none ends one, so a thread can keep a prefix, a
+// reference to an event and a View of a segment across the appends, until the
+// log ends.  A log has no drain, because a drain would take the events from a
+// reader on another thread.  events().segments() gives each block of events to
+// a store.
 //
 // merge_session_logs reads the logs of a run as one sequence: by step id,
-// and for one step id in the order of the logs in its arguments.  The
-// sequence depends on no schedule of the threads.
+// and for one step id in the order of the logs in its arguments.  It reads one
+// prefix of each log, so the sequence depends on the events of the prefixes and
+// on no schedule of the threads after them.
 
 #include <fixy/Mutation.h>
 #include <fixy/session/CrashCause.h>
@@ -86,6 +98,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
 #include <foundation/core/AllocTag.h>
@@ -95,6 +108,8 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/LiveList.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/SegmentList.h>
 #include <foundation/core/Side.h>
@@ -707,39 +722,70 @@ namespace detail::event_log {
 
 class SessionEventWriter;
 
-// The step counter is the ordering identity of the log, so the log does
-// not move.  A drain moves the events out instead.  Only the one writer of
-// the log appends (One writer, in the head of this header).
-class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
-    ::fixy::OrderedAppendOnly<SessionEvent, StepIdKeyFn, StepIdLess> log_ =
-        ::fixy::mint_ordered_append_only<SessionEvent, StepIdKeyFn, StepIdLess>();
-    SessionTagId session_id_{};
-    ::fixy::AtomicMonotonic<std::uint64_t> step_counter_ = ::fixy::mint_atomic_monotonic<std::uint64_t>(0);
+// The step counter is the ordering identity of the log, and readers on other
+// threads read the log, so it does not move.  Only the one writer of the log
+// appends (One writer, in the head of this header).
+//
+// Each member is one that two threads can write, or a const one that they read,
+// so the log is Synchronized by its parts (foundation/Transfer.h).
+//
+// An event holds no borrow, no public member writes a log, and no code can move
+// or assign one.  So a log states owns_its_storage{} of foundation/core/Owner.h,
+// as its list does (the mark of the storage of LiveList.h).  A call that takes a
+// log by reference then ends no borrow of it.  A log behind a pointer, such as in
+// a Box, ends with that owner, and a call that can replace the Box ends each
+// borrow of the log.
+class [[nodiscard]][[= ::foundation::core::owns_its_storage{}]] SessionEventLog
+    : ::foundation::Pinned<SessionEventLog> {
+    // The proof of the one writer of the events and of the step counter.  Only
+    // the writer of the log makes it (One writer).
+    struct AppendRole final {};
+    using writer_proof_ = ::foundation::SoleWriterProof<SessionEventWriter, AppendRole>;
+
+    // The events, in the order of their steps (keeps_order_).
+    ::foundation::core::LiveList<SessionEvent, writer_proof_> events_{};
+    SessionTagId const session_id_{};
+    // The step of the last event that record_now stamped.
+    ::foundation::core::Atomic<std::uint64_t, writer_proof_> last_step_{std::uint64_t{0}};
     // Set when the one writer of this log is minted.
     ::foundation::core::Atomic<bool> has_writer_{false};
 
     friend class SessionEventWriter;
 
-    [[nodiscard]] StepId next_step_() noexcept {
-        const std::uint64_t prior = step_counter_.bump();
+    [[nodiscard]] StepId next_step_(writer_proof_ const& proof) noexcept {
+        const std::uint64_t prior = last_step_.load_owned(proof);
         // The highest value of the word is the empty value of an Option of a
         // step, so the last step of a log is the value below it.
         if (prior >= std::numeric_limits<std::uint64_t>::max() - 1) [[unlikely]]
             detail::event_log::abort_on_step_overflow();
+        last_step_.store_release(proof, prior + 1);
         return StepId{prior + 1};
     }
 
-    void record_now_(::foundation::core::Alloc allocation, SessionEvent event) noexcept {
-        event.step_id_ = next_step_();
-        event.session_ = session_id_;
-        log_.append(allocation, event);
+    // True when the log is empty, or the step of event is not less than the
+    // step of the last event.
+    [[nodiscard]] bool keeps_order_(SessionEvent const& event) const noexcept {
+        return events_.prefix().last().match(
+            [&event](auto last) noexcept { return !StepIdLess{}(StepIdKeyFn{}(event), StepIdKeyFn{}(*last)); },
+            [] noexcept { return true; });
     }
 
-    void record_(::foundation::core::Alloc allocation, SessionEvent event) noexcept { log_.append(allocation, event); }
+    void record_(writer_proof_ const& proof, ::foundation::core::Alloc allocation, SessionEvent const& event) noexcept {
+        CRUCIBLE_PRE(keeps_order_(event));
+        events_.append(proof, allocation, event);
+    }
+
+    // Stamps the event of the caller with the next step and the session, and
+    // appends it.
+    void record_now_(writer_proof_ const& proof, ::foundation::core::Alloc allocation, SessionEvent& event) noexcept {
+        event.step_id_ = next_step_(proof);
+        event.session_ = session_id_;
+        record_(proof, allocation, event);
+    }
 
 public:
     using event_type = SessionEvent;
-    using storage_type = ::foundation::core::SegmentList<SessionEvent>;
+    using events_type = ::foundation::core::SegmentPrefix<SessionEvent const>;
 
     explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
@@ -747,30 +793,39 @@ public:
     // implicit deletion would also list each member that cannot copy.
     SessionEventLog(const SessionEventLog&) =
         delete("the step counter is the ordering identity of a session event log, and a copy would fork the counter");
+    SessionEventLog& operator=(const SessionEventLog&) = delete(
+        "a session event log takes no assignment: it would end the events that a reader on another thread reads");
+    ~SessionEventLog() = default;
 
     [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
-    [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
-    [[nodiscard]] bool empty() const noexcept { return log_.empty(); }
+    [[nodiscard]] std::size_t size() const noexcept { return events_.prefix().size(); }
+    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
-    // An event of the log.  An index at or past size() ends the process.
-    [[nodiscard]] SessionEvent const& operator[](std::size_t index) const& noexcept { return log_[index]; }
-    [[nodiscard]] SessionEvent const& back() const& noexcept { return log_.back(); }
+    // An event of the log.  An index at or past size() ends the process, and so
+    // does the last event of an empty log.
+    [[nodiscard]] SessionEvent const& operator[](std::size_t index) const& noexcept {
+        return *events_.prefix().get(index).expect("an index of a session event log is below its count");
+    }
+    [[nodiscard]] SessionEvent const& back() const& noexcept {
+        return *events_.prefix().last().expect("a session event log whose last event is read holds an event");
+    }
     void operator[](std::size_t index) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
     void back() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
 
-    // The events in the order of the appends, for the loop, the walk and the
-    // walk of the segments (the read of a log).
-    [[nodiscard]] storage_type const& events() const& noexcept { return log_.peek(); }
+    // The events that the writer published, in the order of the appends, for
+    // each read of one prefix: get, the loop, the walk and the walk of the
+    // segments (the read of a log).
+    [[nodiscard]] events_type events() const& noexcept { return events_.prefix(); }
     void events() const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
-
-    [[nodiscard]] storage_type drain() && noexcept { return std::move(log_).drain(); }
 };
 
 // The one writer of one session event log.  Only mint_session_event_writer
 // builds it, and each log has one, so no two recorders append to one log.
 // The writer is move-only: a recorder moves it from each handle to the
 // next, so one handle at a time appends.  A moved-from writer names no log,
-// and an append through it ends the process.
+// and an append through it ends the process, in each build and under each
+// contract semantic.  The writer makes the proof of the one writer only for the
+// list and the step counter of the log that it names.
 //
 // The move constructor is user-provided, so the class is not trivially
 // copyable and std::bit_cast cannot build one.
@@ -815,15 +870,15 @@ public:
 
     // Stamps the next step and the session of the log, then appends.
     void record_now(SessionEvent event) noexcept {
-        CRUCIBLE_PRE(log_ != nullptr);
-        log_->record_now_(allocation_, event);
+        CRUCIBLE_FATAL_INVARIANT(log_ != nullptr);
+        log_->record_now_(SessionEventLog::writer_proof_{}, allocation_, event);
     }
 
     // Appends an event whose step the caller chose, for a replay from a
     // snapshot.  The step must not go backward.
     void record(SessionEvent event) noexcept {
-        CRUCIBLE_PRE(log_ != nullptr);
-        log_->record_(allocation_, event);
+        CRUCIBLE_FATAL_INVARIANT(log_ != nullptr);
+        log_->record_(SessionEventLog::writer_proof_{}, allocation_, event);
     }
 };
 
@@ -846,22 +901,45 @@ void mint_session_event_writer(::foundation::core::Alloc, SessionEventLog&&) noe
 
 // ── The reader of the logs of a run ──────────────────────────────────
 
+namespace detail::event_log {
+
+// The events of one log that a merge reads: one prefix of the log, and the
+// position of its next event.
+class MergedLog final {
+    SessionEventLog::events_type events_;
+    std::size_t next_ = 0;
+
+public:
+    explicit MergedLog(const SessionEventLog& log) noexcept : events_{log.events()} {}
+
+    [[nodiscard]] std::size_t size() const noexcept { return events_.size(); }
+    [[nodiscard]] bool has_current() const noexcept { return next_ != events_.size(); }
+    // The next event of the log, which the merge has not taken.
+    [[nodiscard]] const SessionEvent& current() const noexcept {
+        return *events_.get(next_).expect("a merge reads the next event of a log that has one");
+    }
+    void step() noexcept { ++next_; }
+};
+
+}  // namespace detail::event_log
+
 // The events of `first` and `rest` as one sequence: by step id, and for
 // one step id in the order of the logs in the arguments.  Each log has one
 // writer and steps that do not decrease, so the sequence depends on no
-// schedule of the threads.  Read the logs after their writers end.  The
-// events take one allocation.  Each argument after the first is a log too:
-// the list of the logs below refuses another type.  Complexity: O(n * k)
-// for n events in k logs.
+// schedule of the threads.  The merge reads one prefix of each log at its
+// start, so a writer can append to its log at the same time, and the sequence
+// does not hold the events of those appends.  The events take one allocation.
+// Each argument after the first is a log too: the list of the logs below
+// refuses another type.  Complexity: O(n * k) for n events in k logs.
 template <typename... Rest>
 [[nodiscard]] ::foundation::core::HeapArray<SessionEvent>
 merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& first, const Rest&... rest) {
     constexpr std::size_t log_count = 1 + sizeof...(Rest);
-    const SessionEventLog* const logs[log_count] = {&first, &rest...};
-    std::size_t next[log_count]{};
+    detail::event_log::MergedLog logs[log_count] = {detail::event_log::MergedLog{first},
+                                                    detail::event_log::MergedLog{rest}...};
     std::size_t total = 0;
-    for (const SessionEventLog* const log : logs)
-        total += log->size();
+    for (const detail::event_log::MergedLog& log : logs)
+        total += log.size();
     ::foundation::core::HeapArray<SessionEvent> events =
         ::foundation::core::mint_heap_array(allocation, total, SessionEvent::close(RoleTagId{}, RoleTagId{}));
     for (std::size_t place = 0; place < total; ++place) {
@@ -869,15 +947,15 @@ merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& 
         // the least step.  A tie keeps the earlier log.
         std::size_t chosen = log_count;
         for (std::size_t index = 0; index < log_count; ++index) {
-            if (next[index] == logs[index]->size()) continue;
-            const StepId step = (*logs[index])[next[index]].step_id();
-            if (chosen == log_count || StepIdLess{}(step, (*logs[chosen])[next[chosen]].step_id())) chosen = index;
+            if (!logs[index].has_current()) continue;
+            const StepId step = logs[index].current().step_id();
+            if (chosen == log_count || StepIdLess{}(step, logs[chosen].current().step_id())) chosen = index;
         }
-        const SessionEvent& merged = (*logs[chosen])[next[chosen]];
+        const SessionEvent& merged = logs[chosen].current();
         events.with_element(
             place, [&merged](SessionEvent& event) noexcept { event = merged; },
             [] noexcept { ::foundation::core::fatal("the events hold a slot for each event of the logs"); });
-        ++next[chosen];
+        logs[chosen].step();
     }
     return events;
 }

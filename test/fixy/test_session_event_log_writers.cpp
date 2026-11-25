@@ -8,7 +8,8 @@
 // recorded sessions on two threads many times, and each merge gives the
 // same sequence.  The tsan preset runs the same test, so the shape with
 // one log for each thread is the shape that ThreadSanitizer checks.  Two
-// threads then read one finished log at the same time.
+// threads then read one finished log at the same time, and one thread reads
+// and merges a log while its writer appends.
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
@@ -26,6 +27,8 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Platform.h>
+#include <foundation/core/Atomic.h>
 #include <foundation/effects/Effect.h>
 
 namespace {
@@ -174,6 +177,115 @@ void two_threads_read_one_finished_log() {
     CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kSum && sums.at(::fixy::index<1>()) == kSum);
 }
 
+// The count of the events that the writer appends beside the reader, and the
+// count of the first ones that wait for the reader.
+constexpr std::size_t kBeside = 1000;
+constexpr std::size_t kHandshakes = 70;
+
+// A thread reads a log while its writer appends to it on the calling thread.
+// The reader reads the new events of each prefix, and it merges the log beside
+// the writer.  The writer waits for the reader after each of the first appends,
+// so the reader reads each of those events from a prefix that has no later
+// event.  The wait gives no order from the writer to the reader.  The published
+// count of the log is the one such order, and ThreadSanitizer reports each read
+// that it does not cover.
+void a_thread_reads_a_log_beside_its_writer() {
+    s::SessionEventLog log{s::SessionTagId{9}};
+    ::foundation::core::Atomic<std::size_t> acknowledged{0};
+    auto read = [&log, &acknowledged]() noexcept {
+        std::size_t seen = 0;
+        while (seen != kBeside) {
+            const s::SessionEventLog::events_type events = log.events();
+            if (events.size() == seen) {
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, events.size() > seen && events.size() <= kBeside);
+            for (std::size_t position = events.size(); position != seen; --position) {
+                const s::SessionEvent& event = *events.get(position - 1).expect("the position is below the count");
+                CRUCIBLE_TEST_ASSERT(kTest, event.step_id().raw() == position && event.session().value == 9);
+                CRUCIBLE_TEST_ASSERT(kTest, event.from_role() == kLeft && event.op() == s::SessionOp::Close);
+            }
+            seen = events.size();
+            CRUCIBLE_TEST_ASSERT(kTest, log.size() >= seen && log[seen - 1].step_id().raw() == seen);
+            CRUCIBLE_TEST_ASSERT(kTest, log.back().step_id().raw() >= seen && !log.empty());
+            const auto merged = s::merge_session_logs(test_alloc(), log);
+            CRUCIBLE_TEST_ASSERT(kTest, merged.size() >= seen && merged.size() <= kBeside);
+            std::uint64_t step = 0;
+            for (const s::SessionEvent& event : merged.view()) {
+                ++step;
+                CRUCIBLE_TEST_ASSERT(kTest, event.step_id().raw() == step);
+            }
+            acknowledged.store_release(seen);
+        }
+        return seen;
+    };
+    auto write = [&log, &acknowledged]() noexcept {
+        s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+        for (std::size_t count = 1; count <= kBeside; ++count) {
+            writer.record_now(s::SessionEvent::close(kLeft, kSink));
+            while (count <= kHandshakes && acknowledged.load_acquire() < count)
+                CRUCIBLE_SPIN_PAUSE;
+        }
+        return log.size();
+    };
+    const auto counts = ::fixy::thread::run_beside(::fixy::BgLoadCtx{::foundation::effects::testing::bg()},
+                                                   ::fixy::thread::ThreadOptions{}, std::move(read), std::move(write))
+                            .expect("the test starts one thread");
+    CRUCIBLE_TEST_ASSERT(kTest, counts.at(::fixy::index<0>()) == kBeside && counts.at(::fixy::index<1>()) == kBeside);
+}
+
+// An event whose step goes backward ends the process, and an event with the
+// step of the last event goes into the log.
+void a_step_that_goes_backward_ends_the_process() {
+    const auto event_of_step = [](std::uint64_t step) noexcept {
+        return s::SessionEvent::cipher_event(s::SessionOp::StorePending, s::StepId{step}, s::StateHash{},
+                                             s::CipherEventOrder{std::uint64_t{1}});
+    };
+    s::SessionEventLog log;
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+    writer.record(event_of_step(5));
+    writer.record(event_of_step(5));
+    ::fixy::check::expect_dies(
+        kTest, [&writer, &event_of_step] noexcept { writer.record(event_of_step(4)); },
+        ::fixy::TextView{"foundation: contract violation: keeps_order_(event)"});
+    CRUCIBLE_TEST_ASSERT(kTest, log.size() == 2 && log.back().step_id().raw() == 5);
+}
+
+// The writer that a call gives back by reference.  The rule use-after-move does
+// not read through it, so a test reaches a moved-from writer.
+[[nodiscard]] s::SessionEventWriter& through(s::SessionEventWriter& writer) noexcept { return writer; }
+
+// An append through a moved-from writer ends the process, and the writer that
+// took its log appends.
+void an_append_through_a_moved_writer_ends_the_process() {
+    s::SessionEventLog log;
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+    s::SessionEventWriter moved{std::move(through(writer))};
+    constexpr ::fixy::TextView expected{"foundation: fatal invariant failed: log_ != nullptr"};
+    ::fixy::check::expect_dies(
+        kTest, [&writer] noexcept { through(writer).record_now(s::SessionEvent::close(kLeft, kSink)); }, expected);
+    ::fixy::check::expect_dies(
+        kTest, [&writer] noexcept { through(writer).record(s::SessionEvent::close(kLeft, kSink)); }, expected);
+    moved.record_now(s::SessionEvent::close(kLeft, kSink));
+    CRUCIBLE_TEST_ASSERT(kTest, log.size() == 1);
+}
+
+// A read at the count of a log and the last event of an empty log end the
+// process.
+void a_read_past_the_events_ends_the_process() {
+    s::SessionEventLog log;
+    const s::SessionEventLog empty;
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+    writer.record_now(s::SessionEvent::close(kLeft, kSink));
+    ::fixy::check::expect_dies(
+        kTest, [&log] noexcept { static_cast<void>(log[1]); },
+        ::fixy::TextView{"an index of a session event log is below its count"});
+    ::fixy::check::expect_dies(
+        kTest, [&empty] noexcept { static_cast<void>(empty.back()); },
+        ::fixy::TextView{"a session event log whose last event is read holds an event"});
+}
+
 // An empty log adds nothing, and a tie of steps keeps the order of the
 // arguments.
 void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
@@ -202,6 +314,10 @@ int main() {
     two_threads_record_into_their_own_logs();
     an_append_keeps_each_event_at_its_address();
     two_threads_read_one_finished_log();
+    a_thread_reads_a_log_beside_its_writer();
+    a_step_that_goes_backward_ends_the_process();
+    an_append_through_a_moved_writer_ends_the_process();
+    a_read_past_the_events_ends_the_process();
     a_merge_keeps_the_order_of_the_arguments_for_one_step();
     ::fixy::check::pass(kTest, "test_session_event_log_writers: OK\n");
     return 0;

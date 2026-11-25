@@ -4046,6 +4046,9 @@ fixy_neg_compile_test(neg_sess_event_writer_from_const_log
 fixy_neg_compile_test(neg_sess_event_log_event_of_temporary
   "use of deleted function .void fixy::session::SessionEventLog::operator.* const &&"
   "an element of a temporary log dangles at the end of the full expression")
+fixy_neg_compile_test(neg_sess_event_log_returned_events_of_local
+  "neg_sess_event_log_returned_events_of_local\\.cpp:19:[0-9]+: error: this function gives back a borrow of the local log"
+  "and that object ends with the frame of the function")
 fixy_neg_compile_test(neg_locked_body_keeps_a_view_of_events
   "neg_locked_body_keeps_a_view_of_events\\.cpp:42:16: error: use of deleted function .void fixy::spin::Locked<T, Tag, Strategy>::with\\(const Ctx&, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")
