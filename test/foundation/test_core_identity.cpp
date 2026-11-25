@@ -1,13 +1,17 @@
-// Tests of foundation/core/Identity.h: mint_identity and Identity.
+// Tests of foundation/core/Identity.h: mint_identity, Identity and
+// UniqueIdentity.
 
 #include <foundation/core/Identity.h>
 
 #include <foundation/Platform.h>
 
+#include <utility>
+
 namespace {
 
 using ::foundation::core::Identity;
 using ::foundation::core::mint_identity;
+using ::foundation::core::UniqueIdentity;
 
 // A copy is equal to its source, and two mints are never equal.
 void test_copy_and_fresh() {
@@ -35,10 +39,69 @@ void test_each_mint_is_fresh() {
     }
 }
 
+// Moves the right out under the first name, and gives true when the old name
+// names the Identity.  Two parameters name one right, so the rule
+// use-after-move does not see that the old name moved.
+[[nodiscard]] bool names_under_the_old_name(UniqueIdentity& right, UniqueIdentity& old_name,
+                                            Identity const& identity) noexcept {
+    UniqueIdentity const moved{std::move(right)};
+    CRUCIBLE_FATAL_INVARIANT(moved.names(identity));
+    return old_name.names(identity);
+}
+
+// A right names the Identity that it was made from, and no other one.  A move
+// gives it to the target and leaves none in the source.
+void test_move_leaves_none() {
+    Identity const identity = mint_identity();
+    Identity const other = mint_identity();
+    UniqueIdentity right{identity};
+    CRUCIBLE_FATAL_INVARIANT(right.names(identity) && !right.names(other));
+    CRUCIBLE_FATAL_INVARIANT(!names_under_the_old_name(right, right, identity));
+
+    UniqueIdentity target{other};
+    UniqueIdentity source{identity};
+    target = std::move(source);
+    CRUCIBLE_FATAL_INVARIANT(target.names(identity) && !target.names(other));
+}
+
+// The assignment takes the Identity out of the source before it writes the
+// target, so an assignment of a right to itself keeps it.
+void assign_under_two_names(UniqueIdentity& right, UniqueIdentity& other_name) noexcept {
+    right = std::move(other_name);
+}
+
+void test_self_move_keeps() {
+    Identity const identity = mint_identity();
+    UniqueIdentity right{identity};
+    assign_under_two_names(right, right);
+    CRUCIBLE_FATAL_INVARIANT(right.names(identity));
+}
+
+// Empties the right under the first name, and counts the fresh Identities that
+// the old name names.
+[[nodiscard]] int count_named_by_an_emptied_right(UniqueIdentity& right, UniqueIdentity& old_name) noexcept {
+    UniqueIdentity const moved{std::move(right)};
+    static_cast<void>(moved);
+    int named = 0;
+    for (int turn = 0; turn < 4096; ++turn) {
+        if (old_name.names(mint_identity())) ++named;
+    }
+    return named;
+}
+
+// The property: no mint gives the word of an emptied right.
+void test_emptied_right_names_no_identity() {
+    UniqueIdentity right{mint_identity()};
+    CRUCIBLE_FATAL_INVARIANT(count_named_by_an_emptied_right(right, right) == 0);
+}
+
 }  // namespace
 
 int main() {
     test_copy_and_fresh();
     test_each_mint_is_fresh();
+    test_move_leaves_none();
+    test_self_move_keeps();
+    test_emptied_right_names_no_identity();
     return 0;
 }

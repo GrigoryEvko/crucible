@@ -708,10 +708,12 @@ namespace detail {
 // phase B).  mint_sole_writer() and mint_identity() of
 // foundation/core/Identity.h take its next value, so no two mints give one
 // id.  It is one object for the process (CRUCIBLE_PROCESS_WIDE), also when two
-// shared libraries include this header, and it starts at 1.  A counter of 64
-// bits does not wrap: at one mint in each nanosecond, it gets to 2^64 after
-// 584 years.
-CRUCIBLE_PROCESS_WIDE inline constinit Atomic<std::uint64_t> next_identity_{1};
+// shared libraries include this header, and it starts at 1, because 0 is the
+// id of a moved-from writer and of an emptied right.  A counter of 64 bits
+// does not wrap: at one mint in each nanosecond, it gets to 2^64 after 584
+// years.
+inline constexpr std::uint64_t first_identity_word = 1;
+CRUCIBLE_PROCESS_WIDE inline constinit Atomic<std::uint64_t> next_identity_{first_identity_word};
 
 }  // namespace detail
 

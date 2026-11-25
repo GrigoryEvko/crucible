@@ -39,10 +39,28 @@ static_assert(!std::totally_ordered<Identity>);
 static_assert(std::is_same_v<decltype(mint_identity()), Identity>);
 static_assert(noexcept(mint_identity()));
 
+// The right of one holder is one word.  It does not copy, it moves, and it has
+// no trivial constructor, so no byte route builds one.  It comes only from an
+// Identity, and it compares with no right.
+static_assert(sizeof(UniqueIdentity) == sizeof(std::uint64_t));
+static_assert(!std::is_default_constructible_v<UniqueIdentity> && !std::is_copy_constructible_v<UniqueIdentity>);
+static_assert(!std::is_copy_assignable_v<UniqueIdentity>);
+static_assert(std::is_nothrow_move_constructible_v<UniqueIdentity>
+              && std::is_nothrow_move_assignable_v<UniqueIdentity>);
+static_assert(!std::is_trivially_move_constructible_v<UniqueIdentity> && !std::is_trivially_copyable_v<UniqueIdentity>);
+static_assert(std::is_constructible_v<UniqueIdentity, Identity const&>);
+static_assert(!std::is_constructible_v<UniqueIdentity, std::uint64_t>);
+static_assert(!std::is_convertible_v<Identity, UniqueIdentity> && !std::equality_comparable<UniqueIdentity>);
+
+// The word of an emptied right is 0, and the mints start above it.
+static_assert(detail::first_identity_word != 0);
+
 // Identity is a type of the Ref family (plan section 11.10).  Its only public
 // members are language protocols.
 inline constexpr TextView identity_names{"Identity mint_identity"};
 CRUCIBLE_CLOSED_SURFACE(identity_names, Identity);
+inline constexpr TextView unique_identity_names{"UniqueIdentity names"};
+CRUCIBLE_CLOSED_SURFACE(unique_identity_names, UniqueIdentity);
 
 }  // namespace detail::identity_checks
 
