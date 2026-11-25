@@ -1,20 +1,39 @@
 #pragma once
 
-// The trait that names a loan key, for the borrow types that refuse a key as
-// their element: Ref and Box of foundation/core/Ref.h, View and ViewMut of
-// foundation/core/Region.h, and RefMut of foundation/core/Frame.h.  Frame.h
-// defines LoanKey (the loan key, the dispatch brand), and the class states
-// loan_key_class_.  The header includes only the read of an annotation and
-// <meta>, so a borrow type pays no include of Frame.h for its refusal.
+// The marks of a loan key and of a keyed owner, and the trait that names a loan
+// key.  The borrow types refuse a key as their element: Ref and Box of
+// foundation/core/Ref.h, View and ViewMut of foundation/core/Region.h, and
+// RefMut of foundation/core/Frame.h.  Frame.h defines LoanKey (the loan key, the
+// dispatch brand), and the class states loan_key_class_.  The header includes
+// only the read of an annotation and <meta>, so a borrow type pays no include of
+// Frame.h for its refusal, and the parts of a class (foundation/core/TypeParts.h)
+// read the marks with no include of it.
 
 #include <foundation/reflect/Annotation.h>
 
 #include <meta>
 
-namespace foundation::core::detail {
+namespace foundation::core {
 
-// The annotation of the class LoanKey alone.  A keyed owner states loan_key_mark
-// of Frame.h, and not this annotation.
+// The mark of a loan key and of a keyed owner.  The kind loan-key-static of
+// the rule process-wide-state (utils/tools/quarantine/declaration.cpp, the
+// loan-key statics) refuses an object of static or thread storage duration
+// that reaches a class with the mark, because a body with no capture reaches
+// such an object and the gate does not see it.  A class template whose
+// instances are keyed only for some arguments writes loan_key_mark_when.
+struct loan_key_mark final {};
+struct no_loan_key_mark final {};
+
+template <bool IsKeyed>
+inline constexpr auto loan_key_mark_when = no_loan_key_mark{};
+
+template <>
+inline constexpr auto loan_key_mark_when<true> = loan_key_mark{};
+
+namespace detail {
+
+// The annotation of the class LoanKey alone.  A keyed owner states loan_key_mark,
+// and not this annotation.
 struct loan_key_class_ final {};
 
 // True for a LoanKey of each brand, with its cv-qualifiers and its reference
@@ -30,4 +49,6 @@ struct loan_key_class_ final {};
     return ::foundation::reflect::carries_annotation(bare, ^^loan_key_class_);
 }
 
-}  // namespace foundation::core::detail
+}  // namespace detail
+
+}  // namespace foundation::core

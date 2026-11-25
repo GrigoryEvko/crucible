@@ -64,8 +64,8 @@ public:
 namespace detail {
 
 // True when the type is a keyed in-place owner of the brand: a complete class
-// with loan_key_mark of foundation/core/Frame.h whose template arguments name
-// the brand, and no LoanKey.
+// with loan_key_mark of foundation/core/LoanKeyTrait.h whose template arguments
+// name the brand, and no LoanKey.
 [[nodiscard]] consteval bool is_keyed_owner_of_(std::meta::info type, std::meta::info brand) {
     std::meta::info const bare = std::meta::dealias(std::meta::remove_cv(type));
     return !std::meta::is_reference_type(type) && !is_loan_key_type_(bare) && is_owner_or_key_of_(bare, brand, brand);

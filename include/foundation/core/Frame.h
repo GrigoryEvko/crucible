@@ -135,12 +135,13 @@
 //   storage of a heap owner.  A View has no brand, so it proves no
 //   difference either.
 //
-//   What stays open: a body can store a unique borrow in an object outside
-//   the frame through a capture by reference, in a type that names no brand,
-//   such as an address, a plain View or a Ref with the erased brand.  The
-//   borrow then outlives its frame, as a stored ReadView does
-//   (foundation/permissions/ReadView.h).  No code outside the body can name
-//   the brand of the frame, so only such a type carries a borrow out.
+//   A body keeps no borrow of its frame after the frame.  The store check of
+//   the door (StoresNoBorrowOutside of foundation/core/CaptureStore.h) refuses a
+//   body that can write a borrow into an object that it reaches through a
+//   capture, whatever the type of that borrow.  The result of the body holds no
+//   borrow.  What stays open: a body can store an address in a type that is no
+//   borrow, such as an integer, and it can store a plain View in an object of
+//   static or thread storage duration, which no capture names.
 //
 // A RefMut holds one address.  It does not copy.  A move leaves the source
 // with its address, and the rule use-after-move refuses a later use of the
@@ -172,8 +173,8 @@
 //   A keyed door refuses a body that reaches a key of the brand of its owner
 //   (ReachesNoLoanKey): a capture of the key, a capture of an object that holds
 //   the key or that points to it, at each depth of the walk of
-//   foundation/reflect/TypeComponents.h.  The walk instantiates each class that
-//   it reaches through a pointer, and it refuses a class whose members it cannot
+//   foundation/core/KeyWalk.h.  The walk instantiates each class that it
+//   reaches through a pointer, and it refuses a class whose members it cannot
 //   read, such as an incomplete class behind a pointer.  So a body reaches no
 //   key, and a function that the body calls gets only what the body gives it.
 //   No code inside the body thus opens a second frame of an owner of the brand.
@@ -226,6 +227,7 @@
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/KeyWalk.h>
 #include <foundation/core/LoanKeyTrait.h>
 #include <foundation/reflect/Annotation.h>
 #include <foundation/reflect/TypeComponents.h>
@@ -400,21 +402,6 @@ public:
     [[nodiscard]] constexpr T const* operator->() const& noexcept { return object_; }
 };
 
-// The mark of a loan key and of a keyed owner.  The kind loan-key-static of
-// the rule process-wide-state (utils/tools/quarantine/declaration.cpp, the
-// loan-key statics) refuses an object of static or thread storage duration
-// that reaches a class with the mark, because a body with no capture reaches
-// such an object and the gate does not see it.  A class template whose
-// instances are keyed only for some arguments writes loan_key_mark_when.
-struct loan_key_mark final {};
-struct no_loan_key_mark final {};
-
-template <bool IsKeyed>
-inline constexpr auto loan_key_mark_when = no_loan_key_mark{};
-
-template <>
-inline constexpr auto loan_key_mark_when<true> = loan_key_mark{};
-
 // The brand of an owner with no key.  FixedArray<T, N> takes it by default,
 // and its frame doors take no key.  No mint and no root door gives a
 // LoanKey<Unkeyed>.  The class is a named empty class, so the rule
@@ -501,55 +488,19 @@ public:
 
 namespace detail {
 
-// True when the node is the key, or a class whose members the walk cannot
-// read.  A class that the walk reached through a pointer and that is
-// incomplete has no readable members, and neither has a class whose state
-// reflection does not show.  The gate refuses both, so it fails closed.
-[[nodiscard]] consteval bool is_key_or_unreadable_(::foundation::reflect::TypeNode node, std::meta::info key) {
-    if (node.type == key) {
-        return true;
-    }
-    bool const is_class = std::meta::is_class_type(node.type) || std::meta::is_union_type(node.type);
-    return (is_class && !node.may_read_members) || ::foundation::reflect::holds_unreadable_state(node);
-}
-
-// True when the walk of the gate (the gate) reaches the key from the type
-// root, or a class whose members it cannot read.  The walk is the walk of
-// first_component_satisfying of foundation/reflect/TypeComponents.h with the
-// instantiating read.  It is a function that is no template, so no unit can
-// specialize what the gate admits.  It reads the nodes in the order that it
-// lists them, and it reads each node one time.  Complexity: linear in the
-// distinct types that root reaches, times the scan of the visited list, at
-// compile time only.
+// True when the walk of the gate (the gate) reaches the key from the type root,
+// or a class whose members it cannot read: a class that is incomplete in the
+// unit, or a class whose state reflection does not show.  Such a class can hold
+// the key, so the gate fails closed.  A key with no mark is one that the walk
+// does not name, so the answer for it is true too.  Complexity: a read of the
+// kept answer of the root (foundation/core/KeyWalk.h), and linear in the marked
+// classes that the root reaches.
 [[nodiscard]] consteval bool reaches_loan_key_(std::meta::info root, std::meta::info key) {
-    namespace refl = ::foundation::reflect;
-    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
-    refl::TypeNodeList listed;
-    listed.push_back(refl::TypeNode{refl::bare_type(root), true});
-    for (std::size_t next = 0; next < listed.size(); ++next) {
-        refl::TypeNode const node = listed.begin()[next];
-        bool was_read = false;
-        for (std::size_t earlier = 0; earlier < next; ++earlier) {
-            refl::TypeNode const& seen = listed.begin()[earlier];
-            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
-                was_read = true;
-                break;
-            }
-        }
-        if (was_read) {
-            continue;
-        }
-        if (is_key_or_unreadable_(node, key)) {
-            return true;
-        }
-        for (refl::TypeNode const& component : refl::argument_components_of(node, read)) {
-            listed.push_back(component);
-        }
-        for (refl::TypeNode const& component : refl::member_components_of(node, read)) {
-            listed.push_back(component);
-        }
-    }
-    return false;
+    if (!is_marked_key_(key)) return true;
+    std::meta::info const bare = ::foundation::reflect::bare_type(root);
+    if (is_key_free_(bare)) return false;
+    KeyReach const& reach = std::meta::extract<KeyReach const&>(kept_key_reach_of(bare));
+    return reach.is_refused || reach.holds(key);
 }
 
 // The brand of the owners that a key brand opens (the borrow of a root door):
@@ -597,103 +548,21 @@ namespace detail {
     return false;
 }
 
-// The two regions of the walk of the borrow of a root door: what a value of
-// the root holds, and what it reaches through a borrow.
-enum class BorrowRegion : unsigned char {
-    held,
-    borrowed,
-};
-
 // True when the walk of the borrow of a root door reaches an owner of the
 // brand or a key of the brand through a borrow (is_owner_or_key_of_, with
 // the brand of the owners that the brand states), or a class whose members it
-// cannot read.  Each node has a region, and the walk keeps one list for each
-// region, so a type read in one region is read again in the other:
-//   * the root is held.  A base and a member by value have the region of
-//     their class.  A member that is a reference, the target of a pointer,
-//     each part of a function type and of a member pointer, and the first
-//     argument of a class that states refers{}, refers_unique{} or
-//     refers_deep{} are borrowed.  The element of an array has the region of
-//     the array
-//   * each other template argument names a type and reaches no object, so it
-//     is held, apart from an argument that is a reference type.  The members
-//     give each borrow.  The handle of a PermissionedChannel names its payload
-//     in consumer_pops<Form, T, Handle> and holds none, and with the region of
-//     its class that handle would refuse a payload that it takes by value
-//   * a class that states by_arguments{}, such as a Box, owns the object of
-//     its first argument: that argument has the region of the class, and the
-//     walk reads no member
-//   * a class that states synchronized{} or payload_cell{}, reached through a
-//     borrow, hands its values in and out by value (foundation/Transfer.h):
-//     the walk reads its arguments as held and no member.  The walk thus
-//     trusts each statement of such a class for its private state
-// It is a function that is no template, so no unit can specialize what it
-// admits.  Complexity: linear in the distinct pairs of a type and a region,
-// times the scan of the visited list, at compile time only.
+// cannot read.  walk_owners_ of foundation/core/KeyWalk.h gives the regions of
+// the walk, and the root is held.  Complexity: a read of the kept answer of the
+// root, and linear in the marked classes that the root reaches through a
+// borrow, times their template arguments.
 [[nodiscard]] consteval bool reaches_borrowed_key_owner_(std::meta::info root, std::meta::info brand) {
-    namespace refl = ::foundation::reflect;
-    namespace tr = ::foundation::transfer;
-    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
-    constexpr BorrowRegion held = BorrowRegion::held;
-    constexpr BorrowRegion borrowed = BorrowRegion::borrowed;
+    std::meta::info const bare = ::foundation::reflect::bare_type(root);
+    if (is_owner_free_(bare, BorrowRegion::held)) return false;
+    KeyReach const& reach = std::meta::extract<KeyReach const&>(kept_owner_reach_of(bare, BorrowRegion::held));
+    if (reach.is_refused) return true;
     std::meta::info const owner_brand = stated_owner_brand_(brand);
-    refl::TypeNodeList held_nodes;
-    refl::TypeNodeList borrowed_nodes;
-    std::size_t next_held = 0;
-    std::size_t next_borrowed = 0;
-    auto nodes_of = [&](BorrowRegion region) -> refl::TypeNodeList& {
-        return region == borrowed ? borrowed_nodes : held_nodes;
-    };
-    held_nodes.push_back(refl::TypeNode{refl::bare_type(root), true});
-    while (next_held < held_nodes.size() || next_borrowed < borrowed_nodes.size()) {
-        BorrowRegion const region = next_held < held_nodes.size() ? held : borrowed;
-        std::size_t const at = region == borrowed ? next_borrowed++ : next_held++;
-        refl::TypeNode const node = nodes_of(region).begin()[at];
-        bool was_read = false;
-        for (std::size_t earlier = 0; earlier < at; ++earlier) {
-            refl::TypeNode const& seen = nodes_of(region).begin()[earlier];
-            if (seen.type == node.type && (seen.may_read_members || !node.may_read_members)) {
-                was_read = true;
-                break;
-            }
-        }
-        if (was_read) {
-            continue;
-        }
-        std::meta::info const type = node.type;
-        bool const is_class = std::meta::is_class_type(type) || std::meta::is_union_type(type);
-        if ((is_class && !node.may_read_members) || refl::holds_unreadable_state(node)) {
-            return true;
-        }
-        if (region == borrowed && is_owner_or_key_of_(type, brand, owner_brand)) {
-            return true;
-        }
-        bool const is_box = is_class && tr::detail::states(type, ^^tr::by_arguments);
-        bool const is_referring =
-            is_class
-            && (tr::detail::states(type, ^^tr::refers) || tr::detail::states(type, ^^tr::refers_unique)
-                || tr::detail::states(type, ^^tr::refers_deep));
-        bool const is_cell =
-            is_class && (tr::detail::states(type, ^^tr::synchronized) || tr::detail::states(type, ^^tr::payload_cell));
-        bool const is_indirect = std::meta::is_pointer_type(type) || std::meta::is_function_type(type)
-                              || std::meta::is_member_pointer_type(type);
-        bool is_first_argument = true;
-        for (refl::TypeNode const& component : refl::argument_components_of(node, read)) {
-            BorrowRegion target = held;
-            if (is_indirect || component.was_reference || (is_referring && is_first_argument)) {
-                target = borrowed;
-            } else if (std::meta::is_array_type(type) || (is_box && is_first_argument)) {
-                target = region;
-            }
-            is_first_argument = false;
-            nodes_of(target).push_back(component);
-        }
-        if (is_box || (is_cell && region == borrowed)) {
-            continue;
-        }
-        for (refl::TypeNode const& component : refl::member_components_of(node, read)) {
-            nodes_of(component.was_reference ? borrowed : region).push_back(component);
-        }
+    for (std::size_t index = 0; index < reach.size; ++index) {
+        if (is_owner_or_key_of_(reach.types[index], brand, owner_brand)) return true;
     }
     return false;
 }

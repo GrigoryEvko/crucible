@@ -139,6 +139,66 @@ static_assert(type_parts_v<Counter<int>>.first_argument == ^^int);
 static_assert(type_parts_v<View<Scalars>>.size == type_parts_v<View<Scalars>>.argument_count);
 static_assert(type_parts_v<HeapArray<Scalars>>.size == type_parts_v<HeapArray<Scalars>>.argument_count);
 
+// The type of each value argument stands after the type arguments, and the bases
+// and the members stand from member_start.  The first argument that is no
+// template has a fact of its own, also when a value argument or a leaf is the
+// first one.
+template <template <class> class Form, class First, auto Value, class Second>
+struct NamesArguments : PlainBase {};
+template <auto Value, class Type>
+struct NamesValueFirst {};
+template <class First, class Second>
+struct NamesTwo {};
+[[nodiscard]] consteval bool has_the_parts_of_the_arguments() {
+    using Named = NamesArguments<Counter, Scalars const&, static_cast<Scalars*>(nullptr), View<int>>;
+    TypeParts const& named = type_parts_v<Named>;
+    PartRun const run = named.run();
+    if (named.size != 4 || named.argument_count != 2 || named.member_start != 3) return false;
+    std::meta::info const view = std::meta::dealias(^^View<int>);
+    std::meta::info const scalars = ^^Scalars;
+    std::meta::info const pointer = std::meta::add_pointer(scalars);
+    std::meta::info const plain_base = ^^PlainBase;
+    bool const has_first = run[0].type == scalars && run[0].has(PartFact::is_first)
+                        && run[0].has(PartFact::was_reference) && run[0].has(PartFact::was_const);
+    bool const has_second =
+        run[1].type == view && !run[1].has(PartFact::is_first) && !run[1].has(PartFact::was_reference);
+    bool const has_value = run[2].type == pointer && !run[2].has(PartFact::is_first);
+    bool const has_base = run[3].type == plain_base && run[3].has(PartFact::is_plain);
+    return has_first && has_second && has_value && has_base;
+}
+static_assert(has_the_parts_of_the_arguments());
+static_assert(type_parts_v<NamesValueFirst<static_cast<Scalars*>(nullptr), View<int>>>.size == 2);
+static_assert(
+    !type_parts_v<NamesValueFirst<static_cast<Scalars*>(nullptr), View<int>>>.run()[0].has(PartFact::is_first));
+static_assert(
+    type_parts_v<NamesValueFirst<static_cast<Scalars*>(nullptr), View<int>>>.run()[1].has(PartFact::is_first));
+static_assert(!type_parts_v<NamesValueFirst<7, View<int>>>.run()[0].has(PartFact::is_first));
+static_assert(!type_parts_v<NamesTwo<int, View<int>>>.run()[0].has(PartFact::is_first));
+static_assert(type_parts_v<NamesTwo<View<int>, int>>.run()[0].has(PartFact::is_first));
+
+// The marks of the parts, and the held parts of a class whose parts hide its
+// members, also of one with more held parts than the near rows.
+struct[[= loan_key_mark{}]] MarkedAsKey {};
+template <class T>
+struct[[= ::foundation::transfer::refers{}]] HidesMembers : PlainBase {
+    Scalars& hidden;
+};
+struct[[= ::foundation::transfer::refers{}]] HidesMany {
+    Scalars &a0, &a1, &a2, &a3, &a4, &a5, &a6, &a7, &a8, &a9, &a10, &a11, &a12;
+    View<int> last;
+};
+static_assert(type_parts_v<MarkedAsKey>.is_key_marked && !type_parts_v<Scalars>.is_key_marked);
+static_assert(type_parts_v<Box<int>>.states_by_arguments && !type_parts_v<HeapArray<int>>.states_cell);
+static_assert(type_parts_v<Atomic<int>>.states_cell && !type_parts_v<Atomic<int>>.states_by_arguments);
+static_assert(type_parts_v<HidesMembers<int>>.hides_members && type_parts_v<HidesMembers<int>>.size == 0);
+static_assert(held_parts_v<HidesMembers<int>>.size == 2 && held_parts_v<HidesMembers<int>>.member_start == 0);
+static_assert(held_parts_v<HidesMembers<int>>.run()[0].type == ^^PlainBase);
+static_assert(held_parts_v<HidesMembers<int>>.run()[1].has(PartFact::was_reference));
+static_assert(type_parts_v<HidesMany>.size == 0 && held_parts_v<HidesMany>.size == 14);
+static_assert(held_parts_v<HidesMany>.run()[13].type == std::meta::dealias(^^View<int>));
+static_assert(!type_parts_v<Scalars>.hides_members && type_parts_v<View<int>>.hides_members);
+static_assert(type_parts_v<Box<int>>.hides_members && kept_held_parts_of(^^Scalars) == ^^held_parts_v<Scalars>);
+
 // The kept parts of a part are the parts of its class.
 static_assert(std::meta::extract<TypeParts const&>(type_parts_v<DerivedOfView>.run()[0].kept).size == 1);
 static_assert(kept_parts_of(^^Scalars) == ^^type_parts_v<Scalars>);

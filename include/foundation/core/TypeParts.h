@@ -3,18 +3,24 @@
 // The parts of a class, read one time in each translation unit.
 //
 // A walk of a frame door reads each class that a body reaches: the store check
-// of foundation/core/CaptureStore.h reads the template arguments, the bases,
-// the members and the marks of each one.  A query of reflection that gives a
-// list costs about 0.4 M compile instructions for each element, so the read of
-// one class costs some millions, and the bodies of one unit reach the same
-// classes again and again.  TypeParts holds what a walk reads of one class,
-// and type_parts_v keeps it.
+// of foundation/core/CaptureStore.h and the walks of the loan keys of
+// foundation/core/KeyWalk.h read the template arguments, the bases, the members
+// and the marks of each one.  A query of reflection that gives a list costs
+// about 0.4 M compile instructions for each element, so the read of one class
+// costs some millions, and the bodies of one unit reach the same classes again
+// and again.  TypeParts holds what a walk reads of one class, and type_parts_v
+// keeps it.
 //
 //   type_parts_v<Class>    the parts of a complete class or union
 //   kept_parts_of(type)    the reflection of that variable for a type
+//   held_parts_v<Class>    the bases and the data members alone, also of a
+//                          borrow and of an owner
+//   kept_held_parts_of(type)
+//                          the reflection of that variable for a type
 //   parts.run()            the parts in their order: each type argument, then
-//                          each base, and then each data member.  A borrow and
-//                          an owner give their type arguments alone
+//                          the type of each value argument, then each base,
+//                          and then each data member.  A borrow and an owner
+//                          give their arguments alone
 //   is_plain_class_(type)  true for a plain class or union, with a read that
 //                          costs less than a read of the parts
 //
@@ -42,6 +48,7 @@
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/LoanKeyTrait.h>
 #include <foundation/core/Owner.h>
 #include <foundation/reflect/TypeComponents.h>
 
@@ -52,13 +59,15 @@ namespace foundation::core::detail {
 
 // What a class tells of one of its parts, one bit each: a reference, a const
 // object (the referent of a reference, or the part itself), a mutable member,
-// a type argument that is a scope brand, and a plain part.
+// a type argument that is a scope brand, a plain part, and the first template
+// argument that is no template.
 enum class PartFact : unsigned char {
     was_reference = 1,
     was_const = 2,
     is_mutable = 4,
     is_scope_brand = 8,
     is_plain = 16,
+    is_first = 32,
 };
 
 [[nodiscard]] consteval unsigned char bit_of_(PartFact fact) { return static_cast<unsigned char>(fact); }
@@ -107,15 +116,30 @@ private:
     unsigned char const* facts_ = nullptr;
 };
 
-// The parts of one class.  first_argument is the first type argument of a
-// specialization, also when it is no part, and null when there is none.
+// The parts of one class.  The type arguments stand before argument_count, the
+// types of the value arguments after them, and the bases and the members from
+// member_start.  first_argument is the first type argument of a specialization,
+// also when it is no part, and null when there is none.
 struct TypeParts {
     PartRows<near_part_room> near{};
     std::meta::info wide{};
     std::size_t size = 0;
     std::size_t argument_count = 0;
+    std::size_t member_start = 0;
     std::meta::info first_argument{};
     bool is_first_argument_const = false;
+    // A loan key, a keyed owner or a token of a side: a class that states
+    // loan_key_mark{} (foundation/core/LoanKeyTrait.h).
+    bool is_key_marked = false;
+    // A class that states by_arguments{}, such as a Box: it owns the object of
+    // its first argument.
+    bool states_by_arguments = false;
+    // A class that states synchronized{} or payload_cell{}: it hands its values
+    // in and out by value.
+    bool states_cell = false;
+    // A borrow or an owner, whose parts give no base and no member.  The held
+    // parts give them.
+    bool hides_members = false;
     // A class whose state reflection does not show (holds_unreadable_state of
     // foundation/reflect/TypeComponents.h).
     bool is_unreadable = false;
@@ -265,25 +289,47 @@ private:
     std::size_t size_ = 0;
 };
 
-// The two lists of the parts of one class.  They are templates on their room,
-// so a unit that reads no class instantiates no read.
-template <std::size_t Room>
+// The two reads of one class: each part, as TypeParts gives them, or the bases
+// and the members alone.
+enum class PartRead : unsigned char {
+    each,
+    held,
+};
+
+// The two lists of the parts of one class.  They are templates on their room
+// and their read, so a unit that reads no class instantiates no read.
+template <std::size_t Room, PartRead Read>
 [[nodiscard]] consteval TypeParts list_type_parts_(std::meta::info type);
-template <std::size_t Room>
+template <std::size_t Room, PartRead Read>
 [[nodiscard]] consteval PartRows<Room> list_wide_type_parts_(std::meta::info type);
 
 // The kept parts of one class (the kept answer).
 template <class Class>
-inline constexpr TypeParts type_parts_v = list_type_parts_<near_part_room>(^^Class);
+inline constexpr TypeParts type_parts_v = list_type_parts_<near_part_room, PartRead::each>(^^Class);
 
 // The kept parts of a class with more than near_part_room parts.
 template <class Class>
-inline constexpr WideTypeParts wide_type_parts_v = list_wide_type_parts_<wide_part_room>(^^Class);
+inline constexpr WideTypeParts wide_type_parts_v = list_wide_type_parts_<wide_part_room, PartRead::each>(^^Class);
+
+// The kept bases and members of one class, also of a borrow and of an owner.
+// The argument_count and the member_start of these parts are zero.
+template <class Class>
+inline constexpr TypeParts held_parts_v = list_type_parts_<near_part_room, PartRead::held>(^^Class);
+
+// The kept held parts of a class with more than near_part_room held parts.
+template <class Class>
+inline constexpr WideTypeParts wide_held_parts_v = list_wide_type_parts_<wide_part_room, PartRead::held>(^^Class);
 
 // The reflection of the kept parts of a complete class or union.
 [[nodiscard]] consteval std::meta::info kept_parts_of(std::meta::info type) {
     std::meta::info const arguments[] = {type};
     return std::meta::substitute(^^type_parts_v, arguments);
+}
+
+// The reflection of the kept held parts of a complete class or union.
+[[nodiscard]] consteval std::meta::info kept_held_parts_of(std::meta::info type) {
+    std::meta::info const arguments[] = {type};
+    return std::meta::substitute(^^held_parts_v, arguments);
 }
 
 // The class that a pointer to a plain class converts to, and a pointer to no
@@ -304,16 +350,51 @@ struct PlainClassTest final {
     return std::meta::is_convertible_type(std::meta::add_pointer(type), ^^PlainClassTest);
 }
 
-// Adds each type argument that is no leaf to the list, and reads the facts of
-// the class that its arguments give.
+// True for a template argument that is a value or an object, whose type can
+// name a class.
+[[nodiscard]] consteval bool is_value_argument_(std::meta::info argument) {
+    return std::meta::is_value(argument) || std::meta::is_object(argument);
+}
+
+// Adds the type of each value argument that is no leaf to the list.  first_place
+// is the place of the first argument that is a type or a value argument.
+template <std::size_t Room>
+consteval void list_value_arguments_(PartList<Room>& list, std::vector<std::meta::info> const& arguments,
+                                     std::size_t first_place) {
+    for (std::size_t index = first_place; index < arguments.size(); ++index) {
+        if (!is_value_argument_(arguments[index])) continue;
+        std::meta::info const declared = std::meta::dealias(std::meta::type_of(arguments[index]));
+        std::meta::info const bare = ::foundation::reflect::bare_type(declared);
+        if (is_leaf_(bare)) continue;
+        unsigned char facts = index == first_place ? bit_of_(PartFact::is_first) : 0;
+        if (std::meta::is_reference_type(declared)) {
+            facts = static_cast<unsigned char>(facts | bit_of_(PartFact::was_reference));
+        }
+        list.push(bare, std::meta::info{}, facts);
+    }
+}
+
+// Adds each type argument that is no leaf to the list, and then the type of each
+// value argument, and reads the facts of the class that its arguments give.
 template <std::size_t Room>
 consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta::info type) {
     std::vector<std::meta::info> const arguments = std::meta::template_arguments_of(type);
     std::meta::info const* const first = arguments.data();
     std::size_t const count = arguments.size();
+    std::size_t first_place = count;
+    bool has_value_arguments = false;
     for (std::size_t index = 0; index < count; ++index) {
         std::meta::info const argument = first[index];
-        if (!std::meta::is_type(argument)) continue;
+        if (!std::meta::is_type(argument)) {
+            if (!is_value_argument_(argument)) continue;
+            if (first_place == count) first_place = index;
+            std::meta::info const value_type = std::meta::dealias(std::meta::type_of(argument));
+            has_value_arguments = has_value_arguments
+                               || (!std::meta::is_arithmetic_type(value_type) && !std::meta::is_enum_type(value_type));
+            continue;
+        }
+        bool const is_first = first_place == count;
+        if (is_first) first_place = index;
         std::meta::info const declared = std::meta::dealias(argument);
         bool const is_const = std::meta::is_const_type(std::meta::remove_reference(declared));
         std::meta::info const bare = ::foundation::reflect::bare_type(declared);
@@ -323,16 +404,23 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
         }
         if (is_leaf_(bare)) continue;
         unsigned char facts = is_const ? bit_of_(PartFact::was_const) : 0;
+        if (is_first) facts = static_cast<unsigned char>(facts | bit_of_(PartFact::is_first));
+        if (std::meta::is_reference_type(declared)) {
+            facts = static_cast<unsigned char>(facts | bit_of_(PartFact::was_reference));
+        }
         if (is_scope_brand_(bare)) {
             facts = static_cast<unsigned char>(facts | bit_of_(PartFact::is_scope_brand));
             parts.is_frame_borrow = parts.is_frame_borrow || !std::meta::is_reference_type(declared);
         }
         list.push(bare, std::meta::info{}, facts);
     }
+    parts.argument_count = list.size();
+    if (has_value_arguments) list_value_arguments_(list, arguments, first_place);
 }
 
 // Reads the marks of the class that a walk reads: is_borrow and
-// gives_const_access, and is_storage_owner for the owner marks.
+// gives_const_access, is_storage_owner and the marks of an owner, and the key
+// mark.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
@@ -347,9 +435,16 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
         } else if (mark == ^^tr::refers_deep) {
             parts.is_borrow = true;
             refers_deep = true;
-        } else if (mark == ^^tr::by_arguments || mark == ^^tr::synchronized || mark == ^^tr::payload_cell
-                   || mark == ^^owns_its_storage) {
+        } else if (mark == ^^tr::by_arguments) {
             states_owner = true;
+            parts.states_by_arguments = true;
+        } else if (mark == ^^tr::synchronized || mark == ^^tr::payload_cell) {
+            states_owner = true;
+            parts.states_cell = true;
+        } else if (mark == ^^owns_its_storage) {
+            states_owner = true;
+        } else if (mark == ^^loan_key_mark) {
+            parts.is_key_marked = true;
         }
     }
     if (!states_owner && !refers_deep) return;
@@ -441,59 +536,65 @@ template <std::size_t Room>
 }
 
 // Lists the parts of the class, and reads its facts.  The class is complete.
-// A borrow and an owner that are specializations give their type arguments
-// and no member, because no walk reads a member of one, and a read of the
-// members of a specialization makes the compiler instantiate each member
-// function with a deduced result.  Complexity: linear in the template
-// arguments, the bases and the members of the class.
-template <std::size_t Room>
+// For the read of each part, a borrow and an owner that are specializations
+// give their arguments and no member, because a walk that asks for their parts
+// reads no member of one, and a read of the members of a specialization makes
+// the compiler instantiate each member function with a deduced result.  For the
+// read of the held parts, each class gives its bases and its members, and no
+// argument.  Complexity: linear in the template arguments, the bases and the
+// members of the class.
+template <std::size_t Room, PartRead Read>
 consteval void list_parts_(TypeParts& parts, PartList<Room>& list, std::meta::info type) {
     std::meta::access_context const unchecked = std::meta::access_context::unchecked();
     bool const is_specialization = std::meta::has_template_arguments(type);
-    if (is_specialization) list_arguments_(parts, list, type);
-    parts.argument_count = list.size();
+    constexpr bool lists_held_alone = Read == PartRead::held;
+    if (is_specialization && !lists_held_alone) list_arguments_(parts, list, type);
+    parts.member_start = list.size();
     parts.size = list.size();
     read_marks_(parts, type);
     bool const is_any_borrow = parts.is_frame_borrow || parts.is_borrow;
-    if (is_specialization && is_any_borrow) return;
+    parts.hides_members = is_any_borrow;
+    if (is_specialization && is_any_borrow && !lists_held_alone) return;
     std::vector<std::meta::info> const bases = std::meta::bases_of(type, unchecked);
     if (!parts.is_storage_owner && derives_from_owner_core_(bases)) {
         parts.is_storage_owner = is_class_of_the_base_(type);
     }
-    if (is_specialization && parts.is_storage_owner) return;
+    parts.hides_members = is_any_borrow || parts.is_storage_owner;
+    if (is_specialization && parts.is_storage_owner && !lists_held_alone) return;
     std::vector<std::meta::info> const members = std::meta::nonstatic_data_members_of(type, unchecked);
     parts.is_unreadable =
         !is_specialization && bases.size() == 0 && members.size() == 0 && !std::meta::is_empty_type(type);
-    if (is_any_borrow || parts.is_storage_owner) return;
+    if (parts.hides_members && !lists_held_alone) return;
     bool const has_plain_bases = list_bases_(list, bases);
     bool const has_plain_members = list_members_(parts, list, members);
     parts.size = list.size();
-    parts.is_plain = has_plain_bases && has_plain_members && !parts.is_unreadable
+    parts.is_plain = has_plain_bases && has_plain_members && !parts.is_unreadable && !parts.hides_members
                   && (!parts.holds_bytes || parts.argument_count == 0);
 }
 
-template <std::size_t Room>
+template <std::size_t Room, PartRead Read>
 [[nodiscard]] consteval TypeParts list_type_parts_(std::meta::info type) {
     TypeParts parts{};
     PartList<Room> list{parts.near};
-    list_parts_(parts, list, type);
+    list_parts_<Room, Read>(parts, list, type);
     if (parts.size > Room) {
         std::meta::info const arguments[] = {type};
         if (parts.size > wide_part_room) {
             static_cast<void>(
                 std::meta::extract<bool>(std::meta::substitute(^^refuses_class_of_many_parts_v, arguments)));
         }
-        parts.wide = std::meta::substitute(^^wide_type_parts_v, arguments);
+        std::meta::info const wide_parts = Read == PartRead::held ? ^^wide_held_parts_v : ^^wide_type_parts_v;
+        parts.wide = std::meta::substitute(wide_parts, arguments);
     }
     return parts;
 }
 
-template <std::size_t Room>
+template <std::size_t Room, PartRead Read>
 [[nodiscard]] consteval PartRows<Room> list_wide_type_parts_(std::meta::info type) {
     TypeParts facts{};
     PartRows<Room> rows{};
     PartList<Room> list{rows};
-    list_parts_(facts, list, type);
+    list_parts_<Room, Read>(facts, list, type);
     return rows;
 }
 

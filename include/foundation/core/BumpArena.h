@@ -428,7 +428,7 @@ enum class PartNaming : unsigned char {
         }
     }
     if (parts.is_storage_owner) return false;
-    for (std::size_t index = parts.argument_count; index < parts.size; ++index) {
+    for (std::size_t index = parts.member_start; index < parts.size; ++index) {
         TypePart const part = run[index];
         if (part.has(PartFact::was_reference)) return true;
         if (part.has(PartFact::is_plain)) continue;

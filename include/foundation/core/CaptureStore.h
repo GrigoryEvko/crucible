@@ -263,7 +263,7 @@ private:
 // region of its class.
 consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegion region) {
     PartRun const run = parts.run();
-    for (std::size_t index = parts.argument_count; index < parts.size; ++index) {
+    for (std::size_t index = parts.member_start; index < parts.size; ++index) {
         TypePart const part = run[index];
         if (part.has(PartFact::is_plain)) continue;
         if (part.has(PartFact::was_reference)) {
