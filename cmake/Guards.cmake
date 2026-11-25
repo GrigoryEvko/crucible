@@ -1,5 +1,5 @@
 # cmake/Guards.cmake — read a limit of the build from the registry, and register the tests of the meta rules, of
-# the tsast rules and of the build rules.
+# the elf rules, of the plugin rules, of the tsast rules and of the build rules.
 #
 # utils/registry.txt is the registry of the rules of the utils system.  A measured rule row is
 #
@@ -127,6 +127,33 @@ function(crucible_elf_rule_tests warnings_dir)
       message(FATAL_ERROR "crucible_elf_rule_tests: the rule ${rule} of TREES is no rule of the engine elf with a "
                           "module in utils/registry.txt.  Remove it from TREES, or correct its name.")
     endif()
+  endforeach()
+endfunction()
+
+# crucible_plugin_rule_tests()
+#
+# Register the witness of each rule of the engine plugin.  guard_ID_witness compiles each plant and each control of
+# utils/plants/ID/ with the quarantine plugin that this configure builds (assay.guard.engines.plugin.witness).  The
+# test guard_plugin runs the rules of the engine on the objects of the build.  A rule with the field held-by has no
+# witness of its own.  A rule with the field legacy gets a witness only when utils/plants/ID/ exists, as `guard witness
+# --engine plugin` selects it.  The cost of one test is thus the cost of the plants of one rule, and ctest runs the
+# witnesses of different rules at the same time.  At most 32 compilers of one test run at one time, and the test asks
+# ctest for 32 processors, so ctest -j counts each compiler of the test.
+function(crucible_plugin_rule_tests)
+  set(jobs 32)
+  crucible_rule_rows("^rule[ \t]+[a-z0-9-]+[ \t]+(.*[ \t])?engine=plugin[ \t]" rows)
+  foreach(row IN LISTS rows)
+    string(REGEX MATCH "^rule[ \t]+([a-z0-9-]+)" match "${row}")
+    set(rule "${CMAKE_MATCH_1}")
+    if(row MATCHES "[ \t]held-by=" OR (row MATCHES "[ \t]legacy=" AND NOT IS_DIRECTORY
+                                        "${CMAKE_SOURCE_DIR}/utils/plants/${rule}"))
+      continue()
+    endif()
+    string(REPLACE "-" "_" test_name "guard_${rule}_witness")
+    crucible_script_test(NAME ${test_name}
+      COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard witness --rule ${rule} --cxx ${CRUCIBLE_PLUGIN_CXX}
+              --plugin ${CRUCIBLE_QUARANTINE_PLUGIN} --build-dir ${CMAKE_BINARY_DIR} --jobs ${jobs})
+    set_tests_properties(${test_name} PROPERTIES LABELS "ci_guard;plugin" PROCESSORS ${jobs})
   endforeach()
 endfunction()
 

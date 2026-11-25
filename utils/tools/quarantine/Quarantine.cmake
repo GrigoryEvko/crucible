@@ -303,22 +303,6 @@ if(DEFINED _crucible_quarantine_build_start)
     "${_crucible_quarantine_build_start} ${_crucible_quarantine_build_end}\n")
 endif()
 
-# The witness of the plugin: it compiles each plant and each control of the
-# rules of the engine plugin with the plugin that this configure builds
-# (utils/plants/RULE/ of each such rule).  At most CRUCIBLE_PLUGIN_WITNESS_JOBS
-# compilers of the test run at one time, and the test asks ctest for the same
-# number of processors.  So ctest -j counts each compiler of the test.  With
-# the depth of the compile pool, ctest started the test only when each slot was
-# free.  The test then ran alone for 9 s to 11 s at about 10 cores.  On
-# 2026-10-17, the test took 9.2 s to 11.0 s at 128 compilers and 10.3 s to
-# 11.8 s at 32.  With 32 slots, ctest starts it among the other tests.
-set(CRUCIBLE_PLUGIN_WITNESS_JOBS 32)
-crucible_script_test(NAME guard_plugin_witness
-  COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_GUARD}" witness --engine plugin
-          --cxx "${CRUCIBLE_PLUGIN_CXX}" --plugin "${CRUCIBLE_QUARANTINE_PLUGIN}"
-          --build-dir "${CMAKE_BINARY_DIR}" --jobs ${CRUCIBLE_PLUGIN_WITNESS_JOBS})
-set_tests_properties(guard_plugin_witness PROPERTIES LABELS "ci_guard" PROCESSORS ${CRUCIBLE_PLUGIN_WITNESS_JOBS})
-
 # The facts, the enforce rows and the mode stamps of the rule table.
 execute_process(
   COMMAND "${CRUCIBLE_PYTHON3}" "${CRUCIBLE_LOOP}" stamps

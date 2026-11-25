@@ -5057,8 +5057,8 @@ set_tests_properties(build_target_self_test PROPERTIES LABELS "ci_guard")
 # utils/ledgers/heavy-include.txt.  The test exits 77 for a build whose
 # compiles do not load the plugin, for a build of a configuration that a ledger
 # does not have, and for a build that made only some targets.
-# The witness of the engine is the test guard_plugin_witness
-# (utils/tools/quarantine/Quarantine.cmake).
+# The witness of each rule ID of the engine is the test guard_ID_witness
+# (crucible_plugin_rule_tests of cmake/Guards.cmake).
 crucible_script_test(NAME guard_plugin
   COMMAND python3 ${CMAKE_SOURCE_DIR}/utils/bin/guard check --engine plugin --build-dir ${CMAKE_BINARY_DIR}
           --warnings-dir ${CRUCIBLE_CHECK_WARNINGS_DIR})
@@ -5087,6 +5087,7 @@ crucible_script_test(NAME plugin_owners_self_test
 set_tests_properties(guard_plugin plugin_runner_self_test plugin_witness_self_test
     plugin_declarations_self_test plugin_home_self_test plugin_owners_self_test
     PROPERTIES LABELS "ci_guard" SKIP_RETURN_CODE 77)
+crucible_plugin_rule_tests()
 
 # affected_tests_self_test — `loop test` (utils/assay/loop/affected.py) builds a tree
 # and runs only the tests whose inputs changed since their last pass.  It is
