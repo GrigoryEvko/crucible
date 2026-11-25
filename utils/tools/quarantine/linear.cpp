@@ -785,7 +785,10 @@ LinearMode linear_mode;
 
 // The folds: each folded tree with the object and the initializer before the
 // fold, and the target of each trivial assignment of an empty class by its
-// source.
+// source.  The events of GCC before PLUGIN_PRE_GENERICIZE fill these tables, and
+// a kept body is a copy with its own trees.  So each table that holds trees of a
+// body also has a member in KeptFolds, which keep_folds fills with the trees of
+// the copy and take_kept_folds gives back.
 struct FoldEntry {
     tree object = NULL_TREE;
     tree original = NULL_TREE;
