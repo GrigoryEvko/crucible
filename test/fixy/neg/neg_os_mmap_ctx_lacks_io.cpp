@@ -18,12 +18,13 @@ struct FileRegion final {
 using BlockOnlyCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Block>>;
 using ReadOnly = fixy::atom::mmap::with_prot<fixy::mmap::prot::ReadOnly>;
 using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
+using Faults = fixy::atom::mmap::faults_on_truncate;
 }  // namespace
 
 int main() {
     BlockOnlyCtx ctx{eff::testing::test()};
     auto const owner = perm::mint_permission_root<FileRegion>();
     fixy::fs::TemporaryFile const file{};
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, file.ref(), 4096);
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(ctx, owner, file.ref(), 4096);
     return 0;
 }

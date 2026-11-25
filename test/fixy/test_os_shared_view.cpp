@@ -18,7 +18,6 @@
 #include <fixy/os/Fs.h>
 #include <fixy/os/Mmap.h>
 #include <fixy/os/OwnedMmap.h>
-#include <fixy/os/Path.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Effect.h>
@@ -67,22 +66,11 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
     return std::move(made).consume();
 }
 
-// A file with no name under /tmp of one page, or an empty handle when /tmp
-// gives no such file.
-[[nodiscard]] fixy::fs::TemporaryFile page_file(IoBlockCtx const& ctx) {
-    auto const tmp = fixy::sanitize_path(fixy::mint_tagged<fixy::tags::source::External>(fixy::TextView{"/tmp"}))
-                         .expect("/tmp passes the check");
-    fixy::fs::DirectoryHandle const directory = fixy::fs::open_directory(ctx, tmp).expect("/tmp opens");
-    fixy::fs::TemporaryFile file =
-        fixy::fs::mint_temporary_file_at(ctx, directory.ref())
-            .match([](fixy::Linear<fixy::fs::TemporaryFile> opened) { return std::move(opened).consume(); },
-                   [](foundation::os::Errno) { return fixy::fs::TemporaryFile{}; });
-    if (!file.is_open()) return file;
-    if (fixy::fs::set_file_size(ctx, file.ref(), fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)})
-            .is_err()) {
-        return fixy::fs::TemporaryFile{};
-    }
-    return file;
+// Sealed memory of one page, or an empty handle when the kernel gives none.
+[[nodiscard]] fixy::fs::SealedMemory page_memory(IoBlockCtx const& ctx) {
+    return fixy::fs::mint_sealed_memory(ctx, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)})
+        .match([](fixy::Linear<fixy::fs::SealedMemory> made) { return std::move(made).consume(); },
+               [](foundation::os::Errno) { return fixy::fs::SealedMemory{}; });
 }
 
 // The single-thread cases of each door.
@@ -154,19 +142,19 @@ template <class Mapping>
     return 0;
 }
 
-// Each case on a shared mapping of a page of a file.  The mapping takes the
-// permission of its region, which the caller holds and ends after the
+// Each case on a shared mapping of a page of sealed memory.  The mapping takes
+// the permission of its region, which the caller holds and ends after the
 // mapping ends.
 template <class Brand>
 [[nodiscard]] int check_shared_page(IoBlockCtx const& ctx, perm::Permission<ProbeRegion, Brand> const& owner) {
-    fixy::fs::TemporaryFile const file = page_file(ctx);
-    if (!file.is_open()) {
-        fixy::report(fixy::Sink::Out, "[skipped] the file system of /tmp has no file with no name\n");
+    fixy::fs::SealedMemory const memory = page_memory(ctx);
+    if (!memory.is_open()) {
+        fixy::report(fixy::Sink::Out, "[skipped] the kernel gives no sealed memory\n");
         return 0;
     }
-    auto mapped = region_of(fixy::mmap::mint_mmap<ReadWrite, Shared>(ctx, owner, file.ref(), kPageBytes));
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadWrite, Shared>(ctx, owner, memory.ref(), kPageBytes));
     if (mapped.is_err()) {
-        fixy::report(fixy::Sink::Err, "a shared mapping of a page of the file failed\n");
+        fixy::report(fixy::Sink::Err, "a shared mapping of a page of the memory failed\n");
         return 1;
     }
     auto mapping = std::move(mapped).expect("the mint gave a mapping");

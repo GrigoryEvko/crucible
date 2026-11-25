@@ -336,6 +336,7 @@ door <linux/utsname.h> src/foundation/os/Syscall.cpp
 door <asm/errno.h> src/foundation/os/Errno.cpp
 door <linux/fcntl.h> src/foundation/os/Syscall.cpp
 door <linux/futex.h> src/foundation/os/Syscall.cpp
+door <linux/memfd.h> src/foundation/os/Syscall.cpp
 door <linux/mempolicy.h> src/foundation/os/Syscall.cpp
 door <linux/mman.h> src/foundation/os/Syscall.cpp
 door <linux/resource.h> src/foundation/os/Syscall.cpp

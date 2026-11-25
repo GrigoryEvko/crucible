@@ -232,6 +232,13 @@ struct with_share final : detail::mmap_atom_of {};
 // that keeps writing and executing in separate mappings.
 struct trusted_jit final : detail::mmap_atom_of {};
 
+// This atom is what admits a shared mapping of a regular file.  Another
+// process can make the file shorter while the mapping lives, and a read or a
+// write past the new end ends this process with SIGBUS.  The atom asserts that
+// the caller accepts that end, or that no other process can change the size of
+// the file.  Sealed memory (fixy/os/Fs.h) has no such risk and needs no atom.
+struct faults_on_truncate final : detail::mmap_atom_of {};
+
 }  // namespace mmap
 
 // This atom is what lets a caller give up a mapped region without
@@ -293,7 +300,7 @@ using mmap_atom_roster =
                mmap::with_share<::fixy::mmap::share::Private>, mmap::with_share<::fixy::mmap::share::Shared>,
                mmap::with_share<::fixy::mmap::share::Anonymous>, mmap::with_share<::fixy::mmap::share::Locked>,
                mmap::with_share<::fixy::mmap::share::Populate>, mmap::with_share<::fixy::mmap::share::HugeTLB>,
-               mmap::trusted_jit>;
+               mmap::trusted_jit, mmap::faults_on_truncate>;
 
 using leak_atom_roster = std::tuple<leak::resource<leak_sample_rationale>>;
 

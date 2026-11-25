@@ -146,14 +146,18 @@ struct PerfEvent final {};
 struct IoRing final {};
 // A PTP hardware clock of a /dev/ptpN node.
 struct PtpClock final {};
+// A memory file whose size never decreases (mint_sealed_memory of
+// fixy/os/Fs.h).
+struct SealedMemory final {};
 }  // namespace kind
 
 // A kind of namespace kind.  The concept names each kind, so a class of a
 // different header is no kind.
 template <class Kind>
-concept HandleKind = std::same_as<Kind, kind::File> || std::same_as<Kind, kind::Directory>
-                  || std::same_as<Kind, kind::PerfEvent> || std::same_as<Kind, kind::IoRing>
-                  || std::same_as<Kind, kind::PtpClock> || ::foundation::reflect::IsInstanceOf<Kind, ^^kind::Socket>;
+concept HandleKind =
+    std::same_as<Kind, kind::File> || std::same_as<Kind, kind::Directory> || std::same_as<Kind, kind::PerfEvent>
+    || std::same_as<Kind, kind::IoRing> || std::same_as<Kind, kind::PtpClock> || std::same_as<Kind, kind::SealedMemory>
+    || ::foundation::reflect::IsInstanceOf<Kind, ^^kind::Socket>;
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>

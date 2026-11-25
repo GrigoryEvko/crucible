@@ -4,8 +4,8 @@
 //
 // This file is the one place of the base with the system call instruction,
 // and the one includer of <asm/unistd.h>, <asm-generic/errno-base.h>,
-// <linux/fcntl.h>, <linux/futex.h>, <linux/mempolicy.h>, <linux/mman.h>,
-// <linux/resource.h>, <linux/sched.h>, <linux/sched/types.h>,
+// <linux/fcntl.h>, <linux/futex.h>, <linux/memfd.h>, <linux/mempolicy.h>,
+// <linux/mman.h>, <linux/resource.h>, <linux/sched.h>, <linux/sched/types.h>,
 // <linux/time_types.h> and <linux/utsname.h>.  It includes no header of the
 // C library, because some declarations of the two kinds of header conflict.
 // In a build with ThreadSanitizer, the primitive gives a read or a write that
@@ -28,6 +28,7 @@
 #include <asm/unistd.h>
 #include <linux/fcntl.h>
 #include <linux/futex.h>
+#include <linux/memfd.h>
 #include <linux/mempolicy.h>
 #include <linux/mman.h>
 #include <linux/resource.h>
@@ -81,6 +82,17 @@ static_assert(offsetof(OpenHow, mode) == offsetof(::open_how, mode),
               "OpenHow::mode is not at the place of mode of struct open_how");
 static_assert(offsetof(OpenHow, resolve) == offsetof(::open_how, resolve),
               "OpenHow::resolve is not at the place of resolve of struct open_how");
+
+// The flags of a memory file are the words of <linux/memfd.h>, and its seals
+// the words of <linux/fcntl.h>.
+static_assert(kMemoryFileCloseOnExec == MFD_CLOEXEC, "kMemoryFileCloseOnExec is not MFD_CLOEXEC of <linux/memfd.h>");
+static_assert(kMemoryFileAllowSeals == MFD_ALLOW_SEALING,
+              "kMemoryFileAllowSeals is not MFD_ALLOW_SEALING of <linux/memfd.h>");
+static_assert(kMemoryFileNoExecSeal == MFD_NOEXEC_SEAL,
+              "kMemoryFileNoExecSeal is not MFD_NOEXEC_SEAL of <linux/memfd.h>");
+static_assert(kFcntlAddSeals == F_ADD_SEALS, "kFcntlAddSeals is not F_ADD_SEALS of <linux/fcntl.h>");
+static_assert(kSealSeal == F_SEAL_SEAL, "kSealSeal is not F_SEAL_SEAL of <linux/fcntl.h>");
+static_assert(kSealShrink == F_SEAL_SHRINK, "kSealShrink is not F_SEAL_SHRINK of <linux/fcntl.h>");
 
 // The argument words of foundation/os/MapWords.h are the words of the kernel
 // header.
@@ -301,6 +313,12 @@ constexpr long kNoCall = -1;
             return __NR_pidfd_open;
         case Syscall::geteuid:
             return __NR_geteuid;
+        case Syscall::memfd_create:
+            return __NR_memfd_create;
+        case Syscall::fallocate:
+            return __NR_fallocate;
+        case Syscall::fcntl:
+            return __NR_fcntl;
         default:
             return kNoCall;
     }
@@ -497,6 +515,8 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
 // fixy/os/Process.h reads each stop with PTRACE_GET_SYSCALL_INFO, which came in
 // 5.3.  pidfd_open came in 5.3.  mincore, gettid, geteuid, clock_gettime,
 // clock_nanosleep and mremap came before 2.6.0, and getcpu came in 2.6.19.
+// fallocate came in 2.6.23 and memfd_create in 3.17.  fcntl came before 2.6.0,
+// and the file door uses its F_ADD_SEALS, which came in 3.17.
 // The file door opens
 // each path under a directory with openat2 and RESOLVE_BENEATH, and an open
 // with openat would follow a path out of the directory with no error.  So
@@ -522,6 +542,9 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
         case Syscall::getcpu:
             added = KernelVersion{2, 6, 19};
             break;
+        case Syscall::fallocate:
+            added = KernelVersion{2, 6, 23};
+            break;
         case Syscall::pipe2:
         case Syscall::dup3:
             added = KernelVersion{2, 6, 27};
@@ -538,6 +561,10 @@ constexpr KernelVersion kFirstRelease{3, 7, 0};
             break;
         case Syscall::renameat2:
             added = KernelVersion{3, 15, 0};
+            break;
+        case Syscall::memfd_create:
+        case Syscall::fcntl:
+            added = KernelVersion{3, 17, 0};
             break;
         case Syscall::mlock2:
             added = KernelVersion{4, 4, 0};

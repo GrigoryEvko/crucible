@@ -2,8 +2,8 @@
 // and the writes of a whole buffer, the read at an offset, the read and the
 // change of the size of a file, the opens, the removes, the new
 // directories and the status reads under a directory, the removal of a tree
-// under a directory, and the status read of the pid namespace of the process.  A
-// call that a signal interrupts runs again.  It issues the
+// under a directory, the status read of the pid namespace of the process, and
+// the sealed memory.  A call that a signal interrupts runs again.  It issues the
 // raw primitive of foundation/os/Syscall.h.  It is the one includer of
 // <asm/stat.h>, for the struct of fstat, and of <linux/fs.h>, for the flag of
 // renameat2.  It includes no header of the C library, because some
@@ -541,6 +541,64 @@ UnitResult set_size_(int descriptor, std::int64_t length) noexcept {
         word = os::raw_syscall(os::Syscall::ftruncate, descriptor, length);
     } while (word == kInterrupted);
     return unit_of(word);
+}
+
+namespace {
+
+// The name of each memory file of the base in /proc/PID/maps.  The kernel
+// reads it and opens no path.
+constexpr char kMemoryFileName[] = "crucible-sealed-memory";
+
+// The flags of a memory file that takes seals and closes when a thread starts
+// a program.
+constexpr unsigned int kMemoryFileFlags = os::kMemoryFileCloseOnExec | os::kMemoryFileAllowSeals;
+
+// A new memory file of no bytes.  A kernel before 6.3 refuses the flag
+// MFD_NOEXEC_SEAL with einval, and the file then comes with no such seal.
+[[nodiscard]] core::Result<int, os::Errno> open_memory_file() noexcept {
+    long word =
+        os::raw_syscall(os::Syscall::memfd_create, kMemoryFileName, kMemoryFileFlags | os::kMemoryFileNoExecSeal);
+    if (word == -static_cast<long>(std::to_underlying(os::Errno::einval))) {
+        word = os::raw_syscall(os::Syscall::memfd_create, kMemoryFileName, kMemoryFileFlags);
+    }
+    return os::result_of(word).map([](std::uint64_t opened) noexcept { return static_cast<int>(opened); });
+}
+
+// Gives the file length bytes, and takes the page of each of them.
+[[nodiscard]] UnitResult take_pages(int descriptor, std::int64_t length) noexcept {
+    long word = 0;
+    do {
+        word = os::raw_syscall(os::Syscall::fallocate, descriptor, 0, 0, length);
+    } while (word == kInterrupted);
+    return unit_of(word);
+}
+
+// Seals the size of the file against a decrease, and its seals against a
+// change.  The kernel refuses a seal only for a descriptor that cannot write,
+// for a file that takes no seal, and for a seal against writes while a map
+// writes.  None of these is true of a file of open_memory_file, so no test
+// makes this call fail.  Its error closes the descriptor as each other one.
+[[nodiscard]] UnitResult seal_size(int descriptor) noexcept {
+    return unit_of(
+        os::raw_syscall(os::Syscall::fcntl, descriptor, os::kFcntlAddSeals, os::kSealShrink | os::kSealSeal));
+}
+
+}  // namespace
+
+core::Result<int, os::Errno> make_sealed_memory_(std::int64_t length) noexcept {
+    return open_memory_file().match(
+        [length](int descriptor) noexcept -> core::Result<int, os::Errno> {
+            UnitResult const sealed = take_pages(descriptor, length).and_then([descriptor](core::Unit) noexcept {
+                return seal_size(descriptor);
+            });
+            return sealed.match(
+                [descriptor](core::Unit) noexcept -> core::Result<int, os::Errno> { return descriptor; },
+                [descriptor](os::Errno error) noexcept -> core::Result<int, os::Errno> {
+                    close_descriptor_(descriptor);
+                    return core::err(error);
+                });
+        },
+        [](os::Errno error) noexcept -> core::Result<int, os::Errno> { return core::err(error); });
 }
 
 }  // namespace fixy::fs::detail

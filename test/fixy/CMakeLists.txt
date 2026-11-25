@@ -6533,21 +6533,28 @@ fixy_neg_compile_test(neg_os_mmap_foreign_advice_row
 # is asked for, a context whose row lacks IO, and a capability token in
 # the place of a context.
 fixy_neg_compile_test(neg_os_mmap_shared_permission
-  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, foundation::permissions::SharedPermissionGuard<"
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::IoBlockCtx&, foundation::permissions::SharedPermissionGuard<"
   ".foundation::permissions::SharedPermissionGuard<\\{anonymous\\}::FileRegion, foundation::permissions::<lambda\\(\\)> >. is not derived from .const foundation::permissions::Permission<Tag, Brand>.")
 
 fixy_neg_compile_test(neg_os_mmap_ctx_lacks_io
-  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::BlockOnlyCtx&"
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::BlockOnlyCtx&"
   "required for the satisfaction of .CtxFitsMmapMint<Ctx, Atoms ...>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >"
   "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block>.. evaluated to .false.")
 
 fixy_neg_compile_test(neg_os_mmap_file_lacks_map_right
-  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
-  "required for the satisfaction of .CtxFitsFileMmapMint<Ctx, Rights, Atoms ...>."
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .CtxFitsFileMmapMint<Ctx, Kind, Rights, Atoms ...>."
   "the expression .file_region_mint_admits_v<Ctx, ")
 
+# A shared map of a regular file can fault past an end that another process
+# moved, so the pack names the atom faults_on_truncate (the end of a shared
+# file of fixy/os/OwnedMmap.h).
+fixy_neg_compile_test(neg_os_mmap_shared_file_without_licence
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .SharedFileMapIsLicensed<Kind, ")
+
 fixy_neg_compile_test(neg_os_mmap_non_ctx
-  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(const foundation::effects::Test&"
+  "no matching function for call to .mint_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(const foundation::effects::Test&"
   "required for the satisfaction of .IsExecCtx<Ctx>. .with Ctx = foundation::effects::Test.")
 
 fixy_neg_compile_test(neg_os_mmap_anon_pool_share
@@ -6732,6 +6739,16 @@ fixy_neg_compile_test(neg_owned_mmap_region_ctx_lacks_block
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
   "required for the satisfaction of .CtxAdmitsMapping<Ctx, Prot, Share, Modifiers \\.\\.\\.>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >")
 
+# The end of a shared file: a shared map of a regular file needs the licence
+# faults_on_truncate, and sealed memory has only shared maps.
+fixy_neg_compile_test(neg_owned_mmap_region_shared_file_without_licence
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Shared, "
+  "required for the satisfaction of .SharedFileMapIsLicensed<Kind, Share, Modifiers \\.\\.\\.>.")
+
+fixy_neg_compile_test(neg_owned_mmap_private_map_of_sealed_memory
+  "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, "
+  "required for the satisfaction of .SealedMapIsShared<Kind, Share>.")
+
 # The PROT_* word of a tag is a row of a closed table, so no class of a
 # caller brings bits of its own, and a specialization of a variable
 # template of protection words names nothing.
@@ -6768,6 +6785,21 @@ fixy_neg_compile_test(neg_temporary_file_without_block
 fixy_neg_compile_test(neg_temporary_file_without_io
   "no matching function for call to .mint_temporary_file_at\\(const .anonymous.::ForegroundCtx&, fixy::os::HandleRef<fixy::os::kind::Directory"
   "required for the satisfaction of .CtxAdmitsFs<Ctx>.")
+
+# ── Sealed memory ────────────────────────────────────────────────────
+#
+# mint_sealed_memory makes a memory file and takes its pages, so the mint asks
+# for a context that owns IO and Block.  One fixture for each missing atom.
+# The test maps the memory, opens it again as a regular file, and shows the
+# risk of a shared map of a regular file.
+fixy_test(test_os_sealed_memory)
+fixy_neg_compile_test(neg_sealed_memory_without_block
+  "no matching function for call to .mint_sealed_memory\\(const .anonymous.::IoOnlyCtx&, fixy::fs::FileOffset\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO> >.")
+
+fixy_neg_compile_test(neg_sealed_memory_without_io
+  "no matching function for call to .mint_sealed_memory\\(const .anonymous.::BlockOnlyCtx&, fixy::fs::FileOffset\\)"
+  "required for the satisfaction of .CtxAdmitsFs<Ctx>. .with Ctx = foundation::effects::ExecCtx<foundation::effects::Test, foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::Block> >.")
 
 # ── The file surface ──────────────────────────────────────────────────
 #

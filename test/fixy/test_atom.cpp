@@ -142,6 +142,7 @@ static_assert(std::is_same_v<fe::lift_row_t<fa::io::engine<::fixy::io::engine::I
 static_assert(std::is_same_v<fe::lift_row_t<fa::fs::mode<::fixy::fs::open_mode::ReadOnly>>,
                              fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::mmap::trusted_jit>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
+static_assert(std::is_same_v<fe::lift_row_t<fa::mmap::faults_on_truncate>, fe::Row<fe::Effect::IO, fe::Effect::Block>>);
 static_assert(std::is_same_v<fe::lift_row_t<fa::leak::resource<fad::leak_sample_rationale>>, fe::Row<>>);
 static_assert(!fe::LiftsToRow<fa::affine>);
 static_assert(!fe::LiftsToRow<fa::ctrl::unreachable_ok>);

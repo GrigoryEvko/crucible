@@ -45,6 +45,23 @@
 //   product code is inside an opt-out region of the class ABI (the ABI
 //   descriptor of fixy/os/Handle.h).
 //
+// End of a shared file
+//   A read or a write of a shared map past the end of its file ends the
+//   process with SIGBUS, and another process can make a regular file shorter
+//   at each time.  So a shared map takes sealed memory, the handle of
+//   mint_sealed_memory of fixy/os/Fs.h, whose size never decreases.  The map
+//   of sealed memory checks one time that its range is inside the memory, and
+//   it gives enxio for a range that is not, so no access of the map faults.
+//   A shared map of a regular file needs the atom faults_on_truncate in its
+//   modifiers, which states the risk at the call.  Sealed memory has only
+//   shared maps: a private map of it can read a page that another process
+//   writes, and a plain View of that page is a race.
+//
+//   A private map of a regular file also faults past the end of a file that
+//   another process made shorter, and no gate asks for a licence of it.
+//   map_foreign_region asks for no licence: the caller of the C library
+//   states the size of its object.
+//
 // The address a mapping lands at is randomized by the kernel and is
 // deliberately not reproducible.  No replay path may observe it.
 
@@ -71,6 +88,7 @@
 #include <foundation/os/Errno.h>
 #include <foundation/os/MapWords.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -140,11 +158,17 @@ concept MappedShare = ::fixy::atom_pack::has_row(share_table, ^^Share);
 template <typename Share>
 concept PrimaryShare = MappedShare<Share> && ::fixy::atom_pack::names_tag(primary_share_tags, ^^Share);
 
-// A modifier of a region is a share flag that stacks on the primary, or
-// the trusted_jit atom, which licenses an executable page.
+// A licence of a region adds no bit to its map: trusted_jit licenses an
+// executable page, and faults_on_truncate a shared map of a regular file (the
+// end of a shared file).
 template <typename Modifier>
-concept RegionModifier =
-    (MappedShare<Modifier> && !PrimaryShare<Modifier>) || std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>;
+concept RegionLicence = std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>
+                     || std::is_same_v<Modifier, ::fixy::atom::mmap::faults_on_truncate>;
+
+// A modifier of a region is a share flag that stacks on the primary, or a
+// licence.
+template <typename Modifier>
+concept RegionModifier = (MappedShare<Modifier> && !PrimaryShare<Modifier>) || RegionLicence<Modifier>;
 
 namespace detail {
 
@@ -158,6 +182,13 @@ namespace detail {
 [[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
 map_region_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
 
+// Maps as map_region_ does, from the sealed memory of descriptor.  It reads
+// the size of the memory first, and it gives enxio when the length bytes from
+// offset are not inside it.  The seal keeps the size from a decrease, so the
+// answer stays true for the life of the map (the end of a shared file).
+[[nodiscard]] ::foundation::core::Result<void*, ::foundation::os::Errno>
+map_sealed_region_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
+
 // Unmaps the length bytes at address, which a call of map_region_ gave.  The
 // kernel refuses an unmap only for an address or a length that no map
 // gave, so the door reports no error.
@@ -169,10 +200,10 @@ void unmap_region_(void* address, std::size_t length) noexcept;
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 advise_region_(void* address, std::size_t length, int advice) noexcept;
 
-// The MAP_* bits of a modifier.  The licence adds no bit.
+// The MAP_* bits of a modifier.  A licence adds no bit.
 template <typename Modifier>
 [[nodiscard]] consteval int modifier_flags() noexcept {
-    if constexpr (std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit>) {
+    if constexpr (RegionLicence<Modifier>) {
         return 0;
     } else {
         return share_flags_of(^^Modifier);
@@ -180,14 +211,14 @@ template <typename Modifier>
 }
 
 // The atom that states the modifier, so the row of the mapping is read
-// off the atoms as the atom-pack mints read it.
+// off the atoms as the atom-pack mints read it.  A licence is its own atom.
 template <typename Modifier>
 struct modifier_atom {
     using type = ::fixy::atom::mmap::with_share<Modifier>;
 };
-template <>
-struct modifier_atom<::fixy::atom::mmap::trusted_jit> {
-    using type = ::fixy::atom::mmap::trusted_jit;
+template <RegionLicence Licence>
+struct modifier_atom<Licence> {
+    using type = Licence;
 };
 
 template <typename Prot, typename Share, typename... Modifiers>
@@ -291,10 +322,28 @@ template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
 concept CtxFitsAnonRegionMint =
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && std::is_same_v<Share, share::Anonymous>;
 
-// The gate of the map of a file through a handle with the rights Held.
-template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename... Modifiers>
+// A kind of handle that a map of a file takes: a regular file or sealed
+// memory.
+template <typename Kind>
+concept MappedFileKind =
+    std::same_as<Kind, ::fixy::os::kind::File> || std::same_as<Kind, ::fixy::os::kind::SealedMemory>;
+
+// Sealed memory has only shared maps (the end of a shared file).
+template <typename Kind, typename Share>
+concept SealedMapIsShared = !std::same_as<Kind, ::fixy::os::kind::SealedMemory> || std::is_same_v<Share, share::Shared>;
+
+// A shared map of a regular file needs the licence faults_on_truncate (the
+// end of a shared file).
+template <typename Kind, typename Share, typename... Modifiers>
+concept SharedFileMapIsLicensed = !std::same_as<Kind, ::fixy::os::kind::File> || !std::is_same_v<Share, share::Shared>
+                               || (std::is_same_v<Modifiers, ::fixy::atom::mmap::faults_on_truncate> || ...);
+
+// The gate of the map of a file through a handle of the kind Kind with the
+// rights Held.
+template <typename Ctx, typename Prot, typename Share, typename Kind, ::fixy::os::RightSet Held, typename... Modifiers>
 concept CtxFitsFileRegionMint =
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && !std::is_same_v<Share, share::Anonymous>
+    && MappedFileKind<Kind> && SealedMapIsShared<Kind, Share> && SharedFileMapIsLicensed<Kind, Share, Modifiers...>
     && ::fixy::os::HoldsRights<Held, file_map_rights<Prot, Share>()>;
 
 // The gate of the map of a descriptor that a C library opened.
@@ -630,10 +679,11 @@ class [[nodiscard]] OwnedMmap final
     // the modifiers, and it builds a region only from an address the kernel
     // returned.  On failure it returns the error of the kernel and builds no
     // region.  The map reads the file of descriptor from the byte at offset,
-    // and an anonymous map takes the descriptor -1 and the offset 0.  The
-    // body deduces the return type Result<OwnedMmap, Errno>, for the reason
-    // that the doors below give.
-    template <typename... Modifiers>
+    // and an anonymous map takes the descriptor -1 and the offset 0.  Door is
+    // the call of the door file that maps: map_region_, or map_sealed_region_
+    // for sealed memory.  The body deduces the return type
+    // Result<OwnedMmap, Errno>, for the reason that the doors below give.
+    template <auto Door, typename... Modifiers>
     [[nodiscard]] static auto map_(int descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
         // The body deduces its return type, and CRUCIBLE_TRY returns the error
         // as a type of its own.  So the lambda, which names the return type,
@@ -643,7 +693,7 @@ class [[nodiscard]] OwnedMmap final
         constexpr int protection = mmap::prot_bits_of(^^Prot);
         constexpr int flags = (mmap::share_flags_of(^^Share) | ... | mmap::detail::modifier_flags<Modifiers>());
         auto const map_region = [descriptor, length, offset]() noexcept -> Mapped {
-            CRUCIBLE_TRY(address, mmap::detail::map_region_(length, protection, flags, descriptor, offset.raw()));
+            CRUCIBLE_TRY(address, Door(length, protection, flags, descriptor, offset.raw()));
             return OwnedMmap{address, length};
         };
         return map_region();
@@ -675,20 +725,25 @@ public:
     [[nodiscard]] static auto mint_region(Ctx const&,
                                           ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
                                           std::size_t length) noexcept {
-        return map_<Modifiers...>(-1, length, ::fixy::fs::FileOffset{0});
+        return map_<&mmap::detail::map_region_, Modifiers...>(-1, length, ::fixy::fs::FileOffset{0});
     }
 
-    // The map of the file of a handle from the byte at offset.  The handle
-    // holds the rights that file_map_rights names (the source of a map).
-    // The borrow of an empty handle gives ebadf.  The permission is read as
-    // in the anonymous form.
-    template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx, ::fixy::os::RightSet Rights>
-        requires mmap::CtxFitsFileRegionMint<Ctx, Prot, Share, Rights, Modifiers...>
-    [[nodiscard]] static auto mint_region(Ctx const&,
-                                          ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
-                                          ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file,
-                                          std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
-        return map_<Modifiers...>(::fixy::os::detail::HandleDoor::descriptor_of(file), length, offset);
+    // The map of the file of a handle from the byte at offset: a regular
+    // file, or sealed memory, whose map checks its range (the end of a shared
+    // file).  The handle holds the rights that file_map_rights names (the
+    // source of a map).  The borrow of an empty handle gives ebadf.  The
+    // permission is read as in the anonymous form.
+    template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx, class Kind, ::fixy::os::RightSet Rights>
+        requires mmap::CtxFitsFileRegionMint<Ctx, Prot, Share, Kind, Rights, Modifiers...>
+    [[nodiscard]] static auto
+    mint_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
+                ::fixy::os::HandleRef<Kind, Rights> file, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+        int const descriptor = ::fixy::os::detail::HandleDoor::descriptor_of(file);
+        if constexpr (std::same_as<Kind, ::fixy::os::kind::SealedMemory>) {
+            return map_<&mmap::detail::map_sealed_region_, Modifiers...>(descriptor, length, offset);
+        } else {
+            return map_<&mmap::detail::map_region_, Modifiers...>(descriptor, length, offset);
+        }
     }
 
     // The map of a descriptor that a C library opened, such as the map of a
@@ -705,7 +760,7 @@ public:
         if (abi_descriptor < 0) {
             return Mapped{::foundation::core::err(::foundation::os::Errno::ebadf)};
         }
-        return map_<Modifiers...>(abi_descriptor, length, offset);
+        return map_<&mmap::detail::map_region_, Modifiers...>(abi_descriptor, length, offset);
     }
 
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");

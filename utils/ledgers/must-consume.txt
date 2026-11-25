@@ -6,7 +6,6 @@ reason bench/ | the benches hold the endpoints of a channel and a token for the 
 reason include/fixy/ | the wrappers move a token out of a field of a marked class or out of a tuple through std::get, and consume an upgrade behind a test of its option
 reason include/fixy/concurrent/ | the fork consumes its parent token in a temporary that GCC folds, and the drained access consumes an upgrade behind a test of its option
 reason include/fixy/session/ | the session doors move each handle, value and token out of a field of a marked class or through a closure, which the rule does not follow
-reason src/ | each stage of the background pipeline drops its endpoint of a channel at the end of its function, and the start drops one producer
 reason test/ | the tests drop tokens and handles at the end of a test, consume a value two times to show the abort, and discard linear temporaries.  Some tests consume a token behind a test of its option
 bench/ | discarded-temporary | 2 | - | -
 bench/ | unconsumed | 1 | - | -
@@ -37,7 +36,6 @@ include/fixy/session/Handle.h | ungated-body | 2 | - | the line of SessionMintDo
 include/fixy/session/MachineBridge.h | ungated-body | 1 | - | each line is a public door of the header that owns its body and calls it one time through call_once of foundation/Linear.h, also through the door that it moves the body into, so a body can hold a linear value by move, and the rule reads each consume of it
 include/fixy/session/Mint.h | ungated-body | 1 | - | each line is a door of the header that moves its two bodies into the sides of mint_permission_fork of fixy/concurrent/PermissionFork.h.  The fork calls each side as an lvalue, not through call_once, and a refused start ends the process in start_and_join_.  The lines move with the fork when its bodies go through call_once
 include/foundation/core/Link.h | ungated-body | 1 | - | each line is a public door of the header that calls a body of its caller and states no gate HoldsNoLinearValue of foundation/Linear.h.  The series that gates the doors of the header lowers the row
-src/ | unconsumed | 5 | - | -
 test/ | unconsumed | 2 | - | -
 test/fixy/ | assign-over-live | 6 | - | the cells of the niche form of test_qtt_tracked plant a second consume and an assignment over a live Linear, which the consume tracker of a test build must catch.  The tests of the backstops of a session handle assign over a live handle or a live endpoint in a child process
 test/fixy/ | borrow-move-out | 4 | - | the attacks on a session handle move a handle out of the std::optional of a static slot, and move one handle into itself through two references.  The two death tests of test_spsc_ends move a foreign token out of a frame that lends it, each in a child process

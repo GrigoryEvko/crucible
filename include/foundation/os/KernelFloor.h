@@ -195,6 +195,12 @@ enum class KernelFlag : std::uint8_t {
     clock_of_descriptor,
     // PTP_CLOCK_GETCAPS2 of the capabilities of a PTP clock.
     ptp_clock_caps,
+    // MFD_CLOEXEC and MFD_ALLOW_SEALING of the sealed memory of fixy/os/Fs.h,
+    // and the seals of its F_ADD_SEALS.
+    memory_file_seals,
+    // MFD_NOEXEC_SEAL of the sealed memory.  Its door itself makes the memory
+    // again with no such word on a kernel that lacks it.
+    memory_file_no_exec,
 };
 
 // What a door does on a kernel that lacks the word of a row.
@@ -446,6 +452,15 @@ struct FlagFloor {
                              .word = "PTP_CLOCK_GETCAPS2",
                              .fallback = "The capability read gives the error of the kernel. The caller uses the "
                                          "clock with no capability of the device."};
+        case KernelFlag::memory_file_seals:
+            return FlagFloor{
+                .release = {3, 17, 0}, .need = FlagNeed::each_call, .word = "MFD_ALLOW_SEALING, F_ADD_SEALS"};
+        case KernelFlag::memory_file_no_exec:
+            return FlagFloor{.release = {6, 3, 0},
+                             .need = FlagNeed::fallback,
+                             .word = "MFD_NOEXEC_SEAL",
+                             .fallback = "The mint of sealed memory makes the memory with no such seal. A program in "
+                                         "the memory can start."};
         default:
             break;
     }

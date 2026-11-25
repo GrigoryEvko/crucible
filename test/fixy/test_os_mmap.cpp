@@ -76,6 +76,10 @@ using Anonymous = fixy::atom::mmap::with_share<fixy::mmap::share::Anonymous>;
 using ReadOnly = fixy::atom::mmap::with_prot<fixy::mmap::prot::ReadOnly>;
 using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
 
+// The files of the test have no name, and only this process holds them and
+// changes their size, so no shared map of one faults past its end.
+using Faults = fixy::atom::mmap::faults_on_truncate;
+
 inline constexpr std::size_t kPageBytes = 4096;
 
 // The region of a mint, out of its Linear, or the Errno of the map.  The
@@ -167,8 +171,8 @@ region_of(fixy::Result<fixy::Linear<Region>, foundation::os::Errno> minted) {
     }
 
     const auto owner = perm::mint_permission_root<FileRegion>();
-    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, file.ref(), kPageBytes));
-    auto second = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(ctx, owner, file.ref(), kPageBytes));
+    auto second = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(
         ctx, owner, file.ref(), kPageBytes, fixy::fs::FileOffset{static_cast<std::int64_t>(kPageBytes)}));
     // The file is not needed once the mapping exists: the mapping holds its
     // own reference to the file.
@@ -237,7 +241,7 @@ template <class Brand>
         fixy::report(fixy::Sink::Err, "the write of the words into the file failed\n");
         return 1;
     }
-    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, owner, file.ref(), kPageBytes));
+    auto mapped = region_of(fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(ctx, owner, file.ref(), kPageBytes));
     file = fixy::fs::TemporaryFile{};
     if (mapped.is_err()) {
         fixy::report(fixy::Sink::Err, "a shared read-only mapping of the file failed (errno {})\n",

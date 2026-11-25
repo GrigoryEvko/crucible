@@ -29,6 +29,7 @@ using A_Anon = ::fixy::atom::mmap::with_share<share::Anonymous>;
 using A_Locked = ::fixy::atom::mmap::with_share<share::Locked>;
 using A_Exec = ::fixy::atom::mmap::with_prot<prot::Exec>;
 using A_Jit = ::fixy::atom::mmap::trusted_jit;
+using A_Faults = ::fixy::atom::mmap::faults_on_truncate;
 
 static_assert(::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_RO, A_Shared>);
 static_assert(!::fixy::atom_pack::HasOneAtomOf<^^::fixy::atom::mmap::with_prot, A_Shared>);
@@ -55,6 +56,8 @@ static_assert(std::is_same_v<primary_share_of_t<A_RO, A_Anon, A_Locked>, share::
 static_assert(std::is_same_v<region_modifiers_t<A_RO, A_Shared>, region_modifiers<>>);
 static_assert(std::is_same_v<region_modifiers_t<A_Shared, A_Exec, A_Locked, A_Jit>,
                              region_modifiers<share::Locked, ::fixy::atom::mmap::trusted_jit>>);
+static_assert(std::is_same_v<region_modifiers_t<A_RO, A_Faults, A_Shared>,
+                             region_modifiers<::fixy::atom::mmap::faults_on_truncate>>);
 
 // The row derived from the pack is IO and Block.  This is the pin on
 // that equality: it fails if an mmap atom
@@ -80,6 +83,18 @@ static_assert(!CtxFitsMmapMint<IoBlockCtx, A_Exec, A_Private>, "an executable ma
 static_assert(CtxFitsMmapMint<IoBlockCtx, A_Exec, A_Private, A_Jit>);
 
 static_assert(!CtxFitsMmapMint<IoBlockCtx>, "an empty atom pack names no protection and no share mode.");
+
+// The end of a shared file, read over a pack.
+using FileKind = ::fixy::os::kind::File;
+using SealedKind = ::fixy::os::kind::SealedMemory;
+inline constexpr ::fixy::os::RightSet kMapRight = ::fixy::os::RightSet::map;
+static_assert(CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Shared, A_Faults>);
+static_assert(!CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Shared>,
+              "a shared map of a regular file needs the atom faults_on_truncate.");
+static_assert(CtxFitsFileMmapMint<IoBlockCtx, FileKind, kMapRight, A_RO, A_Private>);
+static_assert(CtxFitsFileMmapMint<IoBlockCtx, SealedKind, kMapRight, A_RO, A_Shared>);
+static_assert(!CtxFitsFileMmapMint<IoBlockCtx, SealedKind, kMapRight, A_RO, A_Private>,
+              "sealed memory has only shared maps.");
 
 static_assert(CtxFitsSafeAdvise<IoBlockCtx, advice::HugePage>);
 static_assert(CtxFitsSafeAdvise<IoBlockCtx, advice::Sequential>);

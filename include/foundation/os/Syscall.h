@@ -159,6 +159,12 @@ enum class Syscall : std::uint8_t {
     // The effective user id of the process, which owns each file that the
     // process makes, for the sweep of the file door (fixy/os/Fs.h).
     geteuid,
+    // The three calls of the sealed memory of the file door (fixy/os/Fs.h): a
+    // file of memory with no name, the pages of each byte of it, and its
+    // seals.
+    memfd_create,
+    fallocate,
+    fcntl,
 };
 
 // True when the call can wait for a long time: for another thread or process

@@ -249,8 +249,8 @@ that the axis does not apply to the row.
 
 | mint | site | nd | cx | ne | rq | cb | fit | HS14 |
 |---|---|---|---|---|---|---|---|---|
-| `OwnedMmap::mint_region(const T1_1&, const foundation::permissions::Permission<T0_0, T0_3>&, fixy::os::HandleRef<fixy::os::kind::File, T1_2>, std::size_t, fixy::fs::FileOffset)` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `OwnedMmap::mint_region(const T1_1&, const foundation::permissions::Permission<T0_0, T0_3>&, std::size_t)` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `OwnedMmap::mint_region(const T1_1&, const foundation::permissions::Permission<T0_0, T0_3>&, fixy::os::HandleRef<T1_2, T1_3>, std::size_t, fixy::fs::FileOffset)` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `OwnedMmap::mint_region(const T1_1&, const foundation::permissions::Permission<T0_0, T0_3>&, std::size_t)` | `include/fixy/os/OwnedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_affinity` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_bounded_sleep` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 | `mint_clock_reader` | `include/fixy/os/Time.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
@@ -260,7 +260,7 @@ that the axis does not apply to the row.
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
+| `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_numa_policy` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -270,6 +270,7 @@ that the axis does not apply to the row.
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_sealed_memory` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_directory` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -406,7 +407,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 285 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 288 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 75 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |
@@ -419,4 +420,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 179 | 62 | 113 | 4 | 0 | 2 |
+| substrate (`include/foundation/`, `include/fixy/`) | 180 | 63 | 113 | 4 | 0 | 2 |

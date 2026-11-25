@@ -17,12 +17,13 @@ struct FileRegion final {
 };
 using ReadOnly = fixy::atom::mmap::with_prot<fixy::mmap::prot::ReadOnly>;
 using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
+using Faults = fixy::atom::mmap::faults_on_truncate;
 }  // namespace
 
 int main() {
     auto const token = eff::testing::test();
     auto const owner = perm::mint_permission_root<FileRegion>();
     fixy::fs::TemporaryFile const file{};
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(token, owner, file.ref(), 4096);
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(token, owner, file.ref(), 4096);
     return 0;
 }

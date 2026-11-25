@@ -268,6 +268,10 @@ void test_judges_each_flag_above_the_floor() {
                              == FlagVerdict::fallback);
     CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::thp_refusal_flags, KernelVersion{6, 18, 0})
                              == FlagVerdict::admitted);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::memory_file_no_exec, KernelVersion{6, 2, 16})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::memory_file_no_exec, KernelVersion{6, 3, 0})
+                             == FlagVerdict::admitted);
 }
 
 // A release that lacks a word that a door needs in each call refuses the

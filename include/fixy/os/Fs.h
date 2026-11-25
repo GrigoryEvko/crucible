@@ -136,6 +136,13 @@ using DirectoryHandle = ::fixy::os::Handle<::fixy::os::kind::Directory, director
 // The handle of a file with no name.
 using TemporaryFile = ::fixy::os::Handle<::fixy::os::kind::File, temporary_file_rights>;
 
+// The rights of sealed memory: a shared map, which reads and writes it.
+inline constexpr ::fixy::os::RightSet sealed_memory_rights =
+    ::fixy::os::RightSet::read | ::fixy::os::RightSet::write | ::fixy::os::RightSet::map;
+
+// The handle of sealed memory (the sealed memory below).
+using SealedMemory = ::fixy::os::Handle<::fixy::os::kind::SealedMemory, sealed_memory_rights>;
+
 inline constexpr ::fixy::atom_pack::tag_row<int> flag_table[] = {
     {^^flag::CloseOnExec, ::foundation::os::kOpenCloseOnExec}, {^^flag::NoFollow, ::foundation::os::kOpenNoFollow},
     {^^flag::DataSync, ::foundation::os::kOpenDataSync},       {^^flag::FullSync, ::foundation::os::kOpenFullSync},
@@ -453,6 +460,13 @@ read_full_at_(int descriptor, void* first, std::size_t count, std::int64_t offse
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 set_size_(int descriptor, std::int64_t length) noexcept;
 
+// Makes sealed memory of length bytes, which are zero, and gives its
+// descriptor (the sealed memory).  A length that is not above zero gives
+// einval.  Each error closes the descriptor.  FileDoor is the one caller that
+// keeps the descriptor.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
+make_sealed_memory_(std::int64_t length) noexcept;
+
 }  // namespace detail
 
 // The count of the directories that the walk of a tree removal holds open at
@@ -706,11 +720,19 @@ template <::fixy::os::RightSet Rights, eff::IsExecCtx Ctx>
 [[nodiscard]] inline ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>
 mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms = FileMode::owner_read_write) noexcept;
 
-// The door to the open of a path.  No object of it exists.  Its members
-// are private, and its friends are the gated mints that open a path:
-// mint_file, open_directory, mint_file_at, open_directory_at and
-// mint_temporary_file_at.  A Handle befriends this class, so a handle over a
-// path comes only from one of those mints, after their gates.
+// The mint of sealed memory (below), declared here and defined below FileDoor
+// for the same reason.
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>
+mint_sealed_memory(Ctx const&, FileOffset length) noexcept;
+
+// The door to the open of a path and to a new memory file.  No object of it
+// exists.  Its members are private, and its friends are the gated mints that
+// open a path, mint_file, open_directory, mint_file_at, open_directory_at and
+// mint_temporary_file_at, and the mint of sealed memory.  A Handle befriends
+// this class, so a handle over a path or over sealed memory comes only from
+// one of those mints, after their gates.
 //
 // The trailing return types are necessary: fixy/os/CpuPinned.h gives the
 // parse reason.
@@ -739,6 +761,11 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
         requires CtxFitsTemporaryMint<FriendCtx, FriendRights>
     friend auto mint_temporary_file_at(FriendCtx const&, DirectoryRef<FriendRights>, FileMode) noexcept
         -> ::foundation::core::Result<Linear<TemporaryFile>, ::foundation::os::Errno>;
+
+    template <eff::IsExecCtx FriendCtx>
+        requires ::fixy::fs::CtxAdmitsFs<FriendCtx>
+    friend auto mint_sealed_memory(FriendCtx const&, FileOffset) noexcept
+        -> ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>;
 
     // The open flags of a file with no name: it reads and writes, and it
     // closes when a thread starts a program.
@@ -938,6 +965,30 @@ mint_temporary_file_at(Ctx const&, DirectoryRef<Rights> dir, FileMode perms) noe
         return ::foundation::core::err(::foundation::os::Errno::ebadf);
     }
     return FileDoor::own_linear_<TemporaryFile>(FileDoor::open_temporary_at_(directory, perms));
+}
+
+// Sealed memory
+//   mint_sealed_memory makes a memory file of length bytes, which are zero,
+//   for a shared map (the end of a shared file of fixy/os/OwnedMmap.h).  No
+//   path names it.  The seal F_SEAL_SHRINK keeps each holder of a descriptor
+//   of it from a decrease of its size, in this process and in each other one,
+//   and the seal F_SEAL_SEAL keeps each of them from a change of the seals.
+//   The size can increase, because an increase takes no page from a map.
+//
+//   The mint takes each page of the memory at once (fallocate), so a first
+//   access of a page in a map needs no new memory.  A shortage of memory is
+//   then an error of the mint and not a SIGBUS at an access.  This is the
+//   price of a map that cannot fault: the cost of each page at the mint, also
+//   of a page that no access reads.  Use a length that the program needs.
+//
+//   A length that is not above zero gives einval, and a kernel with no memory
+//   files gives enosys.  On Linux 6.3 or a subsequent version no program of
+//   the memory can start (MFD_NOEXEC_SEAL).
+template <eff::IsExecCtx Ctx>
+    requires ::fixy::fs::CtxAdmitsFs<Ctx>
+[[nodiscard]] inline ::foundation::core::Result<Linear<SealedMemory>, ::foundation::os::Errno>
+mint_sealed_memory(Ctx const&, FileOffset length) noexcept {
+    return FileDoor::own_linear_<SealedMemory>(detail::make_sealed_memory_(length.raw()));
 }
 
 // A rename under a directory with the rights Held.  The rename makes the

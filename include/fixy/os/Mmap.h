@@ -10,11 +10,11 @@
 //
 // Design notes:
 //
-//  1. The atoms fixy::atom::mmap::{with_prot, with_share, trusted_jit}
-//     carry the axis and the row.  The context gate reads the row off
-//     the pack instead of naming IO and Block by hand.  The two answers
-//     agree, and a pin in the check file of this header says so.  They
-//     stop agreeing the moment
+//  1. The atoms fixy::atom::mmap::{with_prot, with_share, trusted_jit,
+//     faults_on_truncate} carry the axis and the row.  The context gate
+//     reads the row off the pack instead of naming IO and Block by hand.
+//     The two answers agree, and a pin in the check file of this header
+//     says so.  They stop agreeing the moment
 //     an atom lifts to something else, and the derived one is the one
 //     that stays right.
 //
@@ -188,7 +188,7 @@ template <typename... Atoms>
 using primary_share_of_t = typename primary_share_of<Atoms...>::type;
 
 // The modifiers a pack names for OwnedMmap::mint_region: the share
-// flags that stack on the primary, and the trusted_jit licence.  The prot
+// flags that stack on the primary, and the licences.  The prot
 // atom and the primary share atom become the type of the region, and an
 // atom of another kind adds no bit, so the fold skips all three.
 template <typename... Modifiers>
@@ -203,9 +203,9 @@ template <typename... Modifiers, typename Share>
 struct push_modifier<region_modifiers<Modifiers...>, atom_mmap::with_share<Share>> {
     using type = region_modifiers<Modifiers..., Share>;
 };
-template <typename... Modifiers>
-struct push_modifier<region_modifiers<Modifiers...>, atom_mmap::trusted_jit> {
-    using type = region_modifiers<Modifiers..., atom_mmap::trusted_jit>;
+template <typename... Modifiers, RegionLicence Licence>
+struct push_modifier<region_modifiers<Modifiers...>, Licence> {
+    using type = region_modifiers<Modifiers..., Licence>;
 };
 
 template <typename List, typename... Atoms>
@@ -239,11 +239,11 @@ mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& o
 
 // The gate of the map of a file, read over the modifier list of a pack, as
 // region_mint_admits_v reads the gate of a region.
-template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename List>
+template <typename Ctx, typename Prot, typename Share, typename Kind, ::fixy::os::RightSet Held, typename List>
 inline constexpr bool file_region_mint_admits_v = false;
-template <typename Ctx, typename Prot, typename Share, ::fixy::os::RightSet Held, typename... Modifiers>
-inline constexpr bool file_region_mint_admits_v<Ctx, Prot, Share, Held, region_modifiers<Modifiers...>> =
-    CtxFitsFileRegionMint<Ctx, Prot, Share, Held, Modifiers...>;
+template <typename Ctx, typename Prot, typename Share, typename Kind, ::fixy::os::RightSet Held, typename... Modifiers>
+inline constexpr bool file_region_mint_admits_v<Ctx, Prot, Share, Kind, Held, region_modifiers<Modifiers...>> =
+    CtxFitsFileRegionMint<Ctx, Prot, Share, Kind, Held, Modifiers...>;
 
 // The Linear of the region of a map, or the error of the map.  The region
 // holds an address, so the step takes it through CRUCIBLE_TRY and not a
@@ -285,14 +285,18 @@ concept CtxFitsMmapMint =
 template <typename Ctx, typename... Atoms>
 concept CtxFitsAnonMmapMint = CtxFitsMmapMint<Ctx, Atoms...> && detail::pack_has_anonymous_v<Atoms...>;
 
-// The gate of the map of a file through a handle with the rights Held: the
-// gate of the pack, no anonymous share, and the rights that
-// file_map_rights of fixy/os/OwnedMmap.h names.
-template <typename Ctx, ::fixy::os::RightSet Held, typename... Atoms>
+// The gate of the map of a file through a handle of the kind Kind with the
+// rights Held: the gate of the pack, no anonymous share, the two rules of the
+// end of a shared file, and the rights that file_map_rights of
+// fixy/os/OwnedMmap.h names.  The last clause is the gate of the region door,
+// and the two clauses before it name the rule of a refusal.
+template <typename Ctx, typename Kind, ::fixy::os::RightSet Held, typename... Atoms>
 concept CtxFitsFileMmapMint =
-    CtxFitsMmapMint<Ctx, Atoms...> && !detail::pack_has_anonymous_v<Atoms...>
-    && detail::file_region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Held,
-                                         detail::region_modifiers_t<Atoms...>>;
+    CtxFitsMmapMint<Ctx, Atoms...> && !detail::pack_has_anonymous_v<Atoms...> && MappedFileKind<Kind>
+    && SealedMapIsShared<Kind, detail::primary_share_of_t<Atoms...>>
+    && SharedFileMapIsLicensed<Kind, detail::primary_share_of_t<Atoms...>, std::remove_cvref_t<Atoms>...>
+    && detail::file_region_mint_admits_v<Ctx, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Kind,
+                                         Held, detail::region_modifiers_t<Atoms...>>;
 
 // The advice tags lift nothing, so these two gates name the row the
 // madvise call itself needs rather than deriving it.  Both calls reach
@@ -344,15 +348,17 @@ concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice
 //
 // The file is the borrow of the Handle of the file, with the right map,
 // and also read and write for a shared map that writes (the source of a map
-// of fixy/os/OwnedMmap.h).  The map reads the file from the byte at offset.
-template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand,
+// of fixy/os/OwnedMmap.h).  A shared map takes sealed memory, or a regular
+// file with the atom faults_on_truncate in the pack (the end of a shared
+// file).  The map reads the file from the byte at offset.
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Tag, typename Brand, class Kind,
           ::fixy::os::RightSet Rights>
-    requires CtxFitsFileMmapMint<Ctx, Rights, Atoms...>
+    requires CtxFitsFileMmapMint<Ctx, Kind, Rights, Atoms...>
 [[nodiscard]] inline ::foundation::core::Result<
     Linear<OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>,
     ::foundation::os::Errno>
 mint_mmap(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand> const& owner,
-          ::fixy::os::HandleRef<::fixy::os::kind::File, Rights> file, std::size_t length,
+          ::fixy::os::HandleRef<Kind, Rights> file, std::size_t length,
           ::fixy::fs::FileOffset offset = ::fixy::fs::FileOffset{0}) noexcept {
     using Region = OwnedMmap<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>;
     // The syscall lives with the region's only constructor, in

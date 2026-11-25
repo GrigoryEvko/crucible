@@ -109,13 +109,34 @@ static_assert(mmap::file_map_rights<mmap::prot::ReadWrite, mmap::share::Private>
 static_assert(mmap::file_map_rights<mmap::prot::ReadWrite, mmap::share::Shared>()
                   == (RightSet::map | RightSet::read | RightSet::write),
               "the stores of a shared map reach the file");
-static_assert(mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared, RightSet::map>);
-static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared, RightSet::write>,
+using FileKind = os::kind::File;
+using SealedKind = os::kind::SealedMemory;
+using Faults = ::fixy::atom::mmap::faults_on_truncate;
+template <class Prot, class Share, class Kind, RightSet Held, class... Modifiers>
+inline constexpr bool maps_file = mmap::CtxFitsFileRegionMint<IoBlockCtx, Prot, Share, Kind, Held, Modifiers...>;
+
+static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::map, Faults>);
+static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Private, FileKind, RightSet::map>);
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::write, Faults>,
               "a handle with no map right maps nothing.");
-static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::ReadWrite, mmap::share::Shared, RightSet::map>,
+static_assert(!maps_file<mmap::prot::ReadWrite, mmap::share::Shared, FileKind, RightSet::map, Faults>,
               "a shared map that writes needs the read and the write right.");
-static_assert(!mmap::CtxFitsFileRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous, RightSet::map>,
+static_assert(!maps_file<mmap::prot::WriteCopy, mmap::share::Anonymous, FileKind, RightSet::map>,
               "an anonymous map takes no file.");
+
+// The end of a shared file: a shared map of a regular file needs its licence,
+// and sealed memory needs none and has only shared maps.
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::map>,
+              "a shared map of a regular file needs the licence faults_on_truncate.");
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, FileKind, RightSet::map, Jit>,
+              "a licence of an executable page is no licence of a shared file.");
+static_assert(maps_file<mmap::prot::ReadOnly, mmap::share::Shared, SealedKind, RightSet::map>);
+static_assert(maps_file<mmap::prot::ReadWrite, mmap::share::Shared, SealedKind,
+                        RightSet::map | RightSet::read | RightSet::write>);
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Private, SealedKind, RightSet::map>,
+              "sealed memory has only shared maps.");
+static_assert(!maps_file<mmap::prot::ReadOnly, mmap::share::Shared, os::kind::Directory, RightSet::map, Faults>,
+              "a map of a file takes a regular file or sealed memory.");
 static_assert(mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::WriteCopy, mmap::share::Anonymous>);
 static_assert(!mmap::CtxFitsAnonRegionMint<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Private>);
 static_assert(mmap::CtxFitsForeignRegionMap<IoBlockCtx, mmap::prot::ReadOnly, mmap::share::Shared>);
@@ -129,6 +150,9 @@ static_assert(!mmap::MappedProt<NotAProt> && !mmap::MappedProt<const mmap::prot:
 static_assert(mmap::MappedProt<ReadOnlyAlias>);
 static_assert(mmap::PrimaryShare<mmap::share::Anonymous> && !mmap::PrimaryShare<mmap::share::Locked>);
 static_assert(mmap::RegionModifier<mmap::share::Locked> && !mmap::RegionModifier<mmap::share::Private>);
+static_assert(mmap::RegionModifier<Jit> && mmap::RegionModifier<Faults> && !mmap::RegionLicence<mmap::share::Locked>);
+static_assert(mmap::detail::modifier_flags<Faults>() == 0 && mmap::detail::modifier_flags<Jit>() == 0,
+              "a licence adds no bit to the map");
 
 // The W^X rule reads the bits of each row: no row writes and executes,
 // and each row that executes asks for the licence.

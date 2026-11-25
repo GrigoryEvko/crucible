@@ -29,7 +29,8 @@ static_assert(std::to_underlying(RightSet::ioctl_ptp) >> 32U == 1U, "the ioctl f
 
 // The kinds: the closed list.
 struct NotAKind final {};
-static_assert(HandleKind<kind::File> && HandleKind<kind::Directory> && HandleKind<kind::PtpClock>);
+static_assert(HandleKind<kind::File> && HandleKind<kind::Directory> && HandleKind<kind::PtpClock>
+              && HandleKind<kind::SealedMemory>);
 static_assert(HandleKind<kind::Socket<NotAKind>>, "a socket kind takes the tag of its socket");
 static_assert(!HandleKind<NotAKind> && !HandleKind<int> && !HandleKind<kind::File const>);
 

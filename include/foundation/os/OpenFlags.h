@@ -2,10 +2,12 @@
 
 // The argument words of an open of the doors: the directory of a relative
 // path, the access mode and the flags of an open, the flag of a status read
-// through a descriptor, and the argument and the resolve flags of openat2.
+// through a descriptor, the argument and the resolve flags of openat2, and
+// the flags and the seals of a memory file.
 //
-// The values are the values of <linux/fcntl.h> and <linux/openat2.h> on
-// x86_64 and aarch64.  The values of O_DIRECTORY, O_NOFOLLOW and O_DIRECT are
+// The values are the values of <linux/fcntl.h>, <linux/openat2.h> and
+// <linux/memfd.h> on x86_64 and aarch64.  The values of O_DIRECTORY,
+// O_NOFOLLOW and O_DIRECT are
 // different on the two architectures.  The door file
 // src/foundation/os/Syscall.cpp compares each value and the layout of
 // OpenHow with those headers.  A door that includes a header of the C library
@@ -114,5 +116,20 @@ struct OpenHow {
     std::uint64_t mode = 0;
     std::uint64_t resolve = 0;
 };
+
+// The flags of memfd_create.  The descriptor closes when a thread of the
+// process starts a program (MFD_CLOEXEC).  The file takes seals
+// (MFD_ALLOW_SEALING).  No program of the file can start, and no change of
+// its mode can make it start (MFD_NOEXEC_SEAL).
+inline constexpr unsigned int kMemoryFileCloseOnExec = 0x1;
+inline constexpr unsigned int kMemoryFileAllowSeals = 0x2;
+inline constexpr unsigned int kMemoryFileNoExecSeal = 0x8;
+
+// The command of fcntl that adds seals to a memory file (F_ADD_SEALS), and
+// the seals.  The file takes no later seal (F_SEAL_SEAL), and its size does
+// not decrease (F_SEAL_SHRINK).
+inline constexpr int kFcntlAddSeals = 1033;
+inline constexpr unsigned int kSealSeal = 0x1;
+inline constexpr unsigned int kSealShrink = 0x2;
 
 }  // namespace foundation::os

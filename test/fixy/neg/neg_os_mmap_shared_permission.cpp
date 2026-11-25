@@ -23,6 +23,7 @@ struct FileRegion final {
 using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
 using ReadOnly = fixy::atom::mmap::with_prot<fixy::mmap::prot::ReadOnly>;
 using Shared = fixy::atom::mmap::with_share<fixy::mmap::share::Shared>;
+using Faults = fixy::atom::mmap::faults_on_truncate;
 }  // namespace
 
 int main() {
@@ -31,6 +32,6 @@ int main() {
     const eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Nondet>> pool_ctx{eff::testing::test()};
     auto guard = pool.lend(pool_ctx).expect("an idle pool lends a share");
     fixy::fs::TemporaryFile const file{};
-    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared>(ctx, guard, file.ref(), 4096);
+    [[maybe_unused]] auto refused = fixy::mmap::mint_mmap<ReadOnly, Shared, Faults>(ctx, guard, file.ref(), 4096);
     return 0;
 }
