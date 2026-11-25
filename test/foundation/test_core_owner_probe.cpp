@@ -148,6 +148,17 @@ static_assert(std::is_same_v<BoxCore, ::foundation::core::OwnerCore<decltype(sta
 static_assert(::foundation::core::OwnerOfTheBase<Box<int>> && ::foundation::core::OwnerOfTheBase<AlignedBytes>);
 static_assert(!std::is_default_constructible_v<BoxCore> && !std::is_destructible_v<BoxCore>);
 
+// Each of these owners is its core and nothing more, so its move runs no code of
+// a caller.  A class that holds an owner is no such owner.
+struct HolderOfABox final {
+    Box<int> held;
+};
+static_assert(::foundation::core::BareOwner<Box<int>> && ::foundation::core::BareOwner<HeapArray<int>>);
+static_assert(::foundation::core::BareOwner<MaskedArray<int>> && ::foundation::core::BareOwner<GrowList<int>>);
+static_assert(::foundation::core::BareOwner<GrowText> && ::foundation::core::BareOwner<HeapText>);
+static_assert(::foundation::core::BareOwner<AlignedBytes>);
+static_assert(!::foundation::core::BareOwner<HolderOfABox> && !::foundation::core::BareOwner<Option<Box<int>>>);
+
 // ── The chain of Boxes ──────────────────────────────────────────────────
 
 struct BoxNode;

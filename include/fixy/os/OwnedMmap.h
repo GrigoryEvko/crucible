@@ -302,6 +302,7 @@ namespace fixy::detail::owner {
 // the length that the map took.
 struct MappingState {
     using owner_state_mark = ::foundation::core::OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     void* address = nullptr;
     std::size_t length = 0;

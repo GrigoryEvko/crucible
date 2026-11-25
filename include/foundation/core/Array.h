@@ -1426,6 +1426,7 @@ namespace owner {
 template <class T, std::size_t Align>
 struct HeapArrayState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
 
     T* first = nullptr;
     std::size_t count = 0;
@@ -1444,6 +1445,7 @@ struct HeapArrayState {
 template <class T, std::size_t Align>
 struct MaskedArrayState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
 
     T* first = nullptr;
     std::size_t count = 0;
@@ -1808,6 +1810,15 @@ public:
     // only a frame door gives a View that writes the elements of an array.
     [[nodiscard]] friend constexpr View<T> frame_run_(detail::FrameKey const& /*key*/, HeapArray& array) noexcept {
         return View<T>{HeapArray::run_key_(), array.state_.first, array.state_.count};
+    }
+
+    // Ends the elements while the array still names its storage, for an owner that
+    // promises N elements to its end and tests no pointer (FixedHeapArray).  The
+    // array is then empty.  The key of a frame keeps each caller outside the base
+    // out.  Complexity: O(size()).
+    friend constexpr void end_in_place_(detail::FrameKey const& /*key*/, HeapArray& array) noexcept {
+        State::release(array.state_);
+        array.state_ = State{};
     }
 
     // The frame door of one element (the element door): on_some gets the

@@ -242,6 +242,7 @@ namespace owner {
 template <class T, class Generation>
 struct SlotMapState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
 
     T* values = nullptr;
     std::uint32_t* free_stack = nullptr;

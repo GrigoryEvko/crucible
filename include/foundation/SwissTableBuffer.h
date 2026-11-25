@@ -50,6 +50,7 @@ namespace core::detail::owner {
 template <typename SlotPtr>
 struct SwissTableBufferState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     // The alignment of the allocation: one cache line for the first group of
     // control bytes.

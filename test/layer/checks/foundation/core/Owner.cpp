@@ -167,6 +167,50 @@ static_assert(owner_state_of_(^^CheckOwner, ^^OwnerCore) == ^^owner::CheckState)
 static_assert(owner_entity_of_(^^owner::CheckState) == ^^owner::CheckState);
 static_assert(!has_own_move_(^^CheckOwner));
 
+// A state with no statement can run code of an element, and a state that states
+// it as false runs none.
+struct StateWithNoCode {
+    using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
+
+    [[nodiscard]] static constexpr StateWithNoCode emptied(StateWithNoCode const& /*state*/) noexcept { return {}; }
+    static constexpr void release(StateWithNoCode const& /*state*/) noexcept {}
+};
+struct StateWithCode {
+    using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = true;
+
+    [[nodiscard]] static constexpr StateWithCode emptied(StateWithCode const& /*state*/) noexcept { return {}; }
+    static constexpr void release(StateWithCode const& /*state*/) noexcept {}
+};
+static_assert(RunsElementCode<owner::CheckState> && RunsElementCode<StateWithCode>);
+static_assert(!RunsElementCode<StateWithNoCode>);
+
+// A bare owner is its core and nothing more.  An owner with a member, with a
+// move or an end of its own, and a class on the core of another owner are none.
+struct OwnerWithMember final : public OwnerCore<owner::CheckState, OwnerWithMember> {
+    OwnerWithMember() noexcept = default;
+    OwnerWithMember(OwnerWithMember&&) noexcept = default;
+    OwnerWithMember& operator=(OwnerWithMember&&) noexcept = default;
+
+    std::size_t held = 0;
+};
+struct OwnerWithMove final : public OwnerCore<owner::CheckState, OwnerWithMove> {
+    OwnerWithMove() noexcept = default;
+    OwnerWithMove(OwnerWithMove&& other) noexcept : OwnerCore{static_cast<OwnerCore&&>(other)} {}
+    OwnerWithMove& operator=(OwnerWithMove&&) noexcept = default;
+};
+struct OwnerWithEnd final : public OwnerCore<owner::CheckState, OwnerWithEnd> {
+    OwnerWithEnd() noexcept = default;
+    OwnerWithEnd(OwnerWithEnd&&) noexcept = default;
+    OwnerWithEnd& operator=(OwnerWithEnd&&) noexcept = default;
+    ~OwnerWithEnd() { static_cast<void>(sizeof(*this)); }
+};
+struct ClassOnAnotherCore : public OwnerCore<owner::CheckState, CheckOwner> {};
+static_assert(BareOwner<CheckOwner> && BareOwner<SecondCheckOwner> && BareOwner<OwnerOutsideHome>);
+static_assert(!BareOwner<OwnerWithMember> && !BareOwner<OwnerWithMove> && !BareOwner<OwnerWithEnd>);
+static_assert(!BareOwner<ClassOnAnotherCore> && !BareOwner<owner::CheckState> && !BareOwner<int>);
+
 // The home holds the two states above and the states of each owner header
 // that the unit includes, because the walk units compile this file after
 // each header.  So the checks compare counts and pin no total: CheckOwner

@@ -215,6 +215,7 @@ namespace owner {
 template <class T>
 struct GrowListState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
 
     void* storage = nullptr;
     std::size_t count = 0;
@@ -261,6 +262,7 @@ struct GrowListState {
 // state of a GrowList.
 struct GrowTextState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     char* first = nullptr;
     std::size_t size = 0;
@@ -289,6 +291,7 @@ struct GrowTextState {
 // const borrows of them.
 struct HeapTextState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     char* first = nullptr;
     std::size_t size = 0;

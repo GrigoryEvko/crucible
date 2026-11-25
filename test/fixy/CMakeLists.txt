@@ -6091,6 +6091,10 @@ fixy_neg_compile_test(neg_check_tally_copy
   "use of deleted function .fixy::check::Tally::Tally\\(const fixy::check::Tally&\\)"
   "a copy would count a failure two times or lose it")
 
+# The code of an element that reaches the owner of the element: a read finds live
+# elements only.
+fixy_test(test_core_element_code)
+
 # The strided views of foundation/core/Strided.h: the door, the operations on
 # the shape, the walk and the scope, each against a naive model of the offsets
 # in row-major order, and the death of a cursor of the scope past its end.

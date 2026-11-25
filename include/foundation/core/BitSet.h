@@ -302,6 +302,7 @@ namespace owner {
 // the bytes of their allocation.
 struct HeapBitSetState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     std::uint64_t* words = nullptr;
     std::uint32_t count = 0;

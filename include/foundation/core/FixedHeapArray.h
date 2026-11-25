@@ -161,6 +161,14 @@ public:
     // Complexity: one allocation and N copies.
     FixedHeapArray(detail::HeapArrayKey const& key, T const& fill) noexcept : storage_{key, N, fill} {}
 
+    // The array promises its N elements to its end, so the storage keeps its
+    // address until each element ended (the end of the array).
+    constexpr ~FixedHeapArray() {
+        if constexpr (!std::is_trivially_destructible_v<T>) {
+            end_in_place_(FixedHeapArrayFrameKeyDoor::key_(), storage_);
+        }
+    }
+
     FixedHeapArray(FixedHeapArray const&) =
         delete("a FixedHeapArray owns its storage alone: a copy would free the storage two times");
     FixedHeapArray& operator=(FixedHeapArray const&) =

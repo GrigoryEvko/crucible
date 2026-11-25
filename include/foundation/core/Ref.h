@@ -1091,6 +1091,8 @@ namespace owner {
 template <BoxPayload T>
 struct BoxState {
     using owner_state_mark = OwnerStateMark;
+    // Only the end of a Box reads the statement, where T is complete.
+    static constexpr bool runs_element_code = !std::is_trivially_destructible_v<T>;
 
     T* object = nullptr;
 
@@ -1120,6 +1122,7 @@ struct BoxState {
 template <std::size_t Size, std::size_t Align>
 struct HoleState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     void* storage = nullptr;
 

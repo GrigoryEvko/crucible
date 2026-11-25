@@ -45,6 +45,28 @@
 // address: step 3 reads the emptied state of step 2, so step 5 releases
 // nothing, and step 4 gives the value back.
 //
+// Code of an element
+// The end of an element, its move and its assignment can be code of a caller.
+// Such code can reach the owner of the element through a second name: a static
+// owner, a Ref, or a guard that takes itself out of a registry.  So an owner
+// runs such code only while its state names no ended element and no element
+// that moves.  The end of an owner takes the state out, and leaves the emptied
+// state, before it releases the value.  Code that the release runs then sees an
+// empty owner.  reset_() and a move assignment have the same order.  A value
+// that such code puts into an owner in its end leaks, because the end of the
+// owner is at its last step.
+//
+// A state states the member runs_element_code as false when its release runs
+// no such code, such as the storage of bytes or of elements with a trivial end.
+// The end of its owner then releases the state in place, and writes nothing.  A
+// state with no statement keeps the order above.
+//
+// A move of an owner on the core copies a state and runs no code of a caller,
+// and the end of a moved-from owner releases nothing.  BareOwner tells that fact
+// of an owner that holds nothing beside its core and writes no move of its own.
+// A class outside the base is no Owner of a core, so it is no bare owner, and
+// the container of an element reads the fact here alone.
+//
 // Copy of a state
 // Each copy of a state goes through a local state of the core, and no local
 // state is const.  GCC keeps a const local aggregate in memory, and it copies
@@ -142,6 +164,11 @@ struct owns_its_storage final {};
 template <class State>
 concept ReleasesNothing = requires { requires State::releases_nothing; };
 
+// A state whose release can run code of an element: each state that does not
+// state the member runs_element_code as false.
+template <class State>
+concept RunsElementCode = !requires { requires !State::runs_element_code; };
+
 namespace detail {
 
 // True when the class of type is declared in the namespace foundation or
@@ -237,10 +264,15 @@ class OwnerCore {
     OwnerCore&
     operator=(OwnerCore const&) = delete("an owner owns its storage alone: a copy would release it two times");
 
+    // The end of the owner (the code of an element).
     CRUCIBLE_INLINE constexpr ~OwnerCore()
         requires(!ReleasesNothing<State>)
     {
-        State::release(state_);
+        if constexpr (RunsElementCode<State>) {
+            reset_();
+        } else {
+            State::release(state_);
+        }
     }
     constexpr ~OwnerCore()
         requires ReleasesNothing<State>
@@ -266,6 +298,49 @@ protected:
         State::release(held);
     }
 };
+
+namespace detail {
+
+// True when the type derives from the core that names it as its Owner, holds
+// nothing beside that core, and writes no move and no end of its own.  Only a
+// class of the base builds a core, so no other class is such an owner.
+// Complexity: O(bases + members).
+[[nodiscard]] consteval bool is_bare_owner_(std::meta::info type) {
+    if (!std::meta::is_class_type(type)) {
+        return false;
+    }
+    auto const everything = std::meta::access_context::unchecked();
+    if (!std::meta::nonstatic_data_members_of(type, everything).empty()) {
+        return false;
+    }
+    auto const bases = std::meta::bases_of(type, everything);
+    if (bases.size() != 1) {
+        return false;
+    }
+    std::meta::info const base = std::meta::dealias(std::meta::type_of(bases[0]));
+    if (!std::meta::has_template_arguments(base) || std::meta::template_of(base) != ^^OwnerCore
+        || std::meta::dealias(std::meta::template_arguments_of(base)[1]) != std::meta::dealias(type)) {
+        return false;
+    }
+    auto const members = std::meta::members_of(type, everything);
+    for (std::size_t index = 0; index < members.size(); ++index) {
+        std::meta::info const member = members[index];
+        bool const is_move_or_end = std::meta::is_move_constructor(member) || std::meta::is_move_assignment(member)
+                                 || std::meta::is_destructor(member);
+        if (is_move_or_end && std::meta::is_user_provided(member)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+}  // namespace detail
+
+// An owner on the core that is its core and nothing more (the code of an
+// element).  A move of it runs no code of a caller, and the end of a moved-from
+// one runs none.  The type is complete and has no const.
+template <class T>
+concept BareOwner = detail::is_bare_owner_(^^T);
 
 }  // namespace foundation::core
 

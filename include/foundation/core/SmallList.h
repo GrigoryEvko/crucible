@@ -147,6 +147,7 @@ namespace owner {
 template <class T, std::size_t Inline>
 struct SmallListState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     SmallSlots<T, Inline> slots{};
     T* heap = nullptr;

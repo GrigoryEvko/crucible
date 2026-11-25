@@ -232,6 +232,7 @@ namespace core::detail::owner {
 // states of a block share the fields.
 struct AlignedBytesState {
     using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
 
     std::uint8_t* storage = nullptr;
     std::size_t bytes = 0;
