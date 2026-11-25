@@ -28,7 +28,9 @@
 // by-value members, the target of a pointer or a reference, and the
 // element of an array, and each of those answers by the same rules.  So
 // `struct S { Computation<Row<Bg>, int> c; };` carries Row<Bg>, and a
-// scalar, which holds nothing, carries the empty row.
+// scalar, which holds nothing, carries the empty row.  A bare tag carries
+// the row of its effect, because its holder can call each door that takes
+// the tag.
 //
 // Three shapes are refused, each because the extractor cannot say what
 // the shape holds:
@@ -276,6 +278,18 @@ struct PayloadRowWalk {
     return std::uint64_t{1} << static_cast<unsigned>(std::to_underlying(effect));
 }
 
+// The effect that a bare tag gives to its holder, as a mask of one bit, or 0
+// for a type that is no bare tag.  The type holds no alias and no qualifier.
+// The check file of this header checks the tag of each effect that has one.
+[[nodiscard]] consteval std::uint64_t effect_mask_of_bare_tag(std::meta::info type) {
+    using ::foundation::effects::Effect;
+    if (type == ^^::foundation::core::Alloc) return effect_bit(Effect::Alloc);
+    if (type == ^^::foundation::effects::cap::IO) return effect_bit(Effect::IO);
+    if (type == ^^::foundation::effects::cap::Block) return effect_bit(Effect::Block);
+    if (type == ^^::foundation::effects::cap::Nondet) return effect_bit(Effect::Nondet);
+    return 0;
+}
+
 [[nodiscard]] consteval std::uint64_t effect_mask_of_row(std::meta::info row) {
     std::uint64_t mask = 0;
     for (const std::meta::info effect : std::meta::template_arguments_of(std::meta::dealias(row))) {
@@ -293,6 +307,8 @@ struct PayloadRowWalk {
 //   * a family with a rule of the layer hands the arguments that the
 //     rule names to the walk, and the type of its carried member;
 //   * any other specialization is refused;
+//   * a bare tag adds its effect, because a holder of the tag can call
+//     each door of the effect;
 //   * any other type hands its components to the walk, and a class that
 //     is only declared, or that holds state the walk cannot read, is
 //     refused.
@@ -378,6 +394,7 @@ struct PayloadRowWalk {
             refuse(type);
             continue;
         }
+        walked.effect_mask |= effect_mask_of_bare_tag(type);
         // Only a complete non-specialization gets here, which is the case
         // that the shared predicate reads.
         if (refl::holds_unreadable_state(refl::TypeNode{type, true})) {

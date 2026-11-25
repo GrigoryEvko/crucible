@@ -5612,6 +5612,10 @@ fixy_neg_compile_test(neg_stage_mint_ctx_not_exec_ctx
 fixy_neg_compile_test(neg_stage_mint_input_row_not_admitted
   "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."
   "FakeConsumer<foundation::effects::Computation<foundation::effects::Row<foundation::effects::Effect::IO>, int> >&&, <unnamed>::FakeProducer<int>&&\\)")
+# A bare tag in a member of the payload carries the row of its effect.
+fixy_neg_compile_test(neg_stage_payload_holds_a_tag
+  "no matching function for call to .mint_stage<neg_stage_payload_holds_a_tag_types::body>"
+  "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>.")
 # The same row held in a member of a plain struct payload.
 fixy_neg_compile_test(neg_stage_mint_input_member_row_not_admitted
   "required for the satisfaction of .StageInputRowAdmitted<FnPtr, Ctx>."

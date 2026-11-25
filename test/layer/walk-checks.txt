@@ -98,6 +98,7 @@ fixy/channels/SubstrateSessionBridge.cpp | 0.3 | ::fixy::session::combinators, :
 fixy/channels/SwmrSession.cpp | 0.4 | ::fixy::session::combinators, ::fixy::session::pole_tables, ::fixy::session::side_relations, ::foundation::permissions::permission_rows, ::foundation::transfer::door_probe_contexts, unknown
 fixy/collision/Report.cpp | 3.9 | ::fixy::atom::detail, ::fixy::atom::dispatch, ::fixy::atom::spawn
 fixy/concurrent/AtomicSnapshot.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+fixy/concurrent/PayloadRow.cpp | unmeasured | ::foundation::effects::cap
 fixy/concurrent/PermissionedChannel.cpp | 0.8 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Pipeline.cpp | 1.2 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Spawn.cpp | 0.5 | unknown

@@ -40,6 +40,41 @@ static_assert(
     std::is_same_v<payload_row_t<eff::Capability<eff::Effect::Alloc, eff::Bg>>, eff::Row<eff::Effect::Alloc>>);
 static_assert(std::is_same_v<payload_row_t<eff::Capability<eff::Effect::IO, eff::Init>>, eff::Row<eff::Effect::IO>>);
 
+// ── a bare tag carries the row of its effect ────────────────────────
+static_assert(std::is_same_v<payload_row_t<eff::cap::Alloc>, eff::Row<eff::Effect::Alloc>>);
+static_assert(std::is_same_v<payload_row_t<eff::cap::IO>, eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<payload_row_t<eff::cap::Block>, eff::Row<eff::Effect::Block>>);
+static_assert(std::is_same_v<payload_row_t<eff::cap::Nondet>, eff::Row<eff::Effect::Nondet>>);
+static_assert(std::is_same_v<payload_row_t<eff::cap::Block const*>, eff::Row<eff::Effect::Block>>);
+// The walk reads the tag of each effect that has one.
+template <eff::Effect E>
+[[nodiscard]] consteval bool reads_its_tag() {
+    if constexpr (eff::HasBareTag<E>) {
+        return effect_mask_of_bare_tag(std::meta::dealias(^^eff::bare_tag_t<E>)) == effect_bit(E);
+    } else {
+        return true;
+    }
+}
+template <eff::Effect... Es>
+[[nodiscard]] consteval bool reads_each_tag() {
+    return sizeof...(Es) == eff::effect_count && (reads_its_tag<Es>() && ...);
+}
+static_assert(reads_each_tag<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block, eff::Effect::Bg,
+                             eff::Effect::Init, eff::Effect::Test, eff::Effect::Nondet, eff::Effect::Div>());
+class HoldsTag {
+public:
+    explicit HoldsTag(eff::cap::Block block) noexcept : block_{block} {}
+
+private:
+    eff::cap::Block block_;
+};
+static_assert(std::is_same_v<payload_row_t<HoldsTag>, eff::Row<eff::Effect::Block>>);
+static_assert(
+    std::is_same_v<payload_row_t<::foundation::core::Option<eff::cap::Nondet>>, eff::Row<eff::Effect::Nondet>>);
+// An empty class that is no bare tag carries no row.
+struct EmptyClass {};
+static_assert(std::is_same_v<payload_row_t<EmptyClass>, eff::Row<>>);
+
 // ── a transparent wrapper reports what it hides ─────────────────────
 //
 // One Graded entry covers every band, so no band needs an arm of its
