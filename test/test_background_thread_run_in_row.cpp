@@ -316,6 +316,64 @@ void test_uncompiled_queue_answers_as_its_walk() {
     ::fixy::check::pass(kTest, "  uncompiled_queue_answers_as_its_walk:      PASSED\n");
 }
 
+// A move of a QueuedRegion leaves its source with no push, so one push stands in
+// one place.  Each case moves the pushes between the slots of an array and then
+// asks the queue for each slot, so it reads each source through the array.
+//
+// An exchange assigns each slot that it leaves, so it shows no source.  The
+// frame of a HeapArray gives two parts that do not overlap: a move from the one
+// part to the other leaves its source in the slot.  One push goes by the move
+// assignment, and the other one by the move constructor.
+void test_moved_push_leaves_no_push_in_its_source() {
+    run_publish_job([](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
+        using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+        const auto alloc = ::foundation::effects::testing::test().alloc;
+        ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
+        BackgroundThread::UncompiledRegions queue{alloc, Count{4}};
+        auto push_new = [&queue, &stage, &arena, alloc](uint32_t slot) {
+            return queue
+                .push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena), crucible::RegionSlot{slot})
+                .queued;
+        };
+
+        ::fixy::HeapArray<crucible::QueuedRegion> slots = ::fixy::mint_heap_array_with<crucible::QueuedRegion>(
+            alloc, 4, [](std::size_t) noexcept { return crucible::QueuedRegion{}; });
+        static_cast<void>(slots.exchange(0, push_new(0)));
+        static_cast<void>(slots.exchange(1, push_new(1)));
+        slots = ::fixy::with_mut(std::move(slots), [](auto run) noexcept {
+            auto [sources, targets] = ::fixy::split_at(std::move(run), 2).expect("the array has four slots");
+            auto assigned = sources.get_mut(0).expect("a part of two slots");
+            auto first_target = targets.get_mut(0).expect("a part of two slots");
+            *first_target = std::move(*assigned);
+            auto constructed = sources.get_mut(1).expect("a part of two slots");
+            auto second_target = targets.get_mut(1).expect("a part of two slots");
+            crucible::QueuedRegion taken{std::move(*constructed)};
+            *second_target = std::move(taken);
+        });
+        for (std::size_t position = 0; position < slots.size(); ++position) {
+            crucible::QueuedRegion const& queued = *slots.get(position).expect("the array has four slots");
+            CRUCIBLE_TEST_ASSERT(kTest, queue.holds(stage, queued) == (position >= 2));
+            CRUCIBLE_TEST_ASSERT(kTest, queued.node().is_some() == (position >= 2));
+        }
+
+        // An exchange of two slots keeps the two pushes, each one time.
+        ::fixy::FixedArray<crucible::QueuedRegion, 2> pair{};
+        static_cast<void>(pair.exchange(::fixy::index<0>(), push_new(2)));
+        static_cast<void>(pair.exchange(::fixy::index<1>(), push_new(3)));
+        const crucible::RegionLink first = pair.at(::fixy::index<0>()).node();
+        const crucible::RegionLink second = pair.at(::fixy::index<1>()).node();
+        crucible::QueuedRegion taken = pair.exchange(::fixy::index<0>(), crucible::QueuedRegion{});
+        CRUCIBLE_TEST_ASSERT(kTest, !queue.holds(stage, pair.at(::fixy::index<0>())));
+        static_cast<void>(pair.exchange(::fixy::index<0>(), pair.exchange(::fixy::index<1>(), std::move(taken))));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(pair.at(::fixy::index<0>()).node(), second));
+        CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(pair.at(::fixy::index<1>()).node(), first));
+        for (crucible::QueuedRegion const& queued : pair)
+            CRUCIBLE_TEST_ASSERT(kTest, queue.holds(stage, queued));
+    });
+    ::fixy::check::pass(kTest, "  moved_push_leaves_no_push_in_its_source:   PASSED\n");
+}
+
 }  // namespace
 
 }  // namespace test_background_thread_run_in_row
@@ -337,6 +395,7 @@ int main() {
     test_uncompiled_queue_is_bounded();
     test_uncompiled_queue_refuses_past_its_capacity();
     test_uncompiled_queue_answers_as_its_walk();
+    test_moved_push_leaves_no_push_in_its_source();
     test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     test_reset_drops_inflight_regions();
     test_reset_applies_at_its_point();
@@ -359,6 +418,6 @@ int main() {
     test_kept_region_keeps_no_old_mark();
     test_sweep_matches_a_walk_of_each_region();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 35 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 36 groups, all passed\n");
     return 0;
 }
