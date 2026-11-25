@@ -5673,6 +5673,15 @@ foundation_neg_compile_test(neg_simd_register_run_keeps_a_view
 foundation_neg_compile_test(neg_core_lower_bound_key_keeps_a_view
   "use of deleted function .void foundation::core::find_lower_bound_by_key\\(View<T, Extent>, Key, Probe\\)"
   "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_bit_set_keys_keeps_a_view
+  "use of deleted function .void foundation::core::BitSet<N, Key>::with_keys\\(Body&&\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_heap_bit_set_keys_keeps_a_view
+  "use of deleted function .void foundation::core::HeapBitSet<Tag>::with_keys\\(Body&&\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_seat_step_keeps_a_view
+  "use of deleted function .void foundation::core::Seat<T>::step\\(Fn&&\\) &"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_for_each_field_keeps_a_view
   "use of deleted function .void foundation::core::for_each_field\\(const T&, Visit&&\\)"
   "a body of a frame door stores no borrow outside the frame")

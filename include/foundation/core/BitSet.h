@@ -599,7 +599,7 @@ public:
     template <class Body>
         requires std::is_invocable_v<Body, BitKeys<Key, Word> const&>
               && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<Key, Word> const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     constexpr std::invoke_result_t<Body, BitKeys<Key, Word> const&>
     with_keys(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<Key, Word> const&>) {
         BitKeys<Key, Word> const keys{words_.view()};
@@ -611,6 +611,13 @@ public:
         requires std::is_invocable_v<Body, BitKeys<Key, Word> const&>
                   && (!::foundation::linear::HoldsNoLinearValue<Body>)
     void with_keys(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    // A body that can store a borrow of the walk outside the frame binds to
+    // this overload, so the refusal gives its reason (StoresNoBorrowOutside of
+    // foundation/core/CaptureStore.h).
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<Key, Word> const&> && ::foundation::linear::HoldsNoLinearValue<Body>
+                  && (!StoresNoBorrowOutside<Body>)
+    void with_keys(Body&& body) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
     void with_keys(Body&& body) const&& =
         delete("a walk of a temporary BitSet reads an object that the full expression ends");
@@ -824,7 +831,7 @@ public:
     template <class Body>
         requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
               && HoldsNoBorrow<std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>>
-              && ::foundation::linear::HoldsNoLinearValue<Body>
+              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     constexpr std::invoke_result_t<Body, BitKeys<BitId<Tag>, std::uint64_t> const&> with_keys(
         Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>) {
         BitKeys<BitId<Tag>, std::uint64_t> const ids{words_()};
@@ -836,6 +843,13 @@ public:
         requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
                   && (!::foundation::linear::HoldsNoLinearValue<Body>)
     void with_keys(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    // A body that can store a borrow of the walk outside the frame binds to
+    // this overload, so the refusal gives its reason (StoresNoBorrowOutside of
+    // foundation/core/CaptureStore.h).
+    template <class Body>
+        requires std::is_invocable_v<Body, BitKeys<BitId<Tag>, std::uint64_t> const&>
+                  && ::foundation::linear::HoldsNoLinearValue<Body> && (!StoresNoBorrowOutside<Body>)
+    void with_keys(Body&& body) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
     void with_keys(Body&& body) const&& =
         delete("a walk of a temporary HeapBitSet reads storage that the full expression frees");

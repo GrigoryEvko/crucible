@@ -45,6 +45,7 @@
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Report.h>
 
 #include <concepts>
@@ -176,10 +177,13 @@ public:
     // holds the payload that fn gives, in the same storage (the step).
     // fn holds no linear value by value (HoldsNoLinearValue of
     // foundation/Linear.h): the step calls it and ends it, and a call is no
-    // consume.  A body that moves storage: the Seat owns its payload, and the
-    // step puts the next payload in the same storage.
+    // consume.  An fn that takes the payload by reference stores no borrow of
+    // it outside the step (LentArmStoresNoBorrow of foundation/core/Choice.h),
+    // because the step ends that payload.  A body that moves storage: the Seat
+    // owns its payload, and the step puts the next payload in the same
+    // storage.
     template <class Fn>
-        requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn>
+        requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn> && LentArmStoresNoBorrow<Fn, T>
     [[= ::foundation::linear::moves_own_storage{}]] constexpr void step(Fn&& fn) & noexcept {
         // The storage of the payload, before fn moves the payload.  It is a
         // pointer to T and not to void, so it is no view of the bytes of the
@@ -201,6 +205,12 @@ public:
     template <class Fn>
         requires StepOf<Fn, T> && (!::foundation::linear::HoldsNoLinearValue<Fn>)
     void step(Fn&&) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+    // A function that can store a borrow of the payload outside the step binds
+    // to this overload, so the refusal gives its reason.
+    template <class Fn>
+        requires StepOf<Fn, T> && ::foundation::linear::HoldsNoLinearValue<Fn> && (!LentArmStoresNoBorrow<Fn, T>)
+    void step(Fn&&) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // The deleted forms take the constraint of step too, so a function of
     // another type gets the refusal of the constraint and not the reason of
