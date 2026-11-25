@@ -145,6 +145,104 @@ static_assert(std::is_same_v<decltype(::fixy::concurrent::mint_swmr_stage<&stage
                                  std::declval<FakeWriter<int>>())),
                              W1>);
 
+// ── the effects of a handle ─────────────────────────────────────────
+//
+// A handle that reaches a context, a capability or a bare tag is no handle of
+// a stage, also when the context of the stage owns the effect.
+
+template <class Held>
+class HoldingConsumer {
+public:
+    using channel_type = FakeChannel<int>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
+    explicit HoldingConsumer(Held held) noexcept : held_{static_cast<Held&&>(held)} {}
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
+
+private:
+    Held held_;
+};
+
+template <class Held>
+struct HoldingProducer {
+    using channel_type = FakeChannel<int>;
+    static constexpr std::size_t per_call_working_set = 64;
+    static constexpr std::size_t channel_capacity = 0;
+    Held held;
+    [[nodiscard]] bool try_push(int const&) noexcept { return false; }
+};
+
+template <class Held>
+struct HoldingWriter {
+    using channel_type = FakeCell<int>;
+    static constexpr std::size_t per_call_working_set = 64;
+    Held held;
+    void publish(int const&) noexcept {}
+};
+
+template <class Held>
+inline void stage_of_consumer(HoldingConsumer<Held>&&, FakeProducer<int>&&) noexcept {}
+template <class Held>
+inline void stage_of_producer(FakeConsumer<int>&&, HoldingProducer<Held>&&) noexcept {}
+template <class Held>
+inline void stage_of_fan_in(FakeConsumer<int>&&, HoldingConsumer<Held>&&, FakeProducer<int>&&) noexcept {}
+template <class Held>
+inline void stage_of_writer(FakeConsumer<int>&&, HoldingWriter<Held>&&) noexcept {}
+
+template <class Held, class Ctx = BgLoadCtx>
+inline constexpr bool takes_held =
+    CtxFitsStage<&stage_of_consumer<Held>, Ctx> && CtxFitsStage<&stage_of_producer<Held>, Ctx>
+    && CtxFitsVariadicStage<&stage_of_fan_in<Held>, Ctx> && CtxFitsSwmrPublishStage<&stage_of_writer<Held>, Ctx>;
+template <class Held, class Ctx = BgLoadCtx>
+inline constexpr bool refuses_held =
+    !StageHandlesReachNoEffect<&stage_of_consumer<Held>> && !CtxFitsStage<&stage_of_consumer<Held>, Ctx>
+    && !CtxFitsStage<&stage_of_producer<Held>, Ctx> && !CtxFitsVariadicStage<&stage_of_fan_in<Held>, Ctx>
+    && !CtxFitsSwmrPublishStage<&stage_of_writer<Held>, Ctx>;
+
+// The controls: a plain member, and a context that only an argument names.
+struct Plain {
+    int value = 0;
+};
+template <class Ctx>
+struct NamesCtx {
+    int value = 0;
+};
+static_assert(takes_held<int> && takes_held<Plain> && takes_held<NamesCtx<BgLoadCtx>> && takes_held<Plain, HotFgCtx>);
+
+struct Nested {
+    Plain plain{};
+    ::foundation::core::Option<eff::cap::Block> block{::foundation::core::none};
+};
+static_assert(refuses_held<BgLoadCtx> && refuses_held<BgDrainCtx> && refuses_held<BgLoadCtx, BgDrainCtx>);
+static_assert(refuses_held<eff::cap::Alloc> && refuses_held<eff::cap::IO> && refuses_held<eff::cap::Block>
+              && refuses_held<eff::cap::Nondet> && refuses_held<eff::Bg>);
+static_assert(refuses_held<eff::Capability<eff::Effect::Block, eff::Bg>>);
+static_assert(refuses_held<Nested> && refuses_held<eff::cap::Nondet[2]>);
+// A borrow reaches the context as a value does.
+struct BorrowBrand {};
+static_assert(refuses_held<::foundation::core::Ref<BgLoadCtx const, BorrowBrand>> && refuses_held<BgLoadCtx const&>);
+static_assert(refuses_held<::foundation::core::Box<Nested>>);
+
+// The payload of a channel is no part of a handle: the gate of the payload
+// rows weighs it.  A payload that holds a bare tag needs its effect.
+class TagPayload {
+public:
+    explicit TagPayload(eff::cap::Block block) noexcept : block_{block} {}
+
+private:
+    eff::cap::Block block_;
+};
+template <class Payload>
+struct PayloadConsumer {
+    using channel_type = FakeChannel<Payload>;
+    static constexpr std::size_t channel_capacity = 0;
+    ::foundation::core::Option<Payload> cell{::foundation::core::none};
+    [[nodiscard]] ::foundation::core::Option<Payload> try_pop() noexcept { return {}; }
+};
+inline void stage_tag_payload(PayloadConsumer<TagPayload>&&, FakeProducer<int>&&) noexcept {}
+static_assert(StageHandlesReachNoEffect<&stage_tag_payload>);
+static_assert(CtxFitsStage<&stage_tag_payload, BgLoadCtx> && !CtxFitsStage<&stage_tag_payload, BgDrainCtx>);
+
 }  // namespace detail::stage_self_test
 
 }  // namespace fixy::concurrent

@@ -23,7 +23,9 @@
 // gives it its own one (the context of a stage in
 // fixy/concurrent/StageShape.h).  So a wait or a notify of the body, such as
 // a door of a parked channel, has only the effects of the context of its
-// stage.
+// stage.  Each gate also refuses a handle that reaches a context, a capability
+// or a bare tag of its own (StageHandlesReachNoEffect), because a body would
+// take an effect from it that the context of the stage does not own.
 //
 // A stage can run on a thread of its own, so each gate also asks that each
 // parameter of the body and the context move to another thread
@@ -39,8 +41,10 @@
 #include <foundation/Transfer.h>
 #include <foundation/diag/RowHash.h>
 #include <foundation/effects/Ctx.h>
+#include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Signature.h>
+#include <foundation/reflect/TypeComponents.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -93,6 +97,108 @@ template <auto FnPtr>
     return true;
 }
 
+// True when a value of the class gives an effect to its holder: an execution
+// context, a context that holds bare tags, a capability, or a bare tag.
+// Complexity: linear in the count of the effects.
+[[nodiscard]] consteval bool gives_an_effect(std::meta::info type) {
+    namespace effects = ::foundation::effects;
+    if (effects::is_exec_ctx(type) || effects::is_rostered_context(type)) return true;
+    if (std::meta::has_template_arguments(type)) return std::meta::template_of(type) == ^^effects::Capability;
+    return effect_mask_of_bare_tag(type) != 0;
+}
+
+// True when a value of the type root reaches a value that gives an effect:
+// through its bases and its data members, an array, a reference or a pointer.
+// The walk reads no template argument, because a handle can name a context in
+// its type and hold none, and it reads no parameter of a function type.  A
+// class that the walk cannot read counts as one that reaches an effect.
+//
+// The walk first reads what the type payload reaches, and judges none of it.
+// A handle reaches the payload of its channel, and the gate of the payload
+// rows weighs what a payload gives (fixy/concurrent/PayloadRow.h).  A null
+// payload reaches nothing.  The root is complete.
+//
+// The walk asks should_skip of each class that it reaches through a borrow, and
+// it reads no part of a class that should_skip names.  Complexity: linear in
+// the distinct types that the two types reach, times the scan of the visited
+// list, at compile time only.
+template <class Skip>
+[[nodiscard]] consteval bool reaches_an_effect(std::meta::info root, std::meta::info payload, Skip should_skip) {
+    namespace refl = ::foundation::reflect;
+    constexpr refl::SpecializationRead read = refl::SpecializationRead::Instantiating;
+    refl::TypeNodeList listed;
+    if (payload != std::meta::info{}) listed.push_back(refl::node_reached_indirectly(payload, read));
+    bool is_root_listed = false;
+    for (std::size_t next = 0;; ++next) {
+        if (next == listed.size()) {
+            if (is_root_listed) return false;
+            listed.push_back(refl::TypeNode{refl::bare_type(root), true, true});
+            is_root_listed = true;
+        }
+        const refl::TypeNode node = listed.begin()[next];
+        bool was_read = false;
+        for (std::size_t earlier = 0; earlier < next && !was_read; ++earlier) {
+            was_read = listed.begin()[earlier].type == node.type;
+        }
+        if (was_read) continue;
+        if (std::meta::is_pointer_type(node.type)) {
+            listed.push_back(refl::node_reached_indirectly(std::meta::remove_pointer(node.type), read));
+            continue;
+        }
+        if (std::meta::is_array_type(node.type)) {
+            listed.push_back(refl::TypeNode{refl::bare_type(std::meta::remove_all_extents(node.type)), true, true});
+            continue;
+        }
+        if (!std::meta::is_class_type(node.type) && !std::meta::is_union_type(node.type)) continue;
+        const bool is_readable = node.may_read_members && !refl::holds_unreadable_state(node);
+        if (is_root_listed && (!is_readable || gives_an_effect(node.type))) return true;
+        if (!is_readable || (!node.is_held_by_value && should_skip(node.type))) continue;
+        for (const refl::TypeNode& part : refl::member_components_of(node, read)) {
+            listed.push_back(part);
+        }
+    }
+}
+
+// True when a borrow of the class reaches a value that gives an effect.  Each
+// handle of a unit that borrows one class shares one walk of that class.
+template <class Borrowed>
+inline constexpr bool borrow_reaches_an_effect =
+    detail::reaches_an_effect(^^Borrowed, std::meta::info{}, [](std::meta::info) consteval { return false; });
+
+// True when the handle reaches a value that gives an effect, apart from the
+// payload of its channel.  A borrowed class that reaches none needs no read.
+[[nodiscard]] consteval bool handle_reaches_an_effect(std::meta::info handle, std::meta::info payload) {
+    return detail::reaches_an_effect(handle, payload, [](std::meta::info borrowed) consteval {
+        return !std::meta::extract<bool>(std::meta::substitute(^^borrow_reaches_an_effect, {borrowed}));
+    });
+}
+
+// True when the parameter is a handle that reaches a value that gives an
+// effect.  A body takes each handle by rvalue reference, and the context and
+// the keys of a stage are lvalue references.
+template <class Parameter>
+[[nodiscard]] consteval bool does_parameter_reach_an_effect() {
+    if constexpr (!std::is_rvalue_reference_v<Parameter>) {
+        return false;
+    } else if constexpr (is_stage_input_handle_v<Parameter>) {
+        return handle_reaches_an_effect(^^Parameter, ^^stage_input_handle_value_t<Parameter>);
+    } else if constexpr (is_stage_output_handle_v<Parameter>) {
+        return handle_reaches_an_effect(^^Parameter, ^^stage_output_handle_value_t<Parameter>);
+    } else if constexpr (is_swmr_writer_v<Parameter>) {
+        return handle_reaches_an_effect(^^Parameter, ^^swmr_writer_value_t<Parameter>);
+    } else {
+        return handle_reaches_an_effect(^^Parameter, std::meta::info{});
+    }
+}
+
+// True when no handle of the stage body reaches a value that gives an effect.
+// Complexity: linear in the count of the parameters, times the walk of
+// reaches_an_effect.
+template <auto FnPtr, std::size_t... Is>
+[[nodiscard]] consteval bool do_stage_handles_reach_no_effect(std::index_sequence<Is...>) {
+    return (!detail::does_parameter_reach_an_effect<::foundation::reflect::param_type_t<FnPtr, Is>>() && ...);
+}
+
 // Calls the body of the stage with its handles, and with the context of the
 // stage when the body names it (the context of a stage in
 // fixy/concurrent/StageShape.h).  A body that names keys gets them from the
@@ -124,10 +230,17 @@ void call_stage_(Ctx const& ctx, Handles&&... handles) noexcept {
 template <auto FnPtr, class Ctx>
 concept StageCrossesThreads = detail::are_stage_parameters_sendable<FnPtr>() && ::foundation::transfer::Sendable<Ctx>;
 
+// No handle of the body reaches a context, a capability or a bare tag, apart
+// from the payload of its channel, whose row the gates above weigh.  So the
+// body has only the effects of the context of its stage.
+template <auto FnPtr>
+concept StageHandlesReachNoEffect =
+    detail::do_stage_handles_reach_no_effect<FnPtr>(std::make_index_sequence<::foundation::reflect::arity_v<FnPtr>>{});
+
 template <auto FnPtr, class Ctx>
-concept CtxFitsStage =
-    PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageBodyTakesCtx<FnPtr, Ctx>
-    && StageInputRowAdmitted<FnPtr, Ctx> && StageOutputRowAdmitted<FnPtr, Ctx> && StageCrossesThreads<FnPtr, Ctx>;
+concept CtxFitsStage = PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageBodyTakesCtx<FnPtr, Ctx>
+                    && StageInputRowAdmitted<FnPtr, Ctx> && StageOutputRowAdmitted<FnPtr, Ctx>
+                    && StageCrossesThreads<FnPtr, Ctx> && StageHandlesReachNoEffect<FnPtr>;
 
 namespace detail {
 
@@ -244,9 +357,9 @@ template <auto FnPtr>
 using variadic_stage_row_union_t = typename detail::variadic_stage_row_union<FnPtr>::type;
 
 template <auto FnPtr, class Ctx>
-concept CtxFitsVariadicStage =
-    VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageBodyTakesCtx<FnPtr, Ctx>
-    && detail::variadic_stage_rows_admitted<FnPtr, Ctx>() && StageCrossesThreads<FnPtr, Ctx>;
+concept CtxFitsVariadicStage = VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
+                            && StageBodyTakesCtx<FnPtr, Ctx> && detail::variadic_stage_rows_admitted<FnPtr, Ctx>()
+                            && StageCrossesThreads<FnPtr, Ctx> && StageHandlesReachNoEffect<FnPtr>;
 
 template <auto FnPtr, class... Handles>
 concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Handles...>::value;
@@ -279,7 +392,7 @@ template <auto FnPtr, class Ctx>
 concept CtxFitsSwmrPublishStage =
     SwmrPublishStageBody<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
     && ::foundation::effects::is_subrow(^^swmr_stage_row_union_t<FnPtr>, ^^typename Ctx::row_type)
-    && StageCrossesThreads<FnPtr, Ctx>;
+    && StageCrossesThreads<FnPtr, Ctx> && StageHandlesReachNoEffect<FnPtr>;
 
 template <auto FnPtr, class Ctx>
     requires CtxFitsStage<FnPtr, Ctx>

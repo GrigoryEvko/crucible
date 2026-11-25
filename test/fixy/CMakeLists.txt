@@ -5031,6 +5031,17 @@ fixy_neg_compile_test(neg_stage_body_names_another_ctx
 fixy_neg_compile_test(neg_stage_parks_with_no_block
   "no matching function for call to .fixy::concurrent::ParkedConsumerHandle<.*receive_waiting<fixy::concurrent::SpinThenPark<0> >\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >&\\)"
   "required from .void neg_stage_parks_with_no_block_types::drain\\(Input&&, Sink&&, const Ctx&\\)")
+# A handle that reaches a context or a bare tag is no handle of a stage, so a
+# body takes no effect that the context of its stage does not own.
+fixy_neg_compile_test(neg_stage_handle_holds_a_context
+  "no matching function for call to .mint_stage<neg_stage_handle_holds_a_context_types::body>"
+  "required for the satisfaction of .StageHandlesReachNoEffect<FnPtr>.")
+fixy_neg_compile_test(neg_stage_handle_holds_a_tag
+  "no matching function for call to .mint_stage<neg_stage_handle_holds_a_tag_types::body>"
+  "required for the satisfaction of .StageHandlesReachNoEffect<FnPtr>.")
+fixy_neg_compile_test(neg_stage_handles_park_through_their_context
+  "no matching function for call to .mint_stage<\\(& body<neg_stage_handles_park_through_their_context_types::WaitingConsumer<.*\\(const fixy::BgDrainCtx&"
+  "required for the satisfaction of .StageHandlesReachNoEffect<FnPtr>.")
 # A pop of a parked merge takes a context that owns Nondet, and a parked
 # producer of a merge has no release.
 fixy_neg_compile_test(neg_parked_merge_pop_without_nondet

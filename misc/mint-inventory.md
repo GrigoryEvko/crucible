@@ -236,7 +236,7 @@ that the axis does not apply to the row.
 | `mint_spawn` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_spawn_on_host` | `include/fixy/concurrent/Spawn.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_spsc_split` | `include/fixy/concurrent/SpscEnds.h` | Y | - | Y | Y | token | · | HS14: 21 |
-| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 27 |
+| `mint_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 31 |
 | `mint_swmr_stage` | `include/fixy/concurrent/Stage.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
 
 ## include/fixy/handle/
