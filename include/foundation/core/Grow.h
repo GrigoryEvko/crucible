@@ -53,16 +53,16 @@
 //   borrow-match of the quarantine plugin refuses an append, a clear, a move
 //   and each other call of a member that is not const of the owner in the
 //   body (utils/tools/quarantine/borrow.cpp).  A function that the body calls
-//   can still change the owner, so the state of the owner counts its lends.
-//   An append, a clear, a move, a freeze and the end of the owner while the
-//   count is not zero end the process, in each build.  An append ends the
-//   process also when the storage has room, so the refusal does not depend
-//   on the capacity.  The count holds 255 lends, and one more ends the
-//   process.
+//   can still change the owner, so the state of the owner counts its lends in
+//   a LendCount of one byte (foundation/core/LendCount.h).  An append, a
+//   clear, a move, a freeze and the end of the owner while the count is not
+//   zero end the process, in each build.  An append ends the process also
+//   when the storage has room, so the refusal does not depend on the
+//   capacity.  The count holds 255 lends, and one more ends the process.
 //
 //   An owner has one owner thread, and only that thread lends it, so the
-//   count is a plain byte, with no atomic step.  A frame door of an owner
-//   from a second thread is a race on the count.
+//   steps of the count are plain, with no atomic step.  A frame door of an
+//   owner from a second thread is a race on the count.
 //
 //   The result of a body holds no borrow (HoldsNoBorrow of Choice.h), so no
 //   body gives the View, a Ref or an address out.  The concept refuses each
@@ -71,8 +71,8 @@
 //   View in a variable that it captures by reference does not compile
 //   (StoresNoBorrowOutside of CaptureStore.h).
 //
-//   A SmallList counts its lends in a LendCount of one byte
-//   (foundation/core/LendCount.h), and its doors refuse the same changes.
+//   A SmallList counts its lends in a LendCount of one byte too, and its doors
+//   refuse the same changes.
 //
 // A HeapText holds the characters that a GrowText held at its freeze, and no
 // operation of it changes them.  Its view() and its loop then give borrows
@@ -98,6 +98,7 @@
 #include <foundation/core/Cursor.h>
 #include <foundation/core/Full.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/LendCount.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
@@ -117,14 +118,11 @@ namespace detail {
 [[nodiscard]] std::size_t next_capacity_(std::size_t capacity, std::size_t needed, std::size_t maximum,
                                          std::size_t element_bytes) noexcept;
 
-// The fatal exits of the lend count.  The calls take no argument, so each
-// inlined test of a count adds only a compare and a branch to one call.
+// The fatal exit of a change of a lent owner (the lend count).  The call takes
+// no argument, so each inlined test of a count adds only a compare and a branch
+// to one call.
 [[noreturn]] CRUCIBLE_COLD inline void report_lent_owner_change_() noexcept {
     fatal("an append, a clear, a move, a freeze or the end of a growable owner while a frame door lends its storage");
-}
-
-[[noreturn]] CRUCIBLE_COLD inline void report_owner_lend_overflow_() noexcept {
-    fatal("more than 255 frame doors lend the storage of one growable owner at one time");
 }
 
 // The fatal exit of a window of append_self that does not lie in the text.
@@ -133,30 +131,15 @@ namespace detail {
     fatal("append_self got the {} characters from {} of a text of {} characters", count, offset, size);
 }
 
+// The lend count of a GrowText, in one byte of its state.
+using GrowTextLends = LendCount<unsigned char>;
+
 // Ends the process while a frame door lends the storage (the lend count).
-constexpr void refuse_lent_owner_change_(unsigned char lend_count) noexcept {
-    if (lend_count != 0) [[unlikely]] {
+constexpr void refuse_lent_owner_change_(GrowTextLends const& lends) noexcept {
+    if (lends.is_lent()) [[unlikely]] {
         report_lent_owner_change_();
     }
 }
-
-// The lend of one frame door, until its destructor (the lend count).  The
-// owner has one owner thread, so the steps of the count are plain.
-class [[nodiscard]] OwnerLend final {
-    unsigned char& lend_count_;
-
-public:
-    constexpr explicit OwnerLend(unsigned char& lend_count) noexcept : lend_count_{lend_count} {
-        if (lend_count_ == 255) [[unlikely]] {
-            report_owner_lend_overflow_();
-        }
-        ++lend_count_;
-    }
-    constexpr ~OwnerLend() { --lend_count_; }
-
-    OwnerLend(OwnerLend const&) = delete("a lend lives in one frame door");
-    OwnerLend& operator=(OwnerLend const&) = delete("a lend lives in one frame door");
-};
 
 namespace owner {
 
@@ -173,16 +156,16 @@ struct GrowTextState {
     std::size_t size = 0;
     std::size_t capacity = 0;
     std::size_t maximum = 0;
-    mutable unsigned char lend_count = 0;
+    mutable GrowTextLends lends{};
     FixedArray<unsigned char, 7> padding_{};
 
     [[nodiscard]] static constexpr GrowTextState emptied(GrowTextState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
+        refuse_lent_owner_change_(state.lends);
         return GrowTextState{nullptr, 0, 0, state.maximum};
     }
 
     static constexpr void release(GrowTextState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
+        refuse_lent_owner_change_(state.lends);
         if (state.first != nullptr) {
             unpoison_slots_(state.first, state.capacity);
             heap_release_(static_cast<void*>(state.first), slots_layout_<char>(state.capacity));
@@ -309,7 +292,7 @@ class [[nodiscard]][[= ::foundation::lifetime::no_start_over_bytes{}]] GrowText 
     // build with AddressSanitizer reports characters from there.  A lent text
     // ends the process (the lend count).
     [[nodiscard]] Result<Unit, Full<char>> put_(char const* characters, std::size_t count) noexcept {
-        detail::refuse_lent_owner_change_(state_.lend_count);
+        detail::refuse_lent_owner_change_(state_.lends);
         if (count > state_.maximum - state_.size) [[unlikely]] {
             return err(Full<char>{});
         }
@@ -384,7 +367,7 @@ public:
     // (the spare storage of Heap.h).  A lent text ends the process (the lend
     // count).
     constexpr void clear() & noexcept {
-        detail::refuse_lent_owner_change_(state_.lend_count);
+        detail::refuse_lent_owner_change_(state_.lends);
         state_.size = 0;
         detail::poison_slots_(state_.first, state_.capacity);
     }
@@ -397,7 +380,7 @@ public:
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, TextView>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, TextView>) {
-        [[maybe_unused]] detail::OwnerLend const lend{state_.lend_count};
+        [[maybe_unused]] auto const lend = state_.lends.lend();
         return static_cast<Body&&>(body)(GrowTextDoor::text_(state_.first, state_.size));
     }
     template <class Body>

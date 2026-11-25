@@ -1,6 +1,6 @@
-// The deaths of the lend counts of a SmallList (foundation/core/LendCount.h)
-// and of a GrowText (foundation/core/Grow.h).  A frame door lends the storage
-// of a SmallList or of a GrowText to its body.  Each change below comes from a
+// The deaths of the lend count (foundation/core/LendCount.h) of a SmallList and
+// of a GrowText.  A frame door lends the storage of a SmallList or of a
+// GrowText to its body.  Each change below comes from a
 // function that the body calls.  Each such change ends the process in each
 // build: an append, also when the storage has room, a clear, a move, a freeze
 // and the end of the owner.  The move of the owner into the frame of with_mut
@@ -36,6 +36,8 @@ using ::fixy::check::pass;
 
 constexpr ::fixy::TextView kLentChange{
     "an append, a clear, a move, a freeze or the end of a growable owner while a frame door lends its storage"};
+constexpr ::fixy::TextView kLendOverflow{
+    "more frame doors lend what one owner holds at one time than the word of its LendCount can count"};
 
 [[nodiscard]] ::foundation::effects::Alloc allocation() noexcept {
     return ::foundation::effects::testing::test().alloc;
@@ -164,9 +166,13 @@ void unique_frame_from_callee() noexcept {
         list.with_view([&list](core::View<int const> view) noexcept { return frame_of(list) + view.size(); }));
 }
 
-// A SmallList counts its lends in a LendCount, and test_core_lend_count holds
-// the overflow of that count.  A GrowText keeps the count of this header.
-void overflow_the_count() noexcept {
+// The 256th nested lend of one owner, past the count of one byte.
+void overflow_the_list_count() noexcept {
+    IntList const list = small_list();
+    static_cast<void>(lend_nested(list, 256));
+}
+
+void overflow_the_text_count() noexcept {
     core::GrowText const text = small_text();
     static_cast<void>(lend_nested(text, 256));
 }
@@ -187,8 +193,8 @@ int main() {
     expect_dies(test, freeze_from_callee, kLentChange);
     expect_dies(test, end_from_callee, kLentChange);
     expect_dies(test, unique_frame_from_callee, kLentChange);
-    expect_dies(test, overflow_the_count,
-                ::fixy::TextView{"more than 255 frame doors lend the storage of one growable owner at one time"});
+    expect_dies(test, overflow_the_list_count, kLendOverflow);
+    expect_dies(test, overflow_the_text_count, kLendOverflow);
     expect_dies(test, append_self_outside,
                 ::fixy::TextView{"append_self got the 4 characters from 2 of a text of 3 characters"});
 
