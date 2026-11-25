@@ -142,7 +142,17 @@ struct OpData {
 ::fixy::View<const TensorMeta>
 records_of(const OpData&&) = delete("the result points into the op, and a temporary op ends before the result");
 
-OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
+// The tensor that an op after the first one reads.
+enum class InputSource : std::uint8_t {
+    PreviousOutput,  // the output of the op before it
+    Parameter,  // a tensor that no op writes, at one address in each iteration
+};
+
+// The iteration whose addresses the parameters have.  No iteration of the
+// bench has this number, so no op writes a parameter.
+constexpr IterationNumber kParameterIteration{200};
+
+OpData make_op(uint32_t iter, uint32_t op_idx, InputSource source = InputSource::PreviousOutput) noexcept {
     OpData d;
     const OpSlot slot = OpSlot::check(op_idx).expect("the position of an op is below NUM_OPS");
     d.entry.schema_hash = SCHEMA.at(slot);
@@ -153,7 +163,9 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
     uint16_t idx = 0;
     if (op_idx > 0)
         d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
-                    make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1})));
+                    make_meta(source == InputSource::Parameter
+                                  ? fake_address(kParameterIteration, OpPosition{op_idx})
+                                  : fake_address(IterationNumber{iter}, OpPosition{op_idx - 1})));
     d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
                 make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx})));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
@@ -165,23 +177,23 @@ using Ops = ::fixy::FixedArray<OpData, NUM_OPS>;
 
 // The ops of the iteration 10, which the COMPILED rows dispatch after the
 // setup of setup_compiled_vigil.
-[[nodiscard]] Ops make_compiled_ops() noexcept {
+[[nodiscard]] Ops make_compiled_ops(InputSource source = InputSource::PreviousOutput) noexcept {
     Ops ops{};
     for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
-        ops.set(slot, make_op(10, static_cast<uint32_t>(slot.raw())));
+        ops.set(slot, make_op(10, static_cast<uint32_t>(slot.raw()), source));
     return ops;
 }
 
-void feed_record(Vigil& vigil, uint32_t iter) {
+void feed_record(Vigil& vigil, uint32_t iter, InputSource source) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        auto d = make_op(iter, i);
+        auto d = make_op(iter, i, source);
         (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
 
-void feed_trigger(Vigil& vigil, uint32_t iter) {
+void feed_trigger(Vigil& vigil, uint32_t iter, InputSource source) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
-        auto d = make_op(iter, i);
+        auto d = make_op(iter, i, source);
         (void)vigil.record_op(certify_synthetic_op(d.entry, records_of(d)));
     }
 }
@@ -195,17 +207,17 @@ void wait_region_published(Vigil& vigil) {
 // iteration in COMPILED mode.  Returns the number of results that are not
 // the expected ones.  A timed body adds the count up, and a check after the
 // measurement reads it.
-[[nodiscard]] uint32_t align_and_activate(Vigil& vigil, uint32_t iter) {
+[[nodiscard]] uint32_t align_and_activate(Vigil& vigil, uint32_t iter, InputSource source) {
     uint32_t unexpected_results = 0;
     for (uint32_t i = 0; i < K; i++) {
-        auto d = make_op(iter, i);
+        auto d = make_op(iter, i, source);
         const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::RECORD);
     }
     unexpected_results += static_cast<uint32_t>(!vigil.context().is_compiled());
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
-        auto d = make_op(iter, i);
+        auto d = make_op(iter, i, source);
         const auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
         unexpected_results += static_cast<uint32_t>(r.action != DispatchResult::Action::COMPILED);
     }
@@ -215,14 +227,20 @@ void wait_region_published(Vigil& vigil) {
 // Build a Vigil in COMPILED mode ready for benchmarking. On return the
 // engine is at position 0 and the next dispatch_op is the first MATCH.
 // Returns the count of align_and_activate.
-[[nodiscard]] uint32_t setup_compiled_vigil(Vigil& vigil) {
-    feed_record(vigil, 0);
-    feed_record(vigil, 1);
-    feed_trigger(vigil, 2);
+[[nodiscard]] uint32_t setup_compiled_vigil(Vigil& vigil, InputSource source = InputSource::PreviousOutput) {
+    feed_record(vigil, 0, source);
+    feed_record(vigil, 1, source);
+    feed_trigger(vigil, 2, source);
     const ::fixy::TestRunnerCtx waiter{::foundation::effects::testing::test()};
     vigil.flush(waiter).expect("the pipeline of the bench runs");
     wait_region_published(vigil);
-    return align_and_activate(vigil, 3);
+    return align_and_activate(vigil, 3, source);
+}
+
+// The count of the external slots of the plan that the Vigil replays.
+[[nodiscard]] uint32_t count_external_slots(Vigil const& vigil) {
+    const DagRef<RegionNode const> region = vigil.context().active_region().expect("the Vigil replays a region");
+    return PlanLink{region->plan}.expect("an active region has a plan")->num_external;
 }
 
 // The benches below measure a plan for one CPU device with no distribution,
@@ -332,8 +350,8 @@ int main() {
     bench::print("  sizeof(TraceRing::Entry) : {} B\n", sizeof(TraceRing::Entry));
     bench::print("  sizeof(TensorMeta)       : {} B\n\n", sizeof(TensorMeta));
 
-    // The 16 rows below.
-    ::fixy::FixedList<bench::Report, 17> reports{};
+    // The 19 rows of this function.
+    ::fixy::FixedList<bench::Report, 19> reports{};
 
     // ── Sub-component baselines ────────────────────────────────────
     bench::print("--- sub-component baselines ---\n");
@@ -655,6 +673,39 @@ int main() {
             const OpData& d = ops.at(next);
             const DispatchResult r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
             next = OpSlot::check((r.op_index.raw() + 1) % NUM_OPS).expect("the remainder is below NUM_OPS");
+        });
+    }());
+
+    // The replay of a model binds the parameters of each op to the storage of
+    // the live op.  In the two rows that follow, each op after the first one
+    // reads one parameter, so the replay binds one external slot for it.  The
+    // region has one external slot for each parameter.
+    bench::add_report(reports, [&] {
+        Vigil vigil;
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
+        CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
+        Ops ops = make_compiled_ops(InputSource::Parameter);
+
+        OpSlot slot = ::fixy::index<0>();
+        return bench::run("dispatch_op [COMPILED, external reads]", [&] {
+            const OpData& d = ops.at(slot);
+            auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+            bench::do_not_optimize(r);
+            slot = next_in_cycle(slot);
+        });
+    }());
+
+    bench::add_report(reports, [&] {
+        Vigil vigil;
+        CRUCIBLE_BENCH_CHECK(setup_compiled_vigil(vigil, InputSource::Parameter) == 0);
+        CRUCIBLE_BENCH_CHECK(count_external_slots(vigil) == NUM_OPS - 1);
+        Ops ops = make_compiled_ops(InputSource::Parameter);
+
+        return bench::run("dispatch_op [8-op iteration, external reads]", [&] {
+            for (const OpData& d : ops) {
+                auto r = vigil.dispatch_op(certify_synthetic_op(d.entry, records_of(d)));
+                bench::do_not_optimize(r);
+            }
         });
     }());
 
