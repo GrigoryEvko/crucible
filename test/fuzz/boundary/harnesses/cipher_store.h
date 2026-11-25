@@ -213,15 +213,12 @@ inline void run_cipher_store(::fixy::View<std::byte const> bytes) noexcept {
 
     const auto loaded_events =
         cipher.load_session_events(kHarnessCtx, view, test_alloc(), ::fixy::session::SessionTagId{session_raw});
-    loaded_events.events.with_view([session_raw](::fixy::View<SessionEvent const> events) {
-        for (const SessionEvent& event : events) {
-            CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
-            CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
-            auto const record = event.encode();
-            CRUCIBLE_FUZZ_CLAIM("cipher_store",
-                                ::fixy::session::decode_session_log(test_alloc(), record.view()).is_ok());
-        }
-    });
+    for (const SessionEvent& event : loaded_events.events) {
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", names_enumerator(event.op()));
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", event.session().value == session_raw);
+        auto const record = event.encode();
+        CRUCIBLE_FUZZ_CLAIM("cipher_store", ::fixy::session::decode_session_log(test_alloc(), record.view()).is_ok());
+    }
 }
 
 // The seeds of the store.  Each seed holds a store with one region object, a

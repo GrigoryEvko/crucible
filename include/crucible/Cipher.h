@@ -515,8 +515,7 @@ public:
     // no skip, because a writer that stores a batch again appends its line
     // again.  A batch whose steps overlap the events of the load is a skip.
     struct SessionEventLoad {
-        ::foundation::core::GrowList<SessionEvent> events =
-            ::foundation::core::mint_grow_list<SessionEvent>(::fixy::max_of<std::size_t>);
+        ::fixy::SegmentList<SessionEvent> events{};
         std::size_t skipped_batches = 0;
     };
 

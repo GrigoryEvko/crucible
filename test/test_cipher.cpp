@@ -97,9 +97,7 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 
 // The step of the event at position of a list of loaded events.
 [[nodiscard]] static std::uint64_t step_at(crucible::Cipher::SessionEventLoad const& loaded, std::size_t position) {
-    return loaded.events.with_element(
-        position, [](crucible::Cipher::SessionEvent const& event) noexcept { return event.step_id().raw(); },
-        [] noexcept -> std::uint64_t { ::fixy::fatal("the position is inside the list of loaded events"); });
+    return loaded.events.get(position).expect("the position is inside the list of loaded events")->step_id().raw();
 }
 
 // The hash of a batch that the store persists.  A refusal ends the test.

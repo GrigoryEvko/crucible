@@ -691,7 +691,7 @@ struct IndexLine {
 // True when lines holds a line equal to line.  The lines are in the order of
 // their first steps, so the search halves its range at each step.
 // Complexity: O(log n) in the number of lines.
-[[nodiscard]] bool holds_index_line_(::fixy::View<IndexLine const> lines, IndexLine const& line) noexcept {
+[[nodiscard]] bool holds_index_line_(::fixy::SegmentList<IndexLine> const& lines, IndexLine const& line) noexcept {
     std::size_t low = 0;
     std::size_t high = lines.size();
     while (low < high) {
@@ -995,8 +995,6 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
                                                       ::foundation::effects::Alloc allocation,
                                                       ::fixy::session::SessionTagId session,
                                                       ::fixy::session::StepId from_step) const {
-    // The index bounds no count of events, so the list of the load takes
-    // the largest count of a View.
     SessionEventLoad loaded{};
     const EntryPath session_directory = session_entry_(session);
     CRUCIBLE_LET_ELSE(session_dir,
@@ -1022,8 +1020,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     // The lines of the loaded batches.  Each loaded batch starts after the
     // last step that the load held before it, so the lines are in the order
     // of their first steps.
-    ::foundation::core::GrowList<IndexLine> loaded_lines =
-        ::foundation::core::mint_grow_list<IndexLine>(::fixy::max_of<std::size_t>);
+    ::fixy::SegmentList<IndexLine> loaded_lines{};
 
     // The events of the batch of one index line, or the reason that the load
     // skips the batch.  The hashes prove only that the batch is the one its
@@ -1097,10 +1094,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
         // step the load holds names a batch that overlaps the events of the
         // load, and the check of the batch skips it with a report.
         const bool is_loaded_again =
-            have_loaded && index_line.last <= highest_loaded
-            && loaded_lines.with_view([&index_line](::fixy::View<IndexLine const> lines) noexcept {
-                   return holds_index_line_(lines, index_line);
-               });
+            have_loaded && index_line.last <= highest_loaded && holds_index_line_(loaded_lines, index_line);
         if (is_loaded_again) return;
 
         read_checked_batch(index_line)
@@ -1115,9 +1109,9 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
                     const ::fixy::View<SessionEvent const> suffix =
                         events.view().window(skipped, events.size() - skipped).expect("the suffix is inside the batch");
                     for (const SessionEvent& event : suffix) {
-                        loaded.events.append(allocation, event).expect("the list of the events has no maximum");
+                        loaded.events.append(allocation, event);
                     }
-                    loaded_lines.append(allocation, index_line).expect("the list of the loaded lines has no maximum");
+                    loaded_lines.append(allocation, index_line);
                     highest_loaded = index_line.last;
                     have_loaded = true;
                 },
