@@ -38,6 +38,9 @@
 //   take_last() and std::move(list).expect_empty(why)
 //                       of a GrowList: as FixedList gives them.  A take frees
 //                       the slot and keeps the storage
+//   copy_at(position)   of a GrowList: gives a copy of the element at position,
+//                       or no value at or past size().  The copy of the element
+//                       is trivial, and it holds no borrow (CopiedElement)
 //   freeze(std::move(text))
 //                       of a GrowText: gives the characters to a HeapText with
 //                       no copy, and leaves the text empty with its maximum
@@ -56,9 +59,9 @@
 //                       door, body gets the ViewMut of the elements, and the
 //                       door gives the list back (foundation/core/Frame.h)
 // A frame door lends the storage of its owner to the body for the time of
-// the call (the lend count).  The frame doors are the only reads of the
-// elements and of the characters, so no borrow of a growable owner outlives
-// its frame.
+// the call (the lend count).  The frame doors and copy_at are the only reads of
+// the elements and of the characters, and copy_at gives a value that holds no
+// borrow.  So no borrow of a growable owner outlives its frame.
 //
 // The allocation capability comes first in each append, so each growth shows
 // at its call.  A growth doubles the capacity, up to the maximum, and an
@@ -90,6 +93,15 @@
 //   An owner has one owner thread, and only that thread lends it, so the
 //   count is a plain byte, with no atomic step.  A frame door of an owner
 //   from a second thread is a race on the count.
+//
+//   copy_at of a GrowList takes no lend and writes no state.  It calls no body
+//   of a caller, and the copy of the element is trivial, so no code of T runs.
+//   So no code changes the list while copy_at reads it, on the thread that
+//   calls it.  Two threads can call copy_at and size() of one list at the same
+//   time while no thread changes the list or opens a frame of it, as the
+//   readers of a finished log do.  No type states that sharing: a GrowList is
+//   not Shareable (foundation/Transfer.h), because a frame door of a const list
+//   writes the count.  The caller orders the last change before the first read.
 //
 //   The result of a body holds no borrow (HoldsNoBorrow of Choice.h), so no
 //   body gives the View, a Ref or an address out.  The concept refuses each
@@ -311,6 +323,12 @@ template <class T>
 concept GrowListElement =
     OwnedElement<T> && std::is_nothrow_move_constructible_v<T> && !std::is_base_of_v<::foundation::Pinned<T>, T>;
 
+// An element that copy_at of a GrowList gives by value with no lend: its copy
+// is trivial, so no code of T runs in the call, and it holds no borrow, so the
+// value outlives each growth of the list (the lend count).
+template <class T>
+concept CopiedElement = std::is_trivially_copy_constructible_v<T> && HoldsNoBorrow<T>;
+
 template <class T>
     requires GrowListElement<T>
 class GrowList;
@@ -411,6 +429,22 @@ public:
     operator=(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
 
     [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
+
+    // A copy of the element at position, or no value at or past size().  The
+    // call takes no lend and writes no state of the list (the lend count).  One
+    // compare and the copy.
+    [[nodiscard]] constexpr Option<T> copy_at(std::size_t position) const noexcept
+        requires CopiedElement<T>
+    {
+        if (position >= this->state_.count) {
+            return Option<T>{none};
+        }
+        return Option<T>::some(static_cast<T const*>(first_())[position]);
+    }
+    Option<T> copy_at(std::size_t position) const
+        requires(!CopiedElement<T>)
+    = delete("copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow: read "
+             "another element in a frame door of the list");
 
     // Moves the last element out, or gives no value for an empty list.  A
     // lent list ends the process (the lend count).  One compare, and the

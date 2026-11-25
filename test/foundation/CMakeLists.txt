@@ -4955,6 +4955,14 @@ foundation_neg_compile_test(neg_core_grow_text_view_across_append
 foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
   "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) const &"
   "the result of a frame door holds no borrow: the next append can end the storage of the list")
+# copy_at gives an element by value with no lend, so it refuses an element
+# whose copy runs code and an element that holds a borrow.
+foundation_neg_compile_test(neg_core_grow_list_copy_runs_code
+  "use of deleted function .*GrowList<T>::copy_at\\(std::size_t\\) const requires .*with T = CountsItsCopies"
+  "copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow")
+foundation_neg_compile_test(neg_core_grow_list_copy_of_a_borrow
+  "use of deleted function .*GrowList<T>::copy_at\\(std::size_t\\) const requires .*with T = NamesARun"
+  "copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow")
 # The frame door with_view gives a View of the const elements, so no two
 # copies of its View write the elements of one list.
 foundation_neg_compile_test(neg_core_grow_list_two_mutable_views

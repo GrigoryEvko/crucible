@@ -92,6 +92,31 @@ static_assert(!GrowListElement<ThrowingMove> && !GrowListElement<int const>);
 static_assert(std::is_nothrow_move_constructible_v<MovedPin> && !GrowListElement<MovedPin>);
 static_assert(!GrowListElement<Atomic<int>> && GrowListElement<Box<Atomic<int>>> && GrowListElement<Box<MovedPin>>);
 
+// copy_at gives an element by value from a const list.  The copy of the
+// element is trivial, and it holds no borrow.  A sealed element has a trivial
+// copy, and its assignment makes it not trivially copyable.
+struct SealedElement final {
+    int value = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct CopiesWithCode final {
+    int value = 0;
+    constexpr CopiesWithCode(CopiesWithCode const& other) noexcept : value{other.value} {}
+};
+struct HoldsARun final {
+    View<int const> run{};
+};
+struct RefBrand final {};
+template <class T>
+concept CopiesAt = requires(GrowList<T> const& list) {
+    { list.copy_at(std::size_t{0}) } noexcept -> std::same_as<Option<T>>;
+};
+static_assert(CopiesAt<int> && CopiesAt<SealedElement> && !std::is_trivially_copyable_v<SealedElement>);
+static_assert(!CopiesAt<CopiesWithCode> && GrowListElement<CopiesWithCode> && HoldsNoBorrow<CopiesWithCode>);
+static_assert(!CopiesAt<HoldsARun> && GrowListElement<HoldsARun> && std::is_trivially_copy_constructible_v<HoldsARun>);
+static_assert(!CopiesAt<LinearToken> && !CopiesAt<GrowList<int>> && !CopiesAt<Box<int>>);
+static_assert(!CopiesAt<Ref<int const, RefBrand>>);
+
 template <class List>
 concept Clears = requires(List& list) { list.clear(); };
 static_assert(Clears<GrowList<int>> && !Clears<GrowList<LinearToken>> && Clears<GrowText>);
@@ -129,7 +154,7 @@ static_assert(!Views<GrowText> && !Loops<GrowText> && Views<HeapText const> && L
     GrowList<int> const list = mint_grow_list<int>(8);
     GrowText text = mint_grow_text(~std::size_t{0});
     bool const is_list_empty =
-        list.size() == 0 && list.with_view(CountsElements{}) == 0
+        list.size() == 0 && list.with_view(CountsElements{}) == 0 && list.copy_at(0).is_none()
         && list.with_element(0, [](int const&) noexcept { return false; }, [] noexcept { return true; });
     bool const is_text_empty = text.size() == 0 && text.with_view(CountsCharacters{}) == 0;
     HeapText const frozen = freeze(static_cast<GrowText&&>(text));

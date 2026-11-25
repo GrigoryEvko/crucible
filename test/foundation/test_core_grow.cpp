@@ -1,10 +1,10 @@
 // Tests of the growable owners of the Region family: append across many
 // growths, the refusal at the maximum, the Full of a linear element, the
 // moves of elements that are not bytewise, the end of each element, an
-// append of a part of the same text, the frame doors, the freeze into a
-// HeapText, the foreign doors of Region.h, and the CText of a text that keeps
-// a zero after its characters.  test/fixy/test_core_grow_lend.cpp holds the
-// deaths of the lend count.
+// append of a part of the same text, the frame doors, copy_at on one thread and
+// on two threads, the freeze into a HeapText, the foreign doors of Region.h, and
+// the CText of a text that keeps a zero after its characters.
+// test/fixy/test_core_grow_lend.cpp holds the deaths of the lend count.
 
 #include <foundation/core/Grow.h>
 
@@ -17,6 +17,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 
 #include "philox_stream.h"
 
@@ -398,6 +399,73 @@ void test_frame_doors() {
     CRUCIBLE_TEST_ASSERT(kTest, text.size() == 9);
 }
 
+// An element whose copy is trivial and whose assignment is not, as the seal
+// makes it.  So no code of the element runs in copy_at, and the element is not
+// trivially copyable.
+struct Sealed final {
+    std::uint64_t value = 0;
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    explicit Sealed(std::uint64_t from) noexcept : value{from} {}
+};
+static_assert(::foundation::core::CopiedElement<Sealed> && !std::is_trivially_copyable_v<Sealed>);
+
+// copy_at gives a copy of each element below the count, across growths and
+// takes, and no value at or past the count.  A copy outlives a growth, and a
+// body of a frame of the list can call copy_at.
+void test_copy_at() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    GrowList<Sealed> list = mint_grow_list<Sealed>(1000);
+    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(0).is_none());
+    list.append(alloc, Sealed{0}).expect("the list is below its maximum");
+    Sealed const early = list.copy_at(0).expect("0 is below the count");
+    for (std::uint64_t position = 1; position < 300; ++position) {
+        list.append(alloc, Sealed{position * 5}).expect("the list is below its maximum");
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, early.value == 0);
+    GrowList<Sealed> const& fixed = list;
+    for (std::size_t position = 0; position < 300; ++position) {
+        CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(position).expect("below the count").value == position * 5);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(300).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(::fixy::max_of<std::size_t>).is_none());
+    bool const is_same = fixed.with_view([&fixed](View<Sealed const> view) noexcept {
+        return fixed.copy_at(7).expect("7 is below the count").value
+            == view.get(7).expect("7 is below the count")->value;
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, is_same);
+    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().is_some() && list.copy_at(299).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(298).expect("298 is below the count").value == 298 * 5);
+    list.clear();
+    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(0).is_none());
+}
+
+// Two threads copy each element of one finished list at the same time.  The
+// list is no Shareable type, so the probe door starts the threads.  Each thread
+// starts after the last append, and the join comes before the end of the list.
+// copy_at and size() write nothing, so ThreadSanitizer sees no race.
+void test_two_threads_copy_a_finished_list() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    constexpr std::uint64_t kCount = 5000;
+    GrowList<std::uint64_t> list = mint_grow_list<std::uint64_t>(kCount);
+    for (std::uint64_t value = 0; value < kCount; ++value) {
+        list.append(alloc, value).expect("the list is below its maximum");
+    }
+    auto add_each = [&fixed = std::as_const(list)] noexcept {
+        std::uint64_t total = 0;
+        for (std::size_t position = 0; position < fixed.size(); ++position) {
+            total += fixed.copy_at(position).expect("the position is below the count");
+        }
+        return total;
+    };
+    auto const sums =
+        ::fixy::thread::run_joined_raw_probe(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, kTest,
+                                             "two readers of one finished list, which no type states as shared",
+                                             ::fixy::thread::ThreadOptions{}, auto{add_each}, std::move(add_each))
+            .expect("the probe starts two threads");
+    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kCount * (kCount - 1) / 2);
+    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<1>()) == kCount * (kCount - 1) / 2);
+}
+
 // A freeze gives the characters to a HeapText with no copy, and leaves the
 // text empty with its maximum.  The HeapText keeps its characters across each
 // later append of the text, and across a move.
@@ -546,6 +614,8 @@ int main() {
     test_text_appends();
     test_text_appends_itself();
     test_frame_doors();
+    test_copy_at();
+    test_two_threads_copy_a_finished_list();
     test_freeze();
     test_agrees_with_a_model();
     test_foreign_doors();
