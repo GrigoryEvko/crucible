@@ -91,7 +91,6 @@ void test_dispatch_pool_bounds() {
     CRUCIBLE_TEST_ASSERT(kTest, pool.is_initialized());
     CRUCIBLE_TEST_ASSERT(kTest, pool.pool_bytes() > 0);
 
-    auto* pool_base = crucible::test::host_ptr<uint8_t>(pool.pool_base());
     uint64_t pool_bytes = pool.pool_bytes();
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -99,6 +98,7 @@ void test_dispatch_pool_bounds() {
         auto r = crucible::test::dispatch_synthetic(vigil, d.entry, d.metas, d.n_metas);
         CRUCIBLE_TEST_ASSERT(kTest, r.action == DispatchResult::Action::COMPILED);
 
+        auto* pool_base = crucible::test::host_ptr<uint8_t>(pool.pool_base());
         auto* p = crucible::test::host_ptr<uint8_t>(vigil.output_ptr(vigil.mint_producer_context(), 0));
         CRUCIBLE_TEST_ASSERT(kTest, p >= pool_base);
         CRUCIBLE_TEST_ASSERT(kTest, p + 4096 <= pool_base + pool_bytes);

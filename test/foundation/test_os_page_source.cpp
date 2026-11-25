@@ -154,8 +154,9 @@ void test_commit_and_decommit(::fixy::TestRunnerCtx const& test) {
     write_each_page(bytes, 0x5a);
     CRUCIBLE_TEST_ASSERT(test, holds_each_page(bytes, 0x5a));
     CRUCIBLE_TEST_ASSERT(test, reservation.decommit(committed, os::PurgeKind::dont_need) == os::PurgeKind::dont_need);
-    CRUCIBLE_TEST_ASSERT(test, reads_zero(bytes));
-    write_each_page(bytes, 0x3c);
+    ::fixy::View<std::uint8_t> const purged = reservation.bytes_of(committed);
+    CRUCIBLE_TEST_ASSERT(test, reads_zero(purged));
+    write_each_page(purged, 0x3c);
     // The floor of the base is 5.6, and MADV_FREE came in 4.5.
     CRUCIBLE_TEST_ASSERT(test, reservation.decommit(committed, os::PurgeKind::lazy_free) == os::PurgeKind::lazy_free);
     ::fixy::check::pass(test, "a committed range reads zero, and reads zero again after MADV_DONTNEED\n");
@@ -164,10 +165,10 @@ void test_commit_and_decommit(::fixy::TestRunnerCtx const& test) {
 void test_populate_changes_no_byte(::fixy::TestRunnerCtx const& test) {
     os::Reservation reservation = reserve_or_end(ByteCount{kMebibyte}, os::ReserveAlignment::page);
     os::CommittedRange const committed = commit_whole(reservation);
-    ::fixy::View<std::uint8_t> const bytes = reservation.bytes_of(committed);
-    *bytes.get(0).expect("the first byte lies in the range") = 0x11;
+    *reservation.bytes_of(committed).get(0).expect("the first byte lies in the range") = 0x11;
     os::PopulateKind const kind = reservation.populate(committed);
     CRUCIBLE_TEST_ASSERT(test, kind != os::PopulateKind::deferred);
+    ::fixy::View<std::uint8_t> const bytes = reservation.bytes_of(committed);
     CRUCIBLE_TEST_ASSERT(test, *bytes.get(0).expect("the first byte lies in the range") == 0x11);
     CRUCIBLE_TEST_ASSERT(test, *bytes.get(kMebibyte - 1).expect("the last byte lies in the range") == 0);
     ::fixy::check::pass(test, "a populate faults in the pages and changes no byte\n");
@@ -178,11 +179,10 @@ void test_huge_pages_change_no_byte(::fixy::TestRunnerCtx const& test) {
     os::HugePageAdvice const advice = reservation.advise_huge(reservation.whole());
     CRUCIBLE_TEST_ASSERT(test, advice == os::HugePageAdvice::advised || advice == os::HugePageAdvice::refused);
     os::CommittedRange const committed = commit_whole(reservation);
-    ::fixy::View<std::uint8_t> const bytes = reservation.bytes_of(committed);
-    write_each_page(bytes, 0x77);
+    write_each_page(reservation.bytes_of(committed), 0x77);
     os::PageKind const kind = reservation.collapse(committed);
     CRUCIBLE_TEST_ASSERT(test, kind == os::PageKind::huge || kind == os::PageKind::base);
-    CRUCIBLE_TEST_ASSERT(test, holds_each_page(bytes, 0x77));
+    CRUCIBLE_TEST_ASSERT(test, holds_each_page(reservation.bytes_of(committed), 0x77));
     // A range of one page holds no whole huge page, so it gets the base
     // pages with no call.
     os::CommittedRange const one_page =

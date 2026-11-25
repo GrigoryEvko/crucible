@@ -287,10 +287,12 @@ template <class Brand>
     auto region = std::move(mapped).expect("the mint gave a mapping");
     static_assert(std::is_same_v<decltype(region)::brand_type, foundation::brand::brand_of_t<decltype(owner)>>,
                   "a mapping takes the brand of the permission it was minted with");
-    void* const expected_address = region.data();
+    // A new anonymous page reads zero, so the mark tells the page of the region.
+    constexpr std::uint8_t kMark = 0x5a;
+    *static_cast<std::uint8_t*>(region.data()) = kMark;
 
     const auto [address, length] = std::move(region).release(fixy::atom::leak::resource<UnmappedByTheTestItself>{});
-    if (address != expected_address || length != kPageBytes) {
+    if (*static_cast<const std::uint8_t*>(address) != kMark || length != kPageBytes) {
         std::fprintf(stderr, "release handed back an address or length the region did not hold\n");
         return 1;
     }

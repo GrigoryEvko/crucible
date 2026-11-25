@@ -56,12 +56,13 @@ public:
     }
 
     // Puts the bytes of part before the byte at a position of at most size().
-    // The frame of the second buffer reads the input through a View that the
-    // call makes before the frame.  Complexity: one copy of each byte.
+    // The frame of the second buffer reads the input through a View of the
+    // first buffer, which the call makes before the frame.  Complexity: one copy
+    // of each byte.
     void insert_at(ByteCount at, ::fixy::View<std::byte const> part) noexcept {
         std::size_t const position = at.raw();
         std::size_t const tail = count_ - position;
-        ::fixy::View<std::byte const> const source = view();
+        ::fixy::View<std::byte const> const source = front_.view();
         back_ = ::fixy::with_mut(std::move(back_), [source, part, position, tail](auto run) noexcept {
             run = ::fixy::reborrow(std::move(run), [source, position](auto lent) noexcept {
                 ::fixy::copy(::fixy::take_window(std::move(lent), 0, position).expect("the head fits the buffer"),
@@ -89,7 +90,7 @@ public:
     void erase_at(ByteCount at) noexcept {
         std::size_t const position = at.raw();
         std::size_t const tail = count_ - position - 1;
-        ::fixy::View<std::byte const> const source = view();
+        ::fixy::View<std::byte const> const source = front_.view();
         back_ = ::fixy::with_mut(std::move(back_), [source, position, tail](auto run) noexcept {
             run = ::fixy::reborrow(std::move(run), [source, position](auto lent) noexcept {
                 ::fixy::copy(::fixy::take_window(std::move(lent), 0, position).expect("the head fits the buffer"),

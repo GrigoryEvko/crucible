@@ -240,9 +240,11 @@ int check_release_hands_the_region_back() {
     if (mapped.is_err()) return 0;
 
     auto r = std::move(mapped).expect("the map gave a region");
-    void* const addr = r.data();
+    // A new anonymous page reads zero, so the mark tells the page of the region.
+    constexpr std::uint8_t kMark = 0x5a;
+    *static_cast<std::uint8_t*>(r.data()) = kMark;
     auto [out_addr, out_len] = std::move(r).release(SampleLeak{});
-    if (out_addr != addr) return 20;
+    if (*static_cast<std::uint8_t const*>(out_addr) != kMark) return 20;
     if (out_len != len) return 21;
     if (r.is_mapped()) return 22;
 
