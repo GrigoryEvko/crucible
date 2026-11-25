@@ -14,8 +14,14 @@ Rules of a step
     the kinds compile and link (assay.core.record).  step-cost reads the user
     instructions of the compiler run of a compile, in G (10^9).  step-memory
     reads the peak resident memory of a compile and of a link, in GB of 2^30
-    bytes.  A record of a ccache hit holds no time, and the rule counts the
-    output but does not judge it.  An output with no usable record did not
+    bytes.  A record of a ccache hit holds no cost of its own.  step-cost
+    judges the hit by the instructions of the compile that made the object,
+    which the cost store gives the record (assay.core.record, the format).
+    Else a second run of a red build, whose objects come from ccache, would
+    be green, and the landing would take the crossed row for noise.
+    step-memory does not judge a hit, because the peak memory is a value of
+    one run.  Each rule counts a hit, and a hit with no cost in the cost store
+    gives no value.  An output with no usable record did not
     come through the build launcher, and it gives an error of the kind
     no-record.  A record is not usable when it has a different format or
     step, or a different number of bytes.  When no output of a kind has a
@@ -461,10 +467,11 @@ def step_values(context: BuildContext, rule_id: str, kind: str, outputs: Sequenc
         except cost_record.RecordError as problem:
             problems.append((output, str(problem)))
             continue
-        if found.is_hit or found.cost is None:
+        is_instructions = spec.quantity == Quantity.INSTRUCTIONS
+        cost = found.real_cost if is_instructions or not found.is_hit else None
+        if cost is None:
             continue
-        cost = found.cost
-        if spec.quantity == Quantity.INSTRUCTIONS:
+        if is_instructions:
             if cost.compiler_instructions is None:
                 uncounted += 1
                 continue

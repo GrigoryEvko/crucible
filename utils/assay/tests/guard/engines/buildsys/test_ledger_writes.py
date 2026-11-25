@@ -414,6 +414,34 @@ compile CMakeFiles/lib.dir/blind.cpp.o src/blind.cpp result=hit
 """
 
 
+def hit_cases(expect: testing.Expect) -> None:
+    """Judge a ccache hit by the cost of the compile that made the object, and write its crossed row."""
+    with tempfile.TemporaryDirectory(prefix="test-ledger-hit-") as scratch:
+        context = context_of(Path(scratch), LOWER_SECOND)
+        ledgers = rule_ledger.ledger_path("step-cost", context.root).parent
+        ledgers.mkdir(parents=True)
+        found = cost_budgets.budget_findings("step-cost", context)
+        expect(
+            "step-cost gives the finding of a ccache hit whose compile ran 152 G, and none of a hit with no cost in the "
+            f"cost store: {[(item.kind, item.entity) for item in found]}",
+            [(item.kind, item.entity) for item in found] == [("over-limit", "CMakeFiles/lib.dir/scan.cpp.o")],
+        )
+        expect(
+            "step-memory judges no ccache hit, because the peak memory is a value of one run",
+            all("hit" not in item.message for item in cost_budgets.budget_findings("step-memory", context))
+            and not [
+                item for item in cost_budgets.budget_findings("step-memory", context) if item.kind == "over-limit"
+            ],
+        )
+        status, _ = run_write(context, "step-cost", "a planted reason")
+        expect(
+            "guard write writes the crossed row of the hit",
+            status == 0
+            and ledger_values(context, "step-cost")
+            == {("compile", "@build/CMakeFiles/lib.dir/scan.cpp.o"): (152.0, "a planted reason")},
+        )
+
+
 def lower_cases(expect: testing.Expect) -> None:
     """Lower named rows to the largest measure over the builds, and refuse each lower that the lower refuses."""
     with tempfile.TemporaryDirectory(prefix="test-ledger-lower-") as scratch:
@@ -642,6 +670,7 @@ def main(argv: list[str]) -> int:
             damaged_record_cases,
             fixture_cases,
             object_prune_cases,
+            hit_cases,
             lower_cases,
             row_reason_cases,
             list_cases,
