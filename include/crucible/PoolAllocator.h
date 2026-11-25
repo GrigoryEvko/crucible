@@ -31,6 +31,16 @@
 //
 // One thread builds it and the replay path only reads it once initialisation
 // has returned.
+//
+// Lent pool
+//   A body door lends a part of the pool to a body for the time of the call:
+//   with_addresses lends the column of addresses, and with_output_views of the
+//   context lends the bytes of the outputs.  A change through a second name of
+//   the pool, such as a static pointer, would end what the body holds, and no
+//   type gate sees such a name.  So each body door opens a lend of the pool
+//   (foundation/core/LendCount.h), and an init, a destroy, a detach and the end
+//   of a lent pool end the process in each build.  The owner thread alone lends
+//   the pool.  No read of a slot and no registration reads the count.
 
 #include <crucible/ForegroundCtx.h>
 #include <crucible/MerkleDag.h>
@@ -111,9 +121,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     //
     // init has no cold attribute.  GCC compiles a cold function for size, so
     // the doors of the loop of the slots stay out of line, and the loop of a
-    // plan of 4096 slots took twice the cycles of each slot.
+    // plan of 4096 slots took twice the cycles of each slot.  An init of a lent
+    // pool ends the process (the lent pool).
     [[gnu::noinline]]
     void init(::foundation::effects::Alloc allocation, const MemoryPlan& plan) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        refuse_lent_change_();
         CRUCIBLE_PRE(!is_initialized());
         CRUCIBLE_PRE(pool_.size() == 0u);
         const size_t plan_slots = plan.slots.size();
@@ -199,8 +211,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
     // The destructor calls this on each path, so it has no cold attribute.
     // A cold callee there makes GCC compile each function that owns a pool
-    // as an unlikely function.
+    // as an unlikely function.  A destroy of a lent pool ends the process (the
+    // lent pool).
     void destroy() noexcept {
+        refuse_lent_change_();
         crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         pool_.reset();
         addresses_ = ::fixy::HeapArray<::fixy::Option<::fixy::RunAddress>>{};
@@ -327,15 +341,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // indirection out of itself.  body gets the View of the column for the
     // time of the call, and the door gives the result of body, which holds no
     // borrow.  So no View of the column outlives the call.  A body that holds
-    // the pool or the context by a reference does not compile.  A change of
-    // the pool through a second name, such as a static pointer, is still open.
-    // The View holds the count of slots, so each read of it checks its bound.
-    // The view of the pool is required so that the column comes only from a
-    // live pool.
+    // the pool or the context by a reference does not compile, and a change of
+    // the pool through a second name in the body ends the process (the lent
+    // pool).  The View holds the count of slots, so each read of it checks its
+    // bound.  The view of the pool is required so that the column comes only
+    // from a live pool.
     template <class Body>
         requires PoolColumnBody<Body>
     [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] auto with_addresses(InitializedView const&,
                                                                                  Body&& body) const& noexcept {
+        [[maybe_unused]] auto const lend = lends_.lend();
         return static_cast<Body&&>(body)(AddressColumn{addresses_.view()});
     }
 
@@ -413,9 +428,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // Hands the bytes out and empties this allocator, which lets a caller
     // keep the old data alive while it builds the replacement.  The view is
     // stale once this returns, since the pool it vouched for is now empty.
-    // It cannot be refreshed by assignment either.
+    // It cannot be refreshed by assignment either.  A detach of a lent pool
+    // ends the process (the lent pool).
     [[nodiscard, gnu::cold]]
     ::foundation::AlignedBytes detach(InitializedView const&) noexcept {
+        refuse_lent_change_();
         crucible::warden::unregister_hot_region(::fixy::pages::storage_of(pool_.view()));
         // The bytes move out before the reset, so the reset does not give
         // back a block whose ownership has already moved to the return value.
@@ -429,6 +446,20 @@ private:
     // their Vigil already passed, so they reach it without a context.
     friend struct ReplayEngine;
     friend struct CrucibleContext;
+
+    // The count of the open lends of the pool (the lent pool).  One word holds
+    // it, so a lend takes no test of its width.
+    using Lends = ::fixy::LendCount<uint32_t>;
+
+    [[noreturn]] CRUCIBLE_COLD static void report_lent_change_() noexcept {
+        ::fixy::fatal("an init, a detach or the end of a PoolAllocator while a body door lends it");
+    }
+
+    // Ends the process while a body door lends the pool (the lent pool).
+    CRUCIBLE_INLINE void refuse_lent_change_() const noexcept {
+        if (lends_.is_lent()) [[unlikely]]
+            report_lent_change_();
+    }
 
     // The precondition runs in the body, so it also fires when the compiler
     // folds a call at compile time, which a clause reading a member through
@@ -543,7 +574,7 @@ private:
     }
 
     // The bytes of the pool.  A const allocator lends writable tensor
-    // memory: slot_ptr, table and pool_base are const and give addresses that
+    // memory: slot_ptr and pool_base are const and give addresses that
     // the caller writes through.  The bytes are no part of the value of the
     // allocator, so the owner is mutable.
     mutable ::foundation::AlignedBytes pool_{};
@@ -555,10 +586,13 @@ private:
     // its owner.
     ::fixy::HeapArray<TensorDevice> devices_{};
     // The bytes of each slot, with the length of the column of addresses
-    // (the column of bytes).
+    // (the column of bytes).  The replay of an op binds its external slots
+    // through the three columns, which share a line of the context.
     ::fixy::HeapArray<::fixy::View<uint8_t>> views_{};
     uint32_t num_external_ = 0;
-    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad_{};
+    // The lends of the pool, which a body door of a const pool counts too.  No
+    // path of the replay of an op reads it, so it stands after the columns.
+    mutable Lends lends_{};
 };
 
 }  // namespace crucible

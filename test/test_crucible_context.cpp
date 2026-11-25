@@ -965,6 +965,66 @@ static void test_a_stale_proof_of_the_compiled_mode_ends_the_process() {
     ::fixy::check::pass(kTest, "  test_a_stale_proof_of_the_compiled_mode_ends_the_process: PASSED\n");
 }
 
+// A context of static storage.  A body reaches it by a second name, which no
+// type gate of a body door sees.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a static owner is the second name of a change in the body of its lend")
+static CrucibleContext g_lent_context{::foundation::effects::testing::test().alloc};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// Replays the first op of a region in the static context, and lends its output
+// to a body that calls change.
+template <class Change>
+static void change_the_lent_context(Change const& change) noexcept {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> region = make_region_reading_slot_one(arena, false, SchemaHash{51});
+    CRUCIBLE_TEST_ASSERT(kTest, g_lent_context.activate(*region));
+    const auto cv = g_lent_context.mint_compiled_view(kVigilForeground);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         g_lent_context.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::MATCH);
+    const auto written = g_lent_context.with_output_views<std::uint8_t>(cv, [&change](auto& views) noexcept {
+        change();
+        return views.size();
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, written.is_ok_and([](std::size_t const& count) noexcept { return count == 1; }));
+    g_lent_context.deactivate();
+}
+
+// The outputs of an op are lent for the time of the body, so a change of the
+// plan through a second name of the context ends the process in the body.  The
+// deactivation after the body is the control.
+static void test_lent_outputs_refuse_a_change_of_the_plan() {
+    constexpr ::fixy::TextView refusal{
+        "foundation: fatal: an init, a detach or the end of a PoolAllocator while a body door lends it"};
+    ::fixy::check::expect_dies(
+        kTest, [] noexcept { change_the_lent_context([] noexcept { g_lent_context.deactivate(); }); }, refusal);
+    ::fixy::check::expect_dies(
+        kTest, [] noexcept { change_the_lent_context([] noexcept { g_lent_context.deactivate_on_divergence(); }); },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            change_the_lent_context([] noexcept {
+                ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+                static_cast<void>(g_lent_context.activate(*make_region_reading_slot_one(arena, false, SchemaHash{52})));
+            });
+        },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            change_the_lent_context([] noexcept {
+                ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+                static_cast<void>(
+                    g_lent_context.switch_region(*make_region_reading_slot_one(arena, false, SchemaHash{52}), 1));
+            });
+        },
+        refusal);
+    change_the_lent_context([] noexcept {});
+    CRUCIBLE_TEST_ASSERT(kTest, g_lent_context.is_recording());
+
+    ::fixy::check::pass(kTest, "  test_lent_outputs_refuse_a_change_of_the_plan: PASSED\n");
+}
+
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_crucible_context:\n");
     test_initial_state();
@@ -980,6 +1040,7 @@ int main() {
     test_divergence_counter();
     test_slot_views();
     test_a_stale_proof_of_the_compiled_mode_ends_the_process();
+    test_lent_outputs_refuse_a_change_of_the_plan();
     ::fixy::check::pass(kTest, "test_crucible_context: all tests passed\n");
     return 0;
 }

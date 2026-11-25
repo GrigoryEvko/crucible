@@ -693,6 +693,83 @@ static void test_slot_views() {
     ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");
 }
 
+// A pool of static storage.  A body reaches it by a second name, which no type
+// gate of the body door sees.
+CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a static owner is the second name of a change in the body of its lend")
+static constinit PoolAllocator g_lent_pool{};
+CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+
+// Lends the address column of the static pool to a body that calls change, and
+// gives the count of the slots that the column holds after the change.
+template <class Change>
+static std::size_t change_the_lent_pool(Change const& change) noexcept {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    auto const slots_run = arena.array(::foundation::effects::testing::test().alloc, 1,
+                                       TensorSlot{.offset_bytes = 0,
+                                                  .nbytes = 256,
+                                                  .birth_op = OpIndex{0},
+                                                  .death_op = OpIndex{1},
+                                                  .dtype = ScalarType::Float,
+                                                  .device_type = DeviceType::CPU,
+                                                  .device_idx = 0,
+                                                  .layout = Layout::Strided,
+                                                  .is_external = false,
+                                                  .pad = {},
+                                                  .slot_id = SlotId{0},
+                                                  .pad2 = {}});
+    MemoryPlan const plan = make_manual_plan(slots_run, 256, 0);
+    g_lent_pool.init(::foundation::effects::testing::test().alloc, plan);
+    auto const pv = g_lent_pool.mint_initialized_view(kVigilForeground);
+    return g_lent_pool.with_addresses(pv, [&change](crucible::AddressColumn column) noexcept {
+        change();
+        return column.size();
+    });
+}
+
+// A change of the pool through a second name in a body that holds its column
+// ends the process, also after a nested lend.  The same change after the body is
+// the control.
+static void test_lent_pool_refuses_a_change() {
+    constexpr ::fixy::TextView refusal{
+        "foundation: fatal: an init, a detach or the end of a PoolAllocator while a body door lends it"};
+    ::fixy::check::expect_dies(
+        kTest, [] noexcept { static_cast<void>(change_the_lent_pool([] noexcept { g_lent_pool.destroy(); })); },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            static_cast<void>(change_the_lent_pool([] noexcept {
+                auto const pv = g_lent_pool.mint_initialized_view(kVigilForeground);
+                ::foundation::AlignedBytes const bytes = g_lent_pool.detach(pv);
+                static_cast<void>(bytes.size());
+            }));
+        },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            static_cast<void>(change_the_lent_pool(
+                [] noexcept { g_lent_pool.init(::foundation::effects::testing::test().alloc, MemoryPlan{}); }));
+        },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            static_cast<void>(change_the_lent_pool([] noexcept {
+                auto const pv = g_lent_pool.mint_initialized_view(kVigilForeground);
+                static_cast<void>(g_lent_pool.with_addresses(
+                    pv, [](crucible::AddressColumn column) noexcept { return column.size(); }));
+                g_lent_pool.destroy();
+            }));
+        },
+        refusal);
+    CRUCIBLE_TEST_ASSERT(kTest, change_the_lent_pool([] noexcept {}) == 1);
+    g_lent_pool.destroy();
+    CRUCIBLE_TEST_ASSERT(kTest, !g_lent_pool.is_initialized());
+
+    ::fixy::check::pass(kTest, "  test_lent_pool_refuses_a_change: PASSED\n");
+}
+
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_pool_allocator:\n");
     test_basic_init();
@@ -703,6 +780,7 @@ int main() {
     test_integration_with_sweep_line();
     test_device_of_slots();
     test_slot_views();
+    test_lent_pool_refuses_a_change();
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_slot_bounds_guard_is_armed(test);
     ::fixy::check::pass(test, "test_pool_allocator: all tests passed\n");

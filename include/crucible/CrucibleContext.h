@@ -452,7 +452,10 @@ struct CrucibleContext {
     // The block of the pool moves into the frame and comes back after body, so
     // body reads the inputs through input_view, whose Views stay valid, and
     // the pool lends no block to a second call: with_output_views in body
-    // gives OutsidePool for an output that holds an element.
+    // gives OutsidePool for an output that holds an element.  The pool is lent
+    // for the time of body, so a deactivation, an activation or a switch of
+    // region through a second name of the context ends the process
+    // (PoolAllocator, the lent pool).
     // The window of each output comes from the plan of the active region.
     // An external output gives ExternalOutput, an output with no slot
     // NoSlot, more outputs than max_block_windows TooManyOutputs, and a
@@ -464,6 +467,7 @@ struct CrucibleContext {
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] auto with_output_views(CompiledView const&, Body&& body) & {
         return output_windows_().and_then([this, &body](OutputWindows windows) noexcept {
+            [[maybe_unused]] auto const lend = pool_.lends_.lend();
             auto [written, block] =
                 ::foundation::with_mut_windows<T>(std::move(pool_.pool_), windows, static_cast<Body&&>(body));
             pool_.pool_ = std::move(block);
