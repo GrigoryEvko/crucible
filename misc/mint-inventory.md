@@ -343,7 +343,6 @@ that the axis does not apply to the row.
 | `mint_foreign_text(const char*, std::size_t)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 19 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 5 |
 | `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 30 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |
@@ -361,7 +360,7 @@ that the axis does not apply to the row.
 | `mint_run_address(foundation::core::View<T0_0, T0_1>, std::size_t)` | `include/foundation/core/DataAddress.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_seat` | `include/foundation/core/Seat.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_slot_map` | `include/foundation/core/SlotMap.h` | Y | - | Y | Y | token | · | HS14: 8 |
-| `mint_small_list` | `include/foundation/core/SmallList.h` | Y | Y | Y | Y | token | · | HS14: 11 |
+| `mint_small_list` | `include/foundation/core/SmallList.h` | Y | Y | Y | Y | token | · | HS14: 19 |
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_static_text(const char*)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_static_text(const char*, std::size_t)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
@@ -427,4 +426,4 @@ that the axis does not apply to the row.
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
 | crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 7 |
-| substrate (`include/foundation/`, `include/fixy/`) | 188 | 71 | 113 | 4 | 0 | 2 |
+| substrate (`include/foundation/`, `include/fixy/`) | 187 | 71 | 112 | 4 | 0 | 2 |

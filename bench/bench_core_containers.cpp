@@ -41,6 +41,11 @@
 // event, the tail and the count into storage that is there and is warm.  A
 // core with two stores for each cycle needs 2.5 cycles for them.
 //
+// The median and the maximum of an append into a full log follow the position
+// of the log in the run, and not its type.  So each log runs two times, the
+// second time in the mirrored order of the logs, and each row gives the pass
+// with the lower median.
+//
 // The rule codegen-shapes compares the machine code of test, set and get with
 // the raw forms of test/shape/core_shapes.cpp.  This bench gives the times.
 //
@@ -161,17 +166,39 @@ struct LogReports final {
     bench::Report walk;
 };
 
+// The two passes of the five rows of one log (the log rows).
+struct LogPasses final {
+    LogReports const& first;
+    LogReports const& second;
+};
+
+// The pass with the lower median of the two passes of one row.  The two passes
+// can swap with no change of the result, except on a tie, which gives the first.
+[[nodiscard]] bench::Report const& better_pass(bench::Report const& first CRUCIBLE_LIFETIMEBOUND,
+                                               bench::Report const& second CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return second.pct.p50 < first.pct.p50 ? second : first;
+}
+void better_pass(bench::Report const&&, bench::Report const&) =
+    delete("the result can name the first pass, and a temporary pass ends with the full expression");
+void better_pass(bench::Report const&, bench::Report const&&) =
+    delete("the result can name the second pass, and a temporary pass ends with the full expression");
+
 // Writes the five rows of a log, each with the row of its reference log and the
-// ratio of the two medians.
+// ratio of the two medians.  Each row is the better of its two passes.
 template <class Log, class Reference>
-void print_log(LogReports const& log, LogReports const& reference) noexcept {
+void print_log(LogPasses const& log, LogPasses const& reference) noexcept {
     LogNames const& names = Log::kNames;
     LogNames const& others = Reference::kNames;
-    print_pair(Pair{.container = Row{names.append, log.append}, .reference = Row{others.append, reference.append}});
-    print_pair(Pair{.container = Row{names.appends, log.appends}, .reference = Row{others.appends, reference.appends}});
-    print_pair(Pair{.container = Row{names.growth, log.growth}, .reference = Row{others.growth, reference.growth}});
-    print_pair(Pair{.container = Row{names.get, log.get}, .reference = Row{others.get, reference.get}});
-    print_pair(Pair{.container = Row{names.walk, log.walk}, .reference = Row{others.walk, reference.walk}});
+    print_pair(Pair{.container = Row{names.append, better_pass(log.first.append, log.second.append)},
+                    .reference = Row{others.append, better_pass(reference.first.append, reference.second.append)}});
+    print_pair(Pair{.container = Row{names.appends, better_pass(log.first.appends, log.second.appends)},
+                    .reference = Row{others.appends, better_pass(reference.first.appends, reference.second.appends)}});
+    print_pair(Pair{.container = Row{names.growth, better_pass(log.first.growth, log.second.growth)},
+                    .reference = Row{others.growth, better_pass(reference.first.growth, reference.second.growth)}});
+    print_pair(Pair{.container = Row{names.get, better_pass(log.first.get, log.second.get)},
+                    .reference = Row{others.get, better_pass(reference.first.get, reference.second.get)}});
+    print_pair(Pair{.container = Row{names.walk, better_pass(log.first.walk, log.second.walk)},
+                    .reference = Row{others.walk, better_pass(reference.first.walk, reference.second.walk)}});
 }
 
 // The log of a SegmentList.  kFullCount is the count of the events of the
@@ -782,7 +809,12 @@ int main() {
     LogReports const raw_segments = measure_log<RawSegmentLog>(positions);
     LogReports const raw_vector = measure_log<RawVectorLog>(positions);
     LogReports const segments = measure_log<SegmentLog>(positions);
-    print_log<SegmentLog, RawSegmentLog>(segments, raw_segments);
-    print_log<SegmentLog, RawVectorLog>(segments, raw_vector);
+    LogReports const segments_again = measure_log<SegmentLog>(positions);
+    LogReports const raw_vector_again = measure_log<RawVectorLog>(positions);
+    LogReports const raw_segments_again = measure_log<RawSegmentLog>(positions);
+    LogPasses const segment_passes{.first = segments, .second = segments_again};
+    print_log<SegmentLog, RawSegmentLog>(segment_passes,
+                                         LogPasses{.first = raw_segments, .second = raw_segments_again});
+    print_log<SegmentLog, RawVectorLog>(segment_passes, LogPasses{.first = raw_vector, .second = raw_vector_again});
     return 0;
 }
