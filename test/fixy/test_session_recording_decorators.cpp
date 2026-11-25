@@ -72,15 +72,17 @@ int check_crash_recording() {
     // gives the log five events.
     ::foundation::core::FixedArray<std::byte, 5 * s::session_event_size> block{};
     std::size_t position = 0;
-    for (const s::SessionEvent& event : log_p) {
-        auto const record = event.encode();
-        for (const std::byte byte : record) {
-            block.set(::foundation::core::Index<5 * s::session_event_size>::check(position).expect(
-                          "the block holds five records"),
-                      byte);
-            ++position;
+    log_p.with_view([&block, &position](::foundation::core::View<s::SessionEvent const> events) noexcept {
+        for (const s::SessionEvent& event : events) {
+            auto const record = event.encode();
+            for (const std::byte byte : record) {
+                block.set(::foundation::core::Index<5 * s::session_event_size>::check(position).expect(
+                              "the block holds five records"),
+                          byte);
+                ++position;
+            }
         }
-    }
+    });
     auto decoded = s::decode_session_log(::foundation::effects::testing::test().alloc, block.view());
     if (decoded.is_err()) return fail("the recorded log did not decode");
     const ::foundation::core::HeapArray<s::SessionEvent> replayed = std::move(decoded).expect("the log decoded");

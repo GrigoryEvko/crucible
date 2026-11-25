@@ -4,11 +4,13 @@
 // below names a deleted function.
 
 #include <fixy/Mutation.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     auto log = fixy::mint_ordered_append_only<int>();
-    log.append(5);
+    log.append(alloc, 5);
     log = fixy::mint_ordered_append_only<int>();
-    log.append(1);
+    log.append(alloc, 1);
     return static_cast<int>(log.size());
 }

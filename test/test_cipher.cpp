@@ -112,9 +112,10 @@ static ::fixy::HeapArray<crucible::Cipher::SessionEvent> session_batch(std::uint
 
 // The root of an open store of the tests.  A store that is not open ends the
 // test.
-[[nodiscard]] static ::fixy::TextView root_of(crucible::Cipher const& cipher) {
+[[nodiscard]] static ::fixy::TextView root_of(crucible::Cipher const& cipher CRUCIBLE_LIFETIMEBOUND) {
     return cipher.root().expect("the store of the test is open");
 }
+void root_of(crucible::Cipher const&&) = delete("a temporary store releases its root at the end of the statement");
 
 // The directory of the root of cipher.
 [[nodiscard]] static ::fixy::fs::DirectoryHandle root_directory_of(crucible::Cipher const& cipher) {

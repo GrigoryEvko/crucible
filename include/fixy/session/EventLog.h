@@ -67,24 +67,35 @@
 // no Alloc, such as a foreground context.  So the mint of the writer takes the
 // allocation capability, and the writer keeps it for its appends.
 //
+// ── The read of a log ───────────────────────────────────────────────
+//
+// An append can move each event to new storage.  So a reader reads a log after
+// its writer ends, or on the thread of its writer.  size(), empty(),
+// operator[], back() and merge_session_logs write no state of the log: two
+// threads can read one finished log with them at the same time.  No type states
+// that sharing, so the caller orders the end of the writer before each read.
+// with_view lends the storage and writes its lend count, so one thread at a time
+// opens a frame of a log.
+//
 // merge_session_logs reads the logs of a run as one sequence: by step id,
 // and for one step id in the order of the logs in its arguments.  The
-// sequence depends on no schedule of the threads.  An append is a plain
-// vector push, so a reader reads a log after its writer ends, or on the
-// thread of its writer.
+// sequence depends on no schedule of the threads.
 
 #include <fixy/Mutation.h>
 #include <fixy/session/CrashCause.h>
 #include <fixy/session/StepId.h>
 
 #include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/AllocTag.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
 #include <foundation/core/Region.h>
@@ -105,7 +116,6 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace fixy::session {
 
@@ -721,17 +731,17 @@ class [[nodiscard]] SessionEventLog : ::foundation::Pinned<SessionEventLog> {
         return StepId{prior + 1};
     }
 
-    void record_now_(SessionEvent event) {
+    void record_now_(::foundation::core::Alloc allocation, SessionEvent event) noexcept {
         event.step_id_ = next_step_();
         event.session_ = session_id_;
-        log_.append(event);
+        log_.append(allocation, event);
     }
 
-    void record_(SessionEvent event) { log_.append(event); }
+    void record_(::foundation::core::Alloc allocation, SessionEvent event) noexcept { log_.append(allocation, event); }
 
 public:
     using event_type = SessionEvent;
-    using storage_type = std::vector<SessionEvent>;
+    using storage_type = ::foundation::core::GrowList<SessionEvent>;
 
     explicit SessionEventLog(SessionTagId id = {}) noexcept : session_id_{id} {}
 
@@ -743,14 +753,28 @@ public:
     [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
     [[nodiscard]] std::size_t size() const noexcept { return log_.size(); }
     [[nodiscard]] bool empty() const noexcept { return log_.empty(); }
-    [[nodiscard]] const SessionEvent& operator[](std::size_t index) const noexcept { return log_[index]; }
-    [[nodiscard]] const SessionEvent& back() const noexcept { return log_.back(); }
-    [[nodiscard]] auto begin() const noexcept { return log_.begin(); }
-    [[nodiscard]] auto end() const noexcept { return log_.end(); }
 
-    [[nodiscard]] storage_type drain() && noexcept(std::is_nothrow_move_constructible_v<storage_type>) {
-        return std::move(log_).drain();
+    // An event of the log by value.  An index at or past size() ends the
+    // process.
+    [[nodiscard]] SessionEvent operator[](std::size_t index) const noexcept { return log_[index]; }
+    [[nodiscard]] SessionEvent back() const noexcept { return log_.back(); }
+
+    // The frame door of the events: body gets the View of the events, and the
+    // log lends its storage until body returns (the read of a log).
+    template <class Body>
+        requires ::fixy::LogViewBody<Body, SessionEvent>
+    [[= ::foundation::linear::borrow_match{}]] std::invoke_result_t<Body, ::foundation::core::View<SessionEvent const>>
+        with_view(Body&& body) const& noexcept(
+            std::is_nothrow_invocable_v<Body, ::foundation::core::View<SessionEvent const>>) {
+        return log_.with_view(static_cast<Body&&>(body));
     }
+    template <class Body>
+        requires ::fixy::RefusedLogViewBody<Body, SessionEvent>
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
+    template <class Body>
+    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+
+    [[nodiscard]] storage_type drain() && noexcept { return std::move(log_).drain(); }
 };
 
 // The one writer of one session event log.  Only mint_session_event_writer
@@ -801,16 +825,16 @@ public:
     constexpr ~SessionEventWriter() = default;
 
     // Stamps the next step and the session of the log, then appends.
-    void record_now(SessionEvent event) {
+    void record_now(SessionEvent event) noexcept {
         CRUCIBLE_PRE(log_ != nullptr);
-        log_->record_now_(event);
+        log_->record_now_(allocation_, event);
     }
 
     // Appends an event whose step the caller chose, for a replay from a
     // snapshot.  The step must not go backward.
-    void record(SessionEvent event) {
+    void record(SessionEvent event) noexcept {
         CRUCIBLE_PRE(log_ != nullptr);
-        log_->record_(event);
+        log_->record_(allocation_, event);
     }
 };
 
@@ -860,7 +884,7 @@ merge_session_logs(::foundation::core::Alloc allocation, const SessionEventLog& 
             const StepId step = (*logs[index])[next[index]].step_id();
             if (chosen == log_count || StepIdLess{}(step, (*logs[chosen])[next[chosen]].step_id())) chosen = index;
         }
-        const SessionEvent& merged = (*logs[chosen])[next[chosen]];
+        const SessionEvent merged = (*logs[chosen])[next[chosen]];
         events.with_element(
             place, [&merged](SessionEvent& event) noexcept { event = merged; },
             [] noexcept { ::foundation::core::fatal("the events hold a slot for each event of the logs"); });

@@ -9,6 +9,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/core/Grow.h>
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
@@ -21,7 +22,6 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace {
 
@@ -37,6 +37,7 @@ using ::fixy::WideStart;
 using ::fixy::WriteOnce;
 using ::fixy::WriteOnceNonNull;
 using ::fixy::check::expect_dies;
+using ::foundation::core::GrowList;
 
 // The reports of the refusals of the counters that two or more cases share.
 constexpr ::fixy::TextView kBumpAtTheEnd{
@@ -67,9 +68,9 @@ static_assert(std::is_same_v<Monotonic<std::uint64_t>::lattice_type::element_typ
 
 // AppendOnly: the grade derives from the container (regime 3), no
 // second field.
-static_assert(sizeof(AppendOnly<int>) == sizeof(std::vector<int>));
-static_assert(sizeof(AppendOnly<char*>) == sizeof(std::vector<char*>));
-static_assert(fa::LatticeDerivesGrade<AppendOnly<int>::lattice_type, std::vector<int>>);
+static_assert(sizeof(AppendOnly<int>) == sizeof(GrowList<int>));
+static_assert(sizeof(AppendOnly<char*>) == sizeof(GrowList<char*>));
+static_assert(fa::LatticeDerivesGrade<AppendOnly<int>::lattice_type, GrowList<int>>);
 
 // OrderedAppendOnly collapses its empty functors onto the AppendOnly.
 static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std::uint64_t>));
@@ -121,15 +122,18 @@ static_assert(AppendOnly<int>::lattice_name() == "SeqPrefixLattice");
 static_assert(Monotonic<std::uint64_t>::value_type_name() == Monotonic<std::uint64_t>::graded_type::value_type_name());
 static_assert(AppendOnly<int>::value_type_name() == AppendOnly<int>::graded_type::value_type_name());
 static_assert(std::is_same_v<AppendOnly<int>::value_type, int>);
-static_assert(std::is_same_v<AppendOnly<int>::graded_type::value_type, std::vector<int>>);
+static_assert(std::is_same_v<AppendOnly<int>::graded_type::value_type, GrowList<int>>);
 
-// The substrate's bottom stays reachable through graded_type.
+// The substrate's bottom stays reachable through graded_type.  The substrate
+// of a log has none: only the mint of a GrowList gives an empty list, and
+// mint_append_only calls it.
 static_assert(Monotonic<std::uint64_t>::graded_type::at_bottom().grade() == 0u);
 static_assert(Monotonic<std::uint64_t, std::greater<std::uint64_t>>::graded_type::at_bottom().grade()
               == std::numeric_limits<std::uint64_t>::max());
 template <typename G>
 concept CanAtBottomNoArg = requires { G::at_bottom(); };
-static_assert(CanAtBottomNoArg<AppendOnly<int>::graded_type>);
+static_assert(CanAtBottomNoArg<Monotonic<std::uint64_t>::graded_type>);
+static_assert(!CanAtBottomNoArg<AppendOnly<int>::graded_type>);
 
 // ── One door ─────────────────────────────────────────────────────────
 static_assert(!std::is_default_constructible_v<AppendOnly<int>>);
@@ -141,7 +145,7 @@ static_assert(!std::is_default_constructible_v<WriteOnceNonNull<int*>>);
 static_assert(!std::is_constructible_v<AtomicMonotonic<std::uint64_t>, std::uint64_t>);
 
 // The gates on the doors.
-static_assert(::fixy::AppendOnlyStorage<int, std::vector>);
+static_assert(::fixy::AppendOnlyElement<int>);
 static_assert(::fixy::MonotoneCarrier<std::uint32_t, std::less<std::uint32_t>>);
 static_assert(::fixy::MonotoneCarrier<double, std::greater<double>>);
 static_assert(!::fixy::MonotoneCarrier<std::uint32_t, int>);
@@ -203,27 +207,68 @@ static_assert(!::fixy::mint_write_once_non_null<int*>().has_value());
 
 // ── Behaviour ────────────────────────────────────────────────────────
 
+// The allocation capability of the test, which each append takes.
+[[nodiscard]] constexpr ::foundation::effects::Alloc test_alloc() noexcept {
+    return ::foundation::effects::testing::test().alloc;
+}
+
+// The sum of the elements of a log, in a frame of the log.
+template <class Log>
+[[nodiscard]] std::uint64_t sum_of(Log const& log) noexcept {
+    return log.with_view([](auto held) noexcept {
+        std::uint64_t sum = 0;
+        for (auto const& item : held)
+            sum += static_cast<std::uint64_t>(item);
+        return sum;
+    });
+}
+
+// An element that only moves.
+struct MovedLabel {
+    int step = 0;
+    int payload = 0;
+    MovedLabel(int at_step, int with_payload) noexcept : step{at_step}, payload{with_payload} {}
+    MovedLabel(MovedLabel&& other) noexcept : step{other.step}, payload{other.payload} { other.payload = -1; }
+    MovedLabel(MovedLabel const&) = delete("the test moves each label");
+    MovedLabel& operator=(MovedLabel const&) = delete("the test moves each label");
+};
+struct StepOfLabel {
+    [[nodiscard]] constexpr int operator()(MovedLabel const& label) const noexcept { return label.step; }
+};
+
 int check_append_only() {
     AppendOnly<int> log = ::fixy::mint_append_only<int>();
     if (!log.empty()) return 9;
-    // emplace constructs in place and append copies; both grow the log
-    // by one and neither offers a way to shrink it.
-    log.emplace(1);
-    log.append(2);
-    log.append(3);
+    // emplace and append grow the log by one, and neither offers a way to
+    // shrink it.
+    log.emplace(test_alloc(), 1);
+    log.append(test_alloc(), 2);
+    log.append(test_alloc(), 3);
     // No erase is exposed, so the only way out of the log is reading it.
     if (log.empty()) return 15;
     if (log.size() != 3) return 10;
     if (log[2] != 3) return 11;
     if (log.front() != 1 || log.back() != 3) return 12;
+    if (sum_of(log) != 6) return 13;
 
-    int sum = 0;
-    for (int item : log)
-        sum += item;
-    if (sum != 6) return 13;
+    GrowList<int> drained = std::move(log).drain();
+    if (drained.size() != 3 || drained.copy_at(0) != ::fixy::some(1)) return 14;
 
-    std::vector<int> drained = std::move(log).drain();
-    if (drained.size() != 3 || drained[0] != 1) return 14;
+    // A log of elements that only move keeps each of them, in the order of the
+    // appends, across many growths.
+    AppendOnly<MovedLabel> labels = ::fixy::mint_append_only<MovedLabel>();
+    constexpr int kLabels = 3000;
+    for (int at = 0; at < kLabels; ++at)
+        labels.emplace(test_alloc(), at, at * 7);
+    const int in_order = labels.with_view([](::fixy::View<MovedLabel const> held) noexcept {
+        int expected = 0;
+        for (MovedLabel const& label : held) {
+            if (label.step != expected || label.payload != expected * 7) break;
+            ++expected;
+        }
+        return expected;
+    });
+    if (labels.size() != kLabels || in_order != kLabels) return 16;
     return 0;
 }
 
@@ -277,24 +322,20 @@ int check_ordered_append_only() {
     // less, so the appended values themselves must not decrease.
     {
         OrderedAppendOnly<std::uint64_t> timeline = ::fixy::mint_ordered_append_only<std::uint64_t>();
-        timeline.append(0ULL);
-        timeline.append(1ULL);
-        timeline.append(1ULL);  // equal keys are non-decreasing
-        timeline.append(2ULL);
-        timeline.emplace(5ULL);  // emplace must take the ordering path too
+        timeline.append(test_alloc(), 0ULL);
+        timeline.append(test_alloc(), 1ULL);
+        timeline.append(test_alloc(), 1ULL);  // equal keys are non-decreasing
+        timeline.append(test_alloc(), 2ULL);
+        timeline.emplace(test_alloc(), 5ULL);  // emplace must take the ordering path too
         // Appending 3 here would violate the ordering contract.
         if (timeline.size() != 5) return 40;
         if (timeline.back() != 5) return 41;
         if (timeline[0] != 0) return 42;
         if (timeline.front() != 0) return 43;
         if (timeline.empty()) return 44;
+        if (sum_of(timeline) != 9) return 45;
 
-        std::uint64_t sum = 0;
-        for (std::uint64_t item : timeline)
-            sum += item;
-        if (sum != 9) return 45;
-
-        std::vector<std::uint64_t> drained = std::move(timeline).drain();
+        GrowList<std::uint64_t> drained = std::move(timeline).drain();
         if (drained.size() != 5) return 46;
     }
     // With a projected key the ordering runs on one field, so the payload is
@@ -316,12 +357,24 @@ int check_ordered_append_only() {
         static_assert(sizeof(OrderedAppendOnly<Entry, ByStep>) == sizeof(AppendOnly<Entry>),
                       "a projected key must still collapse to zero layout cost");
         OrderedAppendOnly<Entry, ByStep> log_by_step = ::fixy::mint_ordered_append_only<Entry, ByStep>();
-        log_by_step.append({.step = 10, .payload = 100});
-        log_by_step.append({.step = 10, .payload = 101});  // duplicate step OK
-        log_by_step.append({.step = 20, .payload = 200});
+        log_by_step.append(test_alloc(), {.step = 10, .payload = 100});
+        log_by_step.append(test_alloc(), {.step = 10, .payload = 101});  // duplicate step OK
+        log_by_step.append(test_alloc(), {.step = 20, .payload = 200});
         // A step of 15 appended here would violate the ordering contract.
         if (log_by_step.size() != 3) return 47;
         if (log_by_step.back().step != 20) return 48;
+    }
+    // The order check reads the last element in a frame, so an element that only
+    // moves has it too.
+    {
+        OrderedAppendOnly<MovedLabel, StepOfLabel> labels = ::fixy::mint_ordered_append_only<MovedLabel, StepOfLabel>();
+        for (int at = 0; at < 100; ++at)
+            labels.emplace(test_alloc(), at / 3, at);
+        if (labels.size() != 100) return 49;
+        expect_dies(
+            ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
+            [&labels] noexcept { labels.emplace(test_alloc(), 32, 0); },
+            ::fixy::TextView{"foundation: contract violation: keeps_order_(item)"});
     }
     return 0;
 }
@@ -840,10 +893,10 @@ int check_contracts_abort() {
         ::fixy::TextView{"foundation: contract violation: ptr_ == nullptr"});
 
     OrderedAppendOnly<int> ordered = ::fixy::mint_ordered_append_only<int>();
-    ordered.append(5);
+    ordered.append(test_alloc(), 5);
     expect_dies(
-        test, [&ordered] noexcept { ordered.append(3); },
-        ::fixy::TextView{"foundation: contract violation: inner_.empty() || !cmp_(key_(item), key_(inner_.back()))"});
+        test, [&ordered] noexcept { ordered.append(test_alloc(), 3); },
+        ::fixy::TextView{"foundation: contract violation: keeps_order_(item)"});
     if (ordered.size() != 1) return 175;
 
     AtomicMonotonic<std::uint64_t> atomic = ::fixy::mint_atomic_monotonic<std::uint64_t>(10);

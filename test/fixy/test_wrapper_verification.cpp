@@ -31,6 +31,7 @@
 #include <foundation/Lifetime.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/GradedTrait.h>
+#include <foundation/core/Grow.h>
 #include <foundation/effects/Ctx.h>
 
 #include <compare>
@@ -39,7 +40,6 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
-#include <vector>
 #include <fixy/Core.h>
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
@@ -198,8 +198,8 @@ static_assert(std::is_trivially_destructible_v<Stale<int>>);
 
 // AppendOnly grades a container and derives the grade from its size,
 // so it costs exactly the container.
-static_assert(sizeof(AppendOnly<int>) == sizeof(std::vector<int>));
-static_assert(sizeof(AppendOnly<TwoWords>) == sizeof(std::vector<TwoWords>));
+static_assert(sizeof(AppendOnly<int>) == sizeof(::foundation::core::GrowList<int>));
+static_assert(sizeof(AppendOnly<TwoWords>) == sizeof(::foundation::core::GrowList<TwoWords>));
 
 // RecipeSpec stores both numerical axes beside the value.
 static_assert(sizeof(RecipeSpec<int>) >= sizeof(int) + 2);
@@ -509,10 +509,11 @@ static_assert(!satisfies_v<opaque_lifetime::PerRequest<int>, Lifetime_v::PER_FLE
 }
 
 [[nodiscard]] bool smoke_append_only() {
+    const ::foundation::effects::Alloc alloc = ::foundation::effects::testing::test().alloc;
     AppendOnly<int> a = mint_append_only<int>();
-    a.append(1);
-    a.append(2);
-    a.append(3);
+    a.append(alloc, 1);
+    a.append(alloc, 2);
+    a.append(alloc, 3);
     if (a.size() != 3) return false;
     return a[0] == 1 && a[1] == 2 && a[2] == 3;
 }

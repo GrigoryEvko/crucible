@@ -41,7 +41,7 @@ template <typename T>
 [[nodiscard]] ::fixy::AppendOnly<int> log_of(int count) {
     ::fixy::AppendOnly<int> log = ::fixy::mint_append_only<int>();
     for (int value = 1; value <= opaque(count); ++value) {
-        log.append(value);
+        log.append(eff::testing::test().alloc, value);
     }
     return log;
 }
@@ -52,7 +52,7 @@ void read_back_of_empty_append_only() { (void)opaque(log_of(0).back()); }
 
 void read_ordered_past_end() {
     ::fixy::OrderedAppendOnly<int> ordered = ::fixy::mint_ordered_append_only<int>();
-    ordered.append(1);
+    ordered.append(eff::testing::test().alloc, 1);
     (void)opaque(ordered[opaque(std::size_t{1})]);
 }
 

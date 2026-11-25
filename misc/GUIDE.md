@@ -47,7 +47,7 @@ Crucible has no proof-assistant source of truth. Correctness is won by three com
 | `Tagged<T, Tag>` (`fixy/Tagged.h`) | `Graded<RelativeMonad, TrustLattice<Tag>, T>` | grade in the type |
 | `Secret<T>` (`fixy/Secret.h`) | `Graded<Comonad, ConfLattice::At<Conf::Secret>, T>` | grade in the type |
 | `Monotonic<T, Cmp>` (`fixy/Mutation.h`) | `Graded<Absolute, MonotoneLattice<T, Cmp>, T>` | grade is the value |
-| `AppendOnly<T, Storage>` (`fixy/Mutation.h`) | `Graded<Absolute, SeqPrefixLattice<T>, Storage<T>>` | grade derived from the container |
+| `AppendOnly<T>` (`fixy/Mutation.h`) | `Graded<Absolute, SeqPrefixLattice<T>, GrowList<T>>` | grade derived from the container |
 | `Stale<T>` (`fixy/Stale.h`) | `Graded<Absolute, StalenessSemiring, T>` | grade stored per instance |
 | `SharedPermission<Tag, Brand>` (`foundation/permissions/SharedPermission.h`) | `Graded<Absolute, DualLattice<FractionalLattice>, Tag>` (façade — atomic state in `SharedPermissionPool`) | none: the token is empty, and the pool holds the share count |
 
@@ -72,7 +72,7 @@ The first three cost `sizeof(T)`. `test/fixy/test_wrapper_verification.cpp` chec
 - `fixy/ConstantTime.h` — `fixy::ct::select`, `eq` and `less`, branch-free primitives for crypto paths and Cipher key handling.
 - `foundation/Simd.h` — SIMD primitives (§VIII).
 
-Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` / `OrderedAppendOnly<T, KeyFn, Cmp, Storage>` / `AtomicMonotonic<T, Cmp>` in `fixy/Mutation.h`. No lattice grades them. Each one declares an identity that `foundation/diag/RowHash.h` folds, and the `mint_*` function beside each class is its one door.
+Plus `WriteOnce<T>` / `WriteOnceNonNull<Ptr>` / `BoundedMonotonic<T, Max, Cmp>` / `OrderedAppendOnly<T, KeyFn, Cmp>` / `AtomicMonotonic<T, Cmp>` in `fixy/Mutation.h`. No lattice grades them. Each one declares an identity that `foundation/diag/RowHash.h` folds, and the `mint_*` function beside each class is its one door.
 
 **Verification harness.** `test/fixy/test_wrapper_verification.cpp` is a single TU that asserts the cross-wrapper properties of the fixy wrappers: the diagnostic surface, sizeof and triviality per storage regime, cross-composition, and distinct nesting orders. `test/fixy/test_cheat_probe.cpp` runs 56 adversarial cheats against the concept. The build succeeds only when the concept rejects each cheat, or when the file documents the cheat as admitted.
 

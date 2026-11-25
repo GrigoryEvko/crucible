@@ -3,11 +3,12 @@
 // function.
 
 #include <fixy/Mutation.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
     auto shorter = fixy::mint_append_only<int>();
     auto log = fixy::mint_append_only<int>();
-    log.append(1);
+    log.append(::foundation::effects::testing::test().alloc, 1);
     log = shorter;
     return static_cast<int>(log.size());
 }

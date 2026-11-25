@@ -139,6 +139,20 @@ struct Batch {
 void record_at(Batch const&&, unsigned) =
     delete("the reference names a record of the batch, and a temporary ends with the full expression");
 
+// True when the entry of the table at position is the record.  The entries own
+// their names, so the test reads them in a frame of the entries.
+[[nodiscard]] bool holds_record(::crucible::CallSiteTable const& table, unsigned position,
+                                Record const& record) noexcept {
+    return table.entries.with_view([position,
+                                    &record](::fixy::View<::crucible::CallSiteTable::Entry const> held) noexcept {
+        return held.get(position).is_some_and([&record](auto entry) noexcept {
+            return entry->hash == ::crucible::CallsiteHash{record.hash_raw}
+                && entry->filename.value().view() == record.filename.view()
+                && entry->funcname.value().view() == record.funcname.view() && entry->lineno.value() == record.lineno;
+        });
+    });
+}
+
 }  // namespace
 
 int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
@@ -229,12 +243,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 const Record& rec = record_at(b, i);
                 const CallsiteHash h{rec.hash_raw};
                 if (!t.has(h)) return false;
-
-                const auto& e = t.entries[i];
-                if (e.hash != h) return false;
-                if (e.filename.value().view() != rec.filename.view()) return false;
-                if (e.funcname.value().view() != rec.funcname.view()) return false;
-                if (e.lineno.value() != rec.lineno) return false;
+                if (!holds_record(t, i, rec)) return false;
             }
 
             // ── Dedup phase: re-insert every record with DIFFERENT
@@ -255,11 +264,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             }
             if (t.size() != b.count) return false;
             for (unsigned i = 0; i < b.count; ++i) {
-                const Record& rec = record_at(b, i);
-                const auto& e = t.entries[i];
-                if (e.filename.value().view() != rec.filename.view()) return false;
-                if (e.funcname.value().view() != rec.funcname.view()) return false;
-                if (e.lineno.value() != rec.lineno) return false;
+                if (!holds_record(t, i, record_at(b, i))) return false;
             }
 
             // Property (sentinel rejection): has(CallsiteHash{}) is

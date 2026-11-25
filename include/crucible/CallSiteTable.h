@@ -89,7 +89,7 @@ struct CallSiteTable {
                 // This is where the line number is checked: the checked mint
                 // of the wrapper is the guard.
                 entries.emplace(
-                    hash,
+                    alloc, hash,
                     ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::freeze(std::move(stored_filename))),
                     ::fixy::mint_tagged<::fixy::tags::source::Interned>(::fixy::freeze(std::move(stored_funcname))),
                     ::fixy::mint_refined<::fixy::non_negative>(lineno));

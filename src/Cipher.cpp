@@ -1166,7 +1166,7 @@ ContentHash Cipher::hash_at_step(OpenView const&, uint64_t step_id) const {
 
     while (lo > 0) {
         --lo;
-        const LogEntry& entry = log_[lo];
+        const LogEntry entry = log_[lo];
         if (commits_head_(entry)) {
             return committed_hash_(entry);
         }
@@ -1204,7 +1204,7 @@ ContentHash Cipher::latest_committed_head() const noexcept {
     std::size_t i = log_.size();
     while (i > 0) {
         --i;
-        const LogEntry& entry = log_[i];
+        const LogEntry entry = log_[i];
         if (commits_head_(entry)) {
             return committed_hash_(entry);
         }
@@ -1254,7 +1254,8 @@ Cipher::CommitResult Cipher::advance_head(FileCtx const& file_ctx, OpenView cons
     if (!is_appended) {
         return ::fixy::err(CommitError::log_append);
     }
-    log_.append(SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
+    log_.append(allocation_,
+                SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{step_id},
                                            ::fixy::session::StateHash{content_hash.raw()}, order));
     head_ = content_hash;
 
@@ -1437,10 +1438,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
     // Appends the commit of one line that parsed, or skips a corrupt line.
-    // The append of the log can allocate and is not noexcept, so the lambda
-    // is not noexcept either: a noexcept body would add a terminate landing
-    // pad to load_log.
-    const auto replay_line = [this](LogLine const& line) {
+    const auto replay_line = [this, allocation](LogLine const& line) {
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.  A step above the
@@ -1454,9 +1452,10 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
         if (line.order <= commits_.get()) return;
 
         commits_.advance(line.order);
-        log_.append(SessionEvent::cipher_event(
-            ::fixy::session::SessionOp::StoreCommitted, ::fixy::session::StepId{line.step},
-            ::fixy::session::StateHash{line.hash}, ::fixy::session::CipherEventOrder{line.order}));
+        log_.append(allocation, SessionEvent::cipher_event(::fixy::session::SessionOp::StoreCommitted,
+                                                           ::fixy::session::StepId{line.step},
+                                                           ::fixy::session::StateHash{line.hash},
+                                                           ::fixy::session::CipherEventOrder{line.order}));
     };
     for (::fixy::TextView rest = log_text.view(); rest.size() != 0;) {
         const LineSplit split = split_line_(rest);

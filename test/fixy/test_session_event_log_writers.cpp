@@ -7,7 +7,8 @@
 // and for one step in the order of the arguments.  The test runs two
 // recorded sessions on two threads many times, and each merge gives the
 // same sequence.  The tsan preset runs the same test, so the shape with
-// one log for each thread is the shape that ThreadSanitizer checks.
+// one log for each thread is the shape that ThreadSanitizer checks.  Two
+// threads then read one finished log by index at the same time.
 
 #include <fixy/Ctx.h>
 #include <fixy/session/Entry.h>
@@ -24,6 +25,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 
 namespace {
@@ -118,6 +120,57 @@ void two_threads_record_into_their_own_logs() {
     }
 }
 
+// A frame of a log lends its storage.  A writer that the body holds appends
+// through its own name of the log, which no rule sees, so the lend count of the
+// storage ends the process.  Without the append, the body reads the event.
+void an_append_in_a_frame_of_the_log_ends_the_process() {
+    s::SessionEventLog log;
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+    writer.record_now(s::SessionEvent::close(kLeft, kSink));
+    const std::size_t seen =
+        log.with_view([](::fixy::View<s::SessionEvent const> events) noexcept { return events.size(); });
+    CRUCIBLE_TEST_ASSERT(kTest, seen == 1 && log.size() == 1);
+    ::fixy::check::expect_dies(
+        kTest,
+        [&log, &writer] noexcept {
+            log.with_view([held = std::move(writer)](::fixy::View<s::SessionEvent const>) mutable noexcept {
+                held.record_now(s::SessionEvent::close(kLeft, kSink));
+            });
+        },
+        ::fixy::TextView{"while a frame door lends its storage"});
+}
+
+// Two threads read one finished log at the same time, by index and through the
+// merge.  The reads write no state of the log, so ThreadSanitizer sees no race.
+// No type states that sharing, so the probe door starts the threads.  The last
+// append comes before the start of each thread, and the join comes before the
+// end of the log.
+void two_threads_read_one_finished_log() {
+    s::SessionEventLog log{s::SessionTagId{5}};
+    {
+        s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
+        for (int turn = 0; turn < kSends; ++turn)
+            writer.record_now(s::SessionEvent::close(kLeft, kSink));
+    }
+    auto add_steps = [&finished = std::as_const(log)] noexcept {
+        std::uint64_t steps = 0;
+        for (std::size_t index = 0; index < finished.size(); ++index)
+            steps += finished[index].step_id().raw();
+        const auto merged = s::merge_session_logs(test_alloc(), finished);
+        for (const s::SessionEvent& event : merged.view())
+            steps += event.step_id().raw();
+        return steps + finished.back().step_id().raw();
+    };
+    const auto sums =
+        ::fixy::thread::run_joined_raw_probe(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, kTest,
+                                             "two readers of one finished log, which no type states as shared",
+                                             ::fixy::thread::ThreadOptions{}, auto{add_steps}, std::move(add_steps))
+            .expect("the probe starts two threads");
+    constexpr std::uint64_t kLast = kSends;
+    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kLast * (kLast + 1) + kLast);
+    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<1>()) == kLast * (kLast + 1) + kLast);
+}
+
 // An empty log adds nothing, and a tie of steps keeps the order of the
 // arguments.
 void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
@@ -144,6 +197,8 @@ int main() {
     using namespace test_session_event_log_writers;
     a_second_writer_of_one_log_ends_the_process();
     two_threads_record_into_their_own_logs();
+    an_append_in_a_frame_of_the_log_ends_the_process();
+    two_threads_read_one_finished_log();
     a_merge_keeps_the_order_of_the_arguments_for_one_step();
     ::fixy::check::pass(kTest, "test_session_event_log_writers: OK\n");
     return 0;

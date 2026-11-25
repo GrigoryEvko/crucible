@@ -42,6 +42,24 @@ static_assert(!std::is_constructible_v<CallSiteTable::NonZeroHash, CallsiteHash>
 // The name of an entry as a TextView.
 static ::fixy::TextView name_of(CallSiteTable::InternedName const& name) { return name.value().view(); }
 
+// The names and the line number that a test expects of an entry.
+struct ExpectedEntry {
+    ::fixy::TextView filename{};
+    ::fixy::TextView funcname{};
+    int32_t lineno = 0;
+};
+
+// True when the table holds the entry at a position.  The entries own their
+// names, so the test reads them in a frame of the entries.
+static bool holds_entry(CallSiteTable const& table, std::size_t position, ExpectedEntry const& expected) {
+    return table.entries.with_view([position, &expected](::fixy::View<CallSiteTable::Entry const> held) noexcept {
+        return held.get(position).is_some_and([&expected](auto entry) noexcept {
+            return name_of(entry->filename) == expected.filename && name_of(entry->funcname) == expected.funcname
+                && entry->lineno.value() == expected.lineno;
+        });
+    });
+}
+
 static void test_empty_table_has_nothing() {
     CallSiteTable t;
     CRUCIBLE_TEST_ASSERT(kTest, t.size() == 0);
@@ -55,11 +73,7 @@ static void test_single_insert_then_has() {
     CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
     CRUCIBLE_TEST_ASSERT(kTest, t.has(H(42)));
     CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 10);
-    // The filename and funcname fields are tagged wrappers, so the comparison
-    // reads through value().
-    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
-    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].funcname) == ::fixy::TextView{"main"});
+    CRUCIBLE_TEST_ASSERT(kTest, holds_entry(t, 0, {.filename = "foo.py", .funcname = "main", .lineno = 10}));
     ::fixy::check::pass(kTest, "  test_single_insert:             PASSED\n");
 }
 
@@ -69,8 +83,7 @@ static void test_duplicate_insert_is_noop() {
     CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "foo.py", "main", 10));
     CRUCIBLE_TEST_ASSERT(kTest, t.insert(alloc_cap(), NZ(42), "different.py", "other", 99));
     CRUCIBLE_TEST_ASSERT(kTest, t.size() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 10);
-    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"foo.py"});
+    CRUCIBLE_TEST_ASSERT(kTest, holds_entry(t, 0, {.filename = "foo.py", .funcname = "main", .lineno = 10}));
     ::fixy::check::pass(kTest, "  test_duplicate_noop:            PASSED\n");
 }
 
@@ -128,12 +141,9 @@ static void test_tagged_overloads_store_interned() {
                                          ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later.py"}),
                                          ::fixy::mint_tagged<source::FromInternal>(::fixy::TextView{"later_fn"}), 71));
     CRUCIBLE_TEST_ASSERT(kTest, t.size() == 2);
-    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[0].filename) == ::fixy::TextView{"ext.py"}
-                                    && name_of(t.entries[0].funcname) == ::fixy::TextView{"ext_fn"});
-    CRUCIBLE_TEST_ASSERT(kTest, t.entries[0].lineno.value() == 70);
-    CRUCIBLE_TEST_ASSERT(kTest, name_of(t.entries[1].filename) == ::fixy::TextView{"int.py"}
-                                    && name_of(t.entries[1].funcname) == ::fixy::TextView{"int_fn"});
-    CRUCIBLE_TEST_ASSERT(kTest, t.entries[1].lineno.value() == 80);
+    CRUCIBLE_TEST_ASSERT(kTest, holds_entry(t, 0, {.filename = "ext.py", .funcname = "ext_fn", .lineno = 70}));
+    CRUCIBLE_TEST_ASSERT(kTest, holds_entry(t, 1, {.filename = "int.py", .funcname = "int_fn", .lineno = 80}));
+    CRUCIBLE_TEST_ASSERT(kTest, !holds_entry(t, 2, {.filename = "int.py", .funcname = "int_fn", .lineno = 80}));
     ::fixy::check::pass(kTest, "  test_tagged_overloads:          PASSED\n");
 }
 

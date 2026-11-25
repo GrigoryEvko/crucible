@@ -51,7 +51,7 @@ template <typename T>
 [[nodiscard]] ::fixy::AppendOnly<int> log_of(int count) {
     ::fixy::AppendOnly<int> log = ::fixy::mint_append_only<int>();
     for (int value = 1; value <= opaque(count); ++value) {
-        log.append(value);
+        log.append(::foundation::effects::testing::test().alloc, value);
     }
     return log;
 }

@@ -16,9 +16,13 @@
 #include <foundation/contracts/Decide.h>
 #include <foundation/contracts/Post.h>
 #include <foundation/contracts/Pre.h>
+#include <foundation/core/AllocTag.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Grow.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
 #include <foundation/reflect/Instance.h>
 
 #include <atomic>
@@ -30,7 +34,6 @@
 #include <optional>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace fixy {
 
@@ -114,22 +117,61 @@ inline constexpr bool is_writeoncenonnull_v = ::foundation::reflect::IsInstanceO
 // beside each class is its one door, and the concept on that door
 // names what the class asks of its type arguments.
 
-// The container operations AppendOnly forwards to, and the size the
-// lattice derives its grade from.
-template <typename T, template <typename...> class Storage>
-concept AppendOnlyStorage =
-    std::default_initializable<Storage<T>> && std::move_constructible<Storage<T>>
-    && requires(Storage<T>& mutable_storage, Storage<T> const& storage, T item, std::size_t index) {
-           typename Storage<T>::const_iterator;
-           mutable_storage.emplace_back(std::move(item));
-           { storage.size() } -> std::convertible_to<std::size_t>;
-           { storage.empty() } -> std::convertible_to<bool>;
-           { storage[index] } -> std::convertible_to<T const&>;
-           { storage.front() } -> std::convertible_to<T const&>;
-           { storage.back() } -> std::convertible_to<T const&>;
-           { storage.begin() } -> std::same_as<typename Storage<T>::const_iterator>;
-           { storage.end() } -> std::same_as<typename Storage<T>::const_iterator>;
-       };
+// Append-only logs
+//   AppendOnly<T>         the elements in the order of their appends
+//   OrderedAppendOnly<T>  the same, with a key that never goes down
+// A log keeps its elements in a GrowList of foundation/core/Grow.h, and it
+// shows no door that removes, moves out or writes an element.
+//
+//   append(alloc, item)   puts item after the last element.  The allocation
+//                         capability comes first, so each growth shows at its
+//                         call.  A log has no maximum: a growth doubles the
+//                         storage, and an exhausted memory ends the process in
+//                         the allocation door of foundation/core/Heap.h.  So
+//                         append gives nothing, and it does not throw
+//   log[i], front(), back()
+//                         give an element by value.  The copy of the element is
+//                         trivial, and it holds no borrow (CopiedElement of
+//                         foundation/core/Grow.h).  A read at or past size()
+//                         ends the process
+//   with_view(body)       calls body with the View of the const elements.  It is
+//                         the read of each other element, and of a run
+//   std::move(log).drain()
+//                         gives the GrowList, and ends the log
+//
+// A growth moves each element, so a log gives no reference, no View and no
+// iterator out of a frame.  A frame writes the lend count of the GrowList, so
+// one thread at a time opens a frame of a log.  The reads by value and size()
+// write no state, so two threads can use them on one log at the same time while
+// no thread appends.  No type states that sharing.
+
+// The element of a log: the element of a GrowList.  It moves with no throw,
+// because a growth moves it, and it is no pinned object.
+template <typename T>
+concept AppendOnlyElement = ::foundation::core::GrowListElement<T>;
+
+// The body of the frame door of a log: it takes the View of the const elements,
+// its result holds no borrow, it holds no linear value by value, and it stores
+// no borrow outside the frame.
+template <typename Body, typename T>
+concept LogViewBody = std::is_invocable_v<Body, ::foundation::core::View<T const>>
+                   && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body, ::foundation::core::View<T const>>>
+                   && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// A body of a frame of a log that LogViewBody refuses: the deleted twin of the
+// door binds to it.
+template <typename Body, typename T>
+concept RefusedLogViewBody = std::is_invocable_v<Body, ::foundation::core::View<T const>> && (!LogViewBody<Body, T>);
+
+// The reasons of the deleted twins of the doors of a log.
+#define CRUCIBLE_LOG_BY_VALUE_REFUSAL                                                                               \
+    "a log gives by value only an element whose copy is trivial and that holds no borrow: read another element in " \
+    "with_view"
+#define CRUCIBLE_LOG_FRAME_REFUSAL                                                                                 \
+    "a body of a frame of a log gives no borrow, holds no linear value by value and stores no borrow outside the " \
+    "frame: the next append can end the storage that its View borrows"
+#define CRUCIBLE_LOG_TEMPORARY_REFUSAL \
+    "a frame of a temporary log lends storage that the full expression frees: read a log that has a name"
 
 // Cmp{}(a, b) must mean "a is strictly less than b" on the carrier, and
 // the carrier moves into and out of the lattice.
@@ -169,18 +211,18 @@ concept BoundedMonotoneCarrier =
 template <typename Ptr>
 concept SlotPointer = std::is_pointer_v<Ptr> && std::is_object_v<std::remove_pointer_t<Ptr>>;
 
-template <typename T, template <typename...> class Storage = std::vector>
+template <typename T>
 class AppendOnly;
 
-template <typename T, template <typename...> class Storage = std::vector>
-    requires AppendOnlyStorage<T, Storage>
-[[nodiscard]] constexpr AppendOnly<T, Storage>
-mint_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>);
+// The one door of an AppendOnly: an empty log.  It allocates nothing.
+template <typename T>
+    requires AppendOnlyElement<T>
+[[nodiscard]] constexpr AppendOnly<T> mint_append_only() noexcept;
 
-template <typename T, template <typename...> class Storage>
+template <typename T>
 class [[nodiscard]] AppendOnly
     : public graded_facade<::foundation::algebra::ModalityKind::Absolute,
-                           ::foundation::algebra::lattices::SeqPrefixLattice<T>, Storage<T>> {
+                           ::foundation::algebra::lattices::SeqPrefixLattice<T>, ::foundation::core::GrowList<T>> {
     static_assert(!is_writeonce_v<T>, "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
                                       "that emplaced elements are never mutated, reassigned, or removed. "
                                       "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
@@ -206,11 +248,10 @@ public:
     // graded_facade.
     using value_type = T;
     static constexpr bool value_type_decoupled = true;
-    using storage_type = Storage<T>;
-    using const_iterator = typename Storage<T>::const_iterator;
+    using storage_type = ::foundation::core::GrowList<T>;
 
     using facade_ = graded_facade<::foundation::algebra::ModalityKind::Absolute,
-                                  ::foundation::algebra::lattices::SeqPrefixLattice<T>, Storage<T>>;
+                                  ::foundation::algebra::lattices::SeqPrefixLattice<T>, storage_type>;
     using typename facade_::graded_type;
     using typename facade_::lattice_type;
 
@@ -218,17 +259,22 @@ private:
     graded_type impl_;
 
     using key_ = ::foundation::algebra::grade_key<AppendOnly>;
+    using View_ = ::foundation::core::View<T const>;
+    static constexpr bool is_copied_ = ::foundation::core::CopiedElement<T>;
 
-    constexpr AppendOnly() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>) : impl_{Storage<T>{}} {}
+    constexpr AppendOnly() noexcept
+        : impl_{::foundation::core::mint_grow_list<T>(::foundation::core::max_of<std::size_t>)} {}
 
-    template <typename U, template <typename...> class S>
-        requires AppendOnlyStorage<U, S>
-    friend constexpr AppendOnly<U, S> mint_append_only() noexcept(std::is_nothrow_default_constructible_v<S<U>>);
+    template <typename U>
+        requires AppendOnlyElement<U>
+    friend constexpr AppendOnly<U> mint_append_only() noexcept;
 
 public:
-    // An assignment would drop every element the log holds.
-    AppendOnly(AppendOnly const&) = default;
-    AppendOnly(AppendOnly&&) = default;
+    // A copy would allocate, and no allocation capability shows at a copy.  An
+    // assignment would drop every element the log holds.
+    AppendOnly(AppendOnly const&) =
+        delete("a copy of an AppendOnly allocates, and no allocation capability shows at a copy");
+    constexpr AppendOnly(AppendOnly&&) noexcept = default;
     AppendOnly& operator=(AppendOnly const&) =
         delete("AppendOnly never removes an element. An assignment would drop every element it holds.");
     AppendOnly& operator=(AppendOnly&&) =
@@ -238,48 +284,84 @@ public:
     // the tail updates it with no separate field to maintain.  Growing is
     // the one write this class makes, which keeps the derived grade
     // moving up the order.
-    template <typename... Args>
-    void emplace(Args&&... args) {
-        impl_.peek_mut(key_{}).emplace_back(std::forward<Args>(args)...);
+    //
+    // The list has the largest count of a View as its maximum, so an exhausted
+    // memory ends the process in the allocation door before an append can meet
+    // that maximum.  A lent log ends the process too (the lend count of
+    // foundation/core/Grow.h).
+    template <class Marker>
+        requires ::foundation::core::AllocationCapability<Marker>
+    void append(Marker allocation, T item) & noexcept {
+        impl_.peek_mut(key_{}).append(allocation, std::move(item)).expect("an append-only log has no maximum");
     }
 
-    void append(T item) { impl_.peek_mut(key_{}).emplace_back(std::move(item)); }
+    // Builds the element from args, and then appends it.
+    template <class Marker, typename... Args>
+        requires ::foundation::core::AllocationCapability<Marker>
+    void emplace(Marker allocation, Args&&... args) & noexcept(noexcept(T{std::forward<Args>(args)...})) {
+        append(allocation, T{std::forward<Args>(args)...});
+    }
 
-    // Each access checks its index in each build and under each contract
-    // semantic.  The bounds check of the standard library is on only in
-    // Debug, so it is no check of a Release build.  OrderedAppendOnly reads
-    // through these members, so it gets the same checks.
-    [[nodiscard]] const T& operator[](std::size_t i) const noexcept {
+    // Each read by value checks its index in each build and under each contract
+    // semantic.  OrderedAppendOnly reads through these members, so it gets the
+    // same checks.
+    [[nodiscard]] T operator[](std::size_t i) const noexcept
+        requires is_copied_
+    {
         CRUCIBLE_FATAL_INVARIANT(i < size());
-        return impl_.peek()[i];
+        return impl_.peek().copy_at(i).expect("the check above found the element");
     }
-    [[nodiscard]] const T& front() const noexcept {
+    [[nodiscard]] T front() const noexcept
+        requires is_copied_
+    {
         CRUCIBLE_FATAL_INVARIANT(!empty());
-        return impl_.peek().front();
+        return impl_.peek().copy_at(0).expect("the check above found an element");
     }
-    [[nodiscard]] const T& back() const noexcept {
+    [[nodiscard]] T back() const noexcept
+        requires is_copied_
+    {
         CRUCIBLE_FATAL_INVARIANT(!empty());
-        return impl_.peek().back();
+        return impl_.peek().copy_at(size() - 1).expect("the check above found an element");
     }
+    T operator[](std::size_t i) const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    T front() const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    T back() const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+
     [[nodiscard]] std::size_t size() const noexcept { return impl_.peek().size(); }
-    [[nodiscard]] bool empty() const noexcept { return impl_.peek().empty(); }
+    [[nodiscard]] bool empty() const noexcept { return size() == 0; }
 
-    [[nodiscard]] const_iterator begin() const noexcept { return impl_.peek().begin(); }
-    [[nodiscard]] const_iterator end() const noexcept { return impl_.peek().end(); }
-
-    [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
-        return std::move(impl_).consume();
+    // The frame door of the elements: body gets the View of the const elements,
+    // and the log lends its storage until body returns.  Complexity: O(1), and
+    // the cost of body.
+    template <class Body>
+        requires LogViewBody<Body, T>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View_>
+        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View_>) {
+        return impl_.peek().with_view(static_cast<Body&&>(body));
     }
+    template <class Body>
+        requires RefusedLogViewBody<Body, T>
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
+    template <class Body>
+    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+
+    // Gives the elements to the caller, and leaves the log empty.
+    [[nodiscard]] constexpr storage_type drain() && noexcept { return std::move(impl_).consume(); }
 
     // value_type_name reports the storage type, not the element type.
     // The graded value here is the container.
 };
 
-template <typename T, template <typename...> class Storage>
-    requires AppendOnlyStorage<T, Storage>
-[[nodiscard]] constexpr AppendOnly<T, Storage>
-mint_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>) {
-    return AppendOnly<T, Storage>{};
+template <typename T>
+    requires AppendOnlyElement<T>
+[[nodiscard]] constexpr AppendOnly<T> mint_append_only() noexcept {
+    return AppendOnly<T>{};
 }
 
 // KeyFn and Cmp must be empty and default-constructible, and the two
@@ -306,17 +388,15 @@ mint_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>)
 // Reading the members keeps the code honest if the constraint is ever
 // relaxed, because a stateful functor is then read and not ignored.
 
-template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>,
-          template <typename...> class Storage = std::vector>
+template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>>
 class OrderedAppendOnly;
 
-template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>,
-          template <typename...> class Storage = std::vector>
-    requires AppendOnlyStorage<T, Storage>
-[[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp, Storage>
-mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>);
+// The one door of an OrderedAppendOnly: an empty log.  It allocates nothing.
+template <typename T, typename KeyFn = std::identity, typename Cmp = std::less<>>
+    requires AppendOnlyElement<T>
+[[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp> mint_ordered_append_only() noexcept;
 
-template <typename T, typename KeyFn, typename Cmp, template <typename...> class Storage>
+template <typename T, typename KeyFn, typename Cmp>
 class [[nodiscard]] OrderedAppendOnly {
     static_assert(std::is_empty_v<KeyFn> && std::is_default_constructible_v<KeyFn>,
                   "OrderedAppendOnly: KeyFn must be empty and default-constructible. A projection that reads state "
@@ -327,65 +407,116 @@ class [[nodiscard]] OrderedAppendOnly {
                   "back element, so a comparator that changes its answer between calls admits a sequence that is "
                   "ordered under no single comparator.");
 
-    AppendOnly<T, Storage> inner_ = mint_append_only<T, Storage>();
+    AppendOnly<T> inner_ = mint_append_only<T>();
     [[no_unique_address]] KeyFn key_{};
     [[no_unique_address]] Cmp cmp_{};
 
-    constexpr OrderedAppendOnly() = default;
+    using View_ = ::foundation::core::View<T const>;
+    static constexpr bool is_copied_ = ::foundation::core::CopiedElement<T>;
 
-    template <typename U, typename K, typename C, template <typename...> class S>
-        requires AppendOnlyStorage<U, S>
-    friend constexpr OrderedAppendOnly<U, K, C, S>
-    mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<S<U>>);
+    constexpr OrderedAppendOnly() noexcept = default;
+
+    template <typename U, typename K, typename C>
+        requires AppendOnlyElement<U>
+    friend constexpr OrderedAppendOnly<U, K, C> mint_ordered_append_only() noexcept;
+
+    // True when the log is empty, or the key of item is not less than the key of
+    // the last element.  The last element is read in a frame, because only some
+    // elements have a read by value.
+    [[nodiscard]] bool keeps_order_(T const& item) const noexcept {
+        return inner_.empty() || inner_.with_view([this, &item](View_ held) noexcept {
+            return held.get(held.size() - 1).is_some_and([this, &item](auto last) noexcept {
+                return !cmp_(key_(item), key_(*last));
+            });
+        });
+    }
 
 public:
     using value_type = T;
     using row_discipline = ::fixy::row_discipline::ordered_append_only<KeyFn, Cmp>;
-    using row_payload = AppendOnly<T, Storage>;
+    using row_payload = AppendOnly<T>;
     using key_type = std::invoke_result_t<KeyFn, const T&>;
     using key_fn_type = KeyFn;
     using comparator = Cmp;
-    using storage_type = Storage<T>;
-    using const_iterator = typename AppendOnly<T, Storage>::const_iterator;
+    using storage_type = ::foundation::core::GrowList<T>;
 
-    OrderedAppendOnly(OrderedAppendOnly const&) = default;
-    OrderedAppendOnly(OrderedAppendOnly&&) = default;
+    static_assert(std::is_nothrow_invocable_v<KeyFn const&, T const&>
+                      && std::is_nothrow_invocable_v<Cmp const&, key_type, key_type>,
+                  "OrderedAppendOnly: KeyFn and Cmp must not throw. append calls the two, and it does not throw.");
+
+    OrderedAppendOnly(OrderedAppendOnly const&) =
+        delete("a copy of an OrderedAppendOnly allocates, and no allocation capability shows at a copy");
+    constexpr OrderedAppendOnly(OrderedAppendOnly&&) noexcept = default;
     OrderedAppendOnly& operator=(OrderedAppendOnly const&) =
         delete("OrderedAppendOnly never removes an element. An assignment would drop every element it holds.");
     OrderedAppendOnly& operator=(OrderedAppendOnly&&) =
         delete("OrderedAppendOnly never removes an element. An assignment would drop every element it holds.");
 
-    void append(T item) {
-        CRUCIBLE_PRE(inner_.empty() || !cmp_(key_(item), key_(inner_.back())));
-        inner_.append(std::move(item));
+    // As the append of AppendOnly, and the key of item is not less than the key
+    // of the last element.
+    template <class Marker>
+        requires ::foundation::core::AllocationCapability<Marker>
+    void append(Marker allocation, T item) & noexcept {
+        CRUCIBLE_PRE(keeps_order_(item));
+        inner_.append(allocation, std::move(item));
     }
 
     // The key of an element cannot be projected before the element
     // exists, so emplace builds the element first and then checks it.
-    template <typename... Args>
-    void emplace(Args&&... args) {
-        append(T{std::forward<Args>(args)...});
+    template <class Marker, typename... Args>
+        requires ::foundation::core::AllocationCapability<Marker>
+    void emplace(Marker allocation, Args&&... args) & noexcept(noexcept(T{std::forward<Args>(args)...})) {
+        append(allocation, T{std::forward<Args>(args)...});
     }
 
-    [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return inner_[i]; }
-    [[nodiscard]] const T& front() const noexcept { return inner_.front(); }
-    [[nodiscard]] const T& back() const noexcept { return inner_.back(); }
+    // The reads are those of AppendOnly.
+    [[nodiscard]] T operator[](std::size_t i) const noexcept
+        requires is_copied_
+    {
+        return inner_[i];
+    }
+    [[nodiscard]] T front() const noexcept
+        requires is_copied_
+    {
+        return inner_.front();
+    }
+    [[nodiscard]] T back() const noexcept
+        requires is_copied_
+    {
+        return inner_.back();
+    }
+    T operator[](std::size_t i) const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    T front() const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+    T back() const
+        requires(!is_copied_)
+    = delete(CRUCIBLE_LOG_BY_VALUE_REFUSAL);
+
     [[nodiscard]] std::size_t size() const noexcept { return inner_.size(); }
     [[nodiscard]] bool empty() const noexcept { return inner_.empty(); }
 
-    [[nodiscard]] const_iterator begin() const noexcept { return inner_.begin(); }
-    [[nodiscard]] const_iterator end() const noexcept { return inner_.end(); }
-
-    [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
-        return std::move(inner_).drain();
+    template <class Body>
+        requires LogViewBody<Body, T>
+    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View_>
+        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View_>) {
+        return inner_.with_view(static_cast<Body&&>(body));
     }
+    template <class Body>
+        requires RefusedLogViewBody<Body, T>
+    void with_view(Body&& body) const& = delete(CRUCIBLE_LOG_FRAME_REFUSAL);
+    template <class Body>
+    void with_view(Body&& body) const&& = delete(CRUCIBLE_LOG_TEMPORARY_REFUSAL);
+
+    [[nodiscard]] constexpr storage_type drain() && noexcept { return std::move(inner_).drain(); }
 };
 
-template <typename T, typename KeyFn, typename Cmp, template <typename...> class Storage>
-    requires AppendOnlyStorage<T, Storage>
-[[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp, Storage>
-mint_ordered_append_only() noexcept(std::is_nothrow_default_constructible_v<Storage<T>>) {
-    return OrderedAppendOnly<T, KeyFn, Cmp, Storage>{};
+template <typename T, typename KeyFn, typename Cmp>
+    requires AppendOnlyElement<T>
+[[nodiscard]] constexpr OrderedAppendOnly<T, KeyFn, Cmp> mint_ordered_append_only() noexcept {
+    return OrderedAppendOnly<T, KeyFn, Cmp>{};
 }
 
 // The limits of a WideMonotonic (the wide counter below): its start is below
