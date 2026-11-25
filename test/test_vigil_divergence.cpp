@@ -476,6 +476,126 @@ void test_small_region_store_discards_and_counts() {
                         static_cast<unsigned long long>(vigil.region_store_drops()));
 }
 
+namespace {
+
+// The default count of slots of the region store of a Vigil.
+constexpr uint32_t STORE_SLOTS = crucible::PipelineLimits::DEFAULT_REGION_STORE;
+
+// Dispatches one iteration of a cycle, which aligns on the region in the slot.
+void align_on_cycle(crucible::Vigil& vigil, uint32_t cycle, uint32_t iter) {
+    for (uint32_t i = 0; i < divrig::NUM_OPS; i++) {
+        divrig::OpData aligned = cycle_op(cycle, iter, i);
+        (void)crucible::test::dispatch_synthetic(vigil, aligned.entry, aligned.metas, aligned.n_metas);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.context().is_compiled() && "the foreground must align on the region in the slot");
+}
+
+// Dispatches an op that no region holds.  The divergence writes the holders of
+// the foreground.
+void diverge(crucible::Vigil& vigil, uint32_t iter) {
+    divrig::OpData foreign_op = divrig::op_at(iter, 0);
+    foreign_op.entry.schema_hash = divrig::FOREIGN_SCHEMA;
+    auto diverged = crucible::test::dispatch_synthetic(vigil, foreign_op.entry, foreign_op.metas, foreign_op.n_metas);
+    CRUCIBLE_TEST_ASSERT(kTest, diverged.status == crucible::ReplayStatus::DIVERGED);
+}
+
+// Runs three cycles of new bodies after a divergence at the iteration base - 1.
+// Each cycle must publish its region and compile it, and the store must discard
+// no region and must hold no more than its holders name.
+void check_store_publishes_again(crucible::Vigil& vigil, uint32_t base) {
+    // The uncompiled queue, the transaction log, the cells of the foreground,
+    // and the last published region with the handed region.
+    constexpr uint32_t MAX_HELD = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE + 16 + 11 + 2;
+    const uint64_t dropped_before = vigil.region_store_drops();
+    for (uint32_t cycle = 1; cycle <= 3; ++cycle, base += 8) {
+        const uint64_t step_before = vigil.current_step();
+        feed_cycle_region(vigil, cycle, base);
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == step_before + 1
+                                        && "a store that the sweep can free must take the region of the cycle");
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.has_pending_region());
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_count() <= MAX_HELD);
+        align_on_cycle(vigil, cycle, base + 3);
+        diverge(vigil, base + 4);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_drops() == dropped_before
+                                    && "a store that the sweep can free must discard no region");
+}
+
+// The foreground aligns on the region of the first cycle and replays it.  The
+// ring then gets a backlog of the same ops, and the foreground writes no
+// holders, because a replay writes none.  Each region of the backlog leaves the
+// view of the foreground at that one write of the holders, so no sweep releases
+// it before the next write.
+void check_full_store_sweeps_again(uint32_t backlog) {
+    crucible::Vigil vigil;
+    feed_cycle_region(vigil, 0, 0);
+    crucible::test::flush_and_wait_region_published(kTest, vigil);
+    align_on_cycle(vigil, 0, 3);
+    for (uint32_t iter = 4; iter < 4 + backlog; ++iter) {
+        for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
+            record_cycle_op(vigil, 0, iter, i);
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
+
+    // The pipeline tries one publish for the first cycle, and one for each
+    // iteration of the backlog but two: the first one ends the iteration that
+    // the first cycle left open, and the last one stays open.
+    const uint64_t tried = uint64_t{backlog} - 1;
+    const uint64_t kept = ::fixy::min(tried, uint64_t{STORE_SLOTS});
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == kept);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_count() == kept);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_drops() == tried - kept);
+
+    diverge(vigil, 4 + backlog);
+    check_store_publishes_again(vigil, 5 + backlog);
+}
+
+}  // namespace
+
+// A region store that a backlog filled takes regions again after the next write
+// of the holders of the foreground.  The backlogs stand on each side of the
+// count of slots: the store has one or two free slots, it is full with no
+// region discarded, and it discarded one region or many.
+void test_full_region_store_sweeps_again() {
+    const ::fixy::FixedArray<uint32_t, 5> backlogs{STORE_SLOTS - 1, STORE_SLOTS, STORE_SLOTS + 1, STORE_SLOTS + 2, 300};
+    for (const uint32_t backlog : backlogs)
+        check_full_store_sweeps_again(backlog);
+    ::fixy::check::pass(kTest, "  test_full_region_store_sweeps_again: PASSED\n");
+}
+
+// A foreground that records and never dispatches writes no holders.  The store
+// keeps each region until it is full, and each publish after that discards its
+// region and counts it.  The first dispatch takes the region in the slot and
+// writes the holders, and the store then takes regions again.
+void test_full_region_store_counts_each_drop() {
+    constexpr uint32_t ITERATIONS = 300;
+    constexpr uint32_t MORE = 10;
+    crucible::Vigil vigil;
+    const auto record_iterations = [&vigil](uint32_t first, uint32_t count) {
+        for (uint32_t iter = first; iter < first + count; ++iter) {
+            for (uint32_t i = 0; i < divrig::NUM_OPS; i++)
+                record_cycle_op(vigil, 0, iter, i);
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, vigil.flush(kTest).is_ok());
+    };
+    record_iterations(0, ITERATIONS);
+    const uint64_t dropped = vigil.region_store_drops();
+    CRUCIBLE_TEST_ASSERT(kTest, dropped > 0);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == STORE_SLOTS && vigil.region_store_count() == STORE_SLOTS);
+
+    record_iterations(ITERATIONS, MORE);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.region_store_drops() == dropped + MORE
+                                    && "each publish into a store that no write frees counts its region");
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.current_step() == STORE_SLOTS && vigil.region_store_count() == STORE_SLOTS);
+
+    align_on_cycle(vigil, 0, ITERATIONS + MORE);
+    diverge(vigil, ITERATIONS + MORE + 1);
+    check_store_publishes_again(vigil, ITERATIONS + MORE + 2);
+    ::fixy::check::pass(kTest, "  test_full_region_store_counts_each_drop: PASSED (dropped={})\n",
+                        static_cast<unsigned long long>(dropped + MORE));
+}
+
 // The active region names no region that a reset made stale.
 //
 // The foreground replays a region of the first cycle.  The ops of a second

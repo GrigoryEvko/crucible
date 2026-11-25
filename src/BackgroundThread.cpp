@@ -210,9 +210,9 @@ private:
 // receive of the stage waits for the next serve, after the count of that
 // period: the late job arm.  With that third arm, the foreground and the
 // stage take one arm together in each period.  The door checks that the
-// three arms agree on each channel and on the lock: a process holds the same
-// sides in each arm, and the ends of each channel state one capacity.  So a
-// run that takes the arms in any sequence is live (the arms).
+// three arms agree on each channel: a process holds the same sides in each
+// arm, and the ends of each channel state one capacity.  So a run that takes
+// the arms in any sequence is live (the arms).
 //
 // Each channel of the loop states its capacity.  The ring holds
 // TraceRing::CAPACITY ops, and a full ring refuses an op with no wait, so the
@@ -221,24 +221,18 @@ private:
 // mark of a job is one flag.  The handles of the three channels between the
 // stages state the capacities of those channels.
 //
-// The regions that the foreground holds are a sequence lock (HeldRegions of
-// crucible/Vigil.h).  The foreground writes them in a bracket that holds only
-// stores, and the region callback of the publish stage reads them, with a
-// wait while a bracket is open.  The loop states the two ends of the lock.
-// The door checks that one process writes the lock and one other process
-// reads it, that no process waits inside a bracket, and that no write stands
-// inside a read (the locks).
-//
 // A proof of the base holds some ends at each call: RecordProof the publish
 // of the head of the ring, and PublishStage the bump of the count, the serve
-// of the mailbox and the region callback.  The drain
-// end of the ring and the two ends of the lock have no proof, so the loop
-// states them and no call checks them.
+// of the mailbox and the region callback.  The drain end of the ring has no
+// proof, so the loop states it and no call checks it.
 //
 // These cells wait on nothing, so the loop holds no end of them: the metadata
 // log, which gives an op no records when it is full and releases its tail
-// with no wait, the publication slot, which keeps the newest region, and the
-// stop signal, which the drain stage reads after each sleep.
+// with no wait, the publication slot, which keeps the newest region, the
+// regions that the foreground holds, which the marks call of the publish stage
+// reads one time and takes none of while the foreground writes them
+// (crucible/HeldRegions.h), and the stop signal, which the drain stage reads
+// after each sleep.
 
 // The names of the processes of the loop.
 struct ForegroundName {
@@ -271,7 +265,6 @@ struct OwnerMailboxChannel {
 struct JobDoneChannel {
     static constexpr uint32_t channel_capacity = 1;
 };
-struct HeldRegionsLock {};
 
 namespace {
 
@@ -478,10 +471,11 @@ private:
     static void MakeRegionFn(Input&& in, BgSinkProducerHandle&& out, ::fixy::BgLoadCtx const& ctx);
 };
 
-// ignore_regions_ comes before region_ready_ in the class, so it is built
-// before the Ref of it.  The region store holds one empty slot for each
-// region of the limits.  No consumer of the ring runs at the construction, so
-// the tail of the ring holds still for the read of ring_base_.
+// ignore_regions_ and no_region_marks_ come before region_ready_ and
+// region_marks_ in the class, so each is built before the Ref of it.  The
+// region store holds one empty slot for each region of the limits.  No
+// consumer of the ring runs at the construction, so the tail of the ring holds
+// still for the read of ring_base_.
 BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundation::effects::Alloc allocation,
                                    TraceRingSide& ring_side, MetaLogSide& meta_log_side, Setup const& setup)
     : ring_{::fixy::erase_brand(::fixy::to(ring_side))},
@@ -489,6 +483,8 @@ BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundat
       ring_base_{ring_side.with_owner([](TraceRing const& ring) noexcept { return ring.total_consumed(); })},
       region_ready_{::fixy::Option<::fixy::Ref<RegionReadyCall const>>{setup.on_region_ready}.value_or(
           ::fixy::erase_brand(::fixy::to(ignore_regions_)))},
+      region_marks_{::fixy::Option<::fixy::Ref<RegionMarksCall const>>{setup.region_marks}.value_or(
+          ::fixy::erase_brand(::fixy::to(no_region_marks_)))},
       scratch_retained_limit_{setup.limits.scratch_retained},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, setup.limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
@@ -646,8 +642,9 @@ void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta
 // the arrays of the sweep into the scratch of the publish stage, whose epoch
 // ends in this call.  The memory goes to a slot of the region store before
 // the region becomes visible, so each region that a holder can name has an
-// owner.  A store with no free slot discards the region, as a reset discards
-// a stale region.
+// owner.  A store with no free slot gets one sweep with fresh marks.  When that
+// sweep frees no slot, the publish discards the region, as a reset discards a
+// stale region, and counts it in regions_dropped_full_.
 //
 // The arena moves out of the parts for the build of the node and the plan,
 // and back in before the parts move to the store.  The Box holds the arena on
@@ -661,8 +658,10 @@ void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta
 // and for the sweep, with the marks (sweep_regions_).
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    ::fixy::Option<size_t> free_slot = ::fixy::find_if(
-        region_store_.view(), [](RegionMemory const& memory) noexcept { return memory.queued.node().is_none(); });
+    ::fixy::Option<size_t> free_slot = find_free_slot_();
+    if (free_slot.is_none()) [[unlikely]] {
+        free_slot = free_a_slot_(stage);
+    }
     if (free_slot.is_none()) [[unlikely]] {
         ++regions_dropped_full_;
         return;
@@ -702,7 +701,6 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     last_published_ = const_published;
 
     active_region_.store_release(RegionLink::some(region));
-    owner_marks_ = RegionMarks{};
     // The callback gets a proof of its own, which dies with the call, and
     // the record in the slot of the store, whose address it can keep.
     (*region_ready_)(bg, PublishStage{},
@@ -710,7 +708,20 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
                          .get(free_position)
                          .expect("the search above found a free slot of the region store")
                          ->published);
-    sweep_regions_(stage);
+    sweep_regions_(stage, (*region_marks_)(PublishStage{}));
+}
+
+::fixy::Option<size_t> BackgroundThread::find_free_slot_() const noexcept {
+    return ::fixy::find_if(region_store_.view(),
+                           [](RegionMemory const& memory) noexcept { return memory.queued.node().is_none(); });
+}
+
+// The last publish into the full store swept it with the marks of that time.
+// The foreground can have written its holders after it, and the write lets
+// regions go.
+::fixy::Option<size_t> BackgroundThread::free_a_slot_(PublishStage const& stage) noexcept {
+    sweep_regions_(stage, (*region_marks_)(PublishStage{}));
+    return find_free_slot_();
 }
 
 // The sweep releases a region when no holder names it.  The last published
@@ -719,7 +730,8 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // that found the region out of the view of the foreground.  That write names
 // each region that the foreground can still read, so the foreground reads no
 // region that the write does not name.  With no foreground, the sweep
-// releases a region with no holder at once.
+// releases a region with no holder at once.  While the foreground writes its
+// holders, the sweep marks no region left and releases none (RegionMarks).
 //
 // The sweep runs after each publish, and it reads each slot of the store.  The
 // uncompiled queue answers in O(1) (UncompiledRegionQueue::holds), and only a
@@ -730,7 +742,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 //
 // The sweep reads each slot through the View of the const store, and then
 // writes the step for the slot through the element door of the store.
-void BackgroundThread::sweep_regions_(PublishStage const& stage) noexcept {
+void BackgroundThread::sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept {
     // The write of the sweep to one slot.
     enum class SweepStep : uint8_t {
         None,  // a free slot, or a region that a holder names or that waits for a write of the foreground
@@ -738,19 +750,22 @@ void BackgroundThread::sweep_regions_(PublishStage const& stage) noexcept {
         MarkLeft,  // the first sweep that found the region out of the view of the foreground
         Release,
     };
-    const uint64_t generation = owner_marks_.foreground_generation;
+    using Foreground = RegionMarks::Foreground;
+    const uint64_t generation = marks.foreground_generation;
     for (size_t position = 0; position < region_store_.size(); ++position) {
         const RegionMemory& memory =
             *region_store_.view().get(position).expect("the position is below the count of the store");
         SweepStep step = SweepStep::None;
         for (DagRef<RegionNode> const node : memory.queued.node()) {
             const ConstRegionLink region = ConstRegionLink::some(node);
-            if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, owner_marks_.handed)) {
+            if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, marks.handed)) {
                 step = SweepStep::Keep;
-            } else if (owner_marks_.has_foreground && memory.left_generation == RegionMemory::NOT_LEFT) {
+            } else if (marks.foreground == Foreground::Writing) {
+                step = SweepStep::None;
+            } else if (marks.foreground == Foreground::Read && memory.left_generation == RegionMemory::NOT_LEFT) {
                 step = SweepStep::MarkLeft;
-            } else if (!is_held_(stage, memory.queued)
-                       && !(owner_marks_.has_foreground && generation <= memory.left_generation)) {
+            } else if (!is_held_(stage, memory.queued, marks)
+                       && !(marks.foreground == Foreground::Read && generation <= memory.left_generation)) {
                 step = SweepStep::Release;
             }
         }
@@ -777,10 +792,11 @@ void BackgroundThread::sweep_regions_(PublishStage const& stage) noexcept {
     }
 }
 
-bool BackgroundThread::is_held_(PublishStage const& stage, QueuedRegion const& queued) const noexcept {
+bool BackgroundThread::is_held_(PublishStage const& stage, QueuedRegion const& queued,
+                                RegionMarks const& marks) const noexcept {
     if (uncompiled_regions_.holds(stage, queued)) return true;
     for (const ConstRegionLink& held :
-         owner_marks_.held.view().window(0, owner_marks_.count).expect("the marks hold at most CAP regions")) {
+         marks.held.view().window(0, marks.count).expect("the marks hold at most CAP regions")) {
         if (::fixy::same_target(held, queued.node())) return true;
     }
     return false;
@@ -1206,23 +1222,20 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
         using job_foreground =
             cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>,
                             cc::SendsOn<loop::OwnerMailboxChannel>, cc::ReceivesOn<loop::JobDoneChannel>,
-                            cc::WritesLock<loop::HeldRegionsLock>, cc::ReceivesOn<loop::ProcessedCountChannel>>;
+                            cc::ReceivesOn<loop::ProcessedCountChannel>>;
         using flush_arm = cc::StageLoop<
-            cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>, cc::WritesLock<loop::HeldRegionsLock>,
+            cc::LoopProcess<loop::ForegroundName, cc::SendsOn<loop::RingChannel>,
                             cc::ReceivesOn<loop::ProcessedCountChannel>>,
             drain_process, detect_process, build_process,
-            cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::ReadsLock<loop::HeldRegionsLock>,
-                            cc::SendsOn<loop::ProcessedCountChannel>>>;
-        using job_arm = cc::StageLoop<
-            job_foreground, drain_process, detect_process, build_process,
-            cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OwnerMailboxChannel>,
-                            cc::SendsOn<loop::JobDoneChannel>, cc::StageEdges<graph, 3>,
-                            cc::ReadsLock<loop::HeldRegionsLock>, cc::SendsOn<loop::ProcessedCountChannel>>>;
+            cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::SendsOn<loop::ProcessedCountChannel>>>;
+        using job_arm = cc::StageLoop<job_foreground, drain_process, detect_process, build_process,
+                                      cc::LoopProcess<loop::PublishName, cc::ReceivesOn<loop::OwnerMailboxChannel>,
+                                                      cc::SendsOn<loop::JobDoneChannel>, cc::StageEdges<graph, 3>,
+                                                      cc::SendsOn<loop::ProcessedCountChannel>>>;
         using late_job_arm = cc::StageLoop<
             job_foreground, drain_process, detect_process, build_process,
-            cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::ReadsLock<loop::HeldRegionsLock>,
-                            cc::SendsOn<loop::ProcessedCountChannel>, cc::ReceivesOn<loop::OwnerMailboxChannel>,
-                            cc::SendsOn<loop::JobDoneChannel>>>;
+            cc::LoopProcess<loop::PublishName, cc::StageEdges<graph, 3>, cc::SendsOn<loop::ProcessedCountChannel>,
+                            cc::ReceivesOn<loop::OwnerMailboxChannel>, cc::SendsOn<loop::JobDoneChannel>>>;
         cc::ensure_arms_live<flush_arm, job_arm, late_job_arm>();
         // The channels of the flush arm are the ring, the count and the three
         // channels between the stages, and each takes the capacity of its

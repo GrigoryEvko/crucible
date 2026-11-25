@@ -30,11 +30,13 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
+      region_marks_{BackgroundThread::RegionMarksCall::bind<&Vigil::read_region_marks_>(*this)},
       bg_{startup,
           startup.cap().alloc,
           ring_.consumer_side(),
           meta_log_.consumer_side(),
           BackgroundThread::Setup{.on_region_ready = ::fixy::some(::fixy::erase_brand(::fixy::to(region_ready_))),
+                                  .region_marks = ::fixy::some(::fixy::erase_brand(::fixy::to(region_marks_))),
                                   .limits = cfg_.limits},
           prepare_start_(startup),
           BackgroundThread::PlanTarget{
@@ -187,19 +189,6 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
     // the record, so the foreground can compare the reset point.
     pending_region_.store_release(PendingRegion::some(::fixy::erase_brand(::fixy::to(published))));
 
-    // The sweep of the region store after this callback releases each region
-    // that no holder names.  The transaction log holds each region that a
-    // rollback can restore, the slot holds the region that the foreground
-    // did not get, and the cells of held_regions_ hold the regions of the
-    // foreground.
-    BackgroundThread::RegionMarks marks{};
-    tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
-    const PendingRegion handed = pending_region_.load_acquire();
-    for (const auto& record : handed)
-        marks.handed = record->region;
-    mark_held_regions_(marks);
-    bg_.set_region_marks(stage, marks);
-
     // The observation is presented with a background observe context
     // because this runs on the region-publishing thread, not the
     // foreground, and a watchdog reads a clock.  The frame door writes the
@@ -228,6 +217,26 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
             }
         },
         [] noexcept {});
+}
+
+// The transaction log holds each region that a rollback can restore, the slot
+// holds the region that the foreground did not get, and the cells of
+// held_regions_ hold the regions of the foreground.
+BackgroundThread::RegionMarks Vigil::read_region_marks_(BackgroundThread::PublishStage const& stage) noexcept {
+    BackgroundThread::RegionMarks marks{};
+    tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
+    const PendingRegion handed = pending_region_.load_acquire();
+    for (const auto& record : handed)
+        marks.handed = record->region;
+    held_regions_.try_read().match(
+        [&marks](Holders::Read read) noexcept {
+            for (const ConstRegionLink& region : read.regions)
+                marks.hold(region);
+            marks.foreground = BackgroundThread::RegionMarks::Foreground::Read;
+            marks.foreground_generation = read.generation;
+        },
+        [&marks] noexcept { marks.foreground = BackgroundThread::RegionMarks::Foreground::Writing; });
+    return marks;
 }
 
 }  // namespace crucible

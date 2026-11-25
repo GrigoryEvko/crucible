@@ -28,6 +28,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
 #include <crucible/ForegroundCtx.h>
+#include <crucible/HeldRegions.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/LoadError.h>
 #include <crucible/MetaLog.h>
@@ -920,6 +921,18 @@ private:
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
                                        PublishedRegion const& published) noexcept;
 
+    // Gives the regions that this Vigil holds to a sweep of the region store,
+    // on the publish stage (BackgroundThread::RegionMarksCall).
+    //
+    // The words of the foreground that it reads are the publication slot, the
+    // sequence of held_regions_ and its cells, and each one is an atomic.  The
+    // transaction log and the record of the published region belong to the
+    // publish stage.  It takes no lock and waits for nothing: when the
+    // foreground writes held_regions_ at this time, the marks say so and name
+    // no holder of it.  The body is in src/Vigil.cpp.
+    [[gnu::cold, nodiscard]] BackgroundThread::RegionMarks
+    read_region_marks_(BackgroundThread::PublishStage const& stage) noexcept;
+
     // Makes a region from outside the pipeline active: the region of a
     // rollback or of a load.  The caller first requests a mark at the
     // current point, so each region that the pipeline cut before it is
@@ -935,53 +948,24 @@ private:
     // the last published region.  Runs on the producer thread at the end of
     // each cold path that can change one of these holders.
     [[gnu::cold]] void publish_held_regions_() noexcept {
-        const uint64_t before = held_regions_.sequence.load_acquire();
-        held_regions_.sequence.store_release(before + 1);
-        // Each cell is an Atomic, and the publish stage reads the cells at the
-        // same time, so the writes go through the element door in place.
-        const auto store_cell = [this](::fixy::Index<HeldRegions::CAP> position, ConstRegionLink region) noexcept {
-            held_regions_.cells.with_element(
-                position, [region](::fixy::Atomic<ConstRegionLink>& cell) noexcept { cell.store_release(region); });
-        };
-        store_cell(::fixy::index<0>(), pending_activation_);
-        store_cell(::fixy::index<1>(), replay_.context().active_region());
-        store_cell(::fixy::index<2>(), taken_region_.load_acquire());
-        for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
-            store_cell(::fixy::Index<HeldRegions::CAP>::check(3 + age).expect("the cells hold each age of the cache"),
-                       region_cache_.region_at(age));
-        }
-        held_regions_.sequence.store_release(before + 2);
-    }
-
-    // Adds the regions of held_regions_ to marks, with the generation of the
-    // write that holds them.  Runs on the publish stage, and waits while the
-    // foreground writes the cells.
-    void mark_held_regions_(BackgroundThread::RegionMarks& marks) const noexcept {
-        while (true) {
-            const uint64_t before = held_regions_.sequence.load_acquire();
-            if ((before & 1u) == 0) {
-                BackgroundThread::RegionMarks read = marks;
-                for (const ::fixy::Atomic<ConstRegionLink>& cell : held_regions_.cells) {
-                    read.hold(cell.load_acquire());
-                }
-                if (held_regions_.sequence.load_acquire() == before) {
-                    read.has_foreground = true;
-                    read.foreground_generation = before / 2;
-                    marks = read;
-                    return;
-                }
+        held_regions_.with_write_([this](auto store_cell) noexcept {
+            store_cell(::fixy::index<0>(), pending_activation_);
+            store_cell(::fixy::index<1>(), replay_.context().active_region());
+            store_cell(::fixy::index<2>(), taken_region_.load_acquire());
+            for (uint32_t age = 0; age < RegionCache::CAP; ++age) {
+                store_cell(Holders::Position::check(3 + age).expect("the cells hold each age of the cache"),
+                           region_cache_.region_at(age));
             }
-            CRUCIBLE_SPIN_PAUSE;
-        }
+        });
     }
 
     // Ends the arena of each load whose region no holder of the foreground
     // names.  Runs on the producer thread before each load.  Complexity:
-    // O(LOAD_SLOTS * HeldRegions::CAP).
+    // O(LOAD_SLOTS * Holders::CAP).
     [[gnu::cold]] void release_unheld_loads_() noexcept {
         // The test reads only the cells of the holders, through a const
         // reference, and no other part of the Vigil.
-        HeldRegions const& held = held_regions_;
+        Holders const& held = held_regions_;
         for (const auto slot : loads_.indices()) {
             const bool is_unheld = loads_.at(slot).is_some_and(
                 [&held](const LoadedRegion& kept) noexcept { return !held.holds(kept.region); });
@@ -990,7 +974,7 @@ private:
     }
 
     // Keeps the arena of a load beside its region, in a free slot.  The
-    // holders name at most HeldRegions::CAP regions, and the release before
+    // holders name at most Holders::CAP regions, and the release before
     // the load left a slot only for a region that a holder names.  So one
     // slot of LOAD_SLOTS is free for the new load.
     [[gnu::cold]] void keep_load_(::fixy::Box<::fixy::BumpArena<DagArena>>&& arena, ConstRegionLink region) noexcept {
@@ -1001,7 +985,7 @@ private:
         }
         ::fixy::fatal(
             "a load of a Vigil found no free slot for its arena, although the holders name at most {} regions",
-            HeldRegions::CAP);
+            Holders::CAP);
     }
 
     // Binds the inputs of the op that the replay matched to the live op: each
@@ -1540,9 +1524,10 @@ private:
     // The bytes of the first block of the arena of a load.  A larger region
     // takes a block of its own size.
     static constexpr ::fixy::Quantity<::fixy::unit::Byte, size_t> LOAD_BLOCK_BYTES{size_t{1} << 16};
-    // The holders of the foreground (HeldRegions below) name at most this
-    // count minus one regions, so a load always finds a free slot.
-    static constexpr uint32_t LOAD_SLOTS = 3 + RegionCache::CAP + 1;
+    // The regions that the foreground holds.  The holders name at most
+    // Holders::CAP regions, so a load always finds a free slot.
+    using Holders = HeldRegions<Vigil>;
+    static constexpr uint32_t LOAD_SLOTS = Holders::CAP + 1;
     // The arenas of the loads whose region a holder of the foreground named
     // at the last load.  Only the producer thread reads or writes them.  The
     // member stands before the holders of the regions, so it ends after them.
@@ -1690,30 +1675,10 @@ private:
     uint32_t next_bound_scalar_ = 0;
 
     // The regions that the foreground holds, for the sweep of the region
-    // store on the publish stage.  The foreground writes the cells at the end
-    // of each cold path that can change one of its holders, and never on the
-    // replay path.  The sequence is odd while the foreground writes, and each
-    // write adds two.  The publish stage reads the cells between two equal
-    // even values of the sequence.
-    struct HeldRegions {
-        static constexpr uint32_t CAP = 3 + RegionCache::CAP;
-        ::fixy::Atomic<uint64_t> sequence{};
-        ::fixy::FixedArray<::fixy::Atomic<ConstRegionLink>, CAP> cells{};
-
-        // True when a cell names region.  The producer thread writes the
-        // cells at the end of each cold path that changes a holder, so on
-        // that thread the cells name each region that the foreground holds.
-        // Complexity: O(CAP).
-        [[nodiscard]] bool holds(ConstRegionLink region) const noexcept {
-            for (const ::fixy::Atomic<ConstRegionLink>& cell : cells) {
-                if (::fixy::same_target(cell.load_acquire(), region)) return true;
-            }
-            return false;
-        }
-    };
-    static_assert(LOAD_SLOTS == HeldRegions::CAP + 1,
-                  "Vigil::LOAD_SLOTS must exceed the count of regions that the holders name by one");
-    HeldRegions held_regions_;
+    // store on the publish stage (crucible/HeldRegions.h).  The foreground
+    // writes the cells at the end of each cold path that can change one of its
+    // holders, and never on the replay path.
+    Holders held_regions_;
 
     // The watchdog owns its telemetry source, the Senses, so the two end
     // together.  wd_ must precede bg_.  The background thread's region-ready
@@ -1742,12 +1707,14 @@ private:
     // the Vigil holds the startup context, and it sets the tag.
     [[no_unique_address]] ::foundation::effects::Alloc allocation_;
 
-    // The region callback of bg_: on_region_ready of this Vigil.  bg_
-    // borrows it, so it must precede bg_.  Destroying bg_ first joins the
-    // pipeline thread, the one caller of the callback, and only then do this
-    // member and the rest of the Vigil end.  The CallRef holds the address of
-    // this Vigil, so a Vigil has no copy and no move.
+    // The region callback of bg_, on_region_ready of this Vigil, and its marks
+    // call, read_region_marks_.  bg_ borrows the two, so they must precede
+    // bg_.  Destroying bg_ first joins the pipeline thread, the one caller of
+    // the two, and only then do these members and the rest of the Vigil end.
+    // Each CallRef holds the address of this Vigil, so a Vigil has no copy and
+    // no move.
     BackgroundThread::RegionReadyCall const region_ready_;
+    BackgroundThread::RegionMarksCall const region_marks_;
 
     // The thread of the pipeline, which the constructor starts after each other
     // member is complete.

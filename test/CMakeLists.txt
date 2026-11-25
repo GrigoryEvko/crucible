@@ -720,7 +720,7 @@ crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row test_background_thread_run_in_row.cpp
   test_background_thread_run_in_row_drain.cpp test_background_thread_run_in_row_publish.cpp
-  test_background_thread_run_in_row_meta.cpp)
+  test_background_thread_run_in_row_meta.cpp test_background_thread_run_in_row_sweep.cpp)
 crucible_test(test_computation_cache_federation)
 
 crucible_test(test_vessel_api_typed)
@@ -751,6 +751,7 @@ crucible_test(test_trace_ring_pop_batch)
 # that no translation unit compiles all of them.
 crucible_test(test_region_cache test_region_cache.cpp test_region_cache_switch.cpp test_region_cache_migration.cpp
   test_region_cache_repeated.cpp)
+crucible_test(test_held_regions)
 crucible_test(test_numerical_recipe)
 crucible_test(test_recipe_pool)
 crucible_test(test_recipe_registry)

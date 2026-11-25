@@ -67,8 +67,11 @@ public:
 //                     gives back each block but the first
 //                     (EpochArena::set_retained_limit)
 //   region_store      the count of regions that the region store holds.  A
-//                     publish into a full store discards its region and
-//                     counts it.  A store of zero regions discards each region
+//                     publish into a full store sweeps the store one time
+//                     more.  When no slot is free after that sweep, the publish
+//                     discards its region and counts it
+//                     (regions_dropped_full).  A store of zero regions discards
+//                     each region
 //   uncompiled_queue  the count of published regions that the uncompiled
 //                     queue keeps.  A push into a full queue drops the oldest
 //                     region.  A queue of zero regions keeps none and only
@@ -786,38 +789,111 @@ public:
     using RegionReadyCall =
         ::fixy::CallRef<void(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept>;
 
+    // The regions that the owner of the pipeline holds, for one sweep of the
+    // region store (RegionMarksCall).
+    //
+    // Rule of a release.  With a foreground, the sweep releases a region only
+    // when no holder names it and the marks come from a write of the holders
+    // after the sweep that found the region out of the view of the foreground.
+    // That write names each region that the foreground can still read.  So two
+    // things let a region go: a mark, which records the generation of the last
+    // write, and later marks of a later generation.
+    //
+    // Marks that the owner reads while its foreground writes its holders name
+    // no holder of the foreground (Foreground::Writing).  The sweep then marks
+    // no region and releases none.  A mark that does not come now comes at a
+    // later sweep, with a generation that is the same or later, and a release
+    // that does not come now needs the same rule at a later sweep.  So each of
+    // the two is later than with a finished write, and never earlier.
+    struct RegionMarks {
+        static constexpr uint32_t CAP = 32;
+
+        // What the marks tell of the foreground of the owner.
+        enum class Foreground : uint8_t {
+            // The owner has no foreground.  Only held and handed name regions
+            // that the owner can read.
+            Absent,
+            // The foreground wrote its holders during the read.  The marks
+            // name no holder of it.
+            Writing,
+            // The marks name each holder of the write foreground_generation.
+            Read,
+        };
+
+        ::fixy::FixedArray<ConstRegionLink, CAP> held{};
+        uint32_t count = 0;
+        // The region that the owner can still give to its foreground, such
+        // as the region in a publication slot.  The store keeps it as it
+        // keeps the last published region, also while the foreground writes.
+        ConstRegionLink handed{};
+        Foreground foreground = Foreground::Absent;
+        uint64_t foreground_generation = 0;
+
+        // Adds a region to the held regions.  An empty reference adds
+        // nothing.
+        void hold(ConstRegionLink region) noexcept {
+            if (region.is_none()) return;
+            held.set(::fixy::Index<CAP>::check(count).expect(
+                         "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
+                     region);
+            ++count;
+        }
+    };
+
+    // The call that gives the regions that the owner holds.  The publish stage
+    // calls it for each sweep of the region store, after the callback of the
+    // published region, and one more time before a publish into a full store
+    // gives up.  It runs with the proof of the publish stage, on the thread
+    // that holds that stage, and a pipeline that runs no thread calls it on the
+    // thread of the job.
+    //
+    // The call takes no lock and waits for nothing, so the publish stage never
+    // waits on the foreground.  Each word of the foreground that it reads is an
+    // atomic.  An owner whose foreground writes its holders at the time of the
+    // call gives Foreground::Writing.
+    using RegionMarksCall = ::fixy::CallRef<RegionMarks(PublishStage const&) noexcept>;
+
     // The callback of a BackgroundThread that its holder gives no callback.
     static void ignore_region_(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept {
     }
 
+    // The marks of a BackgroundThread that its holder gives no marks call: the
+    // holder has no foreground and holds no region.
+    [[nodiscard]] static RegionMarks read_no_marks_(PublishStage const&) noexcept { return RegionMarks{}; }
+
     // The parts of a BackgroundThread that its owner chooses: the callback of
-    // each published region, or none, and the limits.  The callback outlives the
-    // BackgroundThread (region_ready_).
+    // each published region, or none, the marks call, or none, and the limits.
+    // The two calls outlive the BackgroundThread (region_ready_).
     struct Setup {
         ::fixy::Option<::fixy::Ref<RegionReadyCall const>> on_region_ready{};
+        ::fixy::Option<::fixy::Ref<RegionMarksCall const>> region_marks{};
         PipelineLimits limits{};
     };
 
 private:
-    // The call of ignore_region_.  It has no object, so it cannot dangle.
-    // region_ready_ refers to it when the holder gives no callback.
+    // The call of ignore_region_ and the call of read_no_marks_.  Each has no
+    // object, so it cannot dangle.  region_ready_ and region_marks_ refer to
+    // them when the holder gives no call.
     RegionReadyCall const ignore_regions_ = RegionReadyCall::of<&ignore_region_>();
+    RegionMarksCall const no_region_marks_ = RegionMarksCall::of<&read_no_marks_>();
 
-    // The callback, borrowed from the holder of this BackgroundThread.
+    // The callback and the marks call, borrowed from the holder of this
+    // BackgroundThread.
     //
-    // The holder keeps the CallRef and its callable alive while the pipeline
+    // The holder keeps each CallRef and its callable alive while the pipeline
     // thread runs.  stop() and the destructor join the pipeline thread, and
-    // only that thread calls the callback, so no call comes after the join.
-    // Vigil declares region_ready_ before bg_, and bg_ is its last member.
-    // So bg_ ends first, and its destructor joins the pipeline thread before
-    // region_ready_ and the rest of the Vigil end.  A test declares its
-    // CallRef and the object of the CallRef before the frame of its
-    // BackgroundThread, for the same reason.
+    // only that thread makes the two calls, so no call comes after the join.
+    // Vigil declares region_ready_ and region_marks_ before bg_, and bg_ is its
+    // last member.  So bg_ ends first, and its destructor joins the pipeline
+    // thread before the two members and the rest of the Vigil end.  A test
+    // declares its CallRef and the object of the CallRef before the frame of
+    // its BackgroundThread, for the same reason.
     //
     // Own cache line: background-only state.  Sharing a line with
-    // active_region would drag the callback into the foreground's cache on
-    // every acquire load.
+    // active_region would drag the calls into the foreground's cache on every
+    // acquire load.
     alignas(64)::fixy::Ref<RegionReadyCall const> region_ready_;
+    ::fixy::Ref<RegionMarksCall const> region_marks_;
 
 public:
     // The call of a job: the job takes the publish-stage proof of the call.
@@ -1058,40 +1134,6 @@ private:
     // The build stage is the one writer.
     ::fixy::AtomicMonotonic<uint64_t> works_built_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
-public:
-    // The regions that the owner of the pipeline holds, and the generation
-    // of the holders of its foreground.  The region callback gives them to
-    // set_region_marks on the publish stage, and the sweep of the region
-    // store after the callback reads them.  An owner that gives none has no
-    // foreground, and the store then releases each region that no holder of
-    // the pipeline names.
-    struct RegionMarks {
-        static constexpr uint32_t CAP = 32;
-        ::fixy::FixedArray<ConstRegionLink, CAP> held{};
-        uint32_t count = 0;
-        // The region that the owner can still give to its foreground, such
-        // as the region in a publication slot.  The store keeps it as it
-        // keeps the last published region.
-        ConstRegionLink handed{};
-        // A foreground writes the regions that it holds, and each write
-        // advances the generation.  The store releases a region that left
-        // the view of the foreground only after a later write that does not
-        // name it.
-        bool has_foreground = false;
-        uint64_t foreground_generation = 0;
-
-        // Adds a region to the held regions.  An empty reference adds
-        // nothing.
-        void hold(ConstRegionLink region) noexcept {
-            if (region.is_none()) return;
-            held.set(::fixy::Index<CAP>::check(count).expect(
-                         "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
-                     region);
-            ++count;
-        }
-    };
-
-private:
     // The arena of the trace graph and its CSR arrays.  Only the build stage
     // uses it, and an epoch covers one work item: the build stage ends it
     // after it moves the parts of the region into the message.  The
@@ -1111,21 +1153,32 @@ private:
     // PipelineLimits::region_store slots, which the constructor allocates.
     // Only the publish stage reads and writes it.  The sweep after each
     // publish releases each region that no holder names.  A foreground that
-    // never gets a region writes no holders, and its regions stay.  A publish
-    // into a full table then discards its region and counts it.
+    // writes no holders keeps its regions, so the table can become full.  A
+    // publish into a full table sweeps it one time more, with fresh marks.
+    // When no slot is free after that sweep, the publish discards its region
+    // and counts it in regions_dropped_full_.  Each later publish does the same
+    // sweep, so it has the same chance to free a slot.
     ::fixy::HeapArray<RegionMemory> region_store_;
     ConstRegionLink last_published_{};
-    RegionMarks owner_marks_{};
     uint64_t regions_dropped_full_ = 0;
+
+    // The position of a slot that holds no region, or none.  Complexity: O(S)
+    // for S slots of the store.
+    [[nodiscard]] ::fixy::Option<size_t> find_free_slot_() const noexcept;
+
+    // Sweeps a full store with fresh marks, and gives a slot that is free after
+    // it, or none.
+    [[nodiscard]] CRUCIBLE_COLD ::fixy::Option<size_t> free_a_slot_(PublishStage const& stage) noexcept;
 
     // Releases each region of the store that no holder names, on the
     // publish stage after each publish.  The body tells the rule.
-    void sweep_regions_(PublishStage const& stage) noexcept;
+    void sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept;
 
     // True when the uncompiled queue or the marks of the owner name the region
     // of the push.  Complexity: O(M) for M marks, which are at most
     // RegionMarks::CAP.
-    [[nodiscard]] bool is_held_(PublishStage const& stage, QueuedRegion const& queued) const noexcept;
+    [[nodiscard]] bool is_held_(PublishStage const& stage, QueuedRegion const& queued,
+                                RegionMarks const& marks) const noexcept;
 
 public:
     // The queue of the published regions, for a read.  Only the publish stage
@@ -1567,11 +1620,12 @@ public:
     // size the region store and the uncompiled queue, and set the retained
     // limit of the two scratch arenas.
     //
-    // The order rule: the two sides and the callback outlive this object.  A
-    // frame door takes them as arguments, so they outlive the frame.  A holder
-    // is the last member of its owner.  The end of this object joins the
-    // pipeline thread, so no stage reads a side after the end of its split.  The
-    // Vigil holds ring_, meta_log_ and region_ready_ before bg_.
+    // The order rule: the two sides, the callback and the marks call outlive
+    // this object.  A frame door takes them as arguments, so they outlive the
+    // frame.  A holder is the last member of its owner.  The end of this object
+    // joins the pipeline thread, so no stage reads a side after the end of its
+    // split.  The Vigil holds ring_, meta_log_, region_ready_ and region_marks_
+    // before bg_.
     BackgroundThread(BackgroundThreadKey const& key, ::foundation::effects::Alloc allocation, TraceRingSide& ring_side,
                      MetaLogSide& meta_log_side, Setup const& setup);
     BackgroundThread(const BackgroundThread&) =
@@ -1596,10 +1650,6 @@ public:
     [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained_limit() const noexcept {
         return scratch_retained_limit_;
     }
-
-    // Gives the regions that the owner holds to the sweep of this publish.
-    // The region callback calls it, on the publish stage.
-    void set_region_marks(PublishStage const&, RegionMarks const& marks) noexcept { owner_marks_ = marks; }
 
     // Marks a region that the owner gives to its foreground outside the
     // publication slot, such as the region of a rollback.  The store then
@@ -2384,14 +2434,6 @@ public:
     // The thread, as each other thread shares it.
     [[nodiscard]] BackgroundThread const& shared() const& noexcept { return thread_; }
     void shared() const&& = delete("the thread of a temporary holder ends with the full expression");
-
-    // Gives the regions that the owner holds to the sweep of this publish.  The
-    // region callback of the owner calls it with its proof, on the publish
-    // stage.
-    void set_region_marks(BackgroundThread::PublishStage const& stage,
-                          BackgroundThread::RegionMarks const& marks) noexcept {
-        thread_.set_region_marks(stage, marks);
-    }
 
     // Runs a job on the publish stage, or on the caller before the stage opens
     // (run_on_publish_stage of a Running handle).
