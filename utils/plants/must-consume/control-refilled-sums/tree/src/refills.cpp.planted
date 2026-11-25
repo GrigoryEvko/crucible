@@ -1,0 +1,70 @@
+// Calls after the consume of a sum that fill no sum, or whose payload a second
+// consume takes (the sums of linear.cpp).
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+void read(Option<Token> const& held) noexcept;
+int read_variadic(int count, ...) noexcept;
+
+// A callee that keeps no reference to the sum.
+void refill(Option<Token>& held) noexcept {
+    if (held.is_none()) {
+        held.fill(Token{9});
+    }
+}
+
+// A reference to a const sum, a pointer to a const sum and a const member fill
+// nothing.
+void reads_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    sink(std::move(held).expect("the first token"));
+    read(held);
+    static_cast<void>(read_variadic(1, static_cast<Option<Token> const*>(&held)));
+    static_cast<void>(held.is_none());
+}
+
+// The second consume takes the payload that the call can give, on each path.
+void consumes_after_the_call() {
+    Option<Token> held = Option<Token>::some(Token{2});
+    sink(std::move(held).expect("the second token"));
+    refill(held);
+    sink(std::move(held).expect("the token of the call"));
+}
+void consumes_on_one_path(bool is_filled) {
+    Option<Token> held = Option<Token>::some(Token{3});
+    sink(std::move(held).expect("the third token"));
+    if (is_filled) {
+        refill(held);
+        sink(std::move(held).expect("the token of the call"));
+    }
+}
+
+// A test after the call shows the sum empty at its end.
+void tests_after_the_call() {
+    Option<Token> held = Option<Token>::some(Token{4});
+    sink(std::move(held).expect("the fourth token"));
+    refill(held);
+    if (held.is_some()) {
+        sink(std::move(held).expect("the token of the call"));
+    }
+}
+
+}  // namespace planted

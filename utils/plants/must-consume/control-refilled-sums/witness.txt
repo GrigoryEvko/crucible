@@ -1,0 +1,6 @@
+# Calls after the consume of a sum that fill no sum, and calls whose payload a
+# second consume takes (the sums of linear.cpp).
+
+compile refills src/refills.cpp must-consume=on
+flag refills -freflection
+exit refills pass

@@ -233,12 +233,13 @@
 //     and a sum after a call that took it by a reference or a pointer that
 //     is not const, because the callee can keep the reference and fill the
 //     sum at a later call.
-//     A use that can fill the sum makes it one that can be
-//     full: a member with an object parameter that is not const, and an
-//     argument of a reference or a pointer that is not const.  An alias of
-//     the sum can fill it at each later point: a capture by reference, an
-//     address that is not const in a pointer, and a reference member that is
-//     not const.  So after an alias, no fact shows the sum empty or full.
+//     A use that can fill the sum makes it one that can be full, also after a
+//     consume: a member with an object parameter that is not const, and an
+//     argument of a reference or a pointer that is not const, also a C
+//     variadic one.  An alias of the sum can fill it at each later point: a
+//     capture by reference, an address that is not const in a pointer, and a
+//     reference member that is not const.  So after an alias, no fact shows the
+//     sum empty or full.
 //     A consume ends it only up to the next call that can fill it (the
 //     summaries, the aliases).  A capture hides each later consume, so a
 //     captured sum that can be full at its end gives the kind
@@ -393,7 +394,7 @@
 //     a finding, also a class with a door at the end of its scope.
 //
 // Summaries
-//     Three facts of a body serve each later caller in the unit, at the
+//     Four facts of a body serve each later caller in the unit, at the
 //     PLUGIN_PRE_GENERICIZE of the body:
 //       * the capture fields of a closure whose sum the body of its call
 //         operator can fill: an argument of a parameter that writes it, other
@@ -409,7 +410,13 @@
 //         call, or an argument of a parameter that does not write, or of a
 //         callee that keeps no reference (note_kept_references).  A body that
 //         only names a reference needs no complete class, so a parameter of
-//         an incomplete class counts as one that can name a sum.
+//         an incomplete class counts as one that can name a sum
+//       * a function of the third fact whose body also fills no such sum: no
+//         call of it on the sum is a member that can fill it, a callee that
+//         can fill it, or a call on a reference that a callee gives back.  A
+//         call of such a function leaves a consumed sum consumed.  A caller
+//         that gives a consumed sum to a callee with no fact reads its body
+//         again at the end of the unit (lend_sum).
 //     The call of a call operator consumes each sum that its summary leaves
 //     empty, and so does a call of the once door that takes the closure.  A
 //     call of a closure, and a call of each other callee that takes it, can run
@@ -1179,13 +1186,15 @@ bool parts_hold_linear_sum(tree type, bool is_linear, ReachWalk& walk, int depth
 // the closure, and the capture fields that each path of a call operator
 // leaves empty, by the DECL_UID of the call operator.  Each function whose
 // body keeps no reference parameter that names a linear sum, by its DECL_UID,
-// and each function whose PLUGIN_PRE_GENERICIZE gave its fact.  A fact that
-// waits for the facts of callees with a later body holds the DECL_UID of each
-// such callee.  No collection reuses a UID, so the facts stay for the unit
-// (the collections of plugin.h).
+// each one of them whose body also fills no such sum, and each function whose
+// PLUGIN_PRE_GENERICIZE gave its fact.  A fact that waits for the facts of
+// callees with a later body holds the DECL_UID of each such callee.  No
+// collection reuses a UID, so the facts stay for the unit (the collections of
+// plugin.h).
 std::unordered_map<unsigned, std::vector<unsigned>> closure_fills;
 std::unordered_map<unsigned, std::vector<unsigned>> closure_empties;
 std::unordered_set<unsigned> keeps_no_sum_reference;
+std::unordered_set<unsigned> fills_no_sum;
 std::unordered_set<unsigned> returns_sum_reference;
 std::unordered_set<unsigned> summarized_functions;
 std::unordered_map<unsigned, std::vector<unsigned>> waiting_kept_facts;
@@ -1377,6 +1386,12 @@ KeptFact kept_fact_of(tree callee) {
     return KeptFact::unknown;
 }
 
+// True when a call of CALLEE can fill a sum that it takes by a reference, by a
+// pointer or as its object (the summaries).
+bool can_fill_sum(tree callee) {
+    return callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL || fills_no_sum.count(DECL_UID(callee)) == 0;
+}
+
 // The fact that each callee that the walk of a body found with no fact keeps
 // nothing, after the walks of the unit.
 bool keeps_nothing_each(const std::vector<unsigned>& callees) {
@@ -1440,10 +1455,31 @@ bool is_writing_parameter(tree parameter_type) {
     return (is_lvalue_reference || TYPE_PTR_P(parameter_type)) && !TYPE_READONLY(TREE_TYPE(parameter_type));
 }
 
+// The type of the parameter that takes ARGUMENT.  PARAMETER is the rest of the
+// list of the parameter types, and it goes on to the next one.  A C variadic
+// argument has no parameter, so the type of its value stands for it.
+tree take_parameter_type(tree& parameter, tree argument) {
+    if (parameter == NULL_TREE) {
+        return argument != NULL_TREE ? TREE_TYPE(argument) : NULL_TREE;
+    }
+    return TREE_VALUE(std::exchange(parameter, TREE_CHAIN(parameter)));
+}
+
 // True when the function FUNCTION, or the template of an instance of it,
 // carries the annotation NAME of include/foundation/Linear.h.
 bool carries_linear_annotation(tree function, tree name) {
     return function_carries_base_annotation(function, name, linear_names.linear);
+}
+
+// True when a call of the member CALLEE, or of no known one, of the function type
+// TYPE can fill its object, a linear sum: the member is no consumer, no member
+// that empties and no const member (the sums).
+bool can_member_fill(tree type, tree callee) {
+    tree object_type = TYPE_ARG_TYPES(type) != NULL_TREE ? TREE_VALUE(TYPE_ARG_TYPES(type)) : NULL_TREE;
+    bool const is_const_object =
+        object_type != NULL_TREE && INDIRECT_TYPE_P(object_type) && TYPE_READONLY(TREE_TYPE(object_type));
+    return !FUNCTION_RVALUE_QUALIFIED(type) && !is_const_object
+        && (callee == NULL_TREE || !carries_linear_annotation(callee, linear_names.empties));
 }
 
 // True when CALL calls a move assignment of a class: an operator= whose
@@ -2449,6 +2485,39 @@ private:
         }
     }
 
+    // A call that can fill the tracked sum of SLOT: the sum can hold a payload
+    // again, also when a path consumed it (the sums).
+    void refill_sum(std::size_t slot, FlowState& state) {
+        Status const status = state.get(slot);
+        if (status == Status::consumed || status == Status::maybe) {
+            set_object(state, slot, Status::live);
+        }
+        if (status != Status::dead) {
+            state.set_content(slot, Content::can_be_full);
+        }
+    }
+
+    // A call of CALLEE takes the tracked sum of SLOT by a reference, by a pointer
+    // or as an object that is not const.  A callee whose body fills no such sum
+    // leaves a consumed sum consumed (the summaries).  A callee with no fact can
+    // get one until the end of the unit, so the reading of the body waits then.
+    void lend_sum(std::size_t slot, tree callee, FlowState& state) {
+        if (!state.is_reachable) {
+            return;
+        }
+        state.set_content(slot, Content::can_be_full);
+        Status const status = state.get(slot);
+        if (status != Status::consumed && status != Status::maybe) {
+            return;
+        }
+        if (callee != NULL_TREE && summarized_functions.count(DECL_UID(callee)) == 0) {
+            ++unread_parts;
+        }
+        if (can_fill_sum(callee)) {
+            refill_sum(slot, state);
+        }
+    }
+
     // A capture by reference, a stored address that is not const or a
     // reference member that is not const names a tracked sum (the sums).  A
     // write through it can fill the sum at each later point, so the sum stays
@@ -2626,7 +2695,7 @@ private:
         bool is_const_object =
             object_type != NULL_TREE && INDIRECT_TYPE_P(object_type) && TYPE_READONLY(TREE_TYPE(object_type));
         if (!is_const_object) {
-            state.set_content(slot, Content::can_be_full);
+            lend_sum(slot, callee, state);
         }
     }
 
@@ -3619,11 +3688,8 @@ private:
             return;
         }
         for (int index = 0; index < count; ++index) {
-            tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
-            if (parameter != NULL_TREE) {
-                parameter = TREE_CHAIN(parameter);
-            }
             tree argument = argument_at(call, index);
+            tree parameter_type = take_parameter_type(parameter, argument);
             bool saw_rvalue = false;
             tree field = NULL_TREE;
             bool is_rvalue_object = is_method && index == 0 && FUNCTION_RVALUE_QUALIFIED(type);
@@ -3651,6 +3717,7 @@ private:
                 // writes.
                 if (is_writing_parameter(parameter_type)) {
                     for (tree sum : sums_given_back(argument)) {
+                        lend_sum(sum_slot(sum, NULL_TREE), callee, state);
                         if (can_keep_reference(callee)) {
                             note_kept_alias(sum, NULL_TREE, state);
                         }
@@ -3663,8 +3730,8 @@ private:
             bool is_mutable_borrow =
                 (TYPE_REF_P(parameter_type) && !TYPE_REF_IS_RVALUE(parameter_type)) || TYPE_PTR_P(parameter_type);
             if (is_mutable_borrow && !TYPE_READONLY(TREE_TYPE(parameter_type))) {
-                note_can_be_full(decl, field, state);
                 if (std::size_t slot = sum_slot(decl, field); slot != kNoParent) {
+                    lend_sum(slot, callee, state);
                     slots_[slot].is_borrowed = true;
                     // The summaries: a callee that can keep the reference can
                     // fill the sum at each later point.
@@ -3917,13 +3984,11 @@ private:
             }
             tree parameter = TYPE_ARG_TYPES(TREE_TYPE(callee));
             for (int index = 0; index < argument_count(node); ++index) {
-                tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
-                if (parameter != NULL_TREE) {
-                    parameter = TREE_CHAIN(parameter);
-                }
+                tree argument = argument_at(node, index);
+                tree parameter_type = take_parameter_type(parameter, argument);
                 bool saw_rvalue = false;
                 tree field = NULL_TREE;
-                tree decl = strip_to_tracked(argument_at(node, index), saw_rvalue, &field);
+                tree decl = strip_to_tracked(argument, saw_rvalue, &field);
                 if (is_writing_parameter(parameter_type) && sum_slot(decl, field) != kNoParent) {
                     sums.push_back(decl);
                 }
@@ -3960,36 +4025,19 @@ private:
             if (strip_to_tracked(argument_at(call, 0), saw_rvalue, &field) != NULL_TREE) {
                 return;
             }
-            // A member that cannot fill a sum fills none through an alias: a
-            // consumer, a member that empties, and a const member.
-            tree type = TREE_TYPE(callee);
-            tree object_type = TYPE_ARG_TYPES(type) != NULL_TREE ? TREE_VALUE(TYPE_ARG_TYPES(type)) : NULL_TREE;
-            bool is_const_object =
-                object_type != NULL_TREE && INDIRECT_TYPE_P(object_type) && TYPE_READONLY(TREE_TYPE(object_type));
-            if (FUNCTION_RVALUE_QUALIFIED(type) || is_const_object
-                || carries_linear_annotation(callee, linear_names.empties)) {
+            // A member that cannot fill a sum fills none through an alias.
+            if (!can_member_fill(TREE_TYPE(callee), callee)) {
                 return;
             }
             // A member that can fill a sum, on the result of a callee that
             // gives the sum back, fills that sum.
             for (tree sum : sums_given_back(argument_at(call, 0))) {
-                std::size_t slot = sum_slot(sum, NULL_TREE);
-                if (state.get(slot) == Status::consumed || state.get(slot) == Status::maybe) {
-                    set_object(state, slot, Status::live);
-                }
-                state.set_content(slot, Content::can_be_full);
+                refill_sum(sum_slot(sum, NULL_TREE), state);
             }
         }
         for (std::size_t slot = 0; slot < slots_.size(); ++slot) {
-            if (!slots_[slot].can_refill_at_calls) {
-                continue;
-            }
-            Status status = state.get(slot);
-            if (status == Status::consumed || status == Status::maybe) {
-                set_object(state, slot, Status::live);
-            }
-            if (status != Status::dead) {
-                state.set_content(slot, Content::can_be_full);
+            if (slots_[slot].can_refill_at_calls) {
+                refill_sum(slot, state);
             }
         }
     }
@@ -4046,10 +4094,7 @@ private:
             if (!can_fill || is_emptied || slot == kNoParent) {
                 continue;
             }
-            if (state.get(slot) == Status::consumed || state.get(slot) == Status::maybe) {
-                set_object(state, slot, Status::live);
-            }
-            state.set_content(slot, Content::can_be_full);
+            refill_sum(slot, state);
             if (when == ClosureCall::later_too) {
                 slots_[slot].can_refill_at_calls = true;
             }
@@ -6687,12 +6732,10 @@ tree walk_closure_fills(tree* node_pointer, int* walk_subtrees, void* data) {
                                || (is_function && carries_linear_annotation(callee, linear_names.empties)));
     tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
     for (int index = 0; index < argument_count(node); ++index) {
-        tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
-        if (parameter != NULL_TREE) {
-            parameter = TREE_CHAIN(parameter);
-        }
+        tree argument = argument_at(node, index);
+        tree parameter_type = take_parameter_type(parameter, argument);
         if (is_writing_parameter(parameter_type) && !(index == 0 && is_emptying_member)) {
-            note_fill(walk, capture_field_of(argument_at(node, index), walk.closure));
+            note_fill(walk, capture_field_of(argument, walk.closure));
         }
     }
     return NULL_TREE;
@@ -6726,6 +6769,15 @@ struct KeptReferenceWalk {
     // The callees with no fact at this point that take the parameter by a
     // reference that writes.  The fact of the body waits for theirs.
     std::vector<unsigned> waits_for;
+    // True when a call of the body can fill the sum of the parameter: a call of a
+    // member that can fill it, or of a callee that takes it by a reference that
+    // writes and that has no fact that it fills none.
+    bool can_fill = false;
+    // The calls that give the parameter back as their result, and the ones of
+    // them that a return statement gives on.  A call on each other result can
+    // fill the sum.
+    int given_back = 0;
+    int returned = 0;
 };
 
 // The uses of PARAMETER in a body, and the uses that keep nothing: the object
@@ -6771,6 +6823,7 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
                     }
                     is_passed = is_passed || argument == walk.parameter;
                 }
+                walk.returned += is_passed ? 1 : 0;
                 value = is_passed ? walk.parameter : NULL_TREE;
                 break;
             } else {
@@ -6792,13 +6845,10 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
     KeptFact fact = kept_fact_of(is_function ? callee : NULL_TREE);
     tree parameter = type != NULL_TREE ? TYPE_ARG_TYPES(type) : NULL_TREE;
     for (int index = 0; index < argument_count(node); ++index) {
-        tree parameter_type = parameter != NULL_TREE ? TREE_VALUE(parameter) : NULL_TREE;
-        if (parameter != NULL_TREE) {
-            parameter = TREE_CHAIN(parameter);
-        }
+        tree argument = argument_at(node, index);
+        tree parameter_type = take_parameter_type(parameter, argument);
         bool is_plain_read = (is_method && index == 0) || !is_writing_parameter(parameter_type);
         bool is_reading = is_plain_read || fact != KeptFact::can_keep;
-        tree argument = argument_at(node, index);
         for (int depth = 0; argument != NULL_TREE && depth < kTypeDepth; ++depth) {
             argument = tree_strip_any_location_wrapper(argument);
             if (TREE_CODE(argument) == NOP_EXPR || TREE_CODE(argument) == CONVERT_EXPR
@@ -6807,6 +6857,14 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
                 continue;
             }
             break;
+        }
+        if (argument == walk.parameter && is_function && is_std_move_cast(callee)) {
+            walk.given_back += TYPE_REF_P(TREE_TYPE(node)) && TYPE_REF_IS_RVALUE(TREE_TYPE(node)) ? 0 : 1;
+        } else if (argument == walk.parameter) {
+            bool const is_writing = is_method && index == 0 ? can_member_fill(type, is_function ? callee : NULL_TREE)
+                                                            : is_writing_parameter(parameter_type);
+            walk.can_fill = walk.can_fill || (is_writing && can_fill_sum(callee));
+            walk.given_back += is_function && returns_sum_reference.count(DECL_UID(callee)) != 0 ? 1 : 0;
         }
         if (argument == walk.parameter && is_reading) {
             ++walk.read_uses;
@@ -6823,13 +6881,15 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
 // Keeps the function FUNCTION when its body keeps no reference parameter that
 // names a linear sum: each use of each such parameter is a read (the
 // summaries).  A body that passes such a parameter to a callee with no fact at
-// this point gets a fact that waits for the fact of that callee.  Complexity:
-// linear in the nodes of the body, for each such parameter.
+// this point gets a fact that waits for the fact of that callee.  A body whose
+// calls fill none of these sums gets the fact that it fills none too.
+// Complexity: linear in the nodes of the body, for each such parameter.
 void note_kept_references(tree function) {
     unsigned uid = DECL_UID(function);
     summarized_functions.insert(uid);
     tree body = DECL_SAVED_TREE(function);
     std::vector<unsigned> waits_for;
+    bool can_fill = false;
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
         tree type = TREE_TYPE(parameter);
         // A body that only names a reference needs no complete class, so the
@@ -6852,11 +6912,15 @@ void note_kept_references(tree function) {
         if (walk.return_uses > 0) {
             returns_sum_reference.insert(uid);
         }
+        can_fill = can_fill || walk.can_fill || walk.given_back > walk.returned;
         for (unsigned callee : walk.waits_for) {
             if (std::find(waits_for.begin(), waits_for.end(), callee) == waits_for.end()) {
                 waits_for.push_back(callee);
             }
         }
+    }
+    if (!can_fill) {
+        fills_no_sum.insert(uid);
     }
     if (waits_for.empty()) {
         keeps_no_sum_reference.insert(uid);

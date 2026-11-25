@@ -1,0 +1,29 @@
+# Calls that can fill a sum after its consume (the sums of linear.cpp): through a
+# reference (31), a pointer (37), a C variadic argument (43), a reference on one
+# path (49) and a member that is not const (67).  A callee that gives its reference
+# to a C variadic callee can keep it there (77), and a closure that gives its
+# capture to one can fill it (85).  Each line is an error in each mode.  The plugin
+# that keeps the sum consumed after such a call, and that reads a C variadic
+# argument as a read, gives none of them.  A callee that fills nothing leaves the
+# sum consumed, so a second consume is a line: after a callee that gives the sum
+# back (100), one that reads it (108), and one whose body comes later (119).  A call
+# on the result of a callee that gives the sum back can fill it (130), also in the
+# body of a callee (135) and with a member (140).
+
+compile refills src/refills.cpp must-consume=on errors=refills
+flag refills -freflection
+exit refills fail
+finding refills must-consume option-unconsumed src/refills.cpp:31:19 | planted::reference_fills: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:37:19 | planted::pointer_fills: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:43:19 | planted::variadic_fills: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:49:19 | planted::one_path_fills: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:67:10 | planted::member_fills: cell (planted::Cell)
+finding refills must-consume option-unconsumed src/refills.cpp:77:19 | planted::kept_by_a_variadic_callee: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:85:19 | planted::closure_fills_through_a_variadic_callee: held (foundation::core::Option<planted::Token>)
+finding refills must-consume double-consume src/refills.cpp:100:38 | planted::consumes_twice_through_a_pass: held (foundation::core::Option<planted::Token>)
+finding refills must-consume double-consume src/refills.cpp:108:32 | planted::consumes_twice_after_a_look: held (foundation::core::Option<planted::Token>)
+finding refills must-consume double-consume src/refills.cpp:119:32 | planted::consumes_twice_before_the_callee: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:130:19 | planted::filled_through_a_pass: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:135:19 | planted::filled_by_a_callee_through_a_pass: held (foundation::core::Option<planted::Token>)
+finding refills must-consume option-unconsumed src/refills.cpp:140:19 | planted::filled_by_a_callee_with_a_member: held (foundation::core::Option<planted::Token>)
+finding refills quarantine raw-pointer-object src/refills.cpp:27:36 | held

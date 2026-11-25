@@ -1,0 +1,145 @@
+// Calls that can fill a sum after its consume (the sums of linear.cpp): through a
+// reference, a pointer, a C variadic argument and a member that is not const.
+// Each function can end an Option of a linear payload that a call filled again.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+void after() noexcept;
+void refill(Option<Token>& held) noexcept;
+void refill_pointer(Option<Token>* held) noexcept;
+int refill_variadic(int count, ...) noexcept;
+
+void reference_fills() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    sink(std::move(held).expect("the first token"));
+    refill(held);
+}
+
+void pointer_fills() {
+    Option<Token> held = Option<Token>::some(Token{2});
+    sink(std::move(held).expect("the second token"));
+    refill_pointer(&held);
+}
+
+void variadic_fills() {
+    Option<Token> held = Option<Token>::some(Token{3});
+    sink(std::move(held).expect("the third token"));
+    static_cast<void>(refill_variadic(1, &held));
+}
+
+void one_path_fills(bool is_filled) {
+    Option<Token> held = Option<Token>::some(Token{4});
+    sink(std::move(held).expect("the fourth token"));
+    if (is_filled) {
+        refill(held);
+    }
+}
+
+// A sum of the planted code with a member that can fill it.
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::sum{}]] Cell {
+    Token token{0};
+    constexpr explicit Cell(Token&& given) noexcept : token{std::move(given)} {}
+    constexpr Cell(Cell&&) noexcept = default;
+    Cell(const Cell&) = delete;
+    constexpr Token take_out() && noexcept { return std::move(token); }
+    void put_back() noexcept;
+};
+
+void member_fills() {
+    Cell cell{Token{5}};
+    sink(std::move(cell).take_out());
+    cell.put_back();
+}
+
+// A callee that gives its reference to a C variadic callee can keep it there, so
+// a call after the consume can fill the sum.
+void pass_on(Option<Token>& held) noexcept { static_cast<void>(refill_variadic(1, &held)); }
+
+void kept_by_a_variadic_callee() {
+    Option<Token> held = Option<Token>::some(Token{6});
+    pass_on(held);
+    sink(std::move(held).expect("the sixth token"));
+    after();
+}
+
+// A closure that gives its capture to a C variadic callee fills it at its call.
+void closure_fills_through_a_variadic_callee() {
+    Option<Token> held = Option<Token>::some(Token{7});
+    auto again = [&held] { static_cast<void>(refill_variadic(1, &held)); };
+    sink(std::move(held).expect("the seventh token"));
+    again();
+}
+
+// Callees that give the sum back, and that read it.  They fill nothing, so the
+// sum stays consumed, and a second consume takes nothing.
+Option<Token>& pass(Option<Token>& held) noexcept { return held; }
+bool look(Option<Token>& held) noexcept { return held.is_some(); }
+
+void consumes_twice_through_a_pass() {
+    Option<Token> held = Option<Token>::some(Token{8});
+    Option<Token> other = std::move(held);
+    sink(std::move(other).expect("the eighth token"));
+    sink(std::move(pass(held)).expect("no token"));
+}
+
+void consumes_twice_after_a_look() {
+    Option<Token> held = Option<Token>::some(Token{9});
+    Option<Token> other = std::move(held);
+    sink(std::move(other).expect("the ninth token"));
+    static_cast<void>(look(held));
+    sink(std::move(held).expect("no token"));
+}
+
+// The same through a callee whose body comes after the caller.
+bool look_later(Option<Token>& held) noexcept;
+
+void consumes_twice_before_the_callee() {
+    Option<Token> held = Option<Token>::some(Token{10});
+    Option<Token> other = std::move(held);
+    sink(std::move(other).expect("the tenth token"));
+    static_cast<void>(look_later(held));
+    sink(std::move(held).expect("no token"));
+}
+bool look_later(Option<Token>& held) noexcept { return held.is_some(); }
+
+// Callees that fill the sum through the result of a callee that gives it back,
+// with a call and with a member.
+void fill(Option<Token>& held) noexcept { held.fill(Token{11}); }
+void fill_the_pass(Option<Token>& held) noexcept { fill(pass(held)); }
+void fill_the_pass_with_a_member(Option<Token>& held) noexcept { pass(held).fill(Token{12}); }
+
+void filled_through_a_pass() {
+    Option<Token> held = Option<Token>::some(Token{13});
+    sink(std::move(held).expect("the thirteenth token"));
+    fill(pass(held));
+}
+void filled_by_a_callee_through_a_pass() {
+    Option<Token> held = Option<Token>::some(Token{14});
+    sink(std::move(held).expect("the fourteenth token"));
+    fill_the_pass(held);
+}
+void filled_by_a_callee_with_a_member() {
+    Option<Token> held = Option<Token>::some(Token{15});
+    sink(std::move(held).expect("the fifteenth token"));
+    fill_the_pass_with_a_member(held);
+}
+
+}  // namespace planted
