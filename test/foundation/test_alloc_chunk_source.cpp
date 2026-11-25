@@ -49,12 +49,11 @@ constexpr std::uint32_t kOwnableChunks = 4 * (alloc::kChunksPerExtent - 1);
         .expect("the ladder gives a window of 4 GiB under the cap");
 }
 
-// The window of the eight threads, its commits and the counts of the claims.
-// The root of the allocator holds the host window and its commits the same
-// way: in objects of the process, which each thread reaches with no capture.
-// The window stays mapped to the end of the process.
-constinit core::Immortal<alloc::Window> shared_window{};
-constinit alloc::WindowCommits shared_commits{};
+// The chunk source of the eight threads and the counts of the claims.  The
+// root of the allocator holds the source of the host window the same way: in
+// an object of the process, which each thread reaches with no capture.  The
+// window stays mapped to the end of the process.
+constinit core::Immortal<alloc::ChunkSource> shared_source{};
 constinit core::Atomic<std::uint32_t> shared_claims{0};
 constinit core::Atomic<std::uint32_t> shared_refusals{0};
 
@@ -65,23 +64,22 @@ struct Claimer {
     alloc::HeapId heap;
 
     void operator()() const noexcept {
-        alloc::Window& window = *shared_window.get();
-        alloc::WindowCommits& commits = shared_commits;
+        alloc::ChunkSource& source = *shared_source.get();
         alloc::UnitIndex const first_unit{core::StaticIndex<0>{}};
         std::uint32_t taken = 0;
         for (;;) {
-            core::Option<alloc::ChunkIndex> const claimed = window.claim_chunk(commits);
+            core::Option<alloc::ChunkIndex> const claimed = source.claim_chunk();
             if (claimed.is_none()) break;
             alloc::ChunkIndex const chunk = core::Option<alloc::ChunkIndex>{claimed}.value_or(alloc::ChunkIndex{0});
-            bool const is_committed = window.commit_extent_of(commits, chunk).is_ok();
-            auto meta = window.start_chunk_meta(commits, chunk);
-            bool const is_slab_started = window.start_slab_meta(commits, chunk, first_unit).is_ok();
+            bool const is_committed = source.commit_extent_of(chunk).is_ok();
+            auto meta = source.start_chunk_meta(chunk);
+            bool const is_slab_started = source.start_slab_meta(chunk, first_unit).is_ok();
             if (!is_committed || meta.is_err() || !is_slab_started) {
                 static_cast<void>(shared_refusals.fetch_add_acq_rel(1));
                 continue;
             }
             std::move(meta).expect("the test above found the record")->set_owner(alloc::owner_entry_of(heap));
-            window.set_owner(chunk, alloc::owner_entry_of(heap));
+            source.set_owner(chunk, alloc::owner_entry_of(heap));
             ++taken;
         }
         static_cast<void>(shared_claims.fetch_add_acq_rel(taken));
@@ -89,7 +87,7 @@ struct Claimer {
 };
 
 void eight_threads_claim_each_chunk_once(TestRunnerCtx const& test) {
-    shared_window.fill(reserve_test_window());
+    shared_source.fill(reserve_test_window());
     Claimer one{alloc::HeapId{1}};
     Claimer two{alloc::HeapId{2}};
     Claimer three{alloc::HeapId{3}};
@@ -104,9 +102,8 @@ void eight_threads_claim_each_chunk_once(TestRunnerCtx const& test) {
         .expect("the host starts the eight threads of the test");
     CRUCIBLE_TEST_ASSERT(test, shared_refusals.load_acquire() == 0);
     CRUCIBLE_TEST_ASSERT(test, shared_claims.load_acquire() == kOwnableChunks);
-    alloc::Window const& window = *shared_window.get();
-    alloc::WindowCommits const& commits = shared_commits;
-    alloc::WindowRecord const record = window.record();
+    alloc::ChunkSource& source = *shared_source.get();
+    alloc::WindowRecord const record = source.record();
     std::uint32_t owned = 0;
     bool is_each_guard_free = true;
     for (std::uint32_t index = 0; index < record.chunk_count(); ++index) {
@@ -118,22 +115,21 @@ void eight_threads_claim_each_chunk_once(TestRunnerCtx const& test) {
         }
         bool const is_thread_entry = entry != alloc::ChunkOwner::none && static_cast<std::uint16_t>(entry) <= 8;
         if (is_thread_entry) ++owned;
-        CRUCIBLE_TEST_ASSERT(test, window.is_extent_committed(commits, chunk));
+        CRUCIBLE_TEST_ASSERT(test, source.is_extent_committed(chunk));
     }
     CRUCIBLE_TEST_ASSERT(test, owned == kOwnableChunks);
     CRUCIBLE_TEST_ASSERT(test, is_each_guard_free);
-    CRUCIBLE_TEST_ASSERT(test, window.claim_chunk(shared_commits).is_none());
+    CRUCIBLE_TEST_ASSERT(test, source.claim_chunk().is_none());
     pass(test, "  eight_threads_claim_each_chunk_once: PASSED\n");
 }
 
 void one_thread_claims_in_order(TestRunnerCtx const& test) {
-    alloc::Window const window = reserve_test_window();
-    alloc::WindowCommits commits{};
+    alloc::ChunkSource source{reserve_test_window()};
     std::uint32_t expected = 0;
     std::uint32_t claims = 0;
     bool is_in_order = true;
     for (;;) {
-        core::Option<alloc::ChunkIndex> const claimed = window.claim_chunk(commits);
+        core::Option<alloc::ChunkIndex> const claimed = source.claim_chunk();
         if (claimed.is_none()) break;
         if (alloc::is_guard_chunk(alloc::ChunkIndex{expected})) ++expected;
         alloc::ChunkIndex const chunk = core::Option<alloc::ChunkIndex>{claimed}.value_or(alloc::ChunkIndex{0});
@@ -143,7 +139,7 @@ void one_thread_claims_in_order(TestRunnerCtx const& test) {
     }
     CRUCIBLE_TEST_ASSERT(test, is_in_order);
     CRUCIBLE_TEST_ASSERT(test, claims == kOwnableChunks);
-    CRUCIBLE_TEST_ASSERT(test, window.claim_chunk(commits).is_none());
+    CRUCIBLE_TEST_ASSERT(test, source.claim_chunk().is_none());
     pass(test, "  one_thread_claims_in_order: PASSED\n");
 }
 

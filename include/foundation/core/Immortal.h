@@ -14,16 +14,18 @@
 //   holder.is_filled()   true after the fill
 //
 // Storage
-//   An Immortal holds aligned storage for one T and the address of the T in
-//   it.  An empty holder is zero bytes, so a constinit variable of it runs no
-//   code at the start of the process.  The destructor of the holder is
-//   trivial, and it never runs the destructor of T, so the storage of T is
-//   never released.  So an Immortal is only for an object of the whole
-//   process, such as the window of the root of the allocator: its
-//   destructor would unmap the window while code at the end of the process
-//   still frees blocks of it.  A process-wide variable with a destructor also
-//   makes each unit that holds it register the destructor with the C library,
-//   and a holder makes no such call.
+//   An Immortal holds the address of its T, and then aligned storage for the
+//   T.  Each read loads the address, so it comes before the storage: the last
+//   words of a T can be words that many threads write, such as the claim index
+//   of the chunk source of the root.  An empty holder is zero bytes, so a
+//   constinit variable of it runs no code at the start of the process.  The
+//   destructor of the holder is trivial, and it never runs the destructor of
+//   T, so the storage of T is never released.  So an Immortal is only for an
+//   object of the whole process, such as the window of the root of the
+//   allocator: its destructor would unmap the window while code at the end of
+//   the process still frees blocks of it.  A process-wide variable with a
+//   destructor also makes each unit that holds it register the destructor with
+//   the C library, and a holder makes no such call.
 //
 // Rules
 //   fill builds the T one time, and a second fill ends the process.  The Ref
@@ -135,8 +137,8 @@ private:
         return object_;
     }
 
-    alignas(T) unsigned char storage_[sizeof(T)]{};
     T* object_ = nullptr;
+    alignas(T) unsigned char storage_[sizeof(T)]{};
 };
 
 }  // namespace foundation::core

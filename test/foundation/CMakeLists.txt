@@ -3387,6 +3387,17 @@ crucible_test_reads_emulator(test_alloc_chunk_map)
 # each chunk has one claim.  The tsan preset runs it with no suppression.
 foundation_test(test_alloc_chunk_source)
 target_link_libraries(test_alloc_chunk_source PRIVATE fixy)
+# One window has one set of the commit words: a source takes its window by
+# move, it does not copy, and a window alone has no door that claims a chunk.
+foundation_neg_compile_test(neg_alloc_chunk_source_of_a_borrowed_window
+  "use of deleted function .foundation::alloc::ChunkSource::ChunkSource\\(const foundation::alloc::Window&\\)"
+  "a source takes its window by move, so one window has one set of commit words")
+foundation_neg_compile_test(neg_alloc_chunk_source_copied
+  "use of deleted function .foundation::alloc::ChunkSource::ChunkSource\\(const foundation::alloc::ChunkSource&\\)"
+  "a source holds the one set of the commit words of its window")
+foundation_neg_compile_test(neg_alloc_window_claims_without_its_source
+  "class foundation::alloc::Window. has no member named .claim_chunk."
+  "neg_alloc_window_claims_without_its_source\\.cpp:[0-9]+:[0-9]+: error:")
 # The slab heap of foundation/alloc/SlabHeap.h over the records of a window
 # of 1 GiB: a Philox sequence of inserts, pops and removals against an oracle,
 # with a walk of each link of the tree.

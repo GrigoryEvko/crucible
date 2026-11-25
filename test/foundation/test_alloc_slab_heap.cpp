@@ -66,27 +66,29 @@ using SlabSlot = core::Index<kSlabs>;
 
 [[nodiscard]] std::size_t raw_of(alloc::SlabLink link) noexcept { return static_cast<std::uint32_t>(link) - 1; }
 
-// The window of the test with each record of its first kChunks chunks
+// The chunk source of the test with each record of its first kChunks chunks
 // started, and the records of its slabs.
 struct Records {
-    alloc::Window window;
+    alloc::ChunkSource source;
     alloc::SlabRecords records{};
+
+    explicit Records(alloc::Window&& window) noexcept : source{std::move(window)} {
+        for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
+            for (alloc::UnitIndex const unit : core::IndexRange<alloc::kUnitsPerChunk>{}) {
+                static_cast<void>(source.start_slab_meta(alloc::ChunkIndex{chunk}, unit)
+                                      .expect("the kernel commits the records of the test"));
+            }
+        }
+        records = alloc::SlabRecords::of(source.slab_records_at());
+    }
 };
 
-[[nodiscard]] Records start_records(alloc::WindowCommits& commits) noexcept {
+[[nodiscard]] Records start_records() noexcept {
     alloc::WindowDiagnostic diagnostic{};
     core::Result<alloc::Window, alloc::WindowFull> reserved =
         alloc::reserve_window(os::ReserveCap{kWindowBytes}, core::to(diagnostic));
     if (reserved.is_err()) fixy::fatal("{}", diagnostic.text());
-    alloc::Window window = std::move(reserved).expect("a window that the ladder gave");
-    for (std::uint32_t chunk = 0; chunk < kChunks; ++chunk) {
-        for (alloc::UnitIndex const unit : core::IndexRange<alloc::kUnitsPerChunk>{}) {
-            static_cast<void>(window.start_slab_meta(commits, alloc::ChunkIndex{chunk}, unit)
-                                  .expect("the kernel commits the records of the test"));
-        }
-    }
-    alloc::SlabRecords const records = alloc::SlabRecords::of(window.slab_records_at());
-    return Records{std::move(window), records};
+    return Records{std::move(reserved).expect("a window that the ladder gave")};
 }
 
 // The state of a slab that a search of the oracle wants.
@@ -248,8 +250,7 @@ void removal_of_each_place(TestRunnerCtx const& test, Records const& state) {
 
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
-    alloc::WindowCommits commits{};
-    Records const state = start_records(commits);
+    Records const state = start_records();
     removal_of_each_place(test, state);
     sequence_follows_the_oracle(test, state);
     pass(test, "test_alloc_slab_heap: PASSED\n");

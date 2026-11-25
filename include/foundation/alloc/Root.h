@@ -146,10 +146,9 @@ private:
 
     ::foundation::core::Atomic<RootState> state_{RootState::empty};
     WindowTable windows_{};
-    ::foundation::core::Immortal<Window> host_window_{};
-    // The commits of the host window, which each heap changes when it takes
-    // a chunk (the chunk source of foundation/alloc/Window.h).
-    WindowCommits host_commits_{};
+    // The host window with the words of its commits, which each heap changes
+    // when it takes a chunk (the chunk source of foundation/alloc/Window.h).
+    ::foundation::core::Immortal<ChunkSource> host_source_{};
     ::foundation::core::Atomic<std::uint32_t> claimed_heaps_{0};
     ::foundation::core::Atomic<std::size_t> committed_heap_bytes_{0};
     ::foundation::core::Immortal<::foundation::os::Reservation> heap_table_{};

@@ -33,15 +33,15 @@ struct HeapStateDoor {
     // with the facts of its window and the three pointers of each bin into
     // the bin stacks of the slot (the bins of foundation/alloc/HeapState.h).
     // It writes the HeapState, and no word of the stacks.
-    [[nodiscard]] static HeapState& start(AddressWord slot, HeapId id, Window const& window) noexcept {
+    [[nodiscard]] static HeapState& start(AddressWord slot, HeapId id, ChunkSource const& source) noexcept {
         void* const place = __builtin_bit_cast(void*, static_cast<std::uint64_t>(slot));
         HeapState* const heap = ::new(place) HeapState{};
-        WindowRecord const record = window.record();
+        WindowRecord const record = source.record();
         heap->chunk_map_ = record.chunk_map();
         heap->self_ = owner_entry_of(id);
         heap->window_base_ = record.base();
         heap->window_bytes_ = record.length().raw();
-        heap->slab_records_ = SlabRecords::of(window.slab_records_at());
+        heap->slab_records_ = SlabRecords::of(source.slab_records_at());
         auto* const stacks = __builtin_bit_cast(AddressWord*, static_cast<std::uint64_t>(bin_stacks_at(slot)));
         for (std::uint32_t value = 1; value <= kSizeClassCount; ++value) {
             HeapState::Bin& bin = heap->bins_[value];
@@ -76,7 +76,7 @@ struct RootDoor {
         reserve_window(core::to(diagnostic))
             .match(
                 [&root](Window window) noexcept {
-                    publish_host_window(*root.host_window_.fill(std::move(window)), root.windows_);
+                    publish_host_window(root.host_source_.fill(std::move(window))->record(), root.windows_);
                 },
                 [&diagnostic](WindowFull) noexcept { core::fatal("{}", diagnostic.text()); });
         core::ByteCount const table_bytes{kHeapTableGuardBytes + kHeapTableSlotsBytes + kHeapTableGuardBytes};
@@ -133,7 +133,7 @@ struct RootDoor {
         }
         HeapSlot const index = core::Option<HeapSlot>{slot}.value_or(HeapSlot{core::StaticIndex<0>{}});
         commit_slots(root, core::ByteCount{(std::size_t{index.raw()} + 1) * kHeapSlotBytes});
-        HeapState& heap = HeapStateDoor::start(slot_address(root, index), heap_id_of(index), *root.host_window_.get());
+        HeapState& heap = HeapStateDoor::start(slot_address(root, index), heap_id_of(index), *root.host_source_.get());
         tls_heap_ = &heap;
         return heap;
     }
@@ -141,20 +141,19 @@ struct RootDoor {
     // The take of a chunk of the host window for the heap of the entry (the
     // doors of the window of foundation/alloc/HeapState.h).
     [[nodiscard]] static ChunkIndex claim_chunk(AllocRoot& root, ChunkOwner owner) noexcept {
-        Window& window = *root.host_window_.get();
-        WindowCommits& commits = root.host_commits_;
-        core::Option<ChunkIndex> const claimed = window.claim_chunk(commits);
+        ChunkSource& source = *root.host_source_.get();
+        core::Option<ChunkIndex> const claimed = source.claim_chunk();
         if (claimed.is_none()) {
             core::fatal(
                 "foundation: the window of the allocator holds no free chunk for the heap {}: a claim took each "
                 "of its {} chunks.  The window is the address-space limit of the allocator.  Raise the "
                 "address-space limit of the process (ulimit -v), and start it again.",
-                std::uint32_t{static_cast<std::uint16_t>(owner)}, window.record().chunk_count());
+                std::uint32_t{static_cast<std::uint16_t>(owner)}, source.record().chunk_count());
         }
         ChunkIndex const chunk = core::Option<ChunkIndex>{claimed}.value_or(ChunkIndex{0});
-        require_commit(window.commit_extent_of(commits, chunk));
-        require_commit(window.commit_slab_records_of(commits, chunk));
-        auto const started = window.start_chunk_meta(commits, chunk);
+        require_commit(source.commit_extent_of(chunk));
+        require_commit(source.commit_slab_records_of(chunk));
+        auto const started = source.start_chunk_meta(chunk);
         started.match(
             [owner](auto const& record) noexcept {
                 record->set_owner(owner);
@@ -165,12 +164,12 @@ struct RootDoor {
                     "foundation: the kernel refused the memory of the record of a chunk of the allocator, with {}",
                     core::enum_name_text(error));
             });
-        window.set_owner(chunk, owner);
+        source.set_owner(chunk, owner);
         return chunk;
     }
 
     static void start_slab(AllocRoot& root, ChunkIndex chunk, UnitIndex unit) noexcept {
-        auto started = root.host_window_.get()->start_slab_meta(root.host_commits_, chunk, unit);
+        auto started = root.host_source_.get()->start_slab_meta(chunk, unit);
         if (started.is_err()) {
             core::fatal("foundation: the kernel refused the memory of the record of a slab of the allocator, with {}",
                         core::enum_name_text(started.err().value_or(os::Errno::enomem)));
@@ -178,7 +177,7 @@ struct RootDoor {
     }
 
     [[nodiscard]] static core::ElementCount claimed_chunks(AllocRoot& root) noexcept {
-        return root.host_window_.get()->claimed_chunks(root.host_commits_);
+        return root.host_source_.get()->claimed_chunks();
     }
 
 private:

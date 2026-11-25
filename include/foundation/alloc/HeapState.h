@@ -137,8 +137,8 @@ namespace detail {
 struct HeapStateDoor;
 
 // The doors of the window of a heap for the cold bodies of the refill and the
-// census.  src/foundation/alloc/Root.cpp holds each body, which reads the host
-// window and its commits in the root.  No fast path calls one.
+// census.  src/foundation/alloc/Root.cpp holds each body, which reads the chunk
+// source of the host window in the root.  No fast path calls one.
 //   claim_window_chunk_(owner)       a chunk of the window for the heap of
 //                                    the entry: claimed, its extent and the
 //                                    records of its 32 units committed, its
