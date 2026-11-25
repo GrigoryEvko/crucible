@@ -523,7 +523,8 @@ using RecordSpsc = c::channel_t<int, 8, decltype(record_root())>;
         [&ctx, &log](auto producer, auto consumer) noexcept {
             auto recorded = channels::mint_recording_endpoint(
                 channels::mint_endpoint<RecordSpsc, channels::Direction::Producer>(ctx, std::move(producer)),
-                s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+                s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log), s::RoleTagId{1},
+                s::RoleTagId{2});
             auto after_send = std::move(recorded).send(ctx, 11);
             std::move(after_send).detach(s::detach_reason::InfiniteLoopProtocol{});
 
@@ -555,7 +556,8 @@ struct RecordInTag {};
         [&ctx, &log](auto producer, auto consumer) noexcept {
             auto recorded = channels::mint_recording_endpoint(
                 channels::mint_endpoint<RecordInSpsc, channels::Direction::Consumer>(ctx, std::move(consumer)),
-                s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
+                s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log), s::RoleTagId{2},
+                s::RoleTagId{1});
 
             // A receive on an empty pole waits, so the test fills the pole
             // first, and it ends the process when the pole refuses the value.

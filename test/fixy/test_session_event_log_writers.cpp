@@ -47,6 +47,11 @@ constexpr s::RoleTagId kLeft{1};
 constexpr s::RoleTagId kRight{2};
 constexpr s::RoleTagId kSink{3};
 
+// The allocation capability of the test, which the writer of each log takes.
+[[nodiscard]] constexpr ::foundation::effects::Alloc test_alloc() noexcept {
+    return ::foundation::effects::testing::test().alloc;
+}
+
 // The Resource of a session that sends ints into a sum.
 struct Tally {
     std::int64_t sum = 0;
@@ -76,10 +81,10 @@ void record_one_session(s::SessionEventWriter writer, s::RoleTagId self) {
 // runs in a child through expect_dies of the Check family.
 void a_second_writer_of_one_log_ends_the_process() {
     s::SessionEventLog log;
-    s::SessionEventWriter first = s::mint_session_event_writer(log);
+    s::SessionEventWriter first = s::mint_session_event_writer(test_alloc(), log);
     ::fixy::check::expect_dies(
         ::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-        [&log] noexcept { static_cast<void>(s::mint_session_event_writer(log)); },
+        [&log] noexcept { static_cast<void>(s::mint_session_event_writer(test_alloc(), log)); },
         ::fixy::TextView{"[Event_Log_Writer_Twice]: a second writer was minted for a session event log that "
                          "already has one"});
     first.record_now(s::SessionEvent::close(kLeft, kSink));
@@ -90,17 +95,16 @@ void a_second_writer_of_one_log_ends_the_process() {
 // the join, the merge reads the two logs by step, and for one step the left
 // log first.  So each run gives the same sequence.
 void two_threads_record_into_their_own_logs() {
-    const auto alloc = ::foundation::effects::testing::test().alloc;
     for (int run = 0; run < kRuns; ++run) {
         s::SessionEventLog left_log{s::SessionTagId{1}};
         s::SessionEventLog right_log{s::SessionTagId{2}};
         {
-            std::jthread left{record_one_session, s::mint_session_event_writer(left_log), kLeft};
-            std::jthread right{record_one_session, s::mint_session_event_writer(right_log), kRight};
+            std::jthread left{record_one_session, s::mint_session_event_writer(test_alloc(), left_log), kLeft};
+            std::jthread right{record_one_session, s::mint_session_event_writer(test_alloc(), right_log), kRight};
         }
         CRUCIBLE_TEST_ASSERT(kTest, left_log.size() == kSends + 1);
         CRUCIBLE_TEST_ASSERT(kTest, right_log.size() == kSends + 1);
-        const auto merged = s::merge_session_logs(alloc, left_log, right_log);
+        const auto merged = s::merge_session_logs(test_alloc(), left_log, right_log);
         CRUCIBLE_TEST_ASSERT(kTest, merged.size() == 2 * (kSends + 1));
         for (std::size_t place = 0; place < merged.size(); ++place) {
             const s::SessionEvent& event = *merged.get(place).expect("the merge holds each event of the two logs");
@@ -117,16 +121,15 @@ void two_threads_record_into_their_own_logs() {
 // An empty log adds nothing, and a tie of steps keeps the order of the
 // arguments.
 void a_merge_keeps_the_order_of_the_arguments_for_one_step() {
-    const auto alloc = ::foundation::effects::testing::test().alloc;
     s::SessionEventLog empty_log;
     s::SessionEventLog first_log{s::SessionTagId{7}};
     s::SessionEventLog second_log{s::SessionTagId{8}};
-    s::SessionEventWriter first = s::mint_session_event_writer(first_log);
-    s::SessionEventWriter second = s::mint_session_event_writer(second_log);
+    s::SessionEventWriter first = s::mint_session_event_writer(test_alloc(), first_log);
+    s::SessionEventWriter second = s::mint_session_event_writer(test_alloc(), second_log);
     second.record_now(s::SessionEvent::close(kRight, kSink));
     first.record_now(s::SessionEvent::close(kLeft, kSink));
     first.record_now(s::SessionEvent::close(kLeft, kSink));
-    const auto merged = s::merge_session_logs(alloc, empty_log, second_log, first_log);
+    const auto merged = s::merge_session_logs(test_alloc(), empty_log, second_log, first_log);
     CRUCIBLE_TEST_ASSERT(kTest, merged.size() == 3);
     CRUCIBLE_TEST_ASSERT(kTest, merged.get(0).expect("three events")->session().value == 8);
     CRUCIBLE_TEST_ASSERT(kTest, merged.get(1).expect("three events")->session().value == 7);

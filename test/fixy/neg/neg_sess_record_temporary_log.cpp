@@ -15,8 +15,10 @@ struct Wire {};
 int main() {
     const ::fixy::TestRunnerCtx ctx{::foundation::effects::testing::test()};
     auto handle = s::mint_session<s::Send<int, s::End>>(ctx, Wire{});
-    auto recorded = s::mint_recorded_session(std::move(handle), s::mint_session_event_writer(s::SessionEventLog{}),
-                                             s::RoleTagId{1}, s::RoleTagId{2});
+    auto recorded = s::mint_recorded_session(
+        std::move(handle),
+        s::mint_session_event_writer(::foundation::effects::testing::test().alloc, s::SessionEventLog{}),
+        s::RoleTagId{1}, s::RoleTagId{2});
     (void)recorded;
     return 0;
 }

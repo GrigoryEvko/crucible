@@ -35,14 +35,14 @@ int main() {
     Channel channel{};
     auto tokens = perm::mint_permission_split<Channel::producer_tag, Channel::consumer_tag>(channel_root());
     s::SessionEventLog log;
-    c::with_producer(channel, std::move(tokens.at(::foundation::core::index<0>())),
-                     [&ctx, &log](auto producer) noexcept {
-                         auto recorded = channels::mint_recording_endpoint(
-                             channels::mint_endpoint<Channel, channels::Direction::Producer>(ctx, std::move(producer)),
-                             s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
-                         auto next = std::move(recorded).send(
-                             7, [](auto& handle, int& value) noexcept -> bool { return handle.try_push(value); });
-                         std::move(next).detach(s::detach_reason::TestInstrumentation{});
-                     });
+    c::with_producer(
+        channel, std::move(tokens.at(::foundation::core::index<0>())), [&ctx, &log](auto producer) noexcept {
+            auto recorded = channels::mint_recording_endpoint(
+                channels::mint_endpoint<Channel, channels::Direction::Producer>(ctx, std::move(producer)),
+                s::mint_session_event_writer(eff::testing::test().alloc, log), s::RoleTagId{1}, s::RoleTagId{2});
+            auto next = std::move(recorded).send(
+                7, [](auto& handle, int& value) noexcept -> bool { return handle.try_push(value); });
+            std::move(next).detach(s::detach_reason::TestInstrumentation{});
+        });
     return 0;
 }

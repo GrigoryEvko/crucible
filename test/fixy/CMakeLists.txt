@@ -3966,12 +3966,16 @@ fixy_neg_compile_test(neg_sess_recorded_friend_specialized
   "fixy::session::Recorded<fixy::session::SessionHandle<fixy::session::Send<int, fixy::session::End>, neg_sess_recorded_friend_specialized_types::Wire")
 
 fixy_neg_compile_test(neg_sess_record_temporary_log
-  "use of deleted function .void fixy::session::mint_session_event_writer\\(SessionEventLog&&\\)"
+  "use of deleted function .void fixy::session::mint_session_event_writer\\(foundation::core::Alloc, SessionEventLog&&\\)"
   "\\[Event_Log_Writer_From_Temporary_Log\\] the log is a temporary")
 
 # A log has one writer, so no two recorders append to one log from two
 # threads.  The recorder mint takes the writer, and a log alone gives no
-# right to append.  The writer does not copy, and a const log mints none.
+# right to append.  The writer does not copy, and a const log mints none.  The
+# mint of the writer takes the allocation capability for its appends.
+fixy_neg_compile_test(neg_sess_event_writer_without_allocation
+  "no matching function for call to .mint_session_event_writer\\(foundation::effects::cap::IO, fixy::session::SessionEventLog&\\)"
+  "no known conversion for argument 1 from .foundation::effects::cap::IO. to .foundation::core::Alloc.")
 fixy_neg_compile_test(neg_sess_record_log_without_writer
   "use of deleted function .void fixy::session::mint_recorded_session\\(H, SessionEventLog&, RoleTagId, RoleTagId\\)"
   "\\[Event_Log_Needs_Its_Writer\\] mint_recorded_session takes the one writer of a log")
@@ -3979,7 +3983,7 @@ fixy_neg_compile_test(neg_sess_event_writer_copied
   "use of deleted function .fixy::session::SessionEventWriter::SessionEventWriter\\(const fixy::session::SessionEventWriter&\\)"
   "a session event log has one writer, and a copy is a second")
 fixy_neg_compile_test(neg_sess_event_writer_from_const_log
-  "use of deleted function .void fixy::session::mint_session_event_writer\\(const SessionEventLog&\\)"
+  "use of deleted function .void fixy::session::mint_session_event_writer\\(foundation::core::Alloc, const SessionEventLog&\\)"
   "\\[Event_Log_Writer_From_Const_Log\\] a const log is a view of the record")
 
 # An event exists only through a factory or the decoder, and a log does

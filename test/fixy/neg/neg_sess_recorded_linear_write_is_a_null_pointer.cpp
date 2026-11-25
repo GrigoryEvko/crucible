@@ -35,8 +35,10 @@ using namespace neg_sess_recorded_linear_write_is_a_null_pointer_types;
 int main() {
     s::SessionEventLog log;
     const ::fixy::BgDrainCtx ctx{::foundation::effects::testing::bg()};
-    auto handle = s::mint_recorded_session(s::mint_permissioned_session<Sends>(ctx, Wire{}, mint_region_root()),
-                                           s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+    auto handle =
+        s::mint_recorded_session(s::mint_permissioned_session<Sends>(ctx, Wire{}, mint_region_root()),
+                                 s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log),
+                                 s::RoleTagId{1}, s::RoleTagId{2});
     auto at_end = std::move(handle).send(1, decltype(&put_message){});
     (void)std::move(at_end).close();
     return 0;

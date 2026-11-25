@@ -42,7 +42,7 @@ void check_recorded_step_into_a_name(TestCtx const& test) {
     Mailbox to_peer;
     s::SessionEventLog log;
     auto handle = s::mint_recorded_session(s::mint_session<AskThenTell>(bg_ctx(), Port{&to_self, &to_peer}),
-                                           s::mint_session_event_writer(log), kSelf, kPeer);
+                                           s::mint_session_event_writer(test_alloc(), log), kSelf, kPeer);
     auto told = std::move(handle).send(5, push_int);
     static_assert(std::is_same_v<typename decltype(told)::protocol, s::Send<int, s::End>>,
                   "the step resolves the named state, so the handle stands at the protocol of the name");
@@ -69,9 +69,9 @@ void check_recorded_named_branch(TestCtx const& test) {
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
     auto left = s::mint_recorded_session(s::mint_session<Chooser>(bg_ctx(), Port{&to_left, &to_right}),
-                                         s::mint_session_event_writer(log_left), kSelf, kPeer);
+                                         s::mint_session_event_writer(test_alloc(), log_left), kSelf, kPeer);
     auto right = s::mint_recorded_session(s::mint_session<ChooserPeer>(bg_ctx(), Port{&to_right, &to_left}),
-                                          s::mint_session_event_writer(log_right), kPeer, kSelf);
+                                          s::mint_session_event_writer(test_alloc(), log_right), kPeer, kSelf);
     auto chosen = std::move(left).select<1>(push_label);
     static_assert(std::is_same_v<typename decltype(chosen)::protocol, s::End>,
                   "the branch that is a named state stands at the protocol of the name");
@@ -116,10 +116,10 @@ void check_recorded_crash_over_a_name(TestCtx const& test) {
     s::SessionEventLog log_q;
     auto p = s::mint_recorded_session(
         s::mint_crash_session<NamedP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p)),
-        s::mint_session_event_writer(log_p), kSelf, kPeer);
+        s::mint_session_event_writer(test_alloc(), log_p), kSelf, kPeer);
     auto q = s::mint_recorded_session(
         s::mint_crash_session<PlainQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)),
-        s::mint_session_event_writer(log_q), kPeer, kSelf);
+        s::mint_session_event_writer(test_alloc(), log_q), kPeer, kSelf);
 
     static_cast<void>(std::move(q).crash(s::CrashCause::Throw));
     bool took_crash = false;

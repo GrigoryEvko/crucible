@@ -56,7 +56,8 @@ int main() {
     s::SessionEventLog log;
     auto recorded = s::mint_recorded_session(
         s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, OfferChannel::ConsumerHandle{}),
-        s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+        s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log), s::RoleTagId{1},
+        s::RoleTagId{2});
     std::move(recorded).branch(
         [](OfferChannel::ConsumerHandle&) noexcept -> ::fixy::Option<std::size_t> {
             return ::fixy::Option<std::size_t>{};

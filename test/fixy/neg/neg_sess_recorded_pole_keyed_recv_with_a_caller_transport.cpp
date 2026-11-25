@@ -46,7 +46,7 @@ int main() {
         channel, std::move(tokens.at(::foundation::core::index<1>())), [&ctx, &log](auto consumer) noexcept {
             auto recorded = s::mint_recorded_session(
                 channels::mint_substrate_session<Channel, channels::Direction::Consumer>(ctx, std::move(consumer)),
-                s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+                s::mint_session_event_writer(eff::testing::test().alloc, log), s::RoleTagId{1}, s::RoleTagId{2});
             auto next = std::move(recorded).recv(
                 [](auto&) noexcept -> ::fixy::Option<std::size_t> { return ::fixy::Option<std::size_t>{}; });
             std::move(next).detach(s::detach_reason::TestInstrumentation{});

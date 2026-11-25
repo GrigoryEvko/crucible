@@ -31,10 +31,10 @@ int check_crash_recording() {
     s::SessionEventLog log_q;
     auto p = s::mint_recorded_session(
         s::mint_crash_session<ProtoP, P, Q>(bg_ctx(), Port{&to_p, &to_q}, cell_q, s::mint_crash_writer(cell_p)),
-        s::mint_session_event_writer(log_p), kSelf, kPeer);
+        s::mint_session_event_writer(test_alloc(), log_p), kSelf, kPeer);
     auto q = s::mint_recorded_session(
         s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)),
-        s::mint_session_event_writer(log_q), kPeer, kSelf);
+        s::mint_session_event_writer(test_alloc(), log_q), kPeer, kSelf);
 
     (void)std::move(q).crash(s::CrashCause::Throw);
     if (log_q.size() != 1 || log_q[0].op() != s::SessionOp::Stop
@@ -104,10 +104,10 @@ int check_checkpoint_recording() {
     s::SessionEventLog log_right;
     auto left =
         s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}),
-                                 s::mint_session_event_writer(log_left), kSelf, kPeer);
+                                 s::mint_session_event_writer(test_alloc(), log_left), kSelf, kPeer);
     auto right =
         s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}),
-                                 s::mint_session_event_writer(log_right), kPeer, kSelf);
+                                 s::mint_session_event_writer(test_alloc(), log_right), kPeer, kSelf);
     auto left_saved = std::move(left).select<0>(push_label);
     int got = 0;
     std::move(right).branch(pop_label, [&got, left_saved = std::move(left_saved)](auto branch) mutable {
@@ -143,10 +143,10 @@ int check_pinned_roll_recording() {
     s::SessionEventLog log_right;
     auto left =
         s::mint_recorded_session(s::mint_checkpoint_session<Decide, Follow>(bg_ctx(), Port{&to_left, &to_right}),
-                                 s::mint_session_event_writer(log_left), kSelf, kPeer);
+                                 s::mint_session_event_writer(test_alloc(), log_left), kSelf, kPeer);
     auto right =
         s::mint_recorded_session(s::mint_checkpoint_session<Follow, Decide>(bg_ctx(), Port{&to_right, &to_left}),
-                                 s::mint_session_event_writer(log_right), kPeer, kSelf);
+                                 s::mint_session_event_writer(test_alloc(), log_right), kPeer, kSelf);
     using RightStart = decltype(right);
     auto left_back = std::move(left).select<1>(push_label);
     bool is_closed = false;

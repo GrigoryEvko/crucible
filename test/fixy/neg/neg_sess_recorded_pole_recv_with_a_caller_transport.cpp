@@ -44,7 +44,7 @@ int main() {
             std::move(producer).close();
             auto recorded = channels::mint_recording_endpoint(
                 channels::mint_endpoint<Channel, channels::Direction::Consumer>(ctx, std::move(consumer)),
-                s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
+                s::mint_session_event_writer(eff::testing::test().alloc, log), s::RoleTagId{2}, s::RoleTagId{1});
             auto received =
                 std::move(recorded).recv([](auto& handle) noexcept -> ::fixy::Option<int> { return handle.try_pop(); });
             (void)received;

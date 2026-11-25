@@ -7,11 +7,12 @@
 // its reason.
 
 #include <fixy/session/EventLog.h>
+#include <foundation/effects/Effect.h>
 
 int main() {
     namespace s = ::fixy::session;
     s::SessionEventLog log;
-    s::SessionEventWriter writer = s::mint_session_event_writer(log);
+    s::SessionEventWriter writer = s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log);
     s::SessionEventWriter second = writer;
     second.record_now(s::SessionEvent::close(s::RoleTagId{1}, s::RoleTagId{2}));
     return 0;

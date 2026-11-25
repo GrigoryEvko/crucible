@@ -115,7 +115,7 @@ void recorder_sees_the_crash() {
     s::SessionEventLog log{s::SessionTagId{9}};
     auto q = s::mint_recorded_session(
         s::mint_crash_session<ProtoQ, Q, P>(bg_ctx(), Port{&to_q, &to_p}, cell_p, s::mint_crash_writer(cell_q)),
-        s::mint_session_event_writer(log), s::RoleTagId{2}, s::RoleTagId{1});
+        s::mint_session_event_writer(eff::testing::test().alloc, log), s::RoleTagId{2}, s::RoleTagId{1});
     auto chosen = std::move(q).select<0>(push_label);
     auto [waiting, undelivered] = std::move(chosen).send(5, push_int);
     std::move(waiting).branch(poll_label, [](auto branch) noexcept {

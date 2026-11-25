@@ -63,6 +63,10 @@
 // from each handle to the next, so one handle at a time appends.  Each
 // endpoint of a run records into its own log.
 //
+// An append can allocate.  A step of a recorded session runs in a context with
+// no Alloc, such as a foreground context.  So the mint of the writer takes the
+// allocation capability, and the writer keeps it for its appends.
+//
 // merge_session_logs reads the logs of a run as one sequence: by step id,
 // and for one step id in the order of the logs in its arguments.  The
 // sequence depends on no schedule of the threads.  An append is a plain
@@ -759,21 +763,31 @@ public:
 // copyable and std::bit_cast cannot build one.
 class [[nodiscard]] SessionEventWriter {
     SessionEventLog* log_ = nullptr;
+    // The allocation capability of the mint, which shows that an append can
+    // allocate.  It has no initializer, because an allocation tag has no public
+    // default constructor, and the one constructor sets it.
+    [[no_unique_address]] ::foundation::core::Alloc allocation_;
 
-    constexpr explicit SessionEventWriter(SessionEventLog& log) noexcept : log_{&log} {}
+    constexpr SessionEventWriter(::foundation::core::Alloc allocation, SessionEventLog& log) noexcept
+        : log_{&log}, allocation_{allocation} {}
 
     // Claims the one writer of a log.  A second claim for the same log ends
     // the process with Event_Log_Writer_Twice.
-    [[nodiscard]] static SessionEventWriter claim_(SessionEventLog& log) noexcept {
+    [[nodiscard]] static SessionEventWriter claim_(::foundation::core::Alloc allocation,
+                                                   SessionEventLog& log) noexcept {
         if (log.has_writer_.exchange_acq_rel(true)) [[unlikely]]
             detail::event_log::abort_on_second_writer();
-        return SessionEventWriter{log};
+        return SessionEventWriter{allocation, log};
     }
 
-    friend SessionEventWriter mint_session_event_writer(SessionEventLog& log) noexcept;
+    friend SessionEventWriter mint_session_event_writer(::foundation::core::Alloc allocation,
+                                                        SessionEventLog& log) noexcept;
 
 public:
-    constexpr SessionEventWriter(SessionEventWriter&& other) noexcept : log_{other.log_} { other.log_ = nullptr; }
+    constexpr SessionEventWriter(SessionEventWriter&& other) noexcept
+        : log_{other.log_}, allocation_{other.allocation_} {
+        other.log_ = nullptr;
+    }
     constexpr SessionEventWriter& operator=(SessionEventWriter&& other) noexcept {
         SessionEventLog* const taken = other.log_;
         other.log_ = nullptr;
@@ -800,17 +814,20 @@ public:
     }
 };
 
-// Mints the one writer of a log.  A second mint for the same log ends the
-// process with Event_Log_Writer_Twice.
-[[nodiscard]] inline SessionEventWriter mint_session_event_writer(SessionEventLog& log) noexcept {
-    return SessionEventWriter::claim_(log);
+// Mints the one writer of a log.  The writer keeps the allocation capability,
+// and each of its appends can allocate.  A log that has no writer takes none, so
+// a log that a program only reads needs no capability.  A second mint for the
+// same log ends the process with Event_Log_Writer_Twice.
+[[nodiscard]] inline SessionEventWriter mint_session_event_writer(::foundation::core::Alloc allocation,
+                                                                  SessionEventLog& log) noexcept {
+    return SessionEventWriter::claim_(allocation, log);
 }
 
-void mint_session_event_writer(const SessionEventLog&) noexcept = delete(
+void mint_session_event_writer(::foundation::core::Alloc, const SessionEventLog&) noexcept = delete(
     "[Event_Log_Writer_From_Const_Log] a const log is a view of the record, and a view gives no right to "
     "append.  Mint the writer from the log that this endpoint owns.");
 
-void mint_session_event_writer(SessionEventLog&&) noexcept = delete(
+void mint_session_event_writer(::foundation::core::Alloc, SessionEventLog&&) noexcept = delete(
     "[Event_Log_Writer_From_Temporary_Log] the log is a temporary.  The writer keeps its address, so the log "
     "must outlive each handle that records into it.");
 

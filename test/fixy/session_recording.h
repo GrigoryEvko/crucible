@@ -30,6 +30,11 @@ inline int fail(const char* what) {
 using BgCtx = ::foundation::effects::detail::ctx_witnesses::BgWitness;
 [[nodiscard]] inline BgCtx bg_ctx() noexcept { return BgCtx{::foundation::effects::testing::bg()}; }
 
+// The allocation capability of the test, which the writer of each log takes.
+[[nodiscard]] inline ::foundation::effects::Alloc test_alloc() noexcept {
+    return ::foundation::effects::testing::test().alloc;
+}
+
 inline constexpr s::RoleTagId kSelf{11};
 inline constexpr s::RoleTagId kPeer{22};
 

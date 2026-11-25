@@ -237,7 +237,7 @@ int check_log_decode() {
 
 int check_log_steps() {
     s::SessionEventLog log{s::SessionTagId{77}};
-    s::SessionEventWriter writer = s::mint_session_event_writer(log);
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
     writer.record_now(s::SessionEvent::close(kSelf, kPeer));
     writer.record_now(s::SessionEvent::close(kSelf, kPeer));
     if (log.size() != 2) return fail("the log lost an event");
@@ -259,7 +259,7 @@ int check_plain_recording() {
     Mailbox to_peer;
     s::SessionEventLog log;
     auto handle = s::mint_recorded_session(s::mint_session<Proto>(bg_ctx(), Port{&to_self, &to_peer}),
-                                           s::mint_session_event_writer(log), kSelf, kPeer);
+                                           s::mint_session_event_writer(test_alloc(), log), kSelf, kPeer);
     auto waiting = std::move(handle).send(5, push_int);
     to_self.slots.push_back(0);
     to_self.slots.push_back(9);
@@ -349,11 +349,11 @@ int check_handoff_recording() {
     s::SessionEventLog sender_log;
     s::SessionEventLog receiver_log;
     auto sender = s::mint_recorded_session(s::mint_session<s::Send<Parcel, s::End>>(bg_ctx(), MessageBox<Parcel>{}),
-                                           s::mint_session_event_writer(sender_log), kSelf, kPeer);
+                                           s::mint_session_event_writer(test_alloc(), sender_log), kSelf, kPeer);
     auto parcel = s::mint_delegated_session(s::mint_session<Carried>(bg_ctx(), HandedPort{}));
     MessageBox<Parcel> wire = std::move(sender).send(std::move(parcel), PutMessage<Parcel>{}).close();
     auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Parcel, s::End>>(bg_ctx(), std::move(wire)),
-                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
+                                             s::mint_session_event_writer(test_alloc(), receiver_log), kPeer, kSelf);
     auto [received, at_end] = std::move(receiver).recv(take_message<Parcel>);
     MessageBox<Parcel> back = std::move(at_end).close();
     std::move(back.held).expect_empty("the receive takes the parcel out of the mailbox");
@@ -437,10 +437,10 @@ int check_fresh_brand_recording() {
     s::SessionEventLog receiver_log;
     auto sender = s::mint_recorded_session(
         s::mint_permissioned_session<s::Send<Message, s::End>>(bg_ctx(), MessageBox<Message>{}, std::move(root)),
-        s::mint_session_event_writer(sender_log), kSelf, kPeer);
+        s::mint_session_event_writer(test_alloc(), sender_log), kSelf, kPeer);
     MessageBox<Message> wire = std::move(sender).send(4, PutMessage<Message>{}).close();
     auto receiver = s::mint_recorded_session(s::mint_session<s::Recv<Message, s::End>>(bg_ctx(), std::move(wire)),
-                                             s::mint_session_event_writer(receiver_log), kPeer, kSelf);
+                                             s::mint_session_event_writer(test_alloc(), receiver_log), kPeer, kSelf);
     auto [value, at_end] = std::move(receiver).recv(take_message<Message>);
     // The End handle gives the token back with the mailbox.
     auto [box, token] = std::move(at_end).close();
@@ -485,7 +485,7 @@ int check_fresh_brand_share() {
     static_assert(s::default_proto_hash<Carried> == s::default_proto_hash<ErasedCarried>);
 
     s::SessionEventLog log;
-    s::SessionEventWriter writer = s::mint_session_event_writer(log);
+    s::SessionEventWriter writer = s::mint_session_event_writer(test_alloc(), log);
     writer.record_now(s::SessionEvent::delegate_handoff(kSelf, kPeer, s::default_proto_hash<Carried>));
     if (log.size() != 1 || log[0].op() != s::SessionOp::Delegate
         || log[0].delegated_proto() != s::default_proto_hash<ErasedCarried>)
@@ -551,9 +551,9 @@ int check_keyed_recording() {
     s::SessionEventLog log_left;
     s::SessionEventLog log_right;
     auto left = s::mint_recorded_session(s::mint_session<KeyedAsk>(bg_ctx(), Port{&to_left, &to_right}),
-                                         s::mint_session_event_writer(log_left), kSelf, kPeer);
+                                         s::mint_session_event_writer(test_alloc(), log_left), kSelf, kPeer);
     auto right = s::mint_recorded_session(s::mint_session<KeyedHear>(bg_ctx(), Port{&to_right, &to_left}),
-                                          s::mint_session_event_writer(log_right), kPeer, kSelf);
+                                          s::mint_session_event_writer(test_alloc(), log_right), kPeer, kSelf);
     // A keyed message is its label word and then its value, so each side
     // stands at the value step of its branch.
     auto left_value = std::move(left).select<1>(push_label);
@@ -597,7 +597,7 @@ int check_keyed_recording() {
     s::SessionEventLog log_step;
     using SayNo = s::Send<s::PeerMsg<Carol, No, int>, s::End>;
     auto stepper = s::mint_recorded_session(s::mint_session<SayNo>(bg_ctx(), Port{&step_in, &step_out}),
-                                            s::mint_session_event_writer(log_step), kSelf, kPeer);
+                                            s::mint_session_event_writer(test_alloc(), log_step), kSelf, kPeer);
     (void)std::move(stepper).send(push_label).send(9, push_int).close();
     if (step_out.slots.size() != 2 || step_out.slots.front() != s::step_wire_word_v<SayNo>
         || step_out.slots.front() != s::branch_wire_word_v<KeyedAsk, 1> || step_out.slots.back() != 9)
@@ -640,7 +640,7 @@ int check_pole_select_recording() {
     s::SessionEventLog log;
     auto recorded = s::mint_recorded_session(
         s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(bg_ctx(), RecordedLog::ProducerEnd{}),
-        s::mint_session_event_writer(log), kSelf, kPeer);
+        s::mint_session_event_writer(test_alloc(), log), kSelf, kPeer);
     auto at_end = std::move(recorded).select<1>(s::no_label);
     (void)std::move(at_end).close();
     if (log.size() != 2 || log[0].op() != s::SessionOp::Select || log[0].branch_index() != 1

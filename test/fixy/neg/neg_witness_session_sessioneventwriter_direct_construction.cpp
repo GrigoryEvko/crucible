@@ -24,6 +24,6 @@ template <class T> T&& rvalue() noexcept;
 }  // namespace forge
 
 int main() {
-    [[maybe_unused]] auto forged = fixy::session::SessionEventWriter{forge::lvalue<fixy::session::SessionEventLog>()};
+    [[maybe_unused]] auto forged = fixy::session::SessionEventWriter{forge::lvalue<foundation::core::Alloc>(), forge::lvalue<fixy::session::SessionEventLog>()};
     return 0;
 }

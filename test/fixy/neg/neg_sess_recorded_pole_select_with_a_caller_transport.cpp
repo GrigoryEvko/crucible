@@ -41,7 +41,8 @@ int main() {
     s::SessionEventLog log;
     auto recorded =
         s::mint_recorded_session(s::SessionMintDoor::open_pole<s::DefaultAbandonmentPolicy>(ctx, IntLog::ProducerEnd{}),
-                                 s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+                                 s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log),
+                                 s::RoleTagId{1}, s::RoleTagId{2});
     auto at_end = std::move(recorded).select<1>([](IntLog::ProducerEnd&, std::size_t) noexcept { return true; });
     std::move(at_end).detach(s::detach_reason::TestInstrumentation{});
     return 0;

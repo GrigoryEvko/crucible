@@ -38,7 +38,8 @@ int main() {
     const ::foundation::effects::detail::ctx_witnesses::BgWitness ctx{::foundation::effects::testing::bg()};
     auto handle = s::mint_recorded_session(
         s::mint_crash_session<Relay, Alice, Bob, s::ReliableSet<Bob>>(ctx, Wire{}, cell, s::mint_crash_writer(own)),
-        s::mint_session_event_writer(log), s::RoleTagId{1}, s::RoleTagId{2});
+        s::mint_session_event_writer(::foundation::effects::testing::test().alloc, log), s::RoleTagId{1},
+        s::RoleTagId{2});
     auto [value, reply] = std::move(handle).recv([](Wire&) noexcept {
         auto [message, rest] = s::mint_permission_hold(mint_region_root()).template pack<Region>(1);
         static_cast<void>(std::move(rest).into_permissions());
