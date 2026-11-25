@@ -1,0 +1,7 @@
+# The rule table of the plant plant-early-names of the rule brand-escape.  The
+# unit of src/ is quarantined.  The headers of the repository are outside the
+# root of the plant, so the table admits the marks that the planted code states.
+
+admit foundation::brand | the marks of an epoch brand and of a scope brand, which the planted classes state
+
+quarantine src/

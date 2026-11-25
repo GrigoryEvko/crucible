@@ -1,0 +1,4 @@
+# The rule table of the control control-early-names of the rule brand-escape.
+# The unit of src/ is quarantined, and it names no class of the base.
+
+quarantine src/

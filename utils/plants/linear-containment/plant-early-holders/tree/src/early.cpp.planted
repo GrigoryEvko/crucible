@@ -1,0 +1,8 @@
+// The bodies of fixy/EarlyHolders.h that the unit makes.
+#include <fixy/EarlyHolders.h>
+
+namespace planted {
+
+bool uses() { return local_after_a_static_member() || local_after_the_argument(); }
+
+}  // namespace planted

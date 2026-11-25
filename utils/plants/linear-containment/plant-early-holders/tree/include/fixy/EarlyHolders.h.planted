@@ -1,0 +1,50 @@
+#pragma once
+
+// Classes of the library that a check reads while they are incomplete, or
+// while their argument is incomplete (library_holder_of of linear.cpp).  The
+// declaration of a static data member completes no class, and a local of a
+// vector completes the vector and not its argument.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+#include <optional>
+#include <vector>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+struct Registry {
+    static std::optional<Token> kept;
+};
+
+inline bool local_after_a_static_member() {
+    std::optional<Token> held{};
+    return held.has_value();
+}
+
+struct Later;
+inline bool local_of_an_incomplete_argument() {
+    std::vector<Later> held;
+    return held.empty();
+}
+
+struct Later {
+    Token token{1};
+};
+
+inline bool local_after_the_argument() {
+    std::vector<Later> held;
+    return held.empty();
+}
+
+}  // namespace planted

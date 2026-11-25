@@ -1,0 +1,50 @@
+// Carriers of a brand that a check reads while they are incomplete (the arena
+// brands and the scope brands of linear.cpp).  A member names the first
+// instance of each carrier in a type argument, which completes no class.  A
+// static object of that instance comes later.
+#include <foundation/Brand.h>
+
+namespace planted {
+
+// A class that names its argument and holds nothing.
+template <class T>
+struct Names {
+    int word = 0;
+};
+
+struct [[= ::foundation::brand::epoch_brand{}]] Epoch {};
+
+// A carrier of the epoch.
+template <class T>
+struct EpochCarrier {
+    using brand_type = Epoch;
+    int word = 0;
+};
+
+// The closure of a scope brand, and a carrier of it.
+using Mark = decltype([] [[= ::foundation::brand::scope_brand{}]] () noexcept {});
+
+template <class T>
+struct MarkCarrier {
+    using brand_type = Mark;
+    int word = 0;
+};
+
+// The check of this class reads the first instance of each carrier.
+struct NamesEarly {
+    Names<EpochCarrier<int>> epoch{};
+    Names<MarkCarrier<int>> mark{};
+};
+
+// The objects of the first instances, and of the instances that no check read
+// before.
+EpochCarrier<int> const kept_early_epoch{};
+EpochCarrier<long> const kept_epoch{};
+
+int keep_marks() noexcept {
+    static MarkCarrier<int> const kept_early_mark{};
+    static MarkCarrier<long> const kept_mark{};
+    return kept_early_mark.word + kept_mark.word + kept_early_epoch.word + kept_epoch.word + NamesEarly{}.epoch.word;
+}
+
+}  // namespace planted

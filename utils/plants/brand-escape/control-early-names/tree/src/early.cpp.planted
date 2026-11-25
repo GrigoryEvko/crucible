@@ -1,0 +1,37 @@
+// Classes that a check reads while they are incomplete, and that hold no brand
+// when they are complete (the arena brands and the scope brands of
+// linear.cpp): an instance that a type argument names, and a class that names
+// itself in a type argument of a local class.  Each static object gives no
+// line of the rule.
+namespace planted {
+
+// A class that names its argument and holds nothing.
+template <class T>
+struct Names {
+    int word = 0;
+};
+
+template <class T>
+struct Plain {
+    using value_type = T;
+    int word = 0;
+};
+
+struct NamesEarly {
+    Names<Plain<int>> early{};
+};
+
+Plain<int> const kept_early{};
+
+int keep() noexcept {
+    struct Node {
+        Names<Node> next{};
+        int word = 0;
+    };
+    static Node const kept_node{};
+    static Names<Node> const kept_names{};
+    static Plain<int> const kept_local{};
+    return kept_node.word + kept_names.word + kept_local.word + kept_early.word + NamesEarly{}.early.word;
+}
+
+}  // namespace planted

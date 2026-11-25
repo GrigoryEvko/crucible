@@ -1923,7 +1923,7 @@ bool moves_own_storage(tree function) {
 }
 
 tree capture_field_of(tree node, tree closure);
-void collect_brands(tree type, std::vector<tree>& out, int depth);
+void collect_brands(tree type, std::vector<tree>& out);
 
 // The kinds: the text of the linear type of an object or a temporary in the
 // entity of a line.  type_text of library.cpp gives one text for one type in
@@ -1943,7 +1943,7 @@ std::string linear_type_text(tree type) {
     std::string text = type_text(type);
     const std::string word = "brand";
     std::vector<tree> brands;
-    collect_brands(type, brands, 0);
+    collect_brands(type, brands);
     for (tree brand : brands) {
         std::string spelled = type_text(brand);
         if (spelled.empty() || spelled == word) {
@@ -4794,14 +4794,19 @@ void judge_deferred_findings() {
 
 // ── The shapes (refer to the section Shapes) ────────────────────────────
 
+// The set of brands of each class, by its main variant.
+using BrandSets = std::unordered_map<tree, std::vector<tree>>;
+
 // The facts of the rules of the shapes, keyed by the main variant of a type.
-// Each collection clears them, because a collection can free a tree and reuse
-// its address.
+// The walks keep a fact only when it is final (TypePath).  A collection can
+// free a tree and reuse its address, so each collection clears the facts that
+// hold a tree.  The key of refuses_lifetime is the TYPE_UID, which no
+// collection reuses.
 struct ShapeCaches {
-    std::unordered_map<tree, bool> refuses_lifetime;
+    std::unordered_map<unsigned, bool> refuses_lifetime;
     std::unordered_map<tree, tree> library_holder;
-    std::unordered_map<tree, std::vector<tree>> brands;
-    std::unordered_map<tree, std::vector<tree>> epoch_brands;
+    BrandSets brands;
+    BrandSets epoch_brands;
 };
 
 ShapeCaches shape_caches;
@@ -4856,17 +4861,18 @@ bool is_reported_for(tree entity) {
 // True when TYPE carries the annotation no_start_over_bytes of
 // include/foundation/ByteSeal.h, or holds a part that carries it, or holds a
 // reference member: the checked lifetime start of include/foundation/Lifetime.h
-// refuses it.  Complexity: the walk visits each class one time.
+// refuses it.  The walk reads bases and members by value only, so it meets no
+// class again on its path, and each part is complete when the class is.
+// Complexity: the walk visits each class one time.
 bool refuses_lifetime(tree type, int depth = 0) {
     type = TYPE_MAIN_VARIANT(element_type_of(type));
     if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || depth > kTypeDepth) {
         return false;
     }
-    auto found = shape_caches.refuses_lifetime.find(type);
+    auto found = shape_caches.refuses_lifetime.find(TYPE_UID(type));
     if (found != shape_caches.refuses_lifetime.end()) {
         return found->second;
     }
-    shape_caches.refuses_lifetime.emplace(type, false);
     bool result = carries_annotation(TYPE_ATTRIBUTES(type), linear_names.no_start_over_bytes, linear_names.lifetime);
     if (tree binfo = TYPE_BINFO(type); binfo != NULL_TREE && !result) {
         for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo) && !result; ++index) {
@@ -4878,7 +4884,7 @@ bool refuses_lifetime(tree type, int depth = 0) {
             result = TYPE_REF_P(TREE_TYPE(field)) || refuses_lifetime(TREE_TYPE(field), depth + 1);
         }
     }
-    shape_caches.refuses_lifetime[type] = result;
+    shape_caches.refuses_lifetime.emplace(TYPE_UID(type), result);
     return result;
 }
 
@@ -4917,33 +4923,55 @@ void each_type_argument(tree arguments, Visit visit, int depth = 0) {
 // parts or it has a destructor that is not trivial: its operations copy or
 // drop a value, and they carry no door.  A view, such as std::span, has a
 // trivial destructor and holds no value.  A pointer and a reference hold no
-// value.  Complexity: the walk visits each class one time.
-tree library_holder_of(tree type, int depth = 0) {
+// value.  A type argument is a part of the name of its class, so the walk meets
+// no class again on its path.  A class of the library that is incomplete, and
+// an argument of one that is incomplete, gives its answer when it is complete.
+// Complexity: the walk visits each class one time (TypePath).
+tree library_holder_in(tree type, TypePath& path, int depth) {
     type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(element_type_of(type)) : NULL_TREE;
-    if (type == NULL_TREE || !CLASS_TYPE_P(type) || LAMBDA_TYPE_P(type) || depth > kTypeDepth
-        || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE || uses_template_parms(type)) {
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || LAMBDA_TYPE_P(type) || CLASSTYPE_TEMPLATE_INFO(type) == NULL_TREE
+        || uses_template_parms(type)) {
         return NULL_TREE;
     }
     auto found = shape_caches.library_holder.find(type);
     if (found != shape_caches.library_holder.end()) {
         return found->second;
     }
-    shape_caches.library_holder.emplace(type, NULL_TREE);
+    if (depth > kTypeDepth) {
+        path.reach_unread_part();
+        return NULL_TREE;
+    }
+    if (!path.enter(type)) {
+        return NULL_TREE;
+    }
+    bool const is_of_library = is_library_class(type);
+    if (is_of_library && !COMPLETE_TYPE_P(type)) {
+        path.reach_unread_part();
+    }
+    bool const is_owner = is_of_library && COMPLETE_TYPE_P(type) && !CP_AGGREGATE_TYPE_P(type)
+                       && (is_linear_type(type) || TYPE_HAS_NONTRIVIAL_DESTRUCTOR(type));
     tree result = NULL_TREE;
-    bool is_owner = is_library_class(type) && COMPLETE_TYPE_P(type) && !CP_AGGREGATE_TYPE_P(type)
-                 && (is_linear_type(type) || TYPE_HAS_NONTRIVIAL_DESTRUCTOR(type));
     each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
         if (result != NULL_TREE || !TYPE_P(argument)) {
             return;
         }
         if (is_owner && is_linear_type(argument)) {
             result = type;
-        } else {
-            result = library_holder_of(argument, depth + 1);
+            return;
         }
+        tree const element = TYPE_MAIN_VARIANT(element_type_of(argument));
+        if (is_owner && CLASS_TYPE_P(element) && !COMPLETE_TYPE_P(element)) {
+            path.reach_unread_part();
+        }
+        result = library_holder_in(argument, path, depth + 1);
     });
-    shape_caches.library_holder[type] = result;
+    path.leave([&](tree settled) { shape_caches.library_holder.emplace(settled, result); });
     return result;
+}
+
+tree library_holder_of(tree type) {
+    TypePath path;
+    return library_holder_in(type, path, 0);
 }
 
 // The macro of include/foundation/Brand.h that writes the fresh brand.
@@ -5040,33 +5068,65 @@ tree named_brand_of(tree type, int depth = 0) {
     return NULL_TREE;
 }
 
-// Adds each fresh brand that TYPE holds to OUT: a brand closure, a brand in a
-// template argument or in the type of a value argument such as a function
-// pointer, and a brand in a capture or a field of a closure or of a local
-// class.  Complexity: the walk visits each class one time.
-void collect_brands(tree type, std::vector<tree>& out, int depth = 0) {
-    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
+// The set that SETS keeps for the class that TYPE names behind each reference,
+// pointer and array, or null when a walk must read TYPE.  The set of a type
+// that names no class and no function is empty.  The rules ask about most types
+// again, so this lookup comes before each walk.
+const std::vector<tree>* kept_set_of(tree type, const BrandSets& sets) {
+    static const std::vector<tree> kNoBrand;
+    for (int depth = 0; type != NULL_TREE && TYPE_P(type) && depth < kTypeDepth; ++depth) {
+        switch (TREE_CODE(type)) {
+            case REFERENCE_TYPE:
+            case POINTER_TYPE:
+            case ARRAY_TYPE:
+                type = TREE_TYPE(type);
+                continue;
+            case OFFSET_TYPE:
+            case FUNCTION_TYPE:
+            case METHOD_TYPE:
+                return nullptr;
+            default:
+                break;
+        }
+        if (!CLASS_TYPE_P(type)) {
+            return &kNoBrand;
+        }
+        auto found = sets.find(TYPE_MAIN_VARIANT(type));
+        return found != sets.end() ? &found->second : nullptr;
+    }
+    return nullptr;
+}
+
+// Adds each fresh brand that TYPE holds to OUT, in the walk PATH of
+// collect_brands.  The members of an incomplete class come later, so its set
+// and the set of each class that reaches it stay open (TypePath).
+void add_brands(tree type, std::vector<tree>& out, TypePath& path, int depth) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return;
+    }
+    if (depth > kTypeDepth) {
+        path.reach_unread_part();
         return;
     }
     switch (TREE_CODE(type)) {
         case REFERENCE_TYPE:
         case POINTER_TYPE:
         case ARRAY_TYPE:
-            collect_brands(TREE_TYPE(type), out, depth + 1);
+            add_brands(TREE_TYPE(type), out, path, depth + 1);
             return;
         case OFFSET_TYPE:
-            collect_brands(TREE_TYPE(type), out, depth + 1);
-            collect_brands(TYPE_OFFSET_BASETYPE(type), out, depth + 1);
+            add_brands(TREE_TYPE(type), out, path, depth + 1);
+            add_brands(TYPE_OFFSET_BASETYPE(type), out, path, depth + 1);
             return;
         case FUNCTION_TYPE:
         case METHOD_TYPE: {
-            collect_brands(TREE_TYPE(type), out, depth + 1);
+            add_brands(TREE_TYPE(type), out, path, depth + 1);
             tree parameter = TYPE_ARG_TYPES(type);
             if (TREE_CODE(type) == METHOD_TYPE && parameter != NULL_TREE) {
                 parameter = TREE_CHAIN(parameter);
             }
             for (; parameter != NULL_TREE && parameter != void_list_node; parameter = TREE_CHAIN(parameter)) {
-                collect_brands(TREE_VALUE(parameter), out, depth + 1);
+                add_brands(TREE_VALUE(parameter), out, path, depth + 1);
             }
             return;
         }
@@ -5082,33 +5142,52 @@ void collect_brands(tree type, std::vector<tree>& out, int depth = 0) {
         return;
     }
     auto found = shape_caches.brands.find(type);
-    if (found == shape_caches.brands.end()) {
-        shape_caches.brands.emplace(type, std::vector<tree>{});
-        std::vector<tree> held;
-        if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
-            each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
-                if (TYPE_P(argument)) {
-                    collect_brands(argument, held, depth + 1);
-                } else if (TREE_TYPE(argument) != NULL_TREE) {
-                    collect_brands(TREE_TYPE(argument), held, depth + 1);
-                }
-            });
-        }
-        if (tree named = named_brand_of(type)) {
-            held.push_back(named);
-        }
-        tree decl = TYPE_MAIN_DECL(type);
-        if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
-            for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-                if (TREE_CODE(field) == FIELD_DECL) {
-                    collect_brands(TREE_TYPE(field), held, depth + 1);
-                }
+    if (found != shape_caches.brands.end()) {
+        out.insert(out.end(), found->second.begin(), found->second.end());
+        return;
+    }
+    if (!path.enter(type)) {
+        return;
+    }
+    if (!COMPLETE_TYPE_P(type)) {
+        path.reach_unread_part();
+    }
+    std::vector<tree> held;
+    if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+        each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+            if (TYPE_P(argument)) {
+                add_brands(argument, held, path, depth + 1);
+            } else if (TREE_TYPE(argument) != NULL_TREE) {
+                add_brands(TREE_TYPE(argument), held, path, depth + 1);
+            }
+        });
+    }
+    if (tree named = named_brand_of(type)) {
+        held.push_back(named);
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
+        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+            if (TREE_CODE(field) == FIELD_DECL) {
+                add_brands(TREE_TYPE(field), held, path, depth + 1);
             }
         }
-        found = shape_caches.brands.find(type);
-        found->second = std::move(held);
     }
-    out.insert(out.end(), found->second.begin(), found->second.end());
+    path.leave([&](tree settled) { shape_caches.brands.emplace(settled, held); });
+    out.insert(out.end(), held.begin(), held.end());
+}
+
+// Adds each fresh brand that TYPE holds to OUT: a brand closure, a brand in a
+// template argument or in the type of a value argument such as a function
+// pointer, and a brand in a capture or a field of a closure or of a local
+// class.  Complexity: the walk visits each class one time.
+void collect_brands(tree type, std::vector<tree>& out) {
+    if (const std::vector<tree>* kept = kept_set_of(type, shape_caches.brands)) {
+        out.insert(out.end(), kept->begin(), kept->end());
+        return;
+    }
+    TypePath path;
+    add_brands(type, out, path, 0);
 }
 
 // True when BRAND is held by a template argument of SCOPE or of a class or a
@@ -5278,17 +5357,19 @@ tree named_epoch_brand_of(tree type, int depth = 0) {
     return NULL_TREE;
 }
 
-// Adds each epoch brand that TYPE holds to OUT: an epoch brand, a brand in a
-// type argument at each depth, through a reference, a pointer and an array,
-// the brand that a carrier names, and a brand in a capture or a field of a
-// closure or of a local class.  Complexity: the walk visits each class one
-// time between two collections.
-void collect_epoch_brands(tree type, std::vector<tree>& out, int depth = 0) {
-    if (type == NULL_TREE || !TYPE_P(type) || depth > kTypeDepth) {
+// Adds each epoch brand that TYPE holds to OUT, in the walk PATH of
+// collect_epoch_brands.  The members of an incomplete class come later, so its
+// set and the set of each class that reaches it stay open (TypePath).
+void add_epoch_brands(tree type, std::vector<tree>& out, TypePath& path, int depth) {
+    if (type == NULL_TREE || !TYPE_P(type)) {
+        return;
+    }
+    if (depth > kTypeDepth) {
+        path.reach_unread_part();
         return;
     }
     if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE || TREE_CODE(type) == ARRAY_TYPE) {
-        collect_epoch_brands(TREE_TYPE(type), out, depth + 1);
+        add_epoch_brands(TREE_TYPE(type), out, path, depth + 1);
         return;
     }
     type = TYPE_MAIN_VARIANT(type);
@@ -5300,31 +5381,51 @@ void collect_epoch_brands(tree type, std::vector<tree>& out, int depth = 0) {
         return;
     }
     auto found = shape_caches.epoch_brands.find(type);
-    if (found == shape_caches.epoch_brands.end()) {
-        shape_caches.epoch_brands.emplace(type, std::vector<tree>{});
-        std::vector<tree> held;
-        if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
-            each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
-                if (TYPE_P(argument)) {
-                    collect_epoch_brands(argument, held, depth + 1);
-                }
-            });
-        }
-        if (tree named = named_epoch_brand_of(type)) {
-            held.push_back(named);
-        }
-        tree decl = TYPE_MAIN_DECL(type);
-        if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
-            for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-                if (TREE_CODE(field) == FIELD_DECL) {
-                    collect_epoch_brands(TREE_TYPE(field), held, depth + 1);
-                }
+    if (found != shape_caches.epoch_brands.end()) {
+        out.insert(out.end(), found->second.begin(), found->second.end());
+        return;
+    }
+    if (!path.enter(type)) {
+        return;
+    }
+    if (!COMPLETE_TYPE_P(type)) {
+        path.reach_unread_part();
+    }
+    std::vector<tree> held;
+    if (CLASSTYPE_TEMPLATE_INFO(type) != NULL_TREE) {
+        each_type_argument(CLASSTYPE_TI_ARGS(type), [&](tree argument) {
+            if (TYPE_P(argument)) {
+                add_epoch_brands(argument, held, path, depth + 1);
+            }
+        });
+    }
+    if (tree named = named_epoch_brand_of(type)) {
+        held.push_back(named);
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    if (LAMBDA_TYPE_P(type) || (decl != NULL_TREE && decl_function_context(decl) != NULL_TREE)) {
+        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+            if (TREE_CODE(field) == FIELD_DECL) {
+                add_epoch_brands(TREE_TYPE(field), held, path, depth + 1);
             }
         }
-        found = shape_caches.epoch_brands.find(type);
-        found->second = std::move(held);
     }
-    out.insert(out.end(), found->second.begin(), found->second.end());
+    path.leave([&](tree settled) { shape_caches.epoch_brands.emplace(settled, held); });
+    out.insert(out.end(), held.begin(), held.end());
+}
+
+// Adds each epoch brand that TYPE holds to OUT: an epoch brand, a brand in a
+// type argument at each depth, through a reference, a pointer and an array,
+// the brand that a carrier names, and a brand in a capture or a field of a
+// closure or of a local class.  Complexity: the walk visits each class one
+// time between two collections.
+void collect_epoch_brands(tree type, std::vector<tree>& out) {
+    if (const std::vector<tree>* kept = kept_set_of(type, shape_caches.epoch_brands)) {
+        out.insert(out.end(), kept->begin(), kept->end());
+        return;
+    }
+    TypePath path;
+    add_epoch_brands(type, out, path, 0);
 }
 
 // The first arena of a member tag that a value of TYPE reaches in a place
@@ -6822,7 +6923,6 @@ void on_empty_class_assignment(void* gcc_data, void*) {
 }
 
 void on_linear_collection(void*, void*) {
-    shape_caches.refuses_lifetime.clear();
     shape_caches.library_holder.clear();
     shape_caches.brands.clear();
     shape_caches.epoch_brands.clear();

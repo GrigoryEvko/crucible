@@ -1,0 +1,6 @@
+# Classes that a check reads while they are incomplete, and that hold no brand
+# when they are complete, give no line of the rule.
+
+compile early src/early.cpp linear-shapes=on
+flag early -freflection
+exit early pass

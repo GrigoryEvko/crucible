@@ -1,0 +1,21 @@
+# Classes of the library that a check reads while they are incomplete (31), or
+# while their argument is incomplete (46): library_holder_of of linear.cpp keeps
+# no answer of such a class, so a later local of it is a library holder.  The
+# walk that keeps the answer gives none of these two lines.  The header is a
+# base file, so the names of the library and the member of the token are also
+# lines of other rules.
+
+compile early src/early.cpp linear-shapes=on sentinel=include/fixy/EarlyHolders.h
+flag early -freflection
+exit early pass
+judge early
+finding early linear-containment library-holder include/fixy/EarlyHolders.h:31:26 | planted::local_after_a_static_member: held, std::optional
+finding early linear-containment library-holder include/fixy/EarlyHolders.h:46:24 | planted::local_after_the_argument: held, std::vector
+finding early escape-doors public-member include/fixy/EarlyHolders.h:16:9 | planted::Token::handle
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:27:33 | std::optional
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:31:26 | std::optional
+finding early quarantine base-std-entity include/fixy/EarlyHolders.h:32:26 | std::optional::has_value
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:37:24 | std::vector
+finding early quarantine base-std-entity include/fixy/EarlyHolders.h:38:22 | std::vector::empty
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:46:24 | std::vector
+finding early quarantine base-std-entity include/fixy/EarlyHolders.h:47:22 | std::vector::empty

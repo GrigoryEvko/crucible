@@ -1,0 +1,19 @@
+# Carriers of a brand that a check reads while they are incomplete (the arena
+# brands and the scope brands of linear.cpp).  A static object of the instance
+# of each carrier that the check read gives its line (41 and 45), as a static
+# object of a different instance does (42 and 46), and so does the name of the
+# first object in a body (47:52).  The walk that keeps the set of an incomplete
+# class gives none of the lines 41, 45 and 47:52.  The closure that the plant
+# names is a brand outside its scope too.
+
+compile early src/early.cpp linear-shapes=on errors=early
+flag early -freflection
+exit early fail
+finding early brand-escape escaped-alias src/early.cpp:25:7 | planted: Mark, the brand of src/early.cpp:25
+finding early brand-escape escaped-alias src/early.cpp:29:11 | planted::MarkCarrier: brand_type, the brand of src/early.cpp:25
+finding early brand-escape epoch-static src/early.cpp:41:25 | planted: kept_early_epoch, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:42:26 | planted: kept_epoch, planted::Epoch
+finding early brand-escape scope-static src/early.cpp:45:35 | planted::keep_marks: kept_early_mark, the brand of src/early.cpp:25
+finding early brand-escape scope-static src/early.cpp:46:36 | planted::keep_marks: kept_mark, the brand of src/early.cpp:25
+finding early brand-escape epoch-static src/early.cpp:47:52 | planted::keep_marks: planted::kept_early_epoch, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:47:76 | planted::keep_marks: planted::kept_epoch, planted::Epoch
