@@ -119,17 +119,17 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // time.
 //
 // Each public door that writes or reads the state of a stage from outside
-// the pipeline takes a proof.  run_in_row, trace_build_state, pending_op_count
-// and detector_history_count take the proof that no pipeline runs
-// (prove_quiescence), and at() of the uncompiled queue takes the
-// publish-stage proof.  The mailbox of the publish stage and its two
-// sentinels are private.  The requests, the flush and rearm_stop write only
-// atomic cells, so they are const.  These doors take no proof that the check
-// of the statement reads: set_numerics, start, stop, run_on_publish_stage,
-// run_in_row and trace_build_state.  compute_memory_plan is static and takes
-// no BackgroundThread, so it is no door.  The check exempts this one class
-// until the keyed doors of the owner-key member series replace those doors
-// (the exemption of foundation/Transfer.h).
+// the pipeline takes a proof.  run_in_row, trace_build_state,
+// pending_op_count, detector_history_count and scratch_retained_bytes take
+// the proof that no pipeline runs (prove_quiescence), and at() of the
+// uncompiled queue takes the publish-stage proof.  The mailbox of the publish
+// stage and its two sentinels are private.  The requests, the flush and
+// rearm_stop write only atomic cells, so they are const.  These doors take no
+// proof that the check of the statement reads: set_numerics, start, stop,
+// run_on_publish_stage, run_in_row and trace_build_state.  compute_memory_plan
+// is static and takes no BackgroundThread, so it is no door.  The check
+// exempts this one class until the keyed doors of the owner-key member series
+// replace those doors (the exemption of foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -1489,9 +1489,11 @@ public:
         delete("the pipeline thread reaches this object and its Refs to the two sides at one address");
 
     // The bytes of blocks that the two scratch arenas hold.  The build stage
-    // and the publish stage write the arenas, so read the value only when no
-    // pipeline thread runs: before start() or after stop().
-    [[nodiscard]] size_t scratch_retained_bytes() const noexcept {
+    // and the publish stage write the arenas with no order, so the read takes
+    // the proof that no pipeline runs (prove_quiescence).
+    [[nodiscard]] size_t
+    scratch_retained_bytes(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+        expect_quiescent_(proof);
         return ::fixy::saturating_add(build_scratch_.arena.retained_bytes(), publish_scratch_.arena.retained_bytes());
     }
 

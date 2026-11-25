@@ -49,6 +49,7 @@ enum class ProofDoor : uint8_t {
     trace_build_state,
     detector_history_count,
     pending_op_count,
+    scratch_retained_bytes,
 };
 
 [[nodiscard]] ::fixy::InitLoadCtx startup() noexcept {
@@ -63,6 +64,7 @@ void call_door(BackgroundThread& bt, Proof const& proof, ProofDoor door) noexcep
     if (door == ProofDoor::run_in_row) return bt.run_in_row(proof, background());
     if (door == ProofDoor::trace_build_state) return static_cast<void>(bt.trace_build_state(proof));
     if (door == ProofDoor::detector_history_count) return static_cast<void>(bt.detector_history_count(proof));
+    if (door == ProofDoor::scratch_retained_bytes) return static_cast<void>(bt.scratch_retained_bytes(proof));
     static_cast<void>(bt.pending_op_count(proof));
 }
 
@@ -73,6 +75,7 @@ void test_own_proof_opens_each_door(BackgroundThread& bt) {
     CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(proof) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count(proof) == 0);
     call_door(bt, proof, ProofDoor::trace_build_state);
+    call_door(bt, proof, ProofDoor::scratch_retained_bytes);
     bt.stop_requested.signal();
     call_door(bt, proof, ProofDoor::run_in_row);
     CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(proof) == 0);
@@ -144,13 +147,16 @@ int main() {
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::trace_build_state);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::detector_history_count);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::pending_op_count);
+    test_foreign_proof_ends_the_process(bt, other, ProofDoor::scratch_retained_bytes);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::run_in_row);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::trace_build_state);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::detector_history_count);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::pending_op_count);
+    test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::scratch_retained_bytes);
     test_active_run_ends_the_process(rig, bt, ProofDoor::trace_build_state);
     test_active_run_ends_the_process(rig, bt, ProofDoor::detector_history_count);
     test_active_run_ends_the_process(rig, bt, ProofDoor::pending_op_count);
+    test_active_run_ends_the_process(rig, bt, ProofDoor::scratch_retained_bytes);
     test_own_proof_opens_each_door(bt);
     ::fixy::check::pass(kTest, "test_background_thread_quiescence: all passed\n");
     return 0;

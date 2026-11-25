@@ -2254,6 +2254,11 @@ crucible_neg_compile_test(neg_publish_job_captures_this
 crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
   "no matching function for call to .crucible::BackgroundThread::trace_build_state\\(\\)"
   "candidate expects 1 argument, 0 provided")
+# The bytes of the two scratch arenas belong to two stages, so the read of them
+# takes the proof that no pipeline runs.
+crucible_neg_compile_test(neg_background_thread_scratch_bytes_without_a_proof
+  "no matching function for call to .crucible::BackgroundThread::scratch_retained_bytes\\(\\) const."
+  "candidate expects 1 argument, 0 provided")
 # A BackgroundThread takes its two sides in its constructor, so start takes no
 # side, and no start after stop names another ring or log.
 crucible_neg_compile_test(neg_background_thread_start_takes_no_sides

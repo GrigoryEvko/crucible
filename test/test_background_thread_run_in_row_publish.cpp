@@ -468,7 +468,8 @@ void test_long_run_keeps_its_scratch() {
     const uint64_t published = run_family_a(bt, rig, LONG_RUN_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
-    CRUCIBLE_TEST_ASSERT(kTest, bt.scratch_retained_bytes() == short_bt.scratch_retained_bytes()
+    const size_t scratch_bytes = bt.scratch_retained_bytes(bt.prove_quiescence());
+    CRUCIBLE_TEST_ASSERT(kTest, scratch_bytes == short_bt.scratch_retained_bytes(short_bt.prove_quiescence())
                                     && "a scratch arena kept more blocks after its epochs");
 
     uint32_t stored = 0;
@@ -486,7 +487,7 @@ void test_long_run_keeps_its_scratch() {
                         "  long_run_keeps_its_scratch:                "
                         "PASSED (regions={}, stored={}, scratch={} bytes)\n",
                         static_cast<unsigned long long>(published), stored,
-                        static_cast<unsigned long long>(bt.scratch_retained_bytes()));
+                        static_cast<unsigned long long>(scratch_bytes));
 }
 
 // The limits of a pipeline refuse what passes them.  The uncompiled queue
@@ -519,7 +520,7 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, stored == 2);
     CRUCIBLE_TEST_ASSERT(test, queued == 2);
     CRUCIBLE_TEST_ASSERT(test, dropped > 0);
-    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_bytes() <= size_t{2} << 20);
+    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_bytes(bt.prove_quiescence()) <= size_t{2} << 20);
     ::fixy::check::pass(test, "  limits_refuse_what_passes_them:            PASSED (stored={}, dropped={})\n", stored,
                         static_cast<unsigned long long>(dropped));
 }
