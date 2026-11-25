@@ -256,6 +256,33 @@ struct CapturesMarkedOwnerOfTheBase {
 };
 static_assert(!is_refused<CapturesMarkedOwnerOfTheBase>());
 
+// A handle of the base that states keeps_own_borrows, such as an epoch, is no
+// borrow slot: a capture of it by reference passes, also with a member that
+// would be a borrow slot.  A class outside the base with the same mark is read
+// member by member below.
+struct EpochOwner {
+    struct[[= ::foundation::brand::arena_member_brand{}]] Scratch final {};
+    EpochArena<Scratch> arena;
+};
+struct CapturesEpoch {
+    using brand_type = EpochOf<EpochOwner::Scratch>;
+    Epoch<brand_type>& epoch;
+};
+struct[[= keeps_own_borrows{}]] MarkedHandleOfTheBase {
+    Option<View<int>> held{};
+};
+struct CapturesMarkedHandleOfTheBase {
+    MarkedHandleOfTheBase& handle;
+};
+struct UnmarkedHandleOfTheBase {
+    Option<View<int>> held{};
+};
+struct CapturesUnmarkedHandleOfTheBase {
+    UnmarkedHandleOfTheBase& handle;
+};
+static_assert(!is_refused<CapturesEpoch>() && !is_refused<CapturesMarkedHandleOfTheBase>());
+static_assert(is_refused<CapturesUnmarkedHandleOfTheBase>());
+
 }  // namespace detail::capture_store_checks
 
 }  // namespace foundation::core
@@ -291,6 +318,10 @@ consteval bool is_stash_refused() {
 }
 static_assert(is_stash_refused<OwnerStash>() && is_stash_refused<ArgumentsStash>());
 static_assert(is_stash_refused<CellStash>() && is_stash_refused<SynchronizedStash>());
+struct[[= core::keeps_own_borrows{}]] HandleStash {
+    core::Option<core::View<int>> held{};
+};
+static_assert(is_stash_refused<HandleStash>());
 
 // The walk trusts refers_deep{} only on a class of the base, so a borrow
 // outside the base that states it and gives its target as it is refuses a

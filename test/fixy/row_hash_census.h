@@ -1158,6 +1158,8 @@ inline constexpr StatedZero kZeros[] = {
      "the annotation of a loan key and of a keyed owner: it is empty and is never a value in a signature"},
     {^^::foundation::core::no_loan_key_mark,
      "the annotation of an owner with no key: it is empty and is never a value in a signature"},
+    {^^::foundation::core::keeps_own_borrows,
+     "the mark of a handle whose doors store only borrows of its own brand: an empty tag that holds nothing"},
     {^^::foundation::core::owns_its_storage,
      "the annotation of an owner that holds its storage through pointers that no caller sets: it is empty and is "
      "never a value in a signature"},

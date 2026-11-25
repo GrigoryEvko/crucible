@@ -5552,6 +5552,12 @@ foundation_neg_compile_test(neg_core_link_match_arm_keeps_a_ref
 foundation_neg_compile_test(neg_core_find_if_keeps_an_element
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "a body of a frame door stores no borrow outside the frame")
+# The store check trusts the mark keeps_own_borrows of foundation/core/TypeParts.h
+# only in a class of the base, so a marked class outside the base with a View in
+# it is a borrow slot.
+foundation_neg_compile_test(neg_core_store_mark_outside_the_base
+  "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_strided_walk_keeps_an_element
   "use of deleted function .void foundation::core::walk\\(Body&&, StridedView<First, Rank>, StridedView<Rest, Rank>\\.\\.\\.\\)"
   "a body of a frame door stores no borrow outside the frame")

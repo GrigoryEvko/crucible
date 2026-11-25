@@ -64,6 +64,11 @@
 //       class on OwnerCore (foundation/core/Owner.h), a class that states
 //       by_arguments{}, synchronized{} or payload_cell{}, or owns_its_storage{}.
 //       The walk reads its type arguments in its own region and no member
+//     * a handle of the base that states keeps_own_borrows{}
+//       (foundation/core/TypeParts.h), such as an Epoch, is no borrow slot,
+//       and the walk reads no part of it.  Each door of it that stores an
+//       object runs ArenaKeeps, so the object holds borrows only of the brand
+//       of the handle
 //     * each other class gives its members.  A class template can hold a
 //       value of a type argument in raw bytes, as a FixedList or an Option
 //       does, so a class with an array of bytes or a union in a member gives
@@ -76,7 +81,8 @@
 //
 // A capture by value of a plain value or of a borrow of a const element, a
 // capture by const reference, and a capture by reference of an int, of an
-// owner of plain values, of an arena or of a ViewMut of an outer frame pass.
+// owner of plain values, of an arena, of an epoch or of a ViewMut of an outer
+// frame pass.
 // The cost is a refusal of a capture by reference of a large object that
 // holds a borrow, such as a capture of this in a class with a member Ref.
 // Such a body captures the parts that it writes.
@@ -325,6 +331,7 @@ consteval void push_members_(StoreWalk& walk, TypeParts const& parts, StoreRegio
             }
             continue;
         }
+        if (parts.keeps_own_borrows) continue;
         if (!parts.is_storage_owner) push_members_(walk, parts, region);
         if (!parts.is_storage_owner && !parts.holds_bytes) continue;
         for (std::size_t index = 0; index < parts.argument_count; ++index) {

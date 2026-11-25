@@ -55,6 +55,21 @@
 #include <cstddef>
 #include <meta>
 
+namespace foundation::core {
+
+// The mark of a handle of the base whose doors store an object only through the
+// gate ArenaKeeps of foundation/core/BumpArena.h, such as the Epoch of an
+// EpochArena.  An object that such a door stores holds borrows only of the
+// brand of the handle, and no door of the handle stores a borrow in a member of
+// it.  So a body of a frame that captures the handle by a reference that is not
+// const stores no borrow of the frame into it, and the store check of
+// foundation/core/CaptureStore.h reads the handle as no borrow slot and reads no
+// member of it.  The check trusts the mark only in a class of the base, and the
+// check file of each marked class pins its doors.
+struct keeps_own_borrows final {};
+
+}  // namespace foundation::core
+
 namespace foundation::core::detail {
 
 // What a class tells of one of its parts, one bit each: a reference, a const
@@ -158,6 +173,9 @@ struct TypeParts {
     // OwnerCore in public.  No rule keeps the marks in the base, so a walk
     // reads the members of a marked class outside the base.
     bool is_storage_owner = false;
+    // A handle of the base that states keeps_own_borrows{}.  The store check
+    // reads it as no borrow slot.
+    bool keeps_own_borrows = false;
     // A class with an array of bytes or a union in a member.  Such a member can
     // hold a value of a type argument.  A class with no such member holds a
     // value of a type argument only in a member of a type that names it, which
@@ -419,12 +437,13 @@ consteval void list_arguments_(TypeParts& parts, PartList<Room>& list, std::meta
 }
 
 // Reads the marks of the class that a walk reads: is_borrow and
-// gives_const_access, is_storage_owner and the marks of an owner, and the key
-// mark.
+// gives_const_access, is_storage_owner and the marks of an owner, the key
+// mark, and keeps_own_borrows.
 consteval void read_marks_(TypeParts& parts, std::meta::info type) {
     namespace tr = ::foundation::transfer;
     bool states_owner = false;
     bool refers_deep = false;
+    bool keeps_own = false;
     std::vector<std::meta::info> const annotations = std::meta::annotations_of(type);
     std::meta::info const* const first = annotations.data();
     std::size_t const count = annotations.size();
@@ -445,12 +464,15 @@ consteval void read_marks_(TypeParts& parts, std::meta::info type) {
             states_owner = true;
         } else if (mark == ^^loan_key_mark) {
             parts.is_key_marked = true;
+        } else if (mark == ^^keeps_own_borrows) {
+            keeps_own = true;
         }
     }
-    if (!states_owner && !refers_deep) return;
+    if (!states_owner && !refers_deep && !keeps_own) return;
     bool const is_of_the_base = is_class_of_the_base_(type);
     parts.is_storage_owner = states_owner && is_of_the_base;
     parts.gives_const_access = refers_deep && is_of_the_base;
+    parts.keeps_own_borrows = keeps_own && is_of_the_base;
 }
 
 // True when one of the bases is a public OwnerCore.  Each owner of the base

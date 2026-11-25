@@ -652,6 +652,33 @@ inline constexpr TextView epoch_arena_names{"EpochArena with_epoch retained_byte
                                             "default_retained_bytes_limit max_blocks block_alignment brand_type"};
 CRUCIBLE_CLOSED_SURFACE(epoch_arena_names, EpochArena<Member>);
 
+// The doors of an epoch.  An epoch states keeps_own_borrows{}, so the store
+// check of a frame body reads no member of it.  That holds because each door
+// that stores an object, make, array and build_array, runs ArenaKeeps (the pins
+// MakesHeld, FillsHeld and BuildsHeld above) and no door writes a member of the
+// epoch.  The closed surface pins that list of doors.  The control: a class
+// with the same doors is a closed surface of its list, and with one more door
+// it is not.
+inline constexpr TextView epoch_names{"Epoch make array build_array brand_type"};
+CRUCIBLE_CLOSED_SURFACE(epoch_names, MemberEpoch);
+static_assert(type_parts_v<MemberEpoch>.keeps_own_borrows && !type_parts_v<BumpArena<Family>>.keeps_own_borrows);
+template <class Brand, bool HasStore>
+struct EpochShape {
+    using brand_type = Brand;
+    template <class T>
+    void make(T const& /*value*/) noexcept {}
+    template <class T>
+    void array(T const& /*value*/) noexcept {}
+    template <class T>
+    void build_array(T const& /*value*/) noexcept {}
+    void keep(Ref<int, Brand> /*borrow*/) noexcept
+        requires HasStore
+    {}
+};
+inline constexpr TextView epoch_shape_names{"EpochShape make array build_array brand_type"};
+static_assert(closed_surface<EpochShape<EpochOf<Member>, false>>(epoch_shape_names).is_closed());
+static_assert(!closed_surface<EpochShape<EpochOf<Member>, true>>(epoch_shape_names).is_closed());
+
 }  // namespace detail::bump_arena_checks
 
 }  // namespace foundation::core

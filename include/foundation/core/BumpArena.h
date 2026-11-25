@@ -964,9 +964,12 @@ private:
 
 // The epoch of an EpochArena (epochs above): the one door of make, array and
 // build_array of the arena while the body of with_epoch runs.  It cannot copy or move, and
-// only with_epoch builds it, in its own frame.
+// only with_epoch builds it, in its own frame.  Each of the three doors runs
+// ArenaKeeps, and no door writes a member of the epoch, so the epoch states
+// keeps_own_borrows{} (foundation/core/TypeParts.h).  The check file pins the
+// list of its doors.
 template <EpochBrand Brand>
-class[[= ::foundation::brand::branded_arena{}]] Epoch final {
+class[[= ::foundation::brand::branded_arena{}]][[= keeps_own_borrows{}]] Epoch final {
 public:
     using brand_type = Brand;
 
