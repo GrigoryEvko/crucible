@@ -3650,10 +3650,13 @@ foundation_neg_compile_test(neg_core_epoch_make_linear_token
   "use of deleted function .void foundation::core::Epoch<Brand>::make\\(this foundation::core::Epoch<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::End; Marker = foundation::core::Alloc; Args = \\{\\{anonymous\\}::End\\}; Brand = foundation::core::EpochOf<Owner::Scratch>\\]."
   "an arena ends no object, so a linear value that make builds in it ends with no consume")
 # An object of an arena lives until the arena or the epoch ends, so it holds no
-# borrow of a different owner: a View, an erased Ref, a Ref of an epoch in a
-# named arena, a Ref of a scope in an epoch, and a class outside the base that
-# states the mark of a borrow and an arena tag.
+# borrow of a different owner: a View, a reference to a scalar, an erased Ref, a
+# Ref of an epoch in a named arena, a Ref of a scope in an epoch, and a class
+# outside the base that states the mark of a borrow and an arena tag.
 foundation_neg_compile_test(neg_core_bump_arena_make_holder_of_a_view
+  "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::Holder. .*Brand = Family\\]."
+  "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+foundation_neg_compile_test(neg_core_bump_arena_make_holder_of_a_scalar_reference
   "use of deleted function .void foundation::core::BumpArena<Brand>::make\\(this foundation::core::BumpArena<Brand>&, Marker, Args&& ...\\) \\[with T = \\{anonymous\\}::Holder. .*Brand = Family\\]."
   "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
 foundation_neg_compile_test(neg_core_bump_arena_make_ref_of_an_epoch

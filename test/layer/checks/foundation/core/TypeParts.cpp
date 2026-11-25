@@ -40,7 +40,7 @@ struct PlainBase {
 struct PlainWrapper : PlainBase {
     Scalars inner{};
     FixedArray<unsigned char, 7> padding{};
-    int& scalar;
+    long scalar = 0;
 };
 template <class Tag>
 struct Counter {
@@ -51,11 +51,26 @@ static_assert(is_plain<Scalars>() && is_plain<PlainBase>() && is_plain<PlainWrap
 static_assert(is_plain<Counter<int>>() && is_plain<Counter<UndeclaredTag>>() && is_plain<FixedList<int, 3>>());
 static_assert(is_plain<FixedArray<unsigned char, 7>>() && is_plain<FixedArray<Scalars, 3>>());
 
-// A reference to a class, a borrow, an owner, raw storage that a type argument
-// can fill, and a class that holds one of them by value are not plain.
+// A reference to a class or to a scalar, a borrow, an owner, raw storage that a
+// type argument can fill, and a class that holds one of them by value are not
+// plain.  A reference to a scalar is a part.
 struct WithReference {
     Scalars& target;
 };
+struct WithScalarReference {
+    int count = 0;
+    int const& scalar;
+};
+struct WithByteReference {
+    unsigned char& byte;
+};
+struct DerivedOfScalarReference : WithScalarReference {};
+static_assert(!is_plain<WithScalarReference>() && !is_plain<WithByteReference>()
+              && !is_plain<DerivedOfScalarReference>());
+static_assert(type_parts_v<WithScalarReference>.size == 1);
+static_assert(type_parts_v<WithScalarReference>.run()[0].type == ^^int);
+static_assert(type_parts_v<WithScalarReference>.run()[0].has(PartFact::was_reference));
+static_assert(type_parts_v<WithScalarReference>.run()[0].has(PartFact::was_const));
 struct WithView {
     View<int const> view{};
 };

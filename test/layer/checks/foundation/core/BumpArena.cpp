@@ -334,6 +334,27 @@ struct Stated {
     Value value{};
 };
 static_assert(!ArenaKeeps<HoldsReference, Family> && !ArenaKeeps<Declared, Family>);
+// A reference to a scalar or to a byte borrows its target too, at each depth.
+struct HoldsScalarReference {
+    int& number;
+};
+struct HoldsByteReference {
+    unsigned char const& byte;
+};
+struct HoldsScalarReferenceDeep {
+    HoldsScalarReference inner;
+};
+struct DerivedOfScalarReference : HoldsScalarReference {};
+enum class Shade : unsigned char {
+    dark,
+};
+struct HoldsEnumReference {
+    Shade& shade;
+};
+static_assert(!ArenaKeeps<HoldsScalarReference, Family> && !ArenaKeeps<HoldsByteReference, Family>);
+static_assert(!ArenaKeeps<HoldsEnumReference, Family> && !ArenaKeeps<DerivedOfScalarReference, Family>);
+static_assert(!ArenaKeeps<HoldsScalarReferenceDeep, Family> && !ArenaKeeps<FixedList<HoldsScalarReference, 2>, Family>);
+static_assert(!ArenaKeeps<Option<HoldsByteReference>, Family> && !ArenaKeeps<HoldsByteReference, OtherFamily>);
 static_assert(!holds_loose_borrow_(^^void (*)(int), ^^Family, PartNaming::by_member));
 static_assert(!holds_loose_borrow_(^^int Plain::*, ^^Family, PartNaming::by_member));
 static_assert(holds_loose_borrow_(^^int*, ^^Family, PartNaming::by_argument));

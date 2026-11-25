@@ -31,12 +31,14 @@
 //
 // Parts that a walk does not read
 //   An arithmetic type, an enumeration, void and the null pointer hold no
-//   borrow, so no part names one (is_leaf_).  A part that the class holds by
-//   value and that is plain holds a borrow at no depth.  A plain class gives
-//   each object of it only values: no pointer to an object, no reference, no
-//   mark of a borrow or of an owner, and no raw storage that a type argument
-//   can fill.  A class holds each part by value, so the read of a part that it
-//   holds by value ends with the depth of the class.
+//   borrow, so no part that a class holds by value names one (is_leaf_).  A
+//   reference to one is a part, because an object with such a member borrows
+//   its target.  A part that the class holds by value and that is plain holds a
+//   borrow at no depth.  A plain class gives each object of it only values: no
+//   pointer to an object, no reference, no mark of a borrow or of an owner, and
+//   no raw storage that a type argument can fill.  A class holds each part by
+//   value, so the read of a part that it holds by value ends with the depth of
+//   the class.
 
 #include <foundation/Brand.h>
 #include <foundation/Transfer.h>
@@ -406,8 +408,9 @@ template <std::size_t Room>
     return is_plain;
 }
 
-// Adds each data member of the class that is no leaf to the list.  True when
-// each member is plain.
+// Adds each data member of the class to the list: each member that is a
+// reference, and each other member that is no leaf.  True when each member is
+// plain, which a reference never is.
 template <std::size_t Room>
 [[nodiscard]] consteval bool list_members_(TypeParts& parts, PartList<Room>& list,
                                            std::vector<std::meta::info> const& members) {
@@ -418,11 +421,12 @@ template <std::size_t Room>
         std::meta::info const declared = std::meta::dealias(std::meta::type_of(first[index]));
         if (std::meta::is_arithmetic_type(declared) || std::meta::is_enum_type(declared)) continue;
         std::meta::info const bare = ::foundation::reflect::bare_type(declared);
+        bool const is_reference = std::meta::is_reference_type(declared);
         parts.holds_bytes = parts.holds_bytes || is_byte_storage_(bare);
-        if (is_leaf_(bare)) continue;
+        if (is_leaf_(bare) && !is_reference) continue;
         bool const is_const = std::meta::is_const_type(std::meta::remove_reference(declared));
         unsigned char facts = is_const ? bit_of_(PartFact::was_const) : 0;
-        if (std::meta::is_reference_type(declared)) {
+        if (is_reference) {
             facts = static_cast<unsigned char>(facts | bit_of_(PartFact::was_reference));
             list.push(bare, std::meta::info{}, facts);
             is_plain = false;
