@@ -67,6 +67,14 @@
 //   array holds alone, and its end ends each element and gives the storage
 //   back.  An element of a linear type is refused, because an array that does
 //   not move cannot give such an element back.
+//
+// End of the array
+//   The end of an array ends its elements, from the last, as the end of a
+//   FixedArray does (foundation/core/Array.h).  The count is in the type, so no
+//   state tells that an element ended.  The end of the array is the end of its
+//   scope, and the kind stale-borrow refuses a later use by name.  Only the code
+//   of an element can come in between, and a read of the array by it through a
+//   second name reads an ended element.
 
 #include <foundation/Brand.h>
 #include <foundation/Linear.h>

@@ -40,6 +40,13 @@
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
 //
+// The end of a FixedArray ends its elements, from the last.  The count is in the
+// type, so no state tells that an element ended, as in a C array.  The end of the
+// array is the end of its scope, and the kind stale-borrow of the rule
+// view-escape refuses a later use by name.  Only the code of an element can come
+// in between (the code of an element of foundation/core/Owner.h), and a read of
+// the array by it through a second name reads an ended element.
+//
 // Value doors
 //   array.set(index, value)   the element at an Index<N> becomes value
 //   array.exchange(index, value)
