@@ -311,7 +311,7 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
     // root is the singleton root of the tag.  The map door only reads it,
     // and the root goes back right after the map, so two loads of one facade
     // at one time end the process.  Nothing discards the pages of the
-    // mapping, so no advise_release_aware asks for the root later.
+    // mapping, and it has no pool, so no door asks for the root later.
     ::foundation::permissions::ErasedPermission<bpf_map_region<Tag>> owner =
         ::foundation::permissions::mint_singleton_root<bpf_map_region<Tag>>();
     // The map door refuses a negative descriptor with ebadf.

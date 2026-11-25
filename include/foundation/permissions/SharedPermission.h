@@ -288,7 +288,7 @@ public:
     }
 
     // The exclusive token, lent for the call of a door that reads the proof,
-    // such as advise_release_aware of fixy/os/Mmap.h.  The lease keeps the
+    // such as the map door of fixy/os/OwnedMmap.h.  The lease keeps the
     // token, and no door consumes a token through a reference to const.  The
     // deleted twin refuses a reference into a temporary lease, which would
     // outlive the lease.

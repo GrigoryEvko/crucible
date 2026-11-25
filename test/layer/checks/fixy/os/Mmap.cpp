@@ -104,62 +104,6 @@ static_assert(!CtxFitsSafeAdvise<IoBlockCtx, advice::Free>,
               "Free lets the kernel zero the pages, so it must go through the release-aware door.");
 static_assert(!CtxFitsSafeAdvise<IoOnlyCtx, advice::HugePage>);
 
-// The release gate, read against one probe mapping and each proof a
-// caller could hand it.  The brands are named types, so each claim reads
-// without a mint.  The mapping spelled without a brand is on the erased
-// identity.
-struct ProbeRegion {};
-struct ProbeOtherRegion final {};
-struct ProbeDerivedRegion final : ProbeRegion {};
-struct ProbeBrand final {};
-struct ProbeOtherBrand final {};
-
-using ProbeMapping = OwnedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous, ProbeBrand>;
-using ErasedMapping = OwnedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous>;
-
-using OwnProof = ::foundation::permissions::Permission<ProbeRegion, ProbeBrand>;
-using OtherTagProof = ::foundation::permissions::Permission<ProbeOtherRegion, ProbeBrand>;
-using DerivedTagProof = ::foundation::permissions::Permission<ProbeDerivedRegion, ProbeBrand>;
-using OtherBrandProof = ::foundation::permissions::Permission<ProbeRegion, ProbeOtherBrand>;
-using ShareProof = ::foundation::permissions::SharedPermission<ProbeRegion, ProbeBrand>;
-// A class derived from the right permission.  It has the tag_type and
-// the brand_type of that permission, which is why the tag clause asks
-// for the Permission template exactly rather than for the two members.
-struct LookAlikeProof : OwnProof {};
-
-static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::DontNeed, ProbeMapping, OwnProof>);
-static_assert(CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::Free, ProbeMapping, OwnProof>);
-static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, advice::HugePage, ProbeMapping, OwnProof>,
-              "the release-aware door is for the advice that discards pages.  The rest go through advise.");
-static_assert(!CtxFitsReleaseAwareAdvise<IoOnlyCtx, advice::DontNeed, ProbeMapping, OwnProof>);
-
-static_assert(ProofNamesMappingTag<OwnProof, ProbeMapping> && MappingIsBranded<ProbeMapping>
-              && ProofNamesMappingBrand<OwnProof, ProbeMapping>);
-static_assert(!ProofNamesMappingTag<OtherTagProof, ProbeMapping>,
-              "a permission of another region must not admit a discard of this mapping.");
-static_assert(!ProofNamesMappingTag<DerivedTagProof, ProbeMapping>,
-              "a tag derived from the mapping's tag is another tag.");
-static_assert(!ProofNamesMappingTag<LookAlikeProof, ProbeMapping>, "a class derived from a permission is not one.");
-static_assert(!ProofNamesMappingTag<ShareProof, ProbeMapping>, "a share is not the exclusive.");
-static_assert(!ProofNamesMappingBrand<OtherBrandProof, ProbeMapping>,
-              "a permission of another instance of the tag must not admit a discard of this mapping.");
-static_assert(!MappingIsBranded<ErasedMapping>,
-              "on the erased brand every mapping of the tag is one type, so no proof names one of them.");
-
-// The same refusals through the function itself, where the tag and the
-// brand are deduced from the mapping.
-template <typename Mapping, typename Proof>
-concept CanRelease = requires(IoBlockCtx const& ctx, Mapping& mapping, Proof const& proof) {
-    advise_release_aware<advice::DontNeed>(ctx, mapping, proof);
-};
-static_assert(CanRelease<ProbeMapping, OwnProof>);
-static_assert(!CanRelease<ProbeMapping, OtherTagProof>);
-static_assert(!CanRelease<ProbeMapping, DerivedTagProof>);
-static_assert(!CanRelease<ProbeMapping, LookAlikeProof>);
-static_assert(!CanRelease<ProbeMapping, ShareProof>);
-static_assert(!CanRelease<ProbeMapping, OtherBrandProof>);
-static_assert(!CanRelease<ErasedMapping, OwnProof>);
-
 // A tag with no row in a table has no bits, and a read of them is a
 // compile error.  These cells are the witness: an atom over a tag with
 // no row is refused at the gate, and it cannot fold into PROT_NONE.
@@ -183,6 +127,5 @@ static_assert(!CtxFitsMmapMint<IoBlockCtx, A_UnknownProt, A_Shared>,
 struct NotAnAdvice final {};
 static_assert(!KnownAdvice<NotAnAdvice>);
 static_assert(!CtxFitsSafeAdvise<IoBlockCtx, NotAnAdvice>);
-static_assert(!CtxFitsReleaseAwareAdvise<IoBlockCtx, NotAnAdvice, ProbeMapping, OwnProof>);
 
 }  // namespace fixy::mmap::detail::mmap_surface_invariants

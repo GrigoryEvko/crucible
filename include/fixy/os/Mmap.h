@@ -24,14 +24,14 @@
 //     Their MADV_* values are here, and so is the only clause that walk
 //     cannot express: that every tag declared there has one.
 //
-//  3. The Permission argument on advise_release_aware is what admits
-//     the advice that discards pages.  The gate compares the tag and the
-//     brand of the permission with the mapping's own, so a permission of
-//     another region does not admit a discard of this mapping.
+//  3. No door of this header discards pages.  An advice that discards
+//     pages is a door of LockedMmap (fixy/os/LockedMmap.h), which holds the
+//     mapping and the pool of its readers in one object.
 //
 //  4. A mapping carries a brand.  mint_mmap and mint_mmap_anon read the
 //     tag and the brand of the exclusive permission the caller presents,
-//     so a mapping has an identity past its tag.
+//     so a mapping has an identity past its tag.  The brand names the mint
+//     site of the permission, and not one mapping.
 
 #include <fixy/os/OwnedMmap.h>
 #include <fixy/os/Fd.h>
@@ -57,8 +57,8 @@ namespace fixy::mmap {
 // from the rest.  DontNeed drops the pages at once, and Free lets the
 // kernel drop them when memory is short, before the next write.  A read
 // of a dropped page gives zeros, so each of the two races each reader of
-// the region.  The plain advise surface refuses both, and the
-// release-aware one takes a witness.
+// the region.  advise refuses both, and the release-aware door of LockedMmap
+// (fixy/os/LockedMmap.h) gives them, under the exclusive of its own pool.
 //
 // The advice tags are declared in fixy/atoms/Os.h with the other nine tag
 // namespaces.  What is here is what only this header can express: the
@@ -313,38 +313,12 @@ concept CtxAdmitsAdvise =
 template <typename Ctx, typename Advice>
 concept CtxFitsSafeAdvise = CtxAdmitsAdvise<Ctx> && KnownAdvice<Advice> && !DiscardsPages<Advice>;
 
-// A release names the mapping it acts on, by the tag and the brand of the
-// mapping.  Each clause is its own concept, so a refusal names the clause
-// that failed.
-//
-// The proof is compared as the type the caller passed.  A parameter
-// spelled Permission<Tag, Brand> would also deduce from a class derived
-// from a permission, and IsPermissionFor refuses that class, because it
-// matches the Permission template exactly.  A share, a guard, and a
-// permission of a tag derived from the mapping's tag are each refused as
-// another type.
-template <typename Proof, typename Region>
-concept ProofNamesMappingTag = ::foundation::permissions::IsPermissionFor<Proof, typename Region::tag_type>;
-
-// On the erased brand every mapping of a tag is one type, so a proof of
-// one of them would stand in for all of them.  Only a mint with a
-// permission of a fresh brand gives a branded mapping.
-template <typename Region>
-concept MappingIsBranded = ::foundation::brand::IsBranded<Region>;
-
-template <typename Proof, typename Region>
-concept ProofNamesMappingBrand = ::foundation::brand::SameBrand<Proof, Region>;
-
-template <typename Ctx, typename Advice, typename Region, typename Proof>
-concept CtxFitsReleaseAwareAdvise = CtxAdmitsAdvise<Ctx> && DiscardsPages<Advice> && ProofNamesMappingTag<Proof, Region>
-                                 && MappingIsBranded<Region> && ProofNamesMappingBrand<Proof, Region>;
-
 // The mapping takes its tag and its brand from the exclusive permission
 // the caller presents.  The mint reads the permission and does not
-// consume it: the caller keeps it, can park it in a pool, and presents
-// it again to advise_release_aware.  Each mapping minted with one
-// permission has the identity of that permission, and the exclusive of
-// that identity covers each of them.
+// consume it: the caller keeps it, and can park it in a pool.  Each mapping
+// minted with one permission has the tag and the brand of that permission.
+// The mapping that a discard can reach comes from the mints of LockedMmap
+// (fixy/os/LockedMmap.h).
 //
 // The file is the borrow of the Handle of the file, with the right map,
 // and also read and write for a shared map that writes (the source of a map
@@ -384,48 +358,14 @@ mint_mmap_anon(Ctx const& ctx, ::foundation::permissions::Permission<Tag, Brand>
 }
 
 // The advice gives the unit, or the error of the kernel.  The door gives
-// einval for a region that is not mapped, and it makes no system call.
+// einval for a region that is not mapped, and it makes no system call.  No
+// advice of this door changes a byte of the region, so it takes a region
+// that is const.  The region of a LockedMmap gives these advices to a reader.
 template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand,
           ::foundation::effects::IsExecCtx Ctx>
     requires CtxFitsSafeAdvise<Ctx, Advice>
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-advise(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region) noexcept {
-    return detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
-}
-
-// What makes this surface safe is the permission the caller has to
-// produce.  An exclusive permission over a region is obtainable only
-// once every outstanding share of it has been deposited back, so holding
-// one witnesses that no reader is live.  The permission is move-only, so
-// the caller cannot have handed it to a reader between obtaining it and
-// arriving here.
-//
-// The gate admits only the permission of this mapping: its tag is the
-// mapping's tag and its brand is the mapping's brand.  The mapping took
-// both from the permission it was minted with, so the proof and the
-// mapping name one identity, and a permission of another region cannot
-// stand in.  The Advice argument is the only one a caller spells.  The
-// rest are deduced, and a spelled tag that differs from the mapping's
-// tag does not bind the region.
-//
-// A brand names a mint site, not a mint call, per fact 2 of
-// foundation/Brand.h.  Two permissions minted by one statement in a loop
-// are one type, so two mappings minted with them are one type too, and
-// the gate cannot tell them apart.  A permission carries no state at run
-// time, so there is no identity here to compare at run time either.
-// Mint the two permissions at two sites when both mappings must live at
-// the same time.
-//
-// It is borrowed rather than consumed because discarding pages leaves
-// the region usable, so the caller keeps it and may hand it back out
-// afterwards.
-template <typename Advice, typename Tag, typename Prot, typename Share, typename Brand, typename Proof,
-          ::foundation::effects::IsExecCtx Ctx>
-    requires CtxFitsReleaseAwareAdvise<Ctx, Advice, OwnedMmap<Tag, Prot, Share, Brand>, Proof>
-[[nodiscard]] inline ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-advise_release_aware(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand>& region,
-                     Proof const& /*exclusive_proof*/) noexcept {
-    // The door gives einval for a region that is not mapped.
+advise(Ctx const&, OwnedMmap<Tag, Prot, Share, Brand> const& region) noexcept {
     return detail::advise_region_(region.data(), region.size(), advice_value_of(^^Advice));
 }
 

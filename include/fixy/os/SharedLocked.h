@@ -23,7 +23,11 @@
 // fixy/os/SpinLock.h), so no reference to the T leaves the body through the
 // return.  What stays open, as for each frame door (foundation/core/Frame.h):
 // a body can store a borrow of the T in an object outside the body through a
-// capture by reference, in a type that names no brand.
+// capture by reference, in a type that names no brand.  Also open for a T
+// that moves and that gives views of memory it owns: a write body can assign
+// such a T of the caller to the data, and a view that the caller took of it
+// before the assignment stays live outside the lock.  A pinned T closes that
+// route, as the region of LockedMmap does.
 //
 // The lock takes the exclusive permission of its tag with a fresh brand, so
 // a share of one lock is no share of another lock of another root.

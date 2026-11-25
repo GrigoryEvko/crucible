@@ -864,8 +864,8 @@ inline constexpr corpus_entry rule_corpus[] = {
      "discharged: atom::global::thread_local_<StaticTag> requires the tag, so the untagged form this rule refused "
      "cannot be named"},
     {"M001", Disposition::Retired,
-     "discharged: DontNeed discards pages, so fixy/os/Mmap.h refuses it at advise and admits it only at "
-     "advise_release_aware, which takes the Permission of the mapping"},
+     "discharged: DontNeed discards pages, so fixy/os/Mmap.h refuses it at advise, and only advise_release_aware of "
+     "fixy/os/LockedMmap.h admits it, under the exclusive of the pool that the object holds beside the mapping"},
     {"M011", Disposition::Retired,
      "discharged: a failure here is a Result return or a throw, and each runs every destructor in scope, so "
      "a linear value is released on the failure path; the one exit that skips destructors is longjmp, and L006 "

@@ -8,18 +8,15 @@
 // The bit folds and the gate answers stay in the header, where they fire
 // wherever the surface is used.  What is here is the behaviour under a
 // constructed sequence of calls: that a mapping carries what was written
-// to it, that a file mapping shows the file's bytes, that the
-// release-aware advice really discards, and that the leak door hands
-// back the address the destructor would otherwise have unmapped.  The
-// discard runs twice: once with the permission the mapping was minted
-// with, and once with the exclusive that a pool hands back after its
-// last share ends.
+// to it, that a file mapping shows the file's bytes, and that the leak
+// door hands back the address the destructor would otherwise have
+// unmapped.  The advice that discards pages is a door of LockedMmap, and
+// test_os_locked_mmap.cpp runs it.
 
 #include <fixy/Core.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Mmap.h>
 #include <fixy/os/Path.h>
-#include <foundation/permissions/SharedPermission.h>
 
 #include <sys/mman.h>
 
@@ -41,10 +38,6 @@ namespace {
 using IoBlockCtx =
     eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>>;
 
-// The context of a lend and an upgrade of a pool: the schedule decides
-// their outcome, so the context holds Nondet.
-using PoolOpCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Nondet>>;
-
 // Each mapping is minted with the exclusive permission of its region, and
 // takes its tag and its brand from it.  So each region tag declares the
 // row a permission needs.
@@ -52,12 +45,6 @@ struct AnonRegion final {
     using permission_row = eff::Row<>;
 };
 struct FileRegion final {
-    using permission_row = eff::Row<>;
-};
-struct DiscardRegion final {
-    using permission_row = eff::Row<>;
-};
-struct PooledRegion final {
     using permission_row = eff::Row<>;
 };
 struct LeakedRegion final {
@@ -286,121 +273,6 @@ template <class Brand>
     return result;
 }
 
-[[nodiscard]] int release_aware_advice_discards_the_pages() {
-    IoBlockCtx ctx{eff::testing::test()};
-
-    // The permission is what admits the dangerous advice.  A root mint
-    // is the only way to the first one, and holding it is the claim that
-    // no reader of this region is live — which is true here, because
-    // this thread is the only one that has ever touched it.  The mapping
-    // is minted with it, so the two name one identity.
-    const auto exclusive = perm::mint_permission_root<DiscardRegion>();
-
-    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, exclusive, kPageBytes));
-    if (mapped.is_err()) {
-        std::fprintf(stderr, "an anonymous mapping for the discard leg failed (errno %d)\n",
-                     foundation::os::error_number_of(mapped));
-        return 1;
-    }
-    auto region = std::move(mapped).expect("the mint gave a mapping");
-    static_assert(std::is_same_v<decltype(region)::brand_type, foundation::brand::brand_of_t<decltype(exclusive)>>,
-                  "a mapping takes the brand of the permission it was minted with");
-
-    auto* const bytes = static_cast<std::uint8_t*>(region.data());
-    std::memset(bytes, 0xA5, kPageBytes);
-    if (bytes[0] != 0xA5) {
-        std::fprintf(stderr, "the mapping did not take the fill\n");
-        return 1;
-    }
-
-    if (auto discarded = fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, exclusive);
-        discarded.is_err()) {
-        std::fprintf(stderr, "madvise(MADV_DONTNEED) failed (errno %d)\n", foundation::os::error_number_of(discarded));
-        return 1;
-    }
-
-    // On a private anonymous mapping the discard is observable: the
-    // pages come back zero-filled on the next touch.  This is what
-    // separates the release-aware door from the plain one — it is the
-    // only advice here that destroys what the caller wrote.
-    for (std::size_t index = 0; index < kPageBytes; ++index) {
-        if (bytes[index] != 0) {
-            std::fprintf(stderr, "MADV_DONTNEED left byte %zu at 0x%02X rather than discarding the page\n", index,
-                         static_cast<unsigned>(bytes[index]));
-            return 1;
-        }
-    }
-    return 0;
-}
-
-// The exclusive that a pool hands back is the permission the pool was
-// built from, so it has the brand that the mapping took at the mint.
-// While a share is out, the pool refuses the upgrade, and the caller has
-// no proof to present.  When the share ends, the upgrade gives the proof
-// back and the discard runs.
-[[nodiscard]] int the_pool_hands_back_the_exclusive_that_releases() {
-    IoBlockCtx ctx{eff::testing::test()};
-
-    auto root = perm::mint_permission_root<PooledRegion>();
-    auto mapped = region_of(fixy::mmap::mint_mmap_anon<WriteAnon, Anonymous>(ctx, root, kPageBytes));
-    if (mapped.is_err()) {
-        std::fprintf(stderr, "an anonymous mapping for the pooled leg failed (errno %d)\n",
-                     foundation::os::error_number_of(mapped));
-        return 1;
-    }
-    auto region = std::move(mapped).expect("the mint gave a mapping");
-    auto* const bytes = static_cast<std::uint8_t*>(region.data());
-    std::memset(bytes, 0x3C, kPageBytes);
-
-    perm::SharedPermissionPool pool{std::move(root)};
-    static_assert(std::is_same_v<decltype(pool)::brand_type, decltype(region)::brand_type>,
-                  "the pool keeps the brand of the permission the mapping was minted with");
-    const PoolOpCtx pool_ctx{eff::testing::test()};
-    {
-        auto share = pool.lend(pool_ctx);
-        if (share.is_none()) {
-            std::fprintf(stderr, "the pool refused a share with no exclusive out\n");
-            return 1;
-        }
-        // An exclusive that the pool gives here goes back to the pool at once.
-        const bool is_upgraded_under_a_share = pool.try_upgrade(pool_ctx).match(
-            [&pool](auto exclusive) noexcept {
-                pool.deposit_exclusive(std::move(exclusive));
-                return true;
-            },
-            []() noexcept { return false; });
-        if (is_upgraded_under_a_share) {
-            std::fprintf(stderr, "the pool gave the exclusive out while a share was live\n");
-            return 1;
-        }
-    }
-
-    auto exclusive = pool.try_upgrade(pool_ctx);
-    int failures = 0;
-    if (exclusive.is_none()) {
-        std::fprintf(stderr, "the pool kept the exclusive after the last share ended\n");
-        ++failures;
-    }
-    exclusive.match(
-        [&](auto const& held) noexcept {
-            if (auto discarded =
-                    fixy::mmap::advise_release_aware<fixy::mmap::advice::DontNeed>(ctx, region, held.peek());
-                discarded.is_err()) {
-                std::fprintf(stderr, "madvise(MADV_DONTNEED) with the pooled exclusive failed (errno %d)\n",
-                             foundation::os::error_number_of(discarded));
-                ++failures;
-            } else if (bytes[0] != 0 || bytes[kPageBytes - 1] != 0) {
-                std::fprintf(stderr, "MADV_DONTNEED with the pooled exclusive did not discard the page\n");
-                ++failures;
-            }
-        },
-        []() noexcept {});
-    // The one exit gives the exclusive back to the pool, also when a check failed.
-    std::move(exclusive).match([&pool](auto held) noexcept { pool.deposit_exclusive(std::move(held)); },
-                               []() noexcept {});
-    return failures;
-}
-
 [[nodiscard]] int the_leak_door_hands_back_the_mapping() {
     IoBlockCtx ctx{eff::testing::test()};
 
@@ -413,6 +285,8 @@ template <class Brand>
     }
 
     auto region = std::move(mapped).expect("the mint gave a mapping");
+    static_assert(std::is_same_v<decltype(region)::brand_type, foundation::brand::brand_of_t<decltype(owner)>>,
+                  "a mapping takes the brand of the permission it was minted with");
     void* const expected_address = region.data();
 
     const auto [address, length] = std::move(region).release(fixy::atom::leak::resource<UnmappedByTheTestItself>{});
@@ -440,8 +314,6 @@ int main() {
     if (const int rc = anonymous_mapping_carries_what_was_written(); rc != 0) return rc;
     if (const int rc = file_mapping_shows_the_file_bytes(); rc != 0) return rc;
     if (const int rc = shared_words_load_the_file_words(); rc != 0) return rc;
-    if (const int rc = release_aware_advice_discards_the_pages(); rc != 0) return rc;
-    if (const int rc = the_pool_hands_back_the_exclusive_that_releases(); rc != 0) return rc;
     if (const int rc = the_leak_door_hands_back_the_mapping(); rc != 0) return rc;
     return 0;
 }

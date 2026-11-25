@@ -1,0 +1,81 @@
+// The compile-time checks of fixy/os/LockedMmap.h.
+
+#include <fixy/os/LockedMmap.h>
+
+#include <foundation/Linear.h>
+
+#include <type_traits>
+
+namespace fixy::mmap::detail::locked_mmap_invariants {
+
+namespace eff = ::foundation::effects;
+
+struct ProbeRegion final {
+    using permission_row = eff::Row<>;
+};
+struct ProbeBrand final {};
+
+using Locked = LockedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous, ProbeBrand>;
+
+using AllRowsCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::Alloc, eff::Effect::IO,
+                                                    eff::Effect::Block, eff::Effect::Nondet>>;
+using NoPoolCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+using NoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Nondet>>;
+
+// The advice asks for the rows of the system call and for the row of the
+// pool, and it is an advice that discards pages.
+static_assert(CtxFitsReleaseAwareAdvise<AllRowsCtx, advice::DontNeed, ProbeRegion>);
+static_assert(CtxFitsReleaseAwareAdvise<AllRowsCtx, advice::Free, ProbeRegion>);
+static_assert(!CtxFitsReleaseAwareAdvise<AllRowsCtx, advice::HugePage, ProbeRegion>,
+              "an advice that discards no page goes through advise, in a body of the lock.");
+static_assert(!CtxFitsReleaseAwareAdvise<NoPoolCtx, advice::DontNeed, ProbeRegion>,
+              "the upgrade of the pool depends on the other threads, so the context owns Nondet.");
+static_assert(!CtxFitsReleaseAwareAdvise<NoBlockCtx, advice::DontNeed, ProbeRegion>,
+              "the system call can park the caller, so the context owns Block.");
+
+// The object is pinned.  No code outside the mints builds one, because no
+// code outside their door builds the key.
+static_assert(!std::is_move_constructible_v<Locked> && !std::is_copy_constructible_v<Locked>);
+static_assert(!std::is_move_assignable_v<Locked> && !std::is_copy_assignable_v<Locked>);
+static_assert(!std::is_default_constructible_v<Locked>);
+static_assert(!std::is_default_constructible_v<LockedMmapKey> && !std::is_copy_constructible_v<LockedMmapKey>);
+
+// The lock is the private base, so no code reads the pool or the region
+// through it.
+using Region = LockedRegion<ProbeRegion, prot::WriteCopy, share::Anonymous, ProbeBrand>;
+using Lock = SharedLocked<Region, ProbeRegion, ProbeBrand>;
+static_assert(!std::is_convertible_v<Locked*, Lock*>);
+
+// No body moves the region out of the lock, and no body assigns to it, also
+// from a mapping of its own type.
+using Mapping = OwnedMmap<ProbeRegion, prot::WriteCopy, share::Anonymous, ProbeBrand>;
+static_assert(!std::is_move_constructible_v<Region> && !std::is_move_assignable_v<Region>);
+static_assert(!std::is_copy_constructible_v<Region> && !std::is_copy_assignable_v<Region>);
+static_assert(!std::is_assignable_v<Region&, Mapping&&> && !std::is_constructible_v<Region, Mapping&&>);
+static_assert(!std::is_convertible_v<Region&, Mapping&> && !std::is_convertible_v<Region const&, Mapping const&>);
+
+// A reader gets a const region, which gives no View of elements that it can
+// write.  A region that the kernel mapped read-only gives none to a writer.
+template <typename Held, typename T>
+concept GivesView = requires(Held& region) { region.template view<T>(); };
+template <typename Held, typename T>
+concept GivesRange = requires(Held& region, ::foundation::core::ByteCount offset,
+                              ::foundation::core::ElementCount count) { region.template view_at<T>(offset, count); };
+template <typename Held, typename T>
+concept GivesFixedRange =
+    requires(Held& region, ::foundation::core::ByteCount offset) { region.template view_at<T, 2>(offset); };
+template <typename Held, typename T>
+constexpr int kViewDoors = int{GivesView<Held, T>} + int{GivesRange<Held, T>} + int{GivesFixedRange<Held, T>};
+using ReadOnlyRegion = LockedRegion<ProbeRegion, prot::ReadOnly, share::Private, ProbeBrand>;
+static_assert(kViewDoors<Region, int> == 3 && kViewDoors<Region, int const> == 3);
+static_assert(kViewDoors<Region const, int> == 0 && kViewDoors<Region const, int const> == 3);
+static_assert(kViewDoors<ReadOnlyRegion, int> == 0 && kViewDoors<ReadOnlyRegion, int const> == 3);
+static_assert(kViewDoors<ReadOnlyRegion const, int> == 0 && kViewDoors<ReadOnlyRegion const, int const> == 3);
+
+// The refusal of a map holds the exclusive, so it is linear: a caller that
+// drops it gets an error.
+static_assert(::foundation::linear::is_linear_type(^^MapRefusal<ProbeRegion, ProbeBrand>));
+static_assert(::foundation::core::ErrorValue<MapRefusal<ProbeRegion, ProbeBrand>>);
+static_assert(::foundation::core::ErrorValue<ReleaseRefusal>);
+
+}  // namespace fixy::mmap::detail::locked_mmap_invariants

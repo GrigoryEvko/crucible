@@ -1273,6 +1273,14 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::os::LineTooLong,
      "the error of a line longer than the buffer of its reader: it holds nothing, and it is never a value in a "
      "kernel signature"},
+    {^^::fixy::mmap::ReadersLive, kPayload},
+    {^^::fixy::mmap::LockedRegion, "the mapping inside a locked mapping: a body of the lock gets it by reference, and "
+                                   "it is never a value in a signature"},
+    {^^::fixy::mmap::LockedMmapKey, kPasskey},
+    {^^::fixy::mmap::LockedMmapDoor, kDescriptorDoor},
+    {^^::fixy::mmap::MapRefusal,
+     "the refusal of a map of a locked mapping: the errno and the exclusive back, the error of the result of a mint "
+     "and never a value in a signature"},
     {^^::fixy::mmap::SharedView,
      "a borrow of the elements of a shared mapping that another writer stores: it owns nothing and makes no claim "
      "about what the elements hold"},
@@ -1921,6 +1929,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::spin::LockedGuardKey, kPasskey},
     {^^::fixy::SharedLocked, "a shared lock that owns its data: it lends the data only to a body, and it is never a "
                              "value in a signature"},
+    {^^::fixy::LockedMmap, "a shared lock that owns a mapping: it lends the mapping only to a body, and it is never a "
+                           "value in a signature"},
     {^^::fixy::time::ClockReader, kFactory},
     {^^::fixy::time::TscReader, kFactory},
     {^^::fixy::time::PtpClockReader, kFactory},

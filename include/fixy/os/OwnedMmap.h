@@ -20,11 +20,12 @@
 // rule of prot::Exec each read those claims off the type.
 //
 // Tag gives each region its own type, so two unrelated mappings cannot be
-// swapped at a call boundary.  Brand names one instance of the tag, and
-// foundation/Brand.h states the rules of a brand.  mint_region takes the
-// exclusive permission of the tag and the brand, so a mapping has the
-// identity of that permission.  fixy::mmap::advise_release_aware, the one
-// door that discards pages, admits only a permission of that identity.
+// swapped at a call boundary.  Brand is the brand of the exclusive permission
+// that mint_region takes, and it names the mint site of that permission, not
+// one mapping (fact 2 of foundation/Brand.h).  No door of a plain mapping
+// discards pages.  fixy::LockedMmap (fixy/os/LockedMmap.h) holds a mapping
+// and the pool of its readers in one object, and its release-aware advice
+// asks that pool.
 //
 // The constructor over an address is private, and the map doors are its
 // only callers.  Each door performs the ::mmap itself, so a region exists
@@ -714,8 +715,8 @@ public:
     // The map of no file: a region of the share Anonymous (the source of a
     // map).
     //
-    // The permission is read and not consumed.  The caller keeps it, and
-    // presents it again to fixy::mmap::advise_release_aware.
+    // The permission is read and not consumed.  The caller keeps it, and can
+    // park it in a pool.
     //
     // The return type is Result<OwnedMmap, Errno>, and the body deduces it.
     // A declaration of a member is part of the class, so a Result of the

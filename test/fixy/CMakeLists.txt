@@ -6492,28 +6492,47 @@ fixy_neg_compile_test(neg_os_io_uring_ring_repeated_flag
   "no matching function for call to .mint_io_uring_ring<\\{anonymous\\}::Engine, \\{anonymous\\}::Sq8, \\{anonymous\\}::SqPoll, \\{anonymous\\}::SqPoll>\\(const \\{anonymous\\}::IoBlockCtx&\\)."
   "the expression .!\\(RepeatsAnAtomOf<.*, Atoms ...>\\) \\[with Atoms = \\{.*fixy::atom::io::ring_flag<fixy::io::ring_flag::SqPoll>, fixy::atom::io::ring_flag<fixy::io::ring_flag::SqPoll>\\}\\]. evaluated to .false.")
 
-# ── A discard of pages takes the permission of the mapping ───────────
+# ── A discard of pages runs under the pool of its own mapping ────────
 #
-# advise_release_aware took Permission<RegionTag> with RegionTag free, so
-# a permission of any region admitted a discard of any mapping.  The
-# mapping takes its tag and its brand from the permission it is minted
-# with, and the gate compares each with the proof.  One fixture for each
-# clause: another tag, another brand of the same tag, and a mapping on
-# the erased brand, where an erased proof would agree.
-fixy_neg_compile_test(neg_os_mmap_release_other_tag
-  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
-  "required for the satisfaction of .ProofNamesMappingTag<Proof, Region>. .with Proof = foundation::permissions::Permission<<unnamed>::OtherRegion, "
-  "Tag = <unnamed>::MappedRegion.. evaluated to .false.")
-
-fixy_neg_compile_test(neg_os_mmap_release_other_brand
-  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
-  "required for the satisfaction of .ProofNamesMappingBrand<Proof, Region>. .with Proof = foundation::permissions::Permission<<unnamed>::MappedRegion, "
-  "required for the satisfaction of .SameBrand<Proof, Region>.")
-
-fixy_neg_compile_test(neg_os_mmap_release_erased_mapping
-  "no matching function for call to .advise_release_aware<fixy::mmap::advice::DontNeed>\\("
-  "required for the satisfaction of .MappingIsBranded<Region>. .with Region = fixy::OwnedMmap<<unnamed>::MappedRegion, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, foundation::brand::DefaultBrand>"
-  "the expression .!\\(is_same_v<B, foundation::brand::DefaultBrand>\\) .with B = foundation::brand::DefaultBrand.. evaluated to .false.")
+# fixy/os/LockedMmap.h holds a mapping and its pool in one object, and its
+# release-aware advice asks that pool.  test_os_locked_mmap runs it.  These
+# fixtures show the routes that stay closed: a discard of a plain mapping
+# with a token from outside, an object that no mint made, a View of the
+# pages out of a read body, a mapping that a write body puts into the lock,
+# and an advice on the release-aware door that discards no page.
+fixy_test(test_os_locked_mmap)
+fixy_neg_compile_test(neg_os_locked_mmap_discard_of_a_plain_mapping
+  "neg_os_locked_mmap_discard_of_a_plain_mapping\\.cpp:37:[0-9]+: error:"
+  ".advise_release_aware. is not a member of .fixy::mmap.")
+fixy_neg_compile_test(neg_os_locked_mmap_built_without_mint
+  "neg_os_locked_mmap_built_without_mint\\.cpp:22:[0-9]+: error:"
+  ".constexpr fixy::mmap::LockedMmapKey::LockedMmapKey\\(\\). is private within this context")
+fixy_neg_compile_test(neg_os_locked_mmap_read_body_gives_a_view_out
+  "use of deleted function .void fixy::SharedLocked<T, Tag, Brand>::with_read\\(const Ctx&, Body&&\\)"
+  "the result of a body of a lock leaves the lock, so it holds no reference and no address")
+fixy_neg_compile_test(neg_os_locked_mmap_write_body_assigns_the_region
+  "neg_os_locked_mmap_write_body_assigns_the_region\\.cpp:35:[0-9]+: error: no match for .operator=."
+  "operand types are .fixy::mmap::LockedRegion<")
+fixy_neg_compile_test(neg_os_locked_mmap_safe_advice_on_release_door
+  "advise_release_aware<fixy::mmap::advice::WillNeed>\\(const \\{anonymous\\}::MapCtx&\\)."
+  "required for the satisfaction of .DiscardsPages<Advice>. .with Advice = fixy::mmap::advice::WillNeed.")
+# The two mints of a LockedMmap have the gates of the mints of a mapping.
+# Two fixtures for each mint: a context without Block, and the licence of a
+# shared file or the fresh brand of the exclusive.
+fixy_neg_compile_test(neg_os_locked_mmap_ctx_lacks_block
+  "no matching function for call to .mint_locked_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::IoOnlyCtx&, "
+  "required for the satisfaction of .CtxFitsLockedFileMint<Ctx, Marker, Kind, Rights, Atoms ...>."
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>.. evaluated to .false.")
+fixy_neg_compile_test(neg_os_locked_mmap_shared_file_without_licence
+  "no matching function for call to .mint_locked_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .SharedFileMapIsLicensed<Kind, ")
+fixy_neg_compile_test(neg_os_locked_mmap_anon_ctx_lacks_block
+  "no matching function for call to .mint_locked_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::IoOnlyCtx&, "
+  "required for the satisfaction of .CtxFitsLockedAnonMint<Ctx, Marker, Atoms ...>."
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>.. evaluated to .false.")
+fixy_neg_compile_test(neg_os_locked_mmap_anon_erased_exclusive
+  "no matching function for call to .mint_locked_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .IsFreshBrand<Brand>. .with Brand = foundation::brand::DefaultBrand.")
 
 # The plain advise surface refuses each advice that lets the kernel
 # discard the pages, Free as well as DontNeed.  The MADV_* value of a tag

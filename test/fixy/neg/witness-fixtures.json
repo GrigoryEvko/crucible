@@ -1087,9 +1087,29 @@
       "constructor": "(?<!~)\\bKeyedBytes\\("
     },
     {
+      "name": "neg_witness_lockedmmap_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bLockedMmap\\("
+    },
+    {
       "name": "neg_witness_machine_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bMachine\\("
+    },
+    {
+      "name": "neg_witness_mmap_lockedmmapdoor_direct_construction",
+      "reason": "use of deleted function",
+      "constructor": "(?<!~)\\bLockedMmapDoor\\("
+    },
+    {
+      "name": "neg_witness_mmap_lockedmmapkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bLockedMmapKey\\("
+    },
+    {
+      "name": "neg_witness_mmap_lockedregion_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bLockedRegion\\("
     },
     {
       "name": "neg_witness_mmap_sharedview_direct_construction",
@@ -1751,6 +1771,22 @@
     {
       "type": "fixy::mmap::SharedView<std::uint64_t, 4>",
       "header": "fixy/os/OwnedMmap.h"
+    },
+    {
+      "type": "fixy::mmap::LockedMmapKey",
+      "header": "fixy/os/LockedMmap.h"
+    },
+    {
+      "type": "fixy::mmap::LockedRegion<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand>",
+      "header": "fixy/os/LockedMmap.h"
+    },
+    {
+      "type": "fixy::LockedMmap<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand>",
+      "header": "fixy/os/LockedMmap.h"
+    },
+    {
+      "type": "fixy::mmap::LockedMmapDoor",
+      "header": "fixy/os/LockedMmap.h"
     },
     {
       "type": "fixy::Saturated<unsigned int>",
