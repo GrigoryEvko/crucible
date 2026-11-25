@@ -5079,6 +5079,11 @@ fixy_neg_compile_test(neg_channel_of_a_message_with_a_borrow
 fixy_neg_compile_test(neg_box_channel_of_unsendable_payload
   "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
   "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")
+# A tag that names a class that is only declared answers for the tag alone, and
+# a Box of that class beside the tag still refuses.
+fixy_neg_compile_test(neg_box_channel_of_a_declared_box_beside_its_tag
+  "template constraint failure for .template<fixy::concurrent::ChannelForm Form, class T, long unsigned int Capacity, class UserTag, class Brand>"
+  "required for the satisfaction of .Sendable<T>. \\[with T = .*Parcel\\]")
 # A stage can run on a thread of its own, so each handle of its body is
 # Sendable.  A handle that refers to a plain int is not, and neither is a
 # handle that refers to a branded foreground context, which belongs to one

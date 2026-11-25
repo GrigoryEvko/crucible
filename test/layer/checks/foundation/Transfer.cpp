@@ -509,6 +509,48 @@ static_assert(first_refusal(^^DeclaredBox, Property::Send) == ^^DeclaredPayload)
 static_assert(Sendable<::foundation::core::Box<Plain>> && Shareable<::foundation::core::Box<Plain>>);
 static_assert(!Sendable<::foundation::core::Box<OwnerThreadCount>>);
 
+// A class can name an incomplete class as a tag and hold a part that reaches
+// it.  The tag holds each property, and the part still refuses, whichever of
+// the two the walk reads first.  The walk reads the last part first, and the
+// type arguments before the parts.
+struct PartBeforeTag {
+    Tagged<DeclaredPayload> tag;
+    DeclaredBox box;
+};
+struct TagBeforePart {
+    DeclaredBox box;
+    Tagged<DeclaredPayload> tag;
+};
+template <class T>
+struct ArgumentBeforePart {
+    ::foundation::core::Box<T> box;
+};
+static_assert(!Sendable<PartBeforeTag> && !Shareable<PartBeforeTag> && !SendableBeside<PartBeforeTag>
+              && !SendableOwned<PartBeforeTag>);
+static_assert(!Sendable<TagBeforePart> && !Shareable<TagBeforePart> && !SendableBeside<TagBeforePart>
+              && !SendableOwned<TagBeforePart>);
+static_assert(!Sendable<ArgumentBeforePart<DeclaredPayload>> && !Shareable<ArgumentBeforePart<DeclaredPayload>>
+              && !SendableBeside<ArgumentBeforePart<DeclaredPayload>>
+              && !SendableOwned<ArgumentBeforePart<DeclaredPayload>>);
+static_assert(first_refusal(^^TagBeforePart, Property::Send) == ^^DeclaredPayload);
+static_assert(first_refusal(^^ArgumentBeforePart<DeclaredPayload>, Property::SendOwned) == ^^DeclaredPayload);
+
+// A Ref of an incomplete class asks for a read by two threads, and the tag of
+// the class that holds it answers no such question.
+template <class T>
+struct ArgumentBeforeRef {
+    ::foundation::core::Ref<T const, ViewBrand> ref;
+};
+static_assert(!Shareable<ArgumentBeforeRef<DeclaredPayload>> && !Sendable<ArgumentBeforeRef<DeclaredPayload>>);
+
+// The controls: a complete class answers as a tag and as a part alike, and a
+// tag alone still holds each property.
+static_assert(Sendable<ArgumentBeforePart<Plain>> && Shareable<ArgumentBeforePart<Plain>>);
+static_assert(Shareable<ArgumentBeforeRef<Plain>> && Sendable<ArgumentBeforeRef<Plain>>);
+static_assert(!Sendable<ArgumentBeforePart<OwnerThreadCount>>);
+static_assert(Sendable<Tagged<DeclaredPayload>> && Shareable<Tagged<DeclaredPayload>>
+              && SendableOwned<Tagged<DeclaredPayload>>);
+
 // A type that reaches itself through an owner ends the walk.
 struct Node {
     ::foundation::core::Option<::foundation::core::Box<Node>> next;
@@ -596,6 +638,8 @@ static_assert(!Sendable<ReadsUnstated> && first_refusal(^^ReadsUnstated, Propert
 // An owner of a class that is only declared holds what the statement gives.
 static_assert(Sendable<::foundation::core::Box<OpaqueHandle>> && Shareable<::foundation::core::Box<OpaqueHandle>>);
 static_assert(!Sendable<::foundation::core::Box<UnstatedHandle>>);
+static_assert(Sendable<ArgumentBeforePart<OpaqueHandle>> && Shareable<ArgumentBeforePart<OpaqueHandle>>);
+static_assert(!Sendable<ArgumentBeforePart<UnstatedHandle>>);
 static_assert(holds_its_statement(^^StatedPlain) && !holds_its_statement(^^StatedWithBorrow));
 static_assert(Sendable<StatedWithCellBorrow> && SendableBeside<StatedWithCellBorrow>
               && !holds_its_statement(^^StatedWithCellBorrow));

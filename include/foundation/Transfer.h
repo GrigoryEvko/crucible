@@ -1568,9 +1568,6 @@ struct ReferenceAnswer {
     detail::GoalList visited;
     while (!pending.is_empty()) {
         const detail::Goal goal = pending.pop();
-        if (visited.holds(goal)) continue;
-        visited.push(goal);
-
         const std::meta::info bare = refl::bare_type(goal.type);
         // Rule 2.
         if (std::meta::is_arithmetic_type(bare) || std::meta::is_enum_type(bare)
@@ -1593,6 +1590,12 @@ struct ReferenceAnswer {
             if (goal.reach == detail::Reach::Tag || detail::is_stated(bare, goal.property)) continue;
             return bare;
         }
+        // The verdict of a complete class does not depend on how the walk
+        // reaches it, and the verdict of an incomplete class does.  So only a
+        // complete class enters the list, and a goal of an incomplete tag
+        // answers no goal of a part.
+        if (visited.holds(goal)) continue;
+        visited.push(goal);
         // Rule 5.  A class of one owner thread moves to no other thread.
         const detail::StatedMarks marks{bare};
         if (marks.has(detail::refusing_annotation(goal.property))) return bare;
