@@ -291,10 +291,12 @@ namespace owner {
 // one element, unless an append builds the first one.  tail is the next free
 // slot of the last segment, and tail_end is the end of that segment.  The two
 // are null when the list has no segment, and while code of an element runs in
-// an append (element code in an append).
+// an append (element code in an append).  The release ends each element, so
+// released_element names T for the owner core (the code of an element).
 template <class T>
 struct SegmentListState {
     using owner_state_mark = OwnerStateMark;
+    using released_element = T;
 
     T* segments[segment_limit_]{};
     T* tail = nullptr;

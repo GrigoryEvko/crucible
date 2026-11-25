@@ -80,6 +80,21 @@ static_assert(::foundation::linear::is_linear_v<SegmentList<LinearToken>>);
 static_assert(!::foundation::linear::is_linear_v<SegmentList<int>>);
 static_assert(!std::is_move_assignable_v<SegmentList<LinearToken>>);
 
+// The release of a list ends each element, so the end of a list runs code of a
+// caller only when the end of its element does (the code of an element of
+// foundation/core/Owner.h).  A list is its core and nothing more, so its move
+// runs no such code.
+struct ElementWithEnd final {
+    int value = 0;
+    ElementWithEnd() noexcept = default;
+    ElementWithEnd(ElementWithEnd&&) noexcept = default;
+    ~ElementWithEnd() {}
+};
+static_assert(BareOwner<SegmentList<int>> && BareOwner<SegmentList<ElementWithEnd>>);
+static_assert(!EndRunsCode<SegmentList<int>> && !EndRunsCode<SegmentList<Box<int>>>);
+static_assert(!EndRunsCode<SegmentList<SegmentList<int>>> && !EndRunsCode<Box<SegmentList<int>>>);
+static_assert(EndRunsCode<SegmentList<ElementWithEnd>> && !MoveRunsCode<SegmentList<ElementWithEnd>>);
+
 // A list holds each owned element, also one that does not move, and it
 // refuses an array, a const element and a reference.
 template <class T>
