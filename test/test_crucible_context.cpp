@@ -919,6 +919,52 @@ static void test_slot_views() {
     ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");
 }
 
+// Matches the first op of a region, deactivates the context, and then reads
+// through the proof of the compiled mode that the deactivation ended.
+template <class Read>
+static void read_through_a_stale_proof(Read const& read) noexcept {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> region = make_region_reading_slot_one(arena, false, SchemaHash{51});
+    CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const auto stale = ctx.mint_compiled_view(kVigilForeground);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, stale).status() == ReplayStatus::MATCH);
+    ctx.deactivate();
+    static_cast<void>(read(ctx, stale));
+}
+
+// deactivate takes the region and the slot table from the engine, so a read of
+// the engine through a stale proof reaches no freed column of the pool.  It
+// ends the process at a precondition.
+static void test_a_stale_proof_of_the_compiled_mode_ends_the_process() {
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            read_through_a_stale_proof([](CrucibleContext const& ctx, auto const& stale) noexcept {
+                return ctx.output_ptr(0, stale).is_some();
+            });
+        },
+        ::fixy::TextView{"foundation: contract violation: is_initialized()"});
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            read_through_a_stale_proof([](CrucibleContext const& ctx, auto const& stale) noexcept {
+                return ctx.input_ptr(0, stale).is_some();
+            });
+        },
+        ::fixy::TextView{"foundation: contract violation: is_initialized()"});
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            read_through_a_stale_proof([](CrucibleContext const& ctx, auto const& stale) noexcept {
+                return ctx.input_view<float>(crucible::InputPosition{0}, stale).is_some();
+            });
+        },
+        ::fixy::TextView{"foundation: contract violation: matched.is_some()"});
+
+    ::fixy::check::pass(kTest, "  test_a_stale_proof_of_the_compiled_mode_ends_the_process: PASSED\n");
+}
+
 int main() {
     ::fixy::report(::fixy::Sink::Out, "test_crucible_context:\n");
     test_initial_state();
@@ -933,6 +979,7 @@ int main() {
     test_integration_sweep_line();
     test_divergence_counter();
     test_slot_views();
+    test_a_stale_proof_of_the_compiled_mode_ends_the_process();
     ::fixy::check::pass(kTest, "test_crucible_context: all tests passed\n");
     return 0;
 }

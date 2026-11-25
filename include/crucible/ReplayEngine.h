@@ -301,6 +301,18 @@ private:
         CRUCIBLE_POST(0, slot_table_.size() == pool.num_slots());
     }
 
+    // Takes the engine back to its state before an init: no region, no matched
+    // op and no slot table.  The context calls it before its pool ends, so no
+    // read of the engine names the ended column of the pool, and a stale proof
+    // of the active mode ends the process at its precondition.
+    void clear_() noexcept {
+        num_ops_ = 0;
+        cursor_ = no_region_cursor_();
+        current_ = ::fixy::none;
+        slot_table_ = SlotTable{};
+        load_guard_();
+    }
+
     // The precondition runs in the body, so it also fires when the compiler
     // folds a call at compile time, which a clause reading a member through
     // `this` would skip.  The door gives the view on the erased identity

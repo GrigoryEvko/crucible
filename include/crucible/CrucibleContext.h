@@ -144,6 +144,10 @@ struct CrucibleContext {
     void deactivate() {
         mode_ = ContextMode::RECORD;
         drop_external_reads_();
+        // The slot table of the engine is a View of the column of the pool, so
+        // the engine lets it go before the pool ends.  A stale CompiledView
+        // then ends the process at a precondition of the engine.
+        engine_.clear_();
         pool_.destroy();
         active_region_ = ActiveRegionLink{};
 
@@ -210,6 +214,9 @@ struct CrucibleContext {
         const RegionNode& old_region =
             *::fixy::Option<DagRef<RegionNode const>>{active_region_.value()}.expect("the check above found it");
 
+        // The engine holds a View of the column of the pool that detach ends,
+        // and the init of the engine below gives it the column of the new one.
+        engine_.clear_();
         // Detaching empties the pool, which makes the view stale, but it goes
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
