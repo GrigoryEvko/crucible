@@ -64,9 +64,11 @@
 //   (ArenaKeeps).  The walk reads each base, each member and each element by
 //   value, at each depth:
 //     - A Ref, a Link, an ArenaRun and a run of an ArenaRunSet pass when they
-//       name the brand of the arena, or a member tag or a family tag.  An
-//       epoch brand passes only in an object of that epoch, and a scope brand
-//       only in an object of the arena of that scope
+//       name the brand of the arena, or a named tag that the tag of the arena
+//       states as outlived_by (foundation/Brand.h).  An epoch and the arena of
+//       a scope have no tag of their own, so an object of an epoch keeps only
+//       borrows of that epoch, and an object of a scope only borrows of that
+//       scope
 //     - Each other class that states refers{}, refers_unique{} or
 //       refers_deep{} is a refusal, such as a View, a Ref of the erased brand
 //       and a class outside the base that states the mark.  So is a class
@@ -86,6 +88,9 @@
 //   brand_type gives a Ref of that tag for each of its objects (to() of
 //   foundation/core/Ref.h), so only an arena of the tag builds such an object: each
 //   constructor takes the build key that make gives (ArenaBuildKey).
+//   The walk trusts an outlived_by too: no mint proves that an arena of the
+//   stated tag outlives an arena of the tag that states it.  So each statement
+//   tells who keeps the two arenas in that order.
 //
 // Brands of an arena
 //   The brand of an arena is its first template argument, and each Ref and
@@ -416,12 +421,25 @@ namespace detail {
 // an arena trusts the mark only in the base.
 struct names_owner_second {};
 
-// True for a borrow of the base that names an arena as the owner of its
-// target: the brand of the arena, or a member tag or a family tag
-// (foundation/core/ArenaTag.h).  The second type argument of a Ref, a Link, an
-// ArenaRun and a class with the mark names_owner_second is the brand.
-[[nodiscard]] consteval bool is_borrow_of_arena_(std::meta::info type, std::meta::info brand) {
+// True when a borrow with the brand owner outlives each object of an arena of
+// the brand: the two are one brand, or owner is a named tag and the brand states
+// it as outlived_by (foundation/Brand.h).
+[[nodiscard]] consteval bool outlives_objects_(std::meta::info owner, std::meta::info brand) {
     namespace brand_marks = ::foundation::brand;
+    if (owner == brand) return true;
+    bool const is_named_tag = ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_member_brand)
+                           || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_family_brand);
+    if (!is_named_tag) return false;
+    std::meta::info const arguments[] = {owner};
+    std::meta::info const statement = std::meta::substitute(^^brand_marks::outlived_by, arguments);
+    return ::foundation::reflect::carries_annotation(brand, statement);
+}
+
+// True for a borrow of the base that names an owner of its target which
+// outlives each object of an arena of the brand.  The second type argument of
+// a Ref, a Link, an ArenaRun and a class with the mark names_owner_second is
+// the brand of the owner.
+[[nodiscard]] consteval bool is_borrow_of_arena_(std::meta::info type, std::meta::info brand) {
     if (!std::meta::has_template_arguments(type)) return false;
     std::meta::info const family = std::meta::template_of(type);
     bool const is_named_family = family == ^^Ref || family == ^^Link || family == ^^ArenaRun;
@@ -429,9 +447,7 @@ struct names_owner_second {};
         if (!is_class_of_the_base_(type)) return false;
         if (!::foundation::reflect::carries_annotation(type, ^^names_owner_second)) return false;
     }
-    std::meta::info const owner = std::meta::dealias(std::meta::template_arguments_of(type)[1]);
-    return owner == brand || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_member_brand)
-        || ::foundation::reflect::carries_annotation(owner, ^^brand_marks::arena_family_brand);
+    return outlives_objects_(std::meta::dealias(std::meta::template_arguments_of(type)[1]), brand);
 }
 
 // Where a class names the type of a part: in its type arguments, or only in a
@@ -493,10 +509,11 @@ template <class T, class Brand>
 concept ArenaKeeps = !detail::holds_loose_borrow_(^^T, ^^Brand, detail::PartNaming::by_member);
 
 // The reason of each deleted door of an arena for a type that it cannot keep.
-#define CRUCIBLE_ARENA_KEEPS_REFUSAL                                                                               \
-    "an object of an arena lives until the arena ends, so it holds no borrow of a different owner: hold a Ref, a " \
-    "Link or an ArenaRun of an arena, or a copy of the value, and not a View, a Ref of the erased brand or a "     \
-    "pointer"
+#define CRUCIBLE_ARENA_KEEPS_REFUSAL                                                                                 \
+    "an object of an arena lives until the arena ends, so it holds no borrow of a different owner: hold a Ref, a "   \
+    "Link or an ArenaRun of the same arena, or a copy of the value, and not a View, a Ref of the erased brand or a " \
+    "pointer.  A named tag states each other arena tag that its objects keep a borrow of (outlived_by of "           \
+    "foundation/Brand.h)"
 
 namespace detail {
 

@@ -25,6 +25,17 @@ static_assert(!std::is_convertible_v<DagRef<CompiledKernel const>, KernelRef>);
 static_assert(!std::is_convertible_v<::fixy::Ref<CompiledKernel const>, KernelRef>);
 static_assert(sizeof(RegionKernel) == sizeof(void*), "the slot of a kernel takes one pointer");
 
+// Each object of a DAG arena holds borrows of the DAG arenas, and a region holds
+// a Ref of its kernel too, because DagArena states KernelArena.  The statement
+// has one direction, and no borrow of a different arena goes into the DAG.
+template <class Object>
+constexpr bool dag_keeps = ::foundation::core::ArenaKeeps<Object, DagArena>;
+static_assert(dag_keeps<TraceNode> && dag_keeps<RegionNode> && dag_keeps<BranchNode> && dag_keeps<LoopNode>);
+static_assert(dag_keeps<TraceEntry> && dag_keeps<MemoryPlan> && dag_keeps<BranchNode::Arm> && dag_keeps<KernelRef>);
+static_assert(!::foundation::core::ArenaKeeps<DagRef<TraceNode>, KernelArena>);
+static_assert(!::foundation::core::ArenaKeeps<RegionNode, KernelArena>);
+static_assert(!dag_keeps<::fixy::Ref<NumericalRecipe const, RecipeArena>>);
+
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 

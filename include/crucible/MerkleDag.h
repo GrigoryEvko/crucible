@@ -39,12 +39,8 @@ namespace crucible {
 // type, such as the store check of a frame door, reads that it holds nothing.
 struct CompiledKernel final {};
 
-// The family tag of each arena that holds compiled kernels.  Each kernel is an
-// object of a BumpArena<KernelArena>, and each Ref of a kernel carries the tag.
-// So a region and the kernel cache keep no kernel of a different owner.
-struct[[= ::foundation::brand::arena_family_brand{}]] KernelArena final {};
-
-// A compiled kernel that an arena of kernels keeps.  A reader only reads it.
+// A compiled kernel that an arena of kernels keeps (crucible/DagArena.h).  A
+// reader only reads it.
 using KernelRef = ::fixy::Ref<CompiledKernel const, KernelArena>;
 
 // The transfer facts of a compiled kernel (the opaque types of

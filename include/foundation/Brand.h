@@ -170,6 +170,17 @@ struct arena_member_brand {};
 // run-time id or a graph type that takes the brand of its own arena.
 struct arena_family_brand {};
 
+// The statement of a named arena tag that each arena of the named tag Other
+// outlives each arena of the tag that states it.  An object of an arena keeps a
+// borrow of a different arena only when the tag of its arena states the tag of
+// that borrow (ArenaKeeps of foundation/core/BumpArena.h), so a pair of tags
+// with no statement does not compile.  No mint proves the statement: the code
+// that owns the two arenas keeps their order, and the comment of the tag tells
+// how.  An epoch brand is not its member tag, so a statement of the tag admits
+// nothing in an epoch.
+template <class Other>
+struct outlived_by {};
+
 // The mark of an owner class with a member tag among its type arguments, such
 // as BumpArena and EpochArena of foundation/core/BumpArena.h, whose first
 // argument is the brand, and SlotMap of foundation/core/SlotMap.h, whose third
