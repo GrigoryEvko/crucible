@@ -116,6 +116,17 @@ concept HasFreshClaim = requires(Ring& ring, ::foundation::core::LoanKey<CheckBr
 static_assert(HasFreshClaim<KeyedRing<int>>);
 static_assert(!HasFreshClaim<KeyedRing<ThrowingDefault>>);
 
+// A keyed ring moves only when a move reads its elements, and no ring has an
+// assignment.
+struct Owning {
+    HeapArray<int> items{};
+};
+static_assert(std::is_trivially_move_constructible_v<KeyedRing<int>>);
+static_assert(std::is_move_constructible_v<CyclicBuffer<Owning, 8>>
+              && !std::is_move_constructible_v<KeyedRing<Owning>>);
+static_assert(!std::is_copy_assignable_v<CB8> && !std::is_move_assignable_v<CB8>);
+static_assert(!std::is_copy_assignable_v<KeyedRing<int>> && !std::is_move_assignable_v<KeyedRing<int>>);
+
 // The ring gives no reference to an element out: each door lends one element
 // to a body for the time of the call.
 template <typename Ring>

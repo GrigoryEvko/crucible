@@ -231,8 +231,20 @@ private:
 public:
     constexpr CyclicBuffer() = default;
 
+    // A copy only reads the elements of the source.  A keyed ring moves only
+    // when a move reads its elements and writes none of them, as a keyed
+    // FixedArray does: a body of a frame of the ring can reach the ring by a
+    // name, and a move out of it would end the element that the body holds.
+    // The counter of the fill refuses each assignment of a ring.
     constexpr CyclicBuffer(CyclicBuffer const&) = default;
-    constexpr CyclicBuffer(CyclicBuffer&&) = default;
+    constexpr CyclicBuffer(CyclicBuffer&&)
+        requires(!is_keyed_) || std::is_trivially_copyable_v<T>
+    = default;
+    CyclicBuffer(CyclicBuffer&&)
+        requires is_keyed_ && (!std::is_trivially_copyable_v<T>)
+    = delete(
+        "a move of a keyed CyclicBuffer writes its elements, and a frame of the ring could be open: build the ring "
+        "in its place");
     constexpr CyclicBuffer& operator=(CyclicBuffer const&) = default;
     constexpr CyclicBuffer& operator=(CyclicBuffer&&) = default;
     ~CyclicBuffer() = default;

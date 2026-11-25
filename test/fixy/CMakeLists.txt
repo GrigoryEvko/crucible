@@ -2293,6 +2293,11 @@ foreach(_keyed_read captures_the_key reaches_the_key_by_a_member)
     "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(const key_type&, foundation::core::Index<Count>, Body&&\\) const &"
     "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door that writes a slot")
 endforeach()
+# A move of a keyed CyclicBuffer whose elements it writes ends the element that a
+# body of a frame of the ring holds.
+fixy_neg_compile_test(neg_cyclic_buffer_keyed_move
+  "use of deleted function .fixy::CyclicBuffer<T, N, KeyBrand>::CyclicBuffer\\(fixy::CyclicBuffer<T, N, KeyBrand>&&\\)"
+  "a move of a keyed CyclicBuffer writes its elements, and a frame of the ring could be open: build the ring in its place")
 # A claim ends or replaces the element of its slot, so a ring holds no element
 # that a holder cannot drop.
 fixy_neg_compile_test(neg_cyclic_buffer_of_a_linear_element
