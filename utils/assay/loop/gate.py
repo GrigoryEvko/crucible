@@ -269,7 +269,12 @@ Run of a configuration
          gate writes its name, and the verdict gives it (Verdict.flaky).
          The landing writes it in the verdict of each request of the run
          (assay.loop.land, the flaky tests).
-         An exit other than 0 with no red test rejects the commit too.  Then
+         An exit other than 0 with no red test rejects the commit too.  Then,
+         in ALWAYS, `cmake --build BUILD --target layer_alone` (ALONE_TARGET),
+         which compiles each header with a check file alone.  The target all
+         does not hold these units (test/layer/CMakeLists.txt).  A header that
+         does not compile alone rejects the commit, in each mode of the
+         selection and in the run of the base.  Then
          `guard warnings BUILD`.  The suite holds the ledger checks of the build
          kind, such as the tests guard_plugin and guard_artifact_symbols.
          A second run of these checks gives no new verdict.  A test that gives
@@ -841,6 +846,9 @@ ITEM_RULE = re.compile(r" \[(?P<rule>[^\]\s]+)\]$")
 # The configuration that runs the full suite for each change.  Its build gives the tests that read a build (the
 # selection).
 ALWAYS = "default"
+# The target of test/layer/CMakeLists.txt that compiles each header with a check file alone, and that the target all does
+# not hold.  The gate builds it in the build of ALWAYS (the run of a configuration).
+ALONE_TARGET = "layer_alone"
 # The configurations of objects that run only with --v4, a lower or a change of EVERY_PREFIXES, and not with
 # --all-configurations: release compiles for the level of the host, x86-64-v4 on luks-a (the selection).
 ON_REQUEST = frozenset({"release"})
@@ -3098,6 +3106,10 @@ class Step:
         )
         if problems:
             return problems, still, flaky
+        if configuration.name == ALWAYS:
+            problem = self.build_alone(configuration, share, is_again)
+            if problem is not None:
+                return [problem], (), flaky
         warnings_log = log_name(configuration, "warnings.log", is_again)
         warnings = [*self.gate.master("guard"), "warnings", str(build)]
         if self.run_logged(warnings, warnings_log, share, proc.TOOL_S):
@@ -3105,6 +3117,24 @@ class Step:
         if is_again and configuration.name not in self.unchecked:
             return [], (), flaky
         return self.checked(configuration, (RECONFIGURE_RULE,), share), (), flaky
+
+    def build_alone(self, configuration: Configuration, share: heavy.Share, is_again: bool) -> str | None:
+        """Build ALONE_TARGET, and give the problem of a header that does not compile alone (the run of a configuration).
+
+        The build gets no -j, because ninja obeys the jobserver only with no -j (the jobserver).
+
+        Raises:
+            GateError: If the CMake cache of the build names no cmake
+        """
+        build = build_directory(self.gate.tree, configuration)
+        log = log_name(configuration, "headers.log", is_again)
+        command = [configured_program(build, "cmake"), "--build", str(build), "--target", ALONE_TARGET]
+        if self.run_logged(command, log, share, TEST_RUN_S) != 0:
+            return (
+                f"{configuration.name}: a header does not compile alone (the target {ALONE_TARGET}), "
+                f"see {self.gate.logs / log}"
+            )
+        return None
 
     def judge(
         self,

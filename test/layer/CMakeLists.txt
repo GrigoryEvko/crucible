@@ -42,7 +42,8 @@
 # which each build compiles.  The one-line units of the headers with a check
 # file are the objects of layer_alone_<layer>, because the checks of a check
 # file can need more operations than the header.  The target layer_alone
-# builds them, `all` does not, and the default leg of CI builds the target.
+# builds them, `all` does not, and the gate builds the target in the build of
+# the preset default (assay.loop.gate, the run of a configuration).
 # A row of header-constexpr-ops.txt,
 # `<layer>/<path>.h | limit | reason`, gives one header a higher limit, and
 # the rule header-constexpr-ops refuses a row that its header no longer
@@ -172,7 +173,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/walk-headers.cmake")
 
 # The one-line units of the headers with a check file cost about 500 s of
 # CPU and 4 s of wall time in a clean Debug build at -j128, so `all` does not
-# build them.  The default leg of CI builds this target.
+# build them.  The gate builds this target in the build of the preset default.
 add_custom_target(layer_alone)
 
 set(_walk_header_lines "")

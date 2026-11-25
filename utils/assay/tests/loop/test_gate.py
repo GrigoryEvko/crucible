@@ -391,6 +391,7 @@ VESSEL_CALLS = "vessel/torch/calls.txt"
 VESSEL_HEADER = "include/record.h"
 # The planted cmake: `cmake --build BUILD --target TARGET` writes its target to cmake.txt of the build, and exits 0.
 # `cmake --build BUILD` of a build with the mode build gives an error and exits 1.
+# A build of the target layer_alone of a build with the mode headers gives an error and exits 1.
 # A build of the target crucible_dispatch compiles the planted vessel: each name of VESSEL_CALLS of the tree must be a
 # function of VESSEL_HEADER, else the build gives an error and exits 1.
 CMAKE = """import pathlib
@@ -403,6 +404,9 @@ with open(build / "cmake.txt", "a", encoding="utf-8") as handle:
 mode = build / "mode.txt"
 if words[-1] == str(build) and mode.is_file() and mode.read_text().strip() == "build":
     print("the build gives an error")
+    sys.exit(1)
+if "layer_alone" in words and mode.is_file() and mode.read_text().strip() == "headers":
+    print("include/crucible/Vigil.h: error: the constexpr evaluation operation count exceeds the limit")
     sys.exit(1)
 calls, header = pathlib.Path("@CALLS@"), pathlib.Path("@HEADER@")
 if "crucible_dispatch" in words and calls.is_file():
@@ -1057,7 +1061,8 @@ def every_gate(work: Path, root: Path, tree: Path, modes: Mapping[str, str] | No
 def run_cases(expect: testing.Expect) -> None:
     """Hold the verdict of a run: a red test that is green alone, a test that is red alone too, and a build error.
 
-    A second configure that compiles again rejects the commit too (RECONFIGURE_RULE).
+    A header that does not compile alone rejects the commit too (ALONE_TARGET), and so does a second configure that
+    compiles again (RECONFIGURE_RULE).
     """
     with tempfile.TemporaryDirectory(prefix="gate-run-") as work_text:
         work = Path(work_text)
@@ -1070,14 +1075,17 @@ def run_cases(expect: testing.Expect) -> None:
         verdicts: dict[str, gate.Verdict] = {}
         outputs: dict[str, str] = {}
         suite_reports: dict[str, bool] = {}
-        for mode in ("clean", "flaky", "broken", "build", "late", "reconfigure"):
+        targets: dict[str, list[str]] = {}
+        for mode in ("clean", "flaky", "broken", "build", "late", "headers", "reconfigure"):
             planted = planted_gate(work, root, tree, mode)
+            (tree / "build" / "cmake.txt").unlink(missing_ok=True)
 
             def run(planted: gate.Gate = planted) -> gate.Verdict:
                 return planted.check(candidate, False)
 
             verdicts[mode], outputs[mode] = testing.captured(run)
             suite_reports[mode] = (planted.logs / f"{gate.ALWAYS}.{gate.SUITE_REPORT}").is_file()
+            targets[mode] = built_targets(tree / "build")
         expect(
             "a run with a red test keeps a copy of the report of the suite in its logs, and a run with no red test "
             "keeps none",
@@ -1119,6 +1127,26 @@ def run_cases(expect: testing.Expect) -> None:
         expect(
             "an exit other than 0 after a run with no red test rejects the commit",
             not verdicts["late"].is_accepted and "with no red test" in verdicts["late"].problems[0],
+        )
+        headers = verdicts["headers"]
+        start = f"default: a header does not compile alone (the target {gate.ALONE_TARGET})"
+        expect(
+            f"a header that does not compile alone rejects the commit, the problem names the log of the build, and the "
+            f"focus gives the configuration with no test: {headers.problems}",
+            not headers.is_accepted
+            and headers.problems == (headers.problems[0],)
+            and headers.problems[0].startswith(start)
+            and headers.problems[0].endswith("default.headers.log")
+            and headers.focus == (gate.Focus("default"),),
+        )
+        alone = f"--target {gate.ALONE_TARGET}"
+        expect(
+            f"the default build compiles each header alone one time after its tests, and not after a red test or a build "
+            f"error: {targets}",
+            targets["clean"][-1:] == [alone]
+            and targets["clean"].count(alone) == 1
+            and targets["flaky"].count(alone) == 1
+            and all(alone not in targets[mode] for mode in ("broken", "build", "late")),
         )
         reconfigured = verdicts["reconfigure"]
         expect(
@@ -1407,7 +1435,7 @@ def built_cases(expect: testing.Expect) -> None:
             verdict.is_accepted
             and verdict.built == (INVENTORY,)
             and calls == ["derive mint-inventory --write", "test"]
-            and builds == ["--target build.ninja", ""]
+            and builds == ["--target build.ninja", "", f"--target {gate.ALONE_TARGET}"]
         )
         label = (
             f"the run of default builds build.ninja for the touched tests, then the target all with no -j, writes the "
@@ -1548,7 +1576,8 @@ def built_fixture_cases(expect: testing.Expect) -> None:
             and git.parent(root, verdict.final) == head
             and calls["build"] == ["derive mint-inventory --write", "test"]
             and all(calls[name] == ["test"] for name in SELECTED_BUILDS)
-            and all(builds[name] == [""] for name in objects)
+            and builds["build"] == ["", f"--target {gate.ALONE_TARGET}"]
+            and all(builds[name] == [""] for name in SELECTED_BUILDS)
         )
         label = (
             f"a change that adds a fixture and holds no inventory gets the inventory from the build of default.  Each "
@@ -2172,7 +2201,7 @@ def thread_cases(expect: testing.Expect) -> None:
         regenerated = built_targets(tree / "build")
         holds = (
             verdict.is_accepted
-            and regenerated[-1:] == ["--target build.ninja"]
+            and regenerated[-2:] == ["--target build.ninja", f"--target {gate.ALONE_TARGET}"]
             and len(always) == 1
             and len(bench) == 1
             and seen == ["2", "2"]
