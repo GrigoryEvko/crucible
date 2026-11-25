@@ -1,0 +1,12 @@
+// A plant of use-after-move: the second move of the name that CRUCIBLE_TRY declares, in the scope of the macro.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+Option<Token> open();
+void take(Token&&);
+
+Option<int> must_catch_try_name() {
+    CRUCIBLE_TRY(end, open());
+    take(std::move(end));
+    take(std::move(end));
+    return {};
+}

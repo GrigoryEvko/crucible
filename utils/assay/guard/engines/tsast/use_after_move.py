@@ -93,6 +93,16 @@ Five shapes that keep a name
     static_cast<T&&>(x) for a scalar T, such as int, keeps x, because a
     scalar has no moved-from state.
 
+Unwrap macros
+    CRUCIBLE_TRY(name, operand) and CRUCIBLE_LET_ELSE(name, operand, early)
+    of foundation/core/Choice.h return from the function when the operand
+    holds no value, and else they declare name.  The walk reads the operand
+    on the path.  It reads the early value on a path that returns, so a move
+    in it spends nothing after the macro.  The name starts live in the scope
+    of the statement.  An operand or an early value that names a spent key is
+    a use after move.  The parser gives no expression to an empty early value,
+    so the walk parses such a call again with a value in its place.
+
 Lambdas
     A lambda body is a new body.  It starts with the spent keys of the point
     of the lambda, minus its parameters and its init-captures.  A body that
@@ -435,6 +445,9 @@ PLAIN_CALLEE = frozenset(
 )
 NAME_LEAVES = frozenset({"identifier", "field_identifier", "namespace_identifier"})
 TRY_PREFIX = "try_"
+# The unwrap macros of foundation/core/Choice.h: each one declares its first argument (the unwrap macros).
+LET_ELSE = "CRUCIBLE_LET_ELSE"
+TRY = "CRUCIBLE_TRY"
 MEMBER = "."
 ARROW = "->"
 INDEX = "[]"
@@ -484,6 +497,15 @@ class Place:
     def pointee(self) -> Place:
         """Return the key of the object that the path holds."""
         return replace(self, is_pointee=True)
+
+
+@dataclass(frozen=True, slots=True)
+class Unwrap:
+    """The parts of a call of an unwrap macro (the unwrap macros): its name, its operands and its early values."""
+
+    name: str
+    operands: tuple[tsast.Node, ...]
+    early_values: tuple[tsast.Node, ...]
 
 
 # The keys that a move can have spent, each with the line of its move.  None is a point of no path.
@@ -1225,7 +1247,7 @@ class Walk:
                 state = self.eval(child, state)
             return None
         if kind == "expression_statement":
-            return self.expression_stmt(node, state)
+            return self.expression_stmt(node, state, scope)
         if kind in ("break_statement", "continue_statement"):
             self.jump(kind == "continue_statement", state, frames)
             return None
@@ -1252,8 +1274,12 @@ class Walk:
             return state
         return self.eval(node, state)
 
-    def expression_stmt(self, node: tsast.Node, state: State) -> State:
-        """Walk an expression statement: a throw ends the path, and a base assignment spends the key p#base."""
+    def expression_stmt(self, node: tsast.Node, state: State, scope: Scope) -> State:
+        """Walk an expression statement.
+
+        A throw ends the path, a base assignment spends the key p#base, and an
+        unwrap macro declares its name (the unwrap macros).
+        """
         items = named(node)
         if len(items) == 1 and items[0].type == "throw_expression":
             for child in named(items[0]):
@@ -1261,8 +1287,60 @@ class Walk:
             return None
         if len(items) == 1 and self.base_assignment(items[0]):
             return self.assign_base(items[0], state)
+        unwrap = self.unwrap_macro(items[0]) if len(items) == 1 else None
+        if unwrap is not None:
+            return self.unwrap_stmt(unwrap, state, scope)
         for child in items:
             state = self.eval(child, state)
+        return state
+
+    def unwrap_macro(self, node: tsast.Node) -> Unwrap | None:
+        """Return the parts of a call of an unwrap macro with a plain name and an operand, or None for another node."""
+        function = node.child_by_field("function") if node.type == "call_expression" else None
+        macro = leaf_name(function) if function is not None and function.type == "identifier" else None
+        if macro not in (LET_ELSE, TRY):
+            return None
+        arguments = self.macro_arguments(node)
+        if len(arguments) < 2 or arguments[0].type != "identifier":
+            return None
+        # A comma outside parentheses divides the operand of CRUCIBLE_TRY into more arguments.
+        last_operand = len(arguments) if macro == TRY else 2
+        return Unwrap(name_of(arguments[0]), tuple(arguments[1:last_operand]), tuple(arguments[last_operand:]))
+
+    def macro_arguments(self, call: tsast.Node) -> list[tsast.Node]:
+        """Return the arguments of a call of a macro.
+
+        An empty last argument, as in CRUCIBLE_LET_ELSE(name, operand, ), is
+        no expression, so the grammar gives the tokens of the call and no
+        arguments.  The function then parses the call again with a number in
+        the place of that argument, at the same line.  Complexity: one parse
+        for each such call.
+        """
+        arguments = call.child_by_field("arguments")
+        if arguments is None or arguments.type != "token_tree":
+            return named(arguments)
+        tokens = arguments.tokens()
+        if tokens[-2:] != [",", ")"]:
+            return []
+        text = call.text
+        filled = text[: text.rindex(")")] + "0)"
+        source = "\n" * (call.line - 1) + "void let_else() { " + filled + "; }\n"
+        for tree in tsast.parse_texts([(self.path, source)]):
+            parsed = next(iter(tree.find("call_expression")), None)
+            if parsed is not None:
+                return named(parsed.child_by_field("arguments"))
+        return []
+
+    def unwrap_stmt(self, unwrap: Unwrap, state: State, scope: Scope) -> State:
+        """Walk an unwrap macro: the operand, the early values on a path that returns, and the declared name."""
+        for operand in unwrap.operands:
+            state = self.eval(operand, state)
+        returned = state
+        for value in unwrap.early_values:
+            returned = self.eval(value, returned)
+        state = self.declare(state, scope, [unwrap.name])
+        self.aliases.pop(unwrap.name, None)
+        self.reference_lambdas.pop(unwrap.name, None)
         return state
 
     def jump(self, is_continue: bool, state: State, frames: list[Frame]) -> None:

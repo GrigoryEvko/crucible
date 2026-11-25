@@ -1,0 +1,10 @@
+// A plant of use-after-move: the operand of the let-else moves t, and its early value reads t on the path that returns.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+Option<Token> lend(Token&&);
+int size_of(Token const&);
+
+int must_catch_let_else_early_value(Token t) {
+    CRUCIBLE_LET_ELSE(end, lend(std::move(t)), size_of(t));
+    return size_of(end);
+}

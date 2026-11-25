@@ -1,0 +1,30 @@
+// A control of use-after-move: an unwrap macro declares its name in its scope, so each turn of a loop and each block
+// has a name of its own, and the name of the block around it keeps its state.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+Option<Token> open();
+void take(Token&&);
+bool should_stop();
+
+Option<int> must_accept_unwrap_names(Token end) {
+    while (!should_stop()) {
+        CRUCIBLE_TRY(each, open());
+        take(std::move(each));
+        CRUCIBLE_LET_ELSE(other, open(), {});
+        take(std::move(other));
+    }
+    {
+        CRUCIBLE_LET_ELSE(each, open(), {});
+        take(std::move(each));
+        CRUCIBLE_TRY(end, open());
+        take(std::move(end));
+    }
+    take(std::move(end));
+    return {};
+}
+void must_accept_unwrap_with_no_value() {
+    while (!should_stop()) {
+        CRUCIBLE_LET_ELSE(each, open(), );
+        take(std::move(each));
+    }
+}

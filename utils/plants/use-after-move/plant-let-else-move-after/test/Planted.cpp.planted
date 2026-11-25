@@ -1,0 +1,12 @@
+// A plant of use-after-move: the operand of the let-else moves t on each path, and the code after it moves t again.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+Option<Token> lend(Token&&);
+void take(Token&&);
+
+int must_catch_let_else_move_after(Token t) {
+    CRUCIBLE_LET_ELSE(end, lend(std::move(t)), 0);
+    take(std::move(end));
+    take(std::move(t));
+    return 1;
+}

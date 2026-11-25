@@ -1,0 +1,13 @@
+// A control of use-after-move: the early value of a let-else moves the body on the path that returns, and the code after
+// it moves the body on the path that goes on.
+#include <utility>
+struct Token { Token() = default; Token(Token&&) {} };
+Option<Token> lend();
+template <class Body> int refuse(Body&&);
+template <class Body> int run(Body&&, Token&&);
+
+template <class Body>
+int must_accept_let_else_early_return(Body&& body) {
+    CRUCIBLE_LET_ELSE(end, lend(), refuse(static_cast<Body&&>(body)));
+    return run(static_cast<Body&&>(body), std::move(end));
+}
