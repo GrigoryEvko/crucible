@@ -106,6 +106,7 @@
 #include <foundation/core/CaptureStore.h>
 #include <foundation/core/Fatal.h>
 #include <foundation/core/Frame.h>
+#include <foundation/core/Owner.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Side.h>
 #include <foundation/reflect/Annotation.h>
@@ -1484,7 +1485,8 @@ struct NoPayload final {};
 //     255 lends, and one more ends the process.
 
 [[noreturn]] CRUCIBLE_COLD inline void report_lent_write_() noexcept {
-    fatal("a write ends the payload of a sum while a borrow match lends that payload to an arm");
+    fatal("a write ends the payload of a sum while a borrow match lends that payload to an arm, or while the code of "
+          "the payload runs");
 }
 
 [[noreturn]] CRUCIBLE_COLD inline void report_lend_overflow_() noexcept {
@@ -1680,7 +1682,18 @@ class OptionSlot<T, OptionForm::niche> : NicheLifetime<NicheRead<T>::empty_has_z
     // A storage door: the payload is a member of the slot, which its Option owns.
     [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T& payload_() noexcept { return value_; }
     [[nodiscard]] constexpr T const& payload_() const noexcept { return value_; }
-    constexpr void clear_() noexcept { value_ = NicheRead<T>::empty_(); }
+    constexpr void require_empty_() const noexcept {
+        if (holds_()) [[unlikely]] {
+            detail::report_full_fill_();
+        }
+    }
+    // The payload of a full slot for the one move out of it, which the caller
+    // makes before it calls end_take_.
+    // A storage door: the payload is a member of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T&& begin_take_() noexcept {
+        return static_cast<T&&>(value_);
+    }
+    constexpr void end_take_() noexcept { value_ = NicheRead<T>::empty_(); }
 
     // True when the slot tests each payload: the niche does not state that
     // no door of T builds the empty value.  The payload gate checks a
@@ -1882,8 +1895,8 @@ public:
     // (needs_full), so the branch stays only where the state is not known.
     [[= ::foundation::linear::needs_full{}]] [[nodiscard]] constexpr T expect(Fmt<> why) && noexcept {
         slot_.expect_value_(why);
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return taken;
     }
 
@@ -1907,8 +1920,8 @@ public:
         requires DroppablePayload<T>
     {
         if (!slot_.holds_()) return fallback;
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return taken;
     }
 
@@ -1919,8 +1932,8 @@ public:
         requires ErrorValue<E> && DroppablePayload<E>
     [[nodiscard]] constexpr Result<T, E> ok_or(E error) && noexcept {
         if (!slot_.holds_()) return Result<T, E>{Err<E>{static_cast<E&&>(error)}};
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return Result<T, E>{static_cast<T&&>(taken)};
     }
 
@@ -1939,8 +1952,8 @@ public:
     // empty after the call.  The cost is the one branch of expect.
     [[= ::foundation::linear::empties{}]] [[nodiscard]] constexpr Option take() & noexcept {
         if (!slot_.holds_()) return Option{none};
-        Option taken{detail::SomeTag{}, static_cast<T&&>(slot_.payload_())};
-        slot_.clear_();
+        Option taken{detail::SomeTag{}, slot_.begin_take_()};
+        slot_.end_take_();
         return taken;
     }
 
@@ -1960,9 +1973,7 @@ public:
         requires std::constructible_from<T, U&&>
     [[= ::foundation::linear::fills{}]][[= ::foundation::linear::needs_empty{}]] constexpr void
         fill(U&& value) & noexcept(std::is_nothrow_constructible_v<T, U&&>) {
-        if (slot_.holds_()) [[unlikely]] {
-            detail::report_full_fill_();
-        }
+        slot_.require_empty_();
         slot_.fill_(static_cast<U&&>(value));
     }
 
@@ -2012,8 +2023,8 @@ public:
     map(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
         using Mapped = Option<std::invoke_result_t<Fn, T&&>>;
         if (!slot_.holds_()) return Mapped{none};
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return Mapped::some(static_cast<Fn&&>(fn)(static_cast<T&&>(taken)));
     }
 
@@ -2039,8 +2050,8 @@ public:
     [[nodiscard]] constexpr std::invoke_result_t<Fn, T&&>
     and_then(Fn&& fn) && noexcept(std::is_nothrow_invocable_v<Fn, T&&>) {
         if (!slot_.holds_()) return none;
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return static_cast<Fn&&>(fn)(static_cast<T&&>(taken));
     }
 
@@ -2064,8 +2075,8 @@ public:
               && std::same_as<std::invoke_result_t<Keep&, T const&>, bool>
     [[nodiscard]] constexpr Option filter(Keep&& keep) && noexcept(std::is_nothrow_invocable_v<Keep&, T const&>) {
         if (!slot_.holds_()) return Option{none};
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         if (!keep(static_cast<T const&>(taken))) return Option{none};
         return Option{detail::SomeTag{}, static_cast<T&&>(taken)};
     }
@@ -2136,8 +2147,8 @@ public:
                                                  OnNone&& on_none) && noexcept(std::is_nothrow_invocable_v<OnSome, T&&>
                                                                                && std::is_nothrow_invocable_v<OnNone>) {
         if (!slot_.holds_()) return static_cast<OnNone&&>(on_none)();
-        T taken(static_cast<T&&>(slot_.payload_()));
-        slot_.clear_();
+        T taken(slot_.begin_take_());
+        slot_.end_take_();
         return static_cast<OnSome&&>(on_some)(static_cast<T&&>(taken));
     }
 
@@ -2897,7 +2908,18 @@ class OptionSlot<T, OptionForm::plain> {
     // ends with no action, so the old slot holds nothing to end.
     static constexpr bool assigns_slot_ = std::is_move_assignable_v<SumSlot<NoPayload, T>>;
 
-    constexpr void clear_() noexcept {
+    constexpr void require_empty_() const noexcept {
+        if (holds_()) [[unlikely]] {
+            detail::report_full_fill_();
+        }
+    }
+    // The payload of a full slot for the one move out of it, which the caller
+    // makes before it calls end_take_.
+    // A storage door: the payload is an alternative of the sum of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T&& begin_take_() noexcept {
+        return static_cast<T&&>(payload_());
+    }
+    constexpr void end_take_() noexcept {
         if constexpr (assigns_slot_) {
             sum_ = SumSlot<NoPayload, T>{AlternativeAt<0>{}, NoPayload{}};
         } else {
@@ -2955,6 +2977,17 @@ public:
 //   state by its flag, so the third alternative is one more empty state.  A
 //   payload with a trivial destructor, such as the reservation of the trace
 //   ring, keeps the empty marker, which writes no byte.
+//
+// Code of a payload
+//   The move and the end of a payload can be code of a caller, and such code can
+//   reach its Option through a static, a Ref or a guard that takes itself out of a
+//   registry (the code of an element of foundation/core/Owner.h).  So the slot is
+//   empty, and it holds one lend, while such code works on the payload.  A match
+//   lends a full slot only, so no other door gives that state.  A read and a take
+//   then find no payload.  A fill, an assignment, a move and the end of the Option
+//   end the process, because the outer door works on the storage.  A payload whose
+//   move and end run no code of a caller (MoveRunsCode and EndRunsCode) takes no
+//   such lend.
 template <class T>
 class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionForm::owning> {
     static constexpr std::size_t word_width_ = alignof(T) < 8 ? alignof(T) : 8;
@@ -2969,6 +3002,10 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     bool is_engaged_ = false;
     mutable unsigned char lend_count_ = 0;
 
+    // True when the move or the end of a payload can be code of a caller (the code
+    // of a payload).
+    static constexpr bool runs_code_ = MoveRunsCode<T> || EndRunsCode<T>;
+
     template <ChoicePayload U>
     friend class ::foundation::core::Option;
 
@@ -2977,6 +3014,11 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     constexpr void expect_value_(Fmt<> why) const noexcept {
         if (!is_engaged_) [[unlikely]] {
             fatal(why);
+        }
+    }
+    constexpr void require_empty_() const noexcept {
+        if (is_engaged_) [[unlikely]] {
+            detail::report_full_fill_();
         }
     }
     [[nodiscard]] constexpr bool same_state_(OptionSlot const& other) const noexcept {
@@ -2993,14 +3035,47 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
         ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<empty_index_>{}, EmptyAlternative{});
     }
 
+    // Starts a change of the payload of a slot that no match lends: the slot is
+    // empty from here, and it holds one lend until end_change_ (the code of a
+    // payload).
+    constexpr void begin_change_() noexcept {
+        if constexpr (runs_code_) {
+            is_engaged_ = false;
+            lend_count_ = 1;
+        }
+    }
+    // Ends the change, with the slot full or empty.
+    constexpr void end_change_(bool is_full) noexcept {
+        is_engaged_ = is_full;
+        if constexpr (runs_code_) {
+            lend_count_ = 0;
+        }
+    }
+
+    // Ends the payload object of a slot in a change, and leaves the slot empty.
+    constexpr void end_payload_() noexcept {
+        storage_.destroy_(1);
+        build_empty_();
+        end_change_(false);
+    }
+
     constexpr void clear_() noexcept {
         detail::refuse_lent_write_(lend_count_);
         if (is_engaged_) {
-            storage_.destroy_(1);
-            build_empty_();
-            is_engaged_ = false;
+            begin_change_();
+            end_payload_();
         }
     }
+
+    // The payload of a full slot for the one move out of it, which the caller
+    // makes before it calls end_take_.
+    // A storage door: the payload is in the storage of the slot, which its Option owns.
+    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T&& begin_take_() noexcept {
+        detail::refuse_lent_write_(lend_count_);
+        begin_change_();
+        return static_cast<T&&>(payload_());
+    }
+    constexpr void end_take_() noexcept { end_payload_(); }
 
     // Builds the payload of an empty slot in place.  The storage of an empty
     // slot holds the empty marker or the zero words, and no one of them needs
@@ -3008,8 +3083,12 @@ class[[= ::foundation::lifetime::no_start_over_bytes{}]] OptionSlot<T, OptionFor
     // of the constructor of a full slot.
     template <class U>
     constexpr void fill_(U&& value) noexcept(std::is_nothrow_constructible_v<T, U&&>) {
+        if constexpr (runs_code_) {
+            detail::refuse_lent_write_(lend_count_);
+        }
+        begin_change_();
         ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<U&&>(value));
-        is_engaged_ = true;
+        end_change_(true);
     }
 
 public:
@@ -3022,13 +3101,15 @@ public:
     // The move builds one alternative in place: the payload of a full source,
     // or a new empty alternative.  Only the flag of a source tells that it is
     // empty, so the move reads no alternative of an empty source.
-    constexpr OptionSlot(OptionSlot&& other) noexcept : storage_(NoAlternativeYet{}), is_engaged_{other.is_engaged_} {
-        if (is_engaged_) {
-            ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, static_cast<T&&>(other.payload_()));
+    constexpr OptionSlot(OptionSlot&& other) noexcept : storage_(NoAlternativeYet{}) {
+        if (other.is_engaged_) {
+            ::new(static_cast<void*>(&storage_)) Storage(AlternativeAt<1>{}, other.begin_take_());
+            other.end_take_();
+            is_engaged_ = true;
         } else {
+            detail::refuse_lent_write_(other.lend_count_);
             build_empty_();
         }
-        other.clear_();
     }
 
     // A full source moves to a local first, because it can live inside the
@@ -3044,8 +3125,9 @@ public:
         }
         OptionSlot taken(static_cast<OptionSlot&&>(other));
         clear_();
+        begin_change_();
         storage_.move_in_(1, taken.storage_);
-        is_engaged_ = true;
+        end_change_(true);
         return *this;
     }
 
@@ -3070,7 +3152,10 @@ public:
     constexpr ~OptionSlot() {
         detail::refuse_lent_write_(lend_count_);
         if constexpr (DroppablePayload<T>) {
-            if (is_engaged_) storage_.destroy_(1);
+            if (is_engaged_) {
+                begin_change_();
+                storage_.destroy_(1);
+            }
         } else {
             if (is_engaged_) [[unlikely]] {
                 detail::report_full_linear_end_();

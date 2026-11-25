@@ -320,6 +320,160 @@ void test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process() {
     ::fixy::check::pass(kTest, "  test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process: PASSED\n");
 }
 
+// ── An Option ──────────────────────────────────────────────────────────────
+
+// What the code of a payload does to the Option.
+enum class Look : std::uint8_t {
+    Nothing,
+    Read,
+    Take,
+    Fill,
+    Assign,
+    Clear,
+};
+
+constinit Look look_at_end = Look::Nothing;
+constinit Look look_at_move = Look::Nothing;
+constinit std::uint32_t payloads_taken_by_the_code = 0;
+
+void look_around(Look& look) noexcept;
+
+// A payload of the Option.  It is live from the end of its constructor to its move
+// or its end.
+class Payload final {
+public:
+    Payload() noexcept = default;
+    Payload(Payload&& other) noexcept : is_live_{false} {
+        other.is_live_ = false;
+        look_around(look_at_move);
+        is_live_ = true;
+    }
+    Payload(Payload const&) = delete("a payload of the test has one identity");
+    Payload& operator=(Payload const&) = delete("a payload of the test has one identity");
+    ~Payload() {
+        is_live_ = false;
+        look_around(look_at_end);
+    }
+
+    [[nodiscard]] bool is_live() const noexcept { return is_live_; }
+
+private:
+    bool is_live_ = true;
+};
+
+[[nodiscard]] core::Option<Payload>& reached_option() noexcept {
+    static core::Option<Payload> option{core::none};
+    return option;
+}
+
+// The code of the payload, one time.
+void look_around(Look& look) noexcept {
+    Look const taken = look;
+    look = Look::Nothing;
+    switch (taken) {
+        case Look::Nothing:
+        default:
+            return;
+        case Look::Read:
+            ++reads_of_an_owner;
+            ::fixy::as_const(reached_option())
+                .match([](Payload const& payload) noexcept { is_ended_element_seen |= !payload.is_live(); },
+                       []() noexcept {});
+            return;
+        case Look::Take:
+            ++reads_of_an_owner;
+            if (reached_option().take().is_some()) ++payloads_taken_by_the_code;
+            return;
+        case Look::Fill:
+            reached_option().fill(Payload{});
+            return;
+        case Look::Assign:
+            reached_option() = core::Option<Payload>::some(Payload{});
+            return;
+        case Look::Clear:
+            reached_option() = core::Option<Payload>{core::none};
+            return;
+    }
+}
+
+// The doors of an Option that end its payload or move it out, or that build one.
+enum class Change : std::uint8_t {
+    Take,
+    Clear,
+    Assign,
+    Fill,
+};
+
+// Runs a door of the Option, which is full, or empty for a fill, and gives a look to
+// the next end and to the next move of a payload.
+void run_option_door(Change change, Look at_end, Look at_move) {
+    reached_option() = core::Option<Payload>{core::none};
+    if (change != Change::Fill) reached_option().fill(Payload{});
+    core::Option<Payload> next = core::Option<Payload>::some(Payload{});
+    Payload value{};
+    look_at_end = at_end;
+    look_at_move = at_move;
+    switch (change) {
+        case Change::Take:
+            CRUCIBLE_TEST_ASSERT(kTest, reached_option().take().is_some());
+            break;
+        case Change::Clear:
+            reached_option() = core::Option<Payload>{core::none};
+            break;
+        case Change::Assign:
+            reached_option() = std::move(next);
+            break;
+        case Change::Fill:
+        default:
+            reached_option().fill(std::move(value));
+            break;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, look_at_end == Look::Nothing && look_at_move == Look::Nothing);
+    CRUCIBLE_TEST_ASSERT(kTest, payloads_taken_by_the_code == 0);
+    bool const is_full = change == Change::Assign || change == Change::Fill;
+    CRUCIBLE_TEST_ASSERT(kTest, reached_option().is_some() == is_full);
+    auto const is_live = [](Payload const& payload) noexcept { return payload.is_live(); };
+    CRUCIBLE_TEST_ASSERT(kTest, !is_full || reached_option().is_some_and(is_live));
+}
+
+// An Option is empty while the code of its payload runs, so a read by that code
+// finds no payload that moves or ends, and a take finds none.
+void test_the_code_of_a_payload_finds_an_empty_option() {
+    constexpr ::fixy::FixedArray<Look, 2> looks{Look::Read, Look::Take};
+    for (Look const look : looks) {
+        run_option_door(Change::Take, look, Look::Nothing);
+        check_whole_reads(1);
+        run_option_door(Change::Take, Look::Nothing, look);
+        check_whole_reads(1);
+        run_option_door(Change::Clear, look, Look::Nothing);
+        check_whole_reads(1);
+        run_option_door(Change::Fill, Look::Nothing, look);
+        check_whole_reads(1);
+    }
+    // The first end of an assignment ends the moved-from payload of its source.
+    run_option_door(Change::Assign, Look::Read, Look::Nothing);
+    check_whole_reads(1);
+    ::fixy::check::pass(kTest, "  test_the_code_of_a_payload_finds_an_empty_option: PASSED\n");
+}
+
+// The outer door works on the storage of the Option, so a change by the code of the
+// payload ends the process.
+void test_a_change_by_the_code_of_a_payload_ends_the_process() {
+    constexpr ::fixy::TextView refusal{"or while the code of the payload runs"};
+    constexpr ::fixy::FixedArray<Look, 3> changes{Look::Fill, Look::Assign, Look::Clear};
+    for (Look const change : changes) {
+        ::fixy::check::expect_dies(
+            kTest, [change] noexcept { run_option_door(Change::Take, change, Look::Nothing); }, refusal);
+        ::fixy::check::expect_dies(
+            kTest, [change] noexcept { run_option_door(Change::Take, Look::Nothing, change); }, refusal);
+        ::fixy::check::expect_dies(
+            kTest, [change] noexcept { run_option_door(Change::Clear, change, Look::Nothing); }, refusal);
+        ::fixy::check::expect_dies(
+            kTest, [change] noexcept { run_option_door(Change::Fill, Look::Nothing, change); }, refusal);
+    }
+    ::fixy::check::pass(kTest, "  test_a_change_by_the_code_of_a_payload_ends_the_process: PASSED\n");
+}
+
 // ── The end of an owner ────────────────────────────────────────────────────
 
 // The holder of an owner of each kind.  An element of the owner reaches the
@@ -455,6 +609,8 @@ int main() {
     test_the_code_of_an_element_finds_an_empty_array_in_an_exchange();
     test_the_code_of_a_value_finds_live_values_only();
     test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process();
+    test_the_code_of_a_payload_finds_an_empty_option();
+    test_a_change_by_the_code_of_a_payload_ends_the_process();
     test_the_end_of_an_owner_empties_it_first();
     ::fixy::check::pass(kTest, "test_core_element_code: all tests passed\n");
     return 0;

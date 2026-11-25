@@ -2150,11 +2150,11 @@ static_assert(doors_are_pinned<10, door_count<SumSlotOf<true, NoPayload, SealedW
               "a new door of the plain slot of a sealed payload: test it below, then pin the count");
 static_assert(doors_are_pinned<10, door_count<SumSlotOf<false, Owner, int>>()>,
               "a new door of the owning slot: test it below, then pin the count");
-static_assert(doors_are_pinned<12, door_count<OptionSlot<std::uint64_t>>()>,
+static_assert(doors_are_pinned<13, door_count<OptionSlot<std::uint64_t>>()>,
               "a new door of the plain Option slot: test it below, then pin the count");
-static_assert(doors_are_pinned<11, door_count<OptionSlot<Owner>>()>,
+static_assert(doors_are_pinned<16, door_count<OptionSlot<Owner>>()>,
               "a new door of the owning Option slot: test it below, then pin the count");
-static_assert(doors_are_pinned<12, door_count<OptionSlot<SlotNumber>>()>,
+static_assert(doors_are_pinned<13, door_count<OptionSlot<SlotNumber>>()>,
               "a new door of the niche Option slot: test it below, then pin the count");
 static_assert(doors_are_pinned<12, door_count<ResultSlot<std::uint64_t, Code>>()>,
               "a new door of the Result slot: test it below, then pin the count");
