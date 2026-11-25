@@ -6192,7 +6192,8 @@ void check_assignment_target(tree target, ObjectForm form, location_t location, 
         return;
     }
     tree type = TREE_TYPE(target);
-    if (type != NULL_TREE && TYPE_PTR_P(type)) {
+    // A pointer that is the object itself drops no object behind it.
+    if (form == ObjectForm::address && type != NULL_TREE && TYPE_PTR_P(type)) {
         type = TREE_TYPE(type);
     }
     if (type == NULL_TREE || !is_linear_type(type)) {

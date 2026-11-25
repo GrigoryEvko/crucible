@@ -55,4 +55,21 @@ void drops(Holder<T>& holder, T& slot, T* pointer) {
     free_one(pointer);
 }
 
+// An assignment to a pointer drops no object.  The assignment to the object
+// behind the pointer drops the old value.
+template <class T>
+struct Slots {
+    T* tail = nullptr;
+    T* segments[2] = {};
+};
+
+template <class T>
+void assign_pointers(Slots<T>& slots, T* first) {
+    slots.tail = first;
+    slots.segments[1] = first;
+    slots.tail = nullptr;
+    slots.tail = slots.tail + 1;
+    *slots.tail = T{};
+}
+
 }  // namespace planted

@@ -9,7 +9,9 @@
 # gave no line there.  The end of an alternative in a member of the union
 # Alternative of the base names its place and no type, so the instances for
 # Token and Ticket give one line at the clobber (47:33), and the instance for
-# Sealed gives one line at the call of its destructor (47:41).
+# Sealed gives one line at the call of its destructor (47:41).  An assignment to
+# a member, to an element or to a name whose type is a pointer drops no object, so
+# only the assignment to the object behind the pointer gives a line (72).
 
 compile drops src/drops.cpp linear-shapes=on
 flag drops -freflection
@@ -28,3 +30,4 @@ finding drops drop-door destroy include/fixy/LinearDrops.h:25:16 | planted::end_
 finding drops drop-door destroy include/fixy/LinearDrops.h:30:5 | planted::free_one: planted::Sealed::~Sealed (planted::Sealed)
 finding drops drop-door destroy include/fixy/LinearDrops.h:47:33 | planted::Alternative::end_value: the end of an alternative
 finding drops drop-door destroy include/fixy/LinearDrops.h:47:41 | planted::Alternative::end_value: the end of an alternative
+finding drops drop-door untracked-assignment include/fixy/LinearDrops.h:72:17 | planted::assign_pointers: an object behind a reference (planted::Token)

@@ -48,4 +48,6 @@ void uses_alternatives(Alternative<Token>& token, Alternative<Ticket>& ticket, A
     sealed.end_value();
 }
 
+void uses_slots(Slots<Token>& slots, Token& first) { assign_pointers<Token>(slots, &first); }
+
 }  // namespace planted
