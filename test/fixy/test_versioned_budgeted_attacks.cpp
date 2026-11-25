@@ -291,7 +291,8 @@ bool is_claim_seen = false;
 template <Holder holder>
 void read_holder() noexcept;
 
-// A payload whose moves and end read its holder, through the name of the holder.
+// A payload whose moves, copy assignment and end read its holder, through the name
+// of the holder.
 template <Holder holder>
 struct Reaching {
     int label = 0;
@@ -304,8 +305,12 @@ struct Reaching {
         read_holder<holder>();
         return *this;
     }
-    Reaching(Reaching const&) = delete("a payload of the test has one identity");
-    Reaching& operator=(Reaching const&) = delete("a payload of the test has one identity");
+    Reaching(Reaching const& other) noexcept : label{other.label} {}
+    Reaching& operator=(Reaching const& other) noexcept {
+        label = other.label;
+        read_holder<holder>();
+        return *this;
+    }
     ~Reaching() {
         is_live = false;
         read_holder<holder>();
@@ -335,37 +340,60 @@ void read_holder() noexcept {
     }
 }
 
-// Runs change while the code of the payloads reads the holder.  Such code finds a
-// live payload, and the weakest claim.
+// Runs change while the code of the payloads reads the holder.  The result is true
+// when such code read the holder and found a live payload and the weakest claim.
 template <class Change>
-void watch_holder(Change&& change, char const* what) {
+[[nodiscard]] bool watch_holder(Change&& change) {
     reads_of_the_holder = 0;
     is_ended_payload_seen = false;
     is_claim_seen = false;
     is_holder_watched = true;
     change();
     is_holder_watched = false;
-    expect(reads_of_the_holder != 0 && !is_ended_payload_seen && !is_claim_seen, what);
+    return reads_of_the_holder != 0 && !is_ended_payload_seen && !is_claim_seen;
 }
 
 void attack_holder_in_the_code_of_its_payload() {
     static_cast<void>(version_holder());
     static_cast<void>(budget_holder());
-    watch_holder([] { EpochVersioned<Reaching<Holder::Version>> const taken{std::move(version_holder())}; },
-                 "a move out of a version holder");
+    expect(watch_holder([] { EpochVersioned<Reaching<Holder::Version>> const taken{std::move(version_holder())}; }),
+           "a move out of a version holder");
     EpochVersioned<Reaching<Holder::Version>> next_version{Reaching<Holder::Version>{2}, stamp_at(6, 6)};
-    watch_holder([&] { version_holder() = std::move(next_version); }, "an assignment of a version holder");
+    expect(watch_holder([&] { version_holder() = std::move(next_version); }), "an assignment of a version holder");
     expect(version_holder().peek().label == 2 && version_holder().is_at_least(EpochBound{6}, GenerationBound{6}),
            "the assignment moves the payload and its version");
-    watch_holder([&] { next_version = std::move(version_holder()); }, "an assignment out of a version holder");
+    expect(watch_holder([&] { next_version = std::move(version_holder()); }), "an assignment out of a version holder");
+    expect(watch_holder([&] { version_holder() = next_version; }), "a copy assignment of a version holder");
+    expect(version_holder().is_at_least(EpochBound{6}, GenerationBound{6}), "a copy takes the version of its source");
+    expect(watch_holder([&] { swap(version_holder(), next_version); }), "a swap of a version holder");
+    expect(version_holder().is_at_least(EpochBound{6}, GenerationBound{6}), "a swap moves the version");
+    expect(
+        watch_holder([] { expect(std::move(version_holder()).consume().label == 2, "a consume gives the payload"); }),
+        "a consume of a version holder");
+    expect(!version_holder().is_at_least(EpochBound{1}, GenerationBound{0}), "a consumed holder drops to genesis");
 
-    watch_holder([] { Budgeted<Reaching<Holder::Budget>> const taken{std::move(budget_holder())}; },
-                 "a move out of a budget holder");
+    expect(watch_holder([] { Budgeted<Reaching<Holder::Budget>> const taken{std::move(budget_holder())}; }),
+           "a move out of a budget holder");
     Budgeted<Reaching<Holder::Budget>> next_budget{Reaching<Holder::Budget>{2}, grant(4, 32)};
-    watch_holder([&] { budget_holder() = std::move(next_budget); }, "an assignment of a budget holder");
+    expect(watch_holder([&] { budget_holder() = std::move(next_budget); }), "an assignment of a budget holder");
     expect(budget_holder().peek().label == 2 && budget_holder().satisfies(BitsBudgetBound{4}, PeakBytesBound{32}),
            "the assignment moves the payload and its budget");
-    watch_holder([&] { next_budget = std::move(budget_holder()); }, "an assignment out of a budget holder");
+    expect(watch_holder([&] { next_budget = std::move(budget_holder()); }), "an assignment out of a budget holder");
+    expect(watch_holder([&] { budget_holder() = next_budget; }), "a copy assignment of a budget holder");
+    expect(budget_holder().satisfies(BitsBudgetBound{4}, PeakBytesBound{32}), "a copy takes the budget of its source");
+    expect(watch_holder([&] { swap(budget_holder(), next_budget); }), "a swap of a budget holder");
+    expect(budget_holder().satisfies(BitsBudgetBound{4}, PeakBytesBound{32}), "a swap moves the budget");
+    expect(watch_holder([] { expect(std::move(budget_holder()).consume().label == 2, "a consume gives the payload"); }),
+           "a consume of a budget holder");
+    expect(budget_holder().is_unbounded(), "a consumed holder is unbounded");
+    budget_holder() = next_budget;
+    expect(watch_holder([&] { static_cast<void>(std::move(budget_holder()).accumulate(next_budget).is_unbounded()); }),
+           "a chain out of a budget holder");
+    expect(budget_holder().is_unbounded(), "the source of a chain is unbounded");
+    budget_holder() = next_budget;
+    expect(watch_holder([&] { static_cast<void>(std::move(budget_holder()).combine_max(next_budget).is_unbounded()); }),
+           "a worst case out of a budget holder");
+    expect(budget_holder().is_unbounded(), "the source of a worst case is unbounded");
 }
 
 // ── Budgets at the edge ─────────────────────────────────────────────

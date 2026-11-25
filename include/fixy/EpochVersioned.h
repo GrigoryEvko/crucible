@@ -251,7 +251,20 @@ public:
     // payload was produced, and two values with the same payload and the
     // same version are the same event.
     constexpr EpochVersioned(const EpochVersioned&) = default;
-    constexpr EpochVersioned& operator=(const EpochVersioned&) = default;
+    constexpr EpochVersioned& operator=(const EpochVersioned&)
+        requires std::is_trivially_copyable_v<T>
+    = default;
+    constexpr EpochVersioned& operator=(const EpochVersioned& other) noexcept(std::is_nothrow_copy_assignable_v<T>)
+        requires(!std::is_trivially_copyable_v<T> && std::is_copy_assignable_v<T>)
+    {
+        if (this != &other) {
+            version_t const version = other.version();
+            impl_.set_grade(key_{}, genesis_());
+            impl_.peek_mut(key_{}) = other.peek();
+            impl_.set_grade(key_{}, version);
+        }
+        return *this;
+    }
 
     // A move of a trivially copyable payload is a copy, and the source
     // keeps a claim that is still true.
@@ -300,7 +313,11 @@ public:
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
+    // A consume leaves the source at genesis, as a move does.
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        if constexpr (!std::is_trivially_copyable_v<T>) {
+            impl_.set_grade(key_{}, genesis_());
+        }
         return std::move(impl_).consume();
     }
 
@@ -308,7 +325,22 @@ public:
     [[nodiscard]] constexpr Generation generation() const noexcept { return impl_.grade().second; }
     [[nodiscard]] constexpr version_t version() const noexcept { return impl_.grade(); }
 
-    constexpr void swap(EpochVersioned& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    // Each payload leaves with its own version.  The two hold genesis until
+    // their payloads are whole, as the target of an assignment does.
+    constexpr void swap(EpochVersioned& other) noexcept(std::is_nothrow_swappable_v<T>) {
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            impl_.swap(other.impl_);
+        } else {
+            version_t const own = version();
+            version_t const others = other.version();
+            impl_.set_grade(key_{}, genesis_());
+            other.impl_.set_grade(key_{}, genesis_());
+            using std::swap;
+            swap(impl_.peek_mut(key_{}), other.impl_.peek_mut(key_{}));
+            impl_.set_grade(key_{}, others);
+            other.impl_.set_grade(key_{}, own);
+        }
+    }
 
     friend constexpr void swap(EpochVersioned& a, EpochVersioned& b) noexcept(std::is_nothrow_swappable_v<T>) {
         a.swap(b);

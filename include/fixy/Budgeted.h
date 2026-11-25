@@ -232,7 +232,20 @@ public:
     // used, and two values with the same payload and grade are the same
     // event.
     constexpr Budgeted(const Budgeted&) = default;
-    constexpr Budgeted& operator=(const Budgeted&) = default;
+    constexpr Budgeted& operator=(const Budgeted&)
+        requires std::is_trivially_copyable_v<T>
+    = default;
+    constexpr Budgeted& operator=(const Budgeted& other) noexcept(std::is_nothrow_copy_assignable_v<T>)
+        requires(!std::is_trivially_copyable_v<T> && std::is_copy_assignable_v<T>)
+    {
+        if (this != &other) {
+            budget_t const budget = other.budget();
+            impl_.set_grade(key_{}, lattice_type::top());
+            impl_.peek_mut(key_{}) = other.peek();
+            impl_.set_grade(key_{}, budget);
+        }
+        return *this;
+    }
 
     // A move of a trivially copyable payload is a copy, and the source
     // keeps a claim that is still true.
@@ -281,7 +294,11 @@ public:
 
     [[nodiscard]] constexpr T const& peek() const& noexcept { return impl_.peek(); }
 
+    // A consume leaves the source unbounded, as a move does.
     [[nodiscard]] constexpr T consume() && noexcept(std::is_nothrow_move_constructible_v<T>) {
+        if constexpr (!std::is_trivially_copyable_v<T>) {
+            impl_.set_grade(key_{}, lattice_type::top());
+        }
         return std::move(impl_).consume();
     }
 
@@ -291,7 +308,22 @@ public:
 
     [[nodiscard]] constexpr bool is_unbounded() const noexcept { return budget() == lattice_type::top(); }
 
-    constexpr void swap(Budgeted& other) noexcept(std::is_nothrow_swappable_v<T>) { impl_.swap(other.impl_); }
+    // Each payload leaves with its own budget.  The two are unbounded until
+    // their payloads are whole, as the target of an assignment is.
+    constexpr void swap(Budgeted& other) noexcept(std::is_nothrow_swappable_v<T>) {
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            impl_.swap(other.impl_);
+        } else {
+            budget_t const own = budget();
+            budget_t const others = other.budget();
+            impl_.set_grade(key_{}, lattice_type::top());
+            other.impl_.set_grade(key_{}, lattice_type::top());
+            using std::swap;
+            swap(impl_.peek_mut(key_{}), other.impl_.peek_mut(key_{}));
+            impl_.set_grade(key_{}, others);
+            other.impl_.set_grade(key_{}, own);
+        }
+    }
 
     friend constexpr void swap(Budgeted& a, Budgeted& b) noexcept(std::is_nothrow_swappable_v<T>) { a.swap(b); }
 
@@ -305,7 +337,7 @@ public:
     [[nodiscard]] constexpr Budgeted
     combine_max(Budgeted const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         budget_t const joined = lattice_type::join(budget(), other.budget());
-        return Budgeted{std::move(impl_).consume(), joined};
+        return Budgeted{std::move(*this).consume(), joined};
     }
 
     // The sum clamps at the top rather than wrapping, so a chain whose
@@ -320,7 +352,7 @@ public:
     [[nodiscard]] constexpr Budgeted
     accumulate(Budgeted const& other) && noexcept(std::is_nothrow_move_constructible_v<T>) {
         budget_t const sum = summed_(other);
-        return Budgeted{std::move(impl_).consume(), sum};
+        return Budgeted{std::move(*this).consume(), sum};
     }
 
     // The axes are independent, so admission requires both to fit.
