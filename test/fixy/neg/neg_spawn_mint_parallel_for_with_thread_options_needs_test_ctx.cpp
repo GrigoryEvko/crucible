@@ -28,7 +28,7 @@ int main() {
         fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, 0, perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole =
         fixy::spawn::mint_parallel_for_with_thread_options<fixy::spawn::BodyCoupling::Independent, 2>(
-            ctx, ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto shard, auto) noexcept { (void)shard; },
-            fixy::thread::ThreadOptions{});
+            ctx, ctx, fixy::concurrent::WorkBudget{}, std::move(region), fixy::spawn::reads(),
+            [](auto shard, auto) noexcept { (void)shard; }, fixy::thread::ThreadOptions{});
     return 0;
 }

@@ -45,23 +45,39 @@
 //   part by the index of its place, and the place gives the first slot of
 //   the shard by the cut of the split.
 //
+// Inputs of the shards
+//   The shards write the slots of a region, or the sums of segments, while
+//   each shard reads the elements of the run.  Each form gives the runs that
+//   its shards read to mint_parallel_for in reads() (design note 6 of
+//   fixy/concurrent/Spawn.h).  So a run that shares a byte with the slots or
+//   with the sums ends the process before a shard starts:
+//     sum_by_tree and reduce_by_tree  the elements against the partials
+//     scan_sums                       the input against the carries
+//     sum_segments_by_tree            the elements and the offsets against
+//                                     the sums
+//   The carries of the third phase of a scan are the region of the call,
+//   whose tag is not the tag of the region of the parts, so they take no
+//   compare.  The combine of reduce_by_tree is a capture of the body of the
+//   shards, so it holds no borrow of a plain object (rule 9 of
+//   foundation/Closure.h): a combine that reads a table reads Atomic cells, or
+//   it owns the table.
+//
 // Input of a scan
-//   An input that shares elements with the output at a shift lets a shard
-//   read an element that another shard writes, such as in[16383] of shard 0
-//   and out[16384] of shard 1 over one run.  The input of a scan or of a
-//   segmented sum is a View, or a ViewMut through a const reference.  A
-//   ViewMut of a brand other than the brand of the output names the run of
-//   another frame (the alias proof of foundation/core/Frame.h), so its type
-//   proves that the runs do not overlap, and the form makes no test.  A View
-//   has no brand and proves nothing.  So for a View the form asks
-//   classify_overlap of foundation/core/Region.h one time, on the calling
-//   thread, before a shard starts.  The input of a scan can be the run of
-//   the output, because each shard then reads only the elements that it
-//   writes, and each other share ends the process.  The segmented sum reads
-//   the elements of each segment of its shard, which can lie in the sums of
-//   another shard, so it permits no share.  The slots of a region come from
-//   the caller through the door of a raw address, which states that the
-//   region owns its storage, so no form tests the slots.
+//   The third phase writes the outputs through the parts, and no compare of
+//   Spawn.h sees them, so the form makes the test of the input and the output
+//   itself.  An input that shares elements with the output at a shift lets a
+//   shard read an element that another shard writes, such as in[16383] of
+//   shard 0 and out[16384] of shard 1 over one run.  The input of a scan is a
+//   View, or a ViewMut through a const reference.  A ViewMut of a brand other
+//   than the brand of the output names the run of another frame (the alias
+//   proof of foundation/core/Frame.h), so its type proves that the runs do
+//   not overlap, and the form makes no test.  A View has no brand and proves
+//   nothing.  So for a View the form asks classify_overlap of
+//   foundation/core/Region.h one time, on the calling thread, before a shard
+//   starts.  The input can be the run of the output, because each shard then
+//   reads only the elements that it writes, and each other share ends the
+//   process.  The segmented sum reads the elements of each segment of its
+//   shard, which can lie in the sums of another shard, so it permits no share.
 //
 // Scratch
 //   A form with a region gives the region back, and the values of its slots
@@ -86,6 +102,7 @@
 #include <fixy/concurrent/Spawn.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
@@ -191,25 +208,50 @@ struct ParallelScanParts {
     using scope_door = ::fixy::RegionScopeDoor;
 };
 
+// The part of the outputs of one shard of a scan: the one writer of the
+// outputs of the grains of the shard, or no part after the shard took it.
+//
+// The class states sendable{} (foundation/Transfer.h), so a region of parts
+// enters mint_parallel_for with a compared input (design note 6 of
+// fixy/concurrent/Spawn.h).  The proof is of the two makers of the parts and
+// of their one reader:
+//   - split_by_shards_ cuts the parts out of one ViewMut, so no two parts
+//     share an output, and a shard writes only the part that it takes.
+//   - The form tests the input against the whole output before the loop (the
+//     input of a scan), so a shard reads no output that another shard writes.
+//   - The carries are a region, which shares no element with a ViewMut.
+template <class T, class Brand>
+class[[= ::foundation::transfer::sendable{}]] ScanPart final {
+    using Run = ::foundation::core::ViewMut<T, Brand>;
+
+    ::foundation::core::Option<Run> run_{::foundation::core::none};
+
+public:
+    // Puts the run into a part that holds none.
+    void hold(Run&& run) noexcept { run_ = ::foundation::core::Option<Run>::some(std::move(run)); }
+
+    // Gives the run of the part, which holds none after the call.  A part with
+    // no run ends the process.
+    [[nodiscard]] Run take() noexcept { return run_.take().expect("each shard takes its part one time"); }
+};
+
 // Gives the elements of parts the parts of out at the cut of the shards of a
 // region of grains slots, one shard for each element: part s holds the outputs
 // of the grains of shard s, by the cut of mint_split
 // (fixy::detail::shard_start).  Complexity: O(Shards).
 template <typename T, typename Brand, typename PartsBrand, std::size_t Shards>
-void split_by_shards_(
-    ::foundation::core::ViewMut<::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>, PartsBrand, Shards>
-        parts,
-    ::foundation::core::ViewMut<T, Brand> out, std::size_t grains) noexcept {
+void split_by_shards_(::foundation::core::ViewMut<ScanPart<T, Brand>, PartsBrand, Shards> parts,
+                      ::foundation::core::ViewMut<T, Brand> out, std::size_t grains) noexcept {
     std::size_t const count = out.size();
     std::size_t begin = 0;
     std::size_t shard = 0;
-    for (::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>& part : parts) {
+    for (ScanPart<T, Brand>& part : parts) {
         ++shard;
         std::size_t const limit = ::fixy::detail::shard_start(grains, Shards, shard) * parallel_tree_grain;
         std::size_t const end = limit < count ? limit : count;
         auto [own, next] = ::foundation::core::split_at(std::move(out), end - begin)
                                .expect("the cut of a shard lies inside the outputs that are left");
-        part = ::foundation::core::Option<::foundation::core::ViewMut<T, Brand>>::some(std::move(own));
+        part.hold(std::move(own));
         out = std::move(next);
         begin = end;
     }
@@ -220,8 +262,10 @@ void split_by_shards_(
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The tree sum of the elements, by the grains of the split, with the bits of
-// foundation::core::sum_by_tree.  An empty run gives +0.  Complexity: O(n), in
-// Shards shards, then O(slots) on the calling thread.
+// foundation::core::sum_by_tree.  An empty run gives +0.  Elements that share
+// a byte with the partials end the process before a shard starts (the inputs
+// of the shards).  Complexity: O(n), in Shards shards, then O(slots) on the
+// calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeSumElement<T>
 [[nodiscard]] TreeSumParts<T, Whole, Brand>
@@ -229,11 +273,11 @@ sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elemen
                         ::fixy::OwnedRegion<T, Whole, Brand>&& partials) noexcept {
     detail::check_slots_(partials.size(), elements.size());
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
-        [elements](auto shard, auto place) noexcept {
+        ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials), spawn::reads(elements),
+        [](auto shard, auto place, auto run) noexcept {
             if (shard.size() == 0) return;
             ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(
-                elements, place.first(), detail::first_of_run_(shard), shard.size());
+                run, place.first(), detail::first_of_run_(shard), shard.size());
         });
     T const sum = ::foundation::core::sum_by_tree(::fixy::mint_borrowed(whole));
     return TreeSumParts<T, Whole, Brand>{sum, std::move(whole)};
@@ -242,9 +286,11 @@ sum_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> elemen
 }  // namespace CRUCIBLE_SIMD_TARGET
 
 // The tree of the elements with the combine of the caller, by the grains of
-// Split, with the value of foundation::core::reduce_by_tree.  Each shard
-// takes a copy of the combine.  Complexity: O(n) combines, in Shards shards,
-// then O(slots) on the calling thread.
+// Split, with the value of foundation::core::reduce_by_tree.  Each thread of
+// the shards takes a copy of the combine.  Elements that share a byte with
+// the partials end the process before a shard starts (the inputs of the
+// shards).  Complexity: O(n) combines, in Shards shards, then O(slots) on the
+// calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename T, typename Whole, typename Brand,
           typename Combine>
     requires(Shards > 0) && detail::CtxFitsParallelTree<Ctx> && ::foundation::core::TreeValue<T>
@@ -255,11 +301,11 @@ reduce_by_tree_in_parallel(Ctx const& ctx, ::foundation::core::View<T const> ele
                            ::fixy::OwnedRegion<T, Whole, Brand>&& partials, Combine combine) noexcept {
     detail::check_slots_(partials.size(), elements.size());
     auto whole = spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials),
-        [elements, combine](auto shard, auto place) noexcept {
+        ctx, detail::budget_of_<T>(elements.size(), partials.size()), std::move(partials), spawn::reads(elements),
+        [combine](auto shard, auto place, auto run) noexcept {
             if (shard.size() == 0) return;
             ::foundation::core::detail::reduce_grains_by_tree_<parallel_tree_grain>(
-                elements, place.first(), detail::first_of_run_(shard), shard.size(), combine);
+                run, place.first(), detail::first_of_run_(shard), shard.size(), combine);
         });
     auto value = ::foundation::core::reduce_by_tree(::fixy::mint_borrowed(whole), combine);
     return TreeReduceParts<T, Whole, Brand>{std::move(value), std::move(whole)};
@@ -271,9 +317,10 @@ inline namespace CRUCIBLE_SIMD_TARGET {
 // scan, with the bits of scan_inclusive_sums or scan_exclusive_sums of
 // foundation/core/Scan.h.  input and out hold one count.  input is the run of
 // out, or it shares no element with out (the input of a scan).  Two counts
-// that differ, and an input that shares elements with out at a shift, end the
-// process before a shard starts.  Complexity: O(n) in Shards shards, two
-// times, and O(slots) on the calling thread.
+// that differ, an input that shares elements with out at a shift, and an
+// input that shares a byte with the carries end the process before a shard
+// starts.  Complexity: O(n) in Shards shards, two times, and O(slots) on the
+// calling thread.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename In, typename T, typename OutBrand,
           std::size_t OutExtent, typename Whole, typename Brand>
     requires(Shards > 0)
@@ -297,10 +344,10 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, In cons
     std::size_t const grains = carries.size();
     WorkBudget const budget = detail::budget_of_<T>(in.size(), in.size());
     auto summed = spawn::mint_parallel_for<Coupling, Shards>(
-        ctx, budget, std::move(carries), [in](auto shard, auto place) noexcept {
+        ctx, budget, std::move(carries), spawn::reads(in), [](auto shard, auto place, auto run) noexcept {
             if (shard.size() == 0) return;
             ::foundation::core::detail::sum_grains_by_tree_<parallel_tree_grain>(
-                in, place.first(), detail::first_of_run_(shard), shard.size());
+                run, place.first(), detail::first_of_run_(shard), shard.size());
         });
     auto scanned = ::fixy::with_mut(std::move(summed), [](auto slots) noexcept {
         T* const first = detail::first_of_run_(slots);
@@ -315,34 +362,33 @@ scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::ScanKind kind, In cons
     // The maker is a value of this call, because its type names the brand of
     // out, and no object of static storage holds a value of a scope brand.
     auto [parts, parts_key] = ::foundation::core::mint_keyed_owner(
-        ::foundation::core::FixedArrayOwner<::foundation::core::Option<Part>, Shards>{});
-    ::foundation::core::View<T const> const all_carries = ::fixy::mint_borrowed(scanned);
+        ::foundation::core::FixedArrayOwner<detail::ScanPart<T, OutBrand>, Shards>{});
     // The region of the parts lives in the frame of the parts: the frame door
     // of the parts lends their run, and the region scope door covers it.
-    parts.with_mut(parts_key, [&ctx, budget, in, all_carries, kind, grains,
+    parts.with_mut(parts_key, [&ctx, budget, in, &carried = std::as_const(scanned), kind, grains,
                                rest = Part{std::move(out)}](auto run) mutable noexcept {
         run = ::foundation::core::reborrow(std::move(run), [&rest, grains](auto lent) noexcept {
             detail::split_by_shards_(std::move(lent), std::move(rest), grains);
         });
         static_cast<void>(::fixy::with_region<detail::ParallelScanParts>(
-            std::move(run), [&ctx, budget, in, all_carries, kind, grains](auto region) noexcept {
+            std::move(run), [&ctx, budget, in, &carried, kind, grains](auto region) noexcept {
                 return spawn::mint_parallel_for<Coupling, Shards>(
-                    ctx, budget, std::move(region), [in, all_carries, kind, grains](auto shard, auto place) noexcept {
+                    ctx, budget, std::move(region), spawn::reads(in, carried),
+                    [kind, grains](auto shard, auto place, auto run_in, auto all_carries) noexcept {
                         std::size_t const index = place.index().raw();
                         CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-                        auto own =
-                            std::move(*detail::first_of_run_(shard)).expect("each shard takes its part one time");
+                        auto own = detail::first_of_run_(shard)->take();
                         std::size_t const first = ::fixy::detail::shard_start(grains, Shards, index);
                         std::size_t const count = ::fixy::detail::shard_start(grains, Shards, index + 1) - first;
                         if (count == 0) return;
                         ::foundation::core::View<T const> const shard_carries =
                             all_carries.window(first, count).expect("the grains of a shard lie inside the carries");
                         if (kind == ::foundation::core::ScanKind::Inclusive) {
-                            ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
-                                                                                               std::move(own));
+                            ::foundation::core::scan_inclusive_sum_grains<parallel_tree_grain>(
+                                run_in, first, shard_carries, std::move(own));
                         } else {
-                            ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(in, first, shard_carries,
-                                                                                               std::move(own));
+                            ::foundation::core::scan_exclusive_sum_grains<parallel_tree_grain>(
+                                run_in, first, shard_carries, std::move(own));
                         }
                     });
             }));
@@ -434,11 +480,12 @@ void scan_sums_in_parallel(Ctx const& ctx, ::foundation::core::Alloc alloc, ::fo
 // The tree sum of each segment, by shards of the segments: sums[s] is the
 // tree sum of the elements [offsets[s], offsets[s + 1]), with the bits of
 // sum_segments_by_tree.  A region scope door covers the run of the ViewMut of
-// the sums, so the split of mint_parallel_for gives each shard its own sums.  The offsets must pass check_segment_offsets for the count of the
-// sums, and the elements share no element with the sums (the input of a
-// scan).  Offsets that fail the check, and elements that share an element with
-// the sums, end the process before any write.  Complexity: O(n + S) in Shards
-// shards.
+// the sums, so the split of mint_parallel_for gives each shard its own sums.
+// The offsets must pass check_segment_offsets for the count of the sums, and
+// the elements and the offsets share no byte with the sums (the inputs of the
+// shards).  Offsets that fail the check, and elements or offsets that share a
+// byte with the sums, end the process before any write.  Complexity: O(n + S)
+// in Shards shards.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, typename In, typename T, typename SumBrand,
           std::size_t SumExtent>
     requires(Shards > 0)
@@ -451,23 +498,18 @@ void sum_segments_by_tree_in_parallel(Ctx const& ctx, In const& input,
         ::foundation::core::fatal("a parallel segmented sum got offsets that fail check_segment_offsets for {} sums",
                                   sums.size());
     }
-    if constexpr (!::foundation::core::DisjointInput<In, SumBrand>) {
-        if (::foundation::core::classify_overlap(elements, sums.view()) != ::foundation::core::RunOverlap::Disjoint)
-            [[unlikely]] {
-            ::foundation::core::fatal("a parallel segmented sum got elements that share storage with its sums");
-        }
-    }
     WorkBudget const budget = detail::budget_of_<T>(elements.size(), sums.size());
     static_cast<void>(::fixy::with_region<detail::ParallelTreeSlots>(
         std::move(sums), [&ctx, budget, elements, offsets](auto region) noexcept {
             return spawn::mint_parallel_for<Coupling, Shards>(
-                ctx, budget, std::move(region), [elements, offsets](auto shard, auto place) noexcept {
+                ctx, budget, std::move(region), spawn::reads(elements, offsets),
+                [](auto shard, auto place, auto run, auto all_offsets) noexcept {
                     if (shard.size() == 0) return;
                     ::foundation::core::View<std::size_t const> const own_offsets =
-                        offsets.window(place.first(), shard.size() + 1)
+                        all_offsets.window(place.first(), shard.size() + 1)
                             .expect("the offsets of a shard fit the checked offsets");
                     static_cast<void>(::foundation::core::detail::sum_segments_by_tree_(
-                                          elements, own_offsets, detail::first_of_run_(shard), shard.size())
+                                          run, own_offsets, detail::first_of_run_(shard), shard.size())
                                           .expect("a window of checked offsets passes the check"));
                 });
         }));

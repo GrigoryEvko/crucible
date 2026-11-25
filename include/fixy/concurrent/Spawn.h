@@ -79,6 +79,52 @@
 //     mint_parallel_for_with_thread_options is the door of a test: it
 //     gives the workers options that the thread door refuses, and so a
 //     test reaches the inline run with no global state.
+//
+//  6. The shards of mint_parallel_for write their runs at the same time, so
+//     a body that reads an element of the region through a borrow of its own
+//     races a second shard.  The run of a View, a Ref, a pointer or a
+//     reference has no name in its type.  So a body captures no borrow of a
+//     plain object (rule 9 of foundation/Closure.h), and the runs that the
+//     bodies read enter through the door: reads(inputs...) before the body.
+//     The runner lends each body the run of each input after the place, as a
+//     View or a StridedView of const elements.  These inputs are admitted,
+//     and no other:
+//         View, StridedView                  a borrow
+//         ViewMut, StridedViewMut            a unique borrow, which the loop
+//                                            reads through a const reference
+//         HeapArray, MaskedArray, FixedArray an owner of one run, which the
+//                                            loop reads through view()
+//         OwnedRegion of another tag         a region apart from the written
+//                                            one
+//     A caller of each other class, such as a class of two owners, gives the
+//     View of each run.
+//
+//     An OwnedRegion owns its run alone, and a door that consumes a region
+//     leaves it with no byte.  So a region of another tag shares no byte with
+//     the written region, and the runner compares nothing.  For each other
+//     input the runner compares the bytes of its run with the bytes of the
+//     region one time, on the calling thread, before the split.  A byte that
+//     the two share ends the process, and the text names the input.  A brand
+//     takes no place of the compare.  The brand of a region is the scope
+//     brand of its door, so the brand of an input is always a different one,
+//     and no brand tells that a ViewMut input and the region are apart.  A
+//     ViewMut that moved into a region leaves its old name with no element
+//     (foundation/core/Region.h), so the old name as an input takes the
+//     compare and gives no element.
+//
+//     A compare of two runs says nothing of an object that an element names
+//     and that lies in neither run.  So each element of an input is
+//     Shareable and holds each object that it names in its own bytes
+//     (ReadInput), and so does each element of a region that takes a compared
+//     input.  A class that states sendable{} (foundation/Transfer.h) passes
+//     with its statement: its author proves that a second shard writes none
+//     of the objects that the element names.
+//
+//     Reads holds a reference to each input, and the runner reads the inputs
+//     when the loop starts.  So an owner or a region that a door consumed in
+//     the mean time gives an empty run.  A Reads does not copy and does not
+//     move, so it is an argument of the one call that takes it, and no name
+//     keeps it past the life of an input.
 
 #include <fixy/Atom.h>
 #include <fixy/Axis.h>
@@ -88,16 +134,24 @@
 #include <fixy/concurrent/ParallelismRule.h>
 #include <fixy/concurrent/PermissionFork.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Closure.h>
+#include <foundation/Linear.h>
 #include <foundation/NoObject.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
+#include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Record.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/Report.h>
+#include <foundation/core/Strided.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/Errno.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/PermissionFork.h>
+#include <foundation/reflect/Instance.h>
+#include <foundation/reflect/TypeComponents.h>
 #include <foundation/reflect/TypeList.h>
 
 #include <array>
@@ -414,6 +468,181 @@ struct shard_run<T, ShardTag, true> {
 template <typename T, typename ShardTag>
 using shard_run_t = typename detail::shard_run<T, ShardTag>::type;
 
+namespace detail {
+
+// True for a class of a family of the inputs of reads() (design note 6).  The
+// function is no template, so no unit can specialize it to admit a class.
+[[nodiscard]] consteval bool is_read_family_(std::meta::info type) {
+    if (!std::meta::has_template_arguments(type)) return false;
+    std::meta::info const family = std::meta::template_of(type);
+    return family == ^^::foundation::core::View || family == ^^::foundation::core::ViewMut
+        || family == ^^::foundation::core::StridedView || family == ^^::foundation::core::StridedViewMut
+        || family == ^^::foundation::core::HeapArray || family == ^^::foundation::core::MaskedArray
+        || family == ^^::foundation::core::FixedArray || family == ^^::fixy::OwnedRegion;
+}
+
+// True when each object that an element names lies in the bytes of the
+// element, or the class of the element states sendable{} (design note 6).  A
+// compare of the bytes of two runs then sees each object that a body reaches
+// through an element.  Complexity: linear in the parts of the element.
+[[nodiscard]] consteval bool holds_its_objects_(std::meta::info element) {
+    std::meta::info const bare = ::foundation::reflect::bare_type(element);
+    std::meta::info const statement = ^^::foundation::transfer::sendable;
+    bool const is_stated = std::meta::is_class_type(bare) && ::foundation::transfer::detail::states(bare, statement);
+    return is_stated || !::foundation::core::detail::holds_borrow_(bare);
+}
+
+// True for an input that reads() admits: a class of a family of the inputs
+// whose element two threads can read at the same time, and whose element
+// holds its objects.
+[[nodiscard]] consteval bool is_read_input_(std::meta::info input) {
+    std::meta::info const type = ::foundation::reflect::bare_type(input);
+    if (!is_read_family_(type)) return false;
+    std::meta::info const element = ::foundation::core::detail::template_argument_at(type, 0);
+    return ::foundation::transfer::holds(element, ::foundation::transfer::Property::Share)
+        && holds_its_objects_(element);
+}
+
+// True for a region of the tag.
+[[nodiscard]] consteval bool is_region_of_(std::meta::info input, std::meta::info tag) {
+    std::meta::info const type = ::foundation::reflect::bare_type(input);
+    std::meta::info const region = ^^::fixy::OwnedRegion;
+    if (!std::meta::has_template_arguments(type) || std::meta::template_of(type) != region) return false;
+    return std::meta::dealias(::foundation::core::detail::template_argument_at(type, 1)) == std::meta::dealias(tag);
+}
+
+// The addresses of the bytes of a run, as integers, so a compare of the runs of
+// two objects is no undefined compare of pointers.  A View bounds its bytes by
+// __PTRDIFF_MAX__, and an object ends below the top of the address space, so
+// no sum overflows.
+class ByteRange final {
+    std::uintptr_t first_ = 0;
+    std::uintptr_t past_ = 0;
+
+public:
+    template <class T, std::size_t Extent>
+    explicit ByteRange(::foundation::core::View<T, Extent> run) noexcept
+        : first_{__builtin_bit_cast(std::uintptr_t, first_of_(::foundation::core::detail::BaseLayerRead{}, run))},
+          past_{first_ + run.size() * sizeof(T)} {}
+
+    // A strided run counts each byte from its first element to its last one.
+    // Complexity: O(rank).
+    template <class T, std::size_t Rank>
+    explicit ByteRange(::foundation::core::StridedView<T, Rank> const& run) noexcept {
+        if (run.count() == 0) return;
+        ::foundation::core::detail::StridedLanes<Rank> const& lanes =
+            ::foundation::core::detail::strided_lanes_of_(run);
+        std::size_t elements = 1;
+        for (std::size_t axis = 0; axis < lanes.rank(); ++axis) {
+            elements += (lanes.sizes[axis] - 1) * lanes.strides[axis];
+        }
+        first_ = __builtin_bit_cast(std::uintptr_t, ::foundation::core::detail::strided_first_of_(run));
+        past_ = first_ + elements * sizeof(T);
+    }
+
+    // True when the two runs share a byte.  A run of no byte shares none.
+    [[nodiscard]] bool shares_a_byte_with(ByteRange other) const noexcept {
+        return first_ < past_ && other.first_ < other.past_ && first_ < other.past_ && other.first_ < past_;
+    }
+};
+
+// The run of an input, as a view of const elements: what each body reads.
+// The call stays in the base, and a body gets only its result.
+template <class In>
+void run_of_input_(In const&& input) =
+    delete("the run of a temporary input ends with it, so the runner takes the run of a named input");
+template <class In>
+[[nodiscard]] constexpr auto run_of_input_(In const& input CRUCIBLE_LIFETIMEBOUND) noexcept {
+    namespace core = ::foundation::core;
+    if constexpr (::foundation::reflect::IsInstanceOf<In, ^^core::View>) {
+        return core::View<typename In::element_type const, In::extent>{input};
+    } else if constexpr (::foundation::reflect::IsInstanceOf<In, ^^core::StridedView>) {
+        return core::StridedView<typename In::element_type const, In::static_rank>{input};
+    } else if constexpr (::foundation::reflect::IsInstanceOf<In, ^^::fixy::OwnedRegion>) {
+        return ::fixy::mint_borrowed(input);
+    } else {
+        return input.view();
+    }
+}
+
+}  // namespace detail
+
+// An input of reads() (design note 6).
+template <class In>
+concept ReadInput = detail::is_read_input_(^^In);
+
+// An input of a parallel loop over a region of the tag Whole.  A region of
+// the tag Whole is no such input: its type does not tell it apart from the
+// written region, so its caller gives the View of its elements, which takes
+// the compare.
+template <class In, typename Whole>
+concept ReadInputBeside = ReadInput<In> && !detail::is_region_of_(^^In, ^^Whole);
+
+// The run that a body gets for an input: a View or a StridedView of const
+// elements.
+template <ReadInput In>
+using read_run_t = decltype(detail::run_of_input_(std::declval<In const&>()));
+
+namespace detail {
+
+// The reference to the input of a loop at position I, and the references to
+// each input in their order.  The runner of the loop is the one reader.
+template <std::size_t I, class In>
+class ReadSlot {
+    In const& input_;
+
+    friend class ::fixy::spawn::ParallelForRunner;
+
+public:
+    constexpr explicit ReadSlot(In const& input) noexcept : input_{input} {}
+};
+
+template <class Positions, class... Inputs>
+class ReadSlots;
+
+template <std::size_t... Is, class... Inputs>
+class ReadSlots<std::index_sequence<Is...>, Inputs...> : public ReadSlot<Is, Inputs>... {
+public:
+    constexpr explicit ReadSlots(Inputs const&... inputs) noexcept : ReadSlot<Is, Inputs>{inputs}... {}
+};
+
+}  // namespace detail
+
+// The inputs of one parallel loop (design note 6): a reference to each input.
+// The runner of the loop is the one reader of it.
+template <class... Inputs>
+    requires(ReadInput<Inputs> && ...)
+class [[nodiscard]] Reads final {
+    detail::ReadSlots<std::index_sequence_for<Inputs...>, Inputs...> slots_;
+
+    friend class ParallelForRunner;
+
+public:
+    constexpr explicit Reads(Inputs const&... inputs) noexcept : slots_{inputs...} {}
+
+    Reads(Reads const&) = delete("the inputs of a loop go to one call: write reads(...) as the argument of the call");
+    Reads& operator=(Reads const&) =
+        delete("the inputs of a loop go to one call: write reads(...) as the argument of the call");
+    ~Reads() = default;
+};
+
+// The inputs of a parallel loop, as an argument of the call of the loop
+// (design note 6).  Complexity: O(1).
+template <class... Inputs>
+    requires(ReadInput<Inputs> && ...)
+[[nodiscard]] constexpr Reads<Inputs...> reads(Inputs const&... inputs) noexcept {
+    return Reads<Inputs...>{inputs...};
+}
+
+// An input that reads() does not admit binds to this overload, so the refusal
+// gives its reason.
+template <class... Inputs>
+    requires(!(ReadInput<Inputs> && ...))
+void reads(Inputs const&... inputs) = delete(
+    "reads() admits a View, a StridedView, a ViewMut, a StridedViewMut, a HeapArray, a MaskedArray, a FixedArray and an "
+    "OwnedRegion of another tag.  The element of an input is Shareable, and it names no object past its own bytes.  "
+    "Give the View of each run of a class of another kind");
+
 // The place of one shard in the region that the split of mint_parallel_for
 // cut: the index of the shard among the N shards, and the position of the
 // first element of the shard in that region.  The runner gives each body the
@@ -450,20 +679,23 @@ public:
 // case where the diagnostic lands in this header rather than at the call.
 // The body takes the ViewMut by value: a body that takes it by reference
 // does not satisfy the clause.  A region of const elements gives the View of
-// its elements in place of the ViewMut (shard_run_t).
-template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
+// its elements in place of the ViewMut (shard_run_t).  After the place, the
+// body takes the run of each input of reads() (read_run_t).
+template <std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body, typename... Inputs>
 concept CtxFitsParallelFor = (N > 0) && eff::IsExecCtx<Ctx> && eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
-                          && perm::CtxAdmitsPermission<Whole, Ctx>
-                          && std::is_nothrow_invocable_v<Body&, shard_run_t<T, ::fixy::Slice<Whole, 0>>, ShardPlace<N>>
+                          && perm::CtxAdmitsPermission<Whole, Ctx> && (ReadInputBeside<Inputs, Whole> && ...)
+                          && std::is_nothrow_invocable_v<Body&, shard_run_t<T, ::fixy::Slice<Whole, 0>>, ShardPlace<N>,
+                                                         read_run_t<Inputs> const&...>
                           && (N == 1 || std::is_copy_constructible_v<Body>);
 
 // The gate of the door of a test (design note 5).  The context passes the
 // gate of mint_parallel_for.  The second context owns Test, which only the
 // testing door of foundation/effects/Effect.h mints, so code that ships
 // cannot give the workers options of its own.
-template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body>
+template <std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole, typename Brand, typename Body,
+          typename... Inputs>
 concept CtxFitsParallelForWithThreadOptions =
-    CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
+    CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...> && eff::CtxOwnsCapability<TestCtx, eff::Effect::Test>;
 
 // The policy of the body of the parallel loop (foundation/Closure.h): the
 // workers run at the same time, each copies the one body object, and a
@@ -473,18 +705,19 @@ inline constexpr ::foundation::closure::DoorPolicy parallel_for_body_policy{
 
 // Declared before the runner so that its friend declarations name these
 // two mints and nothing else.
-template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
-    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
+          typename... Inputs, typename Body>
+    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                  Body body) noexcept;
+                  Reads<Inputs...> inputs, Body body) noexcept;
 
 template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
-          typename Brand, typename Body>
-    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+          typename Brand, typename... Inputs, typename Body>
+    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body, Inputs...>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
-                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
+                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Reads<Inputs...> inputs, Body body,
                                       ::fixy::thread::ThreadOptions const& options) noexcept;
 
 // The work of mint_parallel_for.  run_shards_ is the fan-out: one thread
@@ -503,29 +736,75 @@ mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fix
 // all.
 class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
-              typename Body>
-        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+              typename... Inputs, typename Body>
+        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...>
     friend ::fixy::OwnedRegion<T, Whole, Brand> mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget,
                                                                   ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                                                                  Body body) noexcept;
+                                                                  Reads<Inputs...> inputs, Body body) noexcept;
 
     template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
-              typename Brand, typename Body>
-        requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+              typename Brand, typename... Inputs, typename Body>
+        requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body, Inputs...>
     friend ::fixy::OwnedRegion<T, Whole, Brand>
     mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
-                                          ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
-                                          ::fixy::thread::ThreadOptions const& options) noexcept;
+                                          ::fixy::OwnedRegion<T, Whole, Brand>&& region, Reads<Inputs...> inputs,
+                                          Body body, ::fixy::thread::ThreadOptions const& options) noexcept;
 
     // What one worker reads.  The frames live in the frame of run_shards_,
     // which waits in the door until every worker has joined.
-    template <typename Shards, typename Body>
+    template <typename Shards, typename Runs, typename Body>
     struct worker_frame_ {
         Shards* shards = nullptr;
+        Runs const* runs = nullptr;
         Body const* body = nullptr;
         std::size_t worker = 0;
         std::size_t threads = 1;
     };
+
+    // The runs of the inputs, in their order (design note 6).  The runner
+    // reads each input here, so an input that a door consumed gives an empty
+    // run.
+    template <typename... Inputs, std::size_t... Is>
+    [[nodiscard]] static ::foundation::core::Record<read_run_t<Inputs>...>
+    open_inputs_(Reads<Inputs...> const& inputs, std::index_sequence<Is...> /*positions*/) noexcept {
+        return ::foundation::core::Record<read_run_t<Inputs>...>{
+            detail::run_of_input_(static_cast<detail::ReadSlot<Is, Inputs> const&>(inputs.slots_).input_)...};
+    }
+
+    [[noreturn]] CRUCIBLE_COLD static void refuse_shared_input_(std::size_t position) noexcept {
+        ::foundation::core::fatal(
+            "mint_parallel_for: the input {} of reads() shares a byte with the region that the shards write", position);
+    }
+
+    // Ends the process when the run of the input at position shares a byte
+    // with the region (design note 6).  A region of another tag shares none,
+    // by its type.  Complexity: O(1), and O(rank) for a strided input.
+    template <typename Input, typename T>
+    static void check_input_apart_(read_run_t<Input> const& run, ::foundation::core::View<T> written,
+                                   std::size_t position) noexcept {
+        if constexpr (!::fixy::IsOwnedRegion<Input>) {
+            static_assert(detail::holds_its_objects_(^^T),
+                          "mint_parallel_for: an input of reads() takes a compare of bytes with the region, and an "
+                          "element of the region names an object past its own bytes, so a shard can write a byte that "
+                          "the compare does not see.  Give the loop a region of values, or inputs that are regions "
+                          "of another tag");
+            if (detail::ByteRange{run}.shares_a_byte_with(detail::ByteRange{written})) [[unlikely]] {
+                refuse_shared_input_(position);
+            }
+        }
+    }
+
+    // The compare of each input.  The shards of a region of const elements
+    // write no byte, so its inputs take no compare.  Complexity: O(1) for each
+    // input, and O(rank) for a strided input.
+    template <typename Element, typename... Inputs, std::size_t... Is>
+    static void check_inputs_apart_([[maybe_unused]] ::foundation::core::Record<read_run_t<Inputs>...> const& runs,
+                                    [[maybe_unused]] ::foundation::core::View<Element const> written,
+                                    std::index_sequence<Is...> /*positions*/) noexcept {
+        if constexpr (!std::is_const_v<Element>) {
+            (check_input_apart_<Inputs>(runs.at(::foundation::core::index<Is>()), written, Is), ...);
+        }
+    }
 
     // The first element of the region that the split cut: the first element
     // of shard 0, which starts at the position zero of the region.  No body
@@ -537,15 +816,15 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
     }
 
     // The frame of shard I (design note 3): body gets the ViewMut of the
-    // elements of the shard, with the tag of the shard as its brand, and the
-    // place of the shard among the N shards.  The split cut each shard out of
-    // one run, so the position of the shard is the distance of its first
-    // element from the first element of the whole.  A shard of const elements
-    // gives the View of its elements (shard_run_t).  The shard stays in the
-    // tuple, and only this frame lends its run.  Complexity: O(1), and the
-    // cost of body.
-    template <std::size_t I, std::size_t N, typename Shards, typename Body, typename Element>
-    static void run_shard_(Shards& shards, Body& body, Element* whole_first) noexcept {
+    // elements of the shard, with the tag of the shard as its brand, the
+    // place of the shard among the N shards, and the run of each input.  The
+    // split cut each shard out of one run, so the position of the shard is the
+    // distance of its first element from the first element of the whole.  A
+    // shard of const elements gives the View of its elements (shard_run_t).
+    // The shard stays in the tuple, and only this frame lends its run.
+    // Complexity: O(1), and the cost of body.
+    template <std::size_t I, std::size_t N, typename Shards, typename Body, typename Element, typename... Runs>
+    static void run_shard_(Shards& shards, Body& body, Element* whole_first, Runs const&... inputs) noexcept {
         auto& shard = std::get<I>(shards);
         using Shard = std::remove_reference_t<decltype(shard)>;
         static_assert(std::is_same_v<Element, typename Shard::value_type>);
@@ -555,67 +834,75 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
             ::foundation::core::index<I>(),
             static_cast<std::size_t>(first_of_(::foundation::core::detail::BaseLayerRead{}, run) - whole_first)};
         if constexpr (std::is_const_v<Element>) {
-            static_cast<void>(body(run, place));
+            static_cast<void>(body(run, place, inputs...));
         } else {
             static_cast<void>(body(
                 ::foundation::core::ViewMut<Element, typename Shard::tag_type>{
                     ::foundation::core::ParallelForFrameKeyDoor::key_(), run},
-                place));
+                place, inputs...));
         }
     }
 
-    // Runs on the thread of one worker.  The worker copies the body, so each
-    // thread calls a body of its own, and runs each shard whose index is its
-    // own modulo the thread count.
-    template <typename Shards, typename Body, std::size_t... Is>
+    // Runs on the thread of one worker.  The worker copies the body and the
+    // runs of the inputs, so each thread calls a body of its own and reads the
+    // runs from its own frame, and it runs each shard whose index is its own
+    // modulo the thread count.  A body takes a run by value or by a const
+    // reference.
+    template <typename Shards, typename Runs, typename Body, std::size_t... Is>
     static void run_worker_(::foundation::core::ErasedAddress frame) noexcept {
-        worker_frame_<Shards, Body> const& source = frame.restore<worker_frame_<Shards, Body>>();
+        using Frame = worker_frame_<Shards, Runs, Body>;
+        Frame const& source = frame.restore<Frame>();
         Body body = *source.body;
         auto* const whole_first = first_of_whole_(*source.shards);
-        ((Is % source.threads == source.worker ? run_shard_<Is, sizeof...(Is)>(*source.shards, body, whole_first)
-                                               : static_cast<void>(0)),
+        auto const [... inputs] = *source.runs;
+        ((Is % source.threads == source.worker
+              ? run_shard_<Is, sizeof...(Is)>(*source.shards, body, whole_first, inputs...)
+              : static_cast<void>(0)),
          ...);
     }
 
     // Starts the workers with the options, and joins each one before it
     // returns.  The error of the door when no worker started, and then no
     // shard ran (the errors of fixy/os/ThreadTasks.h).
-    template <typename Ctx, typename Shards, typename Body, std::size_t... Is>
+    template <typename Ctx, typename Shards, typename Runs, typename Body, std::size_t... Is>
         requires eff::CtxOwnsCapability<Ctx, eff::Effect::Bg>
     [[nodiscard]] static ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
-    run_shards_(Ctx const&, Shards& shards, Body const& body, std::size_t threads,
+    run_shards_(Ctx const&, Shards& shards, Runs const& runs, Body const& body, std::size_t threads,
                 ::fixy::thread::ThreadOptions const& options, std::index_sequence<Is...>) noexcept {
-        std::array<worker_frame_<Shards, Body>, sizeof...(Is)> frames{};
+        std::array<worker_frame_<Shards, Runs, Body>, sizeof...(Is)> frames{};
         ::fixy::thread::detail::thread_task tasks[sizeof...(Is)]{};
         // The caller gives at most one thread for each slot, so the window of
         // the started tasks fits the array, and the loop writes inside it.
         ::foundation::core::View<::fixy::thread::detail::thread_task> const started =
             ::foundation::core::detail::view_of_array_(tasks).window(0, threads).expect("the threads fit the tasks");
         for (std::size_t worker = 0; worker < threads; ++worker) {
-            frames[worker] = worker_frame_<Shards, Body>{&shards, &body, worker, threads};
+            frames[worker] = worker_frame_<Shards, Runs, Body>{&shards, &runs, &body, worker, threads};
             tasks[worker] = ::fixy::thread::detail::thread_task{::foundation::core::mint_erased_address(frames[worker]),
-                                                                &run_worker_<Shards, Body, Is...>};
+                                                                &run_worker_<Shards, Runs, Body, Is...>};
         }
         return ::fixy::thread::detail::run_thread_tasks(started, options);
     }
 
     // Runs each shard on the calling thread, in shard order.
-    template <typename Shards, typename Body, std::size_t... Is>
-    static void run_inline_(Shards& shards, Body& body, std::index_sequence<Is...>) noexcept {
+    template <typename Shards, typename Runs, typename Body, std::size_t... Is>
+    static void run_inline_(Shards& shards, Runs const& runs, Body& body, std::index_sequence<Is...>) noexcept {
         auto* const whole_first = first_of_whole_(shards);
-        (run_shard_<Is, sizeof...(Is)>(shards, body, whole_first), ...);
+        auto const& [... inputs] = runs;
+        (run_shard_<Is, sizeof...(Is)>(shards, body, whole_first, inputs...), ...);
     }
 
     // The body of the two mints.  The workers get the options.
     template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
-              typename Body>
-        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+              typename... Inputs, typename Body>
+        requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...>
     [[nodiscard]] static ::fixy::OwnedRegion<T, Whole, Brand>
     run_(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-         Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
+         Reads<Inputs...> const& inputs, Body& body, ::fixy::thread::ThreadOptions const& options) noexcept {
         constexpr ::foundation::closure::ClosureVerdict verdict =
             ::foundation::closure::check_closure(^^Body, parallel_for_body_policy, "mint_parallel_for");
         static_assert(verdict.is_admitted(), verdict);
+        auto const runs = open_inputs_(inputs, std::index_sequence_for<Inputs...>{});
+        check_inputs_apart_<T, Inputs...>(runs, ::fixy::mint_borrowed(region), std::index_sequence_for<Inputs...>{});
         auto parts = ::fixy::mint_split<N>(std::move(region));
 
         if constexpr (N == 1) {
@@ -624,13 +911,13 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
             static_cast<void>(ctx);
             static_cast<void>(budget);
             static_cast<void>(options);
-            run_inline_(parts.shards, body, std::make_index_sequence<1>{});
+            run_inline_(parts.shards, runs, body, std::make_index_sequence<1>{});
         } else if constexpr (Coupling == BodyCoupling::WaitOnEachOther) {
             // One thread for each shard, for each budget and each host, and
             // no run on the calling thread (design note 5).
             const std::size_t threads =
                 choose_parallel_for_threads(Coupling, ::fixy::concurrent::ParallelismRule::host_facts(), budget, N);
-            run_shards_(ctx, parts.shards, body, threads, options, std::make_index_sequence<N>{})
+            run_shards_(ctx, parts.shards, runs, body, threads, options, std::make_index_sequence<N>{})
                 .expect("mint_parallel_for: no worker of the shards started.  The shards wait on each other, so they "
                         "cannot run one after another on the calling thread");
         } else {
@@ -641,9 +928,9 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
                 choose_parallel_for_threads(Coupling, ::fixy::concurrent::ParallelismRule::host_facts(), budget, N);
             const bool have_workers_run =
                 threads > 1
-                && run_shards_(ctx, parts.shards, body, threads, options, std::make_index_sequence<N>{}).is_ok();
+                && run_shards_(ctx, parts.shards, runs, body, threads, options, std::make_index_sequence<N>{}).is_ok();
             if (!have_workers_run) {
-                run_inline_(parts.shards, body, std::make_index_sequence<N>{});
+                run_inline_(parts.shards, runs, body, std::make_index_sequence<N>{});
             }
         }
 
@@ -660,29 +947,33 @@ class ParallelForRunner final : ::foundation::NoObject<ParallelForRunner> {
 // shard can wait on another shard, and the budget states the bytes the
 // bodies touch together.  choose_parallel_for_threads gives the thread count
 // from the two, per design note 4.  The workers get the default options of
-// the thread door.
-template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand, typename Body>
-    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>
+// the thread door.  inputs are the runs that the bodies read, as reads()
+// gives them, and a body that reads no other run takes reads() with no
+// argument (design note 6).
+template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename T, typename Whole, typename Brand,
+          typename... Inputs, typename Body>
+    requires CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs...>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for(Ctx const& ctx, ::fixy::concurrent::WorkBudget budget, ::fixy::OwnedRegion<T, Whole, Brand>&& region,
-                  Body body) noexcept {
+                  Reads<Inputs...> inputs, Body body) noexcept {
     // The constraint on the declaration reads the context.  The runner
     // reads it too, and asks for the background effect again before it
     // starts a thread.
-    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), body, ::fixy::thread::ThreadOptions{});
+    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), inputs, body,
+                                                ::fixy::thread::ThreadOptions{});
 }
 
 // mint_parallel_for with the options of its worker threads, for a test
 // (design note 5).  The test context is the authority of the options.
 template <BodyCoupling Coupling, std::size_t N, typename Ctx, typename TestCtx, typename T, typename Whole,
-          typename Brand, typename Body>
-    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body>
+          typename Brand, typename... Inputs, typename Body>
+    requires CtxFitsParallelForWithThreadOptions<N, Ctx, TestCtx, T, Whole, Brand, Body, Inputs...>
 [[nodiscard]] ::fixy::OwnedRegion<T, Whole, Brand>
 mint_parallel_for_with_thread_options(Ctx const& ctx, TestCtx const& test, ::fixy::concurrent::WorkBudget budget,
-                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Body body,
+                                      ::fixy::OwnedRegion<T, Whole, Brand>&& region, Reads<Inputs...> inputs, Body body,
                                       ::fixy::thread::ThreadOptions const& options) noexcept {
     static_cast<void>(test);
-    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), body, options);
+    return ParallelForRunner::run_<Coupling, N>(ctx, budget, std::move(region), inputs, body, options);
 }
 
 }  // namespace fixy::spawn

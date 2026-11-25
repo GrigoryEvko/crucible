@@ -318,7 +318,7 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     auto [whole_count, storage] =
         fixy::with_region<RegionWhole>(fixy::mint_heap_array(test_alloc(), kCount, 0), [&ctx](auto region) noexcept {
             auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
-                ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
+                ctx, dram_bound_budget(), std::move(region), spawn::reads(), [](auto shard, auto) noexcept {
                     for (int& element : shard) {
                         element += 1;
                     }
@@ -366,7 +366,7 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     auto [whole_count, storage] =
         fixy::with_region<RegionWhole>(fixy::mint_heap_array(test_alloc(), kCount, 7), [&ctx](auto region) noexcept {
             auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, 1>(
-                ctx, dram_bound_budget(), std::move(region), [](auto shard, auto) noexcept {
+                ctx, dram_bound_budget(), std::move(region), spawn::reads(), [](auto shard, auto) noexcept {
                     for (int& element : shard) {
                         element = 9;
                     }
@@ -407,7 +407,7 @@ constexpr fixy::concurrent::HostFacts kHugeCaches{
     auto whole = spawn::mint_parallel_for<spawn::BodyCoupling::Independent, kShards>(
         ctx, dram_bound_budget(),
         fixy::mint_owned_region<int const>(test_alloc(), arena, kCount, perm::mint_permission_root<ReadRegion>()),
-        [&sums, &firsts](auto shard, auto place) noexcept {
+        spawn::reads(), [&sums, &firsts](auto shard, auto place) noexcept {
             std::uint64_t sum = 0;
             for (int const element : shard) {
                 sum += static_cast<std::uint64_t>(element);
@@ -460,7 +460,7 @@ struct ShardThreads {
         records = ::fixy::build_fixed_array<ShardRecord, Shards>([&ctx, budget](auto elements) noexcept {
             static_cast<void>(fixy::with_region<RegionWhole>(std::move(elements), [&ctx, budget](auto region) noexcept {
                 return spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
-                    ctx, budget, std::move(region), [](auto shard, auto) noexcept {
+                    ctx, budget, std::move(region), spawn::reads(), [](auto shard, auto) noexcept {
                         for (ShardRecord& record : shard) {
                             record.thread = std::this_thread::get_id();
                             ++record.runs;
@@ -525,7 +525,7 @@ template <std::size_t Shards>
     static_cast<void>(fixy::with_region<RegionWhole>(
         fixy::HeapArray<std::uint32_t>{}, [&ctx, budget, &barrier_body](auto region) noexcept {
             return spawn::mint_parallel_for<spawn::BodyCoupling::WaitOnEachOther, Shards>(
-                ctx, budget, std::move(region), barrier_body);
+                ctx, budget, std::move(region), spawn::reads(), barrier_body);
         }));
     return stuck_shards.load_acquire();
 }
@@ -545,7 +545,7 @@ void run_waiting_shards_with_refused_workers() noexcept {
     static_cast<void>(fixy::with_region<RegionWhole>(
         fixy::HeapArray<std::uint32_t>{}, [&ctx, &test_ctx, &refused_options](auto region) noexcept {
             return spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::WaitOnEachOther, Shards>(
-                ctx, test_ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                ctx, test_ctx, fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region), spawn::reads(),
                 [](auto shard, auto) noexcept { static_cast<void>(shard); }, refused_options);
         }));
 }
@@ -666,7 +666,7 @@ void run_waiting_shards_with_refused_workers() noexcept {
         fixy::mint_heap_array(test_alloc(), kShards, std::uint32_t{0}),
         [&ctx, &test_ctx, budget, &refused_options, &has_run_off_main](auto region) noexcept {
             return spawn::mint_parallel_for_with_thread_options<spawn::BodyCoupling::Independent, kShards>(
-                ctx, test_ctx, budget, std::move(region),
+                ctx, test_ctx, budget, std::move(region), spawn::reads(),
                 [&has_run_off_main](auto shard, auto) noexcept {
                     if (!is_main_thread) has_run_off_main.store_release(true);
                     for (std::uint32_t& element : shard) {

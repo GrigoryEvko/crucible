@@ -139,6 +139,34 @@ struct WorkloadInputs {
     ::fixy::HeapArray<std::uint64_t> dram{};
 };
 
+// What a thread reads of the inputs of a workload: the plain parts, and the
+// View of each run.  Each arm runs the kernels on this class.  The rule arm
+// builds it in a shard from the views that mint_parallel_for lends the shard.
+struct WorkloadRuns {
+    WorkloadKind kind = WorkloadKind::L1ArraySum;
+    std::size_t units = 0;
+    ::fixy::View<std::uint64_t const> l1{};
+    ::fixy::View<double const> matrix_a{};
+    ::fixy::View<double const> matrix_b{};
+    std::size_t matrix_n = 0;
+    ::fixy::View<std::uint32_t const> graph_next{};
+    ::fixy::View<std::uint64_t const> dram{};
+};
+
+[[nodiscard]] WorkloadRuns runs_of(WorkloadInputs const& inputs CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return WorkloadRuns{
+        .kind = inputs.kind,
+        .units = inputs.units,
+        .l1 = inputs.l1.view(),
+        .matrix_a = inputs.matrix_a.view(),
+        .matrix_b = inputs.matrix_b.view(),
+        .matrix_n = inputs.matrix_n,
+        .graph_next = inputs.graph_next.view(),
+        .dram = inputs.dram.view(),
+    };
+}
+WorkloadRuns runs_of(WorkloadInputs const&&) = delete("the Views borrow the inputs, and a temporary ends before them");
+
 struct Workload {
     ::fixy::TextView name{};
     fc::WorkBudget budget{};
@@ -178,8 +206,8 @@ using PieceTable = ::fixy::FixedArray<std::uint32_t, kPieces>;
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the kernels index their runs as the memory hierarchy sees them, with no check")
 namespace {
 
-void run_l1_sum(WorkloadInputs const& inputs, Range range, Sink& sink) noexcept {
-    std::uint64_t const* const l1 = ::foundation::core::foreign_first(inputs.l1.view());
+void run_l1_sum(WorkloadRuns const& inputs, Range range, Sink& sink) noexcept {
+    std::uint64_t const* const l1 = ::foundation::core::foreign_first(inputs.l1);
     std::uint64_t acc = 0;
     for (std::size_t i = range.begin; i < range.end; ++i) {
         acc += l1[i];
@@ -191,9 +219,9 @@ void run_l1_sum(WorkloadInputs const& inputs, Range range, Sink& sink) noexcept 
 // The rows of RANGE of the product, in the order i, j, k, into OUT, which
 // points at the first row of RANGE.  Each cell is the dot product of its row
 // of A and its column of B, in the order of k.
-void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRow* out) noexcept {
-    double const* const matrix_a = ::foundation::core::foreign_first(inputs.matrix_a.view());
-    double const* const matrix_b = ::foundation::core::foreign_first(inputs.matrix_b.view());
+void run_l2_rows(WorkloadRuns const& inputs, Range rows, Sink& sink, ProductRow* out) noexcept {
+    double const* const matrix_a = ::foundation::core::foreign_first(inputs.matrix_a);
+    double const* const matrix_b = ::foundation::core::foreign_first(inputs.matrix_b);
     std::size_t const n = inputs.matrix_n;
     double acc = 0.0;
     for (std::size_t i = rows.begin; i < rows.end; ++i) {
@@ -214,8 +242,8 @@ void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRo
     static_cast<void>(sink.fetch_add_relaxed(static_cast<std::uint64_t>(acc)));
 }
 
-void run_l3_graph(WorkloadInputs const& inputs, Range starts, Sink& sink) noexcept {
-    std::uint32_t const* const graph_next = ::foundation::core::foreign_first(inputs.graph_next.view());
+void run_l3_graph(WorkloadRuns const& inputs, Range starts, Sink& sink) noexcept {
+    std::uint32_t const* const graph_next = ::foundation::core::foreign_first(inputs.graph_next);
     const std::uint32_t mask = static_cast<std::uint32_t>(inputs.graph_next.size() - 1);
     std::uint64_t acc = 0;
     for (std::size_t pass = 0; pass < kL3GraphPasses; ++pass) {
@@ -228,8 +256,8 @@ void run_l3_graph(WorkloadInputs const& inputs, Range starts, Sink& sink) noexce
     static_cast<void>(sink.fetch_add_relaxed(acc));
 }
 
-void run_dram_stream(WorkloadInputs const& inputs, Range lines, Sink& sink) noexcept {
-    std::uint64_t const* const dram = ::foundation::core::foreign_first(inputs.dram.view());
+void run_dram_stream(WorkloadRuns const& inputs, Range lines, Sink& sink) noexcept {
+    std::uint64_t const* const dram = ::foundation::core::foreign_first(inputs.dram);
     std::uint64_t acc = 0;
     for (std::size_t line = lines.begin; line < lines.end; ++line) {
         acc += dram[line * 8];
@@ -240,7 +268,7 @@ void run_dram_stream(WorkloadInputs const& inputs, Range lines, Sink& sink) noex
 
 // The units of RANGE of the workload.  The matrix multiply writes the rows of
 // RANGE into PRODUCT, which points at the row 0.
-void run_range(WorkloadInputs const& inputs, Range range, Sink& sink, ProductRow* product) noexcept {
+void run_range(WorkloadRuns const& inputs, Range range, Sink& sink, ProductRow* product) noexcept {
     switch (inputs.kind) {
         case WorkloadKind::L1ArraySum:
             run_l1_sum(inputs, range, sink);
@@ -263,7 +291,7 @@ void run_range(WorkloadInputs const& inputs, Range range, Sink& sink, ProductRow
 // rows of the product in the frame of measure_once.
 template <typename RowsBrand>
 void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::ViewMut<ProductRow, RowsBrand>& rows) noexcept {
-    run_range(inputs, Range{0, inputs.units}, sink, ::foundation::core::foreign_first(rows));
+    run_range(runs_of(inputs), Range{0, inputs.units}, sink, ::foundation::core::foreign_first(rows));
 }
 
 // The options of the threads of the rule arm (the cores of a run of
@@ -290,9 +318,9 @@ void run_sequential(WorkloadInputs const& inputs, Sink& sink, ::fixy::ViewMut<Pr
 // decision.  A sequential decision runs every shard on the calling thread.
 // The matrix multiply splits the rows of its product, so each shard writes
 // only its own whole rows.  Each other workload splits the piece table, one
-// shard for each piece.  Each shard reads the inputs through a const
-// reference, and notes its CPU in the tally.  The threads take the cores of
-// rule_thread_options.  ROWS is the ViewMut of the rows of the product in the
+// shard for each piece.  Each shard reads the runs of the inputs through
+// reads() of the mint, and notes its CPU in the tally.  The threads take the
+// cores of rule_thread_options.  ROWS is the ViewMut of the rows of the product in the
 // frame of measure_once.  A region scope door covers the rows for the matrix
 // multiply, and the function gives ROWS back.  A region scope door covers
 // the run that the frame door of the piece table lends.
@@ -308,11 +336,16 @@ run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::ViewMut<Pr
             std::move(rows), [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto region) noexcept {
                 return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
                                                                             kPieces>(
-                    ctx, test, budget, std::move(region),
-                    [&inputs, &sink, &tally](auto shard, auto place) noexcept {
+                    ctx, test, budget, std::move(region), ::fixy::spawn::reads(inputs.matrix_a, inputs.matrix_b),
+                    [matrix_n = inputs.matrix_n, &sink, &tally](auto shard, auto place, auto matrix_a,
+                                                                auto matrix_b) noexcept {
                         tally.note_calling_thread();
                         if (shard.size() == 0) return;
-                        run_l2_rows(inputs, Range{place.first(), place.first() + shard.size()}, sink,
+                        WorkloadRuns const runs{.kind = WorkloadKind::L2MatrixMultiply,
+                                                .matrix_a = matrix_a,
+                                                .matrix_b = matrix_b,
+                                                .matrix_n = matrix_n};
+                        run_l2_rows(runs, Range{place.first(), place.first() + shard.size()}, sink,
                                     ::foundation::core::foreign_first(shard));
                     },
                     options);
@@ -321,20 +354,23 @@ run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::ViewMut<Pr
     auto [table, table_key] =
         ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint32_t, PieceTable::size()>, pieces);
     table.with_mut(table_key, [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto run) noexcept {
-        static_cast<void>(::fixy::with_region<PieceTableWhole>(
-            std::move(run), [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto region) noexcept {
-                return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
-                                                                            kPieces>(
-                    ctx, test, budget, std::move(region),
-                    [&inputs, &sink, &tally](auto shard, auto place) noexcept {
-                        static_cast<void>(place);
-                        tally.note_calling_thread();
-                        for (const std::uint32_t piece : shard) {
-                            run_range(inputs, split_range(inputs.units, piece, kPieces), sink, nullptr);
-                        }
-                    },
-                    options);
-            }));
+        static_cast<void>(::fixy::with_region<PieceTableWhole>(std::move(run), [&ctx, &test, budget, &options, &inputs,
+                                                                                &sink, &tally](auto region) noexcept {
+            return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
+                                                                        kPieces>(
+                ctx, test, budget, std::move(region), ::fixy::spawn::reads(inputs.l1, inputs.graph_next, inputs.dram),
+                [kind = inputs.kind, units = inputs.units, &sink, &tally](auto shard, auto place, auto l1,
+                                                                          auto graph_next, auto dram) noexcept {
+                    static_cast<void>(place);
+                    tally.note_calling_thread();
+                    WorkloadRuns const runs{
+                        .kind = kind, .units = units, .l1 = l1, .graph_next = graph_next, .dram = dram};
+                    for (const std::uint32_t piece : shard) {
+                        run_range(runs, split_range(units, piece, kPieces), sink, nullptr);
+                    }
+                },
+                options);
+        }));
     });
     return rows;
 }
@@ -377,7 +413,7 @@ void run_forced_parallel(WorkloadInputs const& inputs, ForcedWorkers workers,
                     bench::pin_calling_thread_to(core).expect("the pin of a worker to a core of the claim of its run");
                 tally.note_calling_thread();
                 const Range r = split_range(inputs.units, worker, forced_workers);
-                run_range(inputs, r, sink, product);
+                run_range(runs_of(inputs), r, sink, product);
             }};
     }
 }

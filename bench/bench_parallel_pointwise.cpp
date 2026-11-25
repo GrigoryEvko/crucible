@@ -250,7 +250,7 @@ void print_shard_cores(Placement const& placement) noexcept {
     static_cast<void>(::fixy::with_region<ShardProbeCells>(
         ::fixy::HeapArray<std::uint32_t>{}, [&ctx, &test, &cpus, &placement](auto region) noexcept {
             return ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
-                ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region), ::fixy::spawn::reads(),
                 [&cpus](auto shard, auto place) noexcept {
                     static_cast<void>(shard);
                     ::fixy::FixedText<1024> stat{};
@@ -297,6 +297,7 @@ template <std::size_t Shards>
             ::fixy::HeapArray<std::uint32_t>{}, [&ctx, &test, &options](auto region) noexcept {
                 return ::fixy::spawn::mint_parallel_for_with_thread_options<BodyCoupling::WaitOnEachOther, Shards>(
                     ctx, test, ::fixy::concurrent::WorkBudget{.read_bytes = 64}, std::move(region),
+                    ::fixy::spawn::reads(),
                     [](auto shard, auto place) noexcept {
                         static_cast<void>(shard);
                         static_cast<void>(place);

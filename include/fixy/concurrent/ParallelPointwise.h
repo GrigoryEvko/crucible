@@ -34,7 +34,9 @@
 //   input in place reads in each shard only the elements that the shard
 //   writes, and an input apart reads no element that a shard writes.  A rank
 //   of zero, a view with no element and a first axis of one position do not
-//   split either.
+//   split either.  The shards write out through the rows that a region lends
+//   them, so the compare of the inputs of mint_parallel_for sees the region
+//   and not out, and this plan is the proof of out (PointwiseRows).
 //
 // Threads
 //   The coupling and the count of shards pass to mint_parallel_for of
@@ -56,8 +58,10 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
+#include <foundation/Transfer.h>
 #include <foundation/core/Arithmetic.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/Pointwise.h>
 #include <foundation/core/Strided.h>
@@ -87,6 +91,34 @@ read_only_(::foundation::core::StridedView<T, Rank> const& view) noexcept {
     return ::foundation::core::StridedView<T const, Rank>{view};
 }
 
+// The rows of out of one shard on the first axis: the writer of the elements
+// of the positions of the shard, or no rows for a shard with no position.
+//
+// The class states sendable{} (foundation/Transfer.h), so a region of rows
+// enters mint_parallel_for with compared inputs (design note 6 of
+// fixy/concurrent/Spawn.h).  The proof is of the one maker of the rows, the
+// body of the walk:
+//   - out is a unique view, and the rows of two shards hold different
+//     positions of its first axis, so no two rows share an element.
+//   - The body takes the plan of the walk over the whole views before it makes
+//     a row, and an input that can name an element of out at a different index
+//     stays on the calling thread.  So a shard reads no element that another
+//     shard writes.
+template <class T, std::size_t Rank>
+class[[= ::foundation::transfer::sendable{}]] PointwiseRows final {
+    using View = ::foundation::core::StridedView<T, Rank>;
+
+    ::foundation::core::Option<View> rows_{::foundation::core::none};
+
+public:
+    // Puts the rows of a shard into an object that holds none.
+    void hold(View rows) noexcept { rows_ = ::foundation::core::Option<View>::some(std::move(rows)); }
+
+    // Gives the rows, or no value for a shard with no position.  The object
+    // holds no rows after the call.
+    [[nodiscard]] ::foundation::core::Option<View> take() noexcept { return rows_.take(); }
+};
+
 // The tag of the region of the shards of one walk: one slot for each shard,
 // which holds the rows of out of the shard on the first axis, or no rows.
 struct ParallelPointwiseShards {
@@ -113,8 +145,9 @@ template <class... Inputs, class T, std::size_t Rank>
 inline namespace CRUCIBLE_SIMD_TARGET {
 
 // The body of the two forms below.  launch runs the shards: it takes the
-// budget, the region of the shards and the body of a shard, and it calls
-// mint_parallel_for, or the door of a test with the options of the threads.
+// budget, the region of the shards, the body of a shard and the inputs, and it
+// calls mint_parallel_for, or the door of a test with the options of the
+// threads.
 template <spawn::BodyCoupling Coupling, std::size_t Shards, class Launch, class T, std::size_t Rank, class Brand,
           class Op, class... Inputs>
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::ShapeMismatch>
@@ -150,26 +183,24 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         // The rows of out are a region of one part for each shard, so the
         // split of the door gives shard s the rows s and no other.  A shard
         // with no positions gets no rows.  No body holds the whole view of
-        // out, which writes.  Each body holds a copy of a view of const
+        // out, which writes.  The door gives each body a view of const
         // elements of each input, because an input can be a view that writes.
-        using Rows = core::StridedView<T, Rank>;
-        auto [parts, parts_key] = core::mint_keyed_owner(core::fixed_array_owner<core::Option<Rows>, Shards>);
+        using Rows = detail::PointwiseRows<T, Rank>;
+        auto [parts, parts_key] = core::mint_keyed_owner(core::fixed_array_owner<Rows, Shards>);
         for (std::size_t shard = 0; shard < Shards; ++shard) {
             std::size_t const first = ::fixy::detail::shard_start(positions, Shards, shard);
             std::size_t const count = ::fixy::detail::shard_start(positions, Shards, shard + 1) - first;
             if (count == 0) continue;
-            core::Option<Rows> rows = core::Option<Rows>::some(
-                whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out"));
-            parts.with_element(
-                parts_key, core::Index<Shards>::check(shard).expect("each shard has a part"),
-                [rows = std::move(rows)](core::Option<Rows>& part) mutable noexcept { part = std::move(rows); });
+            auto const rows =
+                whole.slice(first_axis, first, count, 1).expect("the positions of a shard lie inside out");
+            parts.with_element(parts_key, core::Index<Shards>::check(shard).expect("each shard has a part"),
+                               [rows](Rows& part) noexcept { part.hold(rows); });
         }
-        auto const ruled = core::detail::ruled_op_<T>(op);
-        auto const shard_body = [&ruled, &apart, ... reads = detail::read_only_(core::detail::plain_view_of_(inputs)),
-                                 first_axis, positions](auto shard, auto place) noexcept {
+        auto const shard_body = [ruled = core::detail::ruled_op_<T>(op), apart, first_axis,
+                                 positions](auto shard, auto place, auto const&... reads) noexcept {
             std::size_t const index = place.index().raw();
             CRUCIBLE_FATAL_INVARIANT(shard.size() == 1);
-            CRUCIBLE_LET_ELSE(rows, std::move(*first_of_(core::detail::BaseLayerRead{}, shard)), );
+            CRUCIBLE_LET_ELSE(rows, first_of_(core::detail::BaseLayerRead{}, shard)->take(), );
             std::size_t const first = ::fixy::detail::shard_start(positions, Shards, index);
             std::size_t const count = ::fixy::detail::shard_start(positions, Shards, index + 1) - first;
             bool const is_written =
@@ -185,12 +216,14 @@ write_pointwise_in_parallel_body_(Launch const& launch, ::foundation::core::Stri
         // The region of the parts lives in the frame of the parts: the frame
         // door of the parts lends their run, and the region scope door covers
         // it.
-        parts.with_mut(parts_key, [&launch, budget, &shard_body](auto run) noexcept {
-            static_cast<void>(::fixy::with_region<detail::ParallelPointwiseShards>(
-                std::move(run), [&launch, budget, &shard_body](auto region) noexcept {
-                    return launch(budget, std::move(region), shard_body);
-                }));
-        });
+        parts.with_mut(parts_key,
+                       [&launch, budget, &shard_body,
+                        ... reads = detail::read_only_(core::detail::plain_view_of_(inputs))](auto run) noexcept {
+                           static_cast<void>(::fixy::with_region<detail::ParallelPointwiseShards>(
+                               std::move(run), [&launch, budget, &shard_body, reads...](auto region) noexcept {
+                                   return launch(budget, std::move(region), shard_body, reads...);
+                               }));
+                       });
         return core::Unit{};
     }
 }
@@ -208,8 +241,9 @@ template <spawn::BodyCoupling Coupling, std::size_t Shards, typename Ctx, class 
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::core::ShapeMismatch>
 write_pointwise_in_parallel(Ctx const& ctx, ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
                             Inputs const&... inputs) noexcept {
-    auto const launch = [&ctx](WorkBudget budget, auto&& region, auto body) noexcept {
-        return spawn::mint_parallel_for<Coupling, Shards>(ctx, budget, std::move(region), std::move(body));
+    auto const launch = [&ctx](WorkBudget budget, auto&& region, auto body, auto const&... reads) noexcept {
+        return spawn::mint_parallel_for<Coupling, Shards>(ctx, budget, std::move(region), spawn::reads(reads...),
+                                                          std::move(body));
     };
     return write_pointwise_in_parallel_body_<Coupling, Shards>(launch, out, op, inputs...);
 }
@@ -231,9 +265,10 @@ write_pointwise_in_parallel_with_thread_options(Ctx const& ctx, TestCtx const& t
                                                 ::fixy::thread::ThreadOptions const& options,
                                                 ::foundation::core::StridedViewMut<T, Rank, Brand>& out, Op op,
                                                 Inputs const&... inputs) noexcept {
-    auto const launch = [&ctx, &test, &options](WorkBudget budget, auto&& region, auto body) noexcept {
-        return spawn::mint_parallel_for_with_thread_options<Coupling, Shards>(ctx, test, budget, std::move(region),
-                                                                              std::move(body), options);
+    auto const launch = [&ctx, &test, &options](WorkBudget budget, auto&& region, auto body,
+                                                auto const&... reads) noexcept {
+        return spawn::mint_parallel_for_with_thread_options<Coupling, Shards>(
+            ctx, test, budget, std::move(region), spawn::reads(reads...), std::move(body), options);
     };
     return write_pointwise_in_parallel_body_<Coupling, Shards>(launch, out, op, inputs...);
 }

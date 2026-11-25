@@ -29,7 +29,8 @@ int main() {
     test_owned_region::UncheckedArena arena{};
     auto region = fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, std::size_t{0},
                                                perm::mint_permission_root<RegionWhole>());
-    [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<2>(
-        ctx, fixy::concurrent::WorkBudget{}, std::move(region), [](auto shard, auto) noexcept { (void)shard; });
+    [[maybe_unused]] auto whole =
+        fixy::spawn::mint_parallel_for<2>(ctx, fixy::concurrent::WorkBudget{}, std::move(region), fixy::spawn::reads(),
+                                          [](auto shard, auto) noexcept { (void)shard; });
     return 0;
 }

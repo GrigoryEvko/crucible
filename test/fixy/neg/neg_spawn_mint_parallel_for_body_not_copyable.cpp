@@ -43,6 +43,6 @@ int main() {
     auto region = fixy::mint_owned_region<int>(eff::testing::test().alloc, arena, std::size_t{16},
                                                perm::mint_permission_root<RegionWhole>());
     [[maybe_unused]] auto whole = fixy::spawn::mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>(
-        ctx, fixy::concurrent::WorkBudget{}, std::move(region), MoveOnlyBody{});
+        ctx, fixy::concurrent::WorkBudget{}, std::move(region), fixy::spawn::reads(), MoveOnlyBody{});
     return 0;
 }

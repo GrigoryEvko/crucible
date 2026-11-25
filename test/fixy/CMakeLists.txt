@@ -7572,6 +7572,28 @@ fixy_test(test_shared_locked)
 # with.
 fixy_test(test_concurrent_spawn)
 
+# test_concurrent_parallel_reads gives a parallel loop an input of each family
+# of reads(), and it shows that an input that shares a byte with the region of
+# the shards ends the process before a shard starts.
+fixy_test(test_concurrent_parallel_reads)
+# Each fixture gives reads() an input whose run the compare does not see, or a
+# Reads that outlives its call.
+fixy_neg_compile_test(neg_spawn_reads_class_of_two_owners
+  "use of deleted function .void fixy::spawn::reads\\(const Inputs& \\.\\.\\.\\)"
+  "Give the View of each run of a class of another kind")
+fixy_neg_compile_test(neg_spawn_reads_run_of_views
+  "use of deleted function .void fixy::spawn::reads\\(const Inputs& \\.\\.\\.\\)"
+  "it names no object past its own bytes")
+fixy_neg_compile_test(neg_spawn_reads_region_of_the_same_tag
+  "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, parallel_loop_rig::kShards>"
+  "ReadInputBeside<Inputs, Whole>")
+fixy_neg_compile_test(neg_spawn_reads_with_a_name
+  "use of deleted function .fixy::spawn::Reads<Inputs>::Reads\\(const fixy::spawn::Reads<Inputs>&\\)"
+  "the inputs of a loop go to one call")
+fixy_neg_compile_test(neg_spawn_reads_beside_a_region_of_boxes
+  "static assertion failed: mint_parallel_for: an input of reads\\(\\) takes a compare of bytes with the region"
+  "an element of the region names an object past its own bytes")
+
 # The parallel tree tests run the parallel tree sum and segmented sum, the
 # sum scans, and the reduce on 1, 2, 4, 8 and 64 threads, and compare each
 # result with the bits of the form of one thread.  A combine that records
@@ -7581,6 +7603,9 @@ fixy_test(test_concurrent_parallel_tree)
 fixy_test(test_concurrent_parallel_tree_scan)
 fixy_test(test_concurrent_parallel_tree_segments)
 fixy_test(test_concurrent_parallel_tree_reduce)
+# An input of a parallel tree form that shares a byte with what the shards write
+# ends the process.
+fixy_test(test_concurrent_parallel_tree_inputs)
 
 # The fourth part of the match of the reductions and their nets: the parallel
 # forms follow the tree plan and the scan plan of runs of some grains.  The
@@ -8111,13 +8136,13 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_no_coupling
 # names a region.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_consumes_shard
   "static assertion failed: a body that consumes its shard must be refused"
-  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N> > \\[with Body = <unnamed>::ConsumingBody")
+  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N>, const decltype\\(fixy::spawn::detail::run_of_input_\\(.*\\)&\\.\\.\\.> \\[with Body = <unnamed>::ConsumingBody")
 # The body of the old form takes the region of its shard by reference, and
 # the gate refuses it: a body that held the region could open a second door
 # of its run.
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_takes_region
   "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>\\(.*RegionBody\\)"
-  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N> > \\[with Body = <unnamed>::RegionBody")
+  "is_nothrow_invocable_v<Body&, typename fixy::spawn::detail::shard_run<T, fixy::Slice<Whole, 0, fixy::Unsplit>, is_const_v<T> >::type, fixy::spawn::ShardPlace<N>, const decltype\\(fixy::spawn::detail::run_of_input_\\(.*\\)&\\.\\.\\.> \\[with Body = <unnamed>::RegionBody")
 
 # The fan-out of mint_parallel_for is a private member of
 # ParallelForRunner, and the mint is its only friend: no other scope calls
@@ -8147,7 +8172,7 @@ fixy_neg_compile_test(neg_spawn_mint_parallel_for_ctx_refuses_row
   "required for the satisfaction of .CtxAdmitsPermission<Whole, Ctx>. \\[with Whole = <unnamed>::IoRegion")
 fixy_neg_compile_test(neg_spawn_mint_parallel_for_body_not_copyable
   "no matching function for call to .mint_parallel_for<fixy::spawn::BodyCoupling::Independent, 2>\\(.*MoveOnlyBody\\)"
-  "required for the satisfaction of .CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body>. \\[with N = 2")
+  "required for the satisfaction of .CtxFitsParallelFor<N, Ctx, T, Whole, Brand, Body, Inputs \\.\\.\\.>. \\[with N = 2")
 
 # The door of a test gives the worker threads options, so its second
 # context must own Test and its first context must own Bg.
