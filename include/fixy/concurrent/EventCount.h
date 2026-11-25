@@ -65,6 +65,14 @@
 //   reads the counter of the core and the park blocks, so the policy needs a
 //   context that owns Nondet and Block.  A context of the hot path owns
 //   neither, so it cannot take the policy.
+//
+// Row
+//   EventCountRow<Count> holds one event count for each index.  A FixedArray
+//   lends an element that its holder writes only in a body, and a body that
+//   waits on an event count holds the end of a channel by reference, which the
+//   store check of the body refuses.  Thus the row gives a reference to the
+//   event count at an index.  The reference is as safe as the one that each
+//   waiter holds: threads share an event count by design.
 
 #include <fixy/os/Futex.h>
 #include <fixy/os/SpinBudget.h>
@@ -72,10 +80,12 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/os/SpinHint.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 #include <utility>
@@ -213,6 +223,45 @@ inline EventWait::EventWait(EventCount& events, std::uint32_t epoch) noexcept
     : events_{__builtin_addressof(events)}, epoch_{epoch} {}
 
 inline EventWait::~EventWait() { events_->leave_(); }
+
+// A row of Count event counts, one for each index, such as one for each lane
+// of a channel (the row).
+template <std::size_t Count>
+    requires ::foundation::core::IndexCount<Count>
+class EventCountRow : ::foundation::Pinned<EventCountRow<Count>> {
+public:
+    constexpr EventCountRow() noexcept = default;
+
+    [[nodiscard]] static constexpr std::size_t size() noexcept { return Count; }
+
+    // The event count at a proven index.  Two threads can use one event count
+    // at the same time, so a second reference to it takes nothing from the
+    // first one.  Complexity: O(1).
+    [[nodiscard]] constexpr EventCount& at(::foundation::core::Index<Count> index) & noexcept {
+        return events_[index.raw()];
+    }
+    [[nodiscard]] constexpr EventCount const& at(::foundation::core::Index<Count> index) const& noexcept {
+        return events_[index.raw()];
+    }
+    void at(::foundation::core::Index<Count>) && =
+        delete("an event count of a temporary row dangles at the end of the full expression");
+    void at(::foundation::core::Index<Count>) const&& =
+        delete("an event count of a temporary row dangles at the end of the full expression");
+
+    // Wakes each waiter of each event count, after the store of the condition
+    // of the caller.  Complexity: O(Count), and a system call for each event
+    // count with a waiter.
+    template <class Ctx>
+        requires ::fixy::futex::CtxMayUseFutex<Ctx>
+    void notify_each(Ctx const& ctx) & noexcept {
+        for (EventCount& events : events_) {
+            events.notify_all(ctx);
+        }
+    }
+
+private:
+    EventCount events_[Count]{};
+};
 
 // The wait policy that spins and never parks (the policy).
 struct Spin final {

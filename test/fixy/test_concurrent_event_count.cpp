@@ -14,11 +14,13 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/effects/Ctx.h>
 
 #include "../foundation/philox_stream.h"
 
 #include <cstdint>
+#include <type_traits>
 
 namespace {
 
@@ -99,6 +101,38 @@ void test_a_notify_and_a_deadline_end_the_wait(::fixy::BgLoadCtx const& ctx) {
     // A notify with no waiter makes no call of the kernel and changes nothing.
     events.notify_all(ctx);
     CRUCIBLE_FATAL_INVARIANT(!has_waiters(ctx, events));
+}
+
+// The row: each index names its own event count, so a notify of one index ends
+// no wait of another one.  notify_each ends the wait of each index.
+void test_each_index_of_a_row_is_its_own_count(::fixy::BgLoadCtx const& ctx) {
+    using Row = cc::EventCountRow<3>;
+    static_assert(Row::size() == 3 && sizeof(Row) == 3 * sizeof(EventCount));
+    static_assert(!std::is_move_constructible_v<Row> && !std::is_copy_constructible_v<Row>);
+    Row row{};
+    Row const& const_row = row;
+    constexpr core::Index<3> kFirst{core::index<0>()};
+    constexpr core::Index<3> kSecond{core::index<1>()};
+    constexpr core::Index<3> kThird{core::index<2>()};
+    auto const soon = [&ctx]() noexcept { return core::Option<Deadline>::some(deadline_after(ctx, kMillisecond)); };
+    {
+        EventWait const second_wait = row.at(kSecond).prepare_wait();
+        CRUCIBLE_FATAL_INVARIANT(!has_waiters(ctx, const_row.at(kFirst)) && has_waiters(ctx, const_row.at(kSecond))
+                                 && !has_waiters(ctx, const_row.at(kThird)));
+        row.at(kFirst).notify_one(ctx);
+        row.at(kThird).notify_all(ctx);
+        CRUCIBLE_FATAL_INVARIANT(row.at(kSecond).commit_wait(ctx, second_wait, soon())
+                                 == EventWaitEnd::deadline_passed);
+        row.at(kSecond).notify_one(ctx);
+        CRUCIBLE_FATAL_INVARIANT(row.at(kSecond).commit_wait(ctx, second_wait, soon()) == EventWaitEnd::notified);
+    }
+    EventWait const first_wait = row.at(kFirst).prepare_wait();
+    EventWait const second_wait = row.at(kSecond).prepare_wait();
+    EventWait const third_wait = row.at(kThird).prepare_wait();
+    row.notify_each(ctx);
+    CRUCIBLE_FATAL_INVARIANT(row.at(kFirst).commit_wait(ctx, first_wait, soon()) == EventWaitEnd::notified);
+    CRUCIBLE_FATAL_INVARIANT(row.at(kSecond).commit_wait(ctx, second_wait, soon()) == EventWaitEnd::notified);
+    CRUCIBLE_FATAL_INVARIANT(row.at(kThird).commit_wait(ctx, third_wait, soon()) == EventWaitEnd::notified);
 }
 
 // Spin waits on the foreground, and a condition that holds ends each wait
@@ -202,6 +236,7 @@ int main() {
     ::fixy::BgLoadCtx const ctx{eff::testing::bg()};
     test_the_entry_leaves_at_its_end(ctx);
     test_a_notify_and_a_deadline_end_the_wait(ctx);
+    test_each_index_of_a_row_is_its_own_count(ctx);
     test_a_condition_that_holds_ends_each_wait(ctx);
     test_a_wait_ends_at_its_deadline(ctx);
     expect_no_lost_wake<ParkAtOnce>(ctx, 0xE7E47C0U);

@@ -1523,12 +1523,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::concurrent::SpscSplitBrand,
      "the brand of the Ref of an end: an empty class that is never a value, and the end folds it"},
     {^^::fixy::concurrent::ParkedChannel,
-     "the parked form of a wire: the wire and the two event counts of its waits, an owner of a background "
+     "the parked form of a channel: the channel and the event counts of its waits, an owner of a background "
      "stage and never a kernel signature argument"},
     {^^::fixy::concurrent::ParkedProducerHandle,
-     "the producer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
+     "the producer handle of a frame of a parked channel, which a body holds and never a kernel signature argument"},
     {^^::fixy::concurrent::ParkedConsumerHandle,
-     "the consumer handle of a frame of a parked wire, which a body holds and never a kernel signature argument"},
+     "the consumer handle of a frame of a parked channel, which a body holds and never a kernel signature argument"},
     {^^::fixy::concurrent::PushRefused,
      "the refusal of a push of a parked wire that moves its items: the item back and the reason, a value that the "
      "caller takes and never a kernel signature argument"},
@@ -1902,6 +1902,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::fp::ReduceResult, kPayload},
 
     {^^::fixy::concurrent::EventCount, kDescriptor},
+    {^^::fixy::concurrent::EventCountRow, kDescriptor},
     {^^::fixy::concurrent::EventWait,
      "the entry of one waiter in an event count: it lives in one frame, its destructor leaves the count, and it is "
      "never a template argument of a kernel signature"},
