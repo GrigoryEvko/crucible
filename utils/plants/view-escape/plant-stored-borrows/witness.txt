@@ -32,3 +32,16 @@ text stores | a later read of the store reads the dead stack frame of the call
 compile syntax src/stores.cpp out=no stage=syntax errors=stores notes=stores
 flag syntax -freflection
 exit syntax fail
+
+# A store through an assignment operator that gives a class by value (35 and 51)
+# is the same store as one through an operator that gives a reference (40) or a
+# number (45).  The plugin that reads the call of such an operator only as the
+# construction of its result gives neither of the first two lines.
+
+compile results src/class_results.cpp errors=results
+flag results -freflection
+exit results fail
+finding results view-escape stored-borrow src/class_results.cpp:35:22 | borrow of the local local into the parameter out
+finding results view-escape stored-borrow src/class_results.cpp:40:23 | borrow of the local local into the parameter out
+finding results view-escape stored-borrow src/class_results.cpp:45:9 | borrow of the local local into the parameter out
+finding results view-escape stored-borrow src/class_results.cpp:51:40 | borrow of the local local into the parameter out

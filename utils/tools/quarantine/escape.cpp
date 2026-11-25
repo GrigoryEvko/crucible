@@ -1162,7 +1162,8 @@ tree outer_place_of(tree target, bool is_address) {
 // The callback of cp_walk_tree that collects the stores of a body into an
 // object outside the frame, whose type holds a borrow (the stores): an
 // assignment or an initialization, a call of an assignment operator, and a
-// call of a constructor that builds such an object in place.
+// call that builds such an object in place.  A call that gives a class by value
+// is an AGGR_INIT_EXPR, also the call of an assignment operator.
 tree collect_store(tree* node, int*, void* data) {
     auto& stores = *static_cast<std::vector<Store>*>(data);
     tree current = *node;
@@ -1180,9 +1181,7 @@ tree collect_store(tree* node, int*, void* data) {
         if (place != NULL_TREE && can_hold_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)))) {
             stores.push_back(Store{place, current, true, location});
         }
-        return NULL_TREE;
-    }
-    if (TREE_CODE(current) != CALL_EXPR) {
+    } else if (TREE_CODE(current) != CALL_EXPR) {
         return NULL_TREE;
     }
     tree callee = cp_get_callee_fndecl_nofold(current);
@@ -1190,7 +1189,7 @@ tree collect_store(tree* node, int*, void* data) {
         return NULL_TREE;
     }
     bool const is_assignment = DECL_ASSIGNMENT_OPERATOR_P(callee) && argument_count(current) == 2;
-    bool const is_construction = DECL_CONSTRUCTOR_P(callee);
+    bool const is_construction = TREE_CODE(current) == CALL_EXPR && DECL_CONSTRUCTOR_P(callee);
     if (!is_assignment && !is_construction) {
         return NULL_TREE;
     }

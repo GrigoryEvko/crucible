@@ -1,0 +1,55 @@
+// Stores through assignment operators that give a class by value (the stores of
+// escape.cpp).  The front end builds the result in place, so the call is an
+// AGGR_INIT_EXPR.  Each twin gives a reference or a number.
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using IntView = fc::View<int const>;
+using IntList = fc::FixedList<int, 4>;
+
+// A class that a call cannot give in registers.
+struct Made {
+    int value = 0;
+    constexpr explicit Made(int given) noexcept : value{given} {}
+    constexpr Made(Made const& other) noexcept : value{other.value} {}
+    constexpr ~Made() {}
+};
+
+class Cell {
+public:
+    explicit Cell(IntView view) noexcept : held_{view} {}
+    Made operator=(IntView view) noexcept;
+    Cell& operator+=(IntView view) noexcept;
+    int operator-=(IntView view) noexcept;
+
+private:
+    IntView held_;
+};
+
+void keep_with_a_class_result(Cell& out) noexcept {
+    IntList const local{};
+    out = local.view();
+}
+
+void keep_with_a_reference_result(Cell& out) noexcept {
+    IntList const local{};
+    out += local.view();
+}
+
+void keep_with_a_number(Cell& out) noexcept {
+    IntList const local{};
+    out -= local.view();
+}
+
+// The result of the operator goes into a local.
+int keep_and_read(Cell& out) noexcept {
+    IntList const local{};
+    Made const made = out = local.view();
+    return made.value;
+}
+
+}  // namespace planted
