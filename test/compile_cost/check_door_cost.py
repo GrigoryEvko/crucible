@@ -76,8 +76,12 @@ PROBE_NAME = "door_cost_with_mut.cpp"
 CALLS = 32
 # Each door form and the raw loop form of its body (the probe).
 DOORS = {"DoorWriter": "RawWriter", "DoorSummer": "RawSummer"}
-# The most that one call of a door costs, as a multiple of one call of the loop on the array (the ceilings).
-CEILING_RATIO = 1.10
+# The most that one call of a door costs, as a multiple of one call of the loop on the array (the ceilings).  An
+# emptied source of a moved unique view and the test of a large fixed run raise the keyed doors in the asan kind to
+# 0.1081 G and 0.1276 G, which is 1.112 and 1.118 times the loop.  The ceiling keeps a margin of 2 % over the higher
+# one, by the owner decision of 2026-11-15 that a correct change raises its limit.  The other kinds rise by about 4 %
+# and stay below their ceilings.
+CEILING_RATIO = 1.14
 # The loop on the FixedArray against the raw loop, in the asan kind, on main df8fb4e97: 0.0972 G against
 # 0.0074 G for the writer, and 0.1132 G against 0.0230 G for the summer.  The doors of an array with no key
 # measured 0.1014 G and 0.1215 G there.  The keyed doors measure 0.1035 G and 0.1230 G.
