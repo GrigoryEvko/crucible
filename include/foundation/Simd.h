@@ -664,11 +664,12 @@ template <typename ElementType, int Lanes>
 // A body that takes the Views of one register run of each of two Views and
 // does not throw.  It holds no linear value by value (HoldsNoLinearValue of
 // foundation/Linear.h): the walk calls it for each run and ends it, and a
-// call is no consume.
+// call is no consume.  It stores no borrow outside the walk
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
 template <typename Body, typename V, typename First, typename Second>
 concept RegisterRunBody = std::is_nothrow_invocable_v<Body&, core::View<First, sizeof(typename V::raw_type)>,
                                                       core::View<Second, sizeof(typename V::raw_type)>>
-                       && ::foundation::linear::HoldsNoLinearValue<Body>;
+                       && ::foundation::linear::HoldsNoLinearValue<Body> && core::StoresNoBorrowOutside<Body>;
 
 // Calls body with the Views of each run of the bytes of one register of first
 // and of second, in lockstep, the lowest run first, and gives the two Views of
@@ -690,6 +691,13 @@ template <typename V, typename First, typename Second, typename Body>
     requires(!::foundation::linear::HoldsNoLinearValue<Body>)
 void for_each_register_run(core::View<First> first, core::View<Second> second,
                            Body body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the walk binds to this overload, so
+// the refusal gives its reason (RegisterRunBody).
+template <typename V, typename First, typename Second, typename Body>
+    requires ::foundation::linear::HoldsNoLinearValue<Body> && (!core::StoresNoBorrowOutside<Body>)
+void for_each_register_run(core::View<First> first, core::View<Second> second,
+                           Body body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // A body that takes the ViewMut of one register run of the run of a frame
 // and the View of one register run of a second View, gives void, and does

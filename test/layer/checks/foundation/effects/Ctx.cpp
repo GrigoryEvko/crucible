@@ -3,6 +3,8 @@
 #include <foundation/effects/Ctx.h>
 
 #include <foundation/Lifetime.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Region.h>
 
 namespace foundation::effects {
 
@@ -317,6 +319,19 @@ static_assert(::foundation::transfer::detail::specialize_door(^^CountsInContext:
               && ::foundation::transfer::detail::specialize_door(^^CountsInContext::read,
                                                                  ^^::foundation::transfer::door_probe_contexts)
                      != std::meta::info{});
+
+// run_kernel refuses a kernel that can store a borrow outside its call, and
+// admits the same kernel with a count.
+template <class Kept>
+struct KernelThatKeeps final {
+    Kept& kept;
+    template <class Call>
+    void operator()(Call const& /*call*/) const noexcept {}
+};
+struct KernelCheckBrand final {};
+static_assert(!IsKernelOf<KernelThatKeeps<::foundation::core::Option<::foundation::core::View<float const>>>,
+                          KernelCheckBrand, ::foundation::core::kFpModeIeee>);
+static_assert(IsKernelOf<KernelThatKeeps<int>, KernelCheckBrand, ::foundation::core::kFpModeIeee>);
 
 }  // namespace detail::ctx_witnesses
 

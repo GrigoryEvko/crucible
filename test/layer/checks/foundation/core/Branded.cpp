@@ -77,6 +77,20 @@ static_assert(names_brand(^^CheckBrand const&, ^^CheckBrand));
 }
 static_assert(scope_reads() == 20 + 30 + 40 + 20);
 
+// The mint refuses a body that can store a borrow outside the scope, such as a
+// body with a reference to an Option of a View, and admits the same body with a
+// reference to a count (StoresNoBorrowOutside of foundation/core/CaptureStore.h).
+template <class Kept>
+struct KeepsByReference final {
+    Kept& kept;
+    template <class Brand>
+    constexpr std::size_t operator()(BrandedView<int, Brand> view) const noexcept {
+        return view.size();
+    }
+};
+static_assert(!CanMintBrandedScope<int, KeepsByReference<Option<View<int const>>>, CheckBrand>);
+static_assert(CanMintBrandedScope<int, KeepsByReference<std::size_t>, CheckBrand>);
+
 }  // namespace detail::branded_checks
 
 }  // namespace foundation::core

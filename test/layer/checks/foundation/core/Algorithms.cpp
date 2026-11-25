@@ -214,6 +214,17 @@ constexpr bool searches_with =
 static_assert(searches_with<KeysWithNoToken> && !searches_with<KeysWithToken>);
 static_assert(LinearElementFunction<KeysWithToken, int> && !KeyOf<KeysWithToken, int>);
 
+// The search refuses a key function that can store a borrow of an element
+// outside the search, and the deleted twin gives the reason.
+template <class Kept>
+struct KeyThatKeeps final {
+    Kept& kept;
+    constexpr int operator()(int const& value) const noexcept { return value; }
+};
+static_assert(!KeyOf<KeyThatKeeps<Option<View<int const>>>, int> && KeyOf<KeyThatKeeps<int>, int>);
+static_assert(StoringElementFunction<KeyThatKeeps<Option<View<int const>>>, int>);
+static_assert(!searches_with<KeyThatKeeps<Option<View<int const>>>> && searches_with<KeyThatKeeps<int>>);
+
 }  // namespace detail::algorithm_checks
 
 }  // namespace foundation::core

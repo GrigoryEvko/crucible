@@ -69,6 +69,18 @@ static_assert(std::is_trivially_copy_constructible_v<RowOffset<RowViewBrand<Walk
 }
 static_assert(walks_rows_in_constant_evaluation());
 
+// The walk refuses a body that can store a borrow outside the walk, and admits
+// the same body with a count.
+template <class Kept>
+struct RowBodyThatKeeps final {
+    Kept& kept;
+    template <class Row, class Target, class Source>
+    constexpr void operator()(Row const& /*row*/, Target /*target*/, Source /*source*/) const noexcept {}
+};
+template <class Body>
+constexpr bool walks_rows_with = CanWalkRows<Body, Walk, int, 2, StridedView<int const, 2>>;
+static_assert(!walks_rows_with<RowBodyThatKeeps<Option<View<int const>>>> && walks_rows_with<RowBodyThatKeeps<int>>);
+
 }  // namespace detail::strided_rows_checks
 
 }  // namespace foundation::core

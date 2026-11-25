@@ -8500,6 +8500,14 @@ fixy_neg_compile_test(neg_shared_read_kept_past_its_guard
 fixy_neg_compile_test(neg_shared_read_view_leaves_its_door
   "use of deleted function .void fixy::SharedRead<T, Tag, Brand>::with_view\\(Body&&\\) const"
   "the result of a read door holds no borrow")
+# The two read doors of a SharedRead refuse a body that captures by reference an
+# Option of a View, which the caller reads after the share of the guard.
+fixy_neg_compile_test(neg_shared_read_view_keeps_a_view
+  "use of deleted function .void fixy::SharedRead<T, Tag, Brand>::with_view\\(Body&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
+fixy_neg_compile_test(neg_shared_read_element_keeps_a_view
+  "use of deleted function .void fixy::SharedRead<T, Tag, Brand>::with_element\\(std::size_t, OnSome&&, OnNone&&\\) const"
+  "a body of a frame door stores no borrow outside the frame")
 
 # mint_borrowed gives a View of the const elements of a region, so two
 # borrows of one region write no element.

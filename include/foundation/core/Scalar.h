@@ -582,9 +582,11 @@ concept FieldWalkable =
 // member of object, so the walk does not visit it.  A class with no member
 // gives no call.  visit holds no linear value by value (HoldsNoLinearValue
 // of foundation/Linear.h): the walk calls it and ends it, and a call is no
-// consume.  Complexity: one call of visit for each member.
+// consume.  visit stores no borrow of a field outside the walk
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  Complexity: one
+// call of visit for each member.
 template <class T, class Visit>
-    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit> && StoresNoBorrowOutside<Visit>
 constexpr void for_each_field(T const& object, Visit&& visit) noexcept {
     detail::visit_fields_(object, visit, std::make_index_sequence<detail::member_count(^^T)>{});
 }
@@ -595,6 +597,13 @@ template <class T, class Visit>
     requires FieldWalkable<T> && (!::foundation::linear::HoldsNoLinearValue<Visit>)
 void for_each_field(T const& object, Visit&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+// A visit that can store a borrow of a field outside the walk binds to this
+// overload, and to the same twin of for_each_base, so the refusal gives its
+// reason.
+template <class T, class Visit>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit> && (!StoresNoBorrowOutside<Visit>)
+void for_each_field(T const& object, Visit&& visit) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
 // Calls visit(base) for each direct base subobject of object, in the order
 // of the declarations.  A private base is a base too.  visit gets each base
 // as a const lvalue of the base type, so a walk of the base reads its own
@@ -603,7 +612,7 @@ void for_each_field(T const& object, Visit&& visit) = delete(CRUCIBLE_LINEAR_BOD
 // constructor of the class makes them.  Complexity: one call of visit for
 // each direct base.
 template <class T, class Visit>
-    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit> && StoresNoBorrowOutside<Visit>
 constexpr void for_each_base(T const& object, Visit&& visit) noexcept {
     detail::visit_bases_(object, visit, std::make_index_sequence<detail::base_count(^^T)>{});
 }
@@ -611,5 +620,9 @@ constexpr void for_each_base(T const& object, Visit&& visit) noexcept {
 template <class T, class Visit>
     requires FieldWalkable<T> && (!::foundation::linear::HoldsNoLinearValue<Visit>)
 void for_each_base(T const& object, Visit&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+template <class T, class Visit>
+    requires FieldWalkable<T> && ::foundation::linear::HoldsNoLinearValue<Visit> && (!StoresNoBorrowOutside<Visit>)
+void for_each_base(T const& object, Visit&& visit) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 }  // namespace foundation::core

@@ -280,12 +280,14 @@ using BrandedEnumerateRange = detail::BrandedEnumerateRange<Element, Brand>;
 
 // The arguments of mint_branded_scope: a body that takes the BrandedView of
 // the scope with no throw, holds no linear value by value (HoldsNoLinearValue
-// of foundation/Linear.h), and gives a value that does not hold the brand.
-// The mint calls the body, and a call is no consume.
+// of foundation/Linear.h), stores no borrow outside the scope
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), and gives a value
+// that does not hold the brand.  The mint calls the body, and a call is no
+// consume.
 template <class T, class Body, class Brand>
 concept CanMintBrandedScope =
     ::foundation::brand::IsBrand<Brand> && std::is_nothrow_invocable_v<Body&&, BrandedView<T, Brand>>
-    && ::foundation::linear::HoldsNoLinearValue<Body>
+    && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     && !std::is_void_v<std::invoke_result_t<Body&&, BrandedView<T, Brand>>>
     && !detail::names_brand(^^std::invoke_result_t<Body&&, BrandedView<T, Brand>>, ^^Brand);
 
@@ -399,5 +401,13 @@ template <class... Refused, class T, std::size_t Extent, class Body,
     requires(sizeof...(Refused) == 0) && (!::foundation::linear::HoldsNoLinearValue<Body>)
              && std::is_invocable_v<Body&&, BrandedView<T, Fresh>>
 void mint_branded_scope(View<T, Extent> view, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A body that can store a borrow outside the scope binds to this overload, so
+// the refusal gives its reason.
+template <class... Refused, class T, std::size_t Extent, class Body,
+          ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && ::foundation::linear::HoldsNoLinearValue<Body>
+             && std::is_invocable_v<Body&&, BrandedView<T, Fresh>> && (!StoresNoBorrowOutside<Body>)
+void mint_branded_scope(View<T, Extent> view, Body&& body) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 }  // namespace foundation::core

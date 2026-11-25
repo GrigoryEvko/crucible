@@ -54,6 +54,25 @@ static_assert(std::is_constructible_v<Shared, OwnedRegion<int, probe_tag, probe_
 static_assert(!std::is_constructible_v<Shared, OwnedRegion<int, probe_tag, probe_brand>&>,
               "and consumes it, rather than borrowing");
 
+// The two read doors refuse a body that can store a borrow outside the door,
+// and admit the same body with a count.
+template <class Kept>
+struct ReadThatKeeps final {
+    Kept& kept;
+    constexpr std::size_t operator()(::foundation::core::View<int const> run) const noexcept { return run.size(); }
+    constexpr std::size_t operator()(int const& value) const noexcept { return static_cast<std::size_t>(value); }
+};
+using KeptView = ::foundation::core::Option<::foundation::core::View<int const>>;
+template <class Body>
+constexpr bool reads_with =
+    requires(SharedRead<int, probe_tag, probe_brand> const& read, Body body) { read.with_view(body); };
+template <class Body>
+constexpr bool reads_element_with = requires(SharedRead<int, probe_tag, probe_brand> const& read, Body body) {
+    read.with_element(0uz, body, []() noexcept { return std::size_t{0}; });
+};
+static_assert(!reads_with<ReadThatKeeps<KeptView>> && reads_with<ReadThatKeeps<int>>);
+static_assert(!reads_element_with<ReadThatKeeps<KeptView>> && reads_element_with<ReadThatKeeps<int>>);
+
 }  // namespace detail::shared_region_self_test
 
 }  // namespace fixy

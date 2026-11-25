@@ -2,6 +2,7 @@
 
 #include <foundation/effects/Computation.h>
 
+#include <foundation/core/Region.h>
 #include <foundation/effects/Capability.h>
 
 namespace foundation::effects {
@@ -500,6 +501,19 @@ static_assert(!RunsIn<Computation<Row<Effect::Test>, int>, detail::ctx_witnesses
 static_assert(!RunsIn<int, detail::ctx_witnesses::BgWitness>);
 static_assert(!detail::extract_admits_payload_v<detail::ctx_witnesses::BgWitness>,
               "The positive witness for the graded constraint depends on a context conveying authority.");
+
+// map refuses a function that takes the payload by reference and can store a
+// borrow outside the call, and admits the same function with a count.
+template <class Kept>
+struct MapThatKeeps final {
+    Kept& kept;
+    constexpr int operator()(int const& value) const noexcept { return value; }
+};
+template <class F>
+constexpr bool maps_with =
+    requires(Computation<Row<>, int> const& computation, F function) { computation.map(function); };
+static_assert(!maps_with<MapThatKeeps<::foundation::core::Option<::foundation::core::View<int const>>>>);
+static_assert(maps_with<MapThatKeeps<int>>);
 
 }  // namespace detail::computation_self_test
 

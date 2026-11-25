@@ -82,8 +82,8 @@ template <class Function, class T>
 concept LinearElementFunction =
     (!::foundation::linear::HoldsNoLinearValue<Function>) && std::is_invocable_v<Function&, T const&>;
 
-// A predicate that stores a borrow of an element outside the scan: the deleted
-// twin of find_if binds to it.
+// A predicate or a key function that stores a borrow of an element outside the
+// scan: the deleted twin of find_if and of find_lower_bound_by_key binds to it.
 template <class Function, class T>
 concept StoringElementFunction = ::foundation::linear::HoldsNoLinearValue<Function>
                               && std::is_invocable_v<Function&, T const&> && (!StoresNoBorrowOutside<Function>);
@@ -95,11 +95,11 @@ template <class K>
 concept TotalKey = (std::is_integral_v<K> && !std::same_as<K, bool>) || std::is_enum_v<K>;
 
 // A key function: it takes an element as a const reference, gives a total
-// key, does not throw, and holds no linear value by value, for the reason of
-// ElementPredicate.
+// key, does not throw, holds no linear value by value, and stores no borrow of
+// an element outside the search, for the reasons of ElementPredicate.
 template <class Key, class T>
 concept KeyOf = std::is_nothrow_invocable_v<Key&, T const&> && TotalKey<std::invoke_result_t<Key&, T const&>>
-             && ::foundation::linear::HoldsNoLinearValue<Key>;
+             && ::foundation::linear::HoldsNoLinearValue<Key> && StoresNoBorrowOutside<Key>;
 
 }  // namespace detail
 
@@ -324,6 +324,12 @@ find_lower_bound_by_key(View<T, Extent> view, Key key,
 template <class T, std::size_t Extent, class Key, class Probe>
     requires detail::LinearElementFunction<Key, std::remove_const_t<T>>
 void find_lower_bound_by_key(View<T, Extent> view, Key key, Probe probe) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A key function that stores a borrow of an element outside the search binds to
+// this overload, so the refusal gives its reason (StoringElementFunction).
+template <class T, std::size_t Extent, class Key, class Probe>
+    requires detail::StoringElementFunction<Key, std::remove_const_t<T>>
+void find_lower_bound_by_key(View<T, Extent> view, Key key, Probe probe) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // An object whose bytes are its whole value: each byte is a value byte, and
 // the walk of Scalar accepts its type, so it holds no pointer, no

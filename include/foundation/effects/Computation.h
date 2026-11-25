@@ -30,6 +30,7 @@
 #include <foundation/Linear.h>
 #include <foundation/algebra/Graded.h>
 #include <foundation/algebra/Modality.h>
+#include <foundation/core/Choice.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -348,10 +349,12 @@ public:
     // payload, so a payload that conveys an authority would hand it to f
     // under a row that does not name it.  f holds no linear value by value
     // (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends
-    // it, and a call is no consume.
+    // it, and a call is no consume.  An f that takes the payload by reference
+    // stores no borrow of it outside the call (LentArmStoresNoBorrow of
+    // foundation/core/Choice.h).
     template <typename F>
         requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
-              && ::foundation::linear::HoldsNoLinearValue<F>
+              && ::foundation::linear::HoldsNoLinearValue<F> && ::foundation::core::LentArmStoresNoBorrow<F, T>
     [[nodiscard]] constexpr auto
     map(F&& f) const& noexcept(std::is_nothrow_invocable_v<F, const T&>
                                && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, const T&>>)
@@ -362,7 +365,7 @@ public:
 
     template <typename F>
         requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
-              && ::foundation::linear::HoldsNoLinearValue<F>
+              && ::foundation::linear::HoldsNoLinearValue<F> && ::foundation::core::LentArmStoresNoBorrow<F, T>
     [[nodiscard]] constexpr auto
     map(F&& f) && noexcept(std::is_nothrow_invocable_v<F, T>
                            && std::is_nothrow_move_constructible_v<std::invoke_result_t<F, T>>)
@@ -380,6 +383,18 @@ public:
         requires std::is_invocable_v<F, T> && (!::foundation::linear::HoldsNoLinearValue<F>)
     void map(F&& f) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
+    // An f that can store a borrow of the payload outside the call binds to
+    // these overloads, and to the same twins of then, so the refusal gives its
+    // reason.
+    template <typename F>
+        requires std::is_invocable_v<F, const T&> && ::foundation::linear::HoldsNoLinearValue<F>
+                  && (!::foundation::core::LentArmStoresNoBorrow<F, T>)
+    void map(F&& f) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <typename F>
+        requires std::is_invocable_v<F, T> && ::foundation::linear::HoldsNoLinearValue<F>
+                  && (!::foundation::core::LentArmStoresNoBorrow<F, T>)
+    void map(F&& f) && = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+
     // The result row is the union, so it claims every effect any step
     // in the chain might exercise.
     //
@@ -396,7 +411,7 @@ public:
         requires std::is_invocable_v<F, const T&> && detail::extract_admits_payload_v<T>
               && IsComputation<std::invoke_result_t<F, const T&>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, const T&>::value_type>
-              && ::foundation::linear::HoldsNoLinearValue<F>
+              && ::foundation::linear::HoldsNoLinearValue<F> && ::foundation::core::LentArmStoresNoBorrow<F, T>
     [[nodiscard]] constexpr auto
     then(F&& k) const& -> Computation<row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
                                       typename std::invoke_result_t<F, const T&>::value_type> {
@@ -412,7 +427,7 @@ public:
         requires std::is_invocable_v<F, T> && detail::extract_admits_payload_v<T>
               && IsComputation<std::invoke_result_t<F, T>>
               && detail::extract_admits_payload_v<typename std::invoke_result_t<F, T>::value_type>
-              && ::foundation::linear::HoldsNoLinearValue<F>
+              && ::foundation::linear::HoldsNoLinearValue<F> && ::foundation::core::LentArmStoresNoBorrow<F, T>
     [[nodiscard]] constexpr auto
     then(F&& k) && -> Computation<row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
                                   typename std::invoke_result_t<F, T>::value_type> {
@@ -430,6 +445,14 @@ public:
     template <typename F>
         requires std::is_invocable_v<F, T> && (!::foundation::linear::HoldsNoLinearValue<F>)
     void then(F&& k) && = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <typename F>
+        requires std::is_invocable_v<F, const T&> && ::foundation::linear::HoldsNoLinearValue<F>
+                  && (!::foundation::core::LentArmStoresNoBorrow<F, T>)
+    void then(F&& k) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <typename F>
+        requires std::is_invocable_v<F, T> && ::foundation::linear::HoldsNoLinearValue<F>
+                  && (!::foundation::core::LentArmStoresNoBorrow<F, T>)
+    void then(F&& k) && = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // The way out to the substrate view, for code that wants the
     // uniform grade and lattice diagnostics or a cache key.  The view

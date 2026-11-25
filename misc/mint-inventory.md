@@ -333,7 +333,7 @@ that the axis does not apply to the row.
 | `mint_box` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
-| `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 17 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 19 |
@@ -365,7 +365,7 @@ that the axis does not apply to the row.
 | `mint_sole_writer` | `include/foundation/core/Atomic.h` | Y | - | Y | Y | token | · | HS14: 10 |
 | `mint_static_text(const char*)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_static_text(const char*, std::size_t)` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
-| `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 2 |
+| `mint_strided_rows` | `include/foundation/core/StridedRows.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_strided_scope(foundation::core::StridedView<T0_1, T0_2>, T0_3&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_strided_scope(foundation::core::StridedViewMut<T0_1, T0_2, T0_3>&, T0_4&&)` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_strided_view` | `include/foundation/core/Strided.h` | Y | Y | Y | Y | token | · | HS14: 19 |
@@ -383,7 +383,7 @@ that the axis does not apply to the row.
 |---|---|---|---|---|---|---|---|---|
 | `AtomOwner::mint_atom` | `include/foundation/effects/Effect.h` | Y | Y | Y | Y | member | · | HS14: 2 |
 | `BackgroundOwner::mint_background_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 2 |
-| `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | HS14: 11 |
+| `Computation::mint_computation` | `include/foundation/effects/Computation.h` | Y | Y | Y | · | token | · | HS14: 13 |
 | `Computation::mint_computation_in_ctx` | `include/foundation/effects/Computation.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `InitOwner::mint_init_context` | `include/foundation/effects/Effect.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `ProducerClaim::mint_producer_context` | `include/foundation/effects/Ctx.h` | Y | - | Y | · | member | · | HS14: 5 |

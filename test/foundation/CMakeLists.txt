@@ -5558,6 +5558,39 @@ foundation_neg_compile_test(neg_core_find_if_keeps_an_element
 foundation_neg_compile_test(neg_core_store_mark_outside_the_base
   "use of deleted function .void foundation::core::find_if\\(View<T, Extent>, Predicate\\)"
   "a body of a frame door stores no borrow outside the frame")
+# Each door that lends a borrow to a body for the time of a call refuses a body
+# that captures by reference an Option of a View, a slot that the caller reads
+# after the call, and the store twin of the door gives the reason.
+foundation_neg_compile_test(neg_core_branded_scope_keeps_a_view
+  "use of deleted function .void foundation::core::mint_branded_scope\\(View<Element, Count>, Body&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_strided_rows_keeps_a_view
+  "use of deleted function .void foundation::core::mint_strided_rows\\(StridedViewMut<T, Rank, Brand>&, Body, const Inputs& \\.\\.\\.\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_simd_register_run_keeps_a_view
+  "use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(foundation::core::View<First>, foundation::core::View<Second>, Body\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_lower_bound_key_keeps_a_view
+  "use of deleted function .void foundation::core::find_lower_bound_by_key\\(View<T, Extent>, Key, Probe\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_for_each_field_keeps_a_view
+  "use of deleted function .void foundation::core::for_each_field\\(const T&, Visit&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_core_for_each_base_keeps_a_view
+  "use of deleted function .void foundation::core::for_each_base\\(const T&, Visit&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_os_for_each_entry_keeps_a_name
+  "use of deleted function .void foundation::os::for_each_entry\\(foundation::core::CText, Visitor&&\\)"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_kernel_keeps_a_view
+  "use of deleted function .void foundation::effects::run_kernel\\(KernelCtx<Brand, "
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_computation_map_keeps_a_view
+  "use of deleted function .void foundation::effects::Computation<R, T>::map\\(F&&\\) const &"
+  "a body of a frame door stores no borrow outside the frame")
+foundation_neg_compile_test(neg_computation_then_keeps_a_view
+  "use of deleted function .void foundation::effects::Computation<R, T>::then\\(F&&\\) &&"
+  "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_strided_walk_keeps_an_element
   "use of deleted function .void foundation::core::walk\\(Body&&, StridedView<First, Rank>, StridedView<Rest, Rank>\\.\\.\\.\\)"
   "a body of a frame door stores no borrow outside the frame")

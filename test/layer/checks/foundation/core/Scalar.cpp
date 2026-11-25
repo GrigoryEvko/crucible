@@ -496,6 +496,21 @@ CRUCIBLE_CLOSED_SURFACE(scalar_names, Id<SurfaceTag, std::uint32_t>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Digest<SurfaceTag>);
 CRUCIBLE_CLOSED_SURFACE(scalar_names, Philox4x32);
 
+// The walks of the fields and of the bases refuse a visitor that can store a
+// borrow outside the walk, and admit the same visitor with a count.
+template <class Kept>
+struct VisitThatKeeps final {
+    Kept& kept;
+    template <class Part>
+    constexpr void operator()(Part const& /*part*/) const noexcept {}
+};
+template <class Visit>
+constexpr bool walks_fields_with = requires(WordsAndTail const& object, Visit visit) { for_each_field(object, visit); };
+template <class Visit>
+constexpr bool walks_bases_with = requires(WordsAndTail const& object, Visit visit) { for_each_base(object, visit); };
+static_assert(!walks_fields_with<VisitThatKeeps<Option<View<int const>>>> && walks_fields_with<VisitThatKeeps<int>>);
+static_assert(!walks_bases_with<VisitThatKeeps<Option<View<int const>>>> && walks_bases_with<VisitThatKeeps<int>>);
+
 }  // namespace detail::scalar_checks
 
 }  // namespace foundation::core

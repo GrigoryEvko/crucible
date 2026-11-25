@@ -79,11 +79,13 @@ template <class Visitor>
 // The visitor is not const, because the door calls it through the address
 // of a visitor that it can change.  It holds no linear value by value
 // (HoldsNoLinearValue of foundation/Linear.h): the door calls it and ends it,
-// and a call is no consume.
+// and a call is no consume.  It stores no borrow outside the listing
+// (StoresNoBorrowOutside of foundation/core/CaptureStore.h), because the name
+// of an entry is valid only in its call.
 template <class Visitor>
     requires(std::is_nothrow_invocable_r_v<Visit, Visitor&, core::CText>
              && !std::is_const_v<std::remove_reference_t<Visitor>>)
-         && ::foundation::linear::HoldsNoLinearValue<Visitor>
+         && ::foundation::linear::HoldsNoLinearValue<Visitor> && core::StoresNoBorrowOutside<Visitor>
 [[nodiscard]] core::Result<core::Unit, Errno> for_each_entry(core::CText path, Visitor&& visit) noexcept {
     return detail::list_directory_(path, detail::erase_visitor_(visit));
 }
@@ -93,5 +95,12 @@ template <class Visitor>
 template <class Visitor>
     requires std::is_invocable_r_v<Visit, Visitor&, core::CText> && (!::foundation::linear::HoldsNoLinearValue<Visitor>)
 void for_each_entry(core::CText path, Visitor&& visit) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A visitor that can store the name of an entry outside the listing binds to
+// this overload, so the refusal gives its reason.
+template <class Visitor>
+    requires std::is_invocable_r_v<Visit, Visitor&, core::CText> && ::foundation::linear::HoldsNoLinearValue<Visitor>
+              && (!core::StoresNoBorrowOutside<Visitor>)
+void for_each_entry(core::CText path, Visitor&& visit) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 }  // namespace foundation::os

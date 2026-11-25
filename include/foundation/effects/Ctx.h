@@ -20,6 +20,7 @@
 #include <foundation/Platform.h>
 #include <foundation/SoleWriterProof.h>
 #include <foundation/Transfer.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/FpMode.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
@@ -876,11 +877,14 @@ class KernelCall;
 // A kernel of the context KernelCtx<Brand, Mode>: a callable that takes the
 // token of one call first and its buffers after it, and returns nothing.  It
 // holds no linear value by value (HoldsNoLinearValue of foundation/Linear.h):
-// run_kernel calls it and ends it, and a call is no consume.
+// run_kernel calls it and ends it, and a call is no consume.  It stores no
+// borrow outside the call (StoresNoBorrowOutside of
+// foundation/core/CaptureStore.h), so no borrow of the token leaves the call.
 template <class Kernel, class Brand, ::foundation::core::FpMode Mode, class... Args>
-concept IsKernelOf = std::is_nothrow_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
-                  && std::is_void_v<std::invoke_result_t<Kernel&, KernelCall<Brand, Mode> const&, Args&&...>>
-                  && ::foundation::linear::HoldsNoLinearValue<Kernel>;
+concept IsKernelOf =
+    std::is_nothrow_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
+    && std::is_void_v<std::invoke_result_t<Kernel&, KernelCall<Brand, Mode> const&, Args&&...>>
+    && ::foundation::linear::HoldsNoLinearValue<Kernel> && ::foundation::core::StoresNoBorrowOutside<Kernel>;
 
 // The one door of a token, declared here so that the token can name it as a
 // friend.  The definition is below the token.
@@ -940,6 +944,15 @@ template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... A
               && (!::foundation::linear::HoldsNoLinearValue<Kernel>)
 void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel,
                 Args&&... args) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+
+// A kernel that can store a borrow outside its call binds to this overload, so
+// the refusal gives its reason (IsKernelOf).
+template <class Brand, ::foundation::core::FpMode Mode, class Kernel, class... Args>
+    requires std::is_invocable_r_v<void, Kernel&, KernelCall<Brand, Mode> const&, Args&&...>
+              && ::foundation::linear::HoldsNoLinearValue<Kernel>
+              && (!::foundation::core::StoresNoBorrowOutside<Kernel>)
+void run_kernel(KernelCtx<Brand, Mode> const& ctx, Kernel&& kernel,
+                Args&&... args) = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
 // The test door of the foreground context.  The rule owners of
 // the quarantine plugin refuses a use of it in code that ships, as it does
