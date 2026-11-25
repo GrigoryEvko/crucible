@@ -241,6 +241,9 @@ foundation_neg_compile_test(neg_partial_monoid_no_unit
 foundation_neg_compile_test(neg_graded_stored_grade_outside_the_order
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "Graded<foundation::algebra::detail::self_test_authority>\\(foundation::algebra::detail::self_test_authority::key\\(\\), .*, 9\\)")
+foundation_neg_compile_test(neg_graded_set_grade_outside_the_order
+  "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
+  "Graded<.*OneByteValue>::set_grade<foundation::algebra::detail::self_test_authority>\\(foundation::algebra::detail::self_test_authority::key\\(\\), 9\\)")
 foundation_neg_compile_test(neg_graded_element_grade_outside_the_order
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: in expansion of macro .CRUCIBLE_PRE."
   "TrivialChainLattice, unsigned char>::Graded\\(9\\)")
@@ -261,6 +264,9 @@ foundation_neg_compile_test(neg_graded_witness_names_another_grade
 foundation_neg_compile_test(neg_graded_grade_without_key
   "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::Graded\\(<brace-enclosed initializer list>\\)."
   "candidate [0-9]+: .template<class Authority> constexpr foundation::algebra::Graded<M, L, T>::Graded\\(const foundation::algebra::grade_key<Authority>&, T, grade_type\\)")
+foundation_neg_compile_test(neg_graded_set_grade_without_key
+  "no matching function for call to .foundation::algebra::Graded<.*OneByteValue>::set_grade\\(bool\\)."
+  "candidate [0-9]+: .template<class Authority> constexpr void foundation::algebra::Graded<M, L, T>::set_grade\\(const foundation::algebra::grade_key<Authority>&, grade_type\\) &")
 foundation_neg_compile_test(neg_graded_key_outside_its_authority
   "grade_key<Authority>::grade_key\\(\\) \\[with Authority = \\{anonymous\\}::Stranger\\]. is private within this context"
   "foundation/algebra/Graded\\.h:[0-9]+:[0-9]+: note: declared private here")

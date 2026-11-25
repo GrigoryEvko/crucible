@@ -141,6 +141,27 @@ static_assert(CanPeekMut<GSlotOneByte> && CanPeekMutWithKey<GSlotOneByte>);
 static_assert(!CanPeekMut<GComonad> && !CanPeekMutWithKey<GComonad>,
               "a Comonad grade over a non-empty element names the value, and no key reopens it");
 
+// The write of a stored Absolute grade takes the key.  A grade that is the value
+// or that the value gives has no write, and neither has a grade that names the
+// specific value.
+template <typename G>
+concept CanSetGrade = requires(G graded, typename G::grade_type grade) { graded.set_grade(grade); };
+template <typename G>
+concept CanSetGradeWithKey =
+    requires(G graded, typename G::grade_type grade) { graded.set_grade(self_test_authority::key(), grade); };
+template <typename G>
+concept CanSetGradeOfATemporary =
+    requires(typename G::grade_type grade, G (*make)()) { make().set_grade(self_test_authority::key(), grade); };
+static_assert(CanSetGradeWithKey<GOneByte> && CanSetGradeWithKey<GAbsolute> && CanSetGradeWithKey<GChainOneByte>);
+static_assert(!CanSetGrade<GOneByte> && !CanSetGradeOfATemporary<GOneByte> && !CanSetGradeWithKey<GOneByte const>);
+static_assert(!CanSetGradeWithKey<GComonad> && !CanSetGradeWithKey<GRelMonad> && !CanSetGradeWithKey<GRelative>);
+static_assert(!CanSetGradeWithKey<GBoolElement> && !CanSetGradeWithKey<GDerivedSeq>);
+static_assert([] {
+    GChainOneByte graded{self_test_authority::key(), OneByteValue{}, static_cast<unsigned char>(1)};
+    graded.set_grade(self_test_authority::key(), static_cast<unsigned char>(3));
+    return graded.grade() == 3;
+}());
+
 // at_bottom() exists where the grade is derived from the type or the
 // value, and in the stored regime only for a grade that any bytes
 // satisfy.  at_bottom(T) exists nowhere.

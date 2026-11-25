@@ -274,6 +274,100 @@ void attack_moved_from_budget() {
            "assignment moves the claim");
 }
 
+// ── The code of a payload that reads its holder ─────────────────────
+
+// The wrapper that a payload reaches.
+enum class Holder : std::uint8_t {
+    Version,
+    Budget,
+};
+
+// What the code of a payload found in its holder while a test watched.
+bool is_holder_watched = false;
+int reads_of_the_holder = 0;
+bool is_ended_payload_seen = false;
+bool is_claim_seen = false;
+
+template <Holder holder>
+void read_holder() noexcept;
+
+// A payload whose moves and end read its holder, through the name of the holder.
+template <Holder holder>
+struct Reaching {
+    int label = 0;
+    bool is_live = true;
+
+    explicit Reaching(int value) noexcept : label{value} {}
+    Reaching(Reaching&& other) noexcept : label{other.label} { read_holder<holder>(); }
+    Reaching& operator=(Reaching&& other) noexcept {
+        label = other.label;
+        read_holder<holder>();
+        return *this;
+    }
+    Reaching(Reaching const&) = delete("a payload of the test has one identity");
+    Reaching& operator=(Reaching const&) = delete("a payload of the test has one identity");
+    ~Reaching() {
+        is_live = false;
+        read_holder<holder>();
+    }
+};
+
+[[nodiscard]] EpochVersioned<Reaching<Holder::Version>>& version_holder() {
+    static EpochVersioned<Reaching<Holder::Version>> held{Reaching<Holder::Version>{1}, stamp_at(5, 5)};
+    return held;
+}
+
+[[nodiscard]] Budgeted<Reaching<Holder::Budget>>& budget_holder() {
+    static Budgeted<Reaching<Holder::Budget>> held{Reaching<Holder::Budget>{1}, grant(8, 64)};
+    return held;
+}
+
+template <Holder holder>
+void read_holder() noexcept {
+    if (!is_holder_watched) return;
+    ++reads_of_the_holder;
+    if constexpr (holder == Holder::Version) {
+        is_ended_payload_seen = is_ended_payload_seen || !version_holder().peek().is_live;
+        is_claim_seen = is_claim_seen || version_holder().is_at_least(EpochBound{1}, GenerationBound{0});
+    } else {
+        is_ended_payload_seen = is_ended_payload_seen || !budget_holder().peek().is_live;
+        is_claim_seen = is_claim_seen || !budget_holder().is_unbounded();
+    }
+}
+
+// Runs change while the code of the payloads reads the holder.  Such code finds a
+// live payload, and the weakest claim.
+template <class Change>
+void watch_holder(Change&& change, char const* what) {
+    reads_of_the_holder = 0;
+    is_ended_payload_seen = false;
+    is_claim_seen = false;
+    is_holder_watched = true;
+    change();
+    is_holder_watched = false;
+    expect(reads_of_the_holder != 0 && !is_ended_payload_seen && !is_claim_seen, what);
+}
+
+void attack_holder_in_the_code_of_its_payload() {
+    static_cast<void>(version_holder());
+    static_cast<void>(budget_holder());
+    watch_holder([] { EpochVersioned<Reaching<Holder::Version>> const taken{std::move(version_holder())}; },
+                 "a move out of a version holder");
+    EpochVersioned<Reaching<Holder::Version>> next_version{Reaching<Holder::Version>{2}, stamp_at(6, 6)};
+    watch_holder([&] { version_holder() = std::move(next_version); }, "an assignment of a version holder");
+    expect(version_holder().peek().label == 2 && version_holder().is_at_least(EpochBound{6}, GenerationBound{6}),
+           "the assignment moves the payload and its version");
+    watch_holder([&] { next_version = std::move(version_holder()); }, "an assignment out of a version holder");
+
+    watch_holder([] { Budgeted<Reaching<Holder::Budget>> const taken{std::move(budget_holder())}; },
+                 "a move out of a budget holder");
+    Budgeted<Reaching<Holder::Budget>> next_budget{Reaching<Holder::Budget>{2}, grant(4, 32)};
+    watch_holder([&] { budget_holder() = std::move(next_budget); }, "an assignment of a budget holder");
+    expect(budget_holder().peek().label == 2 && budget_holder().satisfies(BitsBudgetBound{4}, PeakBytesBound{32}),
+           "the assignment moves the payload and its budget");
+    watch_holder([&] { next_budget = std::move(budget_holder()); }, "an assignment out of a budget holder");
+}
+
 // ── Budgets at the edge ─────────────────────────────────────────────
 
 void attack_budget_edges() {
@@ -579,6 +673,7 @@ int main() {
     attack_is_at_least_matches_the_numeric_order();
     attack_moved_from_version();
     attack_moved_from_budget();
+    attack_holder_in_the_code_of_its_payload();
     attack_budget_edges();
     attack_payload_owns_what_it_reaches();
     attack_equal_versions_compare_payloads();

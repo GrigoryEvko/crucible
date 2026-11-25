@@ -375,6 +375,23 @@ public:
         return value_;
     }
 
+    // The keyed door that writes the grade alone.  The value stays in its
+    // place, so no code of the value runs.  The authority answers for the new
+    // claim, as it answers for the grade of the keyed constructor, and the
+    // grade takes the check of that constructor.  A holder whose value changes
+    // lowers its claim through this door before the change, so no code of the
+    // value reads a value in change under the claim of a different one.  A
+    // Comonad grade or a RelativeMonad grade names the specific value, and no
+    // key writes it.
+    template <typename Authority>
+    constexpr void set_grade(grade_key<Authority> const&, grade_type grade) & noexcept
+        requires stores_grade_ && AbsoluteModality<M> && std::is_nothrow_move_constructible_v<grade_type>
+              && std::is_nothrow_move_assignable_v<grade_type>
+    {
+        CRUCIBLE_PRE(detail::graded::inside_order<L>(grade));
+        grade_ = std::move(grade);
+    }
+
     // Each value leaves with its own grade, so a swap keeps every pairing
     // it was given.
     constexpr void swap(Graded& other) noexcept(std::is_nothrow_swappable_v<T>

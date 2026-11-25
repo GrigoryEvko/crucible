@@ -175,6 +175,9 @@ void graded_runs_at_run_time(Tally& checks) {
     GOneByte written{key(), value, false};
     written.peek_mut(key()).c = static_cast<char>(value.c + 1);
     CRUCIBLE_TEST_EXPECT(checks, written.peek().c == '+' && !written.grade());
+    // The keyed write of the grade leaves the value where it was.
+    written.set_grade(key(), opaque(true));
+    CRUCIBLE_TEST_EXPECT(checks, written.peek().c == '+' && written.grade());
     GSlotOneByte slot = GSlotOneByte::at_bottom();
     CRUCIBLE_TEST_EXPECT(checks, !slot.grade() && slot.peek().c == 0);
     slot.peek_mut().c = value.c;

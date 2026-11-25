@@ -74,7 +74,6 @@
 #include <concepts>
 #include <cstdint>
 #include <expected>
-#include <memory>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -226,15 +225,6 @@ private:
         return version_t{EpochLattice::bottom(), GenerationLattice::bottom()};
     }
 
-    // Drops the claim of a moved-from source to genesis.  The payload is
-    // moved out and back in, because Graded sets its grade only at
-    // construction.
-    constexpr void relinquish_version_() noexcept(std::is_nothrow_move_constructible_v<T>) {
-        T left_behind = std::move(impl_).consume();
-        std::destroy_at(&impl_);
-        std::construct_at(&impl_, key_{}, std::move(left_behind), genesis_());
-    }
-
     constexpr EpochVersioned(T value, version_t version) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{key_{}, std::move(value), version} {}
 
@@ -272,19 +262,28 @@ public:
         requires std::is_trivially_copyable_v<T>
     = default;
 
-    // Any other move leaves the source at genesis.
+    // Any other move leaves the source at genesis.  The source drops its
+    // claim before its payload moves, and the target of an assignment holds
+    // genesis until its payload is whole.  So no code of a payload reads a
+    // payload in a move under the version of a whole one.  The payload moves
+    // one time, and no payload ends.
     constexpr EpochVersioned(EpochVersioned&& other) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires(!std::is_trivially_copyable_v<T>)
-        : impl_{std::move(other.impl_)} {
-        other.relinquish_version_();
-    }
-    constexpr EpochVersioned& operator=(EpochVersioned&& other) noexcept(std::is_nothrow_move_constructible_v<T>
-                                                                         && std::is_nothrow_move_assignable_v<T>)
+        : impl_{key_{}, ::foundation::algebra::graded_from_call,
+                [&other]() noexcept(std::is_nothrow_move_constructible_v<T>) {
+                    other.impl_.set_grade(key_{}, genesis_());
+                    return std::move(other.impl_).consume();
+                },
+                other.version()} {}
+    constexpr EpochVersioned& operator=(EpochVersioned&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
         requires(!std::is_trivially_copyable_v<T> && std::is_move_assignable_v<T>)
     {
         if (this != &other) {
-            impl_ = std::move(other.impl_);
-            other.relinquish_version_();
+            version_t const version = other.version();
+            other.impl_.set_grade(key_{}, genesis_());
+            impl_.set_grade(key_{}, genesis_());
+            impl_.peek_mut(key_{}) = std::move(other.impl_.peek_mut(key_{}));
+            impl_.set_grade(key_{}, version);
         }
         return *this;
     }

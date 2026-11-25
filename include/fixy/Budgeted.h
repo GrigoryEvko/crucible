@@ -59,7 +59,6 @@
 
 #include <concepts>
 #include <cstdint>
-#include <memory>
 #include <meta>
 #include <type_traits>
 #include <utility>
@@ -198,15 +197,6 @@ private:
 
     using key_ = ::foundation::algebra::grade_key<Budgeted>;
 
-    // Drops the claim of a moved-from source to unbounded.  The payload is
-    // moved out and back in, because Graded sets its grade only at
-    // construction.
-    constexpr void relinquish_budget_() noexcept(std::is_nothrow_move_constructible_v<T>) {
-        T left_behind = std::move(impl_).consume();
-        std::destroy_at(&impl_);
-        std::construct_at(&impl_, key_{}, std::move(left_behind), lattice_type::top());
-    }
-
     // The compositions build their result from a grade at or above the
     // left operand's own, which is a weaker claim than one it holds.
     constexpr Budgeted(T value, budget_t budget) noexcept(std::is_nothrow_move_constructible_v<T>)
@@ -253,19 +243,28 @@ public:
         requires std::is_trivially_copyable_v<T>
     = default;
 
-    // Any other move leaves the source unbounded.
+    // Any other move leaves the source unbounded.  The source drops its claim
+    // before its payload moves, and the target of an assignment is unbounded
+    // until its payload is whole.  So no code of a payload reads a payload in
+    // a move under the budget of a whole one.  The payload moves one time, and
+    // no payload ends.
     constexpr Budgeted(Budgeted&& other) noexcept(std::is_nothrow_move_constructible_v<T>)
         requires(!std::is_trivially_copyable_v<T>)
-        : impl_{std::move(other.impl_)} {
-        other.relinquish_budget_();
-    }
-    constexpr Budgeted& operator=(Budgeted&& other) noexcept(std::is_nothrow_move_constructible_v<T>
-                                                             && std::is_nothrow_move_assignable_v<T>)
+        : impl_{key_{}, ::foundation::algebra::graded_from_call,
+                [&other]() noexcept(std::is_nothrow_move_constructible_v<T>) {
+                    other.impl_.set_grade(key_{}, lattice_type::top());
+                    return std::move(other.impl_).consume();
+                },
+                other.budget()} {}
+    constexpr Budgeted& operator=(Budgeted&& other) noexcept(std::is_nothrow_move_assignable_v<T>)
         requires(!std::is_trivially_copyable_v<T> && std::is_move_assignable_v<T>)
     {
         if (this != &other) {
-            impl_ = std::move(other.impl_);
-            other.relinquish_budget_();
+            budget_t const budget = other.budget();
+            other.impl_.set_grade(key_{}, lattice_type::top());
+            impl_.set_grade(key_{}, lattice_type::top());
+            impl_.peek_mut(key_{}) = std::move(other.impl_.peek_mut(key_{}));
+            impl_.set_grade(key_{}, budget);
         }
         return *this;
     }
