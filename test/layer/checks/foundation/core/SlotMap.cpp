@@ -51,6 +51,13 @@ using HandleKey = SlotKey<HandleTag, MapBrand>;
 static_assert(sizeof(HandleKey) == sizeof(std::uint64_t));
 static_assert(sizeof(Option<HandleKey>) == sizeof(std::uint64_t));
 static_assert(sizeof(HandleMap<int>) == 3 * sizeof(void*) + 4 * sizeof(std::uint32_t));
+
+// A map of a value whose move or end can be code of a caller holds one more word,
+// the count of the doors that run that code.  A map of an owner on the core, which
+// moves with no code, holds no count.
+static_assert(sizeof(HandleMap<LinearToken>) == sizeof(HandleMap<int>) + sizeof(std::uint64_t));
+static_assert(sizeof(HandleMap<HeapArray<int>>) == sizeof(HandleMap<int>));
+static_assert(std::is_empty_v<SlotMapLends<int>> && !SlotMapLends<int>::is_lent());
 static_assert(std::is_nothrow_move_constructible_v<HandleMap<int>>
               && std::is_nothrow_move_assignable_v<HandleMap<int>>);
 static_assert(!std::is_copy_constructible_v<HandleMap<int>> && !std::is_copy_assignable_v<HandleMap<int>>);

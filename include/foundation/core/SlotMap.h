@@ -96,6 +96,21 @@
 //   generation would make a key wider than one word.  The test of the wrap
 //   uses std::uint8_t, so a slot retires after 128 values.
 //
+// Code of a value
+//   A value can reach its map, through a static map, a Ref or a guard that takes
+//   itself out of a registry.  An insert runs the move of a value, and a remove
+//   runs its move and its end.  A slot holds a value, by its generation, only
+//   while no such code works on the slot: an insert takes the slot from the free
+//   slots before the move and gives it its odd generation after the move, and a
+//   remove takes the odd generation away before the move and frees the slot after
+//   the end.  So a get, a walk, an insert or a remove by that code finds live
+//   values only, and it takes no slot that the outer door works on.  A move or
+//   the end of the map by that code ends the process, because the outer door
+//   works on the storage.  The map counts the doors that run such code (the lend
+//   count).  A value whose move and end run no code of a caller has no count.
+//   The end of a map empties it before it ends a value (the code of an element
+//   of foundation/core/Owner.h).
+//
 // A map owns its slots alone, on the owner core of foundation/core/Owner.h.
 // A move gives the slots to the target and leaves the source empty, with no
 // slot.  The end of a map ends each value in the order of the slots.  A copy
@@ -117,6 +132,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/Heap.h>
 #include <foundation/core/Id.h>
+#include <foundation/core/LendCount.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
 #include <foundation/core/Owner.h>
@@ -232,13 +248,35 @@ template <class T, class Generation>
         .expect("the storage of at least one slot of a SlotMap is a layout");
 }
 
+// The fatal exit of a move or of the end of a map while a door of it runs the
+// code of a value.
+[[noreturn]] CRUCIBLE_COLD inline void report_lent_slot_map_change_() noexcept {
+    fatal("a move or the end of a SlotMap runs in the code of its value, while a door of the map runs that code");
+}
+
+// The count of a map whose value runs no code.  It holds no byte and counts
+// nothing.
+struct NoSlotMapLends final {
+    struct Lend final {};
+
+    [[nodiscard]] static constexpr Lend lend() noexcept { return Lend{}; }
+    [[nodiscard]] static constexpr bool is_lent() noexcept { return false; }
+};
+
+// The count of the doors of a map of T that run the code of a value (MoveRunsCode
+// of foundation/core/Owner.h).  A map of four counts of 32 bits has room for a word
+// of 64 bits with no padding.
+template <class T>
+using SlotMapLends = std::conditional_t<MoveRunsCode<T>, LendCount<std::uint64_t>, NoSlotMapLends>;
+
 namespace owner {
 
 // The fields of a SlotMap.  The values, the stack of the free indexes and the
 // generations are three runs of one allocation, and they are null when the
 // capacity is zero.  The slots below used took a value at least one time, so
 // each one has a generation.  No code reads a slot at or past used.  The
-// stack holds free_count indexes.  live is the count of the values.
+// stack holds free_count indexes.  live is the count of the values.  lends counts
+// the doors that run the code of a value.
 template <class T, class Generation>
 struct SlotMapState {
     using owner_state_mark = OwnerStateMark;
@@ -251,8 +289,17 @@ struct SlotMapState {
     std::uint32_t used = 0;
     std::uint32_t free_count = 0;
     std::uint32_t live = 0;
+    [[no_unique_address]] SlotMapLends<T> lends{};
 
-    [[nodiscard]] static constexpr SlotMapState emptied(SlotMapState const& /*state*/) noexcept {
+    // Ends the process while a door of the map runs the code of a value.
+    static constexpr void refuse_lent_change_(SlotMapState const& state) noexcept {
+        if (state.lends.is_lent()) [[unlikely]] {
+            report_lent_slot_map_change_();
+        }
+    }
+
+    [[nodiscard]] static constexpr SlotMapState emptied(SlotMapState const& state) noexcept {
+        refuse_lent_change_(state);
         return SlotMapState{};
     }
 
@@ -264,6 +311,7 @@ struct SlotMapState {
     // back, with each slot unpoisoned (the spare storage of Heap.h).
     // Complexity: O(used).
     static constexpr void release(SlotMapState const& state) noexcept {
+        refuse_lent_change_(state);
         if (state.values == nullptr) {
             return;
         }
@@ -536,10 +584,13 @@ public:
                 return err(Full<T>{});
             }
         }
+        detail::unpoison_slots_(state.values + index, 1);
+        {
+            [[maybe_unused]] auto const lend = state.lends.lend();
+            ::new(static_cast<void*>(state.values + index)) T(static_cast<T&&>(value));
+        }
         Generation const generation = wrapping_add(state.generations[index], Generation{1});
         state.generations[index] = generation;
-        detail::unpoison_slots_(state.values + index, 1);
-        ::new(static_cast<void*>(state.values + index)) T(static_cast<T&&>(value));
         ++state.live;
         return SlotKey<Tag, Brand>{std::uint64_t{index} | (std::uint64_t{generation} << detail::slot_index_bits_)};
     }
@@ -574,28 +625,28 @@ public:
         delete("a value of a temporary SlotMap dangles at the end of the full expression");
 
     // Moves the value of key out, and frees its slot: the generation of the
-    // slot takes one more, and its index goes onto the stack of the free
-    // slots.  The slot is then poisoned (the spare storage of Heap.h).  At
-    // the largest generation the slot retires (the wrap of a generation).  No
-    // value for a key that the slot does not hold.
+    // slot takes one more before the move, and its index goes onto the stack of
+    // the free slots after the end of the moved-from value (the code of a value).
+    // The slot is then poisoned (the spare storage of Heap.h).  At the largest
+    // generation the slot retires (the wrap of a generation).  No value for a key
+    // that the slot does not hold.
     [[nodiscard]] constexpr Option<T> remove(SlotKey<Tag, Brand> key) & noexcept {
         if (!holds_(key.raw())) {
             return Option<T>{none};
         }
         State& state = this->state_;
         std::uint32_t const index = detail::slot_index_of_(key.raw());
+        Generation const generation = state.generations[index];
+        state.generations[index] = wrapping_add(generation, Generation{1});
+        --state.live;
+        [[maybe_unused]] auto const lend = state.lends.lend();
         Option<T> result = Option<T>::some(static_cast<T&&>(*slot_of_(key.raw())));
         State::end_slot_(*slot_of_(key.raw()));
         detail::poison_slots_(state.values + index, 1);
-        Generation const generation = state.generations[index];
-        if (generation == max_of<Generation>) [[unlikely]] {
-            state.generations[index] = 0;
-        } else {
-            state.generations[index] = wrapping_add(generation, Generation{1});
+        if (generation != max_of<Generation>) [[likely]] {
             state.free_stack[state.free_count] = index;
             ++state.free_count;
         }
-        --state.live;
         return result;
     }
 

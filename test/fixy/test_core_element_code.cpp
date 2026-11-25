@@ -13,7 +13,9 @@
 #include <fixy/check/Check.h>
 #include <foundation/Brand.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
+#include <foundation/core/SlotMap.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -169,12 +171,161 @@ void test_the_code_of_an_element_finds_an_empty_array_in_an_exchange() {
     ::fixy::check::pass(kTest, "  test_the_code_of_an_element_finds_an_empty_array_in_an_exchange: PASSED\n");
 }
 
+// ── A slot map ─────────────────────────────────────────────────────────────
+
+// What the code of a value does to the map.
+enum class Step : std::uint8_t {
+    Nothing,
+    Walk,
+    Get,
+    Remove,
+    Insert,
+    DropMap,
+};
+
+constinit Step step_at_end = Step::Nothing;
+constinit Step step_at_move = Step::Nothing;
+constinit std::uint64_t reached_key_word = 0;
+constinit std::uint32_t values_taken_by_the_code = 0;
+
+void take_step(Step& step) noexcept;
+
+// A value of the map.  It is live from the end of its constructor to its move or
+// its end.
+class Mapped final {
+public:
+    Mapped() noexcept = default;
+    Mapped(Mapped&& other) noexcept : is_live_{false} {
+        other.is_live_ = false;
+        take_step(step_at_move);
+        is_live_ = true;
+    }
+    Mapped(Mapped const&) = delete("a value of the test has one identity");
+    Mapped& operator=(Mapped const&) = delete("a value of the test has one identity");
+    ~Mapped() {
+        is_live_ = false;
+        take_step(step_at_end);
+    }
+
+    [[nodiscard]] bool is_live() const noexcept { return is_live_; }
+
+private:
+    bool is_live_ = true;
+};
+
+struct KeyTag final {};
+
+[[nodiscard]] auto make_map() noexcept {
+    return core::mint_slot_map<Mapped, KeyTag>(allocation(), core::Quantity<core::unit::Element, std::uint32_t>{8});
+}
+using Map = decltype(make_map());
+
+[[nodiscard]] Map& reached_map() noexcept {
+    static Map map = make_map();
+    return map;
+}
+
+[[nodiscard]] Map::key_type insert_value() noexcept {
+    return reached_map().insert(Mapped{}).expect("the map has a free slot");
+}
+
+// The code of the value, one time.
+void take_step(Step& step) noexcept {
+    Step const taken = step;
+    step = Step::Nothing;
+    switch (taken) {
+        case Step::Nothing:
+        default:
+            return;
+        case Step::Walk:
+            ++reads_of_an_owner;
+            for (Mapped const& value : ::fixy::as_const(reached_map()))
+                is_ended_element_seen = is_ended_element_seen || !value.is_live();
+            return;
+        case Step::Get:
+            ++reads_of_an_owner;
+            is_ended_element_seen =
+                is_ended_element_seen || ::fixy::as_const(reached_map()).get(Map::key_type{reached_key_word}).is_some();
+            return;
+        case Step::Remove:
+            ++reads_of_an_owner;
+            if (reached_map().remove(Map::key_type{reached_key_word}).is_some()) ++values_taken_by_the_code;
+            return;
+        case Step::Insert:
+            ++reads_of_an_owner;
+            static_cast<void>(insert_value());
+            return;
+        case Step::DropMap:
+            reached_map() = Map{};
+            return;
+    }
+}
+
+// Runs a remove or an insert of a map of two values, and gives a step to its next
+// end and to its next move.  Then each slot holds at most one value: two more
+// inserts give two keys that no value of the map has.
+void run_map_door(bool is_insert, Step at_end, Step at_move) {
+    reached_map() = make_map();
+    static_cast<void>(insert_value());
+    Map::key_type const key = insert_value();
+    reached_key_word = key.raw();
+    step_at_end = at_end;
+    step_at_move = at_move;
+    if (is_insert) {
+        static_cast<void>(insert_value());
+    } else {
+        CRUCIBLE_TEST_ASSERT(kTest, reached_map().remove(key).is_some());
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, step_at_end == Step::Nothing && step_at_move == Step::Nothing);
+    CRUCIBLE_TEST_ASSERT(kTest, values_taken_by_the_code == 0);
+
+    std::size_t const size = reached_map().size();
+    Map::key_type const first = insert_value();
+    Map::key_type const second = insert_value();
+    CRUCIBLE_TEST_ASSERT(kTest, first != second && reached_map().size() == size + 2);
+    std::size_t walked = 0;
+    for (Mapped const& value : ::fixy::as_const(reached_map())) {
+        CRUCIBLE_TEST_ASSERT(kTest, value.is_live());
+        ++walked;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, walked == size + 2);
+    check_whole_reads(1);
+}
+
+// A slot holds a value only while no code of a value works on it.  So the code
+// finds no value behind the key of a remove, and no value that an insert moves.
+void test_the_code_of_a_value_finds_live_values_only() {
+    run_map_door(false, Step::Walk, Step::Nothing);
+    run_map_door(false, Step::Get, Step::Nothing);
+    run_map_door(false, Step::Remove, Step::Nothing);
+    run_map_door(false, Step::Insert, Step::Nothing);
+    run_map_door(false, Step::Nothing, Step::Walk);
+    run_map_door(false, Step::Nothing, Step::Get);
+    run_map_door(false, Step::Nothing, Step::Remove);
+    run_map_door(false, Step::Nothing, Step::Insert);
+    run_map_door(true, Step::Nothing, Step::Walk);
+    run_map_door(true, Step::Nothing, Step::Insert);
+    ::fixy::check::pass(kTest, "  test_the_code_of_a_value_finds_live_values_only: PASSED\n");
+}
+
+// The outer door works on the storage of the map, so a move or the end of the map
+// by the code of a value ends the process.
+void test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process() {
+    constexpr ::fixy::TextView refusal{
+        "a move or the end of a SlotMap runs in the code of its value, while a door of the map runs that code"};
+    ::fixy::check::expect_dies(kTest, [] noexcept { run_map_door(false, Step::DropMap, Step::Nothing); }, refusal);
+    ::fixy::check::expect_dies(kTest, [] noexcept { run_map_door(false, Step::Nothing, Step::DropMap); }, refusal);
+    ::fixy::check::expect_dies(kTest, [] noexcept { run_map_door(true, Step::Nothing, Step::DropMap); }, refusal);
+    ::fixy::check::pass(kTest, "  test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process: PASSED\n");
+}
+
 // ── The end of an owner ────────────────────────────────────────────────────
 
 // The holder of an owner of each kind.  An element of the owner reaches the
 // holder through a Ref.
 struct ArrayTag final {};
 struct BoxTag final {};
+struct MapTag final {};
 
 template <class Tag>
 struct Holder;
@@ -212,6 +363,20 @@ struct Holder<ArrayTag> final {
 };
 
 template <>
+struct Holder<MapTag> final {
+    using brand_type = HolderBrand<MapTag>;
+    struct[[= ::foundation::brand::arena_member_brand{}]] SlotTag final {};
+    core::SlotMap<Ending<MapTag>, KeyTag, SlotTag> held = core::mint_member_slot_map<Ending<MapTag>, KeyTag, SlotTag>(
+        allocation(), core::Quantity<core::unit::Element, std::uint32_t>{4});
+
+    void read() const noexcept {
+        ++reads_of_an_owner;
+        for (Ending<MapTag> const& value : held)
+            is_ended_element_seen = is_ended_element_seen || !value.is_live();
+    }
+};
+
+template <>
 struct Holder<BoxTag> final {
     using brand_type = HolderBrand<BoxTag>;
     core::Box<Ending<BoxTag>> held;
@@ -232,6 +397,14 @@ void test_the_end_of_an_owner_empties_it_first() {
             allocation(), 3, [&holder](std::size_t) noexcept { return Ending<ArrayTag>{core::to(holder)}; });
     }
     check_whole_reads(3);
+    {
+        Holder<MapTag> holder{};
+        for (std::uint32_t at = 0; at != 3; ++at)
+            static_cast<void>(holder.held.insert(Ending<MapTag>{core::to(holder)}).expect("the map has a free slot"));
+        // The end of each moved-from value read the map before this point.
+        reads_of_an_owner = 0;
+    }
+    check_whole_reads(3);
     ::fixy::check::expect_dies(kTest, [] noexcept { Holder<BoxTag> const holder{}; }, kEmptyBox);
     ::fixy::check::pass(kTest, "  test_the_end_of_an_owner_empties_it_first: PASSED\n");
 }
@@ -241,6 +414,8 @@ void test_the_end_of_an_owner_empties_it_first() {
 int main() {
     test_the_code_of_an_object_finds_an_empty_box();
     test_the_code_of_an_element_finds_an_empty_array_in_an_exchange();
+    test_the_code_of_a_value_finds_live_values_only();
+    test_the_end_of_a_map_by_the_code_of_a_value_ends_the_process();
     test_the_end_of_an_owner_empties_it_first();
     ::fixy::check::pass(kTest, "test_core_element_code: all tests passed\n");
     return 0;

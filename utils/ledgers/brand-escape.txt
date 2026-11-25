@@ -14,7 +14,8 @@ src/ | escaped-return | 4 | - | -
 test/ | escaped-alias | 5 | - | -
 test/ | escaped-return | 5 | - | the tests mint the root of a channel in a helper, as the directory row of test/ states
 test/ | escaped-static | 1 | - | -
-test/fixy/ | escaped-alias | 27 | - | -
+test/fixy/ | escaped-alias | 28 | - | the tests name a branded type in an alias of the unit, as the reason of test/ states, and the test of the code of an element names the type of its static map
 test/fixy/ | escaped-container | 2 | - | -
-test/fixy/ | escaped-return | 44 | - | a trying write of a linear payload gives the value back in an Option, and the type of a branded token names the brand of its root, as a polling read does
+test/fixy/ | escaped-return | 47 | - | a trying write of a linear payload gives the value back in an Option, and the type of a branded token names the brand of its root, as a polling read does.  The test of the code of an element reaches a static map through a helper, because a value that reaches its owner through a static name is the subject of the test
+test/fixy/ | escaped-static | 1 | - | the test of the code of an element reaches a static map through a helper, because a value that reaches its owner through a static name is the subject of the test
 test/foundation/ | escaped-return | 5 | - | -
