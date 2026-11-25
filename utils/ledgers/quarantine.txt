@@ -165,7 +165,7 @@ include/crucible/ | region | 2 | ABI: the front end gave the data pointer of the
 include/crucible/perf/detail/ | opted-out | 74 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 2 | ABI: libbpf gives its objects, maps, programs, links and names as raw pointers of C | the libbpf adapter of crucible/perf/detail/BpfLoader.h and the BPF object of BpfHub.h hold the objects, maps, programs, links and names of libbpf, which libbpf gives as raw pointers of C, and the print callback of libbpf, which takes a printf format with a va_list
 include/crucible/perf/detail/ | region | 1 | ABI: libbpf opened the descriptor of the BPF map, and the map door maps it | libbpf gives the descriptor of a BPF map as a raw int, and map_foreign_region is the door that maps a descriptor that a C library opened
-include/fixy/ | base-std-entity | 202 | - | -
+include/fixy/ | base-std-entity | 198 | - | -
 include/fixy/ | base-std-object | 78 | - | -
 include/fixy/ | replace-pending:<array> | 4 | - | -
 include/fixy/ | replace-pending:<atomic> | 1 | - | -
@@ -179,7 +179,7 @@ include/fixy/ | replace-pending:<span> | 2 | - | -
 include/fixy/ | replace-pending:<string> | 4 | - | -
 include/fixy/ | replace-pending:<string_view> | 9 | - | -
 include/fixy/ | replace-pending:<tuple> | 4 | - | -
-include/fixy/ | replace-pending:<vector> | 6 | - | -
+include/fixy/ | replace-pending:<vector> | 5 | - | -
 include/fixy/atoms/ | base-std-entity | 45 | - | -
 include/fixy/atoms/ | base-std-object | 10 | - | -
 include/fixy/atoms/ | replace-pending:<array> | 3 | - | -
@@ -228,8 +228,8 @@ include/fixy/os/ | replace-pending:<string> | 1 | - | -
 include/fixy/os/ | replace-pending:<string_view> | 1 | - | -
 include/fixy/os/ | replace-pending:<vector> | 1 | - | -
 include/fixy/session/ | base-c-library-call | 51 | - | -
-include/fixy/session/ | base-std-entity | 356 | - | -
-include/fixy/session/ | base-std-object | 143 | - | -
+include/fixy/session/ | base-std-entity | 355 | - | -
+include/fixy/session/ | base-std-object | 140 | - | -
 include/fixy/session/ | replace-pending:<any> | 1 | - | -
 include/fixy/session/ | replace-pending:<array> | 3 | - | -
 include/fixy/session/ | replace-pending:<atomic> | 1 | - | -
@@ -245,7 +245,7 @@ include/fixy/session/ | replace-pending:<span> | 5 | - | -
 include/fixy/session/ | replace-pending:<string> | 6 | - | -
 include/fixy/session/ | replace-pending:<string_view> | 10 | - | -
 include/fixy/session/ | replace-pending:<tuple> | 6 | - | -
-include/fixy/session/ | replace-pending:<vector> | 9 | - | -
+include/fixy/session/ | replace-pending:<vector> | 8 | - | -
 include/foundation/ | base-c-library-call | 4 | - | -
 include/foundation/ | base-std-entity | 17 | - | -
 include/foundation/ | base-std-object | 3 | - | -
@@ -464,13 +464,13 @@ test/fixy/ | region | 1 | PROBE: two threads with no happens-before edge, and a 
 test/fixy/ | replace-pending:<limits> | 20 | - | -
 test/fixy/ | replace-pending:std::bit_cast | 12 | - | -
 test/fixy/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/ | std-entity | 1966 | - | -
-test/fixy/ | std-object | 619 | - | -
+test/fixy/ | std-entity | 1939 | - | -
+test/fixy/ | std-object | 616 | - | -
 test/fixy/neg/ | c-array-object | 25 | - | -
 test/fixy/neg/ | c-library-call | 2 | - | -
 test/fixy/neg/ | detail-use | 346 | - | each fixture uses a private name of the base for its probe, such as a check, a private constructor, the context witness or the state of an owner core in the witness of the core
 test/fixy/neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
-test/fixy/neg/ | lifetime-start | 3 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
+test/fixy/neg/ | lifetime-start | 2 | - | the fixture forges an object with std::start_lifetime_as over raw bytes, and its probe shows that the type refuses it
 test/fixy/neg/ | opted-out | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | opted-out | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
 test/fixy/neg/ | opted-out | 1 | PROBE: the fixture forges InRange<1, 4096> to admit zero | each forged specialization of an attack test or a fixture stands in a PROBE: region, because the rule specialization-home makes it a compile error
@@ -512,7 +512,7 @@ test/fixy/neg/ | opted-out | 2 | PROBE: the fixture takes the address of a membe
 test/fixy/neg/ | opted-out | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | raw-function-pointer | 2 | - | -
 test/fixy/neg/ | raw-new-delete | 1 | - | -
-test/fixy/neg/ | raw-pointer-object | 15 | - | -
+test/fixy/neg/ | raw-pointer-object | 14 | - | -
 test/fixy/neg/ | region | 1 | ABI: the fixture gives the foreign door the address of a foreign entry | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 1 | ABI: the fixture stands for a buffer that a foreign caller gives | the two fixtures of the foreign region door stand in an ABI region, as each call of that door does
 test/fixy/neg/ | region | 2 | PROBE: a static function of the library escapes to the template | the two fixtures of the walk of a scope brand behind a CallRef keep a function of a library in a static to give its address to a template, so the refusal of the CallRef is their one reason
@@ -556,7 +556,7 @@ test/fixy/neg/ | region | 1 | PROBE: the fixture takes the address of a member m
 test/fixy/neg/ | region | 2 | PROBE: the probe specializes a predicate call to show that the mint refuses it | -
 test/fixy/neg/ | replace-pending:<limits> | 4 | - | -
 test/fixy/neg/ | replace-pending:std::source_location | 5 | - | -
-test/fixy/neg/ | std-entity | 57 | - | -
+test/fixy/neg/ | std-entity | 48 | - | -
 test/fixy/neg/ | std-object | 24 | - | -
 test/forge_neg/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/foundation/ | c-array-object | 6 | - | -
@@ -720,7 +720,7 @@ test/layer/checks/crucible/topology/ | enum-cast | 1 | - | a cast of a number in
 test/layer/checks/fixy/ | c-array-object | 1 | - | -
 test/layer/checks/fixy/ | enum-cast | 1 | - | a cast of a number into an enumeration with enumerators that a test makes on purpose: the kind enum-cast of the plugin counts each one
 test/layer/checks/fixy/ | raw-pointer-object | 8 | - | -
-test/layer/checks/fixy/ | std-entity | 70 | - | -
+test/layer/checks/fixy/ | std-entity | 68 | - | -
 test/layer/checks/fixy/ | std-object | 5 | - | -
 test/layer/checks/fixy/atoms/ | std-entity | 18 | - | -
 test/layer/checks/fixy/atoms/ | std-object | 4 | - | -

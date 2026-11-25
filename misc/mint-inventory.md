@@ -171,7 +171,7 @@ that the axis does not apply to the row.
 | `FederationAdmission::mint_federation_admission` | `include/fixy/Federation.h` | Y | Y | Y | Y | ctx | Y | HS14: 3 |
 | `FederationAdmission::mint_federation_admittance` | `include/fixy/Federation.h` | Y | Y | Y | Y | member | · | HS14: 3 |
 | `mint_affine` | `include/fixy/Qtt.h` | Y | Y | Y | Y | token | · | HS14: 0 ⚠ |
-| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_atomic_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_band` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 11 |
 | `mint_borrowed` | `include/fixy/OwnedRegion.h` | Y | Y | Y | Y | token | · | HS14: 3 |
@@ -185,7 +185,7 @@ that the axis does not apply to the row.
 | `mint_linear_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_machine` | `include/fixy/Machine.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 7 |
-| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 4 |
+| `mint_ordered_append_only` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 6 |
 | `mint_owned_region` | `include/fixy/OwnedRegion.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_recipe_spec` | `include/fixy/Bands.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_refined` | `include/fixy/Refined.h` | Y | Y | Y | Y | token | · | HS14: 26 |
@@ -297,7 +297,7 @@ that the axis does not apply to the row.
 | `mint_permissioned_session` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 20 |
 | `mint_recorded_session` | `include/fixy/session/Recording.h` | Y | Y | Y | Y | token | · | HS14: 13 |
 | `mint_session` | `include/fixy/session/Entry.h` | Y | Y | Y | Y | ctx | Y | HS14: 89 |
-| `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 18 |
+| `mint_session_event_writer` | `include/fixy/session/EventLog.h` | Y | - | Y | · | token | · | HS14: 21 |
 | `mint_session_from_machine` | `include/fixy/session/MachineBridge.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_test_channel` | `include/fixy/session/Mint.h` | Y | Y | Y | Y | ctx | Y | HS14: 6 |
 | `mint_vigil_mode_bridge` | `include/fixy/session/VigilMode.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -338,7 +338,7 @@ that the axis does not apply to the row.
 | `mint_foreign_text(const char*, std::size_t)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_text(foundation::core::View<const std::byte, 18446744073709551615>)` | `include/foundation/core/Region.h` | Y | - | Y | · | token | · | HS14: 4 |
 | `mint_foreign_view` | `include/foundation/core/Region.h` | Y | - | Y | Y | token | · | HS14: 2 |
-| `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 15 |
+| `mint_grow_list` | `include/foundation/core/Grow.h` | Y | Y | Y | Y | token | · | HS14: 17 |
 | `mint_grow_text` | `include/foundation/core/Grow.h` | Y | Y | Y | · | token | · | HS14: 5 |
 | `mint_heap_array` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 29 |
 | `mint_heap_array_copy` | `include/foundation/core/Array.h` | Y | - | Y | Y | token | · | HS14: 2 |

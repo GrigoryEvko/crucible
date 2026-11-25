@@ -1438,7 +1438,7 @@ void Cipher::load_log(FileCtx const& file_ctx, ::foundation::effects::Alloc allo
     }));
     const ::fixy::HeapText log_text = ::fixy::freeze(std::move(text));
     // Appends the commit of one line that parsed, or skips a corrupt line.
-    const auto replay_line = [this, allocation](LogLine const& line) {
+    const auto replay_line = [this, allocation](LogLine const& line) noexcept {
         // The log only grows in step order, and its append checks that
         // order with a contract that aborts.  A line out of order is a
         // corrupt line, so it is skipped like the others.  A step above the
