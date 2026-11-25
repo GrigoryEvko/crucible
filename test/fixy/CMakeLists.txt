@@ -3992,14 +3992,14 @@ fixy_neg_compile_test(neg_sess_event_log_copied
   "use of deleted function .fixy::session::SessionEventLog::SessionEventLog\\(const fixy::session::SessionEventLog&\\)"
   "the step counter is the ordering identity of a session event log, and a copy would fork the counter")
 
-# No byte route builds an event: the event is not trivially copyable and
-# not an implicit-lifetime type, so the decoder is the one door.
+# No byte route builds an event: the event is not trivially copyable, and the
+# checked lifetime start refuses its seal, so the decoder is the one door.
 fixy_neg_compile_test(neg_sess_event_forged_by_bit_cast
   "no matching function for call to .bit_cast<fixy::session::SessionEvent>"
   "is_trivially_copyable_v<_To>")
-fixy_neg_compile_test(neg_sess_event_forged_by_start_lifetime_as
-  "static assertion failed"
-  "fixy::session::SessionEvent. is not an implicit-lifetime type")
+fixy_neg_compile_test(neg_sess_event_start_as_array
+  "no matching function for call to .start_as_array<fixy::session::SessionEvent>"
+  "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = fixy::session::SessionEvent.")
 
 # A persistence event takes the place of a count that its store keeps, and
 # a bare integer such as a clock reading is no place.

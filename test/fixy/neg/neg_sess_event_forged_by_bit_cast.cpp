@@ -1,5 +1,5 @@
-// A session event built from bytes that no session step wrote.  The copy
-// constructor of SessionEvent is user-provided, so the event is not
+// A session event built from bytes that no session step wrote.  The seal of
+// SessionEvent makes its assignment user-provided, so the event is not
 // trivially copyable, and std::bit_cast has no candidate.  The one route
 // from bytes to an event is decode_session_event, which checks each byte.
 

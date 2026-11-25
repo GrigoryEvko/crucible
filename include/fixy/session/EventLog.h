@@ -73,6 +73,7 @@
 #include <fixy/session/CrashCause.h>
 #include <fixy/session/StepId.h>
 
+#include <foundation/ByteSeal.h>
 #include <foundation/Pinned.h>
 #include <foundation/algebra/lattices/CipherTierLattice.h>
 #include <foundation/contracts/Pre.h>
@@ -308,7 +309,14 @@ struct RawEvent {
 
 // ── The event ───────────────────────────────────────────────────────
 
-class SessionEvent {
+// No byte route builds an event.  The move assignment of the event is
+// user-provided, so the event is not trivially copyable, and std::bit_cast
+// refuses it.  The annotation no_start_over_bytes refuses a lifetime start over
+// bytes (foundation/ByteSeal.h).  The one way from bytes to an event is
+// decode_session_event, which checks each byte.  A byte_seal member would give
+// the two refusals too, but it would make the copy assignment copy each lane by
+// itself, in place of one copy of 72 bytes.
+class[[= ::foundation::lifetime::no_start_over_bytes{}]] SessionEvent {
     StepId step_id_{std::uint64_t{0}};
     SessionTagId session_{};
     RoleTagId from_role_{};
@@ -322,9 +330,6 @@ class SessionEvent {
     std::uint8_t reason_kind_ = 0;
     std::array<std::uint8_t, 5> pad_{};
 
-    // User-provided, so that no constructor of the event is trivial.  A
-    // trivial constructor makes an implicit-lifetime type, and
-    // std::start_lifetime_as then builds an event over a buffer.
     constexpr SessionEvent() noexcept {}
 
     constexpr SessionEvent(SessionOp op, RoleTagId from, RoleTagId to, std::uint64_t schema, std::uint64_t payload,
@@ -342,13 +347,14 @@ class SessionEvent {
     decode_session_event(::foundation::core::View<std::byte const> bytes) noexcept;
 
 public:
-    // User-provided, and not defaulted.  A defaulted copy is trivial, so
-    // the event was trivially copyable, and std::bit_cast built one from
-    // bytes that no session step wrote.  The one way from bytes to an
-    // event is decode_session_event, which checks each byte.  The copy
-    // compiles to the same 72-byte move.
-    constexpr SessionEvent(const SessionEvent& other) noexcept { *this = other; }
+    // The copy is trivial, so it runs no code of the event, and copy_at of a
+    // GrowList gives an event by value.  The move assignment is the one
+    // user-provided member of the five, and it copies.  A default of it would
+    // make the event trivially copyable, and std::bit_cast would then build an
+    // event from bytes that no session step wrote.
+    constexpr SessionEvent(const SessionEvent&) noexcept = default;
     constexpr SessionEvent& operator=(const SessionEvent&) noexcept = default;
+    constexpr SessionEvent& operator=(SessionEvent&& other) noexcept { return *this = other; }
     constexpr ~SessionEvent() = default;
 
     // ── Factories ───────────────────────────────────────────────────
