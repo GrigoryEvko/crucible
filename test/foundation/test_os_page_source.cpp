@@ -14,8 +14,9 @@
 // count and a reservation of two kinds of access.
 //
 // The children: a read of a reserved page that no commit opened faults, a
-// range of a different reservation ends the process, and a range of the
-// place that a grow left ends the process.
+// range of a different reservation ends the process, a range of the place that
+// a grow left ends the process, and a range of a moved reservation ends the
+// process under the old name.
 
 #include <foundation/os/PageSource.h>
 
@@ -452,6 +453,36 @@ void test_range_of_another_reservation_dies(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "a range of a different reservation, or of the old place of a grow, ends the process\n");
 }
 
+// Two parameters of each of the next two functions name one reservation, so the
+// rule use-after-move does not see that the old name moved.
+
+void check_the_old_name(::fixy::TestRunnerCtx const& test, os::Reservation& reservation, os::Reservation& old_name) {
+    os::Reservation moved{std::move(reservation)};
+    CRUCIBLE_TEST_ASSERT(test, moved.size() == ByteCount{kMebibyte});
+    CRUCIBLE_TEST_ASSERT(test, old_name.size() == ByteCount{std::size_t{0}});
+    CRUCIBLE_TEST_ASSERT(test, old_name.range(start_at(0), moved.page_size()).is_none());
+}
+
+void read_under_the_old_name(os::Reservation& reservation, os::Reservation& old_name,
+                             os::CommittedRange const& range) noexcept {
+    os::Reservation moved{std::move(reservation)};
+    static_cast<void>(old_name.bytes_of(range));
+}
+
+void test_old_name_of_a_reservation_holds_no_range(::fixy::TestRunnerCtx const& test) {
+    os::Reservation reservation = reserve_or_end(ByteCount{kMebibyte}, os::ReserveAlignment::page);
+    check_the_old_name(test, reservation, reservation);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            os::Reservation live = reserve_or_end(ByteCount{kMebibyte}, os::ReserveAlignment::page);
+            os::CommittedRange const range = commit_whole(live);
+            read_under_the_old_name(live, live, range);
+        },
+        ::fixy::TextView{"PageSource: a range of the reservation at"});
+    ::fixy::check::pass(test, "the old name of a moved reservation has no range, and an old range ends the process\n");
+}
+
 // The resident pages of the process: the second field of /proc/self/statm.
 [[nodiscard]] std::uint64_t resident_pages(::fixy::TestRunnerCtx const& test) noexcept {
     ::foundation::core::FixedText<256> text{};
@@ -511,6 +542,7 @@ int main() {
     test_grow_refusals(test);
     test_reserved_page_faults(test);
     test_range_of_another_reservation_dies(test);
+    test_old_name_of_a_reservation_holds_no_range(test);
     test_end_of_a_large_reservation_writes_no_shadow(test);
     return 0;
 }
