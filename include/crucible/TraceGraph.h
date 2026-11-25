@@ -65,8 +65,12 @@ public:
 // epoch.  The class states the brand of the epoch, so it is a carrier of the
 // brand: the rule brand-escape refuses a graph in a static object and in a
 // member of a class that does not state the brand, and an epoch refuses a
-// graph as the result of its body.  The ops and the slots are runs of the DAG
-// arena of the region of the build, which outlives the epoch.
+// graph as the result of its body.
+//
+// The graph holds no run of the region of the build.  The build makes the arena
+// of the region in the body of the epoch, and the region can end before the
+// epoch does.  The region holds its ops and its slots (BuiltRegion of
+// crucible/BackgroundThread.h), and op() takes the ops from its caller.
 //
 // The four counts are const.  build_trace_graph makes the graph when the build
 // knows each count, so no count changes after the build, and an assignment
@@ -74,8 +78,6 @@ public:
 struct TraceGraph {
     using brand_type = ::fixy::EpochOf<TraceScratch::Arena>;
 
-    // The ops in trace order.
-    ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
     uint32_t const num_ops = 0;
 
     // Sorted by source, so a walk answers which ops consume a given output.
@@ -88,14 +90,14 @@ struct TraceGraph {
 
     uint32_t const num_edges = 0;
 
-    ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
     uint32_t const num_slots = 0;  // count of distinct storages, not of tensors
 
     ContentHash content_hash{};
 
     // The end of the run of the metadata log that this trace read, as a count
-    // of records (MetaLog::head).  The ops hold a copy of that run in the
-    // arena.  The owner of the log can release the run after the build.
+    // of records (MetaLog::head).  The ops of the region hold a copy of that
+    // run in its arena.  The owner of the log can release the run after the
+    // build.
     uint64_t const max_meta_end = 0;
 
     // The edges whose source is op i.  The arrays are in the arena, and not
@@ -108,8 +110,13 @@ struct TraceGraph {
     [[nodiscard]] ::fixy::View<const Edge> rev_of(OpIndex i) const noexcept;
     [[nodiscard]] uint32_t in_degree(OpIndex i) const noexcept;
 
-    [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept {
-        return *ops.view().get(checked_index_(i)).expect("the build gives the graph one entry for each op");
+    // Op i of the ops of the region of the build, in trace order.  The caller
+    // gives the ops, because the graph holds no run of the region.  An index at
+    // or past the count of ops ends the process, and so does a run whose count
+    // is not num_ops.
+    [[nodiscard, gnu::pure]] const TraceEntry& op(::fixy::View<const TraceEntry> ops, OpIndex i) const noexcept {
+        CRUCIBLE_PRE(ops.size() == num_ops);
+        return *ops.get(checked_index_(i)).expect("the region of the build holds one entry for each op");
     }
 
     // The precondition refuses a graph with no ops, where the fold

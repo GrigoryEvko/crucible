@@ -590,8 +590,6 @@ BackgroundThread::build_trace_columns_(TraceBuildState& state, MetaLog const& me
     const TraceGraphRef graph = build_trace_graph(
         a, scratch, TraceGraphShape{.num_ops = count, .num_slots = num_slots, .max_meta_end = max_meta_end},
         local_edges.window(0, num_edges).expect("the edge scratch holds each edge of the build"));
-    graph->ops = op_arena_run;
-    graph->slots = tensor_slots_run;
     graph->content_hash = content_fold.finish();
 
     // The arena moves into the region with its runs.  A move of a Box moves

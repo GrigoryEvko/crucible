@@ -483,10 +483,10 @@ void test_pipeline_releases_after_overflow() {
                         static_cast<unsigned long long>(rig.log_total_released()));
 }
 
-// The ops of a built graph hold a copy of the run of the metadata log that
-// the build read.  The floor of a later commit marker releases the run, and
-// the foreground then writes new records over it.  The region lives as long
-// as its memory, and no op points into the buffer of the log.
+// The ops of the region of a built graph hold a copy of the run of the metadata
+// log that the build read.  The floor of a later commit marker releases the
+// run, and the foreground then writes new records over it.  The region lives as
+// long as its memory, and no op points into the buffer of the log.
 template <class Stopped>
 static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog, BackgroundThread const& bt,
                                                 Stopped& stopped) noexcept {
@@ -512,7 +512,7 @@ static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog,
             for (uint32_t op = 0; op < OPS; ++op) {
                 // The expect ends the process when the op holds no output metadata.
                 const crucible::TensorMeta& first_meta =
-                    *graph->op(crucible::OpIndex{op})
+                    *graph->op(region_parts.ops(), crucible::OpIndex{op})
                          .output_metas()
                          .get(0)
                          .expect("a test reads an element at or past the count of its View");
@@ -521,9 +521,10 @@ static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog,
                 CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
                 CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
             }
-            // The ops of the graph are the ops of the region of the build.
+            // The graph gives the entry of the ops that the caller gives, and no
+            // copy of it.
             CRUCIBLE_TEST_ASSERT(kTest,
-                                 ::fixy::address_of(::fixy::to(graph->op(crucible::OpIndex{0})))
+                                 ::fixy::address_of(::fixy::to(graph->op(region_parts.ops(), crucible::OpIndex{0})))
                                      == ::fixy::address_of(region_parts.ops().get(0).expect("the region holds op 0")));
             built_parts = ::fixy::Option<BuiltRegion>::some(std::move(region_parts));
         });
@@ -561,7 +562,7 @@ void test_built_graph_owns_its_metadata() {
 static constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
 
 // The two counters of the metadata log count each record that the log held.
-// A run of ops whose metadata passes 2^32 records builds, the graph holds the
+// A run of ops whose metadata passes 2^32 records builds, the region holds the
 // metadata of each op, and the release moves the tail past 2^32.
 template <class Stopped>
 static void check_build_and_release_pass_two_to_the_32(crucible::test::RigLog& metalog, Stopped& stopped) noexcept {
@@ -587,7 +588,7 @@ static void check_build_and_release_pass_two_to_the_32(crucible::test::RigLog& m
                 work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph");
             for (uint32_t op = 0; op < OPS; ++op) {
                 const crucible::TensorMeta& first_meta =
-                    *graph->op(crucible::OpIndex{op})
+                    *graph->op(region_parts.ops(), crucible::OpIndex{op})
                          .output_metas()
                          .get(0)
                          .expect("a test reads an element at or past the count of its View");

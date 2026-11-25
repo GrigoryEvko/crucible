@@ -158,6 +158,36 @@ static void test_fanout_node_has_multiple_edges() {
     ::fixy::check::pass(kTest, "  test_fanout:                    PASSED\n");
 }
 
+// An op of a graph is an entry of the ops that the caller gives, and no copy of
+// it.  A run whose count is not the count of ops ends the process, and so does
+// an index at the count of ops.
+static void test_op_is_an_entry_of_the_ops_of_the_caller() {
+    const ::fixy::FixedArray<TraceEntry, 3> entries{};
+    const auto read_op = [&entries](uint32_t count, uint32_t index) {
+        return [&entries, count, index] {
+            const ::fixy::View<const TraceEntry> ops =
+                entries.view().window(0, count).expect("the test gives at most three ops");
+            TraceScratch scratch{Bytes{size_t{1} << 16}};
+            scratch.arena.with_epoch([ops, index](TraceScratch::Epoch& epoch) noexcept {
+                TraceGraph const& g = *build_trace_graph(::foundation::effects::testing::test().alloc, epoch,
+                                                         TraceGraphShape{.num_ops = 2}, ::fixy::View<const Edge>{});
+                const TraceEntry& op = g.op(ops, OpIndex{index});
+                CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(op))
+                                                == ::fixy::address_of(ops.get(index).expect("the index is below 2")));
+            });
+        };
+    };
+    read_op(2, 0)();
+    read_op(2, 1)();
+    constexpr ::fixy::TextView kOtherCount{"foundation: contract violation: ops.size() == num_ops"};
+    ::fixy::check::expect_dies(kTest, read_op(1, 0), kOtherCount);
+    ::fixy::check::expect_dies(kTest, read_op(3, 0), kOtherCount);
+    ::fixy::check::expect_dies(
+        kTest, read_op(2, 2),
+        ::fixy::TextView{"foundation: contract violation: ::foundation::decide::in_range<std::uint32_t>"});
+    ::fixy::check::pass(kTest, "  test_op_of_the_caller:          PASSED\n");
+}
+
 [[gnu::cold]] int main() {
     test_empty_graph();
     test_single_edge_fwd_rev();
@@ -165,6 +195,7 @@ static void test_fanout_node_has_multiple_edges() {
     test_edge_kind_preserved();
     test_offsets_prefix_sum_invariant();
     test_fanout_node_has_multiple_edges();
-    ::fixy::check::pass(kTest, "test_trace_graph: 6 groups, all passed\n");
+    test_op_is_an_entry_of_the_ops_of_the_caller();
+    ::fixy::check::pass(kTest, "test_trace_graph: 7 groups, all passed\n");
     return 0;
 }
