@@ -248,10 +248,14 @@ public:
     // Empties the log: each counter and each copy of a counter go back to
     // zero.  Every counter here moves backwards, which the monotonicity
     // contract otherwise forbids.  The door takes the two ends of the log,
-    // which only the frame door of the two ends of a split lends to one
-    // thread, so no other thread is in a frame of the log.
+    // so the thread is in the frames of the two tokens of the log, and no
+    // other thread is in a frame of it.  The store gate of the frame doors
+    // refuses a frame of one log in a frame of another one
+    // (neg_metalog_nested_frames_of_two_logs), and the door compares the
+    // owners of the two ends in each build too, because the reset would move
+    // the counters of a log whose consumer another thread can hold.
     static void reset(Producer& producer, Consumer& consumer) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-        CRUCIBLE_PRE(::fixy::same_object(producer.owner_, consumer.owner_));
+        CRUCIBLE_FATAL_INVARIANT(::fixy::same_object(producer.owner_, consumer.owner_));
         MetaLog& log = *producer.owner_;
         log.head_.reset_under_quiescence();
         log.tail_.reset_under_quiescence();

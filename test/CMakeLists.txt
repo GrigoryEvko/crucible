@@ -439,6 +439,11 @@ crucible_test(test_crucible_context)
 crucible_test(test_crucible_context_migration)
 crucible_test(test_crucible_context_migration_ignore test_crucible_context_migration.cpp)
 crucible_contract_ignore_target(test_crucible_context_migration_ignore)
+# The reset of a trace ring refuses the ends of two rings, under the contract
+# semantic of the preset and under the ignore semantic.
+crucible_test(test_reset_of_two_ends)
+crucible_test(test_reset_of_two_ends_ignore test_reset_of_two_ends.cpp)
+crucible_contract_ignore_target(test_reset_of_two_ends_ignore)
 # Lazy::get and the denominator bound of FractionalLattice refuse a violation
 # under the ignore semantic.
 crucible_test(test_fatal_invariants_under_ignore)
@@ -4140,6 +4145,11 @@ crucible_neg_compile_test(neg_tracering_reset_with_the_producer_end
 crucible_neg_compile_test(neg_metalog_reset_with_the_producer_end
   "cannot convert .crucible::MetaLog::Producer. .aka .fixy::concurrent::SpscEnd<crucible::MetaLog, fixy::concurrent::SpscSide::producer>.. to .crucible::MetaLog::Consumer&."
   "neg_metalog_reset_with_the_producer_end\\.cpp:18:[0-9]+: error: cannot convert")
+# A frame of one log does not nest in a frame of another one, so the reset
+# takes the ends of one log.
+crucible_neg_compile_test(neg_metalog_nested_frames_of_two_logs
+  "neg_metalog_nested_frames_of_two_logs\\.cpp:[0-9]+:[0-9]+: error: no matching function for call to .with_consumer\\("
+  "required for the satisfaction of .StoresNoBorrowOutside<Body>.")
 
 # Each pure gate also reads the source of the context (CtxHasPureSource).
 # A context that narrowed its row to the empty row with in_row keeps the
