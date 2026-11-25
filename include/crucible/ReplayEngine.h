@@ -286,10 +286,10 @@ private:
                     ? no_region_cursor_()
                     : ::foundation::core::CyclicCursor<const TraceEntry>::cycle_from(region.ops.view().begin());
         current_ = ::fixy::none;
-        // The precondition above already established what minting this view
-        // checks.  An initialized pool holds at least one slot.
-        const auto pool_view = pool.initialized_view_();
-        slot_table_ = pool.table(pool_view);
+        // The precondition above established that the pool is live, and an
+        // initialized pool holds at least one slot.  The engine is a friend of
+        // the pool, so it takes the column itself.
+        slot_table_ = pool.addresses_.view();
         check_slot_ids_(region.ops.view(), pool.num_slots());
         // Load the first operation's guard values, so the first advance finds
         // them here like every later one does.

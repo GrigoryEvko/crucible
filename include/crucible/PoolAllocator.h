@@ -58,6 +58,18 @@ namespace pool_state {
 struct Initialized {};
 }  // namespace pool_state
 
+// The address column of a pool, as with_addresses lends it.
+using AddressColumn = ::fixy::View<const ::fixy::Option<::fixy::RunAddress>>;
+
+// The body of with_addresses: it takes the column with no throw, its result
+// holds no borrow, and it keeps no linear value and no borrow outside.
+template <class Body>
+concept PoolColumnBody =
+    std::is_nothrow_invocable_v<Body&&, AddressColumn>
+    && (std::is_void_v<std::invoke_result_t<Body&&, AddressColumn>>
+        || ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, AddressColumn>>)
+    && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
+
 struct CRUCIBLE_OWNER PoolAllocator {
     PoolAllocator() = default;
     ~PoolAllocator() { destroy(); }
@@ -312,16 +324,23 @@ struct CRUCIBLE_OWNER PoolAllocator {
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // The column of addresses, for an inner loop that wants to hoist the
-    // indirection out of itself.  The View holds the count of slots, so each
-    // read of it checks its bound.  The view of the pool is required so that
-    // the table comes only from a live pool.  The table is read once for each
-    // activation of a region, not for each op.
-    [[nodiscard, gnu::pure]] CRUCIBLE_INLINE ::fixy::View<const ::fixy::Option<::fixy::RunAddress>>
-    table(InitializedView const&) const& noexcept {
-        return addresses_.view();
+    // indirection out of itself.  body gets the View of the column for the
+    // time of the call, and the door gives the result of body, which holds no
+    // borrow.  So no View of the column outlives the call.  A body that holds
+    // the pool or the context by a reference does not compile.  A change of
+    // the pool through a second name, such as a static pointer, is still open.
+    // The View holds the count of slots, so each read of it checks its bound.
+    // The view of the pool is required so that the column comes only from a
+    // live pool.
+    template <class Body>
+        requires PoolColumnBody<Body>
+    [[= ::foundation::linear::borrow_match{}]] [[nodiscard]] auto with_addresses(InitializedView const&,
+                                                                                 Body&& body) const& noexcept {
+        return static_cast<Body&&>(body)(AddressColumn{addresses_.view()});
     }
 
-    ::fixy::View<const ::fixy::Option<::fixy::RunAddress>> table(InitializedView const&) const&& =
+    template <class Body>
+    void with_addresses(InitializedView const&, Body&&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
     // The bytes of the pool for a read, and the address of its first byte (no

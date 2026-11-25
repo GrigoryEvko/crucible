@@ -4547,6 +4547,12 @@ crucible_neg_compile_test(neg_pool_allocator_bytes_write
 crucible_neg_compile_test(neg_pool_allocator_bytes_fill
   "no matching function for call to .fill\\(foundation::core::View<const unsigned char"
   "assignment to read-only type .const unsigned char.")
+crucible_neg_compile_test(neg_pool_allocator_addresses_escape
+  "no matching function for call to .crucible::PoolAllocator::with_addresses\\("
+  "PoolColumnBody<.*lambda.*>")
+crucible_neg_compile_test(neg_pool_allocator_addresses_of_temporary
+  "use of deleted function .void crucible::PoolAllocator::with_addresses\\("
+  "a temporary pool releases its memory at the end of the statement")
 crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
   "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
   "from expression of type .fixy::ScopedView<crucible::PoolAllocator, crucible::pool_state::Initialized>.")

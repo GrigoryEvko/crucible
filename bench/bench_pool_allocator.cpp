@@ -240,11 +240,11 @@ int main() {
         PoolAllocator pool;
         pool.init(::foundation::effects::testing::test().alloc, plan);
         auto pv = pool.mint_initialized_view(kVigilForeground);
-        const ::fixy::View<const ::fixy::Option<::fixy::RunAddress>> table = pool.table(pv);
-        bench::do_not_optimize(table);
         auto r = bench::run("table (100, a View)", [&] {
-            for (const ::fixy::Option<::fixy::RunAddress>& address : table)
-                bench::do_not_optimize(address);
+            pool.with_addresses(pv, [](crucible::AddressColumn column) noexcept {
+                for (const ::fixy::Option<::fixy::RunAddress>& address : column)
+                    bench::do_not_optimize(address);
+            });
         });
         pool.destroy();
         return r;
