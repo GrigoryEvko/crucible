@@ -1,0 +1,54 @@
+// Static locals of a linear class whose type argument is incomplete at the end
+// of the body, and that holds a linear sum (the statics of a linear sum, and the
+// waiting checks of plugin.h).
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A linear class that holds the values that its type argument names.
+template <class T>
+struct [[= ::foundation::linear::linear{}]] Cell {
+    int word = 0;
+    constexpr Cell() noexcept = default;
+    constexpr Cell(Cell&&) noexcept = default;
+    constexpr Cell& operator=(Cell&&) noexcept { return *this; }
+    Cell(const Cell&) = delete;
+};
+
+struct Holder;
+struct Plain;
+
+int read_early() noexcept {
+    static Cell<Holder> kept{};
+    static Cell<Plain> plain{};
+    return kept.word + plain.word;
+}
+
+struct Holder {
+    Option<Token> held{};
+};
+struct Plain {
+    int word = 0;
+};
+
+int read_late() noexcept {
+    static Cell<Holder> kept{};
+    static Cell<Plain> plain{};
+    return kept.word + plain.word;
+}
+
+}  // namespace planted

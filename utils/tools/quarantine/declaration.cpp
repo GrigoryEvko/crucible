@@ -2799,13 +2799,14 @@ void check_static_reach(tree decl, const std::string& entity) {
 }
 
 // Each static and thread_local local of the blocks from BLOCK on, and of
-// their subblocks, for the static kinds (check_static_reach).  Complexity:
-// O(blocks and declarations of the body).
+// their subblocks, for the static kinds (check_static_reach).  A local whose
+// type reaches an incomplete class waits for the end of the unit (the waiting
+// checks).  Complexity: O(blocks and declarations of the body).
 void check_static_reach_locals(tree block, const std::string& prefix, int depth) {
     for (; block != NULL_TREE && depth < kBlockDepth; block = BLOCK_CHAIN(block)) {
         for (tree decl = BLOCK_VARS(block); decl != NULL_TREE; decl = DECL_CHAIN(decl)) {
-            if (VAR_P(decl) && !DECL_THIS_EXTERN(decl)) {
-                check_static_reach(decl, prefix + "::" + simple_name(decl));
+            if (VAR_P(decl) && !DECL_THIS_EXTERN(decl) && decl_storage_duration(decl) != dk_auto) {
+                check_or_wait(decl, prefix + "::" + simple_name(decl), &check_static_reach);
             }
         }
         check_static_reach_locals(BLOCK_SUBBLOCKS(block), prefix, depth + 1);

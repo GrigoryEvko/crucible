@@ -1,0 +1,43 @@
+# Members and static objects whose type reaches a class that is incomplete when
+# the rule reads them, behind a pointer or in a type argument (the waiting checks
+# of plugin.h).  Each pair of one kind has a line before the class is complete
+# (28 to 44) and a line after it (59 to 75).  The plugin that reads each class
+# and each object one time gives only the second line of each pair.  A pointer
+# member is also a line of the kind raw-pointer-object, and the closure that the
+# plant names is a brand outside its scope.  The check of an open class reads an
+# instance that no other code names, and the line of that instance does not wait
+# (83).  The compile collected runs a garbage collection at each opportunity and
+# gives the same findings: no collection frees the subject of a check that
+# waits here.
+
+compile early src/early.cpp linear-shapes=on errors=early
+flag early -freflection
+exit early fail
+compile collected src/early.cpp linear-shapes=on findings=early errors=early
+flag collected -freflection --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
+exit collected fail
+finding early brand-escape escaped-alias src/early.cpp:21:7 | planted: Mark, the brand of src/early.cpp:21
+finding early brand-escape epoch-member src/early.cpp:28:19 | planted::EarlyPointer: kept, planted::Epoch
+finding early brand-escape epoch-member src/early.cpp:31:24 | planted::EarlyArgument: kept, planted::Epoch
+finding early brand-escape escaped-member src/early.cpp:34:18 | planted::EarlyMark: kept, the brand of src/early.cpp:21
+finding early brand-escape epoch-static src/early.cpp:37:41 | planted::EarlyStaticMember: kept, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:39:26 | planted: early_epoch, planted::Epoch
+finding early brand-escape scope-static src/early.cpp:40:25 | planted: early_mark, the brand of src/early.cpp:21
+finding early brand-escape arena-member src/early.cpp:41:23 | planted: early_arena, an object of the arena planted::Arena that is no member of the class of planted::ArenaTag
+finding early brand-escape epoch-static src/early.cpp:44:37 | planted::read_early: early_local, planted::Epoch
+finding early brand-escape escaped-alias src/early.cpp:53:11 | planted::MarkCarrier: brand_type, the brand of src/early.cpp:21
+finding early brand-escape epoch-member src/early.cpp:59:19 | planted::LatePointer: kept, planted::Epoch
+finding early brand-escape epoch-member src/early.cpp:62:24 | planted::LateArgument: kept, planted::Epoch
+finding early brand-escape escaped-member src/early.cpp:65:18 | planted::LateMark: kept, the brand of src/early.cpp:21
+finding early brand-escape epoch-static src/early.cpp:68:41 | planted::LateStaticMember: kept, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:70:26 | planted: late_epoch, planted::Epoch
+finding early brand-escape scope-static src/early.cpp:71:25 | planted: late_mark, the brand of src/early.cpp:21
+finding early brand-escape arena-member src/early.cpp:72:23 | planted: late_arena, an object of the arena planted::Arena that is no member of the class of planted::ArenaTag
+finding early brand-escape epoch-static src/early.cpp:75:37 | planted::read_late: late_local, planted::Epoch
+finding early brand-escape epoch-member src/early.cpp:83:17 | planted::HoldsEpoch: kept, planted::Epoch
+finding early quarantine raw-pointer-object src/early.cpp:87:12 | open
+finding early quarantine raw-pointer-object src/early.cpp:11:8 | object
+finding early quarantine raw-pointer-object src/early.cpp:28:19 | kept
+finding early quarantine raw-pointer-object src/early.cpp:34:18 | kept
+finding early quarantine raw-pointer-object src/early.cpp:59:19 | kept
+finding early quarantine raw-pointer-object src/early.cpp:65:18 | kept

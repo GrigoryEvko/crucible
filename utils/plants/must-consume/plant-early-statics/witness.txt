@@ -1,0 +1,16 @@
+# A static local of a linear class whose type argument holds a linear sum, when
+# the argument is incomplete at the end of the body (36, the waiting checks of
+# plugin.h), and its twin after the argument (49).  The plugin that reads each
+# static local one time gives only the twin.  The static local of a class whose
+# argument holds no sum (37 and 50) gives no line of the rule.  Each object is
+# also the kind unmarked-static of the rule process-wide-state.
+
+compile early src/early.cpp must-consume=on errors=early
+flag early -freflection
+exit early fail
+finding early must-consume option-static src/early.cpp:36:25 | planted::read_early()::kept (planted::Cell<planted::Holder>)
+finding early process-wide-state unmarked-static src/early.cpp:36:25 | planted::read_early()::kept
+finding early process-wide-state unmarked-static src/early.cpp:37:24 | planted::read_early()::plain
+finding early must-consume option-static src/early.cpp:49:25 | planted::read_late()::kept (planted::Cell<planted::Holder>)
+finding early process-wide-state unmarked-static src/early.cpp:49:25 | planted::read_late()::kept
+finding early process-wide-state unmarked-static src/early.cpp:50:24 | planted::read_late()::plain

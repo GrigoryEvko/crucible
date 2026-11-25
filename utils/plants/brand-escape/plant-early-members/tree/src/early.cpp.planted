@@ -1,0 +1,91 @@
+// Members and static objects whose type reaches a class that is incomplete when
+// the rule reads them (the waiting checks of plugin.h).  Each name with Early or
+// early comes before that class is complete, and its twin comes after it.
+#include <foundation/Brand.h>
+
+namespace planted {
+
+// A class that names its argument behind a pointer.
+template <class T>
+struct Slot {
+    T* object = nullptr;
+};
+
+// An arena with the shape of BumpArena.
+template <class Tag>
+struct [[= ::foundation::brand::branded_arena{}]] Arena {
+    unsigned bytes = 0;
+};
+
+struct [[= ::foundation::brand::epoch_brand{}]] Epoch {};
+using Mark = decltype([] [[= ::foundation::brand::scope_brand{}]] () noexcept {});
+
+struct EpochCarrier;
+struct MarkCarrier;
+struct ArenaTag;
+
+struct EarlyPointer {
+    EpochCarrier* kept = nullptr;
+};
+struct EarlyArgument {
+    Slot<EpochCarrier> kept{};
+};
+struct EarlyMark {
+    MarkCarrier* kept = nullptr;
+};
+struct EarlyStaticMember {
+    static constexpr Slot<EpochCarrier> kept{};
+};
+Slot<EpochCarrier> const early_epoch{};
+Slot<MarkCarrier> const early_mark{};
+Arena<ArenaTag> const early_arena{};
+
+unsigned read_early() noexcept {
+    static Slot<EpochCarrier> const early_local{};
+    return early_local.object == nullptr ? 1U : 0U;
+}
+
+struct EpochCarrier {
+    using brand_type = Epoch;
+    int word = 0;
+};
+struct MarkCarrier {
+    using brand_type = Mark;
+    int word = 0;
+};
+struct [[= ::foundation::brand::arena_member_brand{}]] ArenaTag final {};
+
+struct LatePointer {
+    EpochCarrier* kept = nullptr;
+};
+struct LateArgument {
+    Slot<EpochCarrier> kept{};
+};
+struct LateMark {
+    MarkCarrier* kept = nullptr;
+};
+struct LateStaticMember {
+    static constexpr Slot<EpochCarrier> kept{};
+};
+Slot<EpochCarrier> const late_epoch{};
+Slot<MarkCarrier> const late_mark{};
+Arena<ArenaTag> const late_arena{};
+
+unsigned read_late() noexcept {
+    static Slot<EpochCarrier> const late_local{};
+    return late_local.object == nullptr ? 1U : 0U;
+}
+
+// The check of a class that waits reads an instance that no other code names.
+// The instance is complete, so its findings do not wait.
+template <class T>
+struct HoldsEpoch {
+    Slot<Epoch> kept{};
+};
+struct Never;
+struct NamesInstance {
+    Never* open = nullptr;
+    static constexpr HoldsEpoch<int> instance{};
+};
+
+}  // namespace planted

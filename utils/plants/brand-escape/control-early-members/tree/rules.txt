@@ -1,0 +1,6 @@
+# The rule table of the control control-early-members of the rule brand-escape.
+# The unit of src/ is quarantined, and it can name the marks of the brands.
+
+admit foundation::brand | the marks of an arena and of an epoch brand, which the planted classes state
+
+quarantine src/

@@ -47,4 +47,13 @@ inline bool local_after_the_argument() {
     return held.empty();
 }
 
+// A member of a class that a later line completes the argument of.
+struct Last;
+struct HoldsLast {
+    std::vector<Last> kept;
+};
+struct Last {
+    Token token{1};
+};
+
 }  // namespace planted

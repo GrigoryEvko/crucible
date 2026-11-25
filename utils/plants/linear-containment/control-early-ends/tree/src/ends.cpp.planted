@@ -1,0 +1,35 @@
+// A holder that cannot move and whose linear part ends at a door of its own
+// scope, when a type argument of the part is incomplete at the holder.  The
+// unit completes the argument later, and the argument holds no sum, so the end
+// of the part is a door at the end of the unit (the waiting checks of plugin.h).
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+// A class whose end of the scope is a door, unless its argument holds a sum.
+template <class T>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] Lease {
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+struct Plain;
+
+struct Holder {
+    Holder() = default;
+    Holder(Holder&&) = delete;
+    Lease<Plain> lease;
+};
+
+struct Plain {
+    int word = 0;
+};
+
+bool uses(Holder const&) noexcept { return true; }
+
+}  // namespace planted

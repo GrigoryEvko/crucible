@@ -566,7 +566,10 @@
 //     The rules of the shapes read each class, each signature and each body
 //     of the bodies that must-consume reads (the bodies), with the same places.
 //     A class is read at PLUGIN_FINISH_TYPE, and an instance of a template
-//     where a declaration or a body names it.  The rules:
+//     where a declaration or a body names it.  A class, and an object of static
+//     or thread storage duration, whose type reaches an incomplete class is
+//     read again at the end of the unit (the waiting checks of plugin.h).  The
+//     rules:
 //       linear-containment  a class that holds a linear part, cannot move and
 //                           has no door at the end of its scope
 //                           (pinned-holder).  The end of the scope of such a
@@ -5255,7 +5258,9 @@ tree unbound_brand(tree type, tree scope) {
 
 // True when the class TYPE carries the annotation foundation::brand::NAME, or
 // the pattern of its class template does.  A brand in a template argument is
-// often never instantiated, and such a specialization holds no attribute.
+// often never instantiated, and such a specialization holds no attribute.  A
+// class whose definition comes later can carry the annotation then, so the
+// check in progress is open (the waiting checks).
 bool carries_brand_mark(tree type, tree name) {
     if (type == NULL_TREE || !TYPE_P(type)) {
         return false;
@@ -5267,13 +5272,21 @@ bool carries_brand_mark(tree type, tree name) {
     if (carries_annotation(TYPE_ATTRIBUTES(type), name, linear_names.brand)) {
         return true;
     }
+    tree stating = type;
     tree info = CLASSTYPE_TEMPLATE_INFO(type);
-    if (info == NULL_TREE || TREE_CODE(TI_TEMPLATE(info)) != TEMPLATE_DECL) {
-        return false;
+    if (info != NULL_TREE && TREE_CODE(TI_TEMPLATE(info)) == TEMPLATE_DECL) {
+        tree pattern = TREE_TYPE(DECL_TEMPLATE_RESULT(most_general_template(TI_TEMPLATE(info))));
+        if (pattern != NULL_TREE && pattern != type && CLASS_TYPE_P(pattern)) {
+            if (carries_annotation(TYPE_ATTRIBUTES(pattern), name, linear_names.brand)) {
+                return true;
+            }
+            stating = pattern;
+        }
     }
-    tree pattern = TREE_TYPE(DECL_TEMPLATE_RESULT(most_general_template(TI_TEMPLATE(info))));
-    return pattern != NULL_TREE && pattern != type && CLASS_TYPE_P(pattern)
-        && carries_annotation(TYPE_ATTRIBUTES(pattern), name, linear_names.brand);
+    if (!COMPLETE_TYPE_P(stating)) {
+        ++unread_parts;
+    }
+    return false;
 }
 
 // True when TYPE is an epoch brand: a class with the annotation epoch_brand,
@@ -5477,6 +5490,7 @@ tree reached_member_arena(tree type, std::set<std::pair<tree, bool>>& seen, bool
         });
     }
     if (!COMPLETE_TYPE_P(type)) {
+        ++unread_parts;
         return found;
     }
     for (tree field = TYPE_FIELDS(type); found == NULL_TREE && field != NULL_TREE; field = DECL_CHAIN(field)) {
@@ -5636,7 +5650,9 @@ struct LinearParts {
     bool has_part = false;
     // The end of the scope of each linear part is a door, and no class that is
     // complete later changes that.  The destructor of a holder that cannot move
-    // then ends each part as the door of the part does.
+    // then ends each part as the door of the part does.  A part whose end is
+    // open at the end of the unit names a class that the unit does not
+    // complete, so it counts as a part with no door.
     bool each_part_ends = true;
 };
 
@@ -5654,15 +5670,9 @@ LinearParts linear_parts_of(tree type) {
 
 void check_class(tree type, int depth = 0);
 
-// The checks of an object with static or thread storage duration: a brand in
-// it escapes each run of its mint site, and a class of the library with a
-// linear argument drops its values.  A scope brand gives the kind
-// scope-static, which is an error in each mode (the scope brands).
-void check_static_object(tree decl, const std::string& owner) {
+// The findings of check_static_object.
+void judge_static_object(tree decl, const std::string& owner) {
     tree type = TREE_TYPE(decl);
-    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
-        return;
-    }
     std::string entity = owner + ": " + simple_name(decl);
     std::vector<tree> held;
     collect_brands(type, held);
@@ -5676,6 +5686,20 @@ void check_static_object(tree decl, const std::string& owner) {
                      entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
     }
     check_arena_object(decl, entity, DECL_SOURCE_LOCATION(decl), true);
+}
+
+// The checks of an object with static or thread storage duration: a brand in
+// it escapes each run of its mint site, and a class of the library with a
+// linear argument drops its values.  A scope brand gives the kind
+// scope-static, which is an error in each mode (the scope brands).  OWNER is
+// the text of the scope that holds the object.  An object whose type reaches an
+// incomplete class waits for the end of the unit (the waiting checks).
+void check_static_object(tree decl, const std::string& owner) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
+        return;
+    }
+    check_or_wait(decl, owner, &judge_static_object);
     check_class(type);
 }
 
@@ -5692,35 +5716,9 @@ void check_alias(tree decl, tree scope, const std::string& owner) {
     }
 }
 
-// The class rules: linear-containment, linear-forge and the members of
-// brand-escape, for one complete class that is no pattern (the shapes).  The
-// walk goes on into the class of each base and each field.  Complexity: each
-// class one time in each unit.
-void check_class(tree type, int depth) {
-    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(element_type_of(type)) : NULL_TREE;
-    if (type == NULL_TREE || !CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || LAMBDA_TYPE_P(type) || depth > kTypeDepth
-        || uses_template_parms(type) || !checked_classes.insert(TYPE_UID(type)).second) {
-        return;
-    }
-    tree decl = TYPE_MAIN_DECL(type);
-    if (decl == NULL_TREE || in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
-        return;
-    }
-    if (tree binfo = TYPE_BINFO(type)) {
-        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-            check_class(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
-        }
-    }
-    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-        if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
-            check_class(TREE_TYPE(field), depth + 1);
-        }
-    }
-    if (!is_reported_for(type)) {
-        return;
-    }
-    location_t location = DECL_SOURCE_LOCATION(decl);
-    std::string name = qualified_name(decl);
+// The findings of check_class for the class TYPE with the name NAME.
+void judge_class(tree type, const std::string& name) {
+    location_t location = DECL_SOURCE_LOCATION(TYPE_MAIN_DECL(type));
     TypeFacts facts = facts_of(type);
     // A union ends no member at its end, and its owner chooses the active
     // member: the rule linear-forge reads it.
@@ -5762,6 +5760,37 @@ void check_class(tree type, int depth) {
                    && !DECL_SELF_REFERENCE_P(member)) {
             check_alias(member, type, name);
         }
+    }
+}
+
+// The class rules: linear-containment, linear-forge and the members of
+// brand-escape, for one complete class that is no pattern (the shapes).  The
+// walk goes on into the class of each base and each field.  A class with a part
+// that reaches an incomplete class waits for the end of the unit (the waiting
+// checks).  Complexity: each class one time in each unit, and one time more
+// when it waits.
+void check_class(tree type, int depth) {
+    type = type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(element_type_of(type)) : NULL_TREE;
+    if (type == NULL_TREE || !CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || LAMBDA_TYPE_P(type) || depth > kTypeDepth
+        || uses_template_parms(type) || !checked_classes.insert(TYPE_UID(type)).second) {
+        return;
+    }
+    tree decl = TYPE_MAIN_DECL(type);
+    if (decl == NULL_TREE || in_library_file_at(DECL_SOURCE_LOCATION(decl))) {
+        return;
+    }
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            check_class(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+        }
+    }
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && TREE_TYPE(field) != NULL_TREE) {
+            check_class(TREE_TYPE(field), depth + 1);
+        }
+    }
+    if (is_reported_for(type)) {
+        check_or_wait(type, qualified_name(decl), &judge_class);
     }
 }
 

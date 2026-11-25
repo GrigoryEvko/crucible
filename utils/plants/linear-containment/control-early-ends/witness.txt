@@ -1,0 +1,8 @@
+# A holder that cannot move and whose part ends at a door, when the unit
+# completes a type argument of the part after the holder, gives no line.  A check
+# that reads the holder one time takes the end of the part as no door, because
+# the argument can hold a sum, and gives a pinned holder.
+
+compile ends src/ends.cpp linear-shapes=on
+flag ends -freflection
+exit ends pass

@@ -1,0 +1,74 @@
+// Members and static objects whose type reaches a class that is incomplete when
+// the rule reads them, and that hold no brand at the end of the unit (the waiting
+// checks of plugin.h): a class that the unit never completes, a class with no
+// brand, a carrier that a type argument binds, and a tag with no mark.
+#include <foundation/Brand.h>
+
+namespace planted {
+
+// A class that names its argument behind a pointer.
+template <class T>
+struct Slot {
+    T* object = nullptr;
+};
+
+// A class that holds nothing of its argument.
+template <class T>
+struct Names {
+    int word = 0;
+};
+
+// An arena with the shape of BumpArena.
+template <class Tag>
+struct [[= ::foundation::brand::branded_arena{}]] Arena {
+    unsigned bytes = 0;
+};
+
+struct [[= ::foundation::brand::epoch_brand{}]] Epoch {};
+
+struct Never;
+struct Plain;
+struct EpochCarrier;
+struct PlainTag;
+
+struct NamesNever {
+    Never* pointer = nullptr;
+    Slot<Never> slot{};
+};
+struct NamesPlain {
+    Plain* pointer = nullptr;
+    Slot<Plain> slot{};
+    static constexpr Slot<Plain> kept{};
+};
+Slot<Never> const kept_never{};
+Slot<Plain> const kept_plain{};
+Arena<PlainTag> const kept_arena{};
+
+// The argument of the class binds the epoch of its member, when the argument is
+// complete.
+template <class T>
+struct Bound {
+    Names<Epoch> epoch{};
+    Names<T> object{};
+};
+struct NamesBound {
+    using brand_type = Epoch;
+    Bound<EpochCarrier> bound{};
+};
+
+bool keep() noexcept {
+    static constexpr Slot<Plain> kept_local{};
+    return kept_local.object == nullptr && NamesPlain::kept.object == nullptr && kept_plain.object == nullptr
+        && kept_never.object == nullptr && kept_arena.bytes == 0U;
+}
+
+struct Plain {
+    int word = 0;
+};
+struct EpochCarrier {
+    using brand_type = Epoch;
+    int word = 0;
+};
+struct PlainTag final {};
+
+}  // namespace planted

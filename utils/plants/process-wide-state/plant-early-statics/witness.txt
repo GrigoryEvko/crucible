@@ -1,0 +1,22 @@
+# Static locals whose type reaches a class that is incomplete at the end of the
+# body (the waiting checks of plugin.h).  Each pair has a line before the class
+# is complete (22, 26 and 30) and a line after it (61, 65 and 69): a loan key, a
+# thread-bound end and a borrow.  The plugin that reads each static local one
+# time gives only the second line of each pair.  An owner of a class that the
+# unit never completes, an owner of a class that holds nothing, and an object
+# with a constant initializer (36, 37 and 38) give no line of these kinds.  Each
+# object that can change is also the kind unmarked-static.
+
+compile early src/early.cpp errors=early
+flag early -freflection
+exit early fail
+finding early process-wide-state loan-key-static src/early.cpp:22:25 | planted::read_early_key()::kept
+finding early process-wide-state unmarked-static src/early.cpp:22:25 | planted::read_early_key()::kept
+finding early process-wide-state thread-bound-static src/early.cpp:26:31 | planted::read_early_end()::kept
+finding early view-escape static-borrow src/early.cpp:30:28 | planted::read_early_borrow()::kept
+finding early process-wide-state unmarked-static src/early.cpp:30:28 | planted::read_early_borrow()::kept
+finding early process-wide-state loan-key-static src/early.cpp:61:25 | planted::read_late_key()::kept
+finding early process-wide-state unmarked-static src/early.cpp:61:25 | planted::read_late_key()::kept
+finding early process-wide-state thread-bound-static src/early.cpp:65:31 | planted::read_late_end()::kept
+finding early view-escape static-borrow src/early.cpp:69:28 | planted::read_late_borrow()::kept
+finding early process-wide-state unmarked-static src/early.cpp:69:28 | planted::read_late_borrow()::kept

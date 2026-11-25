@@ -48,6 +48,9 @@
 //                            PLUGIN_FINISH_UNIT.
 //     PLUGIN_GGC_START       each garbage collection clears the caches that a
 //                            tree keys (the collections of plugin.h).
+//     PLUGIN_GGC_MARKING     each garbage collection drops the waiting checks
+//                            of a subject that it frees (the waiting checks
+//                            of plugin.h).
 //     The other sources register the hooks of their rules.
 //
 // Arguments (-fplugin-arg-crucible_quarantine-NAME=VALUE)
@@ -475,6 +478,51 @@ void report_unit_fact(const Finding& finding) {
              kind_action(finding.kind));
 }
 
+// A check that waits for the end of the unit (the waiting checks of plugin.h).
+struct WaitingCheck {
+    tree subject = NULL_TREE;
+    std::string name;
+    void (*check)(tree subject, const std::string& name) = nullptr;
+    std::vector<HeldFinding> findings;  // of the first run
+};
+
+// PLUGIN_GGC_MARKING drops the record of a subject with no mark.
+std::vector<WaitingCheck> waiting_checks;
+
+void add_held_findings(const std::vector<HeldFinding>& findings) {
+    for (const HeldFinding& finding : findings) {
+        add_finding(finding.kind, finding.pending, finding.place, finding.entity);
+    }
+}
+
+// Runs each check that waits, at the end of the unit.  After a compile error
+// the findings of the first run count, because the class rules read no class
+// then.  Complexity: linear in the open checks, times the walk of each one.
+void run_waiting_checks() {
+    std::vector<WaitingCheck> const checks = std::move(waiting_checks);
+    waiting_checks.clear();
+    for (const WaitingCheck& waiting : checks) {
+        if (seen_error()) {
+            add_held_findings(waiting.findings);
+        } else {
+            waiting.check(waiting.subject, waiting.name);
+        }
+    }
+}
+
+// PLUGIN_GGC_MARKING: a subject with no mark is free after the collection.  No
+// code of the unit names it, so the findings of its first run count.
+// Complexity: linear in the open checks.
+void on_marking(void*, void*) {
+    auto const is_freed = [](const WaitingCheck& waiting) { return !ggc_marked_p(waiting.subject); };
+    for (const WaitingCheck& waiting : waiting_checks) {
+        if (is_freed(waiting)) {
+            add_held_findings(waiting.findings);
+        }
+    }
+    waiting_checks.erase(std::remove_if(waiting_checks.begin(), waiting_checks.end(), is_freed), waiting_checks.end());
+}
+
 // The parse_file hook of the front end, before parse_and_walk wraps it.
 void (*front_end_parse_file)() = nullptr;
 
@@ -486,6 +534,8 @@ void walk_unit() {
         return;
     }
     was_unit_walked = true;
+    state.is_unit_parsed = true;
+    run_waiting_checks();
     walk_declarations();
     finish_expression_rules();
     finish_niche_access();
@@ -544,6 +594,28 @@ void on_collection(void*, void*) {
 }
 
 }  // namespace
+
+void check_or_wait(tree subject, const std::string& name, void (*check)(tree subject, const std::string& name)) {
+    if (state.is_unit_parsed) {
+        check(subject, name);
+        return;
+    }
+    std::vector<HeldFinding> findings;
+    std::vector<HeldFinding>* const outer_findings = std::exchange(state.held_findings, &findings);
+    unsigned const outer_parts = std::exchange(unread_parts, 0U);
+    check(subject, name);
+    bool const is_open = unread_parts != 0;
+    // A check inside another check gives its findings also when the other check
+    // waits: the second run of the other check does not run it again.
+    state.held_findings = nullptr;
+    if (is_open) {
+        waiting_checks.push_back(WaitingCheck{subject, name, check, std::move(findings)});
+    } else {
+        add_held_findings(findings);
+    }
+    state.held_findings = outer_findings;
+    unread_parts = outer_parts;
+}
 
 tree annotation_class(tree attribute) {
     if (!annotation_p(attribute)) {
@@ -972,5 +1044,6 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_callback(plugin_info->base_name, PLUGIN_FINISH_UNIT, on_finish_unit, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);
+    register_callback(plugin_info->base_name, PLUGIN_GGC_MARKING, on_marking, nullptr);
     return 0;
 }

@@ -1,0 +1,73 @@
+// Static locals whose type reaches a class that is incomplete at the end of the
+// body (the waiting checks of plugin.h).  Each function read_early_X comes before
+// that class is complete, and its twin read_late_X comes after it.
+#include <foundation/Transfer.h>
+#include <foundation/core/Frame.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct KeyNode;
+struct EndNode;
+struct BorrowNode;
+struct Never;
+struct Plain;
+
+int read_early_key() noexcept {
+    static Own<KeyNode> kept{};
+    return kept.word;
+}
+int read_early_end() noexcept {
+    static Own<EndNode> const kept{};
+    return kept.word;
+}
+int read_early_borrow() noexcept {
+    static Own<BorrowNode> kept{};
+    return kept.word;
+}
+
+// A class that the unit never completes, a class that holds nothing, and an
+// object with a constant initializer, which can hold a borrow.
+int read_other() noexcept {
+    static Own<Never> const never{};
+    static Own<Plain> const plain{};
+    static constexpr Own<BorrowNode> constant{};
+    return never.word + plain.word + constant.word;
+}
+
+struct [[= ::foundation::core::loan_key_mark{}]] KeyNode {
+    int word = 0;
+};
+struct [[= ::foundation::transfer::thread_bound{}]] EndNode {
+    int word = 0;
+};
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+struct BorrowNode {
+    Borrow<int> borrow;
+};
+struct Plain {
+    int word = 0;
+};
+
+int read_late_key() noexcept {
+    static Own<KeyNode> kept{};
+    return kept.word;
+}
+int read_late_end() noexcept {
+    static Own<EndNode> const kept{};
+    return kept.word;
+}
+int read_late_borrow() noexcept {
+    static Own<BorrowNode> kept{};
+    return kept.word;
+}
+
+}  // namespace planted

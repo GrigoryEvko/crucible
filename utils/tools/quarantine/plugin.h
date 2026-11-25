@@ -692,7 +692,7 @@
 //         costs only a second computation, and a finding counts one time for
 //         each place
 //       * a record that PLUGIN_GGC_MARKING drops when its tree has no mark
-//         (definition.cpp, the reads)
+//         (definition.cpp, the reads, and the waiting checks below)
 //       * a key that no collection reuses: a DECL_UID, a TYPE_UID, a location,
 //         a text, a FileEntry, or the file name of a line map, which libcpp
 //         keeps to the end of the compile.  The facts of the accessors and the
@@ -768,6 +768,11 @@ namespace crucible_plugin {
 inline constexpr int kMacroDepth = 1 << 16;
 inline constexpr int kTypeDepth = 4096;
 
+// The number of the parts that the check in progress could not read: an
+// incomplete class, or a part behind a bound.  A check that reached one is
+// open (the waiting checks).
+inline unsigned unread_parts = 0;
+
 // The path of one walk of types, which tells when the answer of a class is
 // final.  A walk reads the parts of each class one time.  A type argument can
 // name a class of the path, whose answer is open there, so each class of the
@@ -796,7 +801,10 @@ public:
 
     // The last class of the path reaches a part that the walk cannot read: an
     // incomplete class, or a part behind a bound.
-    void reach_unread_part() { wait_for(kUnread); }
+    void reach_unread_part() {
+        ++unread_parts;
+        wait_for(kUnread);
+    }
 
     [[nodiscard]] bool has_unread_part() const { return has_unread_part_; }
 
@@ -2408,6 +2416,14 @@ struct Finding {
     std::string entity;
 };
 
+// A finding that a check holds until its answer is final (the waiting checks).
+struct HeldFinding {
+    Kind kind = Kind::contract_specifier;
+    const AdmitRow* pending = nullptr;
+    Place place;
+    std::string entity;
+};
+
 // The kind of a finding as the report spells it: the name of its kind, and
 // for the kind replace-pending also the entry of its admit row.
 inline std::string kind_text(const Finding& finding) {
@@ -2561,6 +2577,11 @@ struct State {
     std::vector<Finding> findings;
     std::unordered_set<std::string> finding_keys;
     std::vector<Region> regions;
+
+    // The waiting checks: the findings of the check in progress, or null, and
+    // whether the front end parsed the unit.
+    std::vector<HeldFinding>* held_findings = nullptr;
+    bool is_unit_parsed = false;
 
     // The admit row of each name entry, and of each header entry by its name.
     std::unordered_map<std::string, const AdmitRow*> admitted_names;
@@ -2960,8 +2981,13 @@ inline bool counts_in_unit(const Place& place) {
 // One finding for each kind and place.  Two names at one place, such as a type
 // and its member function in one expression, are two findings, and so are two
 // headers that one place includes (is_name_kind).  PENDING is the admit row of
-// a finding of the kind replace-pending, or null.
+// a finding of the kind replace-pending, or null.  The finding of a check in
+// progress waits for the end of that check (the waiting checks).
 inline void add_finding(Kind kind, const AdmitRow* pending, const Place& place, const std::string& entity) {
+    if (state.held_findings != nullptr) {
+        state.held_findings->push_back(HeldFinding{kind, pending, place, entity});
+        return;
+    }
     std::string kind_spelling = pending != nullptr ? pending->pending_kind : std::string(kind_name(kind));
     std::string key = kind_spelling + ' ' + place.file->relative + ':' + std::to_string(place.line) + ':'
                     + std::to_string(place.column) + (is_name_kind(kind) ? ' ' + entity : std::string{});
@@ -2978,6 +3004,20 @@ inline void add_finding(Kind kind, const AdmitRow* pending, const Place& place, 
     finding.entity = entity;
     state.findings.push_back(std::move(finding));
 }
+
+// ── The waiting checks ──────────────────────────────────────────────────
+
+// A check of a class or of an object reads the classes that a type reaches.  A
+// class behind a pointer or in a type argument can be incomplete at that time,
+// and the unit can complete it later.  Such a check is open, and it waits: it
+// holds its findings, and the end of the unit runs it again, where each class
+// that the unit completes is complete (plugin.cpp, run_waiting_checks).  Only
+// the last run gives the findings.
+//
+// Runs CHECK about SUBJECT, a class or a declaration, and runs it again at the
+// end of the unit when it is open.  NAME is the part of the entity that the
+// caller gives.  A check that runs inside another check waits by itself.
+void check_or_wait(tree subject, const std::string& name, void (*check)(tree subject, const std::string& name));
 
 // The macro assert of a system header outside the root.  A file under the
 // root that marks itself as a system header and defines assert does not hide

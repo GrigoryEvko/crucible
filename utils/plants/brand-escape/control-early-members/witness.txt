@@ -1,0 +1,12 @@
+# Members and static objects whose type reaches a class that is incomplete when
+# the rule reads them, and that hold no brand at the end of the unit, give no
+# line of the rule.  A check that reads each class one time gives a line at the
+# member of Bound (51), because its argument binds the epoch only when it is
+# complete.  The pointer members are lines of the kind raw-pointer-object.
+
+compile early src/early.cpp linear-shapes=on
+flag early -freflection
+exit early pass
+finding early quarantine raw-pointer-object src/early.cpp:12:8 | object
+finding early quarantine raw-pointer-object src/early.cpp:35:12 | pointer
+finding early quarantine raw-pointer-object src/early.cpp:39:12 | pointer
