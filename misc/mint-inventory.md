@@ -201,7 +201,7 @@ that the axis does not apply to the row.
 | `mint_tagged(T0_1)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_tagged(foundation::core::ForeignText)` | `include/fixy/Tagged.h` | Y | Y | Y | Y | token | · | HS14: 21 |
 | `mint_version_source` | `include/fixy/EpochVersioned.h` | Y | Y | Y | Y | ctx | Y | HS14: 2 |
-| `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 9 |
+| `mint_view` | `include/fixy/ScopedView.h` | Y | Y | Y | Y | token | · | HS14: 10 |
 | `mint_wide_monotonic` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 3 |
 | `mint_write_once` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 5 |
 | `mint_write_once_non_null` | `include/fixy/Mutation.h` | Y | Y | Y | Y | token | · | HS14: 7 |
@@ -334,7 +334,7 @@ that the axis does not apply to the row.
 | `mint_box(T0_1, T0_2&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_box(foundation::core::Hole<T0_1, T0_2>&&, T0_3&& ...)` | `include/foundation/core/Ref.h` | Y | - | Y | Y | token | · | HS14: 31 |
 | `mint_branded_scope` | `include/foundation/core/Branded.h` | Y | Y | Y | Y | token | · | HS14: 9 |
-| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 15 |
+| `mint_bump_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 16 |
 | `mint_c_text` | `include/foundation/core/Text.h` | Y | Y | Y | · | token | · | HS14: 3 |
 | `mint_epoch_arena` | `include/foundation/core/BumpArena.h` | Y | - | Y | Y | token | · | HS14: 17 |
 | `mint_erased_address` | `include/foundation/core/CallRef.h` | Y | Y | Y | Y | token | · | HS14: 2 |

@@ -139,7 +139,7 @@ public:
         requires(sizeof...(Refused) == 0)
              && ::foundation::effects::CtxOwnsCapability<Ctx, ::foundation::effects::Effect::Div>
              && std::is_invocable_r_v<T, F>
-    [[nodiscard]] ::foundation::core::Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>
+    [[nodiscard]] ::foundation::core::Ref<T, ::foundation::core::carrier_brand_t<T, Fresh>>
     get_or_init(Ctx const& ctx, F&& f) noexcept {
         // Exceptions are off for the build, so no path here throws.
         // Both specifiers are unconditional rather than derived from F.
@@ -147,8 +147,7 @@ public:
         // not itself declared noexcept, and the warning that infers
         // from the body then flags the mismatch.
         once_.call(ctx, [&]() noexcept { ::new(static_cast<void*>(storage_.data())) T(std::forward<F>(f)()); });
-        return ::foundation::core::LazyRefDoor::lend_<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(
-            *storage_ptr_());
+        return ::foundation::core::LazyRefDoor::lend_<::foundation::core::carrier_brand_t<T, Fresh>>(*storage_ptr_());
     }
 
     // The value as a Ref, or none before the end of the build.  Another
@@ -156,10 +155,9 @@ public:
     // One acquire load of the gate.
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
-    [[nodiscard]] ::foundation::core::Option<
-        ::foundation::core::Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>>
+    [[nodiscard]] ::foundation::core::Option<::foundation::core::Ref<T, ::foundation::core::carrier_brand_t<T, Fresh>>>
     get() & noexcept {
-        using Brand = ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>;
+        using Brand = ::foundation::core::carrier_brand_t<T, Fresh>;
         using Held = ::foundation::core::Ref<T, Brand>;
         if (!once_.done()) return ::foundation::core::Option<Held>{::foundation::core::none};
         return ::foundation::core::Option<Held>::some(::foundation::core::LazyRefDoor::lend_<Brand>(*storage_ptr_()));
@@ -168,9 +166,9 @@ public:
     template <class... Refused, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] ::foundation::core::Option<
-        ::foundation::core::Ref<T const, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>>
+        ::foundation::core::Ref<T const, ::foundation::core::carrier_brand_t<T, Fresh>>>
     get() const& noexcept {
-        using Brand = ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>;
+        using Brand = ::foundation::core::carrier_brand_t<T, Fresh>;
         using Held = ::foundation::core::Ref<T const, Brand>;
         if (!once_.done()) return ::foundation::core::Option<Held>{::foundation::core::none};
         return ::foundation::core::Option<Held>::some(::foundation::core::LazyRefDoor::lend_<Brand>(*storage_ptr_()));

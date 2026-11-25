@@ -95,12 +95,12 @@ public:
     // no brand (the rules).  A holder that holds a T ends the process.
     template <class... Args, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
         requires std::is_nothrow_constructible_v<T, Args&&...>
-    Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> fill(Args&&... args) noexcept {
+    Ref<T, carrier_brand_t<T, Fresh>> fill(Args&&... args) noexcept {
         if (object_ != nullptr) [[unlikely]] {
             fatal("an Immortal holds one object for the process, and a second fill would build another one over it");
         }
         object_ = ::new(static_cast<void*>(storage_)) T(static_cast<Args&&>(args)...);
-        return ImmortalRefDoor::lend_<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(*object_);
+        return ImmortalRefDoor::lend_<carrier_brand_t<T, Fresh>>(*object_);
     }
 
     [[nodiscard]] constexpr bool is_filled() const noexcept { return object_ != nullptr; }

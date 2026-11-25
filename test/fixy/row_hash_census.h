@@ -1130,6 +1130,11 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::ArenaBlockSize,
      "the size of the blocks of an arena: a count of bytes above zero, and never a value in a kernel signature"},
     {^^::foundation::core::EpochOf, "the brand of the epochs of an arena: an empty tag that holds nothing"},
+    {^^::foundation::core::ArenaBuildKey,
+     "the key of the build of one object of an arena: it lives for one constructor, and never a value in a kernel "
+     "signature"},
+    {^^::foundation::core::carrier_brand,
+     "the brand that a door gives for an object of a class: a type function, never a value"},
     {^^::foundation::core::Ref,
      "a borrow of one object: it owns nothing and makes no claim about what the object holds"},
     {^^::fixy::handle::published_key,

@@ -90,7 +90,7 @@ concept IsScopedView = ::foundation::reflect::IsInstanceOf<T, ^^ScopedView>;
 
 // The brand a view of Carrier takes.
 template <typename Carrier, typename Fresh>
-using view_brand_t = ::foundation::brand::inherited_or_fresh_brand_t<Carrier, Fresh>;
+using view_brand_t = ::foundation::core::carrier_brand_t<Carrier, Fresh>;
 
 // The type half of the gate.  view_ok is found by argument-dependent
 // lookup on the carrier, so this asks whether the carrier declares a

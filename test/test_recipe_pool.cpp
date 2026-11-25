@@ -65,9 +65,6 @@ auto g_init = eff::testing::init();
 inline eff::Alloc alloc_cap() noexcept { return g_test.alloc; }
 inline eff::Init init_cap() noexcept { return g_init; }
 
-// The Ref that to() gives, with the brand of the arena.
-using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena<RecipeArena>&>()));
-
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -81,14 +78,17 @@ using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena<RecipeArena
                       "RecipePool capacity must carry the power-of-two invariant");
         static_assert(std::is_same_v<RecipePool::Size, ::fixy::Monotonic<uint32_t>>,
                       "RecipePool size must carry the monotonic-growth invariant");
-        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::Ref<BumpArena<RecipeArena>, RecipeArena>>,
-                      "RecipePool arena dependency must be an explicit borrow with the brand of the arena");
+        static_assert(std::is_same_v<RecipePool::ArenaBorrow, ::fixy::Ref<BumpArena<RecipeArena>>>,
+                      "RecipePool keeps an explicit borrow of its arena, whose class names the tag");
         static_assert(sizeof(RecipePool::Capacity) == sizeof(uint32_t),
                       "PowerOfTwo capacity wrapper must stay zero-cost");
         static_assert(sizeof(RecipePool::Size) == sizeof(uint32_t), "Monotonic size wrapper must stay zero-cost");
         static_assert(sizeof(RecipePool::ArenaBorrow) == sizeof(void*), "Ref<BumpArena> must stay pointer-sized");
-        static_assert(std::is_same_v<MintedArenaBorrow, RecipePool::ArenaBorrow>,
-                      "to() of an arena of recipes gives the brand of the arena");
+        // The Ref that to() gives, with the fresh brand of its call.
+        using MintedArenaBorrow = decltype(::fixy::to(std::declval<BumpArena<RecipeArena>&>()));
+        static_assert(!std::is_same_v<MintedArenaBorrow, ::fixy::Ref<BumpArena<RecipeArena>, RecipeArena>>
+                          && !std::is_same_v<MintedArenaBorrow, RecipePool::ArenaBorrow>,
+                      "to() of an arena gives a fresh brand: the arena is no object of an arena of its tag");
         static_assert(std::is_constructible_v<RecipePool, MintedArenaBorrow, eff::Init>,
                       "RecipePool takes the Ref that to() gives");
         static_assert(!std::is_constructible_v<RecipePool, ::fixy::Ref<BumpArena<RecipeArena>>, eff::Init>,

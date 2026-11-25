@@ -128,23 +128,6 @@ concept IsBranded = HasBrand<T> && IsFreshBrand<brand_of_t<T>>;
 template <class T>
 concept IsErased = HasBrand<T> && std::is_same_v<brand_of_t<T>, DefaultBrand>;
 
-// The brand a view of Carrier takes: the carrier's own when it has one,
-// so the view is pinned to that instance, and the fresh one a mint
-// supplies otherwise.
-template <class Carrier, class Fresh>
-struct inherited_or_fresh_brand {
-    using type = Fresh;
-};
-
-template <class Carrier, class Fresh>
-    requires HasBrand<Carrier>
-struct inherited_or_fresh_brand<Carrier, Fresh> {
-    using type = brand_of_t<Carrier>;
-};
-
-template <class Carrier, class Fresh>
-using inherited_or_fresh_brand_t = typename inherited_or_fresh_brand<Carrier, Fresh>::type;
-
 // The brand of the result of a mint, in a context where template argument
 // deduction cannot set it (the fresh brand, below).  The member type of a
 // class template is such a context, so a target type and the declared type

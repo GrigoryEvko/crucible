@@ -84,7 +84,8 @@
 //       owner of the base, such as an Atomic, give their type arguments
 //   The walk trusts the brand of a Ref.  A type that states an arena tag as its
 //   brand_type gives a Ref of that tag for each of its objects (to() of
-//   foundation/core/Ref.h), so such a type keeps its constructors for an arena.
+//   foundation/core/Ref.h), so only an arena of the tag builds such an object: each
+//   constructor takes the build key that make gives (ArenaBuildKey).
 //
 // Brands of an arena
 //   The brand of an arena is its first template argument, and each Ref and
@@ -194,6 +195,41 @@ concept CanMakeInArena = RefTarget<T> && !std::is_const_v<T> && std::is_triviall
                       && ::foundation::linear::HoldsNoLinearValue<T> && std::is_nothrow_constructible_v<T, Args&&...>
                       && AllocationCapability<Marker>;
 
+namespace detail {
+
+// The blocks of an arena (the definition below).  ArenaRefDoor names it as a
+// friend, so this declaration stands before the door.
+class BumpArenaCore;
+
+// The source of a build key in an unevaluated test of a constructor.  A key has no
+// move, so only a prvalue gives the parameter of a constructor, and the conversion
+// gives one.  No code makes a source, so no code gets a key from it.
+template <class Tag, class T>
+class BuildKeySource final : ::foundation::NoObject<BuildKeySource<Tag, T>> {
+public:
+    [[noreturn]] operator ArenaBuildKey<Tag, T>() const noexcept {
+        fatal("no code makes the source of a build key, so no code converts one");
+    }
+};
+
+}  // namespace detail
+
+// A T that only an arena of the tag builds, and whose constructor takes the build
+// key of the tag and then the arguments, with no throw (ArenaBuildKey of
+// foundation/core/Ref.h).
+template <class T, class Tag, class... Args>
+concept TakesArenaKey = detail::is_built_only_by_arena_(^^T, ^^Tag)
+                     && std::is_nothrow_constructible_v<T, detail::BuildKeySource<Tag, T> const&, Args&&...>;
+
+// The arguments of make<T> in an arena of the tag: the arguments of
+// CanMakeInArena, or the same for a T that takes the build key of the tag before
+// the arguments.
+template <class T, class Tag, class Marker, class... Args>
+concept ArenaMakes = CanMakeInArena<T, Marker, Args...>
+                  || (RefTarget<T> && (!std::is_const_v<T>)
+                      && std::is_trivially_destructible_v<T> && ::foundation::linear::HoldsNoLinearValue<T>
+                      && TakesArenaKey<T, Tag, Args...> && AllocationCapability<Marker>);
+
 // The arguments of make<T> of a T that holds a linear value: the deleted twin
 // of make binds to them.
 template <class T, class Marker, class... Args>
@@ -270,17 +306,25 @@ concept CanBuildArenaArray = ViewElement<T> && !std::is_const_v<T> && std::is_tr
                           && std::same_as<std::invoke_result_t<Make&, RunStart>, T> && AllocationCapability<Marker>;
 
 // The door of a BumpArena and an Epoch to the door of a Ref (the doors of the
-// owners above foundation/core/Ref.h).  Its one member is private, and the
-// two are its friends.  The invariant: make() lends the object that the
-// arguments built in new bytes of the arena, with the brand of the arena or
-// of the epoch.  An Epoch lends the core of its arena to itself with the
-// epoch brand, and only with_epoch builds an Epoch, in its own frame.  A home
-// owner row of utils/rule-table.txt keeps this definition in this header.
+// owners above foundation/core/Ref.h), and to the build key of each object.  Its
+// members are private, and the two and their core are its friends.  The
+// invariant: make() lends the object that the arguments built in new bytes of the
+// arena, with the brand of the arena or of the epoch, and it builds one key for
+// the one object that it builds.  An Epoch lends the core of its arena to itself
+// with the epoch brand, and only with_epoch builds an Epoch, in its own frame.  A
+// home owner row of utils/rule-table.txt keeps this definition in this header.
 class ArenaRefDoor final : ::foundation::NoObject<ArenaRefDoor> {
     template <ArenaBrand Brand>
     friend class BumpArena;
     template <EpochBrand Brand>
     friend class Epoch;
+    friend class detail::BumpArenaCore;
+
+    // The build key of one T in an arena of the tag.
+    template <class Tag, class T>
+    [[nodiscard]] CRUCIBLE_INLINE static constexpr ArenaBuildKey<Tag, T> build_key_() noexcept {
+        return ArenaBuildKey<Tag, T>{};
+    }
 
     // An object of the bytes of the arena, as a Ref of the brand.
     template <::foundation::brand::IsBrand Brand, RefTarget T>
@@ -496,8 +540,6 @@ inline void bump_unpoison_(void const* /*first*/, std::size_t /*count*/) noexcep
     return std::move(rounded).value_or(0);
 }
 
-class BumpArenaCore;
-
 // ArenaBlockSize calls this function for a size of zero bytes.  It has no
 // definition, so the call is no constant expression, and the error of the
 // compiler names the rule.
@@ -595,10 +637,17 @@ private:
     template <EpochBrand Brand>
     friend class ::foundation::core::Epoch;
 
-    // One T that the arguments build in new bytes, at the alignment of T.
-    template <class T, class... Args>
+    // One T that the arguments build in new bytes, at the alignment of T.  A T
+    // that takes the build key of the tag gets the key before the arguments, and
+    // the key is the parameter itself (ArenaBuildKey of foundation/core/Ref.h).
+    template <class Tag, class T, class... Args>
     [[nodiscard, gnu::always_inline]] T& build_(Args&&... args) noexcept {
-        return *::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
+        if constexpr (TakesArenaKey<T, Tag, Args...>) {
+            return *::new(bump_(sizeof(T), alignof(T)))
+                T(ArenaRefDoor::build_key_<Tag, T>(), static_cast<Args&&>(args)...);
+        } else {
+            return *::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
+        }
     }
 
     // count copies of fill in new bytes, at the alignment of T, as a run of
@@ -768,16 +817,16 @@ public:
     // One T that the arguments build in new bytes of the arena, at the
     // alignment of T, as a Ref of the brand of the arena.
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...> && ArenaKeeps<T, Brand>
+        requires ArenaMakes<T, Brand, Marker, Args...> && ArenaKeeps<T, Brand>
     [[nodiscard]] Ref<T, Brand> make(this BumpArena& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
-        return ArenaRefDoor::lend_<Brand>(self.core_.template build_<T>(static_cast<Args&&>(args)...));
+        return ArenaRefDoor::lend_<Brand>(self.core_.template build_<Brand, T>(static_cast<Args&&>(args)...));
     }
 
     // A T that holds a borrow of a different owner binds to this overload, so
     // the refusal gives its reason (objects of an arena).
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...> && (!ArenaKeeps<T, Brand>)
+        requires ArenaMakes<T, Brand, Marker, Args...> && (!ArenaKeeps<T, Brand>)
     void make(this BumpArena& self, Marker, Args&&...) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A T that holds a linear value binds to this overload, so the refusal
@@ -900,7 +949,7 @@ private:
 // build_array of the arena while the body of with_epoch runs.  It cannot copy or move, and
 // only with_epoch builds it, in its own frame.
 template <EpochBrand Brand>
-class Epoch final {
+class[[= ::foundation::brand::branded_arena{}]] Epoch final {
 public:
     using brand_type = Brand;
 
@@ -913,16 +962,16 @@ public:
     // One T that the arguments build in new bytes of the epoch, at the
     // alignment of T, as a Ref of the epoch brand.
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...> && ArenaKeeps<T, Brand>
+        requires ArenaMakes<T, Brand, Marker, Args...> && ArenaKeeps<T, Brand>
     [[nodiscard]] Ref<T, Brand> make(this Epoch& self CRUCIBLE_LIFETIMEBOUND, Marker /*allocation*/,
                                      Args&&... args) noexcept {
-        return ArenaRefDoor::lend_<Brand>((*self.core_).template build_<T>(static_cast<Args&&>(args)...));
+        return ArenaRefDoor::lend_<Brand>((*self.core_).template build_<Brand, T>(static_cast<Args&&>(args)...));
     }
 
     // A T that holds a borrow of a different owner binds to this overload, so
     // the refusal gives its reason (objects of an arena).
     template <class T, class Marker, class... Args>
-        requires CanMakeInArena<T, Marker, Args...> && (!ArenaKeeps<T, Brand>)
+        requires ArenaMakes<T, Brand, Marker, Args...> && (!ArenaKeeps<T, Brand>)
     void make(this Epoch& self, Marker, Args&&...) = delete(CRUCIBLE_ARENA_KEEPS_REFUSAL);
 
     // A T that holds a linear value binds to this overload, so the refusal

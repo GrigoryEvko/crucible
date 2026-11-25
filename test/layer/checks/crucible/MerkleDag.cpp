@@ -66,17 +66,18 @@ static_assert(sizeof(LoopNode) == 72, "LoopNode must be 72 bytes");
 static_assert(std::is_trivially_destructible_v<LoopNode>, "an arena ends no LoopNode");
 
 // Each node lives in a DAG arena: no node has a default constructor, a copy
-// or a move, its constructor takes the key that only mint_dag_node builds,
-// and the key has no public constructor.  So the class states the DagArena
-// brand, and to(node) gives a Ref of that brand.
+// or a move, and its constructor takes the build key that only an arena of the
+// DagArena tag builds.  So the class states the DagArena brand, and to(node)
+// gives a Ref of that brand.
 static_assert(!std::is_default_constructible_v<RegionNode> && !std::is_default_constructible_v<TraceNode>);
 static_assert(!std::is_copy_constructible_v<RegionNode> && !std::is_move_constructible_v<RegionNode>);
 static_assert(!std::is_copy_constructible_v<BranchNode> && !std::is_copy_constructible_v<LoopNode>);
 static_assert(!std::is_copy_assignable_v<TraceNode> && !std::is_move_assignable_v<TraceNode>);
-static_assert(!std::is_default_constructible_v<DagNodeKey> && !std::is_copy_constructible_v<DagNodeKey>);
-static_assert(!std::is_trivially_copyable_v<DagNodeKey>);
+template <class Node>
+constexpr bool has_brand_of_its_arena = std::is_same_v<decltype(::fixy::to(std::declval<Node&>())), DagRef<Node>>;
+static_assert(has_brand_of_its_arena<TraceNode> && has_brand_of_its_arena<RegionNode>);
+static_assert(has_brand_of_its_arena<BranchNode> && has_brand_of_its_arena<LoopNode const>);
 static_assert(std::is_same_v<RegionNode::brand_type, DagArena> && std::is_same_v<LoopNode::brand_type, DagArena>);
-static_assert(std::is_same_v<decltype(::fixy::to(std::declval<RegionNode&>())), DagRef<RegionNode>>);
 static_assert(DagNodeType<TraceNode> && DagNodeType<RegionNode> && !DagNodeType<RegionNode const>
               && !DagNodeType<MemoryPlan>);
 

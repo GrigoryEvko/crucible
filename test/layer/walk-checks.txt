@@ -70,7 +70,7 @@ fixy/OwnedRegion.cpp | 0.5 | ::foundation::permissions::permission_rows
 fixy/PredicateImplies.cpp | 5.6 | ::fixy::refined::admitted_implications
 fixy/Reject.cpp | 2.6 | unknown
 fixy/Role.cpp | 1.8 | ::fixy::role, ::foundation::effects::resource, ::foundation::permissions::permission_rows, unknown
-fixy/ScopedView.cpp | 0.0 | ::fixy::session::combinators
+fixy/ScopedView.cpp | 0.0 | ::fixy::session::combinators, unknown
 fixy/Secret.cpp | 0.1 | ::fixy::tags::secret_policy, ::fixy::tags::secret_policy::admitted_policies
 fixy/SharedRegion.cpp | 0.1 | ::foundation::permissions::permission_rows
 fixy/Tagged.cpp | 0.3 | ::fixy::tags::admitted_retags

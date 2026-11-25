@@ -362,6 +362,11 @@
       "constructor": "(?<!~)\\bArenaArrayDoor\\("
     },
     {
+      "name": "neg_witness_core_arenabuildkey_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bArenaBuildKey\\("
+    },
+    {
       "name": "neg_witness_core_arenaposition_direct_construction",
       "reason": "is private within this context",
       "constructor": "(?<!~)\\bArenaPosition\\("
@@ -2244,6 +2249,10 @@
     },
     {
       "type": "foundation::core::detail::RefKey",
+      "header": "foundation/core/Ref.h"
+    },
+    {
+      "type": "foundation::core::ArenaBuildKey<forge::brand, int>",
       "header": "foundation/core/Ref.h"
     },
     {

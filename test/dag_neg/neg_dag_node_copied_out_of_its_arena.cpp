@@ -1,8 +1,8 @@
 // Negative compile test.  This file must fail to compile.
 //
-// Only mint_dag_node builds a node, in a DAG arena (crucible/MerkleDag.h).  A
-// copy of a node would be a second node outside each arena, with the brand of
-// the DAG arenas, so a node does not copy.  A walk links the node instead.
+// Only a DAG arena builds a node (crucible/MerkleDag.h).  A copy of a node
+// would be a second node outside each arena, with the brand of the DAG arenas,
+// so a node does not copy.  A walk links the node instead.
 
 #include <crucible/MerkleDag.h>
 

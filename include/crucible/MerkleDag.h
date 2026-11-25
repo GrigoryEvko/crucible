@@ -351,47 +351,16 @@ template <class Node>
 concept DagNodeType = std::is_class_v<Node> && !std::is_const_v<Node>
                    && (std::is_same_v<Node, TraceNode> || std::is_base_of_v<TraceNode, Node>);
 
-template <DagNodeType Node, class... Refused>
-    requires(sizeof...(Refused) == 0)
-[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena) noexcept;
-
-template <DagNodeType Node, class... Refused>
-    requires(sizeof...(Refused) == 0)
-[[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
-                                         ::fixy::Box<::fixy::BumpArena<DagArena>>& arena) noexcept;
-
-// The key of the constructor of a node.  Its constructor is private, and only
-// mint_dag_node builds one, so each node lives in a DAG arena.
-class DagNodeKey final {
-    constexpr DagNodeKey() noexcept {}
-
-    template <DagNodeType Node, class... Refused>
-        requires(sizeof...(Refused) == 0)
-    friend DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::BumpArena<DagArena>& arena) noexcept;
-
-    template <DagNodeType Node, class... Refused>
-        requires(sizeof...(Refused) == 0)
-    friend DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
-                                      ::fixy::Box<::fixy::BumpArena<DagArena>>& arena) noexcept;
-
-public:
-    DagNodeKey(DagNodeKey const&) = delete("a key lives in the call of mint_dag_node");
-    DagNodeKey(DagNodeKey&&) = delete("a key lives in the call of mint_dag_node");
-    DagNodeKey& operator=(DagNodeKey const&) = delete("a key lives in the call of mint_dag_node");
-    DagNodeKey& operator=(DagNodeKey&&) = delete("a key lives in the call of mint_dag_node");
-    // User-provided, because GCC counts a class whose copy and move are all
-    // deleted as trivially copyable, and a bit_cast could then forge a key.
-    constexpr ~DagNodeKey() {}
-};
-
 // Nodes live in a DAG arena and are never freed individually.  The class
 // states the brand of the arena family, so to(node) gives a Ref with the
-// DagArena brand.  That is sound because only mint_dag_node builds a node, in
-// a BumpArena<DagArena>, and no node copies or moves out of its arena.
+// DagArena brand.  That is sound because each constructor takes the build key of
+// its node (ArenaBuildKey of foundation/core/Ref.h), so only a
+// BumpArena<DagArena> builds a node, and no node copies or moves out of its
+// arena.
 struct TraceNode {
     using brand_type = DagArena;
 
-    explicit constexpr TraceNode(DagNodeKey const& /*key*/) noexcept {}
+    explicit constexpr TraceNode(::foundation::core::ArenaBuildKey<DagArena, TraceNode> /*key*/) noexcept {}
     TraceNode(TraceNode const&) = delete("a node lives in its DAG arena: link the node, do not copy it");
     TraceNode(TraceNode&&) = delete("a node lives in its DAG arena: link the node, do not move it");
     TraceNode& operator=(TraceNode const&) = delete("a node lives in its DAG arena: link the node, do not copy it");
@@ -503,7 +472,8 @@ using ValidContentHash = ::fixy::Refined<::fixy::non_zero, ContentHash>;
 
 // A compilable sequence of ops.
 struct RegionNode : TraceNode {
-    explicit constexpr RegionNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+    explicit constexpr RegionNode(::foundation::core::ArenaBuildKey<DagArena, RegionNode> key) noexcept
+        : TraceNode{std::move(key).for_base<TraceNode>()} {}
 
     ContentHash content_hash;
     // The hash of the numerics policy and the eager word that the content
@@ -584,7 +554,8 @@ struct RegionNode : TraceNode {
 
 // A guard point where execution can diverge.  Arms are kept sorted by value.
 struct BranchNode : TraceNode {
-    explicit constexpr BranchNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+    explicit constexpr BranchNode(::foundation::core::ArenaBuildKey<DagArena, BranchNode> key) noexcept
+        : TraceNode{std::move(key).for_base<TraceNode>()} {}
 
     Guard guard;
 
@@ -670,7 +641,8 @@ enum class LoopTermKind : uint8_t {
 };
 
 struct LoopNode : TraceNode {
-    explicit constexpr LoopNode(DagNodeKey const& key) noexcept : TraceNode{key} {}
+    explicit constexpr LoopNode(::foundation::core::ArenaBuildKey<DagArena, LoopNode> key) noexcept
+        : TraceNode{std::move(key).for_base<TraceNode>()} {}
 
     ContentHash body_content_hash;
     // The first node of the body: a chain that ends in TERMINAL.  make_loop
@@ -1137,14 +1109,14 @@ using RecipeChoice = ::fixy::Option<RecipeRef>;
     return ContentHash{::foundation::reflect::fmix64(branched_hash_state)};
 }
 
-// The one door that builds a node of the DAG: a Node with each field at its
-// default, in the arena, with the brand of the arena.  Only this door builds
-// the key of the constructor of a node, so each node lives in a DAG arena.
+// Builds a node of the DAG: a Node with each field at its default, in the
+// arena, with the brand of the arena.  The arena gives the build key to the
+// constructor of the node, so each node lives in a DAG arena.
 template <DagNodeType Node, class... Refused>
     requires(sizeof...(Refused) == 0)
 [[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a,
                                          ::fixy::BumpArena<DagArena>& arena CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return arena.make<Node>(a, DagNodeKey{});
+    return arena.make<Node>(a);
 }
 
 // mint_dag_node in the arena of a Box, such as the arena that a published
@@ -1154,7 +1126,7 @@ template <DagNodeType Node, class... Refused>
     requires(sizeof...(Refused) == 0)
 [[nodiscard]] DagRef<Node> mint_dag_node(::foundation::effects::Alloc a, ::fixy::Box<::fixy::BumpArena<DagArena>>& arena
                                          CRUCIBLE_LIFETIMEBOUND) noexcept {
-    return arena->make<Node>(a, DagNodeKey{});
+    return arena->make<Node>(a);
 }
 
 // The twins of mint_dag_node.  A temporary arena releases the node at the end

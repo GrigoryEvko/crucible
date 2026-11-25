@@ -968,6 +968,8 @@ witness <foundation/core/Seat.h> private | foundation::core::Seat<int>::MintKey 
 # from an object comes through the door.
 witness <foundation/core/Ref.h> no-match | foundation::core::Ref<int, forge::brand> | foundation::core::Ref<int, forge::brand>{forge::rvalue<int*>()}
 witness <foundation/core/Ref.h> private | foundation::core::detail::RefKey | foundation::core::detail::RefKey{}
+# Only the door of an arena builds the key of the build of an object.
+witness <foundation/core/Ref.h> private | foundation::core::ArenaBuildKey<forge::brand, int> | foundation::core::ArenaBuildKey<forge::brand, int>{}
 # An Address takes the key that only AddressDoor builds, so each Address
 # comes through address_of.
 witness <foundation/core/Ref.h> no-match | foundation::core::Address | foundation::core::Address{forge::rvalue<unsigned long>()}

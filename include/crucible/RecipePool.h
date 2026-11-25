@@ -31,7 +31,7 @@ namespace crucible {
 
 class CRUCIBLE_OWNER RecipePool {
 public:
-    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena<RecipeArena>, RecipeArena>;
+    using ArenaBorrow = ::fixy::Ref<::fixy::BumpArena<RecipeArena>>;
     using Capacity = ::fixy::PowerOfTwo<uint32_t>;
     using Size = ::fixy::Monotonic<uint32_t>;
     using init_required_row = ::foundation::effects::Row<::foundation::effects::Effect::Init>;
@@ -39,15 +39,17 @@ public:
     // The table never passes half full, so the initial capacity holds half
     // that many distinct recipes before the first resize.
     //
-    // The arena comes as a Ref from ::fixy::to, which gives the brand of the
-    // arena, RecipeArena.  The pool keeps that Ref, so each recipe that it
-    // makes keeps the brand of its arena.  This constructor only checks and
-    // forwards, and the one body below does the work out of line.
-    template <typename CallerRow = init_required_row>
+    // The arena comes as a Ref from ::fixy::to, with the fresh brand of that
+    // call.  The class of the arena names the tag RecipeArena, so each recipe
+    // that the pool makes has the brand of its arena.  The pool keeps the Ref
+    // with no brand.  This constructor only checks and forwards, and the one body
+    // below does the work out of line.
+    template <typename CallerRow = init_required_row, ::foundation::brand::IsFreshBrand Brand>
         requires ::foundation::effects::Subrow<init_required_row, CallerRow>
-    [[gnu::cold]] explicit RecipePool(ArenaBorrow arena, ::foundation::effects::Init init,
-                                      uint32_t initial_capacity = 32, std::type_identity<CallerRow> = {}) noexcept
-        : RecipePool{body_door_{}, arena, init, admitted_capacity_(initial_capacity)} {}
+    [[gnu::cold]] explicit RecipePool(::fixy::Ref<::fixy::BumpArena<RecipeArena>, Brand> arena,
+                                      ::foundation::effects::Init init, uint32_t initial_capacity = 32,
+                                      std::type_identity<CallerRow> = {}) noexcept
+        : RecipePool{body_door_{}, ::fixy::erase_brand(arena), init, admitted_capacity_(initial_capacity)} {}
 
     RecipePool(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");
     RecipePool& operator=(const RecipePool&) = delete("RecipePool owns interior pointers into arena_");

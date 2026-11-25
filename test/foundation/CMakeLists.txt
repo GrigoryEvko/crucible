@@ -3680,6 +3680,43 @@ foundation_neg_compile_test(neg_core_epoch_array_of_views
 foundation_neg_compile_test(neg_core_epoch_build_array_of_erased_refs
   "use of deleted function .void foundation::core::Epoch<Brand>::build_array\\(this foundation::core::Epoch<Brand>&, Marker, foundation::core::ElementCount, Make&&\\) \\[with T = foundation::core::Ref<int, foundation::brand::DefaultBrand>. .*Brand = foundation::core::EpochOf<Owner::Scratch>.*\\]."
   "an object of an arena lives until the arena ends, so it holds no borrow of a different owner")
+# A class that states an arena tag gives a Ref of the tag for each object, so only
+# an arena of the tag builds one.  The doors refuse each other class that states the
+# tag, and the key of the build does not leave its constructor: a member, a static,
+# a second object, a closure, a Ref, a class that is no base and a key made by hand.
+foundation_neg_compile_test(neg_core_to_of_a_stated_arena_tag
+  "static assertion failed: a class states an arena tag as its brand_type, and code outside the arena can build an object of it"
+  "In instantiation of .struct foundation::core::carrier_brand<.anonymous.::Loan, ")
+foundation_neg_compile_test(neg_core_to_of_a_product_class_with_branded_arena
+  "static assertion failed: a class states an arena tag as its brand_type, and code outside the arena can build an object of it"
+  "In instantiation of .struct foundation::core::carrier_brand<.anonymous.::LookAlike, ")
+foundation_neg_compile_test(neg_core_immortal_fill_of_a_stated_arena_tag
+  "static assertion failed: a class states an arena tag as its brand_type, and code outside the arena can build an object of it"
+  "In instantiation of .struct foundation::core::carrier_brand<.anonymous.::Loan, ")
+foundation_neg_compile_test(neg_core_build_key_kept_in_a_member
+  "use of deleted function .foundation::core::ArenaBuildKey<Tag, T>::ArenaBuildKey\\(foundation::core::ArenaBuildKey<Tag, T>&&\\)"
+  "a build key is for one object: the constructor takes it in its place")
+foundation_neg_compile_test(neg_core_build_key_kept_in_a_static
+  "use of deleted function .foundation::core::ArenaBuildKey<Tag, T>::ArenaBuildKey\\(foundation::core::ArenaBuildKey<Tag, T>&&\\)"
+  "a build key is for one object: the constructor takes it in its place")
+foundation_neg_compile_test(neg_core_build_key_builds_a_second_object
+  "use of deleted function .foundation::core::ArenaBuildKey<Tag, T>::ArenaBuildKey\\(foundation::core::ArenaBuildKey<Tag, T>&&\\)"
+  "a build key is for one object: the constructor takes it in its place")
+foundation_neg_compile_test(neg_core_build_key_kept_by_a_closure
+  "this function stores a borrow of the parameter .*key.* into the object of the member function"
+  "the borrowed object ends with the frame of the function")
+foundation_neg_compile_test(neg_core_build_key_ref_kept
+  "static assertion failed: a Ref of a build key would keep a borrow of the key past the constructor that takes it"
+  "In instantiation of .class foundation::core::Ref<foundation::core::ArenaBuildKey<Family, .anonymous.::Node>")
+foundation_neg_compile_test(neg_core_build_key_for_a_class_that_is_no_base
+  "no matching function for call to .foundation::core::ArenaBuildKey<Family, .anonymous.::Maker>::for_base<.anonymous.::Node>\\(\\)"
+  "constraints not satisfied")
+foundation_neg_compile_test(neg_core_build_key_made_by_hand
+  "foundation::core::ArenaBuildKey<Tag, T>::ArenaBuildKey\\(\\) .with Tag = Family. T = .anonymous.::Node.. is private within this context"
+  "neg_core_build_key_made_by_hand\\.cpp:[0-9]+:[0-9]+: error:")
+foundation_neg_compile_test(neg_core_bump_arena_keeps_a_ref_of_an_arena
+  "could not convert .foundation::core::to<, .*BumpArena<Family> ?>\\(short_lived\\)"
+  "neg_core_bump_arena_keeps_a_ref_of_an_arena\\.cpp:[0-9]+:[0-9]+: error:")
 # The brands of an arena: the two mints take a named tag of one kind, a Ref
 # of one family does not fit a different family, an arena has no public
 # constructor, and the view-escape rule refuses a Ref of a local arena that

@@ -1911,6 +1911,15 @@ fixy_neg_compile_test(neg_scoped_view_escapes_through_private_member
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "fixy/ScopedView\\.h:[0-9]+:[0-9]+: error"
   "fixy::contains_scoped_view<Holder>\\(\\). evaluates to false")
+# A carrier or a value that states an arena tag and that code outside the arena
+# builds is no object of an arena, so the mint of a view and the doors of a Lazy
+# refuse it.
+fixy_neg_compile_test(neg_scoped_view_of_a_stated_arena_tag
+  "static assertion failed: a class states an arena tag as its brand_type, and code outside the arena can build an object of it"
+  "In instantiation of .struct foundation::core::carrier_brand<.*Carrier")
+fixy_neg_compile_test(neg_lazy_of_a_stated_arena_tag
+  "static assertion failed: a class states an arena tag as its brand_type, and code outside the arena can build an object of it"
+  "In instantiation of .struct foundation::core::carrier_brand<.*Loan, ")
 # The audit reads a concept, and the template-id of a concept declares
 # nothing, so an explicit specialization that hides a stored view from
 # the audit is refused.

@@ -458,6 +458,151 @@ using RefResult = decltype(std::declval<MemberEpoch&>().make<int>(std::declval<A
 static_assert(!EpochResult<RefResult, Member> && !EpochResult<ArenaRun<int, EpochOf<Member>>, Member>);
 static_assert(EpochResult<int, Member> && EpochResult<void, Member>);
 
+// The build key.  A class that states an arena tag gives that tag to each of its
+// objects only when each constructor takes the key of the class and the tag by
+// value, and when no copy, no move and no bytes build an object.  Each plant
+// below breaks one part of the rule.
+template <class T>
+using FamilyKey = ArenaBuildKey<Family, T>;
+struct Keyed {
+    using brand_type = Family;
+    explicit constexpr Keyed(FamilyKey<Keyed> /*key*/) noexcept {}
+    Keyed(Keyed const&) = delete("an object of the arena stays in it");
+    Keyed(Keyed&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+    int value = 0;
+};
+struct DerivedKeyed : Keyed {
+    explicit constexpr DerivedKeyed(FamilyKey<DerivedKeyed> key) noexcept : Keyed{std::move(key).for_base<Keyed>()} {}
+};
+struct Loan {
+    using brand_type = Family;
+    int value = 0;
+};
+struct NoSeal {
+    using brand_type = Family;
+    explicit constexpr NoSeal(FamilyKey<NoSeal> /*key*/) noexcept {}
+    NoSeal(NoSeal const&) = delete("an object of the arena stays in it");
+    NoSeal(NoSeal&&) = delete("an object of the arena stays in it");
+};
+struct OpenBeside : Keyed {
+    explicit constexpr OpenBeside(FamilyKey<OpenBeside> key) noexcept : Keyed{std::move(key).for_base<Keyed>()} {}
+    explicit constexpr OpenBeside(FamilyKey<Keyed>& /*key*/, int /*number*/) noexcept;
+};
+struct TemplateBuilt : Keyed {
+    explicit constexpr TemplateBuilt(FamilyKey<TemplateBuilt> key) noexcept : Keyed{std::move(key).for_base<Keyed>()} {}
+    template <class Given>
+    explicit constexpr TemplateBuilt(Given const& given, int number) noexcept;
+};
+struct DefaultBuilt {
+    using brand_type = Family;
+    constexpr DefaultBuilt() noexcept {}
+    explicit constexpr DefaultBuilt(FamilyKey<DefaultBuilt> /*key*/) noexcept {}
+    DefaultBuilt(DefaultBuilt const&) = delete("an object of the arena stays in it");
+    DefaultBuilt(DefaultBuilt&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct CopyBuilt {
+    using brand_type = Family;
+    explicit constexpr CopyBuilt(FamilyKey<CopyBuilt> /*key*/) noexcept {}
+    constexpr CopyBuilt(CopyBuilt const& /*other*/) noexcept {}
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct MoveBuilt {
+    using brand_type = Family;
+    explicit constexpr MoveBuilt(FamilyKey<MoveBuilt> /*key*/) noexcept {}
+    MoveBuilt(MoveBuilt const&) = delete("an object of the arena stays in it");
+    constexpr MoveBuilt(MoveBuilt&& /*other*/) noexcept {}
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct OpenBase {
+    explicit constexpr OpenBase(int number) noexcept : value{number} {}
+    int value = 0;
+};
+struct InheritsOpen : OpenBase {
+    using brand_type = Family;
+    using OpenBase::OpenBase;
+    explicit constexpr InheritsOpen(FamilyKey<InheritsOpen> /*key*/) noexcept : OpenBase{0} {}
+    InheritsOpen(InheritsOpen const&) = delete("an object of the arena stays in it");
+    InheritsOpen(InheritsOpen&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct OtherTagBuilt {
+    using brand_type = Family;
+    explicit constexpr OtherTagBuilt(ArenaBuildKey<OtherFamily, OtherTagBuilt> /*key*/) noexcept {}
+    OtherTagBuilt(OtherTagBuilt const&) = delete("an object of the arena stays in it");
+    OtherTagBuilt(OtherTagBuilt&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct OtherClassBuilt {
+    using brand_type = Family;
+    explicit constexpr OtherClassBuilt(FamilyKey<Keyed> /*key*/) noexcept {}
+    OtherClassBuilt(OtherClassBuilt const&) = delete("an object of the arena stays in it");
+    OtherClassBuilt(OtherClassBuilt&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct ReferenceBuilt {
+    using brand_type = Family;
+    explicit constexpr ReferenceBuilt(FamilyKey<ReferenceBuilt> const& /*key*/) noexcept {}
+    ReferenceBuilt(ReferenceBuilt const&) = delete("an object of the arena stays in it");
+    ReferenceBuilt(ReferenceBuilt&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+struct OwnKey final {};
+struct OwnKeyBuilt {
+    using brand_type = Family;
+    explicit constexpr OwnKeyBuilt(OwnKey /*key*/) noexcept {}
+    OwnKeyBuilt(OwnKeyBuilt const&) = delete("an object of the arena stays in it");
+    OwnKeyBuilt(OwnKeyBuilt&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
+template <class T>
+consteval bool is_built_by_family() {
+    return is_built_only_by_arena_(^^T, ^^Family) && brand_statement_v<T> == BrandStatement::of_object
+        && brand_statement_v<T const&> == BrandStatement::of_object;
+}
+template <class T>
+consteval bool is_unproven() {
+    return !is_built_only_by_arena_(^^T, ^^Family) && brand_statement_v<T> == BrandStatement::unproven;
+}
+static_assert(is_built_by_family<Keyed>() && is_built_by_family<DerivedKeyed>());
+static_assert(is_unproven<Loan>() && is_unproven<NoSeal>() && is_unproven<OpenBeside>());
+static_assert(is_unproven<TemplateBuilt>() && is_unproven<DefaultBuilt>() && is_unproven<CopyBuilt>());
+static_assert(is_unproven<MoveBuilt>() && is_unproven<InheritsOpen>() && is_unproven<OtherTagBuilt>());
+static_assert(is_unproven<OtherClassBuilt>() && is_unproven<ReferenceBuilt>() && is_unproven<OwnKeyBuilt>());
+static_assert(std::is_same_v<decltype(to(std::declval<Keyed&>())), Ref<Keyed, Family>>);
+static_assert(std::is_same_v<decltype(to(std::declval<DerivedKeyed const&>())), Ref<DerivedKeyed const, Family>>);
+
+// An owner of an arena tag is no object of an arena, so a door gives it a fresh
+// brand.  A class outside the base that states branded_arena stays unproven (the
+// fixture neg_core_to_of_a_product_class_with_branded_arena).
+static_assert(brand_statement_v<BumpArena<Family>> == BrandStatement::of_owner);
+static_assert(brand_statement_v<EpochArena<Member>> == BrandStatement::of_owner);
+static_assert(brand_statement_v<MemberEpoch> == BrandStatement::of_owner);
+template <class Object, class Tag>
+constexpr bool has_brand_of_tag = std::is_same_v<decltype(to(std::declval<Object&>())), Ref<Object, Tag>>;
+static_assert(!has_brand_of_tag<BumpArena<Family>, Family> && !has_brand_of_tag<EpochArena<Member>, Member>);
+static_assert(!has_brand_of_tag<MemberEpoch, EpochOf<Member>> && has_brand_of_tag<Keyed, Family>);
+
+// make gives the key to a class that takes it, with and with no arguments after
+// it, and no other code makes one.  A key has no copy, no move and no bytes form.
+struct KeyedWithValue : Keyed {
+    constexpr KeyedWithValue(FamilyKey<KeyedWithValue> key, int number) noexcept
+        : Keyed{std::move(key).for_base<Keyed>()} {
+        value = number;
+    }
+};
+template <class T, class... Args>
+constexpr bool family_makes =
+    requires(BumpArena<Family>& arena, Alloc alloc, Args... args) { arena.make<T>(alloc, args...); };
+static_assert(family_makes<Keyed> && family_makes<DerivedKeyed> && family_makes<KeyedWithValue, int>);
+static_assert(!family_makes<KeyedWithValue> && !family_makes<OtherTagBuilt> && !family_makes<OtherClassBuilt>);
+static_assert(ArenaMakes<Plain, Family, Alloc> && !ArenaMakes<Keyed, OtherFamily, Alloc>);
+static_assert(!std::is_default_constructible_v<FamilyKey<Keyed>> && !std::is_copy_constructible_v<FamilyKey<Keyed>>);
+static_assert(!std::is_move_constructible_v<FamilyKey<Keyed>> && !std::is_trivially_copyable_v<FamilyKey<Keyed>>);
+static_assert(!std::is_constructible_v<FamilyKey<Keyed>, FamilyKey<DerivedKeyed>>);
+static_assert(!ChoicePayload<FamilyKey<Keyed>> && !std::is_constructible_v<Record<FamilyKey<Keyed>>, FamilyKey<Keyed>>);
+
 // The closed surface of each arena.
 inline constexpr TextView bump_arena_names{
     "BumpArena make array build_array retained_bytes max_blocks block_alignment brand_type position_of"};

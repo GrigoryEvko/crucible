@@ -182,13 +182,196 @@ public:
 
 }  // namespace detail
 
+// The door of an arena and of an epoch (foundation/core/BumpArena.h), which
+// builds the key of each build.
+class ArenaRefDoor;
+
+// The key of the build of one object of type T in an arena of the tag: a named
+// arena tag, or the brand of an epoch.  Only make of the arena builds one
+// (ArenaRefDoor), and it gives the key as the first argument of the constructor
+// of T.  The key has no copy and no move, so make builds the parameter of the
+// constructor in its place, and no code keeps the key, passes it on by value or
+// builds a second object of T with it.
+//
+// A class with a base that takes a key gives the base its own key with for_base.
+// for_base takes the key as an rvalue, and the rule use-after-move refuses a
+// second call with one key, because no type of C++ counts the calls.  A class
+// that is no base of T gets no key from it.  A Ref refuses a key as its target,
+// and the quarantine refuses a raw pointer, so no code outside the base keeps a
+// borrow of a key past the constructor.
+template <class Tag, class T>
+class [[nodiscard]] ArenaBuildKey final {
+    friend class ArenaRefDoor;
+    template <class OtherTag, class Other>
+    friend class ArenaBuildKey;
+
+    constexpr ArenaBuildKey() noexcept {}
+
+    // The byte makes the key no empty class.  The rule view-escape reads no borrow
+    // of an empty class in the result of a call, so it would not see a closure that
+    // captures an empty key by reference and that the object keeps.
+    unsigned char held_ = 0;
+
+public:
+    ArenaBuildKey(ArenaBuildKey const&) =
+        delete("a build key is for one object: the constructor takes it in its place");
+    ArenaBuildKey(ArenaBuildKey&&) = delete("a build key is for one object: the constructor takes it in its place");
+    ArenaBuildKey& operator=(ArenaBuildKey const&) = delete("a build key is for one object");
+    ArenaBuildKey& operator=(ArenaBuildKey&&) = delete("a build key is for one object");
+    // User-provided, because GCC counts a class whose copy and move are all
+    // deleted as trivially copyable, and a bit_cast could then build a key.
+    constexpr ~ArenaBuildKey() noexcept {}
+
+    template <class Base, class... Refused>
+        requires(sizeof...(Refused) == 0) && std::is_base_of_v<Base, T> && (!std::is_same_v<Base, T>)
+    [[nodiscard]] constexpr ArenaBuildKey<Tag, Base> for_base() && noexcept {
+        return ArenaBuildKey<Tag, Base>{};
+    }
+};
+
+namespace detail {
+
+// True for a build key, with its cv-qualifiers removed.
+[[nodiscard]] consteval bool is_build_key_(std::meta::info type) {
+    std::meta::info const bare = std::meta::dealias(std::meta::remove_cv(type));
+    return std::meta::has_template_arguments(bare) && std::meta::template_of(bare) == ^^ArenaBuildKey;
+}
+
+// True when brand is the brand of an arena: a member tag, a family tag or an
+// epoch brand of foundation/core/BumpArena.h, each of which carries its mark of
+// foundation/Brand.h.  A Ref of an arena keeps the brand of its arena, so a
+// store of the Ref names its arena, and no erased Ref of an arena exists.
+[[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
+    namespace brand_marks = ::foundation::brand;
+    return ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_member_brand)
+        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_family_brand)
+        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::epoch_brand);
+}
+
+// The constructors of a class that a build can call: each one of the class, or
+// the ones that a derived class can inherit, which are no default, copy or move
+// constructor.
+enum class BuildSet : unsigned char {
+    own,
+    inherited,
+};
+
+// True when a constructor of the set that is not deleted takes no build key of
+// the class and the tag by value.  A constructor template counts as one, because
+// the read does not see the parameters of a template.  The read has no access
+// check, because a member function or a friend of the class can call a private
+// constructor.  Complexity: linear in the members of the class and in the
+// parameters of each constructor.
+[[nodiscard]] consteval bool has_open_build_(std::meta::info type, std::meta::info tag, BuildSet set) {
+    namespace refl = ::foundation::reflect;
+    std::meta::info const arguments[] = {tag, type};
+    std::meta::info const key = std::meta::dealias(std::meta::substitute(^^ArenaBuildKey, arguments));
+    std::meta::info const open =
+        refl::find_member(type, std::meta::access_context::unchecked(), [key, set](std::meta::info member) {
+            if (std::meta::is_constructor_template(member)) return true;
+            if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) return false;
+            bool const is_special = std::meta::is_default_constructor(member) || std::meta::is_copy_constructor(member)
+                                 || std::meta::is_move_constructor(member);
+            if (set == BuildSet::inherited && is_special) return false;
+            std::meta::info const taken = refl::find_parameter(member, [key](std::meta::info parameter) {
+                return std::meta::dealias(std::meta::type_of(parameter)) == key;
+            });
+            return taken == std::meta::info{};
+        });
+    return open != std::meta::info{};
+}
+
+// True when a base of the class, at each depth, has a constructor with
+// parameters that takes no build key of the base and the tag.  A using
+// declaration inherits such a constructor, and no list of the members of the
+// derived class shows it.
+[[nodiscard]] consteval bool inherits_open_build_(std::meta::info type, std::meta::info tag) {
+    namespace refl = ::foundation::reflect;
+    for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{type, true})) {
+        if (part.member != std::meta::info{}) continue;
+        if (has_open_build_(part.type, tag, BuildSet::inherited) || inherits_open_build_(part.type, tag)) return true;
+    }
+    return false;
+}
+
+// True when only an arena of the tag builds an object of the class: the class is
+// complete, it is no aggregate and no union, it has no default, copy or move
+// constructor and no bytes form, and each constructor that it has or inherits
+// takes the build key of the class and the tag by value.
+[[nodiscard]] consteval bool is_built_only_by_arena_(std::meta::info type, std::meta::info tag) {
+    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(type));
+    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
+    if (std::meta::is_aggregate_type(bare) || std::meta::is_trivially_copyable_type(bare)) return false;
+    if (std::meta::is_default_constructible_type(bare) || std::meta::is_copy_constructible_type(bare)
+        || std::meta::is_move_constructible_type(bare)) {
+        return false;
+    }
+    return !has_open_build_(bare, tag, BuildSet::own) && !inherits_open_build_(bare, tag);
+}
+
+// What the brand_type of a class tells of an object of it.
+enum class BrandStatement : unsigned char {
+    // The brand of the object: a brand of one instance or of a named owner that
+    // is no arena, or the tag of the arena that builds each object of the class.
+    of_object,
+    // The brand of the objects of an owner of the base, such as a BumpArena.  The
+    // owner itself is an object of no arena, so a door gives it a fresh brand.
+    of_owner,
+    // The tag of an arena, stated by a class whose objects other code builds too.
+    unproven,
+};
+
+[[nodiscard]] consteval BrandStatement read_brand_statement_(std::meta::info carrier, std::meta::info brand) {
+    std::meta::info const stated = std::meta::dealias(brand);
+    if (!std::meta::is_class_type(stated) || !names_arena_brand_(stated)) return BrandStatement::of_object;
+    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(carrier));
+    bool const is_owner = ::foundation::reflect::carries_annotation(bare, ^^::foundation::brand::branded_arena)
+                       && is_class_of_the_base_(bare);
+    if (is_owner) return BrandStatement::of_owner;
+    return is_built_only_by_arena_(bare, stated) ? BrandStatement::of_object : BrandStatement::unproven;
+}
+
+// The kept statement of one carrier.
+template <class Carrier>
+inline constexpr BrandStatement brand_statement_v =
+    read_brand_statement_(^^Carrier, ^^::foundation::brand::brand_of_t<Carrier>);
+
+}  // namespace detail
+
+// The brand that a door gives for an object of Carrier: the brand that the class
+// states, when the statement proves it, and the fresh brand of the call for each
+// other class and for an owner of an arena tag.  A class that states an arena tag
+// as its brand_type must have only constructors that an arena of the tag calls
+// (ArenaBuildKey), because the tag tells that the object lives in an arena.
+template <class Carrier, class Fresh>
+struct carrier_brand {
+    using type = Fresh;
+};
+
+template <class Carrier, class Fresh>
+    requires ::foundation::brand::HasBrand<Carrier>
+struct carrier_brand<Carrier, Fresh> {
+    static constexpr detail::BrandStatement statement = detail::brand_statement_v<Carrier>;
+    static_assert(
+        statement != detail::BrandStatement::unproven,
+        "a class states an arena tag as its brand_type, and code outside the arena can build an object of it: "
+        "give each constructor the parameter ArenaBuildKey<Tag, Class> by value, delete the copy and the move, "
+        "hold a byte_seal, and declare no constructor template, no default constructor and no inherited "
+        "constructor that takes no such key (foundation/core/Ref.h)");
+    using type = std::conditional_t<statement == detail::BrandStatement::of_owner, Fresh,
+                                    ::foundation::brand::brand_of_t<Carrier>>;
+};
+
+template <class Carrier, class Fresh>
+using carrier_brand_t = typename carrier_brand<Carrier, Fresh>::type;
+
 // The one door from an object.  The brand is the brand of a branded object,
-// and the fresh brand of the call for each other object.  The pack in front
-// takes each explicit template argument and refuses it, so no caller names
-// the brand.
+// and the fresh brand of the call for each other object (carrier_brand_t).  The
+// pack in front takes each explicit template argument and refuses it, so no
+// caller names the brand.
 template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh = CRUCIBLE_FRESH_BRAND>
     requires(sizeof...(Refused) == 0)
-[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept;
+[[nodiscard]] constexpr Ref<T, carrier_brand_t<T, Fresh>> to(T& object) noexcept;
 
 template <class... Refused, class T>
     requires(!std::is_lvalue_reference_v<T>)
@@ -201,6 +384,9 @@ class[[= ::foundation::transfer::refers{}]] Ref {
     static_assert(!detail::is_loan_key_type_(^^T),
                   "a Ref of a LoanKey would keep a borrow of the key past the frame that lent it: borrow the key "
                   "with LoanKey<B>& for the call (THE DISPATCH BRAND of foundation/core/Frame.h)");
+    static_assert(!detail::is_build_key_(^^T),
+                  "a Ref of a build key would keep a borrow of the key past the constructor that takes it "
+                  "(ArenaBuildKey of foundation/core/Ref.h)");
 
     T* object_ = nullptr;
     // The seal makes the assignment user-provided, so std::bit_cast cannot
@@ -278,21 +464,6 @@ template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh 
 [[nodiscard]] constexpr Option<Ref<T const, ::foundation::brand::undeducible_brand_t<Fresh>>>
 as_ref(Option<T> const& option) noexcept;
 
-namespace detail {
-
-// True when brand is the brand of an arena: a member tag, a family tag or an
-// epoch brand of foundation/core/BumpArena.h, each of which carries its mark of
-// foundation/Brand.h.  A Ref of an arena keeps the brand of its arena, so a
-// store of the Ref names its arena, and no erased Ref of an arena exists.
-[[nodiscard]] consteval bool names_arena_brand_(std::meta::info brand) {
-    namespace brand_marks = ::foundation::brand;
-    return ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_member_brand)
-        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::arena_family_brand)
-        || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::epoch_brand);
-}
-
-}  // namespace detail
-
 // A brand that erase_brand drops: a brand of one instance that is not a scope
 // brand, names none, and is no brand of an arena.  The rule brand-escape
 // refuses each value of a scope brand that outlives its scope, and an erased
@@ -333,7 +504,6 @@ class WindowLoanRefDoor;
 class SlotMapRefDoor;
 class ImmortalRefDoor;
 class AllocWindowRefDoor;
-class ArenaRefDoor;
 class HeapScopeRefDoor;
 class ScopedViewRefDoor;
 class ChaseLevDequeRefDoor;
@@ -369,8 +539,7 @@ template <RefTarget T, ::foundation::brand::IsBrand Brand>
 class RefDoor final : ::foundation::NoObject<RefDoor> {
     template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0)
-    friend constexpr auto ::foundation::core::to(T& object) noexcept
-        -> Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>;
+    friend constexpr auto ::foundation::core::to(T& object) noexcept -> Ref<T, carrier_brand_t<T, Fresh>>;
     template <class... Refused, ChoicePayload T, ::foundation::brand::IsBrand Fresh>
         requires(sizeof...(Refused) == 0) && (detail::option_form_of<T> != detail::OptionForm::owning)
     friend constexpr auto ::foundation::core::as_ref(Option<T> const& option) noexcept
@@ -417,9 +586,9 @@ class RefDoor final : ::foundation::NoObject<RefDoor> {
 // test of the null pointer.
 template <class... Refused, RefTarget T, ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0)
-[[nodiscard]] constexpr Ref<T, ::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>> to(T& object) noexcept {
+[[nodiscard]] constexpr Ref<T, carrier_brand_t<T, Fresh>> to(T& object) noexcept {
     [[assume(__builtin_addressof(object) != nullptr)]];
-    return detail::RefDoor::lend<::foundation::brand::inherited_or_fresh_brand_t<T, Fresh>>(object);
+    return detail::RefDoor::lend<carrier_brand_t<T, Fresh>>(object);
 }
 
 // The payload of an Option as an Option of a Ref of a const T with the

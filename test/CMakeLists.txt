@@ -2365,8 +2365,8 @@ crucible_neg_compile_test(neg_publish_stage_forged_by_lifetime_start
   "no matching function for call to .start_as_array<Stage>\\(unsigned char \\[1\\], int\\)."
   "required for the satisfaction of .ImplicitLifetimeThroughout<T>. .with T = crucible::BackgroundThread::PublishStage.")
 
-# Each node lives in a DAG arena: only mint_dag_node builds one, and no node
-# copies out of its arena.  So the DagArena brand of a node is sound.
+# Each node lives in a DAG arena: only a DAG arena builds one, and no node copies
+# out of its arena.  So the DagArena brand of a node is sound.
 crucible_neg_compile_test(neg_dag_node_on_the_stack
   "no matching function for call to .crucible::RegionNode::RegionNode\\(<brace-enclosed initializer list>\\)."
   "neg_dag_node_on_the_stack.cpp:[0-9]+:[0-9]+: error")
@@ -3850,15 +3850,15 @@ crucible_neg_compile_test(neg_recipe_pool_size_assign_raw
   "no match for .operator=."
   "crucible::RecipePool::Size.*fixy::Monotonic<unsigned int")
 
-# The RecipePool constructor takes a Ref<BumpArena<RecipeArena>, RecipeArena>,
-# with the brand of the arena.  A raw pointer to the arena and a Ref of a
-# different type must fail at the constructor.
+# The RecipePool constructor takes a Ref<BumpArena<RecipeArena>, Brand> of a
+# fresh brand.  A raw pointer to the arena and a Ref of a different type must
+# fail at the constructor.
 crucible_neg_compile_test(neg_recipe_pool_arena_raw_pointer
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "\\(type .foundation::core::BumpArena<crucible::RecipeArena>\\*.\\) to type .crucible::RecipePool::ArenaBorrow. \\{aka .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, crucible::RecipeArena>.\\}")
+  "mismatched types .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, Brand>. and .foundation::core::BumpArena<crucible::RecipeArena>\\*.")
 crucible_neg_compile_test(neg_recipe_pool_arena_wrong_borrow
   "no matching function for call to .crucible::RecipePool::RecipePool"
-  "\\(type .foundation::core::Ref<OtherArena, .*\\) to type .crucible::RecipePool::ArenaBorrow. \\{aka .foundation::core::Ref<foundation::core::BumpArena<crucible::RecipeArena>, crucible::RecipeArena>.\\}")
+  "mismatched types .foundation::core::BumpArena<crucible::RecipeArena>. and .OtherArena.")
 
 # A RecipePool is built in the initialization phase.  The constructor
 # defaults to Row<Init>, and a pure row, a row with only Alloc and a row

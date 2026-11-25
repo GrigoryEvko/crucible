@@ -319,6 +319,20 @@ static_assert(::foundation::brand::IsFreshBrand<decltype(brand_of(to(reached_num
 static_assert(std::is_same_v<decltype(target_of(to(reached_number))), Target<int>>);
 static_assert(std::is_same_v<decltype(target_of(to(reached_constant))), Target<int const>>);
 
+// A door gives the brand that the class of the object states, and the fresh brand
+// of its call for each other class.  A stated arena tag is in
+// checks/foundation/core/BumpArena.cpp.
+struct StatesBrand {
+    using brand_type = CheckBrand;
+};
+struct StatesNumber {
+    using brand_type = int;
+};
+static_assert(std::is_same_v<carrier_brand_t<int, NoMarker>, NoMarker>);
+static_assert(std::is_same_v<carrier_brand_t<StatesNumber, NoMarker>, NoMarker>);
+static_assert(std::is_same_v<carrier_brand_t<StatesBrand, NoMarker>, CheckBrand>);
+static_assert(std::is_same_v<carrier_brand_t<StatesBrand const&, NoMarker>, CheckBrand>);
+
 // The target gate.
 static_assert(RefTarget<int>);
 static_assert(RefTarget<int const>);
