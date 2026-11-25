@@ -1,0 +1,14 @@
+# A call of a closure that moves a linear capture out needs an object that the
+# frame gives up (the closures that move a capture of linear.cpp).  A call by
+# name (26), a call by a name in parentheses (31), a cast of a parameter by an
+# lvalue reference (36) and a cast of a local reference (42) give nothing up, so
+# each one is the kind closure-move-out.
+
+compile casts src/casts.cpp must-consume=on
+flag casts -freflection
+exit casts pass
+judge casts
+finding casts must-consume closure-move-out src/casts.cpp:26:9 | planted::call_by_name: body (planted::each_form_borrows_the_closure()::<lambda()>)
+finding casts must-consume closure-move-out src/casts.cpp:31:11 | planted::call_by_a_name_in_parentheses: body (planted::each_form_borrows_the_closure()::<lambda()>)
+finding casts must-consume closure-move-out src/casts.cpp:36:30 | planted::call_a_cast_of_a_borrow: body (planted::each_form_borrows_the_closure()::<lambda()>)
+finding casts must-consume closure-move-out src/casts.cpp:42:31 | planted::call_a_cast_of_a_local_reference: alias (planted::each_form_borrows_the_closure()::<lambda()>)

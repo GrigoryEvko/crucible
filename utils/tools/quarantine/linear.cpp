@@ -1213,22 +1213,24 @@ bool is_frame_owned_name(tree name) {
 
 // True when the object OBJECT of a call of a closure is a temporary, or an
 // rvalue that std::move, std::forward or a cast to an rvalue reference gives
-// of an object of the frame (is_frame_owned_name).  The full expression ends
-// a temporary, so no second call reaches it, and the rule use-after-move
-// refuses each later use of a name that such a cast spends.  A cast of a
-// borrowed object, such as a parameter by an lvalue reference, a capture or
-// the object behind a pointer, gives nothing up (the closures that move a
-// capture).
+// of an object of the frame (is_frame_owned_name).  The front end writes a
+// cast of a forwarding reference to its own type, such as
+// static_cast<Body&&>(body), as a NON_LVALUE_EXPR of that type.  The full
+// expression ends a temporary, so no second call reaches it, and the rule
+// use-after-move refuses each later use of a name that such a cast spends.  A
+// cast of a borrowed object, such as a parameter by an lvalue reference, a
+// capture or the object behind a pointer, gives nothing up (the closures that
+// move a capture).
 bool is_object_given_up(tree object) {
     bool saw_rvalue = false;
     for (int depth = 0; object != NULL_TREE && depth < kTypeDepth; ++depth) {
         object = tree_strip_any_location_wrapper(object);
         switch (TREE_CODE(object)) {
             case ADDR_EXPR:
-            case NON_LVALUE_EXPR:
             case INDIRECT_REF:
                 object = TREE_OPERAND(object, 0);
                 continue;
+            case NON_LVALUE_EXPR:
             case NOP_EXPR:
             case CONVERT_EXPR:
             case STATIC_CAST_EXPR:

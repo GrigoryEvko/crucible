@@ -1,0 +1,9 @@
+# A cast to an rvalue reference gives a closure up, as std::forward does (the
+# closures that move a capture of linear.cpp): a door that casts the closure
+# that its caller gave up, for a result that is a number and for a class
+# result, a door that casts the closure that it takes by value, and an arm that
+# gives a captured closure to the once door.  The unit compiles and gives no
+# line of the rule.
+compile casts src/casts.cpp must-consume=on
+flag casts -freflection
+exit casts pass

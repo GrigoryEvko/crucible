@@ -1,0 +1,82 @@
+// Calls of a closure that moves a linear capture out (the closures that move a
+// capture of linear.cpp), each one through a cast that gives the closure up.
+// The front end writes a cast of a forwarding reference to its own type as a
+// NON_LVALUE_EXPR.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that a call cannot pass in registers.
+struct Plain {
+    int value = 0;
+    constexpr explicit Plain(int given) noexcept : value{given} {}
+    constexpr Plain(Plain const& other) noexcept : value{other.value} {}
+    constexpr ~Plain() {}
+};
+
+void sink(Token&& token) noexcept;
+
+// A door that casts the closure that its caller gave up, as the rvalue match
+// of a Result does with its arm.
+template <class Body>
+auto run_given(Body&& body) noexcept {
+    return static_cast<Body&&>(body)(1);
+}
+
+// A door that casts the closure that it takes by value.
+template <class Body>
+auto run_owned(Body body) noexcept {
+    return static_cast<Body&&>(body)(1);
+}
+
+void cast_of_a_given_closure() {
+    Token first{1};
+    int const number = run_given([&first](int value) noexcept {
+        sink(std::move(first));
+        return value;
+    });
+    static_cast<void>(number);
+    Token second{2};
+    Plain const made = run_given([&second](int value) noexcept {
+        sink(std::move(second));
+        return Plain{value};
+    });
+    static_cast<void>(made);
+    Token third{3};
+    Plain const owned = run_owned([&third](int value) noexcept {
+        sink(std::move(third));
+        return Plain{value};
+    });
+    static_cast<void>(owned);
+}
+
+// An arm that gives the closure that it captures by reference to the once
+// door, as the arm of a spawn does.
+template <class Body>
+Plain spawn_like(Body&& body) noexcept {
+    return run_given([&body](int value) noexcept {
+        ::foundation::linear::call_once(static_cast<Body&&>(body));
+        return Plain{value};
+    });
+}
+
+void body_given_to_the_once_door_in_an_arm() {
+    Token fourth{4};
+    Plain const made = spawn_like([&fourth]() noexcept { sink(std::move(fourth)); });
+    static_cast<void>(made);
+}
+
+}  // namespace planted

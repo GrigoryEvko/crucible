@@ -1,0 +1,57 @@
+// Calls of a closure that moves a linear capture out (the closures that move a
+// capture of linear.cpp), each one through a form that gives nothing up: a
+// name, a cast of a parameter by an lvalue reference, a cast of a local
+// reference, and a name in parentheses.  Each call can run again.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+void sink(Token&& token) noexcept;
+
+template <class Body>
+void call_by_name(Body&& body) noexcept {
+    body();
+}
+
+template <class Body>
+void call_by_a_name_in_parentheses(Body&& body) noexcept {
+    (body)();
+}
+
+template <class Body>
+void call_a_cast_of_a_borrow(Body& body) noexcept {
+    static_cast<Body&&>(body)();
+}
+
+template <class Body>
+void call_a_cast_of_a_local_reference(Body&& body) noexcept {
+    auto& alias = body;
+    static_cast<Body&&>(alias)();
+}
+
+void each_form_borrows_the_closure() {
+    Token first{1};
+    call_by_name([&first]() noexcept { sink(std::move(first)); });
+    Token second{2};
+    call_by_a_name_in_parentheses([&second]() noexcept { sink(std::move(second)); });
+    Token third{3};
+    auto give = [&third]() noexcept { sink(std::move(third)); };
+    call_a_cast_of_a_borrow(give);
+    Token fourth{4};
+    call_a_cast_of_a_local_reference([&fourth]() noexcept { sink(std::move(fourth)); });
+}
+
+}  // namespace planted
