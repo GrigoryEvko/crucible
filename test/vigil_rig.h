@@ -96,5 +96,6 @@ void test_raise_in_each_iteration_after_a_replay_keeps_the_loop_eager();
 void test_external_follows_the_live_op();
 void test_views_of_an_external_bind_its_storage();
 void test_internal_slot_of_a_nest_keeps_its_pool_bytes();
+void test_register_external_checks_the_plan();
 
 }  // namespace test_vigil

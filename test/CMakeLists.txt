@@ -4478,19 +4478,23 @@ crucible_neg_compile_test(neg_crucible_context_nested_output_views
   "no matching function for call to .foundation::core::Result<foundation::core::FixedList<foundation::ByteWindow, 8>, crucible::OutputRefusal>::and_then\\("
   "StoresNoBorrowOutside")
 
-# mint_external_slot gives the ExternalSlotId of a slot that the plan marks
-# external, and the address form of register_external takes only that type.
-# Two fixtures cover its two gates:
-#   * neg_crucible_context_register_external_plain_slot — a plain SlotId does
-#     not convert to an ExternalSlotId.
-#   * neg_crucible_context_external_slot_from_slot_id — the constructor from a
-#     SlotId is private to the mint.
-crucible_neg_compile_test(neg_crucible_context_register_external_plain_slot
-  "cannot convert .crucible::SlotId. to .crucible::ExternalSlotId."
-  "neg_crucible_context_register_external_plain_slot.cpp:14")
-crucible_neg_compile_test(neg_crucible_context_external_slot_from_slot_id
-  "is private within this context"
-  "neg_crucible_context_external_slot_from_slot_id.cpp:12")
+# A caller registers the address of an external slot only through the door
+# that reads the plan of the active region, and it reads the result.
+#   * neg_crucible_context_external_slot_id_is_private: no code outside the
+#     context keeps the id of an external slot of one activation.
+#   * neg_crucible_context_unchecked_register_of_a_slot_id: the door that reads
+#     no plan takes no SlotId.
+#   * neg_crucible_context_register_external_unread_refusal: the result of
+#     the checked door is not discarded.
+crucible_neg_compile_test(neg_crucible_context_external_slot_id_is_private
+  "class crucible::CrucibleContext::ExternalSlotId. is private within this context"
+  "neg_crucible_context_external_slot_id_is_private\\.cpp:11:")
+crucible_neg_compile_test(neg_crucible_context_unchecked_register_of_a_slot_id
+  "cannot convert .crucible::SlotId. to .crucible::CrucibleContext::ExternalSlotId."
+  "neg_crucible_context_unchecked_register_of_a_slot_id\\.cpp:17:")
+crucible_neg_compile_test(neg_crucible_context_register_external_unread_refusal
+  "ignoring return value of .*crucible::CrucibleContext::register_external\\(crucible::SlotId, crucible::TensorData"
+  "neg_crucible_context_register_external_unread_refusal\\.cpp:16:")
 crucible_neg_compile_test(neg_replay_engine_active_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_replay_engine_active_view_unbranded_ctx.cpp:11")

@@ -7,6 +7,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/check/Fixture.h>
 #include "tensor_data.h"
+#include "test_harness.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -373,9 +374,8 @@ static void test_external_slots() {
     auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     alignas(256) char fake_param[128];
-    ctx.register_external(
-        crucible::mint_external_slot(plan->slots.view(), SlotId{1}).expect("the plan marks slot 1 external"),
-        crucible::test::host_data(fake_param), cv);
+    ctx.register_external(SlotId{1}, crucible::test::host_data(fake_param), cv)
+        .expect("the plan marks slot 1 external");
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::COMPLETE);
     // The registration is checked through the pool, which is where an
@@ -384,6 +384,176 @@ static void test_external_slots() {
     CRUCIBLE_TEST_ASSERT(kTest, crucible::test::host_ptr(ctx.pool().slot_ptr(SlotId{1}, pv)) == fake_param);
 
     ::fixy::check::pass(kTest, "  test_external_slots: PASSED\n");
+}
+
+// The layout of a block of external bytes: 64 bytes at an alignment of 64.
+static ::fixy::Layout make_external_layout() {
+    return ::fixy::mint_layout(::fixy::ByteCount{64},
+                               ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
+        .expect("64 bytes at an alignment of 64 is a layout");
+}
+
+// A region of two ops and two slots.  Op 0 reads slot 1 and writes slot 0,
+// and op 1 writes slot 0.  The plan marks slot 1 external, or puts it in the
+// pool.
+static crucible::DagRef<RegionNode> make_region_reading_slot_one(::fixy::BumpArena<DagArena>& arena, bool is_external,
+                                                                 SchemaHash last_schema) {
+    auto ops_run = arena.array(g_test.alloc, 2, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry, 2> const ops = ops_run.view().window<2>(0).expect("the run holds two ops");
+    TraceEntry& first = ops.at(::foundation::core::index<0>());
+    first.schema_hash = SchemaHash{50};
+    first.shape_hash = ShapeHash{60};
+    set_input_slots(first, ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1}));
+    set_output_slots(first, ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0}));
+    TraceEntry& last = ops.at(::foundation::core::index<1>());
+    last.schema_hash = last_schema;
+    last.shape_hash = ShapeHash{61};
+    set_output_slots(last, ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0}));
+
+    auto slots_run = arena.array(g_test.alloc, 2, TensorSlot{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TensorSlot, 2> const slots = slots_run.view().window<2>(0).expect("the run holds two slots");
+    const crucible::DagRef<MemoryPlan> plan = make_simple_plan(g_test.alloc, arena, slots_run);
+    slots.at(::foundation::core::index<1>()).is_external = is_external;
+    plan->num_external = is_external ? 1 : 0;
+    return build_region(g_test.alloc, arena, ops_run, crucible::make_plan_link(plan));
+}
+
+// The address form of the register door reads the plan of the active region.
+// A slot that one region marks external is a pooled slot of another region,
+// and the door refuses it there, so the slot keeps the window of the pool.
+static void test_register_external_refusals() {
+    using crucible::ExternalRefusal;
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> external_region = make_region_reading_slot_one(arena, true, SchemaHash{51});
+    const crucible::DagRef<RegionNode> pooled_region = make_region_reading_slot_one(arena, false, SchemaHash{51});
+    ::foundation::AlignedBytes owner = ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
+    const ::fixy::RunAddress given = ::fixy::mint_run_address(owner.view(), 0).expect("the block holds 64 bytes");
+    const crucible::TensorData data{given, crucible::kHostDevice};
+
+    CrucibleContext ctx{g_test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    {
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
+        const auto refusal_of = [&ctx, &cv, data](SlotId sid) noexcept {
+            return ctx.register_external(sid, data, cv).err();
+        };
+        CRUCIBLE_TEST_ASSERT(kTest, refusal_of(SlotId{1}).is_none());
+        CRUCIBLE_TEST_ASSERT(kTest, refusal_of(SlotId{0}) == ::fixy::some(ExternalRefusal::PooledSlot));
+        CRUCIBLE_TEST_ASSERT(kTest, refusal_of(SlotId{2}) == ::fixy::some(ExternalRefusal::OutsidePlan));
+        CRUCIBLE_TEST_ASSERT(kTest, refusal_of(SlotId{}) == ::fixy::some(ExternalRefusal::OutsidePlan));
+        auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{1}, pv) == ::fixy::some(given));
+    }
+
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    {
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
+        auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+        const ::fixy::Option<::fixy::RunAddress> planned = ctx.pool().slot_ptr(SlotId{1}, pv);
+        CRUCIBLE_TEST_ASSERT(kTest, planned.is_some() && !(planned == ::fixy::some(given)));
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.register_external(SlotId{1}, data, cv).err()
+                                        == ::fixy::some(ExternalRefusal::PooledSlot));
+        CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{1}, pv) == planned);
+    }
+
+    ::fixy::check::pass(kTest, "  test_register_external_refusals: PASSED\n");
+}
+
+// The list of the external reads belongs to the active region.  Each change
+// of the active region drops it, so a bind of the next region reads no slot
+// of the region before it.
+static void test_external_reads_follow_the_region() {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{8192});
+    const crucible::DagRef<RegionNode> external_region = make_region_reading_slot_one(arena, true, SchemaHash{51});
+    const crucible::DagRef<RegionNode> pooled_region = make_region_reading_slot_one(arena, false, SchemaHash{51});
+    const crucible::DagRef<RegionNode> pooled_alternate = make_region_reading_slot_one(arena, false, SchemaHash{52});
+
+    // Two live ops of one input, each with its own data.
+    ::foundation::AlignedBytes owner = ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
+    const ::fixy::RunAddress first_data = ::fixy::mint_run_address(owner.view(), 0).expect("the block holds 64 bytes");
+    const ::fixy::RunAddress second_data =
+        ::fixy::mint_run_address(owner.view(), 32).expect("the block holds 64 bytes");
+    ::fixy::FixedArray<crucible::TensorMeta, 1> first_records{};
+    ::fixy::FixedArray<crucible::TensorMeta, 1> second_records{};
+    first_records.with_element(::fixy::index<0>(), [first_data](crucible::TensorMeta& record) noexcept {
+        record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(first_data));
+    });
+    second_records.with_element(::fixy::index<0>(), [second_data](crucible::TensorMeta& record) noexcept {
+        record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(second_data));
+    });
+    crucible::TraceRing::Entry entry{};
+    entry.num_inputs = 1;
+    const crucible::ValidatedOp first_op = crucible::test::certify_synthetic_op(entry, first_records, 1);
+    const crucible::ValidatedOp second_op = crucible::test::certify_synthetic_op(entry, second_records, 1);
+
+    CrucibleContext ctx{g_test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    {
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
+        auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+        const auto held = [&ctx, &pv] noexcept { return ctx.pool().slot_ptr(SlotId{1}, pv); };
+        // The activation lists no read.
+        ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, held().is_none());
+        // The list holds the one read of op 0, and a rewind gives it again.
+        ctx.list_external_reads(OpIndex{0}, cv);
+        ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, held() == ::fixy::some(first_data));
+        ctx.bind_external_reads(OpIndex{1}, second_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, held() == ::fixy::some(first_data));
+        ctx.rewind_external_reads();
+        ctx.bind_external_reads(OpIndex{0}, second_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, held() == ::fixy::some(second_data));
+        // A list that resumes at op 1 gives no read of op 0.
+        ctx.list_external_reads(OpIndex{1}, cv);
+        ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, held() == ::fixy::some(second_data));
+        ctx.rewind_external_reads();
+    }
+
+    // The switch to another region after op 0 drops the list, and so does an
+    // activation.  Slot 1 of the two regions is a pooled slot, and it keeps
+    // its window.
+    const auto check_pooled_region = [&ctx, &first_op] noexcept {
+        auto cv = ctx.mint_compiled_view(kVigilForeground);
+        auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+        const ::fixy::Option<::fixy::RunAddress> planned = ctx.pool().slot_ptr(SlotId{1}, pv);
+        ctx.rewind_external_reads();
+        ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+        ctx.list_external_reads(OpIndex{0}, cv);
+        ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+        CRUCIBLE_TEST_ASSERT(kTest, planned.is_some() && ctx.pool().slot_ptr(SlotId{1}, pv) == planned);
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.switch_region(*pooled_alternate, 1));
+    check_pooled_region();
+
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    ctx.list_external_reads(OpIndex{0}, ctx.mint_compiled_view(kVigilForeground));
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    check_pooled_region();
+
+    // A deactivation ends the pool of the region, and it drops the list with
+    // it, so the next activation starts with no read of the old plan.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    ctx.list_external_reads(OpIndex{0}, ctx.mint_compiled_view(kVigilForeground));
+    ctx.deactivate();
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*pooled_region));
+    check_pooled_region();
+
+    // The activation of the external region again starts with an empty list,
+    // and a new list gives its read.
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*external_region));
+    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+    ctx.bind_external_reads(OpIndex{0}, first_op, cv);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{1}, pv).is_none());
+    ctx.list_external_reads(OpIndex{0}, cv);
+    ctx.bind_external_reads(OpIndex{0}, second_op, cv);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().slot_ptr(SlotId{1}, pv) == ::fixy::some(second_data));
+
+    ::fixy::check::pass(kTest, "  test_external_reads_follow_the_region: PASSED\n");
 }
 
 // The plan here comes from the real sweep-line planner rather than the
@@ -474,9 +644,8 @@ static void test_integration_sweep_line() {
 
     alignas(256) char fake_param[128];
     std::memset(fake_param, 0xEE, 128);
-    ctx.register_external(
-        crucible::mint_external_slot(plan_storage->slots.view(), SlotId{2}).expect("the plan marks slot 2 external"),
-        crucible::test::host_data(fake_param), cv);
+    ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), cv)
+        .expect("the plan marks slot 2 external");
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv).status() == ReplayStatus::MATCH);
@@ -564,13 +733,6 @@ static void test_divergence_counter() {
     ::fixy::check::pass(kTest, "  test_divergence_counter: PASSED\n");
 }
 
-// The layout of a block of external bytes: 64 bytes at an alignment of 64.
-static ::fixy::Layout make_external_layout() {
-    return ::fixy::mint_layout(::fixy::ByteCount{64},
-                               ::fixy::mint_alignment(::fixy::ByteCount{64}).expect("64 is a power of two"))
-        .expect("64 bytes at an alignment of 64 is a layout");
-}
-
 // The doors of the views of an op.  register_external_view checks a View
 // against the slot of the plan, and refuses a pooled slot, a View smaller
 // than the slot and a View off the alignment of the element.  input_view
@@ -641,10 +803,11 @@ static void test_slot_views() {
     ::foundation::AlignedBytes address_only =
         ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
     ctx.register_external(
-        crucible::mint_external_slot(plan->slots.view(), SlotId{4}).expect("the plan marks slot 4 external"),
-        crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 64 bytes"),
-                             crucible::kHostDevice},
-        cv);
+           SlotId{4},
+           crucible::TensorData{::fixy::mint_run_address(address_only.view(), 0).expect("the block holds 64 bytes"),
+                                crucible::kHostDevice},
+           cv)
+        .expect("the plan marks slot 4 external");
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{700}, ShapeHash{800}, cv).status() == ReplayStatus::MATCH);
 
@@ -765,6 +928,8 @@ int main() {
     test_divergence();
     test_reactivate();
     test_external_slots();
+    test_register_external_refusals();
+    test_external_reads_follow_the_region();
     test_integration_sweep_line();
     test_divergence_counter();
     test_slot_views();

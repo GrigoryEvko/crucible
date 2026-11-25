@@ -228,4 +228,53 @@ void test_internal_slot_of_a_nest_keeps_its_pool_bytes() {
     ::fixy::check::pass(kTest, "  test_internal_slot_of_a_nest_keeps_its_pool_bytes: PASSED\n");
 }
 
+// The door of an external address reads the plan of the region that replays.
+// It takes the one external slot, the batch, and it refuses each pooled slot
+// and an id outside the plan, so each pooled slot keeps its window.
+void test_register_external_checks_the_plan() {
+    using crucible::DispatchResult;
+    using crucible::ExternalRefusal;
+    using crucible::SlotId;
+    auto memory_run = take_memory();
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<std::byte> const memory = memory_run.view();
+    crucible::Vigil vigil;
+    const auto fg = vigil.mint_producer_context();
+    publish_and_align(vigil, memory, kOutputOfOp0);
+
+    const crucible::TensorData given{batch_address(memory, 9).expect("the batch is in the memory"),
+                                     crucible::kHostDevice};
+    const crucible::DagRef<crucible::RegionNode const> region =
+        vigil.context().active_region().expect("the Vigil replays a region");
+    const crucible::DagRef<crucible::MemoryPlan const> plan =
+        crucible::PlanLink{region->plan}.expect("the region has a plan");
+    auto pv = vigil.context().pool().mint_initialized_view(fg);
+    uint32_t position = 0;
+    uint32_t num_external = 0;
+    for (const crucible::TensorSlot& slot : plan->slots.view()) {
+        const SlotId sid{position};
+        const ::fixy::Option<::fixy::RunAddress> planned = vigil.context().pool().slot_ptr(sid, pv);
+        const ::fixy::Option<ExternalRefusal> refusal = vigil.register_external(fg, sid, given).err();
+        const ::fixy::Option<::fixy::RunAddress> held = vigil.context().pool().slot_ptr(sid, pv);
+        if (slot.is_external) {
+            CRUCIBLE_TEST_ASSERT(kTest, refusal.is_none() && held == ::fixy::some(given.address()));
+            ++num_external;
+        } else {
+            CRUCIBLE_TEST_ASSERT(kTest, refusal == ::fixy::some(ExternalRefusal::PooledSlot) && held == planned);
+        }
+        ++position;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, num_external == 1 && position > num_external);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.register_external(fg, SlotId{position}, given).err()
+                                    == ::fixy::some(ExternalRefusal::OutsidePlan));
+
+    // The replay binds the batch of the live op again.
+    for (uint32_t op = 0; op < NUM_OPS; ++op)
+        CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, 4, op).action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, dispatch(vigil, memory, 5, 0).action == DispatchResult::Action::COMPILED);
+    CRUCIBLE_TEST_ASSERT(kTest, vigil.input_ptr(fg, 0) == batch_address(memory, 5));
+
+    ::fixy::check::pass(kTest, "  test_register_external_checks_the_plan: PASSED\n");
+}
+
 }  // namespace test_vigil

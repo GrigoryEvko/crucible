@@ -46,7 +46,7 @@ that the axis does not apply to the row.
 | `CKernelTable::mint_mutable_view` | `include/crucible/CKernel.h` | Y | - | Y | · | member | · | HS14: 5 |
 | `CKernelTable::mint_sealed_view` | `include/crucible/CKernel.h` | Y | · | Y | · | member | · | HS14: 2 |
 | `Cipher::mint_open_view` | `include/crucible/Cipher.h` | Y | · | Y | Y | member | · | HS14: 15 |
-| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 4 |
+| `CrucibleContext::mint_compiled_view` | `include/crucible/CrucibleContext.h` | Y | Y | Y | · | member | · | HS14: 5 |
 | `PoolAllocator::mint_initialized_view` | `include/crucible/PoolAllocator.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `ReplayEngine::mint_active_view` | `include/crucible/ReplayEngine.h` | Y | Y | Y | · | member | · | HS14: 4 |
 | `SchemaTableOf::mint_mutable_view` | `include/crucible/SchemaTable.h` | Y | - | Y | · | member | · | HS14: 10 |
@@ -54,7 +54,6 @@ that the axis does not apply to the row.
 | `Vigil::mint_producer_context` | `include/crucible/Vigil.h` | Y | - | Y | · | member | · | HS14: 3 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::Box<foundation::core::BumpArena<crucible::DagArena> >&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 12 |
 | `mint_dag_node(foundation::effects::Alloc, foundation::core::BumpArena<crucible::DagArena>&)` | `include/crucible/MerkleDag.h` | Y | - | Y | Y | token | · | HS14: 12 |
-| `mint_external_slot` | `include/crucible/CrucibleContext.h` | Y | Y | Y | Y | token | · | HS14: 2 |
 | `mint_ffi_entry` | `include/crucible/TraceRing.h` | Y | Y | Y | · | token | · | HS14: 8 |
 | `mint_metalog_consumer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
 | `mint_metalog_producer_session` | `include/crucible/MetaLogSession.h` | Y | Y | Y | Y | ctx | Y | HS14: 4 |
@@ -419,5 +418,5 @@ that the axis does not apply to the row.
 
 | layer | mints | ctx | token | member | ctx with no fit | under the HS14 floor |
 |---|---|---|---|---|---|---|
-| crucible (`include/crucible/`) | 81 | 46 | 26 | 9 | 0 | 7 |
+| crucible (`include/crucible/`) | 80 | 46 | 25 | 9 | 0 | 7 |
 | substrate (`include/foundation/`, `include/fixy/`) | 180 | 63 | 113 | 4 | 0 | 2 |

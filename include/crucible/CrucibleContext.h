@@ -2,7 +2,9 @@
 
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
+#include <crucible/ValidatedOp.h>
 #include <fixy/Core.h>
 #include <fixy/Mutation.h>
 #include <fixy/Refined.h>
@@ -101,50 +103,11 @@ enum class ViewRefusal : uint8_t {
     Misaligned,  // the first byte of the View is not aligned for an element of the slot
 };
 
-// The slots of a memory plan, and no other type, so the mint reads the flag
-// of a slot of a plan.
-template <class Slots>
-concept PlanSlotsView = std::is_same_v<Slots, ::fixy::View<TensorSlot const>>;
-
-// A slot id that the plan of a region marks external.  mint_external_slot
-// is the one door, so a register door that takes one writes no pooled slot,
-// and the window of each pooled slot stays the window of the plan.  No
-// constructor takes a SlotId outside the mint, and the class has no default.
-// The id names a slot of the plan that the mint read: the Vigil mints the
-// ids of each activation from the plan of that activation.  The class holds
-// one SlotId, so it costs what a SlotId costs.
-class ExternalSlotId final {
-public:
-    [[nodiscard]] constexpr SlotId slot() const noexcept { return slot_; }
-
-private:
-    // The return type is deduced, so the declaration names no Option of
-    // this class before the class is complete.
-    template <PlanSlotsView Slots>
-    friend constexpr auto mint_external_slot(Slots slots, SlotId sid) noexcept;
-
-    constexpr explicit ExternalSlotId(SlotId slot) noexcept : slot_{slot} {}
-
-    SlotId slot_{};
+// Why register_external refused an address.
+enum class ExternalRefusal : uint8_t {
+    OutsidePlan,  // the plan of the active region has no slot of this id
+    PooledSlot,  // the plan puts the slot in the pool, which owns its bytes
 };
-
-// The id sid, when the slot at sid of the plan slots is external, or no
-// value for an id outside the plan and for a pooled slot: an
-// Option<ExternalSlotId>.  The Vigil mints one at each test of an external
-// slot, and the address form of register_external takes only this type.
-// Complexity: O(1).
-template <PlanSlotsView Slots>
-[[nodiscard]] constexpr auto mint_external_slot(Slots slots, SlotId sid) noexcept {
-    using Minted = ::fixy::Option<ExternalSlotId>;
-    // The window of one slot holds the one bound test, which a loop over the
-    // positions of the plan folds into its own test.
-    const bool is_external =
-        slots.template window<1>(sid.raw()).is_some_and([](::fixy::View<TensorSlot const, 1> const& planned) noexcept {
-            return planned.at(::fixy::index<0>()).is_external;
-        });
-    if (!is_external) return Minted{::fixy::none};
-    return Minted::some(ExternalSlotId{sid});
-}
 
 struct CrucibleContext {
     // The caller gives the allocation capability of its context.  The pool
@@ -180,6 +143,7 @@ struct CrucibleContext {
 
     void deactivate() {
         mode_ = ContextMode::RECORD;
+        drop_external_reads_();
         pool_.destroy();
         active_region_ = ActiveRegionLink{};
 
@@ -250,6 +214,8 @@ struct CrucibleContext {
         // out of scope before anything touches the pool again.
         auto pv = pool_.initialized_view_();
         const ::foundation::AlignedBytes old_pool = pool_.detach(pv);
+        // The listed reads name slots of the old plan.
+        drop_external_reads_();
         pool_.init(allocation_, *new_plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
@@ -327,13 +293,90 @@ struct CrucibleContext {
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // The address of an external slot and the device of its owner
-    // (PoolAllocator::register_external).  The id comes from
-    // mint_external_slot, so the plan marks the slot external, and the door
-    // writes no pooled slot.  The door runs for each external read of the
-    // replay, and the type carries the proof, so it reads no plan.
-    CRUCIBLE_INLINE void register_external(ExternalSlotId external, TensorData data, CompiledView const&) {
-        auto pv = pool_.initialized_view_();
-        pool_.register_external(external.slot(), data, pv);
+    // (PoolAllocator::register_external).  The door reads the flag of the
+    // slot in the plan of the active region, so it writes no pooled slot,
+    // and the window of each pooled slot stays the window of the plan.  A
+    // refusal gives its ExternalRefusal, and the pool keeps the slot as it
+    // was.  The replay of an op binds its external slots through
+    // bind_external_reads, which reads no plan.  Complexity: O(1).
+    [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
+    register_external(SlotId sid, TensorData data, CompiledView const&) {
+        using Registered = ::fixy::Result<::fixy::Unit, ExternalRefusal>;
+        const ::fixy::View<const TensorSlot> plan_slots = active_plan_().slots.view();
+        if (plan_slots.get(sid.raw()).is_none()) return ::fixy::err(ExternalRefusal::OutsidePlan);
+        return external_slot_(plan_slots, sid)
+            .match(
+                [this, data](ExternalSlotId external) noexcept -> Registered {
+                    register_external_(external, data);
+                    return ::fixy::Unit{};
+                },
+                []() noexcept -> Registered { return ::fixy::err(ExternalRefusal::PooledSlot); });
+    }
+
+    // Lists each read of an external slot by an op of the active region, in
+    // the order of the ops and of the inputs, for bind_external_reads: each
+    // input of an op that has an external slot of the plan and no producer
+    // op.  An input with no producer can also read an internal slot, such as
+    // the new result that a nested copy_ writes in place before its parent
+    // returns it, and the pool owns the bytes of that slot.  The replay
+    // resumes at op resume_op, so the cursor starts at the first read of that
+    // op or of a later op.  The ids come from the plan of the active region,
+    // and each activation, each switch and each deactivation drops the list,
+    // so a listed id is always an external slot of the active plan.  Two
+    // passes, one to count and one to fill, so the list takes one allocation.
+    // Complexity: O(the inputs of the region).
+    [[gnu::cold]] void list_external_reads(OpIndex resume_op, CompiledView const&) {
+        const RegionNode& region = active_region_node_();
+        const ::fixy::View<const TensorSlot> plan_slots = active_plan_().slots.view();
+        const auto each_read = [&region, plan_slots](auto&& on_read) {
+            for (uint32_t i = 0; i < region.num_ops(); i++) {
+                const TraceEntry& te = region.op_at(i);
+                const ::fixy::View<const OpIndex> producers = te.input_trace_indices();
+                const ::fixy::View<const SlotId> slots = te.input_slot_ids();
+                for (uint16_t input = 0; input < te.num_inputs(); input++) {
+                    const SlotId slot = *slots.get(input).expect("the input arrays of an entry hold one count");
+                    const bool has_producer =
+                        producers.get(input).expect("the input arrays of an entry hold one count")->is_valid();
+                    for (const ExternalSlotId external : external_slot_(plan_slots, slot)) {
+                        if (!has_producer) on_read(ExternalRead{OpIndex{i}, external, InputPosition{input}});
+                    }
+                }
+            }
+        };
+        uint32_t count = 0;
+        each_read([&count](const ExternalRead&) noexcept { ++count; });
+        uint32_t filled = 0;
+        next_external_read_ = count;
+        // The lease writes each read once, in order, so a read needs no
+        // default value.  The second pass gives the reads that the first
+        // pass counted.
+        external_reads_ = ::fixy::mint_heap_array_written<ExternalRead>(
+            allocation_, count, [&](::fixy::WriteLease<ExternalRead>& lease) noexcept {
+                each_read([&](const ExternalRead& read) noexcept {
+                    lease.put(read);
+                    if (next_external_read_ == count && read.op.raw() >= resume_op.raw()) next_external_read_ = filled;
+                    ++filled;
+                });
+            });
+    }
+
+    // Takes the cursor of bind_external_reads back to the first read, for
+    // the first op of an iteration.
+    CRUCIBLE_INLINE void rewind_external_reads() noexcept { next_external_read_ = 0; }
+
+    // Binds each external slot that the op at matched reads to the storage of
+    // that input of the live op.  The replay of each op calls the door once,
+    // in the order of the ops.  An op that reads no external costs two
+    // compares, and an op that reads one costs one call for all its reads.
+    // The list holds only external slots of the active plan
+    // (list_external_reads), so the door reads no plan, and it writes no
+    // pooled slot.  Complexity: O(the reads of the op).
+    CRUCIBLE_INLINE void bind_external_reads(OpIndex matched, const ValidatedOp& live, CompiledView const&) {
+        const bool has_read =
+            external_reads_.view().get(next_external_read_).is_some_and([matched](auto const& next) noexcept {
+                return next->op.raw() <= matched.raw();
+            });
+        if (has_read) bind_reads_up_to_(matched, live);
     }
 
     // The bytes of an external slot as a View of the host
@@ -452,12 +495,93 @@ private:
     // one for each output, in the order of the outputs.
     using OutputWindows = ::fixy::FixedList<::foundation::ByteWindow, ::foundation::max_block_windows>;
 
+    // A slot that the plan of the active region marks external.  The door
+    // external_slot_ is the one source, so a register door that takes one
+    // writes no pooled slot.  The class is private to the context, and only
+    // the list of the reads holds one, which each change of the active
+    // region drops.  It holds one SlotId, so it costs what a SlotId costs.
+    class ExternalSlotId final {
+    public:
+        [[nodiscard]] constexpr SlotId slot() const noexcept { return slot_; }
+
+    private:
+        friend struct CrucibleContext;
+
+        constexpr explicit ExternalSlotId(SlotId slot) noexcept : slot_{slot} {}
+
+        SlotId slot_{};
+    };
+
+    // The slot of the id, when the slot of the plan at the id is external,
+    // or no value for an id outside the plan and for a pooled slot.
+    // Complexity: O(1).
+    [[nodiscard]] static constexpr ::fixy::Option<ExternalSlotId>
+    external_slot_(::fixy::View<const TensorSlot> plan_slots, SlotId sid) noexcept {
+        // The window of one slot holds the one bound test.
+        const bool is_external =
+            plan_slots.window<1>(sid.raw()).is_some_and([](::fixy::View<const TensorSlot, 1> const& planned) noexcept {
+                return planned.at(::fixy::index<0>()).is_external;
+            });
+        if (!is_external) return ::fixy::none;
+        return ::fixy::some(ExternalSlotId{sid});
+    }
+
+    // One read of an external slot by an op of the active region: the op,
+    // the slot and the position of the input.  The slot and the position
+    // have no default, so the read has none.
+    struct ExternalRead {
+        OpIndex op{};
+        ExternalSlotId slot;
+        InputPosition input;
+        [[maybe_unused]] ::fixy::FixedArray<uint8_t, 2> pad{};
+    };
+
+    CRUCIBLE_INLINE void register_external_(ExternalSlotId external, TensorData data) {
+        auto pv = pool_.initialized_view_();
+        pool_.register_external(external.slot(), data, pv);
+    }
+
+    // Binds the listed reads of the op at matched to the live op, and passes
+    // the reads of the earlier ops.  The cursor stops at the first read of a
+    // later op.
+    [[gnu::noinline]] void bind_reads_up_to_(OpIndex matched, const ValidatedOp& live) {
+        const ::fixy::View<const ExternalRead> reads = external_reads_.view();
+        while (next_external_read_ < reads.size()) {
+            const ExternalRead& read = *reads.get(next_external_read_).expect("the test above bounds the cursor");
+            if (read.op.raw() > matched.raw()) break;
+            if (read.op.raw() == matched.raw()) bind_external_read_(live, read);
+            ++next_external_read_;
+        }
+    }
+
+    // Binds one external slot to the storage of one input of the live op.  A
+    // slot holds one storage, so the slot takes the address of the first
+    // byte of the storage, and two views at different offsets of one storage
+    // bind the slot to one address.  The guard matched the shape hash of the
+    // inputs, so the input is in the live op, and the test keeps each read in
+    // bounds when a hash collides.
+    void bind_external_read_(const ValidatedOp& live, const ExternalRead& read) {
+        const uint16_t input = read.input.raw();
+        if (input >= live.entry().num_inputs) return;
+        storage_address(*live.metas().get(input).expect("the live op holds its inputs first"))
+            .match([this, &read](TensorData data) noexcept { register_external_(read.slot, data); }, []() noexcept {});
+    }
+
+    void drop_external_reads_() noexcept {
+        external_reads_ = ::fixy::HeapArray<ExternalRead>{};
+        next_external_read_ = 0;
+    }
+
+    // The active region.  A compiled context has one.
+    [[nodiscard]] const RegionNode& active_region_node_() const {
+        return *::fixy::Option<DagRef<RegionNode const>>{active_region_.value()}.expect(
+            "a compiled context has a region");
+    }
+
     // The plan of the active region.  A compiled context has a region, and
     // the region of an activation has a plan.
     [[nodiscard]] const MemoryPlan& active_plan_() const {
-        const RegionNode& region =
-            *::fixy::Option<DagRef<RegionNode const>>{active_region_.value()}.expect("a compiled context has a region");
-        return *PlanLink{region.plan}.expect("an active region has a memory plan");
+        return *PlanLink{active_region_node_().plan}.expect("an active region has a memory plan");
     }
 
     // True when the first byte of the bytes is aligned for an element of the
@@ -487,12 +611,12 @@ private:
     // plan of the active region: the offset of its first byte and its count
     // of bytes.  An external slot holds bytes of its owner, and no window of
     // the pool, so it gives ExternalOutput.  The column of bytes of the pool
-    // holds the same window for each pooled slot.  register_external_view
-    // refuses a pooled slot, and register_external takes an ExternalSlotId,
-    // but that id can come from the plan of an earlier activation.  So the
-    // check of each output stays in each build: a pooled slot with another
-    // address or View ends the process, and an input never reads other bytes
-    // than the output wrote.  Complexity: O(outputs).
+    // holds the same window for each pooled slot, because register_external,
+    // register_external_view and the list of the external reads refuse a
+    // pooled slot of the active plan.  The check of each output stays in each
+    // build: a pooled slot with another address or View ends the process, and
+    // an input never reads other bytes than the output wrote.  Complexity:
+    // O(outputs).
     [[nodiscard]] ::fixy::Result<OutputWindows, OutputRefusal> output_windows_() const {
         using ::fixy::side_as;
         using Start = ::foundation::core::side::WindowStart;
@@ -633,9 +757,11 @@ private:
 
     // The engine sits at offset zero, so its own hot cache line is this
     // object's hot cache line. The View of the ops of the engine, the mode,
-    // the count of iterations and the active region share the next one, and
-    // the pool follows. The count of divergences is cold, and it goes after
-    // the pool. The check file of this header pins the size.
+    // the count of iterations, the active region and the list of the external
+    // reads with its cursor share the next one, so the replay of an op that
+    // reads no external touches no other line of this object. The pool
+    // follows. The count of divergences is cold, and it goes after the pool.
+    // The check file of this header pins the size.
     ReplayEngine engine_;  // 72 bytes, offset 0
     ContextMode mode_ = ContextMode::RECORD;  // offset 72
     [[maybe_unused]] ::fixy::FixedArray<uint8_t, 7> pad_{};
@@ -659,9 +785,16 @@ private:
     }
 
     ActiveRegionLink active_region_{};  // offset 88
-    PoolAllocator pool_;  // 80 bytes, offset 96
+    // The reads of the external slots of the active region, in the order of
+    // the ops (list_external_reads), and the next read of the iteration, at
+    // most the count of the reads.  The list is empty while the context
+    // records, and from a change of the active region to the next list.
+    ::fixy::HeapArray<ExternalRead> external_reads_{};  // 16 bytes, offset 96
+    uint32_t next_external_read_ = 0;  // offset 112
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> cursor_pad_{};
+    PoolAllocator pool_;  // 80 bytes, offset 120
     // The count of divergences, with the type of the count of iterations.
-    ::fixy::WideMonotonic<1> diverged_count_ = ::fixy::mint_wide_monotonic<1>();  // offset 176
+    ::fixy::WideMonotonic<1> diverged_count_ = ::fixy::mint_wide_monotonic<1>();  // offset 200
     // The allocation capability that the constructor received.  The pool of
     // each activated region allocates only through it.  The tag is empty, so
     // it adds no storage.  It has no initializer, because the one

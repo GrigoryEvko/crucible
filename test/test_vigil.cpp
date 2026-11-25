@@ -362,6 +362,7 @@ int main() {
     test_vigil::test_external_follows_the_live_op();
     test_vigil::test_views_of_an_external_bind_its_storage();
     test_vigil::test_internal_slot_of_a_nest_keeps_its_pool_bytes();
+    test_vigil::test_register_external_checks_the_plan();
     test_store_that_does_not_open_gives_no_store();
 
     char tmpdir[] = "/tmp/crucible_vigil_XXXXXX";

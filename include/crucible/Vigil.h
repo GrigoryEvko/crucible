@@ -666,9 +666,14 @@ public:
     ::fixy::Option<::fixy::RunAddress> input_ptr(VigilFgCtx const&, uint16_t) const&& =
         delete("a temporary Vigil releases its pool at the end of the statement. Use a Vigil that has a name");
 
-    void register_external(VigilFgCtx const& fg, ExternalSlotId external, TensorData data) {
+    // The address of an external slot of the active region and the device of
+    // its owner.  A slot that the plan of the active region does not mark
+    // external gives its ExternalRefusal
+    // (CrucibleContext::register_external), and the slot stays as it was.
+    [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
+    register_external(VigilFgCtx const& fg, SlotId sid, TensorData data) {
         auto compiled_view = replay_.context().mint_compiled_view(fg);
-        replay_.register_external(external, data, compiled_view);
+        return replay_.register_external(sid, data, compiled_view);
     }
 
     // One data slot of an op of a replayed region (ScalarRole of Types.h),
@@ -991,28 +996,19 @@ private:
             HeldRegions::CAP);
     }
 
-    // One read of an external slot by an op of the active region.  An input
-    // reads an external when it has a slot and no producer op: the build
-    // gives each read of an external that pair.  The slot comes from
-    // mint_external_slot, so the read has no default.
-    struct ExternalRead {
-        OpIndex op{};
-        uint32_t input = 0;
-        ExternalSlotId slot;
-    };
-
     // Binds the inputs of the op that the replay matched to the live op: each
     // external tensor to the data of the live op, and each data slot to the
     // value of the live op.  An external is a tensor that no op of the region
     // writes, such as a parameter or a batch of the data loader, and its
     // address can change from one iteration to the next.  A data scalar, such
     // as a step size, can change its value from one iteration to the next.
-    // The activation lists each read of an external (external_reads_) and
-    // each data slot (bound_scalars_), in the order of the ops, and two
-    // cursors walk the lists once in each iteration.  An op that reads no
-    // external and has no data slot costs four compares.  The cursors go back
-    // to the start at op 0 and when the iteration completes.  O(1) for each
-    // op, and O(the reads and the slots) for the iteration.
+    // The activation lists each read of an external
+    // (CrucibleContext::list_external_reads) and each data slot
+    // (bound_scalars_), in the order of the ops, and two cursors walk the
+    // lists once in each iteration.  An op that reads no external and has no
+    // data slot costs four compares.  The cursors go back to the start at op 0
+    // and when the iteration completes.  O(1) for each op, and O(the reads and
+    // the slots) for the iteration.
     CRUCIBLE_INLINE void bind_inputs_(const ValidatedOp& op, ReplayStep step,
                                       CrucibleContext::CompiledView const& compiled_view) {
         const uint32_t matched = step.matched_op_index().value().raw();
@@ -1020,16 +1016,10 @@ private:
         // that too, but the switch of a region advances the engine with no
         // call here, so a rewind can pass this function by.
         if (matched == 0) {
-            next_external_read_ = 0;
+            replay_.rewind_external_reads();
             next_bound_scalar_ = 0;
         }
-        const ::fixy::View<const ExternalRead> reads = external_reads_.view();
-        while (next_external_read_ < reads.size()) {
-            const ExternalRead& read = *reads.get(next_external_read_).expect("the test above bounds the cursor");
-            if (read.op.raw() > matched) break;
-            if (read.op.raw() == matched) bind_external_read_(op, read, compiled_view);
-            ++next_external_read_;
-        }
+        replay_.bind_external_reads(OpIndex{matched}, op, compiled_view);
         // The cursor passes the slots of the earlier ops, writes the value of
         // each slot of the live op, and stops at the first slot of a later op.
         // The element door of each step lends the slot at the cursor in place,
@@ -1052,23 +1042,9 @@ private:
             ++next_bound_scalar_;
         }
         if (step.status() == ReplayStatus::COMPLETE) {
-            next_external_read_ = 0;
+            replay_.rewind_external_reads();
             next_bound_scalar_ = 0;
         }
-    }
-
-    // Binds one external slot to the storage of one input of the live op.  A
-    // slot holds one storage, so the slot takes the address of the first
-    // byte of the storage, and two views at different offsets of one storage
-    // bind the slot to one address.  The guard matched the shape hash of the
-    // inputs, so the input is in the live op, and the test keeps each read in
-    // bounds when a hash collides.
-    [[gnu::noinline]] void bind_external_read_(const ValidatedOp& op, const ExternalRead& read,
-                                               CrucibleContext::CompiledView const& compiled_view) {
-        if (read.input >= op.entry().num_inputs) return;
-        for (const TensorData data :
-             storage_address(*op.metas().get(read.input).expect("the live op holds its inputs first")))
-            replay_.register_external(read.slot, data, compiled_view);
     }
 
     // The result of an op that the replay matched: the status of its guard
@@ -1404,83 +1380,40 @@ private:
     // and one allocation of each list.
     [[gnu::cold]] void register_inputs_from_region_(VigilFgCtx const& fg, const RegionNode& region,
                                                     uint32_t resume_op) {
-        list_external_reads_(region, resume_op);
         list_bound_scalars_(region, resume_op);
-        if (region.plan.is_none()) return;
-        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("the test above found the plan");
+        // Every call site activates the context on the region immediately
+        // before it calls here, so the context is compiled, and the region
+        // has a plan.
+        auto compiled_view = replay_.context().mint_compiled_view(fg);
+        replay_.list_external_reads(OpIndex{resume_op}, compiled_view);
+        const DagRef<MemoryPlan const> plan = PlanLink{region.plan}.expect("an active region has a memory plan");
 
         // The id of a slot is its position in the plan, which the inputs of
         // the ops name.
         const ::fixy::View<const TensorSlot> plan_slots = plan->slots.view();
         for (uint32_t position = 0; position < plan_slots.size(); position++) {
-            for (const ExternalSlotId target : mint_external_slot(plan_slots, SlotId{position})) {
-                ::fixy::Option<TensorData> data{::fixy::none};
+            if (!plan_slots.get(position).expect("the loop bounds the position")->is_external) continue;
+            const SlotId target{position};
+            ::fixy::Option<TensorData> data{::fixy::none};
 
-                for (uint32_t i = 0; i < region.num_ops() && data.is_none(); i++) {
-                    const auto& te = region.op_at(i);
-                    // An op with no slot ids or no metadata of its inputs has
-                    // no pair of the two, and try_zip gives an error.
-                    for (auto const& pairs : te.input_slot_ids().walk().try_zip(te.input_metas().walk()).ok()) {
-                        for (auto [slot_id, meta] : pairs) {
-                            if (*slot_id == target.slot()) {
-                                data = storage_address(*meta);
-                                break;
-                            }
+            for (uint32_t i = 0; i < region.num_ops() && data.is_none(); i++) {
+                const auto& te = region.op_at(i);
+                // An op with no slot ids or no metadata of its inputs has no
+                // pair of the two, and try_zip gives an error.
+                for (auto const& pairs : te.input_slot_ids().walk().try_zip(te.input_metas().walk()).ok()) {
+                    for (auto [slot_id, meta] : pairs) {
+                        if (*slot_id == target) {
+                            data = storage_address(*meta);
+                            break;
                         }
                     }
                 }
-
-                for (const TensorData found : data) {
-                    // Every call site activates the context immediately before
-                    // calling here, so it is compiled.
-                    auto compiled_view = replay_.context().mint_compiled_view(fg);
-                    replay_.register_external(target, found, compiled_view);
-                }
             }
+
+            for (const TensorData found : data)
+                replay_.register_external(target, found, compiled_view)
+                    .expect("the plan of the active region marks the slot external");
         }
-    }
-
-    // Writes external_reads_: each input of an op of the region that has an
-    // external slot of the plan and no producer op, in the order of the ops
-    // and of the inputs.  An input with no producer can also read an internal
-    // slot, such as the new result that a nested copy_ writes in place before
-    // its parent returns it, and the pool owns the bytes of that slot.  A
-    // region with no plan lists no read.  Two passes, one to count and one to
-    // fill, so the list takes one allocation.
-    [[gnu::cold]] void list_external_reads_(const RegionNode& region, uint32_t resume_op) {
-        ::fixy::View<const TensorSlot> plan_slots{};
-        for (const DagRef<MemoryPlan const> plan : region.plan)
-            plan_slots = plan->slots.view();
-        const auto each_read = [&region, plan_slots](auto&& on_read) {
-            for (uint32_t i = 0; i < region.num_ops(); i++) {
-                const TraceEntry& te = region.op_at(i);
-                const ::fixy::View<const OpIndex> producers = te.input_trace_indices();
-                const ::fixy::View<const SlotId> slots = te.input_slot_ids();
-                for (uint32_t input = 0; input < te.num_inputs(); input++) {
-                    const SlotId slot = *slots.get(input).expect("the input arrays of an entry hold one count");
-                    const bool has_producer =
-                        producers.get(input).expect("the input arrays of an entry hold one count")->is_valid();
-                    for (const ExternalSlotId external : mint_external_slot(plan_slots, slot)) {
-                        if (!has_producer) on_read(ExternalRead{OpIndex{i}, input, external});
-                    }
-                }
-            }
-        };
-        uint32_t count = 0;
-        each_read([&count](const ExternalRead&) noexcept { ++count; });
-        uint32_t filled = 0;
-        next_external_read_ = count;
-        // The lease writes each read once, in order, so a read needs no
-        // default value.  The second pass gives the reads that the first
-        // pass counted.
-        external_reads_ = ::fixy::mint_heap_array_written<ExternalRead>(
-            allocation_, count, [&](::fixy::WriteLease<ExternalRead>& lease) noexcept {
-                each_read([&](const ExternalRead& read) noexcept {
-                    lease.put(read);
-                    if (next_external_read_ == count && read.op.raw() >= resume_op) next_external_read_ = filled;
-                    ++filled;
-                });
-            });
     }
 
     // Writes bound_scalars_: each data slot of an op of the region, in the
@@ -1706,8 +1639,20 @@ private:
             return ctx_.advance(schema_hash, shape_hash);
         }
 
-        void register_external(ExternalSlotId external, TensorData data, CrucibleContext::CompiledView const& view) {
-            ctx_.register_external(external, data, view);
+        [[nodiscard, gnu::cold]] ::fixy::Result<::fixy::Unit, ExternalRefusal>
+        register_external(SlotId sid, TensorData data, CrucibleContext::CompiledView const& view) {
+            return ctx_.register_external(sid, data, view);
+        }
+
+        [[gnu::cold]] void list_external_reads(OpIndex resume_op, CrucibleContext::CompiledView const& view) {
+            ctx_.list_external_reads(resume_op, view);
+        }
+
+        CRUCIBLE_INLINE void rewind_external_reads() noexcept { ctx_.rewind_external_reads(); }
+
+        CRUCIBLE_INLINE void bind_external_reads(OpIndex matched, const ValidatedOp& live,
+                                                 CrucibleContext::CompiledView const& view) {
+            ctx_.bind_external_reads(matched, live, view);
         }
 
     private:
@@ -1727,13 +1672,11 @@ private:
     // the Vigil on.
     OpRecordStack op_record_stack_{};
 
-    // The reads of the external slots and the data slots of the active
-    // region, in the order of the ops.  Each activation and each switch of a
-    // region writes them (register_inputs_from_region_), and bind_inputs_
-    // walks them.  Only the producer thread reads or writes the four members.
-    ::fixy::HeapArray<ExternalRead> external_reads_{};
-    // The next read of the iteration, at most the count of the reads.
-    uint32_t next_external_read_ = 0;
+    // The data slots of the active region, in the order of the ops.  Each
+    // activation and each switch of a region writes them
+    // (register_inputs_from_region_), and bind_inputs_ walks them.  Only the
+    // producer thread reads or writes the two members.  The reads of the
+    // external slots stand in the replay context, beside the active region.
     ::fixy::HeapArray<BoundScalar> bound_scalars_{};
     // The next data slot of the iteration, at most the count of the slots.
     uint32_t next_bound_scalar_ = 0;
