@@ -18,11 +18,19 @@
 //   it and fills the Option again.  That is two more moves of the payload and
 //   a test of the state at each door.  A Seat holds its payload from its mint
 //   to its take, so its type proves that it is full, and step() tests nothing.
-//   step() calls fn on the payload in place, ends the old payload, and builds
-//   the next payload in the same storage from the result of fn.  That is one
-//   move of the payload for each turn, as the emplace of a std::optional
-//   gives.  The payload stays at one address for the whole loop, so a step of
-//   a session handle sees no change of its holder.
+//   step() calls fn on the payload in place, and puts the result of fn in the
+//   place of the old payload.  A payload with a nothrow move assignment takes
+//   it, and another payload ends, and the next one starts in the same storage.
+//   That is one move of the payload for each turn, as the emplace of a
+//   std::optional gives.  The payload stays at one address for the whole loop,
+//   so a step of a session handle sees no change of its holder.
+//
+//   The end and the move of a payload can be code that reaches its Seat through
+//   a second name (the code of an element of foundation/core/Owner.h).  An
+//   assigned payload is live at each point of a step.  The Seat of a payload
+//   with no assignment whose end or move is code, such as a handle over a
+//   reference, holds a flag for the time of a step, and a step in a step ends
+//   the process.
 //
 // Rules
 //   fn gives T itself, so a step cannot change the type of the payload, and fn
@@ -30,11 +38,14 @@
 //   no default constructor, no copy and no assignment.  It moves, so a linear
 //   payload makes the Seat linear, and the rule must-consume holds a Seat to
 //   its take.  A step and a take of a temporary or of a const Seat are deleted
-//   with their reasons.  The cost of a step is the call of fn, the end of the
-//   old payload and one move of the next payload.
+//   with their reasons.  The cost of a step is the call of fn and one assignment
+//   of the next payload, or the end of the old payload and one move of the next
+//   one.
 
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/Platform.h>
+#include <foundation/core/Report.h>
 
 #include <concepts>
 #include <new>
@@ -60,6 +71,48 @@ class Seat;
 template <SeatPayload T>
 [[nodiscard]] constexpr Seat<T> mint_seat(T value) noexcept;
 
+namespace detail {
+
+// The fatal exit of a step of a Seat in a step of the same Seat.
+[[noreturn]] CRUCIBLE_COLD inline void report_nested_step_() noexcept {
+    fatal("a step of a Seat runs in the code of its payload, in a step of the same Seat");
+}
+
+// The turn of a Seat (the step): a flag for the time of a step, and nothing for
+// a payload that needs none.
+template <bool Counts>
+class SeatTurn final {
+public:
+    class Guard final {
+    public:
+        constexpr explicit Guard(SeatTurn& /*turn*/) noexcept {}
+    };
+};
+
+template <>
+class SeatTurn<true> final {
+    bool is_stepping_ = false;
+
+public:
+    class [[nodiscard]] Guard final {
+        SeatTurn& turn_;
+
+    public:
+        constexpr explicit Guard(SeatTurn& turn) noexcept : turn_{turn} {
+            if (turn_.is_stepping_) [[unlikely]] {
+                report_nested_step_();
+            }
+            turn_.is_stepping_ = true;
+        }
+        constexpr ~Guard() { turn_.is_stepping_ = false; }
+
+        Guard(Guard const&) = delete("a guard is the turn of one step");
+        Guard& operator=(Guard const&) = delete("a guard is the turn of one step");
+    };
+};
+
+}  // namespace detail
+
 template <SeatPayload T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]] Seat final {
@@ -84,10 +137,23 @@ private:
     // member that the storage holds.
     T payload_;
 
+    // True when a step assigns the next payload.  Then the storage holds a live
+    // payload at each step.  Another payload ends, and the next one starts in its
+    // storage.  The turn of a Seat tells the code of such a payload, when its end
+    // or its move is code, that a step runs (the step).
+    static constexpr bool assigns_payload_ = std::is_nothrow_move_assignable_v<T>;
+    static constexpr bool runs_code_over_free_storage_ =
+        !assigns_payload_ && !(std::is_trivially_move_constructible_v<T> && std::is_trivially_destructible_v<T>);
+    [[no_unique_address]] detail::SeatTurn<runs_code_over_free_storage_> turn_{};
+
     // The end of the old payload in a step, before the next payload takes its
-    // storage.  It is the drop door of the Seat: the payload that it ends is
-    // the moved rest of the payload that the step gave to fn.
+    // storage, and the assignment over it.  Each is a drop door of the Seat: the
+    // payload that it ends or writes is the moved rest of the payload that the
+    // step gave to fn.
     [[= ::foundation::linear::drop_door{}]] constexpr void end_payload_() noexcept { payload_.~T(); }
+    [[= ::foundation::linear::drop_door{}]] constexpr void put_payload_(T&& next) noexcept {
+        payload_ = static_cast<T&&>(next);
+    }
 
     constexpr Seat(MintKey, T&& value) noexcept : payload_(static_cast<T&&>(value)) {}
 
@@ -120,9 +186,14 @@ public:
         // payload, and the placement new builds a T in it (the byte views of
         // the quarantine plugin).
         T* const storage = __builtin_addressof(payload_);
+        [[maybe_unused]] typename detail::SeatTurn<runs_code_over_free_storage_>::Guard const turn{turn_};
         T next = fn(static_cast<T&&>(payload_));
-        end_payload_();
-        ::new(static_cast<void*>(storage)) T(static_cast<T&&>(next));
+        if constexpr (assigns_payload_) {
+            put_payload_(static_cast<T&&>(next));
+        } else {
+            end_payload_();
+            ::new(static_cast<void*>(storage)) T(static_cast<T&&>(next));
+        }
     }
 
     // A function that holds a linear value by value binds to this overload,
