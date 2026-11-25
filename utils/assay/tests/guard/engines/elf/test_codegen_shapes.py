@@ -312,6 +312,9 @@ def verdict_cases(expect: testing.Expect) -> None:
     division = code_of("probe", plain("endbr64", "mov eax,edi", "xor edx,edx", "div esi", "ret"))
     division_raw = code_of("probe", plain("endbr64", "mov eax,edi", "xor edx,edx", "shr esi,1", "mov eax,esi", "ret"))
     indexed = code_of("probe", plain("endbr64", "mov eax,DWORD PTR [rdi+rsi*4]", "ret"))
+    indexed_store = code_of("probe", plain("endbr64", "mov QWORD PTR [rdi+rsi*8],rax", "ret"))
+    store = code_of("probe", plain("endbr64", "mov QWORD PTR [rdi],rax", "ret"))
+    indexed_update = code_of("probe", plain("endbr64", "add DWORD PTR [rdi+rsi*4],0x1", "ret"))
     loop = plain("endbr64", "xor eax,eax", "add eax,DWORD PTR [rdi]", "add rdi,0x4", "cmp rdi,rsi", "jne @2", "ret")
     loop_raw = code_of("probe", loop)
     loop_work = code_of(
@@ -343,6 +346,8 @@ def verdict_cases(expect: testing.Expect) -> None:
         ("a declared call", shapes.Probe("probe", "c", calls=("memmove",)), call, call_raw, False, ()),
         ("a family-only division", ZERO_COST, division, division_raw, False, ("division",)),
         ("a family-only indexed load", ZERO_COST, indexed, load, False, ("index register",)),
+        ("a store whose address takes an index register", ZERO_COST, indexed_store, store, False, ()),
+        ("an add into memory with an index register", ZERO_COST, indexed_update, unlocked, False, ("index register",)),
         ("a family-only lea with an index", ZERO_COST, swapped, swapped_raw, False, ()),
         ("family-only work in a loop", ZERO_COST, loop_work, loop_raw, False, ("work to a loop",)),
         ("a lost lock", ZERO_COST, unlocked, locked, False, ("locked instructions",)),

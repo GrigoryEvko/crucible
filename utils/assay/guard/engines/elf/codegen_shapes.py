@@ -113,7 +113,8 @@ Verdict
       branch    a jump into returning code
       call      a call, or a jump to a different function
       division  div or idiv
-      indexed   a memory operand with an index register, other than lea
+      indexed   a memory operand with an index register, other than lea and
+                a store of STORE_MNEMONICS (an indexed load)
       plain     each other instruction.
     These family-only instructions are errors:
       - A check of a kind that the probe does not declare with check=KIND.
@@ -295,6 +296,40 @@ TRAP_MNEMONICS = frozenset({"ud2", "int3", "hlt"})
 DIVISIONS = frozenset({"div", "idiv"})
 # The mnemonics that calculate an address and read no memory.
 ADDRESS_ONLY = frozenset({"lea"})
+# The moves that write their first operand and read no other memory.  With a memory first operand, such a move is a
+# store, and an index register in its address is only a form of that address (the verdict).
+STORE_MNEMONICS = frozenset(
+    {
+        "mov",
+        "movnti",
+        "movd",
+        "movq",
+        "movss",
+        "movsd",
+        "movaps",
+        "movups",
+        "movapd",
+        "movupd",
+        "movdqa",
+        "movdqu",
+        "vmovd",
+        "vmovq",
+        "vmovss",
+        "vmovsd",
+        "vmovaps",
+        "vmovups",
+        "vmovapd",
+        "vmovupd",
+        "vmovdqa",
+        "vmovdqu",
+        "vmovdqa32",
+        "vmovdqa64",
+        "vmovdqu8",
+        "vmovdqu16",
+        "vmovdqu32",
+        "vmovdqu64",
+    }
+)
 # The callee of a call or a jump with no symbol: a call in the object, or a jump through a register.
 LOCAL_CALLEE = "<local>"
 INDIRECT_CALLEE = "<indirect>"
@@ -1466,6 +1501,22 @@ class Instruction:
         )
 
     @property
+    def is_indexed_store(self) -> bool:
+        """True for a move of STORE_MNEMONICS whose first operand is memory with an index register.
+
+        Such a move writes memory and reads no memory, so the index register only forms the address of the store.
+        An instruction that also reads a memory operand, such as an add into memory, is no such store.
+        """
+        if self.mnemonic not in STORE_MNEMONICS or not self.operands:
+            return False
+        target, *sources = self.operands
+        return (
+            isinstance(target, objdump.Memory)
+            and target.index is not None
+            and not any(isinstance(source, objdump.Memory) for source in sources)
+        )
+
+    @property
     def opaque(self) -> tuple[objdump.Opaque, ...]:
         """The operands that the reader gives as `Opaque`, because no different record of the reader reads them."""
         return tuple(operand for operand in self.operands if isinstance(operand, objdump.Opaque))
@@ -1843,8 +1894,10 @@ def classified(flow: Flow, place: Place, instruction: Instruction) -> tuple[str,
     text = f"{head} {normalized_operands(instruction.operands)}".strip() + symbol_text(instruction)
     if instruction.mnemonic in DIVISIONS:
         return text, StepClass.DIVISION, "", None
-    if instruction.mnemonic not in ADDRESS_ONLY and any(
-        isinstance(operand, objdump.Memory) and operand.index is not None for operand in instruction.operands
+    if (
+        instruction.mnemonic not in ADDRESS_ONLY
+        and not instruction.is_indexed_store
+        and any(isinstance(operand, objdump.Memory) and operand.index is not None for operand in instruction.operands)
     ):
         return text, StepClass.INDEXED, "", None
     return text, StepClass.PLAIN, "", None
