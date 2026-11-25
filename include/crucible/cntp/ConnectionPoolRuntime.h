@@ -114,12 +114,15 @@ class ConnectionPool : public ::foundation::Pinned<ConnectionPool<T, MaxRemotes,
     }
 
     // The connection of an occupied slot.  Each caller tested the slot first.
-    [[nodiscard]] static constexpr Connection<T> const& connection_of(Slot const& slot) noexcept {
+    [[nodiscard]] static constexpr Connection<T> const& connection_of(Slot const& slot
+                                                                      CRUCIBLE_LIFETIMEBOUND) noexcept {
         for (Connection<T> const& connection : slot.connection) {
             return connection;
         }
         ::fixy::fatal("a connection pool read the connection of an empty slot");
     }
+    static void connection_of(Slot const&&) =
+        delete("the reference names the connection of the slot, and a temporary slot ends with the full expression");
 
     [[nodiscard]] static constexpr std::uint16_t max_per_remote() noexcept {
         return static_cast<std::uint16_t>(MaxPerRemote);
