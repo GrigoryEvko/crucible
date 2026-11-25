@@ -5,5 +5,6 @@
 
 admit foundation::core | the sums Option, Result and OneOf, whose borrow match the planted code calls
 admit std::move | a cast to an rvalue reference
+admit std::as_const | a read through a const reference
 
 quarantine src/

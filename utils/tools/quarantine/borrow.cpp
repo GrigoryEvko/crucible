@@ -48,7 +48,9 @@
 //     object that its value points at.  A capture by copy of an object names
 //     the copy, so a write to it is no finding.  A local reference names the
 //     object of its initializer, as the range of a loop over the sum does.  A
-//     static variable is the root of its own path.
+//     receiver and the initializer of a local reference can go through std::move,
+//     std::forward and std::as_const, which give their argument back.  A static
+//     variable is the root of its own path.
 //
 // Writes
 //     In the body of an arm, these writes are findings:
@@ -221,6 +223,24 @@ tree strip_wrappers(tree node) {
     return node;
 }
 
+// NODE with each wrapper taken off, and each call of std::move, std::forward and
+// std::as_const that the front end did not fold: such a call gives its argument
+// back.
+tree strip_identity_calls(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = strip_wrappers(node);
+        if (node == NULL_TREE || (TREE_CODE(node) != CALL_EXPR && TREE_CODE(node) != AGGR_INIT_EXPR)) {
+            return node;
+        }
+        tree callee = cp_get_callee_fndecl_nofold(node);
+        if (argument_count(node) < 1 || !(is_std_move_cast(callee) || is_std_as_const(callee))) {
+            return node;
+        }
+        node = argument_at(node, 0);
+    }
+    return node;
+}
+
 // True when the text of a path ends with the dereference of a pointer.
 bool ends_with_arrow(const std::string& text) {
     return text.size() >= 2 && text.compare(text.size() - 2, 2, "->") == 0;
@@ -230,6 +250,36 @@ bool ends_with_arrow(const std::string& text) {
 std::string name_text(tree decl) {
     return decl != NULL_TREE && DECL_P(decl) && DECL_NAME(decl) != NULL_TREE ? IDENTIFIER_POINTER(DECL_NAME(decl))
                                                                              : std::string("<anonymous>");
+}
+
+// The value of each local reference of the body in hand that one store
+// initializes, by its DECL_UID.  The front end gives a value with a call as a
+// store, and each walk visits it before a use of the reference.
+std::unordered_map<int, tree> reference_stores;
+
+bool is_local_reference(tree node) {
+    return VAR_P(node) && TREE_TYPE(node) != NULL_TREE && TYPE_REF_P(TREE_TYPE(node)) && !DECL_HAS_VALUE_EXPR_P(node)
+        && !TREE_STATIC(node);
+}
+
+// The initializer of the local reference NODE, or null.
+tree reference_initializer(tree node) {
+    if (!is_local_reference(node)) {
+        return NULL_TREE;
+    }
+    if (DECL_INITIAL(node) != NULL_TREE) {
+        return DECL_INITIAL(node) != error_mark_node ? DECL_INITIAL(node) : NULL_TREE;
+    }
+    auto found = reference_stores.find(static_cast<int>(DECL_UID(node)));
+    return found != reference_stores.end() ? found->second : NULL_TREE;
+}
+
+// Records the store of VALUE that initializes a local reference.
+void record_reference(tree target, tree value) {
+    target = strip_wrappers(target);
+    if (target != NULL_TREE && is_local_reference(target)) {
+        reference_stores.emplace(static_cast<int>(DECL_UID(target)), value);
+    }
 }
 
 Path pointee_path(tree node, tree closure, int depth);
@@ -294,9 +344,8 @@ Path pointee_path(tree node, tree closure, int depth) {
     }
     // A local reference names the object of its initializer for its whole
     // scope, as the range of a loop over the sum does.
-    if (VAR_P(node) && TREE_TYPE(node) != NULL_TREE && TYPE_REF_P(TREE_TYPE(node)) && !DECL_HAS_VALUE_EXPR_P(node)
-        && !TREE_STATIC(node) && DECL_INITIAL(node) != NULL_TREE && DECL_INITIAL(node) != error_mark_node) {
-        Path bound = pointee_path(DECL_INITIAL(node), closure, depth + 1);
+    if (tree initializer = reference_initializer(node)) {
+        Path bound = pointee_path(strip_identity_calls(initializer), closure, depth + 1);
         if (bound.root != kNoRoot) {
             return bound;
         }
@@ -392,6 +441,9 @@ tree walk_arm_writes(tree* node_pointer, int* walk_subtrees, void* data) {
         walk.last_location = EXPR_LOCATION(node);
     }
     switch (TREE_CODE(node)) {
+        case INIT_EXPR:
+            record_reference(TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
+            break;
         case MODIFY_EXPR:
             record_write(walk, lvalue_path(TREE_OPERAND(node, 0), walk.closure, 0), WriteKind::assignment, node);
             break;
@@ -452,17 +504,10 @@ struct CallWalk {
 
 // The receiver of a call of a borrow match: the object of its first argument,
 // the object parameter of a member or the reference parameter of a free
-// door.  A call of std::move that the front end did not fold names its own
-// argument.  A receiver that ends with the dereference of a pointer is
-// spelled with a star.
+// door.  A receiver that ends with the dereference of a pointer is spelled
+// with a star.
 Path receiver_of(tree call) {
-    tree object = argument_at(call, 0);
-    tree bare = strip_wrappers(object);
-    if (bare != NULL_TREE && (TREE_CODE(bare) == CALL_EXPR || TREE_CODE(bare) == AGGR_INIT_EXPR)
-        && is_std_move_cast(cp_get_callee_fndecl_nofold(bare)) && argument_count(bare) >= 1) {
-        object = argument_at(bare, 0);
-    }
-    Path receiver = pointee_path(object, NULL_TREE, 0);
+    Path receiver = pointee_path(strip_identity_calls(argument_at(call, 0)), NULL_TREE, 0);
     if (ends_with_arrow(receiver.text)) {
         receiver.text = "*" + receiver.text.substr(0, receiver.text.size() - 2);
     }
@@ -622,6 +667,7 @@ tree walk_cursors(tree* node_pointer, int* walk_subtrees, void* data) {
         return NULL_TREE;
     }
     if (TREE_CODE(node) == INIT_EXPR || TREE_CODE(node) == MODIFY_EXPR) {
+        record_reference(TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
         record_cursor(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
     } else if (TREE_CODE(node) == DECL_EXPR) {
         if (tree decl = DECL_EXPR_DECL(node); VAR_P(decl) && DECL_INITIAL(decl) != NULL_TREE) {
@@ -714,6 +760,7 @@ tree walk_calls(tree* node_pointer, int* walk_subtrees, void* data) {
     switch (TREE_CODE(node)) {
         case INIT_EXPR:
         case MODIFY_EXPR:
+            record_reference(TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
             record_initializer(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
             record_cursor(walk, TREE_OPERAND(node, 0), TREE_OPERAND(node, 1));
             break;
@@ -818,6 +865,7 @@ void on_pre_genericize(void* gcc_data, void*) {
     CallWalk walk;
     tree body = DECL_SAVED_TREE(function);
     cp_walk_tree_without_duplicates(&body, walk_calls, &walk);
+    reference_stores.clear();
 }
 
 void on_collection(void*, void*) { borrow_match_answers.clear(); }

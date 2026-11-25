@@ -176,4 +176,38 @@ int loops(Option<int>& source) {
     return loop_assigns() + loop_moves(source) + holder.member();
 }
 
+// A receiver that goes through std::as_const is the same object: of a local, of a
+// member, in a generic arm, through a local reference, and as the range of a loop.
+int as_const_local() {
+    Option<int> held = Option<int>::some(9);
+    return std::as_const(held).match([&](int const& value) { held = none; return value; }, [] { return 0; });
+}
+
+struct AsConstHolder {
+    Option<int> held = Option<int>::some(10);
+
+    int member() {
+        return std::as_const(held).match([this](auto const& value) { held = none; return value; }, [] { return 0; });
+    }
+};
+
+int as_const_reference(Option<int>& held) {
+    Option<int> const& read = std::as_const(std::as_const(held));
+    return read.match([&](int const& value) { held = none; return value; }, [] { return 0; });
+}
+
+int as_const_loop(Option<int>& held) {
+    int total = 0;
+    for (int const& value : std::as_const(held)) {
+        held = none;
+        total += value;
+    }
+    return total;
+}
+
+int as_const_calls(Option<int>& source) {
+    AsConstHolder holder;
+    return as_const_local() + holder.member() + as_const_reference(source) + as_const_loop(source);
+}
+
 }  // namespace planted
