@@ -935,7 +935,7 @@ static void read_through_a_stale_proof(Read const& read) noexcept {
 
 // deactivate takes the region and the slot table from the engine, so a read of
 // the engine through a stale proof reaches no freed column of the pool.  It
-// ends the process at a precondition.
+// ends the process at a check of the engine.
 static void test_a_stale_proof_of_the_compiled_mode_ends_the_process() {
     ::fixy::check::expect_dies(
         kTest,
@@ -944,7 +944,7 @@ static void test_a_stale_proof_of_the_compiled_mode_ends_the_process() {
                 return ctx.output_ptr(0, stale).is_some();
             });
         },
-        ::fixy::TextView{"foundation: contract violation: is_initialized()"});
+        ::fixy::TextView{"foundation: fatal invariant failed: is_initialized()"});
     ::fixy::check::expect_dies(
         kTest,
         [] noexcept {
@@ -952,7 +952,7 @@ static void test_a_stale_proof_of_the_compiled_mode_ends_the_process() {
                 return ctx.input_ptr(0, stale).is_some();
             });
         },
-        ::fixy::TextView{"foundation: contract violation: is_initialized()"});
+        ::fixy::TextView{"foundation: fatal invariant failed: is_initialized()"});
     ::fixy::check::expect_dies(
         kTest,
         [] noexcept {

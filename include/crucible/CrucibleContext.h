@@ -146,7 +146,7 @@ struct CrucibleContext {
         drop_external_reads_();
         // The slot table of the engine is a View of the column of the pool, so
         // the engine lets it go before the pool ends.  A stale CompiledView
-        // then ends the process at a precondition of the engine.
+        // then ends the process at a check of the engine.
         engine_.clear_();
         pool_.destroy();
         active_region_ = ActiveRegionLink{};
