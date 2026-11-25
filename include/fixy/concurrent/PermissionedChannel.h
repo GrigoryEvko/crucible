@@ -966,6 +966,27 @@ public:
         // park.
         [[nodiscard]] bool is_closed() const noexcept { return ch_->is_closed(); }
 
+        // As try_receive of a lanes channel, and it calls freed with the index
+        // of each lane after it published the tail of that lane (the room of
+        // fixy/concurrent/LaneRing.h).  The parked form wakes the producer of
+        // the lane there.
+        template <class Freed>
+            requires(Form == ChannelForm::lanes)
+                 && LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+        [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive_freeing(Freed&& freed) noexcept {
+            return ch_->side_.ring_.try_receive_freeing(PermissionedChannel::prove_consumer_(), freed);
+        }
+
+        // True when the next receive of a lanes channel gives an item or the
+        // end of the stream.  Before a false answer it publishes each tail and
+        // calls freed, so the caller can park after it.
+        template <class Freed>
+            requires(Form == ChannelForm::lanes)
+                 && LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+        [[nodiscard]] bool is_next_ready(Freed&& freed) noexcept {
+            return ch_->side_.ring_.is_next_ready(PermissionedChannel::prove_consumer_(), freed);
+        }
+
         // The oldest item, or NoItem::Closed after the last item of a closed
         // channel.  While the channel is empty and open, the call waits by
         // Policy (the policy of fixy/concurrent/EventCount.h): Spin spins, and

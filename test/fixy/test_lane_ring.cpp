@@ -4,7 +4,8 @@
 // lanes, the wait on an open lane while other lanes hold items, a full lane,
 // the end of a lane, the end of the stream and the drain.  A walk checks the
 // room: the publish of the tail of a lane at each tail_interval pops, and of
-// each lane before an Empty answer.  The threaded case runs four producers and
+// each lane before an Empty answer.  Three walks check the lanes that a receive
+// and a ready test tell.  The threaded case runs four producers and
 // the consumer on threads of their own, under several schedules: a delay of a
 // Philox stream on each thread, of a seed of its own in each schedule.  The
 // lanes have different lengths, one lane holds no item, and a lane holds 16
@@ -192,6 +193,12 @@ constexpr Wide::lane_index kWideSecond{::fixy::index<1>()};
     return count;
 }
 
+// Pushes one item into lane of a wide ring that has room.
+void push_wide(Wide& ring, Wide::lane_index lane, Item item) noexcept {
+    if (!ring.try_push(LanesOwner::lane(ring, lane), item))
+        ::fixy::fatal("a lane refused item {} below its capacity", item);
+}
+
 // The producer of a full lane sees the cells of the deferred pops of its lane
 // at each tail_interval pops of the lane, and at the next Empty answer, also
 // when the turn waits at another lane.  A snapshot after an Empty answer counts
@@ -229,6 +236,136 @@ void walk_room_after_empty(::fixy::TestRunnerCtx const& test) noexcept {
     }
     CRUCIBLE_TEST_ASSERT(test, code == kClosed && received == 32);
     CRUCIBLE_TEST_ASSERT(test, ring.empty_approx(kNondet) && ring.size_approx(kNondet) == 0);
+}
+
+// One call of the consumer of a wide ring: the code of its result, and one bit
+// for each lane that the call told after it published the tail of the lane.
+struct Step final {
+    Item code = kEmpty;
+    std::uint64_t freed = 0;
+
+    [[nodiscard]] friend bool operator==(Step const&, Step const&) noexcept = default;
+};
+
+// The codes of is_next_ready.
+constexpr Item kReady = 1;
+constexpr Item kNotReady = 0;
+// The bits of the two lanes of a wide ring.
+constexpr std::uint64_t kFirstBit = 1;
+constexpr std::uint64_t kSecondBit = 2;
+
+// Notes a lane in the bits of a step.  One call tells a lane at most one time.
+void note_freed(std::uint64_t& freed, Wide::lane_index lane) noexcept {
+    std::uint64_t const bit = std::uint64_t{1} << lane.raw();
+    if ((freed & bit) != 0) ::fixy::fatal("one call told lane {} two times", lane.raw());
+    freed |= bit;
+}
+
+[[nodiscard]] Step receive_step(Wide& ring) noexcept {
+    std::uint64_t freed = 0;
+    Item const code = ring.try_receive_freeing(LanesOwner::consumer(ring),
+                                               [&freed](Wide::lane_index lane) noexcept { note_freed(freed, lane); })
+                          .match([](Item item) noexcept { return item; },
+                                 [](cc::NoItem why) noexcept { return why == cc::NoItem::Closed ? kClosed : kEmpty; });
+    return Step{.code = code, .freed = freed};
+}
+
+[[nodiscard]] Step ready_step(Wide& ring) noexcept {
+    std::uint64_t freed = 0;
+    bool const is_ready = ring.is_next_ready(LanesOwner::consumer(ring),
+                                             [&freed](Wide::lane_index lane) noexcept { note_freed(freed, lane); });
+    return Step{.code = is_ready ? kReady : kNotReady, .freed = freed};
+}
+
+// A receive and a ready test tell each lane after the publish of its tail, and
+// no other lane.  The producer of a told lane then takes the free cells, and
+// the producer of a lane that no call told finds none.
+void walk_freed_lanes(::fixy::TestRunnerCtx const& test) noexcept {
+    Wide ring{};
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kNotReady});
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 100) == 16);
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kReady});
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 100});
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 116) == 0);
+    // The second lane is empty and open, so the ready test publishes.  A second
+    // one has nothing to publish.
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == (Step{.code = kNotReady, .freed = kFirstBit}));
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 116) == 1);
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kNotReady});
+
+    // One pop of each lane waits for its publish at the next Empty answer.
+    push_wide(ring, kWideSecond, 200);
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 200});
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 101});
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == (Step{.code = kEmpty, .freed = kFirstBit | kSecondBit}));
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = kEmpty});
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 117) == 1);
+
+    // At the interval of four pops, a receive tells the one lane of its item.
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideSecond, 201) == 16);
+    for (Item place = 0; place < 3; ++place) {
+        CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 201 + place});
+        CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 102 + place});
+    }
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 118) == 0 && fill_lane(ring, kWideSecond, 217) == 0);
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == (Step{.code = 204, .freed = kSecondBit}));
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 118) == 0 && fill_lane(ring, kWideSecond, 217) == 4);
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == (Step{.code = 105, .freed = kFirstBit}));
+    CRUCIBLE_TEST_ASSERT(test, fill_lane(ring, kWideFirst, 118) == 4);
+}
+
+// The step of the consumer that meets the end of a lane: a receive or a ready
+// test.
+enum class EndDoor : std::uint8_t {
+    receive,
+    is_next_ready,
+};
+
+// The second lane gave its one item and ended, so at its turn it leaves the
+// turn.  The step goes to the first lane, which is open and empty, and it tells
+// the first lane only: no producer waits for a lane that ended.  After the end
+// of the first lane, the end of the stream is ready.
+void walk_freed_lanes_past_an_end(::fixy::TestRunnerCtx const& test, EndDoor door) noexcept {
+    Wide ring{};
+    push_wide(ring, kWideFirst, 100);
+    push_wide(ring, kWideFirst, 101);
+    push_wide(ring, kWideSecond, 200);
+    ring.end_lane(LanesOwner::lane(ring, kWideSecond));
+    for (Item const code : ::fixy::FixedArray<Item, 3>{100, 200, 101}) {
+        CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kReady});
+        CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = code});
+    }
+    if (door == EndDoor::receive) {
+        CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == (Step{.code = kEmpty, .freed = kFirstBit}));
+    } else {
+        CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == (Step{.code = kNotReady, .freed = kFirstBit}));
+    }
+    CRUCIBLE_TEST_ASSERT(test, ring.size_approx(kNondet) == 0);
+    push_wide(ring, kWideFirst, 102);
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kReady});
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = 102});
+    ring.end_lane(LanesOwner::lane(ring, kWideFirst));
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kReady});
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = kClosed});
+    CRUCIBLE_TEST_ASSERT(test, ready_step(ring) == Step{.code = kReady});
+}
+
+// The ended second lane leaves the turn in the receive that takes the fourth
+// item of the first lane.  That receive reaches the interval of the first lane,
+// and it tells it.
+void walk_freed_lane_behind_an_end(::fixy::TestRunnerCtx const& test) noexcept {
+    Wide ring{};
+    for (Item place = 0; place < 4; ++place) {
+        push_wide(ring, kWideFirst, 100 + place);
+    }
+    push_wide(ring, kWideSecond, 200);
+    push_wide(ring, kWideSecond, 201);
+    ring.end_lane(LanesOwner::lane(ring, kWideSecond));
+    for (Item const code : ::fixy::FixedArray<Item, 5>{100, 200, 101, 201, 102}) {
+        CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = code});
+    }
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == (Step{.code = 103, .freed = kFirstBit}));
+    CRUCIBLE_TEST_ASSERT(test, receive_step(ring) == Step{.code = kEmpty});
 }
 
 // A lane ends one time in a stream, and a second end ends the process.
@@ -528,6 +665,10 @@ int main() {
     walk_end_of_lanes(test);
     walk_drain(test);
     walk_room_after_empty(test);
+    walk_freed_lanes(test);
+    walk_freed_lanes_past_an_end(test, EndDoor::receive);
+    walk_freed_lanes_past_an_end(test, EndDoor::is_next_ready);
+    walk_freed_lane_behind_an_end(test);
     ::fixy::check::expect_dies(test, second_end, ::fixy::TextView{"end.load_acquire() == LaneEnd::open"});
     threaded_streams_equal_the_oracle(test, ctx);
     ::fixy::check::pass(test, "test_lane_ring: PASSED\n");

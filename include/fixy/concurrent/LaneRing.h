@@ -47,11 +47,14 @@
 //   NoItem::Empty, and when a lane leaves the turn.  A consumer waits or
 //   parks only after an Empty answer.  So a producer that waits for room in
 //   its lane while the consumer waits for an item sees each cell that the
-//   consumer freed, and no wait of the two holds the other.  A consumer that
-//   wakes parked producers when it frees room wakes them after each receive
-//   of an item and after the first Empty answer after an item: no other
-//   receive publishes a tail.  The publish decides only when a producer sees
-//   room, so the order does not change.
+//   consumer freed, and no wait of the two holds the other.  The publish
+//   decides only when a producer sees room, so the order does not change.
+//
+//   A consumer that wakes parked producers takes try_receive_freeing and
+//   is_next_ready, which call it with the index of each lane after they publish
+//   the tail of that lane.  No other step of the two frees a cell that a
+//   producer can see.  A lane that leaves the turn ended, so no producer waits
+//   for its room, and its publish calls nothing.
 //
 // Owner
 //   Owner, such as the lanes channel of fixy/concurrent/PermissionedChannel.h,
@@ -183,6 +186,11 @@ namespace fixy::concurrent {
 template <class Drop, class T>
 concept LaneDrainDrop = std::is_nothrow_invocable_v<Drop&, T>;
 
+// A callable that the consumer gives for the lanes whose tail it publishes
+// (the room): it takes the index of the lane and does not throw.
+template <class Freed, class Index>
+concept LaneFreedCall = std::is_nothrow_invocable_v<Freed&, Index>;
+
 template <RingValue T, std::size_t LaneCapacity, LaneCount Lanes, class Owner>
 class[[= ::foundation::transfer::synchronized{}]] LaneRing
     : public ::foundation::Pinned<LaneRing<T, LaneCapacity, Lanes, Owner>> {
@@ -280,15 +288,53 @@ public:
     // The next item of the merged stream (the order), NoItem::Empty while the
     // lane of the turn is empty and open, or NoItem::Closed after the last
     // item of the last lane.  The proof names the one consumer.
-    [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive(ConsumerProof const& /*proof*/) noexcept {
+    [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive(ConsumerProof const& proof) noexcept {
+        return try_receive_freeing(proof, NoFreedCall{});
+    }
+
+    // As try_receive, and it calls freed with the index of each lane after it
+    // published the tail of that lane (the room).  A door of a channel that
+    // parks its producers wakes the producer of the lane there.  The call can
+    // come before the result, and it reaches no state of the ring, so it can
+    // make a system call.  The receive borrows the callable, so it holds no
+    // linear value, and the door has no deleted twin, as the drain below.
+    template <class Freed>
+        requires LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+    [[nodiscard, gnu::hot]] ::foundation::core::Result<T, NoItem> try_receive_freeing(ConsumerProof const& /*proof*/,
+                                                                                      Freed&& freed) noexcept {
         if (!turn_.is_empty()) [[likely]] {
+            lane_index const lane = lane_index_of_turn_();
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
             if (item.is_some()) [[likely]] {
                 step_turn_();
+                call_if_published_(lane, freed);
                 return static_cast<::foundation::core::Option<T>&&>(item).ok_or(NoItem::Empty);
             }
         }
-        return receive_after_empty_();
+        return receive_after_empty_(freed);
+    }
+
+    // True when the next receive gives an item or the end of the stream, and
+    // false when it gives NoItem::Empty.  It takes no item.  Before a false
+    // answer it publishes each tail and calls freed, as a receive does, so the
+    // caller can park after it (the room).  A lane that ended and holds no
+    // item leaves the turn here.  The proof names the one consumer.
+    template <class Freed>
+        requires LaneFreedCall<Freed, lane_index> && ::foundation::linear::HoldsNoLinearValue<Freed>
+    [[nodiscard]] bool is_next_ready(ConsumerProof const& /*proof*/, Freed&& freed) noexcept {
+        while (!turn_.is_empty()) {
+            lane_type& lane = lane_of_turn_();
+            if (lane.ring.has_item_proven(prove_lane_consumer_())) return true;
+            if (lane.end->load_acquire() == LaneEnd::open) {
+                if (tails_ == LaneTails::deferred) publish_each_tail_(freed);
+                return false;
+            }
+            // The read of the end comes before this read, so it finds each
+            // item that the producer pushed before its end.
+            if (lane.ring.has_item_proven(prove_lane_consumer_())) return true;
+            leave_turn_();
+        }
+        return true;
     }
 
     // The next item of the merged stream, or no value when try_receive gives
@@ -362,9 +408,26 @@ public:
     }
 
 private:
+    // The callable of a receive that wakes no producer.
+    struct NoFreedCall final {
+        constexpr void operator()(lane_index /*lane*/) const noexcept {}
+    };
+
     // The lane of the turn.  The type of the turn and the type of each lane of
     // the turn prove them below lane_count, so the reads have no check.
     [[nodiscard, gnu::always_inline]] lane_type& lane_of_turn_() noexcept { return lane_at_(turn_.at()); }
+
+    // The index of the lane of the turn.
+    [[nodiscard, gnu::always_inline]] lane_index lane_index_of_turn_() const noexcept {
+        return live_.at(turn_.at()).lane;
+    }
+
+    // Calls freed with the lane when the deferred pop before the call, which
+    // took an item of the lane, published its tail (the room).
+    template <class Freed>
+    [[gnu::always_inline]] void call_if_published_(lane_index lane, Freed& freed) noexcept {
+        if (!lane_of_(lane).ring.has_deferred_pops_proven(prove_lane_consumer_())) freed(lane);
+    }
 
     // The lane at a position of the turn.  Only the one consumer calls it.
     [[nodiscard, gnu::always_inline]] lane_type& lane_at_(lane_index position) noexcept {
@@ -420,12 +483,17 @@ private:
         tails_ = LaneTails::deferred;
     }
 
-    // Publishes the tail of each lane of the turn that holds deferred pops
-    // (the room).  A lane out of the turn published its tail when it left.
-    // Complexity: linear in the lanes of the turn.
-    CRUCIBLE_COLD void publish_each_tail_() noexcept {
+    // Publishes the tail of each lane of the turn that holds deferred pops, and
+    // then calls freed with the lane (the room).  A lane out of the turn
+    // published its tail when it left.  Complexity: linear in the lanes of the
+    // turn.
+    template <class Freed>
+    CRUCIBLE_COLD void publish_each_tail_(Freed& freed) noexcept {
         for (std::size_t position = 0; position < turn_.live(); ++position) {
-            lane_at_(position_(position)).ring.publish_tail_proven(prove_lane_consumer_());
+            lane_index const lane = live_.at(position_(position)).lane;
+            if (!lane_of_(lane).ring.has_deferred_pops_proven(prove_lane_consumer_())) continue;
+            lane_of_(lane).ring.publish_tail_proven(prove_lane_consumer_());
+            freed(lane);
         }
         tails_ = LaneTails::published;
     }
@@ -446,12 +514,14 @@ private:
     // of a lane).  An open lane gives NoItem::Empty, after the publish of the
     // tail of each lane (the room).  An ended lane gets one more pop after the
     // acquire read of its end, and an empty ended lane leaves the turn.  Then
-    // the next lane of the turn gets its pop.
-    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_() noexcept {
+    // the next lane of the turn gets its pop.  The pops and the publishes call
+    // freed as a receive does (the room).
+    template <class Freed>
+    [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<T, NoItem> receive_after_empty_(Freed& freed) noexcept {
         while (!turn_.is_empty()) {
             lane_type& lane = lane_of_turn_();
             if (lane.end->load_acquire() == LaneEnd::open) {
-                if (tails_ == LaneTails::deferred) publish_each_tail_();
+                if (tails_ == LaneTails::deferred) publish_each_tail_(freed);
                 return ::foundation::core::err(NoItem::Empty);
             }
             ::foundation::core::Option<T> item = pop_lane_of_turn_();
@@ -461,7 +531,9 @@ private:
                 item = pop_lane_of_turn_();
             }
             if (item.is_some()) {
+                lane_index const popped = lane_index_of_turn_();
                 step_turn_();
+                call_if_published_(popped, freed);
                 return static_cast<::foundation::core::Option<T>&&>(item).ok_or(NoItem::Empty);
             }
         }

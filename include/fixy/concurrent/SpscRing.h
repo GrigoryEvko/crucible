@@ -67,7 +67,11 @@
 //   A ring with an Owner also gives try_pop_deferred_proven and
 //   publish_tail_proven, which take the proof of the consumer (the proven
 //   form).  Each publish of the proven form stores the tail from the copy and
-//   the count, and it loads nothing from the published tail.
+//   the count, and it loads nothing from the published tail.  The same ring
+//   tells its consumer whether a pop waits for its publish
+//   (has_deferred_pops_proven), and whether a pop gives an item
+//   (has_item_proven).  So a consumer that wakes a parked producer wakes it
+//   only after a publish, and one that parks publishes first.
 
 #include <fixy/Mutation.h>
 #include <fixy/concurrent/RingValue.h>
@@ -214,6 +218,24 @@ public:
         requires(!std::is_void_v<Owner>)
     {
         publish_deferred_<TailPublish::proven>();
+    }
+
+    // True when a deferred pop moved the copy of the tail since its last
+    // publish (the deferred tail).  After a deferred pop that took an item, it
+    // is false only when that pop published the tail.
+    [[nodiscard, gnu::always_inline]] bool has_deferred_pops_proven(consumer_proof const& /*proof*/) const noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        return deferred_pops_ != 0;
+    }
+
+    // True when a pop of the one consumer that the proof names gives an item.
+    // The cached head answers, and a cache at or behind the tail reads the
+    // head again, as a pop does.
+    [[nodiscard]] bool has_item_proven(consumer_proof const& /*proof*/) noexcept
+        requires(!std::is_void_v<Owner>)
+    {
+        return cached_head_.get() > own_tail_.get() || items_after_head_load_() != 0;
     }
 
     // The bulk copies go through std::memcpy rather than a std::simd
