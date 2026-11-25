@@ -19,12 +19,17 @@
 
 #include <fixy/Core.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace {
 
 // The context of the test, which each check of the Check family takes.
 constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
+
+// The foreground context of the Vigil that the test stands for.
+constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
 }  // namespace
 
@@ -214,7 +219,23 @@ void test_smaller_new_slot_takes_its_own_size() {
 
     CrucibleContext context{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, context.activate(*old_region));
-    ::fixy::fill(context.pool().bytes(), std::uint8_t{0x5A});
+    // The output of the first op holds each byte of the old slot.
+    const auto compiled = context.mint_compiled_view(kVigilForeground);
+    CRUCIBLE_TEST_ASSERT(kTest, context.advance(SchemaHash{100}, ShapeHash{200}, compiled).status()
+                                    == crucible::ReplayStatus::MATCH);
+    const auto fill_outputs = [](auto& views) noexcept {
+        std::size_t count = 0;
+        std::move(views).drain([&count](auto view) noexcept {
+            for (std::uint8_t& byte : view) {
+                byte = 0x5A;
+                ++count;
+            }
+        });
+        return count;
+    };
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         context.with_output_views<std::uint8_t>(compiled, fill_outputs)
+                             .is_ok_and([](std::size_t const& count) noexcept { return count == 2 * kSlotBytes; }));
     CRUCIBLE_TEST_ASSERT(kTest, context.switch_region(*new_region, 1));
     CRUCIBLE_TEST_ASSERT(kTest, context.pool().bytes().size() == kSlotBytes);
     for (const std::uint8_t byte : context.pool().bytes()) {

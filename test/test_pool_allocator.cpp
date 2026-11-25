@@ -667,10 +667,10 @@ static void test_slot_views() {
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<std::uint8_t>(SlotId{0}, pv)
                                     .is_some_and([&pool, &pv](::fixy::View<std::uint8_t const> bytes) noexcept {
                                         return bytes.size() == 64
-                                            && pool.slot_ptr(SlotId{0}, pv)
-                                                   == ::fixy::mint_run_address(pool.bytes(), 256);
+                                            && host_ptr<char>(pool.slot_ptr(SlotId{0}, pv))
+                                                   == host_ptr<char>(pool.pool_base()) + 256;
                                     }));
-    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{2}, pv) == ::fixy::mint_run_address(pool.bytes(), 512));
+    CRUCIBLE_TEST_ASSERT(kTest, host_ptr<char>(pool.slot_ptr(SlotId{2}, pv)) == host_ptr<char>(pool.pool_base()) + 512);
 
     ::fixy::Layout const layout =
         ::fixy::mint_layout(::fixy::ByteCount{64},

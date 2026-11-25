@@ -747,10 +747,7 @@ private:
                 if (nbytes == 0) continue;
                 const ::fixy::View<const uint8_t> source =
                     old_pool.window(old_slot.offset_bytes, nbytes).expect("the old init kept each slot in its pool");
-                const ::fixy::View<uint8_t> target = pool_.bytes()
-                                                         .window(new_slot.offset_bytes, nbytes)
-                                                         .expect("the new init kept each slot in its pool");
-                ::fixy::copy(target, source).expect("the two windows hold one count of bytes");
+                pool_.copy_into_slot_(new_slot, source);
             }
         }
     }

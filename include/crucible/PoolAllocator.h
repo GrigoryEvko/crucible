@@ -324,12 +324,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
     ::fixy::View<const ::fixy::Option<::fixy::RunAddress>> table(InitializedView const&) const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
 
-    // The bytes of the pool, and the address of its first byte (no address
-    // for a pool of no bytes).  The pool is memory of the host
-    // (kHostDevice).  A const allocator lends writable memory here, as
-    // slot_ptr does.
-    [[nodiscard]] ::fixy::View<uint8_t> bytes() const& noexcept { return pool_.view(); }
-    ::fixy::View<uint8_t> bytes() const&& =
+    // The bytes of the pool for a read, and the address of its first byte (no
+    // address for a pool of no bytes).  The pool is memory of the host
+    // (kHostDevice).  No View writes the bytes: a kernel writes its outputs
+    // through with_output_views of the context, and the migration of a switch
+    // of region copies through copy_into_slot_.
+    [[nodiscard]] ::fixy::View<uint8_t const> bytes() const& noexcept { return pool_.view(); }
+    ::fixy::View<uint8_t const> bytes() const&& =
         delete("a temporary pool releases its memory at the end of the statement. Use a pool that has a name");
     [[nodiscard, gnu::pure]] ::fixy::Option<::fixy::RunAddress> pool_base() const& noexcept { return pool_address_(); }
     ::fixy::Option<::fixy::RunAddress> pool_base() const&& =
@@ -471,6 +472,18 @@ private:
     // no bytes.
     [[nodiscard]] ::fixy::Option<::fixy::RunAddress> pool_address_() const noexcept {
         return ::fixy::mint_run_address(pool_.view(), 0);
+    }
+
+    // Copies source into the first bytes of the pooled slot of the plan that
+    // init bound.  The context calls it in a switch of region.  A source with
+    // more bytes than the slot ends the process, and so does a slot that init
+    // did not keep in the pool.  Complexity: O(source.size()).
+    void copy_into_slot_(TensorSlot const& slot, ::fixy::View<uint8_t const> source) noexcept {
+        CRUCIBLE_FATAL_INVARIANT(source.size() <= slot.nbytes);
+        ::fixy::copy(
+            pool_.view().window(slot.offset_bytes, source.size()).expect("init kept each pooled slot in the pool"),
+            source)
+            .expect("the two windows hold one count of bytes");
     }
 
     // Writes the address, the device and the bytes of the slot sid into the

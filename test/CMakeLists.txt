@@ -4541,6 +4541,12 @@ crucible_neg_compile_test(neg_crucible_context_mint_compiled_view_in_field
   "static assertion failed: Type contains a fixy::ScopedView<> in some field"
   "! fixy::contains_scoped_view<OffendingCtxContainer>\\(\\). evaluates to false")
 
+crucible_neg_compile_test(neg_pool_allocator_bytes_write
+  "binding reference of type .uint8_t&. \\{aka .unsigned char&.\\} to .const unsigned char. discards qualifiers"
+  "neg_pool_allocator_bytes_write\\.cpp:12:42: error")
+crucible_neg_compile_test(neg_pool_allocator_bytes_fill
+  "no matching function for call to .fill\\(foundation::core::View<const unsigned char"
+  "assignment to read-only type .const unsigned char.")
 crucible_neg_compile_test(neg_pool_allocator_mint_initialized_view_cross_carrier
   "invalid initialization of reference of type .const crucible::CKernelTable::MutableView&."
   "from expression of type .fixy::ScopedView<crucible::PoolAllocator, crucible::pool_state::Initialized>.")
