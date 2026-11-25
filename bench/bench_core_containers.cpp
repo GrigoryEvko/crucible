@@ -1,8 +1,8 @@
 // Microbench of the hot verbs of the containers of the Region family on one
 // thread: test and set of a BitSet and of a HeapBitSet, get of a SlotMap, a
 // pair of a remove and an insert of a SlotMap, the appends of a SmallList in
-// its inline slots and past them, and the five verbs of a log of events in a
-// SegmentList.
+// its inline slots and past them, the five verbs of a log of events in a
+// SegmentList, and the six verbs of a log that a LiveList publishes to readers.
 //
 // Each row of a set, a map and a SmallList is one pass of 4096 operations,
 // which the cache of the core holds after the first pass.  Each row of a
@@ -26,6 +26,10 @@
 //                       index from its top bit.  The reference of SegmentList
 //   raw event vector    the push_back of std::vector, one contiguous run.  The
 //                       second reference of SegmentList
+//   raw live segments   the raw segments with a count on a line of its own.
+//                       The writer stores the count with release order after
+//                       each append, and a reader loads it with acquire order.
+//                       The reference of LiveList
 //
 // Log rows
 //   append              one append of an event of 72 bytes to a log that grows
@@ -46,6 +50,18 @@
 // second time in the mirrored order of the logs, and each row gives the pass
 // with the lower median.
 //
+// Live rows
+//   append, appends     the rows of a log, with the publish of each append
+//   runs                4096 events in runs of 8, with one publish for a run, to
+//                       an empty log, and its end
+//   get, walk           the rows of a log, through one prefix for each pass
+//   count               4096 prefixes, and the count of each one
+// The rows of a published run are the floor of a live append: the five stores
+// of the reserved run and the store of the published count, which are 3 cycles.
+// One thread runs each row, so no row holds the cache miss of a line that a
+// reader on another core took.  Each live log runs two times in mirrored order,
+// as a log does.
+//
 // The rule codegen-shapes compares the machine code of test, set and get with
 // the raw forms of test/shape/core_shapes.cpp.  This bench gives the times.
 //
@@ -57,6 +73,7 @@
 
 #include <fixy/Core.h>
 #include <foundation/Quarantine.h>
+#include <foundation/SoleWriterProof.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -222,6 +239,88 @@ struct SegmentLog final {
     void clear() noexcept { events = fixy::SegmentList<BenchEvent>{}; }
 };
 
+// The names and the rows of a log that its writer publishes (the live rows).
+struct LiveNames final {
+    fixy::TextView append;
+    fixy::TextView appends;
+    fixy::TextView runs;
+    fixy::TextView get;
+    fixy::TextView walk;
+    fixy::TextView count;
+};
+struct LiveReports final {
+    bench::Report append;
+    bench::Report appends;
+    bench::Report runs;
+    bench::Report get;
+    bench::Report walk;
+    bench::Report count;
+};
+
+// The run of one publish of the row runs.
+constexpr std::size_t kRunEvents = 8;
+using EventRun = fixy::FixedArray<BenchEvent, kRunEvents>;
+
+// The two passes of the six rows of one live log, as for a log.
+struct LivePasses final {
+    LiveReports const& first;
+    LiveReports const& second;
+};
+
+// Writes the six rows of a live log, each with the row of its reference log and
+// the ratio of the two medians.  Each row is the better of its two passes.
+template <class Log, class Reference>
+void print_live_log(LivePasses const& log, LivePasses const& reference) noexcept {
+    LiveNames const& names = Log::kNames;
+    LiveNames const& others = Reference::kNames;
+    print_pair(Pair{.container = Row{names.append, better_pass(log.first.append, log.second.append)},
+                    .reference = Row{others.append, better_pass(reference.first.append, reference.second.append)}});
+    print_pair(Pair{.container = Row{names.appends, better_pass(log.first.appends, log.second.appends)},
+                    .reference = Row{others.appends, better_pass(reference.first.appends, reference.second.appends)}});
+    print_pair(Pair{.container = Row{names.runs, better_pass(log.first.runs, log.second.runs)},
+                    .reference = Row{others.runs, better_pass(reference.first.runs, reference.second.runs)}});
+    print_pair(Pair{.container = Row{names.get, better_pass(log.first.get, log.second.get)},
+                    .reference = Row{others.get, better_pass(reference.first.get, reference.second.get)}});
+    print_pair(Pair{.container = Row{names.walk, better_pass(log.first.walk, log.second.walk)},
+                    .reference = Row{others.walk, better_pass(reference.first.walk, reference.second.walk)}});
+    print_pair(Pair{.container = Row{names.count, better_pass(log.first.count, log.second.count)},
+                    .reference = Row{others.count, better_pass(reference.first.count, reference.second.count)}});
+}
+
+// The log of a LiveList.  The log makes the proof of the one writer of its list,
+// and the one function that builds the log appends to it.
+class LiveLog final {
+    struct AppendRole final {};
+    using Proof = ::foundation::SoleWriterProof<LiveLog, AppendRole>;
+
+    fixy::LiveList<BenchEvent, Proof> events_{};
+
+public:
+    static constexpr LiveNames kNames{.append = "LiveList, one append",
+                                      .appends = "LiveList, 4096 appends",
+                                      .runs = "LiveList, 4096 events in runs of 8",
+                                      .get = "LiveList, get of 4096 events",
+                                      .walk = "LiveList, walk of 4096 events",
+                                      .count = "LiveList, 4096 prefixes"};
+
+    void append(BenchEvent const& event) noexcept { events_.append(Proof{}, kAlloc, event); }
+    void append_run(EventRun const& run) noexcept { events_.append_each(Proof{}, kAlloc, run.view()); }
+    [[nodiscard]] std::uint64_t sum_at(Positions const& positions) const noexcept {
+        auto const events = events_.prefix();
+        std::uint64_t total = 0;
+        for (fixy::Index<kOperations> const position : positions) {
+            total +=
+                events.get(position.raw())
+                    .match([](auto event) noexcept { return event->value; }, [] noexcept { return std::uint64_t{0}; });
+        }
+        return total;
+    }
+    [[nodiscard]] std::uint64_t sum() const noexcept {
+        return events_.prefix().walk().fold(std::uint64_t{0}, kAddValue);
+    }
+    [[nodiscard]] std::size_t count() const noexcept { return events_.prefix().size(); }
+};
+
 // The append that meets a full log.  The hook before each sample gives the log
 // back and fills a new one, outside the timed region.
 template <class Log>
@@ -278,6 +377,58 @@ template <class Log>
                                std::uint64_t sum = events.sum();
                                bench::do_not_optimize(sum);
                            }),
+    };
+}
+
+// The six rows of one live log.
+template <class Log>
+[[gnu::noinline]] LiveReports measure_live_log(Positions const& positions) noexcept {
+    constexpr LiveNames const& names = Log::kNames;
+    BenchEvent event{};
+    EventRun const run{};
+    Log growing{};
+    Log events{};
+    for (std::size_t value = 0; value != kOperations; ++value) {
+        event.value = value;
+        events.append(event);
+    }
+    return LiveReports{
+        .append =
+            bench::Run(names.append).batch(1).warmup(0).samples(kLogAppends).measure([&] { growing.append(event); }),
+        .appends = bench::run(names.appends,
+                              [&] {
+                                  Log fresh{};
+                                  for (std::size_t count = 0; count != kOperations; ++count) {
+                                      fresh.append(event);
+                                  }
+                                  bench::do_not_optimize(fresh);
+                              }),
+        .runs = bench::run(names.runs,
+                           [&] {
+                               Log fresh{};
+                               for (std::size_t count = 0; count != kOperations; count += kRunEvents) {
+                                   fresh.append_run(run);
+                               }
+                               bench::do_not_optimize(fresh);
+                           }),
+        .get = bench::run(names.get,
+                          [&] {
+                              std::uint64_t sum = events.sum_at(positions);
+                              bench::do_not_optimize(sum);
+                          }),
+        .walk = bench::run(names.walk,
+                           [&] {
+                               std::uint64_t sum = events.sum();
+                               bench::do_not_optimize(sum);
+                           }),
+        .count = bench::run(names.count,
+                            [&] {
+                                std::size_t total = 0;
+                                for (std::size_t step = 0; step != kOperations; ++step) {
+                                    total += events.count();
+                                }
+                                bench::do_not_optimize(total);
+                            }),
     };
 }
 
@@ -566,6 +717,73 @@ struct RawSegmentLog final {
     }
 };
 
+// The raw live segments: the raw segments, and the published count on a line of
+// its own.
+struct RawLiveLog final {
+    static constexpr LiveNames kNames{.append = "raw live segments, one append",
+                                      .appends = "raw live segments, 4096 appends",
+                                      .runs = "raw live segments, 4096 events in runs of 8",
+                                      .get = "raw live segments, get of 4096 events",
+                                      .walk = "raw live segments, walk of 4096 events",
+                                      .count = "raw live segments, 4096 counts"};
+
+    RawSegmentLog log{};
+    alignas(64) std::size_t published = 0;
+
+    void publish() noexcept { __atomic_store_n(&published, log.count, __ATOMIC_RELEASE); }
+    [[nodiscard]] std::size_t count() const noexcept { return __atomic_load_n(&published, __ATOMIC_ACQUIRE); }
+
+    void append(BenchEvent const& event) noexcept {
+        log.append(event);
+        publish();
+    }
+
+    void append_run(EventRun const& run) noexcept {
+        BenchEvent const* from = __builtin_addressof(run.at(fixy::index<0>()));
+        std::size_t left = kRunEvents;
+        while (left != 0) {
+            if (log.tail == log.tail_end) [[unlikely]] {
+                log.grow();
+            }
+            std::size_t const room = static_cast<std::size_t>(log.tail_end - log.tail);
+            std::size_t const copied = left < room ? left : room;
+            __builtin_memcpy(static_cast<void*>(log.tail), from, copied * sizeof(BenchEvent));
+            log.tail += copied;
+            log.count += copied;
+            from += copied;
+            left -= copied;
+        }
+        publish();
+    }
+
+    [[nodiscard]] std::uint64_t sum_at(Positions const& positions) const noexcept {
+        std::size_t const held = count();
+        std::uint64_t total = 0;
+        for (fixy::Index<kOperations> const index : positions) {
+            std::size_t const position = index.raw();
+            if (position >= held) continue;
+            std::size_t const key = position + 4;
+            unsigned const top = 63u - static_cast<unsigned>(__builtin_clzll(key));
+            total += log.segments[top - 2][key ^ (std::size_t{1} << top)].value;
+        }
+        return total;
+    }
+
+    [[nodiscard]] std::uint64_t sum() const noexcept {
+        std::uint64_t total = 0;
+        std::size_t left = count();
+        for (unsigned segment = 0; left != 0; ++segment) {
+            std::size_t const slots = std::size_t{4} << segment;
+            std::size_t const run = left < slots ? left : slots;
+            for (std::size_t offset = 0; offset < run; ++offset) {
+                total += log.segments[segment][offset].value;
+            }
+            left -= run;
+        }
+        return total;
+    }
+};
+
 // The raw event vector: the push_back of std::vector.
 struct RawVectorLog final {
     static constexpr std::size_t kFullCount = 65536;
@@ -622,11 +840,14 @@ struct RawVectorLog final {
     }
 };
 
-// The two rows of the reserved run, the floor of an append: one append, and
-// 4096 appends from the start of the run.
+// The rows of the reserved run, the floor of an append: one append, and 4096
+// appends from the start of the run.  The published rows store the count on a
+// line of its own too, the floor of a live append.
 struct FloorReports final {
     bench::Report append;
     bench::Report appends;
+    bench::Report published_append;
+    bench::Report published_appends;
 };
 
 [[gnu::noinline]] FloorReports measure_reserved_run() noexcept {
@@ -638,6 +859,7 @@ struct FloorReports final {
     }
     BenchEvent* tail = first;
     std::size_t count = 0;
+    alignas(64) std::size_t published = 0;
     FloorReports reports{
         .append = bench::Run("reserved run append").batch(1).warmup(0).samples(kLogAppends).measure([&] {
             *tail++ = event;
@@ -656,6 +878,26 @@ struct FloorReports final {
                                       bench::do_not_optimize(count);
                                   }
                               }),
+        .published_append =
+            bench::Run("published run append").batch(1).warmup(0).samples(kLogAppends - kOperations).measure([&] {
+                *tail++ = event;
+                ++count;
+                __atomic_store_n(&published, count, __ATOMIC_RELEASE);
+                bench::do_not_optimize(tail);
+                bench::do_not_optimize(count);
+            }),
+        .published_appends = bench::run("published run appends",
+                                        [&] {
+                                            tail = first;
+                                            count = 0;
+                                            for (std::size_t step = 0; step != kOperations; ++step) {
+                                                *tail++ = event;
+                                                ++count;
+                                                __atomic_store_n(&published, count, __ATOMIC_RELEASE);
+                                                bench::do_not_optimize(tail);
+                                                bench::do_not_optimize(count);
+                                            }
+                                        }),
     };
     __builtin_free(first);
     return reports;
@@ -816,5 +1058,14 @@ int main() {
     print_log<SegmentLog, RawSegmentLog>(segment_passes,
                                          LogPasses{.first = raw_segments, .second = raw_segments_again});
     print_log<SegmentLog, RawVectorLog>(segment_passes, LogPasses{.first = raw_vector, .second = raw_vector_again});
+
+    print_row(Row{"published run, one append", floor.published_append});
+    print_row(Row{"published run, 4096 appends", floor.published_appends});
+    LiveReports const raw_live = measure_live_log<RawLiveLog>(positions);
+    LiveReports const live = measure_live_log<LiveLog>(positions);
+    LiveReports const live_again = measure_live_log<LiveLog>(positions);
+    LiveReports const raw_live_again = measure_live_log<RawLiveLog>(positions);
+    print_live_log<LiveLog, RawLiveLog>(LivePasses{.first = live, .second = live_again},
+                                        LivePasses{.first = raw_live, .second = raw_live_again});
     return 0;
 }

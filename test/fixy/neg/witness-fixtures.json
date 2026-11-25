@@ -802,6 +802,11 @@
       "constructor": "(?<!~)\\bSegmentList\\("
     },
     {
+      "name": "neg_witness_core_segmentprefix_direct_construction",
+      "reason": "no matching function for call",
+      "constructor": "(?<!~)\\bSegmentPrefix\\("
+    },
+    {
       "name": "neg_witness_core_segmentruncursor_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bSegmentRunCursor\\("
@@ -2524,6 +2529,10 @@
     },
     {
       "type": "foundation::core::SegmentList<int>",
+      "header": "foundation/core/SegmentList.h"
+    },
+    {
+      "type": "foundation::core::SegmentPrefix<int const>",
       "header": "foundation/core/SegmentList.h"
     },
     {

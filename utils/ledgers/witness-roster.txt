@@ -1,0 +1,5 @@
+# The ledger of the rule witness-roster.  `python3 utils/bin/guard explain witness-roster` tells the rule and its policy,
+# and `python3 utils/bin/guard write --rule witness-roster` writes this file.
+format 1
+rule witness-roster
+include/foundation/core/LiveList.h | unrostered-witness | admit | foundation::core::detail::LiveSegments::WriteKey | the one constructor of the key takes the proof of the one writer, a SoleWriterProof that only the claim of the writer mints, so a forger of the key needs that proof.  neg_core_live_list_append_without_proof refuses an append with no proof
