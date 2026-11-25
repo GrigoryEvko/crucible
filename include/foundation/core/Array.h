@@ -1501,6 +1501,12 @@ template <class T, std::size_t Align>
     return heap_allocate_(heap_array_layout_<T, Align>(count));
 }
 
+// The fatal exit of an exchange whose element put a value into the array while
+// the array held no storage.
+[[noreturn]] CRUCIBLE_COLD inline void report_heap_array_changed_() noexcept {
+    fatal("the code of an element changed a HeapArray while an exchange moved an element");
+}
+
 // The fatal exit of a writer of mint_heap_array_written that left elements
 // with no write, or that gave elements past the last one.
 [[noreturn]] CRUCIBLE_COLD inline void refuse_written_array_(std::size_t count, std::size_t unwritten,
@@ -1887,9 +1893,25 @@ public:
         if (position >= this->state_.count) [[unlikely]] {
             fatal("an exchange at the position {} of a HeapArray of {} elements", position, this->state_.count);
         }
-        T held = std::move(this->state_.first[position]);
-        this->state_.first[position] = std::move(value);
-        return held;
+        if constexpr ((std::is_trivially_move_constructible_v<T> && std::is_trivially_move_assignable_v<T>)
+                      || BareOwner<T>) {
+            T held = std::move(this->state_.first[position]);
+            this->state_.first[position] = std::move(value);
+            return held;
+        } else {
+            // The move and the assignment of an element can reach the array
+            // through a second name (the code of an element of
+            // foundation/core/Owner.h).  So the array holds no storage while they
+            // run, and a value that they put into it ends the process.
+            State lent = this->take_state_();
+            T held = std::move(lent.first[position]);
+            lent.first[position] = std::move(value);
+            if (this->state_.first != nullptr) [[unlikely]] {
+                detail::report_heap_array_changed_();
+            }
+            this->state_ = lent;
+            return held;
+        }
     }
     void exchange(std::size_t position, T value) && =
         delete("an exchange in a temporary HeapArray writes storage that the full expression frees");

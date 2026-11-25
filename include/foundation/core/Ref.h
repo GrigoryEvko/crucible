@@ -1233,12 +1233,13 @@ class [[nodiscard]][[= ::foundation::linear::linear_when<is_linear_box<T>>]][[= 
         requires HoleShape<Size, Align>
     friend class Hole;
 
-    // Ends the object and gives the storage to a Hole.  The Box then holds
-    // no object.
+    // Ends the object and gives the storage to a Hole.  The Box holds no object
+    // before the end of the object starts, so code of the object that reaches
+    // the Box finds no ended object.
     [[nodiscard]] void* vacate_() noexcept {
         T* const object = held_();
-        object->~T();
         this->state_.object = nullptr;
+        object->~T();
         return static_cast<void*>(object);
     }
 
@@ -1357,17 +1358,19 @@ public:
     }
 
     // Moves the object out, destroys the moved-from object, and frees the
-    // storage.  The Box then holds no object.  The constraint reads T only
-    // at a call, because consume is a template.  So an Option of a Box of a
-    // declared type can read the members of the Box with no error.
+    // storage.  The Box holds no object before the move starts, so code of the
+    // object that reaches the Box changes no object that moves.  The constraint
+    // reads T only at a call, because consume is a template.  So an Option of a
+    // Box of a declared type can read the members of the Box with no error.
     template <class Payload = T>
         requires std::same_as<Payload, T> && std::is_nothrow_move_constructible_v<Payload>
     [[nodiscard]] T consume() && noexcept {
         if (this->state_.object == nullptr) [[unlikely]] {
             fatal("consume of a Box that holds no object: the Box was moved from or consumed");
         }
-        T taken(static_cast<T&&>(*this->state_.object));
-        this->reset_();
+        State held = this->take_state_();
+        T taken(static_cast<T&&>(*held.object));
+        State::release(held);
         return taken;
     }
 
