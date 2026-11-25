@@ -6870,9 +6870,24 @@ fixy_neg_compile_test(neg_owned_mmap_view_at_writes_a_read_only_mapping
   "no matching function for call to .fixy::OwnedMmap<\\{anonymous\\}::Region, fixy::mmap::prot::ReadOnly, fixy::mmap::share::Private, \\{anonymous\\}::RegionBrand>::view_at<int, 4>\\(int\\)."
   "MappingViewElement<Prot, T>")
 # The shared view of a shared mapping: a writer thread and a reader thread
-# of one slot, and the single-thread cases of each door.  The tsan preset
-# runs the two threads.
+# of one slot, the writers and the readers of one ring of tickets, and the
+# single-thread cases of each door.  The tsan preset runs the threads.
 fixy_test(test_os_shared_view)
+
+# The ring ticket: a ring has a fixed extent that is a power of two, a ticket
+# is no number, and a run of const records takes no write.
+fixy_neg_compile_test(neg_owned_mmap_ring_ticket_extent_not_a_power
+  "no matching function for call to .fixy::mmap::SharedView<const \\{anonymous\\}::Event, 3>::read_ticket<"
+  "required for the satisfaction of .RingExtent<Extent>. \\[with Extent = 3\\]")
+fixy_neg_compile_test(neg_owned_mmap_ring_ticket_of_dynamic_run
+  "no matching function for call to .fixy::mmap::SharedView<\\{anonymous\\}::Event>::write_ticket<"
+  "required for the satisfaction of .RingExtent<Extent>. \\[with Extent = 18446744073709551615\\]")
+fixy_neg_compile_test(neg_owned_mmap_ring_ticket_of_a_number
+  "cannot convert .long unsigned int. to .fixy::mmap::RingTicket."
+  "read_ticket\\(fixy::mmap::RingTicket\\) const")
+fixy_neg_compile_test(neg_owned_mmap_ring_ticket_writes_const_run
+  "no matching function for call to .fixy::mmap::SharedView<const \\{anonymous\\}::Event, 4>::write_ticket<"
+  "the expression .!\\(is_const_v<T>\\) \\[with T = const [^ ]*::Event\\]. evaluated to .false.")
 
 # A shared mapping gives a SharedView and no plain View, a private mapping
 # gives a View and no SharedView, no door of a SharedView gives a plain

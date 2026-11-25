@@ -640,9 +640,9 @@ crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.
 #
 #   • The cost-discipline fixes of the first audit carry forward
 #     (2026-05-04): BPF_MAP_TYPE_LRU_HASH (not HASH) for in-flight
-#     maps, single bpf_ktime_get_ns() per event, and one exchange of
-#     the ts_ns commit word before the fields and one after them.
-#     Same as SchedSwitch and SyscallLatency.
+#     maps, single bpf_ktime_get_ns() per event, and the ring ticket
+#     of include/crucible/perf/bpf/ring_ticket.h in the commit word of
+#     each record.  Same as SchedSwitch and SyscallLatency.
 #
 # Userspace facades: include/crucible/perf/SchedTpBtf.h and
 # SyscallTpBtf.h (mirror SchedSwitch.h and SyscallLatency.h surfaces).

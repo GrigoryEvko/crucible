@@ -352,13 +352,10 @@ struct RingLayout {
     // the view covers only the events.  view_at of the mapping checks the
     // bounds and the alignment, and it starts the lifetime of the events
     // over their bytes.  The mapping is shared, so the view is a SharedView
-    // of fixy/os/OwnedMmap.h, and each read of an event is atomic.  The stamp
-    // ts_ns is the commit word of an event: the BPF program exchanges it to
-    // zero, writes the other fields, and exchanges it to the stamp.  So a copy
-    // through the stamp drops each event that the program writes again during
-    // the copy.  Only two programs that write one slot at the same time can
-    // mix their fields: the ring then wraps over a program that stalls inside
-    // its write.
+    // of fixy/os/OwnedMmap.h, and each read of an event is atomic.  The word
+    // commit of an event holds the ticket of its write (the ring ticket of
+    // fixy/os/OwnedMmap.h), so a copy through read_ticket is the record of one
+    // ticket and mixes no two writes.
     template <class Tag>
     [[nodiscard]] static ::fixy::mmap::SharedView<const Event>
     events(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
@@ -374,16 +371,29 @@ struct RingLayout {
     }
 
     // The write index of the header, with an acquire load.  The BPF program
-    // advances write_idx with a barriered add, and a stamp marks a written
-    // event, so a reader checks the stamp before it trusts the rest of an
-    // event.
+    // claims a ticket with a barriered add to write_idx, and the record of a
+    // ticket becomes whole after the claim, so a reader gets it through
+    // read_ticket or not at all.
     template <class Tag>
     [[nodiscard]] static uint64_t write_index(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
+        return header_word_<&Header::write_idx>(mapping);
+    }
+
+    // The count of the claims whose write dropped, with an acquire load.
+    template <class Tag>
+    [[nodiscard]] static uint64_t dropped(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
+        return header_word_<&Header::dropped>(mapping);
+    }
+
+private:
+    // The word Word of the header, or zero for no mapping.
+    template <auto Word, class Tag>
+    [[nodiscard]] static uint64_t header_word_(const ::fixy::Option<ReadOnlyMapping<Tag>>& mapping) noexcept {
         return mapping.match(
             [](ReadOnlyMapping<Tag> const& mapped) noexcept -> uint64_t {
                 for (::fixy::mmap::SharedView<const Header, 1> const headers :
                      mapped.template view_at<const Header, 1>(0)) {
-                    return headers.template load_acquire<&Header::write_idx>(::fixy::index<0>());
+                    return headers.template load_acquire<Word>(::fixy::index<0>());
                 }
                 return 0;
             },
@@ -410,6 +420,8 @@ struct RingState : ::foundation::NonMovable<RingState<Tag, Event>> {
     [[nodiscard]] ::fixy::mmap::SharedView<const Event> events() const noexcept { return layout::events(timeline); }
 
     [[nodiscard]] uint64_t write_index() const noexcept { return layout::write_index(timeline); }
+
+    [[nodiscard]] uint64_t dropped() const noexcept { return layout::dropped(timeline); }
 
     [[nodiscard]] uint64_t count() const noexcept {
         if (counter.value() < 0) return 0;
@@ -471,7 +483,7 @@ template <class Facade, ::foundation::effects::IsExecCtx Ctx>
     });
 }
 
-// The three reads of a ring facade.
+// The four reads of a ring facade.
 template <class State>
 [[nodiscard]] uint64_t ring_count(HeldState<State> const& held) noexcept {
     return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.count(); });
@@ -480,6 +492,11 @@ template <class State>
 template <class State>
 [[nodiscard]] uint64_t ring_write_index(HeldState<State> const& held) noexcept {
     return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.write_index(); });
+}
+
+template <class State>
+[[nodiscard]] uint64_t ring_dropped(HeldState<State> const& held) noexcept {
+    return read_held(held, uint64_t{0}, [](State const& state) noexcept { return state.dropped(); });
 }
 
 template <class State>

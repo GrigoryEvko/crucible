@@ -5,8 +5,8 @@
 namespace crucible::perf {
 
 static_assert(sizeof(PmuSampleEvent) == 32, "PmuSampleEvent must be 32 B = ip(8) + tid(4) + event_type(1) + "
-                                            "_pad[3] + ts_ns(8) + _pad8(8); the trailing pad makes 32 divide "
-                                            "64 evenly so each slot is cache-line-coresident");
+                                            "_pad[3] + ts_ns(8) + commit(8), and 32 divides 64 evenly so each "
+                                            "slot is cache-line-coresident");
 
 static_assert(sizeof(PmuSampleHeader) == 64, "PmuSampleHeader must be exactly one cache line so the events "
                                              "array starts at offset 64");

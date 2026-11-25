@@ -36,17 +36,18 @@
 //       Target ~100 ns; a reasonable upper bound on the steady-state cost
 //       of windowed counter deltas.
 //
-//   (K) The read of an event through its commit word
-//       (SharedView::read_committed), on a ring of sealed memory that needs no
+//   (K) The read of an event of a ring through its ticket
+//       (SharedView::read_ticket), on a ring of sealed memory that needs no
 //       BPF program.  Each row reads the 64 newest events of 32 bytes of a
-//       ring of TIMELINE_CAPACITY slots.  The acquire-load row reads one stamp
-//       of each event, and the read_committed row copies each event.  A seqlock
-//       of the same words in atomic words of the base is the reference, and a
-//       plain copy of the same 2 KiB, which takes no check, is the floor.
-//       Each event takes six loads of read_committed: the stamp, four words
-//       and the stamp again.  A core with three loads in each cycle (Zen 4)
-//       does them in two cycles.  The write rows do the same for
-//       SharedView::write_committed.
+//       ring of TIMELINE_CAPACITY slots.  The acquire-load row reads the commit
+//       word of each event, and the read_ticket row copies each event.  A
+//       seqlock of the same words in atomic words of the base is the reference,
+//       and a plain copy of the same 2 KiB, which takes no check, is the floor.
+//       Each event takes six loads of read_ticket: the commit word, four words
+//       and the commit word again.  A core with three loads in each cycle
+//       (Zen 4) does them in two cycles.  The write rows do the same for
+//       SharedView::write_ticket, whose compare-exchange keeps two writers out
+//       of one slot.  Each write row writes the same 64 slots.
 //
 // Reading the output:
 //   • [batch-avg] flag → auto-batched percentiles are over batch means.
@@ -139,89 +140,88 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
 CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: the BPF programs of the perf facades write the timeline rings that the bench reads")
 namespace {
 
-// The count of the events with a stamp that is not zero in the 64 slots of a
-// timeline ring of Capacity slots before the write index end, newest first.
-// The kernel writes the stamp of a slot last, so an acquire load of the stamp
-// orders the read of the rest of the slot.  Capacity is a power of two.  The
-// body is inline in each drain row, so the row times the loads and no call.
-// The window of the fixed extent Capacity checks the count of the view one
-// time, and its type holds the count.  The mask keeps each slot below
-// Capacity, so a read of a slot takes no check.  A view of fewer than
-// Capacity slots gives no window and the count zero.
+using ::fixy::mmap::RingTicket;
+
+// The count of the 64 tickets before the write index end whose slot in a
+// timeline ring of Capacity slots holds the whole record of the ticket, newest
+// first.  Capacity is a power of two.  The body is inline in each drain row, so
+// the row times the loads and no call.  The window of the fixed extent Capacity
+// checks the count of the view one time, and its type holds the count, so a
+// read of a ticket takes no check.  A view of fewer than Capacity slots gives
+// no window and the count zero.  A ticket below zero has no record.
 template <std::uint64_t Capacity, class Events>
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
 count_live_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
     using Event = std::remove_const_t<typename Events::element_type>;
-    using Slot = ::fixy::Index<Capacity>;
     std::uint64_t live = 0;
     for (auto const ring : view.template window<Capacity>(0)) {
         for (std::uint64_t i = 0; i < 64; ++i) {
-            if (ring.template load_acquire<&Event::ts_ns>(Slot::mask(end.value() - 1 - i)) != 0) ++live;
+            if (ring.template has_ticket<&Event::commit>(RingTicket::mask(end.value() - 1 - i))) ++live;
         }
     }
     return live;
 }
 
-// The count of the events with a stamp that is not zero from the slot of pre
-// up to post in a timeline ring of Capacity slots, at most Capacity of them,
-// oldest first.  When the window holds more than Capacity new events, the
-// ring wrote over the older ones, and the count stops at Capacity.  The
-// window of the fixed extent Capacity holds the count in its type, as in
-// count_live_newest, so a read of a slot takes no check.  Complexity: linear
-// in the window.
+// The count of the tickets from pre up to post whose slot in a timeline ring
+// of Capacity slots holds the whole record of the ticket, at most Capacity of
+// them, oldest first.  When the window holds more than Capacity new tickets,
+// the ring wrote over the records of the older ones, and the walk takes the
+// newest Capacity of them.  The window of the fixed extent Capacity holds the
+// count in its type, as in count_live_newest, so a read of a ticket takes no
+// check.  Complexity: linear in the window.
 template <std::uint64_t Capacity, class Events>
 [[nodiscard]] std::size_t count_live_window(Events const& events,
                                             ::fixy::Side<bench::side::ReadingBefore, std::uint64_t> pre,
                                             ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> post) noexcept {
     using Event = std::remove_const_t<typename Events::element_type>;
-    using Slot = ::fixy::Index<Capacity>;
     const std::uint64_t delta = (post.value() >= pre.value()) ? (post.value() - pre.value()) : 0;
     const std::size_t to_walk = (delta > Capacity) ? Capacity : static_cast<std::size_t>(delta);
     std::size_t live = 0;
     for (auto const ring : events.template window<Capacity>(0)) {
         for (std::size_t i = 0; i < to_walk; ++i) {
-            if (ring.template load_acquire<&Event::ts_ns>(Slot::mask(pre.value() + i)) != 0) ++live;
+            if (ring.template has_ticket<&Event::commit>(RingTicket::mask(post.value() - to_walk + i))) ++live;
         }
     }
     return live;
 }
 
-// The sum of the words of the events with a commit in the 64 slots of a
-// timeline ring of Capacity slots before the write index end, newest first.
-// Each event is a copy through its commit word, so the row times the whole
-// read of an event, and the sum keeps each word of the copy alive.  Capacity
-// is a power of two.  The body is inline in each row, and the window and the
-// mask are as in count_live_newest.
+// The sum of the words of the whole records of the 64 tickets before the write
+// index end of a timeline ring of Capacity slots, newest first.  Each event is
+// a copy through its ticket, so the row times the whole read of an event, and
+// the sum keeps each word of the copy alive.  Capacity is a power of two.  The
+// body is inline in each row, and the window is as in count_live_newest.
 template <std::uint64_t Capacity, class Events>
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
-sum_committed_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
+sum_tickets_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
     using Event = std::remove_const_t<typename Events::element_type>;
-    using Slot = ::fixy::Index<Capacity>;
     std::uint64_t sum = 0;
     for (auto const ring : view.template window<Capacity>(0)) {
         for (std::uint64_t i = 0; i < 64; ++i) {
-            for (Event const event : ring.template read_committed<&Event::ts_ns>(Slot::mask(end.value() - 1 - i))) {
-                sum += event.off_cpu_ns + event.tid + event.on_cpu + event.ts_ns + event._pad;
+            for (Event const event : ring.template read_ticket<&Event::commit>(RingTicket::mask(end.value() - 1 - i))) {
+                sum += event.off_cpu_ns + event.tid + event.on_cpu + event.ts_ns + event.commit;
             }
         }
     }
     return sum;
 }
 
-// Writes event into the 64 slots of a ring of Capacity slots before the write
-// index end, newest first, each through its commit word.  The window and the
-// mask are as in count_live_newest.
+// Writes event as the records of the 64 tickets before the write index end of
+// a ring of Capacity slots, newest first, and gives the count of the writes
+// that did not drop.  The window is as in count_live_newest.
 template <std::uint64_t Capacity, class Events>
-[[gnu::always_inline]] inline void fill_committed_newest(Events const& view,
-                                                         ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end,
-                                                         typename Events::element_type const& event) noexcept {
+[[nodiscard, gnu::always_inline]] inline std::uint64_t
+fill_tickets_newest(Events const& view, ::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end,
+                    typename Events::element_type const& event) noexcept {
     using Event = typename Events::element_type;
-    using Slot = ::fixy::Index<Capacity>;
+    std::uint64_t written = 0;
     for (auto const ring : view.template window<Capacity>(0)) {
         for (std::uint64_t i = 0; i < 64; ++i) {
-            ring.template write_committed<&Event::ts_ns>(Slot::mask(end.value() - 1 - i), event);
+            ::fixy::mmap::RingWrite const end_of_write =
+                ring.template write_ticket<&Event::commit>(RingTicket::mask(end.value() - 1 - i), event);
+            written += end_of_write == ::fixy::mmap::RingWrite::written ? 1U : 0U;
         }
     }
+    return written;
 }
 
 }  // namespace
@@ -255,7 +255,7 @@ using SharedRing = ::fixy::atom::mmap::with_share<::fixy::mmap::share::Shared>;
                      .tid = static_cast<std::uint32_t>(index + 1),
                      .on_cpu = static_cast<std::uint32_t>(index % 8 + 1),
                      .ts_ns = index + 1,
-                     ._pad = index * 5 + 1};
+                     .commit = index * 5 + 1};
 }
 
 // The region of a mint, or the error of the mint.
@@ -293,7 +293,7 @@ run_on_sealed_ring(::foundation::permissions::Permission<SealedRingRegion, Brand
     auto mapping = std::move(mapped).expect("the mint gave a mapping");
     for (FullRing const ring : mapping.template view_at<RingEvent, kRingEvents>(0)) {
         for (auto const slot : FullRing::indices()) {
-            ring.template write_committed<&RingEvent::ts_ns>(slot, event_of_slot(slot.raw()));
+            static_cast<void>(ring.template write_ticket<&RingEvent::commit>(slot, event_of_slot(slot.raw())));
         }
         return on_view(RingOf{ring});
     }
@@ -361,7 +361,7 @@ void fill_plain_events() noexcept {
 
 // The sum of the words of the 64 newest events through the standard seqlock
 // read: an acquire load of the stamp, an acquire load of each other word, and a
-// second load of the stamp.  It is the reference of sum_committed_newest, with
+// second load of the stamp.  It is the reference of sum_tickets_newest, with
 // five loads for each event.
 [[nodiscard, gnu::always_inline]] inline std::uint64_t
 sum_seqlock_newest(::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) noexcept {
@@ -381,7 +381,7 @@ sum_seqlock_newest(::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end) n
 
 // Writes event into the 64 newest events through the standard seqlock write:
 // an exchange of the stamp to zero, a release store of each other word and a
-// release store of the stamp.  It is the reference of fill_committed_newest.
+// release store of the stamp.  It is the reference of fill_tickets_newest.
 [[gnu::always_inline]] inline void fill_seqlock_newest(::fixy::Side<bench::side::ReadingAfter, std::uint64_t> end,
                                                        RingEvent const& event) noexcept {
     EventWords const from = ::fixy::bit_cast<EventWords>(event);
@@ -839,12 +839,12 @@ int main() {
                 }
             });
         }(),
-        // (K) The copy of an event through its commit word.
+        // (K) The copy of an event through its ticket.
         [&] {
-            return bench::run("sched_switch drain 64 events [64x read_committed]", [&] {
+            return bench::run("sched_switch drain 64 events [64x read_ticket]", [&] {
                 for (auto const h : s.sched_switch()) {
                     const auto view = h->timeline_view();
-                    const std::uint64_t sum = sum_committed_newest<crucible::perf::TIMELINE_CAPACITY>(
+                    const std::uint64_t sum = sum_tickets_newest<crucible::perf::TIMELINE_CAPACITY>(
                         view, ::fixy::side_as<bench::side::ReadingAfter>(h->timeline_write_index()));
                     bench::do_not_optimize(sum);
                 }
@@ -856,8 +856,8 @@ int main() {
             });
         }(),
         [&] {
-            return run_sealed_ring("sealed ring drain 64 events [64x read_committed]", [](RingOf const view) {
-                return sum_committed_newest<kRingEvents>(view, ::fixy::side_as<bench::side::ReadingAfter>(kRingEnd));
+            return run_sealed_ring("sealed ring drain 64 events [64x read_ticket]", [](RingOf const view) {
+                return sum_tickets_newest<kRingEvents>(view, ::fixy::side_as<bench::side::ReadingAfter>(kRingEnd));
             });
         }(),
         [&] {
@@ -867,11 +867,14 @@ int main() {
         }(),
         [&] { return bench::run("plain copy of 64 events, no check [floor]", [&] { copy_newest(); }); }(),
         [&] {
-            return run_sealed_ring("sealed ring write 64 events [64x write_committed]", [](RingOf const view) {
-                fill_committed_newest<kRingEvents>(view, ::fixy::side_as<bench::side::ReadingAfter>(kRingEnd),
-                                                   event_of_slot(7));
-                return view.size();
-            });
+            // Each turn writes the tickets of the next lap, so each write is
+            // the next write of its slot and none drops.
+            return run_sealed_ring("sealed ring write 64 events [64x write_ticket]",
+                                   [end = kRingEnd](RingOf const view) mutable {
+                                       end += kRingEvents;
+                                       return fill_tickets_newest<kRingEvents>(
+                                           view, ::fixy::side_as<bench::side::ReadingAfter>(end), event_of_slot(7));
+                                   });
         }(),
         [&] {
             return bench::run("seqlock write 64 events [reference]", [&] {

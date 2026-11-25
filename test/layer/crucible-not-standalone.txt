@@ -22,6 +22,7 @@ crucible/cntp/dataplane/bpf/net_common.h | a BPF C header that includes common.h
 crucible/cog/bpf/common.h | a BPF C header that includes vmlinux.h
 crucible/observe/bpf/common.h | a BPF C header that includes vmlinux.h
 crucible/perf/bpf/common.h | a BPF C header that includes vmlinux.h
+crucible/perf/bpf/ring_ticket.h | a BPF C header whose types and macros come from the common.h that includes it
 crucible/perf/bpf/vmlinux.h | the BPF type information of the kernel, as generated C
 crucible/topology/bpf/common.h | a BPF C header that includes vmlinux.h
 crucible/warden/bpf/common.h | a BPF C header that includes vmlinux.h

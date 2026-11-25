@@ -159,6 +159,32 @@ static_assert(mmap::detail::modifier_flags<Faults>() == 0 && mmap::detail::modif
 static_assert(mmap::ExecIsLicensed<mmap::prot::ReadWrite> && !mmap::ExecIsLicensed<mmap::prot::Exec>);
 static_assert(mmap::ExecIsLicensed<mmap::prot::Exec, Jit> && !mmap::ExecIsLicensed<NotAProt, Jit>);
 
+// The ring ticket.  The extent of a ring is a power of two.  The commit words
+// of a ticket differ from zero and from the words of each other ticket, and
+// they increase with the ticket, also for the largest one.
+static_assert(mmap::RingExtent<1> && mmap::RingExtent<4096>);
+static_assert(!mmap::RingExtent<0> && !mmap::RingExtent<3> && !mmap::RingExtent<::foundation::core::dynamic_extent>);
+
+consteval bool commit_words_increase() {
+    std::uint64_t last = 0;
+    for (std::uint64_t claim = 0; claim < 64; ++claim) {
+        mmap::RingTicket const ticket = mmap::RingTicket::mask(claim);
+        std::uint64_t const busy = mmap::detail::busy_commit_(ticket);
+        std::uint64_t const whole = mmap::detail::whole_commit_(ticket);
+        if (busy <= last || whole <= busy) return false;
+        last = whole;
+    }
+    mmap::RingTicket const largest = mmap::RingTicket::mask(std::uint64_t{0} - 1);
+    return mmap::detail::whole_commit_(largest) > mmap::detail::busy_commit_(largest)
+        && mmap::detail::busy_commit_(largest) > last;
+}
+static_assert(commit_words_increase());
+
+// A count below zero and a count that no ticket has give no ticket.
+static_assert(mmap::RingTicket::check(std::uint64_t{0} - 1).is_none());
+static_assert(mmap::RingTicket::check(std::uint64_t{1} << 62U).is_none());
+static_assert(mmap::RingTicket::check((std::uint64_t{1} << 62U) - 1).is_some());
+
 }  // namespace detail::owned_mmap_self_test
 
 }  // namespace fixy

@@ -6,7 +6,7 @@
 // and the field offsets of its C struct, and each mirror keeps the names of
 // the C fields.  The check file of this header holds the layout of each one.
 //
-// A timeline has 131080 bytes, so a caller reads it through the mmap of its
+// A timeline has 262208 bytes, so a caller reads it through the mmap of its
 // map and does not make one on a stack.
 
 #include <fixy/Core.h>
@@ -57,9 +57,9 @@ struct NetFlowKey {
     }
 };
 
-// struct crucible_net_event: one sample of a timeline.  ts_ns is the commit
-// word of a slot: the publish of bpf/net_common.h exchanges it to zero,
-// writes the other fields, and then exchanges it to the stamp.
+// struct crucible_net_event: one sample of a timeline.  commit is the commit
+// word of a slot, and it holds the ticket of the write (the ring ticket of
+// fixy/os/OwnedMmap.h), which the publish of bpf/net_common.h claims.
 struct NetEvent {
     std::uint64_t value0 = 0;
     std::uint64_t value1 = 0;
@@ -68,12 +68,16 @@ struct NetEvent {
     NetEventKind kind = NetEventKind::PacingSample;
     std::uint8_t pad = 0;
     std::uint64_t ts_ns = 0;
+    std::uint64_t commit = 0;
+    ::fixy::FixedArray<std::uint64_t, 3> pad8{};
 };
 
-// struct timeline_header of bpf/common.h.  The program takes each slot with a
-// fetch-add on write_idx.
+// struct timeline_header of bpf/common.h.  The program claims each slot with a
+// fetch-add on write_idx, and dropped counts the claims whose write dropped.
 struct NetTimelineHeader {
     std::uint64_t write_idx = 0;
+    std::uint64_t dropped = 0;
+    ::fixy::FixedArray<std::uint64_t, 6> pad{};
 };
 
 // struct crucible_net_timeline: the value of one timeline map.  The slot of

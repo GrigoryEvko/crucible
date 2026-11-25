@@ -3,13 +3,17 @@
 // each object and loads no program, so it needs no capability.
 //
 // Ring writers
-//   A program of a perf ring writes a slot as the shared view of
-//   fixy/os/OwnedMmap.h asks.  It exchanges ts_ns, the commit word, to zero,
-//   it stores each other field, and it exchanges ts_ns to the stamp.  A
-//   reader drops a copy that a write overlaps only when the program does
-//   both exchanges.  The walk counts the writes with that form: an exchange
-//   with a zero, stores of exactly the bytes of the fields, no plain store of
-//   the commit word, and a second exchange at the same offset.
+//   A program of a perf ring writes a slot as ring_ticket.h beside the
+//   programs does, and as the shared view of fixy/os/OwnedMmap.h reads it.  It
+//   takes the slot with one or two compare-exchanges of the commit word, and
+//   it counts a dropped event when none of them takes the slot.  It stores
+//   each field, and it exchanges the commit word to the whole commit of its
+//   ticket.  A reader drops a copy that a write overlaps, and two programs are
+//   never in one slot, only when each program writes in that form.  The walk
+//   counts the writes with the form: one or two compare-exchanges of the
+//   commit word with no field store before them, an atomic add of the dropped
+//   count, stores of exactly the bytes of the fields, no plain store of the
+//   commit word, and one exchange of the commit word.
 //
 // Deleted elements
 //   A program that ends an interval looks up the element of its start, reads
@@ -20,8 +24,8 @@
 //   the first delete.  It does not follow an address through the stack.
 //
 // The two walks read the instructions in the order of the text.  clang writes
-// the code between the two exchanges, and between the lookup and the delete,
-// with no jump back.
+// the code between the first compare-exchange and the exchange, and between
+// the lookup and the delete, with no jump back.
 
 #include <crucible/perf/detail/BpfLoader.h>
 #include <fixy/Core.h>
@@ -87,8 +91,13 @@ struct Instruction {
 
     [[nodiscard]] std::uint64_t opcode_class() const noexcept { return opcode & 0x07u; }
 
-    // BPF_STX | BPF_ATOMIC | BPF_DW with BPF_XCHG: the exchange of 64 bits.
+    // BPF_STX | BPF_ATOMIC | BPF_DW: an atomic operation of 64 bits, with
+    // BPF_XCHG, BPF_CMPXCHG, and BPF_ADD with and without BPF_FETCH.
     [[nodiscard]] bool is_exchange() const noexcept { return opcode == 0xDBu && immediate == 0xE1u; }
+    [[nodiscard]] bool is_compare_exchange() const noexcept { return opcode == 0xDBu && immediate == 0xF1u; }
+    [[nodiscard]] bool is_atomic_add() const noexcept {
+        return opcode == 0xDBu && (immediate == 0x00u || immediate == 0x01u);
+    }
 
     [[nodiscard]] bool is_call() const noexcept { return opcode == 0x85u; }
     [[nodiscard]] bool is_call_of(Helper helper) const noexcept {
@@ -121,9 +130,8 @@ struct Instruction {
 
     [[nodiscard]] bool is_load() const noexcept { return opcode_class() == 1; }
 
-    // A move of a 64-bit register, or a move of an immediate.
+    // A move of a 64-bit register.
     [[nodiscard]] bool is_register_move() const noexcept { return opcode == 0xBFu; }
-    [[nodiscard]] bool is_zero_move() const noexcept { return (opcode == 0xB7u || opcode == 0xB4u) && immediate == 0; }
 
     // An add to a 64-bit register, which keeps an address in its element.
     [[nodiscard]] bool is_add() const noexcept { return opcode == 0x07u || opcode == 0x0Fu; }
@@ -151,13 +159,46 @@ private:
     std::uint64_t bits_ = 0;
 };
 
+// The bytes of the header of a ring, which the records follow.  An access of a
+// record can have the bytes of the header in its offset or in its register.
+inline constexpr std::uint64_t kHeaderBytes = 64;
+
+// The offset of the dropped count in the header of a ring.
+inline constexpr std::uint64_t kDroppedOffset = 8;
+
+// The compare-exchanges that one write can do to take its slot.
+inline constexpr std::size_t kTakesOfWrite = 2;
+
 // The writes that one object must hold.
 struct RingWriter {
     ::fixy::TextView name{};
     // The count of the programs of the object that write its ring.
     std::size_t writers = 0;
-    // The bytes of the fields of a record, other than ts_ns and the padding.
+    // The offset of the commit word in a record.
+    std::uint64_t commit_offset = 0;
+    // The bytes of the fields of a record, other than the commit word and the
+    // padding.
     std::uint64_t field_bytes = 0;
+
+    // True when an access at offset is one of the commit word.
+    [[nodiscard]] bool is_commit(std::uint64_t offset) const noexcept {
+        return offset == commit_offset || offset == commit_offset + kHeaderBytes;
+    }
+};
+
+// What the walk saw of the write that it is in.
+struct WriteSeen {
+    std::size_t takes = 0;
+    bool counts_a_drop = false;
+    std::uint64_t stored = 0;
+
+    // True when the compare-exchange can be the next one of the write.
+    [[nodiscard]] bool takes_again() const noexcept { return takes < kTakesOfWrite && stored == 0 && !counts_a_drop; }
+
+    // True when the exchange can end the write.
+    [[nodiscard]] bool is_whole(RingWriter const& ring) const noexcept {
+        return takes > 0 && counts_a_drop && stored == ring.field_bytes;
+    }
 };
 
 // The count of the writes of text that have the form of the top of the file,
@@ -165,41 +206,31 @@ struct RingWriter {
 // instructions of text.
 [[nodiscard]] ::fixy::Option<std::size_t> count_committed_writes(ObjectBytes text, RingWriter const& ring) noexcept {
     LittleEndian const words{text};
-    RegisterSet zeros{};
     std::size_t writes = 0;
-    bool is_inside = false;
-    std::uint64_t commit_offset = 0;
-    std::uint64_t stored = 0;
+    WriteSeen write{};
     for (std::size_t place = 0; place < text.size(); place += kInstructionBytes) {
         Instruction const instruction = Instruction::at(words, place);
-        if (instruction.is_exchange()) {
-            bool const is_start = !is_inside && zeros.has(instruction.source);
-            bool const is_end = is_inside && !zeros.has(instruction.source) && instruction.offset == commit_offset
-                             && stored == ring.field_bytes;
-            if (!is_start && !is_end) {
+        bool const is_of_commit = ring.is_commit(instruction.offset);
+        if (instruction.is_compare_exchange()) {
+            if (!is_of_commit || !write.takes_again()) {
                 return ::fixy::none;
             }
-            commit_offset = instruction.offset;
-            stored = 0;
-            is_inside = is_start;
-            zeros.drop(instruction.source);
-            if (is_end) ++writes;
-            continue;
-        }
-        if (is_inside
-            && (instruction.is_exit() || (instruction.is_shared_store() && instruction.offset == commit_offset))) {
-            return ::fixy::none;
-        }
-        if (is_inside && instruction.is_shared_store()) stored += instruction.access_bytes();
-        if (instruction.is_call()) {
-            zeros.drop_call_registers();
-        } else if (instruction.is_zero_move()) {
-            zeros.add(instruction.destination);
-        } else if (instruction.sets_destination()) {
-            zeros.drop(instruction.destination);
+            ++write.takes;
+        } else if (instruction.is_exchange()) {
+            if (!is_of_commit || !write.is_whole(ring)) {
+                return ::fixy::none;
+            }
+            ++writes;
+            write = WriteSeen{};
+        } else if (write.takes > 0) {
+            if (instruction.is_exit() || (instruction.is_shared_store() && is_of_commit)) {
+                return ::fixy::none;
+            }
+            if (instruction.is_shared_store()) write.stored += instruction.access_bytes();
+            if (instruction.is_atomic_add() && instruction.offset == kDroppedOffset) write.counts_a_drop = true;
         }
     }
-    if (is_inside) {
+    if (write.takes > 0) {
         return ::fixy::none;
     }
     return ::fixy::some(writes);
@@ -272,22 +303,22 @@ void expect_ring_writes(perf::ForeignBytes object, RingWriter const& ring) noexc
 }
 
 void test_each_ring_program_commits_its_slots() {
-    // off_cpu_ns, tid and on_cpu.
+    // off_cpu_ns, tid, on_cpu and ts_ns.
     expect_ring_writes(perf::sched_switch_bpf_object(),
-                       RingWriter{.name = "sched_switch", .writers = 1, .field_bytes = 16});
+                       RingWriter{.name = "sched_switch", .writers = 1, .commit_offset = 24, .field_bytes = 24});
     expect_ring_writes(perf::sched_tp_btf_bpf_object(),
-                       RingWriter{.name = "sched_tp_btf", .writers = 1, .field_bytes = 16});
-    // duration_ns, tid and syscall_nr.
+                       RingWriter{.name = "sched_tp_btf", .writers = 1, .commit_offset = 24, .field_bytes = 24});
+    // duration_ns, tid, syscall_nr and ts_ns.
     expect_ring_writes(perf::syscall_latency_bpf_object(),
-                       RingWriter{.name = "syscall_latency", .writers = 1, .field_bytes = 16});
+                       RingWriter{.name = "syscall_latency", .writers = 1, .commit_offset = 24, .field_bytes = 24});
     expect_ring_writes(perf::syscall_tp_btf_bpf_object(),
-                       RingWriter{.name = "syscall_tp_btf", .writers = 1, .field_bytes = 16});
-    // futex_addr, wait_ns and tid.
+                       RingWriter{.name = "syscall_tp_btf", .writers = 1, .commit_offset = 24, .field_bytes = 24});
+    // futex_addr, wait_ns, tid and ts_ns.
     expect_ring_writes(perf::lock_contention_bpf_object(),
-                       RingWriter{.name = "lock_contention", .writers = 1, .field_bytes = 20});
-    // ip, tid and event_type, in each of the eight programs.
+                       RingWriter{.name = "lock_contention", .writers = 1, .commit_offset = 32, .field_bytes = 28});
+    // ip, tid, event_type and ts_ns, in each of the eight programs.
     expect_ring_writes(perf::pmu_sample_bpf_object(),
-                       RingWriter{.name = "pmu_sample", .writers = 8, .field_bytes = 13});
+                       RingWriter{.name = "pmu_sample", .writers = 8, .commit_offset = 24, .field_bytes = 21});
     ::fixy::check::pass(kTest, "  test_each_ring_program_commits_its_slots: PASSED\n");
 }
 
@@ -308,41 +339,71 @@ void test_no_program_reads_a_deleted_element() {
 // register byte holds the source in its high half and the destination in its
 // low half.
 void test_the_walks_refuse_a_wrong_text() {
-    RingWriter const ring{.name = "text", .writers = 1, .field_bytes = 8};
-    ::fixy::FixedArray<unsigned char, 32> const committed{
-        0xB7, 0x01, 0, 0, 0,    0, 0, 0,  // r1 = 0
-        0xDB, 0x10, 8, 0, 0xE1, 0, 0, 0,  // r1 = xchg_64(r0 + 8, r1)
-        0x7B, 0x60, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 0) = r6
-        0xDB, 0x70, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r0 + 8, r7)
+    RingWriter const ring{.name = "text", .writers = 1, .commit_offset = 8, .field_bytes = 8};
+    ::fixy::FixedArray<unsigned char, 40> const committed{
+        0xDB, 0x58, 72, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 72, r0, r5)
+        0xDB, 0x58, 8,  0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x19, 8,  0, 0x01, 0, 0, 0,  // r1 = atomic_fetch_add((u64 *)(r9 + 8), r1)
+        0x7B, 0x68, 0,  0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0xDB, 0x78, 8,  0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r8 + 8, r7)
     };
     CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(committed.view(), ring).value_or(0) == 1);
 
+    // The write that the compare-exchange replaced: an exchange to zero, the
+    // field, and an exchange of the commit word.
+    ::fixy::FixedArray<unsigned char, 32> const exchange_to_zero{
+        0xB7, 0x01, 0, 0, 0,    0, 0, 0,  // r1 = 0
+        0xDB, 0x10, 8, 0, 0xE1, 0, 0, 0,  // r1 = xchg_64(r0 + 8, r1)
+        0x7B, 0x60, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 0) = r6
+        0xDB, 0x70, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r0 + 8, r7)
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(exchange_to_zero.view(), ring).is_none());
+
     // The last store is plain, so the write does not end.
-    ::fixy::FixedArray<unsigned char, 32> const plain_stamp{
-        0xB7, 0x01, 0, 0, 0,    0, 0, 0,  // r1 = 0
-        0xDB, 0x10, 8, 0, 0xE1, 0, 0, 0,  // r1 = xchg_64(r0 + 8, r1)
-        0x7B, 0x60, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 0) = r6
-        0x7B, 0x70, 8, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 8) = r7
+    ::fixy::FixedArray<unsigned char, 32> const plain_commit{
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x19, 8, 0, 0x01, 0, 0, 0,  // r1 = atomic_fetch_add((u64 *)(r9 + 8), r1)
+        0x7B, 0x68, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0x7B, 0x78, 8, 0, 0,    0, 0, 0,  // *(u64 *)(r8 + 8) = r7
     };
-    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(plain_stamp.view(), ring).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(plain_commit.view(), ring).is_none());
 
-    // The first exchange stores the stamp and not a zero.
-    ::fixy::FixedArray<unsigned char, 32> const stamp_first{
-        0xB7, 0x01, 0, 0, 1,    0, 0, 0,  // r1 = 1
-        0xDB, 0x10, 8, 0, 0xE1, 0, 0, 0,  // r1 = xchg_64(r0 + 8, r1)
-        0x7B, 0x60, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 0) = r6
-        0xDB, 0x70, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r0 + 8, r7)
+    // The program counts no dropped event.
+    ::fixy::FixedArray<unsigned char, 24> const uncounted_drop{
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0x7B, 0x68, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0xDB, 0x78, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r8 + 8, r7)
     };
-    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(stamp_first.view(), ring).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(uncounted_drop.view(), ring).is_none());
 
-    // The field store is before the first exchange.
+    // The field store is before the compare-exchange.
     ::fixy::FixedArray<unsigned char, 32> const field_first{
-        0x7B, 0x60, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r0 + 0) = r6
-        0xB7, 0x01, 0, 0, 0,    0, 0, 0,  // r1 = 0
-        0xDB, 0x10, 8, 0, 0xE1, 0, 0, 0,  // r1 = xchg_64(r0 + 8, r1)
-        0xDB, 0x70, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r0 + 8, r7)
+        0x7B, 0x68, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x19, 8, 0, 0x01, 0, 0, 0,  // r1 = atomic_fetch_add((u64 *)(r9 + 8), r1)
+        0xDB, 0x78, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r8 + 8, r7)
     };
     CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(field_first.view(), ring).is_none());
+
+    // The compare-exchange is of another word of the record.
+    ::fixy::FixedArray<unsigned char, 32> const other_word{
+        0xDB, 0x58, 16, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 16, r0, r5)
+        0xDB, 0x19, 8,  0, 0x01, 0, 0, 0,  // r1 = atomic_fetch_add((u64 *)(r9 + 8), r1)
+        0x7B, 0x68, 0,  0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0xDB, 0x78, 8,  0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r8 + 8, r7)
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(other_word.view(), ring).is_none());
+
+    // A third compare-exchange after two that did not take the slot.
+    ::fixy::FixedArray<unsigned char, 48> const third_take{
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x58, 8, 0, 0xF1, 0, 0, 0,  // r0 = cmpxchg_64(r8 + 8, r0, r5)
+        0xDB, 0x19, 8, 0, 0x01, 0, 0, 0,  // r1 = atomic_fetch_add((u64 *)(r9 + 8), r1)
+        0x7B, 0x68, 0, 0, 0,    0, 0, 0,  // *(u64 *)(r8 + 0) = r6
+        0xDB, 0x78, 8, 0, 0xE1, 0, 0, 0,  // r7 = xchg_64(r8 + 8, r7)
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, count_committed_writes(third_take.view(), ring).is_none());
 
     // The load after the delete reads the element that r7 names.
     ::fixy::FixedArray<unsigned char, 40> const read_after_delete{

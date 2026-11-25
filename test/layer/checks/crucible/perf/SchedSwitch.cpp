@@ -4,7 +4,7 @@
 
 namespace crucible::perf {
 
-static_assert(sizeof(TimelineSchedEvent) == 32, "TimelineSchedEvent must be 32 B (with 8 B trailing pad) to "
+static_assert(sizeof(TimelineSchedEvent) == 32, "TimelineSchedEvent must be 32 B (with the commit word last) to "
                                                 "match the kernel-side event struct — wire contract with the "
                                                 "BPF_F_MMAPABLE map.  32 divides 64 evenly, so events[N] never "
                                                 "spans two cache lines.");

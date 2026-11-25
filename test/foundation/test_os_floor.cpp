@@ -276,6 +276,10 @@ void test_judges_each_flag_above_the_floor() {
                              == FlagVerdict::fallback);
     CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::memory_file_no_exec, KernelVersion{6, 3, 0})
                              == FlagVerdict::admitted);
+    // The release of the BPF atomics is 5.12 on x86-64 and 5.18 on aarch64.
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::bpf_atomics, KernelVersion{5, 11, 22})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::bpf_atomics, KernelVersion{5, 18, 0}) == FlagVerdict::admitted);
 }
 
 // A release that lacks a word that a door needs in each call refuses the

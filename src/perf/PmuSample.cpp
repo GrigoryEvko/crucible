@@ -302,6 +302,11 @@ uint64_t PmuSample::timeline_write_index() const noexcept {
                              [](State const& state) noexcept { return PmuSampleRing::write_index(state.timeline); });
 }
 
+uint64_t PmuSample::timeline_dropped() const noexcept {
+    return detail::read_held(state_, uint64_t{0},
+                             [](State const& state) noexcept { return PmuSampleRing::dropped(state.timeline); });
+}
+
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> PmuSample::attached_programs() const noexcept {
     return detail::attached_programs(state_);
 }

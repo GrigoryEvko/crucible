@@ -18,25 +18,26 @@ struct FacadeDoor;
 }  // namespace detail
 
 // The kernel-side program writes into the same byte offsets userspace
-// reads.  ts_ns is the commit word of a slot (the shared view of
-// fixy/os/OwnedMmap.h): the program exchanges it to zero, writes the
-// other fields, and exchanges it to the stamp.  A slot with ts_ns == 0
-// is still being filled and its other fields are meaningless.
+// reads.  commit is the commit word of a slot, and it holds the ticket of
+// the write (the ring ticket of fixy/os/OwnedMmap.h).  The other fields of
+// a slot are a record only for a reader that asks for that ticket.
 //
-// The trailing pad brings the struct to 32 bytes, which divides the
-// 64-byte cache line evenly, so no slot in the events array straddles
-// two lines.
+// The struct is 32 bytes, which divides the 64-byte cache line evenly, so
+// no slot in the events array straddles two lines.
 struct TimelineSchedEvent {
     uint64_t off_cpu_ns;
     uint32_t tid;
     uint32_t on_cpu;
     uint64_t ts_ns;  // kernel monotonic clock
-    uint64_t _pad;
+    uint64_t commit;  // the ticket of the write
 };
 
+// write_idx counts each claim of a slot, and dropped counts the claims whose
+// write dropped (the ring ticket of fixy/os/OwnedMmap.h).
 struct TimelineHeader {
     uint64_t write_idx;
-    ::fixy::FixedArray<uint64_t, 7> _pad;
+    uint64_t dropped;
+    ::fixy::FixedArray<uint64_t, 6> _pad;
 };
 
 // This value mirrors the ring size the kernel-side program was built
@@ -74,13 +75,19 @@ public:
     // never reach the ring.
     //
     // The kernel writes this memory while the reader walks it, so read
-    // a whole slot through its commit word, with
-    // read_committed<&TimelineSchedEvent::ts_ns>.
+    // the record of a ticket through its commit word, with
+    // read_ticket<&TimelineSchedEvent::commit>.  A record that the ring
+    // wrote over, that is not whole yet, or whose write dropped gives no
+    // value.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSchedEvent> timeline_view() const noexcept;
 
-    // The index counts events forever, so the most recently written
-    // slot is `(write_idx - 1) & TIMELINE_MASK`.
+    // The index counts claims forever, so the newest ticket is
+    // `write_idx - 1`, and its slot is that ticket masked to the capacity.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
+
+    // The count of the claims whose write dropped.  A count that grows
+    // with each lap of the ring shows a slot that a program never left.
+    [[nodiscard]] uint64_t timeline_dropped() const noexcept;
 
     [[nodiscard]] ::fixy::MaxBounded<8, std::size_t> attached_programs() const noexcept;
 

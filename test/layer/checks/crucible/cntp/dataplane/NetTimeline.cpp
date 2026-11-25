@@ -30,8 +30,9 @@ static_assert(std::has_unique_object_representations_v<NetFlowKey>);
 static_assert(NetFlowKey{} == NetFlowKey{});
 static_assert(!(NetFlowKey{.proto = 6} == NetFlowKey{.proto = 17}));
 
-// struct crucible_net_event: 8 + 8 + 4 + 2 + 1 + 1 + 8 bytes, aligned to 8.
-static_assert(sizeof(NetEvent) == 32);
+// struct crucible_net_event: 8 + 8 + 4 + 2 + 1 + 1 + 8 + 8 + 24 bytes, aligned
+// to 8.  A record fills one cache line.
+static_assert(sizeof(NetEvent) == 64);
 static_assert(alignof(NetEvent) == 8);
 static_assert(offsetof(NetEvent, value0) == 0);
 static_assert(offsetof(NetEvent, value1) == 8);
@@ -40,17 +41,20 @@ static_assert(offsetof(NetEvent, queue_id) == 20);
 static_assert(offsetof(NetEvent, kind) == 22);
 static_assert(offsetof(NetEvent, pad) == 23);
 static_assert(offsetof(NetEvent, ts_ns) == 24);
+static_assert(offsetof(NetEvent, commit) == 32);
+static_assert(offsetof(NetEvent, pad8) == 40);
 static_assert(std::is_trivially_copyable_v<NetEvent>);
 static_assert(std::has_unique_object_representations_v<NetEvent>);
 
-// struct timeline_header and struct crucible_net_timeline: 8 bytes, then
-// 4096 events of 32 bytes.
-static_assert(sizeof(NetTimelineHeader) == 8);
+// struct timeline_header and struct crucible_net_timeline: a cache line, then
+// 4096 events of 64 bytes.
+static_assert(sizeof(NetTimelineHeader) == 64);
 static_assert(offsetof(NetTimelineHeader, write_idx) == 0);
-static_assert(sizeof(NetTimeline) == 131080);
+static_assert(offsetof(NetTimelineHeader, dropped) == 8);
+static_assert(sizeof(NetTimeline) == 262208);
 static_assert(alignof(NetTimeline) == 8);
 static_assert(offsetof(NetTimeline, hdr) == 0);
-static_assert(offsetof(NetTimeline, events) == 8);
+static_assert(offsetof(NetTimeline, events) == 64);
 static_assert(std::is_trivially_copyable_v<NetTimeline>);
 
 static_assert(net_event_kind_name(NetEventKind::LldpRx) == "LldpRx");

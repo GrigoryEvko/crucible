@@ -5,7 +5,7 @@
 namespace crucible::perf {
 
 static_assert(sizeof(TimelineSyscallEvent) == 32, "TimelineSyscallEvent must be 32 B (duration_ns 8 + tid 4 + "
-                                                  "syscall_nr 4 + ts_ns 8 + _pad 8) to match the kernel-side "
+                                                  "syscall_nr 4 + ts_ns 8 + commit 8) to match the kernel-side "
                                                   "event struct — wire contract with the BPF_F_MMAPABLE map.  32 "
                                                   "divides 64 evenly, so events[N] never spans two cache lines.");
 

@@ -201,6 +201,10 @@ enum class KernelFlag : std::uint8_t {
     clock_of_descriptor,
     // PTP_CLOCK_GETCAPS2 of the capabilities of a PTP clock.
     ptp_clock_caps,
+    // BPF_CMPXCHG and BPF_XCHG, the atomic operations of a BPF program that
+    // takes and gives a slot of a ring of records (the ring ticket of
+    // fixy/os/OwnedMmap.h).  The load of the program passes them.
+    bpf_atomics,
     // MFD_CLOEXEC and MFD_ALLOW_SEALING of the sealed memory of fixy/os/Fs.h,
     // and the seals of its F_ADD_SEALS.
     memory_file_seals,
@@ -229,6 +233,15 @@ struct FlagFloor {
     char const* word = "";
     char const* fallback = "";
 };
+
+// The release that runs the atomic operations of a BPF program.  The verifier
+// and the JIT of x86-64 have them since 5.12, and the JIT of aarch64 since
+// 5.18.
+#if defined(__aarch64__)
+inline constexpr KernelVersion kBpfAtomics{5, 18, 0};
+#else
+inline constexpr KernelVersion kBpfAtomics{5, 12, 0};
+#endif
 
 // The row of FLAG.  The releases come from the kernel history.  An
 // enumerator with no row gives the empty row of the default, which has no
@@ -468,6 +481,12 @@ struct FlagFloor {
                              .word = "PTP_CLOCK_GETCAPS2",
                              .fallback = "The capability read gives the error of the kernel. The caller uses the "
                                          "clock with no capability of the device."};
+        case KernelFlag::bpf_atomics:
+            return FlagFloor{.release = kBpfAtomics,
+                             .need = FlagNeed::fallback,
+                             .word = "BPF_CMPXCHG, BPF_XCHG",
+                             .fallback = "The kernel refuses the load of the program. The loader reports that the "
+                                         "ring of the program is unavailable, and the process has no such ring."};
         case KernelFlag::memory_file_seals:
             return FlagFloor{
                 .release = {3, 17, 0}, .need = FlagNeed::each_call, .word = "MFD_ALLOW_SEALING, F_ADD_SEALS"};

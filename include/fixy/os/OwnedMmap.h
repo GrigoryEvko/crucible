@@ -496,6 +496,35 @@ template <auto Field, typename T>
 concept CommitField =
     SharedField<Field, T> && sizeof(typename detail::member_of_<decltype(Field)>::member_type) == sizeof(std::uint64_t);
 
+// A ticket of a ring of records (the ring ticket of the shared view): the
+// claim of one write, which counts the claims of the ring from zero.  It is
+// below 2^62, so each ticket has its own commit words.  A count that wrapped
+// below zero gives no ticket through check(), and through mask() a ticket that
+// no write has.
+using RingTicket = ::foundation::core::Index<(std::size_t{1} << 62U)>;
+
+// The end of a write of a ring record.  A dropped write changed no word of the
+// ring.
+enum class RingWrite : std::uint8_t {
+    written,
+    dropped,
+};
+
+// A fixed extent of a ring of records: a power of two, so the low bits of a
+// ticket are the slot of its record.
+template <std::size_t Extent>
+concept RingExtent = Extent != ::foundation::core::dynamic_extent && Extent > 0 && (Extent & (Extent - 1)) == 0;
+
+namespace detail {
+
+// The commit word of a slot while the writer of ticket is in it, and when the
+// record of ticket is whole.  The first is odd and the second is even and not
+// zero, and a later ticket has a larger word.
+[[nodiscard]] constexpr std::uint64_t busy_commit_(RingTicket ticket) noexcept { return 2 * ticket.raw() + 1; }
+[[nodiscard]] constexpr std::uint64_t whole_commit_(RingTicket ticket) noexcept { return 2 * ticket.raw() + 2; }
+
+}  // namespace detail
+
 // Shared view
 //   A SharedView is a run of elements of T in a mapping of share::Shared,
 //   which another writer stores: the kernel, a BPF program, another process
@@ -506,8 +535,12 @@ concept CommitField =
 //     load_acquire<Field>(index)      a word field of a record element
 //     read_committed<Commit>(index)   a copy of a record element through its
 //                                     commit word
-//     store_release(index, value), store_release<Field>(index, value) and
-//     write_committed<Commit>(index, record), for a run that can be written.
+//     has_ticket<Commit>(ticket)      true when the slot of a ring ticket holds
+//                                     the whole record of it
+//     read_ticket<Commit>(ticket)     a copy of the record of a ring ticket
+//     store_release(index, value), store_release<Field>(index, value),
+//     write_committed<Commit>(index, record) and
+//     write_ticket<Commit>(ticket, record), for a run that can be written.
 //   An acquire load makes visible each store that the writer made before
 //   its store of the word.
 //
@@ -522,7 +555,41 @@ concept CommitField =
 //   not clear the commit word before it writes a record again, each load is
 //   still atomic, and no field is torn, but the copy can mix two writes: the
 //   whole record is consistent only after that writer clears the commit word
-//   first.
+//   first.  A record of the commit word has one writer at a time.  Two writers
+//   in one record mix their words, and no reader sees it.
+//
+// Ring ticket
+//   A ring of records with many writers gives each write a ticket: the writer
+//   claims the next number of a counter, and the slot of the write is that
+//   number masked to the extent.  A writer that stops in its slot, while the
+//   others claim the whole ring, meets a second writer in the slot.  So the
+//   commit word of a slot states who is in it: 2t + 1 while the writer of the
+//   ticket t is in the slot, and 2t + 2 when the record of t is whole.  Zero is
+//   a slot that no write reached.
+//
+//   write_ticket takes the slot with one compare-exchange from the commit of
+//   the ticket one lap before.  When that fails, the commit word that it saw
+//   decides.  A slot that another writer is in, and a slot that holds a later
+//   record, drop the write.  Each other slot is taken from the commit that the
+//   writer saw.  So at most one writer is in a slot, no earlier record replaces
+//   a later one, and no writer waits.
+//
+//   read_ticket gives the record of one ticket, or no value.  It takes a copy
+//   only when the commit word is the whole commit of that ticket before the
+//   copy and after it.  So the copy mixes no two writes, and it is never the
+//   record of another ticket: not the one of an earlier lap in a slot whose
+//   writer claimed and did not write yet, and not the one of a later lap that
+//   overtook the reader.
+//
+//   A writer that never leaves its slot, such as a program on a CPU that goes
+//   away, keeps the slot busy for ever.  Each later write to that slot is then
+//   dropped, and the reader gets no value for its ticket.  No writer takes such
+//   a slot over, because the old writer can go on and mix its words into the
+//   new record.  The writers of a ring count what they drop.
+//
+//   The commit words of the two forms are not compatible: a ring takes the
+//   doors of the ticket, and a record with one writer the doors of the commit
+//   word.
 //
 //   A run of a fixed extent takes the indexed doors, and the Index proves the
 //   bound.  A run of the dynamic extent gives size() and window<Count>().
@@ -614,6 +681,25 @@ class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
         }
     }
 
+    // Takes the slot of target for the write of ticket, and gives false when
+    // the write drops (the ring ticket).  The first exchange expects the whole
+    // commit of the ticket one lap before.  In the first lap no slot holds that
+    // word, so the first exchange fails there and gives the commit of the slot.
+    template <auto Commit>
+    [[nodiscard]] static bool take_slot_(T* target, RingTicket ticket) noexcept
+        requires(!std::is_const_v<T>)
+    {
+        using Word64 = typename detail::member_of_<decltype(Commit)>::member_type;
+        Word64 const busy = detail::busy_commit_(ticket);
+        Word64 seen = detail::whole_commit_(ticket) - 2 * Extent;
+        if (__atomic_compare_exchange_n(&(target->*Commit), &seen, busy, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            return true;
+        }
+        bool const is_free = (seen & 1) == 0 && seen < busy;
+        return is_free
+            && __atomic_compare_exchange_n(&(target->*Commit), &seen, busy, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+    }
+
 public:
     using element_type = T;
     static constexpr std::size_t extent = Extent;
@@ -689,6 +775,34 @@ public:
         return ::foundation::core::some(copy);
     }
 
+    // True when the slot of ticket holds the whole record of that ticket now
+    // (the ring ticket).  A later write can take the slot at once, so only
+    // read_ticket gives a record.  Complexity: one acquire load.
+    template <auto Commit>
+        requires RingExtent<Extent> && SharedRecord<Value> && CommitField<Commit, Value>
+    [[nodiscard]] bool has_ticket(RingTicket ticket) const noexcept {
+        T* const record = first_ + Position::mask(ticket.raw()).raw();
+        return __atomic_load_n(&(record->*Commit), __ATOMIC_ACQUIRE) == detail::whole_commit_(ticket);
+    }
+
+    // A copy of the record of ticket through its commit word Commit, or no
+    // value when the slot holds no whole record of that ticket (the ring
+    // ticket).  Complexity: two loads of the commit word and one acquire load
+    // for each word of the record.
+    template <auto Commit>
+        requires RingExtent<Extent> && SharedRecord<Value> && CommitField<Commit, Value>
+    [[nodiscard]] ::foundation::core::Option<Value> read_ticket(RingTicket ticket) const noexcept {
+        T* const record = first_ + Position::mask(ticket.raw()).raw();
+        std::uint64_t const whole = detail::whole_commit_(ticket);
+        if (__atomic_load_n(&(record->*Commit), __ATOMIC_ACQUIRE) != whole) return ::foundation::core::none;
+        Words words{};
+        copy_words_(record, words);
+        if (__atomic_load_n(&(record->*Commit), __ATOMIC_ACQUIRE) != whole) return ::foundation::core::none;
+        Value copy = __builtin_bit_cast(Value, words);
+        copy.*Commit = whole;
+        return ::foundation::core::some(copy);
+    }
+
     // Stores value in the word element at index, with a release store.
     void store_release(Position index, Value value) const noexcept
         requires(Extent != ::foundation::core::dynamic_extent) && SharedWord<Value> && (!std::is_const_v<T>)
@@ -718,6 +832,24 @@ public:
         Words const words = __builtin_bit_cast(Words, record);
         store_words_(target, words, commit_word_of_<Commit>(target));
         __atomic_store_n(&(target->*Commit), record.*Commit, __ATOMIC_RELEASE);
+    }
+
+    // Writes record as the record of ticket through its commit word Commit (the
+    // ring ticket): one compare-exchange of the commit word, a release store of
+    // each other word, and a release store of the commit of ticket.  The commit
+    // that record holds is not read.  A slot that another writer is in, or that
+    // holds a later record, drops the write.  The ticket is a claim that no
+    // other write has.  Complexity: at most two compare-exchanges, and one store
+    // for each word.
+    template <auto Commit>
+        requires RingExtent<Extent> && SharedRecord<Value> && CommitField<Commit, Value> && (!std::is_const_v<T>)
+    [[nodiscard]] RingWrite write_ticket(RingTicket ticket, Value const& record) const noexcept {
+        T* const target = first_ + Position::mask(ticket.raw()).raw();
+        if (!take_slot_<Commit>(target, ticket)) return RingWrite::dropped;
+        Words const words = __builtin_bit_cast(Words, record);
+        store_words_(target, words, commit_word_of_<Commit>(target));
+        __atomic_store_n(&(target->*Commit), detail::whole_commit_(ticket), __ATOMIC_RELEASE);
+        return RingWrite::written;
     }
 };
 

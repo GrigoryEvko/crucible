@@ -46,6 +46,8 @@ uint64_t LockContention::wait_count() const noexcept { return detail::ring_count
 
 uint64_t LockContention::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
+uint64_t LockContention::timeline_dropped() const noexcept { return detail::ring_dropped(state_); }
+
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> LockContention::attached_programs() const noexcept {
     return detail::attached_programs(state_);
 }

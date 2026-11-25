@@ -13,19 +13,19 @@
 namespace crucible::perf {
 
 // The kernel-side program writes into the same byte offsets userspace
-// reads.  ts_ns is the commit word of a slot (the shared view of
-// fixy/os/OwnedMmap.h): the program exchanges it to zero, writes the
-// other fields, and exchanges it to the stamp.  A slot with ts_ns == 0
-// is still being filled and its other fields are meaningless.
+// reads.  commit is the commit word of a slot, and it holds the ticket of
+// the write (the ring ticket of fixy/os/OwnedMmap.h).  The other fields of
+// a slot are a record only for a reader that asks for that ticket.
 //
-// The struct is 32 bytes, which divides the 64-byte cache line
-// evenly, so no slot in the events array straddles two lines.
+// The struct fills one cache line of 64 bytes.
 struct TimelineLockEvent {
     uint64_t futex_addr;
     uint64_t wait_ns;
     uint32_t tid;
     uint32_t _pad;
     uint64_t ts_ns;  // kernel monotonic clock
+    uint64_t commit;  // the ticket of the write
+    ::fixy::FixedArray<uint64_t, 3> _pad8;
 };
 
 }  // namespace crucible::perf
@@ -63,13 +63,19 @@ public:
     [[nodiscard]] uint64_t wait_count() const noexcept;
 
     // The kernel writes this memory while the reader walks it, so read
-    // a whole slot through its commit word, with
-    // read_committed<&TimelineLockEvent::ts_ns>.
+    // the record of a ticket through its commit word, with
+    // read_ticket<&TimelineLockEvent::commit>.  A record that the ring
+    // wrote over, that is not whole yet, or whose write dropped gives no
+    // value.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineLockEvent> timeline_view() const noexcept;
 
-    // The index counts events forever, so the most recently written
-    // slot is `(write_idx - 1) & TIMELINE_MASK`.
+    // The index counts claims forever, so the newest ticket is
+    // `write_idx - 1`, and its slot is that ticket masked to the capacity.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
+
+    // The count of the claims whose write dropped.  A count that grows
+    // with each lap of the ring shows a slot that a program never left.
+    [[nodiscard]] uint64_t timeline_dropped() const noexcept;
 
     [[nodiscard]] ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 

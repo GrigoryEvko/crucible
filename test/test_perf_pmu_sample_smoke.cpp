@@ -20,20 +20,18 @@ namespace {
 
 static_assert(sizeof(crucible::perf::PmuSampleEvent) == 32,
               "PmuSampleEvent must be 32 B = ip(8) + tid(4) + event_type(1) + "
-              "_pad[3] + ts_ns(8) + _pad8(8). The trailing pad is what makes the "
-              "size divide the 64-byte cache line. Without it a slot can straddle "
-              "two lines, and a torn read of the second line breaks the "
-              "write-ts_ns-last completion marker for that slot");
+              "_pad[3] + ts_ns(8) + commit(8). The size divides the 64-byte cache "
+              "line, so no slot straddles two lines");
 
 static_assert(offsetof(crucible::perf::PmuSampleEvent, ip) == 0, "ip must be at offset 0");
 static_assert(offsetof(crucible::perf::PmuSampleEvent, tid) == 8, "tid must be at offset 8");
 static_assert(offsetof(crucible::perf::PmuSampleEvent, event_type) == 12, "event_type must be at offset 12");
 static_assert(offsetof(crucible::perf::PmuSampleEvent, ts_ns) == 16,
-              "ts_ns must be at offset 16 — written last as the completion "
-              "marker. A reorder lets readers see other fields turn non-zero "
-              "before ts_ns lands");
-static_assert(offsetof(crucible::perf::PmuSampleEvent, _pad8) == 24,
-              "_pad8 must be at offset 24 — the cache-line-coresidence pad");
+              "ts_ns must be at offset 16 — the third u64-aligned slot");
+static_assert(offsetof(crucible::perf::PmuSampleEvent, commit) == 24,
+              "commit must be at offset 24. The program takes the slot through it "
+              "before each other field and ends the write through it, so a reorder "
+              "lets a reader take the ticket from another field");
 
 static_assert(sizeof(crucible::perf::PmuSampleHeader) == 64,
               "PmuSampleHeader must be exactly one cache line so the events "
@@ -152,6 +150,13 @@ int main() {
                            "PmuSample::timeline_write_index() on moved-from — "
                            "expected 0, got {}\n",
                            write_idx_after);
+            return 1;
+        }
+        if (const uint64_t dropped_after = hub.timeline_dropped(); dropped_after != 0u) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "PmuSample::timeline_dropped() on moved-from — "
+                           "expected 0, got {}\n",
+                           dropped_after);
             return 1;
         }
         if (view_after.size() != 0) {

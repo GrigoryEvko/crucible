@@ -18,12 +18,11 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 
 namespace {
 
-static_assert(sizeof(crucible::perf::TimelineLockEvent) == 32,
-              "TimelineLockEvent must be 32 B = futex_addr(8) + wait_ns(8) + "
-              "tid(4) + _pad(4) + ts_ns(8). Any other size means the kernel-side "
-              "program writes a layout userspace does not read, producing garbage "
-              "events. The size divides the 64-byte cache line, so no slot "
-              "straddles two lines.");
+static_assert(sizeof(crucible::perf::TimelineLockEvent) == 64,
+              "TimelineLockEvent must be 64 B = futex_addr(8) + wait_ns(8) + "
+              "tid(4) + _pad(4) + ts_ns(8) + commit(8) + _pad8(24). Any other size "
+              "means the kernel-side program writes a layout userspace does not "
+              "read, producing garbage events. A record fills one cache line.");
 
 // The wire contract is offset-sensitive, not only size-sensitive. A reorder
 // that preserves the size still breaks the reader.
@@ -36,12 +35,14 @@ static_assert(offsetof(crucible::perf::TimelineLockEvent, tid) == 16,
 static_assert(offsetof(crucible::perf::TimelineLockEvent, _pad) == 20,
               "_pad must be at offset 20 — packs with tid for ts_ns alignment");
 static_assert(offsetof(crucible::perf::TimelineLockEvent, ts_ns) == 24,
-              "ts_ns must be at offset 24 — the kernel writes it last as the "
-              "completion marker. A reorder lets readers see other fields turn "
-              "non-zero before ts_ns lands");
+              "ts_ns must be at offset 24 — the fourth u64-aligned slot");
+static_assert(offsetof(crucible::perf::TimelineLockEvent, commit) == 32,
+              "commit must be at offset 32. The program takes the slot through it "
+              "before each other field and ends the write through it, so a reorder "
+              "lets a reader take the ticket from another field");
 
 // The events array starts at offset 64, right after the header, so slot N
-// begins at byte 64 + 32*N.
+// begins at byte 64 + 64*N.
 static_assert(64 % sizeof(crucible::perf::TimelineLockEvent) == 0,
               "the 64-byte cache line must divide evenly by the event size, "
               "otherwise events straddle cache-line boundaries and become "
@@ -155,6 +156,13 @@ int main() {
                            "perf::LockContention::timeline_write_index() on "
                            "moved-from — expected 0, got {}\n",
                            write_idx_after);
+            return 1;
+        }
+        if (const uint64_t dropped_after = hub.timeline_dropped(); dropped_after != 0u) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::LockContention::timeline_dropped() on "
+                           "moved-from — expected 0, got {}\n",
+                           dropped_after);
             return 1;
         }
         if (view_after.size() != 0) {

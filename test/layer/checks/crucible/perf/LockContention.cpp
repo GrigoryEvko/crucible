@@ -4,10 +4,10 @@
 
 namespace crucible::perf {
 
-static_assert(sizeof(TimelineLockEvent) == 32, "TimelineLockEvent must be 32 B (futex_addr 8 + wait_ns 8 + "
-                                               "tid 4 + _pad 4 + ts_ns 8) to match the kernel-side event "
-                                               "struct — wire contract with the BPF_F_MMAPABLE map.  32 "
-                                               "divides 64 evenly, so events[N] never spans two cache lines.");
+static_assert(sizeof(TimelineLockEvent) == 64, "TimelineLockEvent must be 64 B (futex_addr 8 + wait_ns 8 + "
+                                               "tid 4 + _pad 4 + ts_ns 8 + commit 8 + _pad8 24) to match the "
+                                               "kernel-side event struct — wire contract with the "
+                                               "BPF_F_MMAPABLE map.  A record fills one cache line.");
 
 // Block is the atom that decides this gate.  ColdInitCtx and
 // BgCompileCtx both carry Alloc and IO, and the gate rejects both for

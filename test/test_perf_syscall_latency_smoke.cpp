@@ -21,10 +21,10 @@ namespace {
 
 static_assert(sizeof(crucible::perf::TimelineSyscallEvent) == 32,
               "TimelineSyscallEvent must be 32 B = duration_ns(8) + tid(4) + "
-              "syscall_nr(4) + ts_ns(8) + _pad(8). Any other size means the "
+              "syscall_nr(4) + ts_ns(8) + commit(8). Any other size means the "
               "kernel-side program writes a layout userspace does not read, "
-              "producing garbage events. The trailing pad makes the size divide "
-              "the 64-byte cache line, so no slot straddles two lines.");
+              "producing garbage events. The size divides the 64-byte cache "
+              "line, so no slot straddles two lines.");
 
 // The wire contract is offset-sensitive, not only size-sensitive. A reorder
 // that preserves the size still breaks the reader.
@@ -35,12 +35,11 @@ static_assert(offsetof(crucible::perf::TimelineSyscallEvent, tid) == 8,
 static_assert(offsetof(crucible::perf::TimelineSyscallEvent, syscall_nr) == 12,
               "syscall_nr must be at offset 12 — packs with tid in the same u64 word");
 static_assert(offsetof(crucible::perf::TimelineSyscallEvent, ts_ns) == 16,
-              "ts_ns must be at offset 16 — the kernel writes it last as the "
-              "completion marker. A reorder lets readers see other fields turn "
-              "non-zero before ts_ns lands");
-static_assert(offsetof(crucible::perf::TimelineSyscallEvent, _pad) == 24,
-              "_pad must be at offset 24. The kernel never writes this field. It "
-              "exists only so sizeof(TimelineSyscallEvent) divides 64 evenly.");
+              "ts_ns must be at offset 16 — the third u64-aligned slot");
+static_assert(offsetof(crucible::perf::TimelineSyscallEvent, commit) == 24,
+              "commit must be at offset 24. The program takes the slot through it "
+              "before each other field and ends the write through it, so a reorder "
+              "lets a reader take the ticket from another field");
 
 // The events array starts at offset 64, right after the header, so slot N
 // begins at byte 64 + 32*N.
@@ -159,6 +158,13 @@ int main() {
                            "perf::SyscallLatency::timeline_write_index() on "
                            "moved-from — expected 0, got {}\n",
                            write_idx_after);
+            return 1;
+        }
+        if (const uint64_t dropped_after = hub.timeline_dropped(); dropped_after != 0u) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SyscallLatency::timeline_dropped() on "
+                           "moved-from — expected 0, got {}\n",
+                           dropped_after);
             return 1;
         }
         if (view_after.size() != 0) {

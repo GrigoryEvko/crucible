@@ -42,6 +42,8 @@ uint64_t SchedSwitch::context_switches() const noexcept { return detail::ring_co
 
 uint64_t SchedSwitch::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
+uint64_t SchedSwitch::timeline_dropped() const noexcept { return detail::ring_dropped(state_); }
+
 ::fixy::MaxBounded<8, std::size_t> SchedSwitch::attached_programs() const noexcept {
     return detail::attached_programs(state_);
 }

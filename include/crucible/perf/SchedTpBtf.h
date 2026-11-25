@@ -44,13 +44,19 @@ public:
     // never reach the ring.
     //
     // The kernel writes this memory while the reader walks it, so read
-    // a whole slot through its commit word, with
-    // read_committed<&TimelineSchedEvent::ts_ns>.
+    // the record of a ticket through its commit word, with
+    // read_ticket<&TimelineSchedEvent::commit>.  A record that the ring
+    // wrote over, that is not whole yet, or whose write dropped gives no
+    // value.
     [[nodiscard]] ::fixy::mmap::SharedView<const TimelineSchedEvent> timeline_view() const noexcept;
 
-    // The index counts events forever, so the most recently written
-    // slot is `(write_idx - 1) & TIMELINE_MASK`.
+    // The index counts claims forever, so the newest ticket is
+    // `write_idx - 1`, and its slot is that ticket masked to the capacity.
     [[nodiscard]] uint64_t timeline_write_index() const noexcept;
+
+    // The count of the claims whose write dropped.  A count that grows
+    // with each lap of the ring shows a slot that a program never left.
+    [[nodiscard]] uint64_t timeline_dropped() const noexcept;
 
     [[nodiscard]] ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> attached_programs() const noexcept;
 

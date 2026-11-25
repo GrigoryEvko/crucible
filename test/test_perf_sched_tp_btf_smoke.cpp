@@ -78,8 +78,9 @@ int main() {
 
         // Reading a moved-from hub is defined here and must report zeros.
         crucible::perf::SchedTpBtf moved_into = std::move(hub);
-        if (hub.context_switches() != 0u || hub.timeline_write_index() != 0u || hub.timeline_view().size() != 0
-            || hub.attached_programs().value() != 0u || hub.attach_failures().value() != 0u) {
+        if (hub.context_switches() != 0u || hub.timeline_write_index() != 0u || hub.timeline_dropped() != 0u
+            || hub.timeline_view().size() != 0 || hub.attached_programs().value() != 0u
+            || hub.attach_failures().value() != 0u) {
             ::fixy::report(::fixy::Sink::Err, "perf::SchedTpBtf moved-from accessors — expected zeros\n");
             return 1;
         }

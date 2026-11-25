@@ -128,20 +128,16 @@ int handle_sched_switch_btf(u64* ctx) {
             __u32 tl_zero = 0;
             struct sched_timeline* tl = bpf_map_lookup_elem(&sched_timeline, &tl_zero);
             if (tl) {
+                __u32 cpu = bpf_get_smp_processor_id();
                 __u64 idx = __sync_fetch_and_add(&tl->hdr.write_idx, 1);
                 __u32 slot = (__u32)(idx & TIMELINE_MASK);
-                if (slot < TIMELINE_CAPACITY) {
-                    /* ts_ns is the commit word of the slot (the shared view
-                     * of fixy/os/OwnedMmap.h). The exchange to zero is fully
-                     * ordered, so a reader that sees a field of this write
-                     * loads the zero or a later stamp again and drops its
-                     * copy. The exchange of the stamp is fully ordered too,
-                     * so each field is visible before the stamp. */
-                    (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, 0);
+                if (slot < TIMELINE_CAPACITY
+                    && ring_take_slot(&tl->events[slot].commit, idx, TIMELINE_CAPACITY, &tl->hdr.dropped)) {
                     tl->events[slot].off_cpu_ns = delta;
                     tl->events[slot].tid = next_pid;
-                    tl->events[slot].on_cpu = bpf_get_smp_processor_id();
-                    (void)__sync_lock_test_and_set(&tl->events[slot].ts_ns, ts);
+                    tl->events[slot].on_cpu = cpu;
+                    tl->events[slot].ts_ns = ts;
+                    ring_give_slot(&tl->events[slot].commit, idx);
                 }
             }
 

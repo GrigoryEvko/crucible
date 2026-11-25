@@ -20,15 +20,14 @@ namespace {
 
 static_assert(sizeof(crucible::perf::TimelineSchedEvent) == 32,
               "TimelineSchedEvent must be 32 B = off_cpu_ns(8) + tid(4) + "
-              "on_cpu(4) + ts_ns(8) + _pad(8). Any other size means the "
+              "on_cpu(4) + ts_ns(8) + commit(8). Any other size means the "
               "kernel-side program writes a layout userspace does not read, "
-              "producing garbage events. The trailing pad exists so the size "
-              "divides the 64-byte cache line and no slot straddles two lines.");
+              "producing garbage events. The size divides the 64-byte cache "
+              "line, so no slot straddles two lines.");
 
 // The wire contract is offset-sensitive, not only size-sensitive. Swapping
-// off_cpu_ns and ts_ns still yields a 32-byte struct, but the kernel would
-// then write ts_ns first instead of last and the completion-marker discipline
-// breaks.
+// off_cpu_ns and commit still yields a 32-byte struct, but a reader would
+// then take a ticket from a time.
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, off_cpu_ns) == 0,
               "off_cpu_ns must be at offset 0 — the kernel writes it first");
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, tid) == 8,
@@ -36,12 +35,11 @@ static_assert(offsetof(crucible::perf::TimelineSchedEvent, tid) == 8,
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, on_cpu) == 12,
               "on_cpu must be at offset 12 — packs with tid in the same u64 word");
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, ts_ns) == 16,
-              "ts_ns must be at offset 16 — the kernel writes it last as the "
-              "completion marker. A reorder lets readers see other fields turn "
-              "non-zero before ts_ns lands");
-static_assert(offsetof(crucible::perf::TimelineSchedEvent, _pad) == 24,
-              "_pad must be at offset 24. The kernel never writes this field. It "
-              "exists only so sizeof(TimelineSchedEvent) divides 64 evenly.");
+              "ts_ns must be at offset 16 — the third u64-aligned slot");
+static_assert(offsetof(crucible::perf::TimelineSchedEvent, commit) == 24,
+              "commit must be at offset 24. The program takes the slot through it "
+              "before each other field and ends the write through it, so a reorder "
+              "lets a reader take the ticket from another field");
 
 // The events array starts at offset 64, right after the header, so slot N
 // begins at byte 64 + 32*N.
@@ -156,6 +154,13 @@ int main() {
                            "perf::SchedSwitch::timeline_write_index() on moved-from "
                            "— expected 0, got {}\n",
                            write_idx_after);
+            return 1;
+        }
+        if (const uint64_t dropped_after = hub.timeline_dropped(); dropped_after != 0u) {
+            ::fixy::report(::fixy::Sink::Err,
+                           "perf::SchedSwitch::timeline_dropped() on moved-from "
+                           "— expected 0, got {}\n",
+                           dropped_after);
             return 1;
         }
         if (view_after.size() != 0) {

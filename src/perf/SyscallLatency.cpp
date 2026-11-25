@@ -47,6 +47,8 @@ uint64_t SyscallLatency::total_syscalls() const noexcept { return detail::ring_c
 
 uint64_t SyscallLatency::timeline_write_index() const noexcept { return detail::ring_write_index(state_); }
 
+uint64_t SyscallLatency::timeline_dropped() const noexcept { return detail::ring_dropped(state_); }
+
 ::fixy::Refined<::fixy::bounded_above<8>, std::size_t> SyscallLatency::attached_programs() const noexcept {
     return detail::attached_programs(state_);
 }

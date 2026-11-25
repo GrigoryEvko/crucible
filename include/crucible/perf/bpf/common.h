@@ -6,6 +6,7 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
+#include "ring_ticket.h"
 
 /* Userspace rewrites this in .rodata before the program is loaded. */
 const volatile __u32 target_tgid = 0;
@@ -62,35 +63,24 @@ struct fault_val {
 #define TIMELINE_MASK (TIMELINE_CAPACITY - 1)
 
 /*
- * ts_ns is the commit word of a record (the shared view of
- * fixy/os/OwnedMmap.h). The writer exchanges it to zero, stores the other
- * fields, and exchanges it to the stamp, which is never zero. A BPF exchange
- * is fully ordered on each architecture. So a reader that sees a field of a
- * write sees the zero or a later stamp when it loads ts_ns again, and a
- * reader that sees the stamp sees each field of its write. The reader loads
- * ts_ns, copies the record, and loads ts_ns again. It drops the copy when
- * ts_ns is zero or when the two loads differ. Two programs that write one
- * slot at the same time can mix their fields. The ring then wraps over a
- * program that stalls inside its write.
+ * The commit word of a record holds the ticket of its write (the ring ticket
+ * of ring_ticket.h). The size of a record divides the cache line of 64 bytes,
+ * so no slot straddles two lines.
  */
 struct timeline_sched_event {
     __u64 off_cpu_ns;
     __u32 tid;
     __u32 on_cpu; /* CPU core switched onto */
-    __u64 ts_ns; /* the commit word */
-    __u64 _pad; /* Rounds the record to 32 bytes, which divides
-                        * the cache line, so no slot straddles two
-                        * lines and each slot takes one line. */
+    __u64 ts_ns;
+    __u64 commit; /* the ticket of the write */
 };
 
 struct timeline_syscall_event {
     __u64 duration_ns;
     __u32 tid;
     __u32 syscall_nr;
-    __u64 ts_ns; /* the commit word */
-    __u64 _pad; /* Rounds the record to 32 bytes so no slot
-                        * straddles a cache line.  Refer to
-                        * timeline_sched_event. */
+    __u64 ts_ns;
+    __u64 commit; /* the ticket of the write */
 };
 
 struct timeline_lock_event {
@@ -98,17 +88,21 @@ struct timeline_lock_event {
     __u64 wait_ns;
     __u32 tid;
     __u32 _pad;
-    __u64 ts_ns; /* the commit word */
+    __u64 ts_ns;
+    __u64 commit; /* the ticket of the write */
+    __u64 _pad8[3]; /* Rounds the record to one line. */
 };
 
 /*
- * write_idx counts every record ever published and never resets. The slot is
- * write_idx masked to the capacity. The header fills a whole cache line so
- * that the events array starts cache-aligned.
+ * write_idx counts each claim of a slot, and dropped counts the claims whose
+ * write dropped. Neither resets. The slot is write_idx masked to the capacity.
+ * The header fills a whole cache line so that the events array starts
+ * cache-aligned.
  */
 struct timeline_header {
     __u64 write_idx;
-    __u64 _pad[7];
+    __u64 dropped;
+    __u64 _pad[6];
 };
 
 struct sched_timeline {
@@ -140,10 +134,8 @@ struct pmu_sample_event {
     __u32 tid;
     __u8 event_type;
     __u8 _pad[3];
-    __u64 ts_ns; /* the commit word */
-    __u64 _pad8; /* Rounds the record to 32 bytes so no slot
-                         * straddles a cache line.  Refer to
-                         * timeline_sched_event. */
+    __u64 ts_ns;
+    __u64 commit; /* the ticket of the write */
 };
 
 struct pmu_sample_timeline {
