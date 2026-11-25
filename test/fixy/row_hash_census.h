@@ -1434,6 +1434,9 @@ inline constexpr StatedZero kZeros[] = {
      "a value in a kernel signature"},
     {^^::foundation::core::Full,
      "the error of a push into a full owner: it holds nothing, or the linear value of the push, and makes no claim"},
+    {^^::foundation::core::LendCount,
+     "the count of the open lends of an owner: a member of that owner, and it makes no claim about what the owner "
+     "holds"},
     // The FP mode.
     {^^::foundation::core::FpMode,
      "the three settings of the FP control register: a template argument of a kernel context, which states it in "

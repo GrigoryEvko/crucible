@@ -44,7 +44,7 @@
 //   moves the inline elements too.  So a View or a Ref of an element that
 //   outlives one call would dangle after the next append or move, as it would
 //   for a GrowList.  The list gives no View, no Ref and no cursor out of a
-//   frame.  The frame doors keep the lend count of foundation/core/Grow.h: an
+//   frame.  The frame doors count their lends (foundation/core/LendCount.h): an
 //   append, a take, a clear, a move and the end of the list while a door lends
 //   the elements end the process, in each build.
 //
@@ -70,6 +70,7 @@
 #include <foundation/core/Frame.h>
 #include <foundation/core/Grow.h>
 #include <foundation/core/Heap.h>
+#include <foundation/core/LendCount.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Quantity.h>
@@ -125,14 +126,24 @@ public:
     constexpr SmallSlots() noexcept : bytes_{} {}
 };
 
+// The lend count of a SmallList, in one byte of its state.
+using SmallListLends = LendCount<unsigned char>;
+
+// Ends the process while a frame door lends the elements (the lend count).
+constexpr void refuse_lent_list_change_(SmallListLends const& lends) noexcept {
+    if (lends.is_lent()) [[unlikely]] {
+        report_lent_owner_change_();
+    }
+}
+
 namespace owner {
 
 // The fields of a SmallList.  The heap storage holds capacity elements, or it
 // is null while the elements are inline, and then the capacity is the smaller
 // of Inline and the maximum.  So the capacity is never above the maximum, and
 // an append with room makes one compare.  A moved-from list keeps its
-// maximum.  The lend count is that of a GrowList (the lend count of
-// foundation/core/Grow.h).
+// maximum.  The lend count is mutable, because a frame door of a const list
+// lends it too (foundation/core/LendCount.h).
 template <class T, std::size_t Inline>
 struct SmallListState {
     using owner_state_mark = OwnerStateMark;
@@ -142,7 +153,7 @@ struct SmallListState {
     std::size_t count = 0;
     std::size_t capacity = 0;
     std::size_t maximum = 0;
-    mutable unsigned char lend_count = 0;
+    mutable SmallListLends lends{};
     FixedArray<unsigned char, 7> padding_{};
 
     // The capacity of the inline slots of a list of at most maximum
@@ -152,7 +163,7 @@ struct SmallListState {
     }
 
     [[nodiscard]] static constexpr SmallListState emptied(SmallListState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
+        refuse_lent_list_change_(state.lends);
         SmallListState empty{};
         empty.capacity = inline_capacity_(Quantity<unit::Element, std::size_t>{state.maximum});
         empty.maximum = state.maximum;
@@ -163,7 +174,7 @@ struct SmallListState {
     // Heap.h).  Each element is trivially destructible, so no element needs
     // an end.
     static constexpr void release(SmallListState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
+        refuse_lent_list_change_(state.lends);
         if (state.heap != nullptr) {
             unpoison_slots_(state.heap, state.capacity);
             heap_release_(static_cast<void*>(state.heap), slots_layout_<T>(state.capacity));
@@ -263,7 +274,7 @@ public:
         requires AllocationCapability<Marker>
     [[nodiscard]] constexpr Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
         State& state = this->state_;
-        detail::refuse_lent_owner_change_(state.lend_count);
+        detail::refuse_lent_list_change_(state.lends);
         if (state.count == state.capacity) [[unlikely]] {
             if (state.count == state.maximum) {
                 return err(Full<T>{});
@@ -282,7 +293,7 @@ public:
     // compare.  A lent list ends the process (the lend count).
     [[nodiscard]] constexpr Option<T> take_last() & noexcept {
         State& state = this->state_;
-        detail::refuse_lent_owner_change_(state.lend_count);
+        detail::refuse_lent_list_change_(state.lends);
         if (state.count == 0) {
             return Option<T>{none};
         }
@@ -298,7 +309,7 @@ public:
     // storage is then poisoned (the spare storage of Heap.h).  A lent list
     // ends the process (the lend count).
     constexpr void clear() & noexcept {
-        detail::refuse_lent_owner_change_(this->state_.lend_count);
+        detail::refuse_lent_list_change_(this->state_.lends);
         this->state_.count = 0;
         if (this->state_.heap != nullptr) {
             detail::poison_slots_(this->state_.heap, this->state_.capacity);
@@ -314,7 +325,7 @@ public:
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
         with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
+        [[maybe_unused]] auto const lend = this->state_.lends.lend();
         return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
     }
 
@@ -333,7 +344,7 @@ public:
     template <class Body>
     friend constexpr decltype(auto) lend_elements_(detail::FrameKey const& /*key*/, SmallList& list,
                                                    Body&& body) noexcept {
-        [[maybe_unused]] detail::OwnerLend const lend{list.state_.lend_count};
+        [[maybe_unused]] auto const lend = list.state_.lends.lend();
         return static_cast<Body&&>(body)(View<T>{SmallList::run_key_(), list.first_(), list.state_.count});
     }
 

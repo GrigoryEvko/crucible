@@ -692,6 +692,11 @@
       "constructor": "(?<!~)\\bKeyedMintFrameKeyDoor\\("
     },
     {
+      "name": "neg_witness_core_lendcount_lend_direct_construction",
+      "reason": "is private within this context",
+      "constructor": "(?<!~)\\bLend\\("
+    },
+    {
       "name": "neg_witness_core_loankey_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bLoanKey\\("
@@ -2242,6 +2247,10 @@
     {
       "type": "foundation::core::Seat<int>::MintKey",
       "header": "foundation/core/Seat.h"
+    },
+    {
+      "type": "foundation::core::LendCount<unsigned int>::Lend",
+      "header": "foundation/core/LendCount.h"
     },
     {
       "type": "foundation::core::Ref<int, forge::brand>",

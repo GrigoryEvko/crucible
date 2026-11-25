@@ -963,6 +963,10 @@ witness <foundation/core/Ref.h> private | foundation::core::detail::HoleKey | fo
 # from its start.
 witness <foundation/core/Seat.h> deleted | foundation::core::Seat<int> | foundation::core::Seat<int>{}
 witness <foundation/core/Seat.h> private | foundation::core::Seat<int>::MintKey | foundation::core::Seat<int>::MintKey{}
+# A lend of a LendCount counts one open frame door, and only lend() of a count
+# builds one.  So no code ends a lend that it did not open, and the count is zero
+# only after the last body returned.
+witness <foundation/core/LendCount.h> private | foundation::core::LendCount<unsigned int>::Lend | foundation::core::LendCount<unsigned int>::Lend{forge::lvalue<unsigned int>()}
 # A Ref has no constructor from a pointer, so no Ref holds a null pointer.
 # A Ref of an object takes the key that only RefDoor builds, so each Ref
 # from an object comes through the door.

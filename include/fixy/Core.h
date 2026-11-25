@@ -40,6 +40,7 @@
 #include <foundation/core/Id.h>
 #include <foundation/core/Index.h>
 #include <foundation/core/KeyedMint.h>
+#include <foundation/core/LendCount.h>
 #include <foundation/core/Link.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Number.h>
@@ -149,6 +150,11 @@ using ::foundation::core::PartialEquatable;
 using ::foundation::core::OwnerCore;
 using ::foundation::core::OwnerState;
 using ::foundation::core::OwnerStateMark;
+
+// The count of the open lends of an owner that a frame door lends from
+// (foundation/core/LendCount.h).
+using ::foundation::core::LendCount;
+using ::foundation::core::LendWord;
 
 using ::foundation::core::Box;
 using ::foundation::core::box_word_key;

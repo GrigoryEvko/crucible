@@ -4998,6 +4998,17 @@ foundation_neg_compile_test(neg_core_owner_state_mark_no_release
 # time, and the model of a FixedArray and a count agrees with each step.
 foundation_test(test_core_list)
 
+# The count of the lends of an owner: the lends nest, and a word of one byte
+# ends the process at the lend that it cannot count.  A lend comes from a named
+# count, and it does not copy.
+foundation_test(test_core_lend_count)
+foundation_neg_compile_test(neg_core_lend_count_lend_of_temporary
+  "use of deleted function .foundation::core::LendCount<Word>::Lend foundation::core::LendCount<Word>::lend\\(\\) &&"
+  "a lend of a temporary LendCount counts in an object that the full expression ends")
+foundation_neg_compile_test(neg_core_lend_count_lend_copied
+  "use of deleted function .foundation::core::LendCount<Word>::Lend::Lend\\(const foundation::core::LendCount<Word>::Lend&\\)"
+  "a lend lives in one frame door, so no copy of it counts a second one")
+
 # A GrowList and a GrowText grow through many doublings up to the maximum of
 # their mint, refuse an append past it, move each element at a growth and end
 # it one time.  The foreign doors give a View and a TextView of a run that a
@@ -6266,7 +6277,7 @@ foundation_neg_compile_test(neg_net_reflect_growth_without_door
 # links fixy.
 foreach(_death_test
     test_aligned_bytes test_core_array test_core_bit_set test_core_box test_core_branded test_core_bump_arena test_core_choice
-    test_core_enum_match test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_link test_core_list
+    test_core_enum_match test_core_grow test_core_heap test_core_heap_array test_core_hole test_core_iteration test_core_lend_count test_core_link test_core_list
     test_core_masked_array test_core_one_of test_core_report test_core_run_set test_core_scalar_arith test_core_text test_diag
     test_core_slot_map test_core_small_list test_core_sort test_core_walk test_lattice_closure test_moved_from_token test_os_x86_level test_platform test_report_sink_pipe
     test_singleton_root test_swiss_table_buffer test_swiss_table_buffer_ignore test_thread_local_ref
