@@ -152,14 +152,15 @@ void the_key_after_the_last_cell_ends_the_process(::fixy::TestRunnerCtx const& t
 // the key of the 16 characters "ThreadLocalRef 2", as a little-endian word.
 [[nodiscard]] constexpr std::uint64_t second_word_of_name(::foundation::core::TextView name) noexcept {
     constexpr ::foundation::core::TextView key_text{"ThreadLocalRef 2"};
-    ::foundation::core::SipKeyBytes key{};
-    key.with_mut([key_text](auto run) noexcept {
-        auto letter = key_text.begin();
-        for (std::byte& byte : run) {
-            byte = static_cast<std::byte>(*letter);
-            ++letter;
-        }
-    });
+    ::foundation::core::SipKeyBytes const key =
+        ::foundation::core::build_fixed_array<std::byte, ::foundation::core::sip_key_bytes>(
+            [key_text](auto run) noexcept {
+                auto letter = key_text.begin();
+                for (std::byte& byte : run) {
+                    byte = static_cast<std::byte>(*letter);
+                    ++letter;
+                }
+            });
     std::uint64_t word = 0;
     int shift = 0;
     for (std::byte const byte : ::foundation::core::sip_hash(key, name)) {

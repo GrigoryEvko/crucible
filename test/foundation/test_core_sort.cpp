@@ -51,8 +51,8 @@ template <std::size_t N>
     constexpr auto plan = ::foundation::core::plan_sort_network<N>();
     std::uint64_t const inputs = std::uint64_t{1} << N;
     std::uint64_t const lanes = inputs < 64 ? ((std::uint64_t{1} << inputs) - 1) : ~std::uint64_t{0};
-    ::fixy::FixedArray<std::uint64_t, N> wires{};
-    return wires.with_mut([&plan, inputs, lanes](auto run) noexcept {
+    auto const [is_sorted,
+                wires] = ::fixy::build_fixed_array<std::uint64_t, N>([&plan, inputs, lanes](auto run) noexcept {
         View<std::uint64_t const> const wire_view = run.view();
         for (std::uint64_t base = 0; base < inputs; base += 64) {
             for (std::size_t wire = 0; wire < N; ++wire) {
@@ -76,6 +76,7 @@ template <std::size_t N>
         }
         return true;
     });
+    return is_sorted;
 }
 
 template <std::size_t... N>
@@ -142,15 +143,17 @@ void naive_sort(::foundation::core::ViewMut<float, Brand, Extent> values) noexce
 template <std::size_t N>
 void check_network_on_floats(::crucible::test::PhiloxStream& stream) noexcept {
     for (int trial = 0; trial < 64; ++trial) {
-        ::fixy::FixedArray<float, N> values{};
-        values.with_mut([&stream](auto run) noexcept {
+        auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
+        values.with_mut(values_key, [&stream](auto run) noexcept {
             for (float& value : run) {
                 value = draw_special_float(stream);
             }
         });
-        ::fixy::FixedArray<float, N> expected{values};
-        expected.with_mut([](auto run) noexcept { naive_sort(std::move(run)); });
-        values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+        auto [expected, expected_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
+        expected.with_mut(expected_key,
+                          [drawn = values.view()](auto run) noexcept { ::fixy::copy(std::move(run), drawn); });
+        expected.with_mut(expected_key, [](auto run) noexcept { naive_sort(std::move(run)); });
+        values.with_mut(values_key, [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }
@@ -825,17 +828,19 @@ void test_sort_runs_stay_inside_their_buffers() {
 template <std::size_t N>
 void check_network_patterns(::crucible::test::PhiloxStream& stream) noexcept {
     for (RunPattern const pattern : kRunPatterns) {
-        ::fixy::FixedArray<float, N> values{};
-        values.with_mut([&stream, pattern](auto run) noexcept {
+        auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
+        values.with_mut(values_key, [&stream, pattern](auto run) noexcept {
             std::uint32_t position = 0;
             for (float& value : run) {
                 value = pattern_float(pattern, position, static_cast<std::uint32_t>(N), stream);
                 ++position;
             }
         });
-        ::fixy::FixedArray<float, N> expected{values};
-        expected.with_mut([](auto run) noexcept { naive_sort(std::move(run)); });
-        values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+        auto [expected, expected_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
+        expected.with_mut(expected_key,
+                          [drawn = values.view()](auto run) noexcept { ::fixy::copy(std::move(run), drawn); });
+        expected.with_mut(expected_key, [](auto run) noexcept { naive_sort(std::move(run)); });
+        values.with_mut(values_key, [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
         CRUCIBLE_TEST_ASSERT(kTest, same_bits(View<float const>{values.view()}, View<float const>{expected.view()}));
     }
 }

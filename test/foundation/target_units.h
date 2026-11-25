@@ -24,14 +24,14 @@ struct TargetProbeBrand final {};
 
 // The key of the probed keyed hash: the bytes 0 to 31.
 [[nodiscard]] constexpr ::foundation::core::KeyedHashKeyBytes target_probe_key() noexcept {
-    ::foundation::core::FixedArray<std::byte, 32> bytes{};
-    bytes.with_mut([](auto run) noexcept {
-        std::uint8_t next = 0;
-        for (std::byte& byte : run) {
-            byte = static_cast<std::byte>(next);
-            ++next;
-        }
-    });
+    ::foundation::core::FixedArray<std::byte, 32> const bytes =
+        ::foundation::core::build_fixed_array<std::byte, 32>([](auto run) noexcept {
+            std::uint8_t next = 0;
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(next);
+                ++next;
+            }
+        });
     return ::foundation::core::KeyedHashKeyBytes{bytes.view()};
 }
 

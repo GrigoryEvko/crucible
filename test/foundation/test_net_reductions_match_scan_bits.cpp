@@ -50,8 +50,7 @@ template <int Lanes, class T, std::size_t Count, core::ScanKind Kind>
 [[nodiscard]] bool does_sum_scan_follow(std::uint64_t seed) noexcept {
     auto const leaves = draw_values<T, Count>(seed);
     auto const from_net = evaluate_net<Count>(scan_net_of<Count, Kind>, leaves, T{}, AddValues{}, core::Ascending{});
-    core::FixedArray<T, Count> scanned{};
-    bool is_written = scanned.with_mut([&leaves](auto out) noexcept {
+    auto [is_written, scanned] = core::build_fixed_array<T, Count>([&leaves](auto out) noexcept {
         return scan_sums_in<Lanes, Kind>(core::View<T const>{leaves.view()}, std::move(out));
     });
     std::size_t position = 0;
@@ -87,19 +86,18 @@ template <class T, core::ScanKind Kind>
         auto const leaves = draw_values<T, 37>(seeds.next_wide());
         core::View<T const> const run{leaves.view()};
         auto const from_net = evaluate_net<37>(scan_net_of<37, Kind>, leaves, T{}, AddValues{}, core::Ascending{});
-        core::FixedArray<T, 4> heads{};
-        heads.with_mut([run](auto out) noexcept { core::sum_grains_by_tree<8>(run, 0, std::move(out)); });
+        core::FixedArray<T, 4> const heads = core::build_fixed_array<T, 4>(
+            [run](auto out) noexcept { core::sum_grains_by_tree<8>(run, 0, std::move(out)); });
         core::FixedArray<T, 5> sums{};
         for (std::size_t grain = 0; grain < 4; ++grain) {
             T const element = slot_at(heads, grain);
             sums.set(slot_index(sums, grain), element);
         }
-        core::FixedArray<T, 5> carries{};
-        bool is_written = carries.with_mut([&sums](auto out) noexcept {
+        auto [carries, carries_key] = core::mint_keyed_owner(core::fixed_array_owner<T, 5>);
+        bool is_written = carries.with_mut(carries_key, [&sums](auto out) noexcept {
             return core::scan_exclusive_sums(core::View<T const>{sums.view()}, std::move(out)).is_ok();
         });
-        core::FixedArray<T, 37> scanned{};
-        scanned.with_mut([run, &carries](auto out) noexcept {
+        core::FixedArray<T, 37> const scanned = core::build_fixed_array<T, 37>([run, &carries](auto out) noexcept {
             core::View<T const> const carried{carries.view()};
             if constexpr (Kind == core::ScanKind::Inclusive) {
                 core::scan_inclusive_sum_grains<8>(run, 0, carried, std::move(out));

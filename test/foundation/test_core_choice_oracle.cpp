@@ -150,28 +150,28 @@ using ReadingOracle = std::variant<std::uint32_t, Refusal, std::uint16_t>;
     }
 }
 
-// Each sum and its oracle, in the same slots.
-template <class Sum, class Oracle>
+// The oracle of each sum, in the slot of the sum.
+template <class Oracle>
 struct Lane {
-    FixedArray<Sum, kSlots> sums;
     std::array<Oracle, kSlots> oracles;
 
-    [[nodiscard]] Sum const& sum(std::size_t raw) const noexcept { return sums.at(slot_at(raw)); }
-
     // The state of each pair agrees after each step.
-    void expect_agree() noexcept {
+    template <class Sums>
+    void expect_agree(Sums const& sums) noexcept {
         for (std::size_t raw = 0; raw < kSlots; ++raw) {
-            CRUCIBLE_FATAL_INVARIANT(state_of(sum(raw)) == oracle_state(oracles.at(raw)));
+            CRUCIBLE_FATAL_INVARIANT(state_of(sums.at(slot_at(raw))) == oracle_state(oracles.at(raw)));
         }
     }
 };
 
 void run_option_sequence(std::uint64_t seed) {
     ::crucible::test::PhiloxStream stream{seed};
-    Lane<Maybe, MaybeOracle> lane{};
+    auto [slots, slots_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<Maybe, kSlots>);
+    Lane<MaybeOracle> lane{};
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 9);
-        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+        slots.with_mut(slots_key, [&lane, draw](auto run) noexcept {
             View<Maybe const, kSlots> const sums = run.view();
             auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
             Maybe& target = *writer;
@@ -241,19 +241,19 @@ void run_option_sequence(std::uint64_t seed) {
                     break;
             }
         });
-        lane.expect_agree();
+        lane.expect_agree(slots);
     }
 }
 
 void run_result_sequence(std::uint64_t seed) {
     ::crucible::test::PhiloxStream stream{seed};
-    Lane<Outcome, OutcomeOracle> lane{
-        FixedArray<Outcome, kSlots>{Outcome{0u}, Outcome{0u}, Outcome{0u}, Outcome{0u}},
-        std::array<OutcomeOracle, kSlots>{},
-    };
+    auto [slots, slots_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<Outcome, kSlots>,
+        FixedArray<Outcome, kSlots>{Outcome{0u}, Outcome{0u}, Outcome{0u}, Outcome{0u}});
+    Lane<OutcomeOracle> lane{};
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 7);
-        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+        slots.with_mut(slots_key, [&lane, draw](auto run) noexcept {
             View<Outcome const, kSlots> const sums = run.view();
             auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
             Outcome& target = *writer;
@@ -303,19 +303,19 @@ void run_result_sequence(std::uint64_t seed) {
                 }
             }
         });
-        lane.expect_agree();
+        lane.expect_agree(slots);
     }
 }
 
 void run_one_of_sequence(std::uint64_t seed) {
     ::crucible::test::PhiloxStream stream{seed};
-    Lane<Reading, ReadingOracle> lane{
-        FixedArray<Reading, kSlots>{Reading{0u}, Reading{0u}, Reading{0u}, Reading{0u}},
-        std::array<ReadingOracle, kSlots>{},
-    };
+    auto [slots, slots_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<Reading, kSlots>,
+        FixedArray<Reading, kSlots>{Reading{0u}, Reading{0u}, Reading{0u}, Reading{0u}});
+    Lane<ReadingOracle> lane{};
     for (int step = 0; step < kSteps; ++step) {
         Draw const draw = draw_step(stream, 6);
-        lane.sums.with_mut([&lane, draw](auto run) noexcept {
+        slots.with_mut(slots_key, [&lane, draw](auto run) noexcept {
             View<Reading const, kSlots> const sums = run.view();
             auto writer = run.get_mut(slot_at(draw.target).raw()).expect("the slot is below the count");
             Reading& target = *writer;
@@ -361,7 +361,7 @@ void run_one_of_sequence(std::uint64_t seed) {
                 }
             }
         });
-        lane.expect_agree();
+        lane.expect_agree(slots);
     }
 }
 

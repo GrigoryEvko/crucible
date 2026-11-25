@@ -258,9 +258,8 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 
 // The image of the sample.
 [[nodiscard]] Image image_of(Sample const& sample) noexcept {
-    Image image{};
-    image.with_mut([&sample](auto run) noexcept { encode(sample, std::move(run)); });
-    return image;
+    return ::foundation::core::build_fixed_array<std::byte, Image::size()>(
+        [&sample](auto run) noexcept { encode(sample, std::move(run)); });
 }
 
 // The hand hash of a Sample: the hand fold of its hand image.
@@ -269,9 +268,8 @@ void put_word(Image& image, std::size_t at, Word word) noexcept {
 // The image of a value of an Encodable type, by encode.
 template <class T>
 [[nodiscard]] FixedArray<std::byte, encoded_size_v<T>> encoded(T const& value) noexcept {
-    FixedArray<std::byte, encoded_size_v<T>> image{};
-    image.with_mut([&value](auto run) noexcept { encode(value, std::move(run)); });
-    return image;
+    return ::foundation::core::build_fixed_array<std::byte, encoded_size_v<T>>(
+        [&value](auto run) noexcept { encode(value, std::move(run)); });
 }
 
 // The decode of an image that the test names.
@@ -390,21 +388,19 @@ template <class Leaf>
 
 template <class Leaf, std::size_t N>
 void fill(FixedArray<Leaf, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
-    array.with_mut([&stream](auto run) noexcept {
-        for (Leaf& leaf : run) {
-            leaf = random_leaf<Leaf>(stream);
-        }
-    });
+    for (auto const index : array.indices()) {
+        array.set(index, random_leaf<Leaf>(stream));
+    }
 }
 
 template <std::size_t N>
 void fill(FixedArray<Pair, N>& array, ::crucible::test::PhiloxStream& stream) noexcept {
-    array.with_mut([&stream](auto run) noexcept {
-        for (Pair& pair : run) {
+    for (auto const index : array.indices()) {
+        array.update(index, [&stream](Pair& pair) noexcept {
             pair.narrow = random_leaf<std::uint16_t>(stream);
             pair.tiny = random_leaf<std::uint8_t>(stream);
-        }
-    });
+        });
+    }
 }
 
 // The hash of the value is the hand fold of its image, and each byte of the
@@ -626,16 +622,12 @@ void test_hash_of_a_run() {
     FixedArray<OneBlock, 6> blocks{};
     for (int round = 0; round < 64; ++round) {
         fill(pairs, stream);
-        edges.with_mut([&stream](auto run) noexcept {
-            for (Edge& edge : run) {
-                edge = Edge{random_leaf<std::uint16_t>(stream), random_leaf<std::uint16_t>(stream)};
-            }
-        });
-        blocks.with_mut([&stream](auto run) noexcept {
-            for (OneBlock& block : run) {
-                block = OneBlock{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)};
-            }
-        });
+        for (auto const index : edges.indices()) {
+            edges.set(index, Edge{random_leaf<std::uint16_t>(stream), random_leaf<std::uint16_t>(stream)});
+        }
+        for (auto const index : blocks.indices()) {
+            blocks.set(index, OneBlock{random_leaf<std::uint64_t>(stream), random_leaf<std::uint64_t>(stream)});
+        }
         for (std::size_t count = 0; count <= 40; ++count) {
             CRUCIBLE_FATAL_INVARIANT(hash_of_run(pairs, count) == hand_hash_of_run(pairs, count));
             CRUCIBLE_FATAL_INVARIANT(hash_of_run(edges, count) == hand_hash_of_run(edges, count));
@@ -800,10 +792,10 @@ void test_c_array_and_pointer_parts() {
             fixed_array.lanes.set(Index<3>::check(lane).expect("three lanes"), lane_value);
         }
         CRUCIBLE_FATAL_INVARIANT(hash(c_array).raw() == hash(fixed_array).raw());
-        FixedArray<std::byte, 6> c_image{};
-        FixedArray<std::byte, 6> fixed_image{};
-        c_image.with_mut([&c_array](auto run) noexcept { encode(c_array, std::move(run)); });
-        fixed_image.with_mut([&fixed_array](auto run) noexcept { encode(fixed_array, std::move(run)); });
+        FixedArray<std::byte, 6> const c_image = ::foundation::core::build_fixed_array<std::byte, 6>(
+            [&c_array](auto run) noexcept { encode(c_array, std::move(run)); });
+        FixedArray<std::byte, 6> const fixed_image = ::foundation::core::build_fixed_array<std::byte, 6>(
+            [&fixed_array](auto run) noexcept { encode(fixed_array, std::move(run)); });
         CRUCIBLE_FATAL_INVARIANT(c_image == fixed_image);
         HoldsCArray other = c_array;
         other.lanes[2] = static_cast<std::uint16_t>(other.lanes[2] + 1U);

@@ -147,10 +147,11 @@ static_assert(!has_no_overlap(3, 2, 2, 3));
 
 // The view of a 3 x 4 matrix in row-major order over 12 elements.
 [[nodiscard]] consteval int matrix_sum() noexcept {
-    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] =
+        mint_keyed_owner(fixed_array_owner<int, 12>, FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
-    return values.with_mut([&sizes, &strides](auto run) noexcept {
+    return values.with_mut(values_key, [&sizes, &strides](auto run) noexcept {
         auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
         int total = 0;
         if (walk([&total](int& element) noexcept { total += element; }, unique).is_err()) return -1;
@@ -161,10 +162,11 @@ static_assert(matrix_sum() == 66);
 
 // The walk over the branded view of a scope of the same matrix.
 [[nodiscard]] consteval int scope_sum() noexcept {
-    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] =
+        mint_keyed_owner(fixed_array_owner<int, 12>, FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
-    return values.with_mut([&sizes, &strides](auto run) noexcept {
+    return values.with_mut(values_key, [&sizes, &strides](auto run) noexcept {
         auto unique = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
         return mint_strided_scope(unique, [](auto branded) noexcept {
             int total = 0;
@@ -178,10 +180,11 @@ static_assert(scope_sum() == 66);
 // The erased view of the same matrix stays the writer of its elements: the
 // scope on it adds one to each element, and a walk of its view reads them.
 [[nodiscard]] consteval int erased_scope_sum() noexcept {
-    FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] =
+        mint_keyed_owner(fixed_array_owner<int, 12>, FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     FixedArray<std::size_t, 2> const sizes{3, 4};
     FixedArray<std::size_t, 2> const strides{4, 1};
-    return values.with_mut([&sizes, &strides](auto run) noexcept {
+    return values.with_mut(values_key, [&sizes, &strides](auto run) noexcept {
         auto erased = erase_brand(
             mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits"));
         int const added = mint_strided_scope(erased, [](auto branded) noexcept {

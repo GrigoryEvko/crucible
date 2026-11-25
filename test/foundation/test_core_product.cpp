@@ -259,14 +259,8 @@ void test_the_hard_cases() {
         // A product of -0 in each term gives -0, and one +0 term gives +0.
         FixedArray<T, 37> negative_zeros{};
         FixedArray<T, 37> ones{};
-        negative_zeros.with_mut([zero](auto cells) noexcept {
-            for (T& value : cells)
-                value = -zero;
-        });
-        ones.with_mut([one](auto cells) noexcept {
-            for (T& value : cells)
-                value = one;
-        });
+        negative_zeros.fill(-zero);
+        ones.fill(one);
         ::fixy::View<T const> const zeros_view{negative_zeros.view()};
         ::fixy::View<T const> const ones_view{ones.view()};
         CRUCIBLE_TEST_ASSERT(kTest,
@@ -277,10 +271,7 @@ void test_the_hard_cases() {
         // An infinity gives itself, and two infinities of the two signs give
         // the canonical NaN.
         FixedArray<T, 37> mixed{};
-        mixed.with_mut([one](auto cells) noexcept {
-            for (T& value : cells)
-                value = one;
-        });
+        mixed.fill(one);
         ::fixy::View<T const> const mixed_view{mixed.view()};
         mixed.set(::fixy::index<3>(), infinity);
         CRUCIBLE_TEST_ASSERT(kTest,
@@ -304,8 +295,7 @@ void test_the_hard_cases() {
                              bits_of_float(product_of_terms(mixed_view, ones_view, lanes)) == bits_of_float(canonical));
         // A cancellation: x0 * 1 + ... with the pairs x and -x, and one small
         // term, gives the small term exactly.
-        FixedArray<T, 37> pairs{};
-        pairs.with_mut([](auto cells) noexcept {
+        FixedArray<T, 37> pairs = ::foundation::core::build_fixed_array<T, 37>([](auto cells) noexcept {
             for (std::size_t index = 0; index < 36; index += 2) {
                 T const value = T{3} * static_cast<T>(index + 1);
                 auto first = cells.get_mut(index).expect("a test reads an element at or past the count of its array");
@@ -322,15 +312,9 @@ void test_the_hard_cases() {
         // A product that underflows to a subnormal value keeps its bits, and
         // a sum of subnormal values is exact.
         FixedArray<T, 37> halves{};
-        halves.with_mut([](auto cells) noexcept {
-            for (T& value : cells)
-                value = T{0.5};
-        });
+        halves.fill(T{0.5});
         FixedArray<T, 37> tinies{};
-        tinies.with_mut([tiny](auto cells) noexcept {
-            for (T& value : cells)
-                value = tiny + tiny;
-        });
+        tinies.fill(tiny + tiny);
         CRUCIBLE_TEST_ASSERT(kTest, bits_of_float(product_of_terms(::fixy::View<T const>{halves.view()},
                                                                    ::fixy::View<T const>{tinies.view()}, lanes))
                                         == bits_of_float(tiny * T{37}));

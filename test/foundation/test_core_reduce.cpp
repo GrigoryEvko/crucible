@@ -204,10 +204,10 @@ template <std::size_t Grain>
             std::size_t const count = shard_start(grains, shards, shard + 1) - first;
             HeapArray<std::size_t> const grain_order = draw_order(count, stream);
             for (std::size_t const offset : grain_order) {
-                ::fixy::FixedArray<float, 1> one{};
-                one.with_mut([run, first, offset](auto own) noexcept {
-                    ::foundation::core::sum_grains_by_tree<Grain>(run, first + offset, std::move(own));
-                });
+                ::fixy::FixedArray<float, 1> const one =
+                    ::fixy::build_fixed_array<float, 1>([run, first, offset](auto own) noexcept {
+                        ::foundation::core::sum_grains_by_tree<Grain>(run, first + offset, std::move(own));
+                    });
                 auto partial =
                     slots.get_mut(first + offset).expect("a test reads an element at or past the count of its View");
                 *partial = *one.get(0).expect("a test reads an element at or past the count of its array");

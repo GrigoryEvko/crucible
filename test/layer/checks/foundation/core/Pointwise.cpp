@@ -94,38 +94,37 @@ static_assert(transpose_source_(16, 4, 2, false, 4) == 8 && transpose_source_(16
 // The walk in a constant evaluation: the stated row-major order, with the op
 // on lanes of one live element.  The second input is the output in place.
 [[nodiscard]] consteval bool walks_in_constant_evaluation() noexcept {
-    FixedArray<int, 6> values{1, 2, 3, 4, 5, 6};
+    auto [values, values_key] = mint_keyed_owner(fixed_array_owner<int, 6>, FixedArray<int, 6>{1, 2, 3, 4, 5, 6});
     FixedArray<int, 6> const addends{10, 20, 30, 40, 50, 60};
     FixedArray<std::size_t, 2> const sizes{2, 3};
     FixedArray<std::size_t, 2> const strides{3, 1};
     FixedArray<std::size_t, 2> const columns{1, 2};
     StridedView<int const, 2> const source =
         mint_strided_view(addends.view(), sizes.view(), columns.view(), 0).expect("the matrix fits");
-    bool const is_written = values.with_mut([&sizes, &strides, &source](auto run) noexcept {
+    bool const is_written = values.with_mut(values_key, [&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense matrix");
         StridedView<int const, 2> const in_place = out.view();
         return write_pointwise(out, Add{}, in_place, source).is_ok();
     });
     // The source reads the addends in column-major order.
-    return is_written && values == FixedArray<int, 6>{11, 32, 53, 24, 45, 66};
+    FixedArray<int, 6> const expected{11, 32, 53, 24, 45, 66};
+    return is_written && ::foundation::core::equal(values.view(), expected.view());
 }
 static_assert(walks_in_constant_evaluation());
 
 // The walk of floats in a constant evaluation: a NaN input with a payload
 // gives the canonical NaN, and the copy keeps the payload.
 [[nodiscard]] consteval bool gives_canonical_nan_in_constant_evaluation() noexcept {
-    FixedArray<float, 2> sums{};
-    FixedArray<float, 2> copies{};
     FixedArray<float, 2> const values{bit_cast<float>(0x7FC12345u), 1.5f};
     FixedArray<std::size_t, 1> const sizes{2};
     FixedArray<std::size_t, 1> const strides{1};
     StridedView<float const, 1> const source =
         mint_strided_view(values.view(), sizes.view(), strides.view(), 0).expect("the row fits");
-    bool const is_summed = sums.with_mut([&sizes, &strides, &source](auto run) noexcept {
+    auto const [is_summed, sums] = build_fixed_array<float, 2>([&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
         return write_pointwise(out, Add{}, source, source).is_ok();
     });
-    bool const is_copied = copies.with_mut([&sizes, &strides, &source](auto run) noexcept {
+    auto const [is_copied, copies] = build_fixed_array<float, 2>([&sizes, &strides, &source](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense row");
         return write_pointwise(out, Copy{}, source).is_ok();
     });
@@ -133,16 +132,14 @@ static_assert(walks_in_constant_evaluation());
     // keeps the payload and the bits of 1.5.
     FixedArray<std::uint32_t, 2> const expected_sums{0x7FC00000u, 0x40400000u};
     FixedArray<std::uint32_t, 2> const expected_copies{0x7FC12345u, 0x3FC00000u};
-    FixedArray<std::uint32_t, 2> sum_bits{};
-    FixedArray<std::uint32_t, 2> copy_bits{};
-    sum_bits.with_mut([&sums](auto run) noexcept {
+    FixedArray<std::uint32_t, 2> const sum_bits = build_fixed_array<std::uint32_t, 2>([&sums](auto run) noexcept {
         auto sum_cursor = run.begin();
         for (float const value : sums) {
             *sum_cursor = bit_cast<std::uint32_t>(value);
             ++sum_cursor;
         }
     });
-    copy_bits.with_mut([&copies](auto run) noexcept {
+    FixedArray<std::uint32_t, 2> const copy_bits = build_fixed_array<std::uint32_t, 2>([&copies](auto run) noexcept {
         auto copy_cursor = run.begin();
         for (float const value : copies) {
             *copy_cursor = bit_cast<std::uint32_t>(value);

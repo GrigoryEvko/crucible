@@ -254,18 +254,14 @@ struct Matcher {
     // b.  A combine that no add takes, or that an add took before, marks the
     // run as stray.
     [[nodiscard]] constexpr Symbol combine(Symbol a, Symbol b) noexcept {
-        return fired.with_mut([this, a, b](auto run) noexcept {
-            std::uint32_t step = 0;
-            for (std::uint32_t& count : run) {
-                if (slot_at(left, step) == a.node && slot_at(right, step) == b.node && count == 0) {
-                    count = 1;
-                    return Symbol{leaves + step};
-                }
-                ++step;
+        for (auto const step : fired.indices()) {
+            if (left.at(step) == a.node && right.at(step) == b.node && fired.at(step) == 0) {
+                fired.set(step, 1);
+                return Symbol{leaves + static_cast<std::uint32_t>(step.raw())};
             }
-            is_stray = true;
-            return Symbol{no_add};
-        });
+        }
+        is_stray = true;
+        return Symbol{no_add};
     }
 
     // The combine of an add that took a combine before, with the same
@@ -277,18 +273,14 @@ struct Matcher {
         Symbol const first = combine(a, b);
         if (first.node != no_add) return first;
         is_stray = was_stray;
-        return fired.with_mut([this, a, b](auto run) noexcept {
-            std::uint32_t step = 0;
-            for (std::uint32_t& count : run) {
-                if (slot_at(left, step) == a.node && slot_at(right, step) == b.node) {
-                    ++count;
-                    return Symbol{leaves + step};
-                }
-                ++step;
+        for (auto const step : fired.indices()) {
+            if (left.at(step) == a.node && right.at(step) == b.node) {
+                fired.set(step, fired.at(step) + 1);
+                return Symbol{leaves + static_cast<std::uint32_t>(step.raw())};
             }
-            is_stray = true;
-            return Symbol{no_add};
-        });
+        }
+        is_stray = true;
+        return Symbol{no_add};
     }
 
     // Each add took one combine.
@@ -323,15 +315,13 @@ template <std::size_t Leaves, std::size_t Steps, std::size_t Agents, std::size_t
 
 template <std::size_t Leaves>
 [[nodiscard]] consteval core::FixedArray<Symbol, Leaves> symbols_of_leaves() noexcept {
-    core::FixedArray<Symbol, Leaves> symbols{};
-    symbols.with_mut([](auto run) noexcept {
+    return core::build_fixed_array<Symbol, Leaves>([](auto run) noexcept {
         std::uint32_t node = 0;
         for (Symbol& symbol : run) {
             symbol.node = node;
             ++node;
         }
     });
-    return symbols;
 }
 
 // ── The plans and their nets ────────────────────────────────────────────
@@ -348,13 +338,8 @@ template <std::size_t Leaves>
 template <std::size_t Leaves>
 [[nodiscard]] consteval CombinePlan<Leaves, Leaves - 1, 1> swapped_tree_combine_plan() noexcept {
     CombinePlan<Leaves, Leaves - 1, 1> plan = tree_combine_plan<Leaves>();
-    plan.steps.with_mut([](auto run) noexcept {
-        for (core::TreeStep& step : run) {
-            core::TreeStep const swapped{step.right, step.left};
-            step = swapped;
-            break;
-        }
-    });
+    core::TreeStep const first = plan.steps.at(core::index<0>());
+    plan.steps.set(core::index<0>(), core::TreeStep{first.right, first.left});
     return plan;
 }
 
@@ -366,14 +351,12 @@ template <std::size_t Leaves>
     auto previous = static_cast<std::uint32_t>(0);
     auto next_node = static_cast<std::uint32_t>(Leaves);
     std::uint32_t leaf = 1;
-    plan.steps.with_mut([&previous, &next_node, &leaf](auto run) noexcept {
-        for (core::TreeStep& step : run) {
-            step = core::TreeStep{core::PlanNode{previous}, core::PlanNode{leaf}};
-            previous = next_node;
-            ++next_node;
-            ++leaf;
-        }
-    });
+    for (auto const step : plan.steps.indices()) {
+        plan.steps.set(step, core::TreeStep{core::PlanNode{previous}, core::PlanNode{leaf}});
+        previous = next_node;
+        ++next_node;
+        ++leaf;
+    }
     plan.outputs = core::FixedArray<core::PlanNode, 1>{core::PlanNode{previous}};
     return plan;
 }
@@ -396,13 +379,18 @@ inline constexpr std::size_t scan_steps_of = core::count_scan_plan_steps(Count, 
 
 template <std::size_t Count, core::ScanKind Kind>
 [[nodiscard]] consteval CombinePlan<Count, scan_steps_of<Count, Kind>, Count> scan_combine_plan() noexcept {
-    CombinePlan<Count, scan_steps_of<Count, Kind>, Count> plan{};
-    bool const is_written = plan.steps.with_mut([&plan](auto steps) noexcept {
-        return plan.outputs.with_mut([&steps](auto outputs) noexcept {
-            return core::write_scan_plan(Kind, std::move(steps), std::move(outputs)).is_ok();
+    auto [steps, steps_key] =
+        core::mint_keyed_owner(core::fixed_array_owner<core::TreeStep, scan_steps_of<Count, Kind>>);
+    auto [outputs, outputs_key] = core::mint_keyed_owner(core::fixed_array_owner<core::PlanNode, Count>);
+    bool const is_written = steps.with_mut(steps_key, [&outputs, &outputs_key](auto step_run) noexcept {
+        return outputs.with_mut(outputs_key, [&step_run](auto output_run) noexcept {
+            return core::write_scan_plan(Kind, std::move(step_run), std::move(output_run)).is_ok();
         });
     });
     if (!is_written) core::fatal("the counts of the scan plan agree");
+    CombinePlan<Count, scan_steps_of<Count, Kind>, Count> plan{};
+    plan.steps.copy_from(steps.view());
+    plan.outputs.copy_from(outputs.view());
     return plan;
 }
 
@@ -524,13 +512,11 @@ template <class T>
 template <class T, std::size_t Count>
 [[nodiscard]] core::FixedArray<T, Count> draw_values(std::uint64_t seed) noexcept {
     PhiloxStream stream{seed};
-    core::FixedArray<T, Count> values{};
-    values.with_mut([&stream](auto run) noexcept {
+    return core::build_fixed_array<T, Count>([&stream](auto run) noexcept {
         for (T& drawn : run) {
             drawn = draw_value<T>(stream);
         }
     });
-    return values;
 }
 
 [[nodiscard]] inline bool has_same_bits(float left, float right) noexcept {

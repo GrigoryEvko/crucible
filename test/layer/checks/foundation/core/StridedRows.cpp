@@ -39,7 +39,7 @@ static_assert(std::is_trivially_copy_constructible_v<RowOffset<RowViewBrand<Walk
 // The walk of rows in a constant evaluation: the stated row-major order, with
 // a source of a column-major layout and the output in place.
 [[nodiscard]] consteval bool walks_rows_in_constant_evaluation() noexcept {
-    FixedArray<int, 6> values{1, 2, 3, 4, 5, 6};
+    auto [values, values_key] = mint_keyed_owner(fixed_array_owner<int, 6>, FixedArray<int, 6>{1, 2, 3, 4, 5, 6});
     FixedArray<int, 6> const addends{10, 20, 30, 40, 50, 60};
     FixedArray<std::size_t, 2> const sizes{2, 3};
     FixedArray<std::size_t, 2> const strides{3, 1};
@@ -47,7 +47,7 @@ static_assert(std::is_trivially_copy_constructible_v<RowOffset<RowViewBrand<Walk
     StridedView<int const, 2> const source =
         mint_strided_view(addends.view(), sizes.view(), columns.view(), 0).expect("the matrix fits");
     std::size_t rows = 0;
-    bool const is_written = values.with_mut([&](auto run) noexcept {
+    bool const is_written = values.with_mut(values_key, [&](auto run) noexcept {
         auto out = mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("a dense matrix");
         StridedView<int const, 2> const in_place = out.view();
         return mint_strided_rows(
@@ -64,7 +64,8 @@ static_assert(std::is_trivially_copy_constructible_v<RowOffset<RowViewBrand<Walk
     });
     // The source reads the addends in column-major order, and each of the
     // two rows of the matrix is one row of the walk.
-    return is_written && rows == 2 && values == FixedArray<int, 6>{11, 32, 53, 24, 45, 66};
+    FixedArray<int, 6> const expected{11, 32, 53, 24, 45, 66};
+    return is_written && rows == 2 && ::foundation::core::equal(values.view(), expected.view());
 }
 static_assert(walks_rows_in_constant_evaluation());
 

@@ -93,8 +93,7 @@ template <class T>
     bool is_each = true;
     for (std::uint32_t round = 0; round < 16; ++round) {
         auto const leaves = draw_values<T, 37>(seeds.next_wide());
-        core::FixedArray<T, 5> partials{};
-        partials.with_mut([&leaves](auto out) noexcept {
+        core::FixedArray<T, 5> const partials = core::build_fixed_array<T, 5>([&leaves](auto out) noexcept {
             core::sum_grains_by_tree<8>(core::View<T const>{leaves.view()}, 0, std::move(out));
         });
         is_each = is_each && has_same_bits(slot_at(partials, 0), tree_of_part<8, 0>(leaves))
@@ -116,11 +115,11 @@ template <class T, std::size_t Runs>
     ::crucible::test::PhiloxStream seeds{seed};
     bool is_each = true;
     for (std::uint32_t round = 0; round < 16; ++round) {
-        core::FixedArray<core::FixedArray<T, 37>, Runs> runs{};
-        runs.with_mut([&seeds](auto each_run) noexcept {
-            for (core::FixedArray<T, 37>& run : each_run)
-                run = draw_values<T, 37>(seeds.next_wide());
-        });
+        core::FixedArray<core::FixedArray<T, 37>, Runs> const runs =
+            core::build_fixed_array<core::FixedArray<T, 37>, Runs>([&seeds](auto each_run) noexcept {
+                for (core::FixedArray<T, 37>& run : each_run)
+                    run = draw_values<T, 37>(seeds.next_wide());
+            });
         core::FixedArray<core::View<T const>, Runs> views{};
         std::size_t index = 0;
         for (core::FixedArray<T, 37> const& run : runs) {
@@ -128,9 +127,8 @@ template <class T, std::size_t Runs>
             views.set(slot_index(views, index), run_view);
             ++index;
         }
-        core::FixedArray<T, 37> sums{};
         auto const& views_read = views;
-        bool const is_summed = sums.with_mut([&views_read](auto out) noexcept {
+        auto const [is_summed, sums] = core::build_fixed_array<T, 37>([&views_read](auto out) noexcept {
             return core::sum_runs_by_tree(core::View<core::View<T const> const>{views_read.view()}, std::move(out))
                 .is_ok();
         });
@@ -159,8 +157,7 @@ template <class T>
     bool is_each = true;
     for (std::uint32_t round = 0; round < 16; ++round) {
         auto const elements = draw_values<T, 50>(seeds.next_wide());
-        core::FixedArray<T, 4> sums{};
-        bool const is_summed = sums.with_mut([&elements, &offsets](auto out) noexcept {
+        auto const [is_summed, sums] = core::build_fixed_array<T, 4>([&elements, &offsets](auto out) noexcept {
             return core::sum_segments_by_tree(core::View<T const>{elements.view()},
                                               core::View<std::size_t const>{offsets.view()}, std::move(out))
                 .is_ok();

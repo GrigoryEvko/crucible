@@ -44,15 +44,20 @@ enum class TestKind : unsigned char {
 
 using HostData = DataAddress<TestDevice>;
 
-struct alignas(64) LineBytes {
-    FixedArray<unsigned char, 64> bytes{};
-};
+// Runs body on the run of a line of 64 bytes at an alignment of 64, and gives
+// the result of body.
+template <class Body>
+auto with_line(Body body) noexcept {
+    alignas(64) auto minted =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<unsigned char, 64>);
+    auto& [line, line_key] = minted;
+    return line.with_mut(line_key, body);
+}
 
 // The address of the byte at an offset, for each offset up to the count.
 // An offset equal to the count gives the address one past the last byte.
 void test_mint_from_bytes() {
-    LineBytes line{};
-    line.bytes.with_mut([](auto run) noexcept {
+    with_line([](auto run) noexcept {
         Option<RunAddress> const first = mint_run_address(run, 0);
         Option<RunAddress> const middle = mint_run_address(run, 9);
         Option<RunAddress> const end = mint_run_address(run, 64);
@@ -68,17 +73,14 @@ void test_mint_from_bytes() {
 void test_mint_refuses() {
     View<unsigned char> const empty{};
     CRUCIBLE_FATAL_INVARIANT(mint_run_address(empty, 0).is_none());
-    LineBytes line{};
-    CRUCIBLE_FATAL_INVARIANT(
-        line.bytes.with_mut([](auto run) noexcept { return mint_run_address(run, 65).is_none(); }));
+    CRUCIBLE_FATAL_INVARIANT(with_line([](auto run) noexcept { return mint_run_address(run, 65).is_none(); }));
     CRUCIBLE_FATAL_INVARIANT(mint_foreign_run_address(static_cast<unsigned char*>(nullptr)).is_none());
 }
 
 // A DataAddress pairs an address with its device.  Two data addresses are
 // equal only when the address and the device agree.
 void test_device_is_part_of_the_value() {
-    LineBytes line{};
-    line.bytes.with_mut([](auto run) noexcept {
+    with_line([](auto run) noexcept {
         RunAddress const address = mint_run_address(run, 4).expect("the line holds 64 bytes");
         HostData const on_host{address, kHost};
         HostData const on_accelerator{address, kAccelerator};
@@ -99,8 +101,7 @@ void test_device_is_part_of_the_value() {
 // same byte, and foreign_pointer gives the pointer back.  A write through
 // that pointer reaches the byte of the run.
 void test_foreign_round_trip() {
-    LineBytes line{};
-    line.bytes.with_mut([](auto run) noexcept {
+    with_line([](auto run) noexcept {
         auto writer = run.get_mut(7).expect("the line holds 64 bytes");
         unsigned char& seventh = *writer;
         Option<RunAddress> const foreign = mint_foreign_run_address(&seventh);
@@ -116,8 +117,7 @@ void test_foreign_round_trip() {
 // The alignment of an address follows the alignment of its byte, alone and
 // in a pair.
 void test_alignment() {
-    LineBytes line{};
-    line.bytes.with_mut([](auto run) noexcept {
+    with_line([](auto run) noexcept {
         for (RunAddress const address : mint_run_address(run, 0)) {
             CRUCIBLE_FATAL_INVARIANT(is_aligned<1>(address) && is_aligned<8>(address) && is_aligned<64>(address));
             CRUCIBLE_FATAL_INVARIANT((is_aligned<64>(HostData{address, kHost})));
@@ -135,8 +135,7 @@ void test_alignment() {
 // the offset is at most the count, and two pairs are equal exactly when
 // their offsets and their devices are equal.
 void test_agrees_with_plain_model() {
-    LineBytes line{};
-    line.bytes.with_mut([](auto run) noexcept {
+    with_line([](auto run) noexcept {
         ::crucible::test::PhiloxStream stream{0x5EEDDA7A00000001u};
         for (int trial = 0; trial < 1024; ++trial) {
             auto const first_offset = stream.below(70);

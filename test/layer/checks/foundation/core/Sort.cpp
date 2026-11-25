@@ -49,15 +49,15 @@ static_assert(sort_network_size<8> == 24 && sort_network_size<16> == 80 && sort_
 template <std::size_t N>
 [[nodiscard]] consteval bool network_sorts_each_binary_input() noexcept {
     for (std::uint32_t input = 0; input < (std::uint32_t{1} << N); ++input) {
-        FixedArray<std::uint8_t, N> wires{};
-        wires.with_mut([input](auto run) noexcept {
+        auto [wires, wires_key] = mint_keyed_owner(fixed_array_owner<std::uint8_t, N>);
+        wires.with_mut(wires_key, [input](auto run) noexcept {
             std::size_t wire = 0;
             for (std::uint8_t& value : run) {
                 value = static_cast<std::uint8_t>((input >> wire) & 1u);
                 ++wire;
             }
         });
-        wires.with_mut([](auto out) noexcept { sort_by_network(std::move(out)); });
+        wires.with_mut(wires_key, [](auto out) noexcept { sort_by_network(std::move(out)); });
         std::uint8_t last = 0;
         for (std::uint8_t const value : wires) {
             if (value < last) return false;
@@ -75,13 +75,16 @@ static_assert(networks_sort(std::make_index_sequence<9>{}));
 
 // The stable sort keeps two records of one key in their order of input.
 [[nodiscard]] consteval bool sort_stably_keeps_equal_keys_in_order() noexcept {
-    FixedArray<Record, 6> records{Record{3, 0}, Record{1, 1}, Record{3, 2}, Record{2, 3}, Record{1, 4}, Record{3, 5}};
-    FixedArray<Record, 6> scratch{};
+    auto [records, records_key] =
+        mint_keyed_owner(fixed_array_owner<Record, 6>, FixedArray<Record, 6>{Record{3, 0}, Record{1, 1}, Record{3, 2},
+                                                                             Record{2, 3}, Record{1, 4}, Record{3, 5}});
+    auto [scratch, scratch_key] = mint_keyed_owner(fixed_array_owner<Record, 6>);
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
     bool is_sorted = false;
-    records.with_mut([&](auto elements) noexcept {
-        scratch.with_mut(
-            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok(); });
+    records.with_mut(records_key, [&](auto elements) noexcept {
+        scratch.with_mut(scratch_key, [&](auto room) noexcept {
+            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
+        });
     });
     if (!is_sorted) return false;
     FixedArray<Record, 6> const expected{Record{1, 1}, Record{1, 4}, Record{2, 3},
@@ -100,8 +103,8 @@ static_assert(sort_stably_keeps_equal_keys_in_order());
 // pivot and the small sorts, keeps the records of one key in their order of
 // input in constant evaluation too.
 [[nodiscard]] consteval bool comparator_form_keeps_equal_keys_in_order() noexcept {
-    FixedArray<Record, 200> records{};
-    records.with_mut([](auto run) noexcept {
+    auto [records, records_key] = mint_keyed_owner(fixed_array_owner<Record, 200>);
+    records.with_mut(records_key, [](auto run) noexcept {
         std::uint32_t tag = 0;
         std::uint32_t next = 5;
         for (Record& record : run) {
@@ -110,12 +113,13 @@ static_assert(sort_stably_keeps_equal_keys_in_order());
             ++tag;
         }
     });
-    FixedArray<Record, 200> scratch{};
+    auto [scratch, scratch_key] = mint_keyed_owner(fixed_array_owner<Record, 200>);
     auto const by_key = [](Record const& left, Record const& right) noexcept { return left.key < right.key; };
     bool is_sorted = false;
-    records.with_mut([&](auto elements) noexcept {
-        scratch.with_mut(
-            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok(); });
+    records.with_mut(records_key, [&](auto elements) noexcept {
+        scratch.with_mut(scratch_key, [&](auto room) noexcept {
+            is_sorted = sort_stably(std::move(elements), std::move(room), by_key).is_ok();
+        });
     });
     Record last{0, 0};
     bool is_first = true;
@@ -143,8 +147,8 @@ static_assert(order_by_key (&Record::key)(Record{1, 0}, Record{2, 0})
 // order of input in each direction, in constant evaluation too.
 template <KeyDirection Direction>
 [[nodiscard]] consteval bool radix_by_key_keeps_equal_keys_in_order() noexcept {
-    FixedArray<Record, 300> records{};
-    records.with_mut([](auto run) noexcept {
+    auto [records, records_key] = mint_keyed_owner(fixed_array_owner<Record, 300>);
+    records.with_mut(records_key, [](auto run) noexcept {
         std::uint32_t tag = 0;
         std::uint32_t next = 3;
         for (Record& record : run) {
@@ -153,10 +157,10 @@ template <KeyDirection Direction>
             ++tag;
         }
     });
-    FixedArray<Record, 300> scratch{};
+    auto [scratch, scratch_key] = mint_keyed_owner(fixed_array_owner<Record, 300>);
     bool is_sorted = false;
-    records.with_mut([&](auto elements) noexcept {
-        scratch.with_mut([&](auto room) noexcept {
+    records.with_mut(records_key, [&](auto elements) noexcept {
+        scratch.with_mut(scratch_key, [&](auto room) noexcept {
             if constexpr (Direction == KeyDirection::ascending) {
                 is_sorted = sort_stably(std::move(elements), std::move(room), order_by_key(&Record::key)).is_ok();
             } else {
@@ -180,12 +184,13 @@ static_assert(radix_by_key_keeps_equal_keys_in_order<KeyDirection::descending>()
 
 // A scratch of another count is refused.
 [[nodiscard]] consteval bool short_scratch_is_refused() noexcept {
-    FixedArray<int, 4> values{4, 3, 2, 1};
-    FixedArray<int, 3> scratch{};
+    auto [values, values_key] = mint_keyed_owner(fixed_array_owner<int, 4>, FixedArray<int, 4>{4, 3, 2, 1});
+    auto [scratch, scratch_key] = mint_keyed_owner(fixed_array_owner<int, 3>);
     bool is_refused = false;
-    values.with_mut([&](auto elements) noexcept {
-        scratch.with_mut(
-            [&](auto room) noexcept { is_refused = sort_stably(std::move(elements), std::move(room)).is_err(); });
+    values.with_mut(values_key, [&](auto elements) noexcept {
+        scratch.with_mut(scratch_key, [&](auto room) noexcept {
+            is_refused = sort_stably(std::move(elements), std::move(room)).is_err();
+        });
     });
     return is_refused;
 }
@@ -212,19 +217,20 @@ static_assert(radix_key_(-0.0) < radix_key_(0.0) && radix_key_(-1.0e300) < radix
 // selects, gives the order of Ascending in constant evaluation too.
 [[nodiscard]] consteval bool radix_sort_orders_values() noexcept {
     static_assert(stable_sort_radix_count <= 300);
-    FixedArray<int, 300> values{};
-    values.with_mut([](auto run) noexcept {
+    auto [values, values_key] = mint_keyed_owner(fixed_array_owner<int, 300>);
+    values.with_mut(values_key, [](auto run) noexcept {
         int next = 7;
         for (int& value : run) {
             next = (next * 37 + 11) % 1009;
             value = next - 500;
         }
     });
-    FixedArray<int, 300> scratch{};
+    auto [scratch, scratch_key] = mint_keyed_owner(fixed_array_owner<int, 300>);
     bool is_sorted = false;
-    values.with_mut([&](auto elements) noexcept {
-        scratch.with_mut(
-            [&](auto room) noexcept { is_sorted = sort_stably(std::move(elements), std::move(room)).is_ok(); });
+    values.with_mut(values_key, [&](auto elements) noexcept {
+        scratch.with_mut(scratch_key, [&](auto room) noexcept {
+            is_sorted = sort_stably(std::move(elements), std::move(room)).is_ok();
+        });
     });
     int last = -501;
     for (int const value : values) {

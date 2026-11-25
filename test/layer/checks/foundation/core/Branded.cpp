@@ -57,8 +57,8 @@ static_assert(names_brand(^^CheckBrand const&, ^^CheckBrand));
 
 // A scope in a constant evaluation: index, at, indices and enumerate.
 [[nodiscard]] consteval int scope_reads() noexcept {
-    FixedArray<int, 5> values{10, 20, 30, 40, 50};
-    return values.with_mut([](auto run) noexcept {
+    auto [values, values_key] = mint_keyed_owner(fixed_array_owner<int, 5>, FixedArray<int, 5>{10, 20, 30, 40, 50});
+    return values.with_mut(values_key, [](auto run) noexcept {
         View<int const> const elements = run.view().window(1, 3).expect("three elements fit");
         return mint_branded_scope(elements, [&run](auto view) noexcept {
             int total = 0;

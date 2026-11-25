@@ -93,8 +93,8 @@ static_assert(encoded_size_v<HoldsFixedArray> == 12);
     leaves.kind = Kind::second;
     leaves.flag = true;
     leaves.scale = -0.0;
-    FixedArray<std::byte, encoded_size_v<Leaves>> image{};
-    image.with_mut([&leaves](auto run) noexcept { encode(leaves, std::move(run)); });
+    FixedArray<std::byte, encoded_size_v<Leaves>> const image = build_fixed_array<std::byte, encoded_size_v<Leaves>>(
+        [&leaves](auto run) noexcept { encode(leaves, std::move(run)); });
     return image.at(index<0>()) == std::byte{0x02} && image.at(index<1>()) == std::byte{0x01}
         && image.at(index<2>()) == std::byte{1} && image.at(index<3>()) == std::byte{1}
         && image.at(index<4>()) == std::byte{0} && image.at(index<11>()) == std::byte{0x80};
@@ -107,8 +107,8 @@ static_assert(writes_the_image());
     leaves.word = 7;
     leaves.kind = Kind::second;
     leaves.scale = 2.5;
-    FixedArray<std::byte, encoded_size_v<Leaves>> image{};
-    image.with_mut([&leaves](auto run) noexcept { encode(leaves, std::move(run)); });
+    FixedArray<std::byte, encoded_size_v<Leaves>> image = build_fixed_array<std::byte, encoded_size_v<Leaves>>(
+        [&leaves](auto run) noexcept { encode(leaves, std::move(run)); });
     FixedArray<std::byte, encoded_size_v<Leaves>> const& read = image;
     bool const is_back = decode<Leaves>(read.view())
                              .match([&leaves](Leaves back) noexcept { return equal(back, leaves); },
@@ -185,8 +185,8 @@ static_assert(Encodable<HoldsPart<Option<Sealed>>> && !Decodable<HoldsPart<Optio
     sums.maybe = Option<std::uint32_t>::some(std::uint32_t{7});
     sums.outcome = Result<std::uint16_t, Kind>{Err<Kind>{Kind::second}};
     sums.either = OneOf<std::uint8_t, Leaves>{Leaves{.word = 3}};
-    FixedArray<std::byte, encoded_size_v<HoldsSums>> image{};
-    image.with_mut([&sums](auto run) noexcept { encode(sums, std::move(run)); });
+    FixedArray<std::byte, encoded_size_v<HoldsSums>> image = build_fixed_array<std::byte, encoded_size_v<HoldsSums>>(
+        [&sums](auto run) noexcept { encode(sums, std::move(run)); });
     FixedArray<std::byte, encoded_size_v<HoldsSums>> const& read = image;
     bool const is_back = decode<HoldsSums>(read.view())
                              .match([&sums](HoldsSums back) noexcept { return equal(back, sums); },
@@ -226,8 +226,8 @@ static_assert(!Encodable<HoldsPart<FixedText<0x100000000>>>);
     HoldsLists lists{};
     bool const is_built =
         lists.words.append(std::uint16_t{0x0102}).is_ok() && lists.name.append(TextView{"ab"}).is_ok();
-    FixedArray<std::byte, encoded_size_v<HoldsLists>> image{};
-    image.with_mut([&lists](auto run) noexcept { encode(lists, std::move(run)); });
+    FixedArray<std::byte, encoded_size_v<HoldsLists>> image = build_fixed_array<std::byte, encoded_size_v<HoldsLists>>(
+        [&lists](auto run) noexcept { encode(lists, std::move(run)); });
     FixedArray<std::byte, encoded_size_v<HoldsLists>> const& read = image;
     bool const is_back = decode<HoldsLists>(read.view())
                              .match([&lists](HoldsLists back) noexcept { return equal(back, lists); },

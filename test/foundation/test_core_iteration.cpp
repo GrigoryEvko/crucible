@@ -40,11 +40,9 @@ using Run = FixedArray<std::uint64_t, run_size>;
 }
 
 void fill_with_stream(Run& run, ::crucible::test::PhiloxStream& stream) {
-    run.with_mut([&stream](auto elements) noexcept {
-        for (std::uint64_t& value : elements) {
-            value = stream.next_wide();
-        }
-    });
+    for (auto const index : run.indices()) {
+        run.set(index, stream.next_wide());
+    }
 }
 
 void test_reverse_reads_from_the_last_element() {
@@ -55,8 +53,9 @@ void test_reverse_reads_from_the_last_element() {
         --expected;
     }
     CRUCIBLE_TEST_ASSERT(kTest, expected == 0);
-    FixedArray<int, 3> numbers{1, 2, 3};
-    numbers.with_mut([](auto run) noexcept {
+    auto [numbers, numbers_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 3>,
+                                                                       FixedArray<int, 3>{1, 2, 3});
+    numbers.with_mut(numbers_key, [](auto run) noexcept {
         std::size_t position = run.size();
         for (int const value : run.view().reverse()) {
             --position;
@@ -64,7 +63,8 @@ void test_reverse_reads_from_the_last_element() {
             *element = value * 10;
         }
     });
-    CRUCIBLE_TEST_ASSERT(kTest, numbers == (FixedArray<int, 3>{10, 20, 30}));
+    FixedArray<int, 3> const expected_numbers{10, 20, 30};
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(numbers.view(), expected_numbers.view()));
 }
 
 void test_windows_and_chunks_of_an_array() {
@@ -96,8 +96,7 @@ void test_enumerate_gives_each_index_with_its_element() {
         ++expected_position;
     }
     CRUCIBLE_TEST_ASSERT(kTest, expected_position == 5);
-    FixedArray<int, 4> numbers{};
-    numbers.with_mut([](auto run) noexcept {
+    FixedArray<int, 4> const numbers = ::foundation::core::build_fixed_array<int, 4>([](auto run) noexcept {
         for (auto const [position, element] : run.view().enumerate()) {
             auto writer = run.get_mut(position.raw()).expect("the position is below the count");
             *writer = *element + static_cast<int>(position.raw()) * 3;
@@ -114,8 +113,7 @@ void test_zip_of_one_fixed_extent() {
         total += *first * *second;
     }
     CRUCIBLE_TEST_ASSERT(kTest, total == 10 + 40 + 90 + 160);
-    FixedArray<int, 4> target{};
-    target.with_mut([&left](auto run) noexcept {
+    FixedArray<int, 4> const target = ::foundation::core::build_fixed_array<int, 4>([&left](auto run) noexcept {
         std::size_t position = 0;
         for (auto const [destination, source] : run.view().walk().zip(left.view().walk())) {
             auto writer = run.get_mut(position).expect("the position is below the count");

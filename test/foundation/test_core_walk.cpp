@@ -40,11 +40,9 @@ using Run = FixedArray<std::uint64_t, run_size>;
 }
 
 void fill_with_stream(Run& run, ::crucible::test::PhiloxStream& stream) {
-    run.with_mut([&stream](auto elements) noexcept {
-        for (std::uint64_t& value : elements) {
-            value = stream.next_wide() % 1000;
-        }
-    });
+    for (auto const index : run.indices()) {
+        run.set(index, stream.next_wide() % 1000);
+    }
 }
 
 [[nodiscard]] constexpr bool is_kept(std::uint64_t const& value) noexcept { return value % 3 != 0; }
@@ -68,24 +66,25 @@ void test_float_fold_runs_left_to_right() {
 // read.  get_mut writes each element of a window, and write_each writes each
 // element from the element of a source at the same position.
 void test_writer_writes_what_the_walk_reads() {
-    FixedArray<int, 5> values{1, 2, 3, 4, 5};
-    values.with_mut([](auto run) noexcept {
+    auto [values, values_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 5>,
+                                                                     FixedArray<int, 5>{1, 2, 3, 4, 5});
+    values.with_mut(values_key, [](auto run) noexcept {
         auto middle = ::foundation::core::take_window(std::move(run), 1, 3).expect("three elements fit");
         for (std::size_t position = 0; position < middle.size(); ++position) {
             auto value = middle.get_mut(position).expect("the position is inside the window");
             *value *= 10;
         }
     });
-    CRUCIBLE_TEST_ASSERT(kTest, values == (FixedArray<int, 5>{1, 20, 30, 40, 5}));
+    FixedArray<int, 5> const expected{1, 20, 30, 40, 5};
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(values.view(), expected.view()));
     int const middle_sum = values.view()
                                .walk()
                                .skip(ElementCount{1})
                                .limit(ElementCount{3})
                                .fold(0, [](int sum, int const& value) noexcept { return sum + value; });
     CRUCIBLE_TEST_ASSERT(kTest, middle_sum == 90);
-    FixedArray<int, 3> target{};
     FixedArray<int, 3> const source{7, 8, 9};
-    bool const is_written = target.with_mut([&source](auto run) noexcept {
+    auto const [is_written, target] = ::foundation::core::build_fixed_array<int, 3>([&source](auto run) noexcept {
         return ::foundation::core::write_each(
                    std::move(run), [](int const origin) noexcept { return origin + 1; }, source.view())
             .is_ok();

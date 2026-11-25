@@ -29,8 +29,7 @@ struct CodeLeaves {
 // The tree of tree_of_leaves_ is the tree of reduce_by_tree for each count
 // from 1 to 64, and from a first leaf other than zero.
 [[nodiscard]] consteval bool has_the_tree_of_reduce_by_tree() {
-    FixedArray<Code, 64> leaves{};
-    leaves.with_mut([](auto run) noexcept {
+    FixedArray<Code, 64> const leaves = ::foundation::core::build_fixed_array<Code, 64>([](auto run) noexcept {
         std::uint64_t next = 1;
         for (Code& leaf : run) {
             leaf = Code{next++};

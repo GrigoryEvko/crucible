@@ -206,10 +206,10 @@ inline constexpr std::size_t kRunCount = 61;
     for (std::size_t first_runs = 1; first_runs <= kRuns; ++first_runs) {
         View<View<float const> const> const chosen =
             View<View<float const> const>{runs.view()}.window(0, first_runs).expect("the runs fit");
-        FixedArray<float, kRunCount> sums{};
-        bool const is_summed = sums.with_mut([&chosen](auto out) noexcept {
-            return ::foundation::core::sum_runs_by_tree(chosen, std::move(out)).is_ok();
-        });
+        auto const [is_summed, sums] =
+            ::foundation::core::build_fixed_array<float, kRunCount>([&chosen](auto out) noexcept {
+                return ::foundation::core::sum_runs_by_tree(chosen, std::move(out)).is_ok();
+            });
         CRUCIBLE_TEST_ASSERT(kTest, is_summed);
         digest = fold_outputs(digest, View<float const>{sums.view()});
     }
@@ -401,13 +401,14 @@ struct KeyLess {
 // sort_by_network of N drawn words, and the digest of the sorted words.
 template <std::size_t N>
 [[nodiscard]] std::uint64_t fold_network_sort(std::uint64_t digest, PhiloxStream& stream) noexcept {
-    FixedArray<std::uint64_t, N> values{};
-    values.with_mut([&stream](auto cells) noexcept {
+    auto [values, values_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint64_t, N>);
+    values.with_mut(values_key, [&stream](auto cells) noexcept {
         for (std::uint64_t& value : cells) {
             value = stream.below(64);
         }
     });
-    values.with_mut([](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
+    values.with_mut(values_key, [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out)); });
     return fold_outputs(digest, View<std::uint64_t const>{values.view()});
 }
 

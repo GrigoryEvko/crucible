@@ -79,14 +79,12 @@ static_assert(plan_of_six.at(index<4>()) == TreeStep{PlanNode{8}, PlanNode{9}});
 // The leaves 1, 2, 3, ... of a run of N.
 template <std::size_t N>
 [[nodiscard]] consteval FixedArray<std::uint64_t, N> leaves_of() noexcept {
-    FixedArray<std::uint64_t, N> leaves{};
-    leaves.with_mut([](auto run) noexcept {
+    return build_fixed_array<std::uint64_t, N>([](auto run) noexcept {
         std::uint64_t next = 1;
         for (std::uint64_t& leaf : run) {
             leaf = next++;
         }
     });
-    return leaves;
 }
 
 // The plan of N leaves gives the value of reduce_by_tree for the combine Mix.
@@ -94,8 +92,7 @@ template <std::size_t N>
 [[nodiscard]] consteval bool plan_agrees_with_reduce() noexcept {
     auto const leaves = leaves_of<N>();
     auto const steps = plan_tree<N>();
-    FixedArray<std::uint64_t, N - 1> scratch{};
-    std::uint64_t const from_plan = scratch.with_mut([&steps, &leaves](auto room) noexcept {
+    auto const [from_plan, scratch] = build_fixed_array<std::uint64_t, N - 1>([&steps, &leaves](auto room) noexcept {
         return evaluate_tree_plan(View<TreeStep const>{steps.view()}, View<std::uint64_t const>{leaves.view()},
                                   std::move(room), Mix{})
             .expect("the plan of plan_tree is ready in step order");
@@ -127,8 +124,7 @@ static_assert(reduce_by_tree(one_leaf.view(), Mix{}).expect("one leaf") == 7);
 constexpr FixedArray<TreeStep, 1> bad_plan{TreeStep{PlanNode{0}, PlanNode{2}}};
 [[nodiscard]] consteval bool bad_plan_is_refused() noexcept {
     FixedArray<std::uint64_t, 2> const two{leaves_of<2>()};
-    FixedArray<std::uint64_t, 1> scratch{};
-    bool const is_refused = scratch.with_mut([&two](auto room) noexcept {
+    auto const [is_refused, scratch] = build_fixed_array<std::uint64_t, 1>([&two](auto room) noexcept {
         return evaluate_tree_plan(View<TreeStep const>{bad_plan.view()}, View<std::uint64_t const>{two.view()},
                                   std::move(room), Mix{})
             .is_err();
@@ -141,8 +137,7 @@ static_assert(bad_plan_is_refused());
 [[nodiscard]] consteval bool segments_take_their_trees() noexcept {
     auto const leaves = leaves_of<6>();
     FixedArray<std::size_t, 4> const offsets{0, 2, 2, 6};
-    FixedArray<std::uint64_t, 3> results{};
-    bool const is_written = results.with_mut([&leaves, &offsets](auto out) noexcept {
+    auto const [is_written, results] = build_fixed_array<std::uint64_t, 3>([&leaves, &offsets](auto out) noexcept {
         return reduce_segments_by_tree(View<std::uint64_t const>{leaves.view()},
                                        View<std::size_t const>{offsets.view()}, std::move(out), std::uint64_t{99},
                                        Mix{})
@@ -160,14 +155,14 @@ static_assert(segments_take_their_trees());
     auto const leaves = leaves_of<6>();
     FixedArray<std::size_t, 3> const decreasing{0, 4, 2};
     FixedArray<std::size_t, 3> const past_end{0, 4, 7};
-    FixedArray<std::uint64_t, 2> results{};
-    bool const is_first_refused = results.with_mut([&leaves, &decreasing](auto out) noexcept {
+    auto [results, results_key] = mint_keyed_owner(fixed_array_owner<std::uint64_t, 2>);
+    bool const is_first_refused = results.with_mut(results_key, [&leaves, &decreasing](auto out) noexcept {
         return reduce_segments_by_tree(View<std::uint64_t const>{leaves.view()},
                                        View<std::size_t const>{decreasing.view()}, std::move(out), std::uint64_t{0},
                                        Mix{})
             .is_err();
     });
-    bool const is_second_refused = results.with_mut([&leaves, &past_end](auto out) noexcept {
+    bool const is_second_refused = results.with_mut(results_key, [&leaves, &past_end](auto out) noexcept {
         return reduce_segments_by_tree(View<std::uint64_t const>{leaves.view()},
                                        View<std::size_t const>{past_end.view()}, std::move(out), std::uint64_t{0},
                                        Mix{})

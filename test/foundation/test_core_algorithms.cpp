@@ -232,10 +232,11 @@ void test_is_window_of_agrees_with_offsets() {
 // the answers of the std algorithms.
 void test_view_scans_agree_with_std() {
     ::crucible::test::PhiloxStream stream{0x5CA45CA40000D004u};
-    FixedArray<std::uint32_t, 64> run;
+    auto [run, run_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint32_t, 64>);
     auto const is_small = [](std::uint32_t value) noexcept { return value < 2; };
     for (int trial = 0; trial < 2048; ++trial) {
-        run.with_mut([&stream](auto elements) noexcept {
+        run.with_mut(run_key, [&stream](auto elements) noexcept {
             for (std::uint32_t& value : elements) {
                 value = static_cast<std::uint32_t>(stream.below(8));
             }
