@@ -1,0 +1,7 @@
+# The rule table of the control control-early-borrows of the rule view-escape.
+# The unit of src/ is quarantined, and it can name the marks of the base that the
+# planted classes state.
+
+admit foundation::transfer | the marks of an owner and of a borrow, which the planted classes state
+
+quarantine src/

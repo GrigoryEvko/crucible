@@ -1,0 +1,123 @@
+// Bodies with a finding for one answer of an open question, and with no finding
+// for the other one (the wide reading of escape.cpp).  Each function with the
+// suffix _early comes before its classes are complete, and its twin comes after
+// them.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    long word = 0;
+    long const* place = nullptr;
+};
+template <class T>
+struct Shell {
+    long word = 0;
+};
+// A borrow with no brand.
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+
+struct Leaf;
+struct Tag;
+struct Held {
+    Own<Leaf> const& owner;
+};
+struct Two {
+    Own<Leaf> first;
+    Borrow<int> second;
+};
+
+Borrow<int> look(Shell<Leaf> const& shell) noexcept;
+Borrow<int> look_owner(Own<Leaf> const& owner) noexcept;
+Borrow<int> open_held(Held held) noexcept;
+Borrow<int> join(Shell<Leaf> const& shell, Own<Leaf>&& owner) noexcept;
+Own<Leaf>&& pick(Shell<Leaf> const& shell) noexcept;
+Tag const& tag() noexcept;
+Borrow<int> after(Tag const& tag, Shell<int> const& shell) noexcept;
+Two split(Shell<Leaf> const& shell) noexcept;
+
+// A part of a local, one time and after a call that asks the same question.
+Borrow<int> part_early() noexcept {
+    Shell<Leaf> const shell{};
+    return look(shell);
+}
+Borrow<int> twice_early(Shell<Leaf> const& outer) noexcept {
+    Shell<Leaf> const shell{};
+    [[maybe_unused]] Borrow<int> const first = look(outer);
+    return look(shell);
+}
+// A local with no borrow of its own, and a member that names one.
+Borrow<int> owner_early() noexcept {
+    Own<Leaf> const owner{};
+    return look_owner(owner);
+}
+Borrow<int> member_early() noexcept {
+    Own<Leaf> const owner{};
+    Held const held{owner};
+    return open_held(held);
+}
+// A local that does not go into the result with the owner.
+Borrow<int> moved_early() noexcept {
+    Shell<Leaf> const shell{};
+    return join(shell, pick(shell));
+}
+// An argument after an object of an empty class.
+Borrow<int> empty_early() noexcept {
+    Shell<int> const shell{};
+    return after(tag(), shell);
+}
+// A name of a structured binding that a statement writes.
+long const* binding_early() noexcept {
+    Shell<Leaf> const shell{};
+    [[maybe_unused]] auto [first, second] = split(shell);
+    first = Own<Leaf>{};
+    return first.place;
+}
+// A borrowed parameter.
+Borrow<int> parameter_early(Shell<Leaf> const& shell) noexcept { return look(shell); }
+
+struct Leaf {
+    int word = 0;
+};
+struct Tag {};
+
+Borrow<int> part_late() noexcept {
+    Shell<Leaf> const shell{};
+    return look(shell);
+}
+Borrow<int> twice_late(Shell<Leaf> const& outer) noexcept {
+    Shell<Leaf> const shell{};
+    [[maybe_unused]] Borrow<int> const first = look(outer);
+    return look(shell);
+}
+Borrow<int> owner_late() noexcept {
+    Own<Leaf> const owner{};
+    return look_owner(owner);
+}
+Borrow<int> member_late() noexcept {
+    Own<Leaf> const owner{};
+    Held const held{owner};
+    return open_held(held);
+}
+Borrow<int> moved_late() noexcept {
+    Shell<Leaf> const shell{};
+    return join(shell, pick(shell));
+}
+Borrow<int> empty_late() noexcept {
+    Shell<int> const shell{};
+    return after(tag(), shell);
+}
+long const* binding_late() noexcept {
+    Shell<Leaf> const shell{};
+    [[maybe_unused]] auto [first, second] = split(shell);
+    first = Own<Leaf>{};
+    return first.place;
+}
+Borrow<int> parameter_late(Shell<Leaf> const& shell) noexcept { return look(shell); }
+
+}  // namespace planted

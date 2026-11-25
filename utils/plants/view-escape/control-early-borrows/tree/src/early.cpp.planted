@@ -1,0 +1,55 @@
+// Bodies that name an owner of a class that is incomplete there, and that hold no
+// borrow at the end of the unit (the waiting checks of plugin.h): the class has
+// no borrow, or the unit never completes it.  A parameter by an rvalue
+// reference to a class that holds a borrow is no object that ends with the
+// frame, also when the class is complete after the body.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct Plain;
+struct Never;
+struct Node;
+
+Own<Plain> wrap_plain(int const& place) noexcept;
+Own<Never> wrap_never(int const& place) noexcept;
+
+void store_plain(Own<Plain>& out) noexcept {
+    int const local = 1;
+    out = wrap_plain(local);
+}
+Own<Plain> return_plain() noexcept {
+    int const local = 2;
+    return wrap_plain(local);
+}
+Own<Never> return_never() noexcept {
+    int const local = 3;
+    return wrap_never(local);
+}
+
+// A borrow with no brand.
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+
+Borrow<int> give(Node&& node) noexcept;
+Borrow<int> forward(Node&& node) noexcept { return give(static_cast<Node&&>(node)); }
+
+struct Plain {
+    int word = 0;
+};
+struct Node {
+    Borrow<int> borrow;
+};
+
+Own<Plain> wrap_plain(int const& place) noexcept { return {place}; }
+Borrow<int> give(Node&& node) noexcept { return node.borrow; }
+
+}  // namespace planted

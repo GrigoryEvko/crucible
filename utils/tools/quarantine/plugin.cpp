@@ -51,6 +51,8 @@
 //     PLUGIN_GGC_MARKING     each garbage collection drops the waiting checks
 //                            of a subject that it frees (the waiting checks
 //                            of plugin.h).
+//     PLUGIN_REGISTER_GGC_ROOTS   the kept bodies are a root of the
+//                            collections.
 //     The other sources register the hooks of their rules.
 //
 // Arguments (-fplugin-arg-crucible_quarantine-NAME=VALUE)
@@ -190,7 +192,9 @@
 
 #include "plugin.h"
 
+#include "function.h"
 #include "langhooks.h"
+#include "tree-inline.h"
 
 #include "rows.h"
 
@@ -507,10 +511,28 @@ struct WaitingCheck {
 // PLUGIN_GGC_MARKING drops the record of a subject with no mark.
 std::vector<WaitingCheck> waiting_checks;
 
+// Adds the findings of one check or reading.  A check inside another one gives
+// its findings also when the other one waits, because the second run of the
+// other one does not run it again.
 void add_held_findings(const std::vector<HeldFinding>& findings) {
+    std::vector<HeldFinding>* const outer_findings = std::exchange(state.held_findings, nullptr);
     for (const HeldFinding& finding : findings) {
         add_finding(finding.kind, finding.pending, finding.place, finding.entity);
     }
+    state.held_findings = outer_findings;
+}
+
+// Calls RUN, gives its findings to FINDINGS, and returns true when RUN reached
+// a part that it cannot read.
+template <typename Run>
+bool run_and_hold(Run run, std::vector<HeldFinding>& findings) {
+    std::vector<HeldFinding>* const outer_findings = std::exchange(state.held_findings, &findings);
+    unsigned const outer_parts = std::exchange(unread_parts, 0U);
+    run();
+    bool const is_open = unread_parts != 0;
+    state.held_findings = outer_findings;
+    unread_parts = outer_parts;
+    return is_open;
 }
 
 // Runs each check that waits, at the end of the unit.  After a compile error
@@ -541,6 +563,209 @@ void on_marking(void*, void*) {
     waiting_checks.erase(std::remove_if(waiting_checks.begin(), waiting_checks.end(), is_freed), waiting_checks.end());
 }
 
+// The kept bodies: the bodies that a family reads again at the end of the unit
+// (read_or_keep_body of plugin.h).
+//
+// A list of the kept bodies, from the last one: the purpose of an entry is the
+// function, and the value is a vector of the copy of its body, of its
+// parameters, of its result, and of the expressions that the family keeps with
+// it.  The list is a root of the collections, and it is empty after the end of
+// the unit.
+tree kept_bodies = NULL_TREE;
+
+// The reading of one kept body, with the findings of its first run.
+struct KeptReading {
+    void (*read)(tree function) = nullptr;
+    std::vector<HeldFinding> findings;
+};
+
+// The reading of each entry of kept_bodies, from the first one.
+std::vector<KeptReading> kept_readings;
+
+const ggc_root_tab kept_body_roots[] = {
+    {&kept_bodies, 1, sizeof(kept_bodies), &gt_ggc_mx_tree_node, &gt_pch_nx_tree_node},
+    LAST_GGC_ROOT_TAB,
+};
+
+// The walk that gives the direct parts of a node, in the sequence of
+// cp_walk_tree.
+struct PartWalk {
+    std::vector<tree> parts;
+    bool is_at_root = true;
+};
+
+tree collect_part(tree* node, int* walk_subtrees, void* data) {
+    PartWalk& walk = *static_cast<PartWalk*>(data);
+    if (walk.is_at_root) {
+        walk.is_at_root = false;
+        return NULL_TREE;
+    }
+    *walk_subtrees = 0;
+    walk.parts.push_back(*node);
+    return NULL_TREE;
+}
+
+// Adds each node of ORIGINAL with its twin in COPY to TWINS.  The copy has the
+// shape of the original, so the two walks give the parts in one sequence.  A
+// part that the two share has no twin.  Returns false when the shapes differ.
+// Complexity: linear in the copy.
+bool add_twins(tree original, tree copy, std::vector<std::pair<tree, tree>>& twins) {
+    std::unordered_set<tree> seen;
+    std::vector<std::pair<tree, tree>> pending{{original, copy}};
+    while (!pending.empty()) {
+        auto const [node, twin] = pending.back();
+        pending.pop_back();
+        if (node == twin || !seen.insert(twin).second) {
+            continue;
+        }
+        if (node == NULL_TREE || twin == NULL_TREE || TREE_CODE(node) != TREE_CODE(twin)) {
+            return false;
+        }
+        if (TYPE_P(node)) {
+            continue;
+        }
+        twins.emplace_back(node, twin);
+        if (DECL_P(node)) {
+            continue;
+        }
+        // The copy of a block has no static local and no local type.
+        if (TREE_CODE(node) == BIND_EXPR) {
+            tree twin_local = BIND_EXPR_VARS(twin);
+            for (tree local = BIND_EXPR_VARS(node); local != NULL_TREE; local = DECL_CHAIN(local)) {
+                if (twin_local != NULL_TREE && DECL_ABSTRACT_ORIGIN(twin_local) == DECL_ORIGIN(local)) {
+                    pending.emplace_back(local, twin_local);
+                    if (VAR_P(local)) {
+                        pending.emplace_back(DECL_INITIAL(local), DECL_INITIAL(twin_local));
+                    }
+                    twin_local = DECL_CHAIN(twin_local);
+                }
+            }
+            if (twin_local != NULL_TREE) {
+                return false;
+            }
+            pending.emplace_back(BIND_EXPR_BODY(node), BIND_EXPR_BODY(twin));
+            continue;
+        }
+        PartWalk parts;
+        PartWalk twin_parts;
+        tree root = node;
+        tree twin_root = twin;
+        cp_walk_tree(&root, collect_part, &parts, nullptr);
+        cp_walk_tree(&twin_root, collect_part, &twin_parts, nullptr);
+        if (parts.parts.size() != twin_parts.parts.size()) {
+            return false;
+        }
+        for (std::size_t index = 0; index < parts.parts.size(); ++index) {
+            pending.emplace_back(parts.parts[index], twin_parts.parts[index]);
+        }
+    }
+    return true;
+}
+
+// The copier of the trees of one function, as copy_fn of GCC copies a body for
+// the constant evaluator at the same event.  The copies have their own locals
+// and parameters, and they share each other declaration with the body.
+class BodyCopier {
+public:
+    explicit BodyCopier(tree function) {
+        memset(&data_, 0, sizeof(data_));
+        data_.src_fn = function;
+        data_.dst_fn = function;
+        data_.src_cfun = DECL_STRUCT_FUNCTION(function);
+        data_.decl_map = &decl_map_;
+        data_.copy_decl = copy_decl_no_change;
+        data_.transform_call_graph_edges = CB_CGE_DUPLICATE;
+        data_.transform_parameter = true;
+        data_.do_not_unshare = true;
+        data_.do_not_fold = true;
+    }
+    BodyCopier(const BodyCopier&) = delete;
+    BodyCopier& operator=(const BodyCopier&) = delete;
+
+    // The copy of the parameter or of the result DECL.
+    tree copy_decl(tree decl) { return decl != NULL_TREE ? remap_decl(decl, &data_) : NULL_TREE; }
+
+    // The copy of NODE.  The copy of a block gives each static local of the
+    // block to the function in compile, which gets it again when it lowers the
+    // body, so the copier takes it off.
+    tree copy(tree node) {
+        unsigned const locals = cfun != nullptr ? vec_safe_length(cfun->local_decls) : 0U;
+        walk_tree(&node, copy_tree_body_r, &data_, nullptr);
+        if (cfun != nullptr && vec_safe_length(cfun->local_decls) > locals) {
+            cfun->local_decls->truncate(locals);
+        }
+        return node;
+    }
+
+private:
+    hash_map<tree, tree> decl_map_;
+    copy_body_data data_;
+};
+
+// Keeps a copy of the body of FUNCTION for READING.  Returns false when
+// KEEP_FACTS cannot read the copy.
+bool keep_body(tree function, KeptReading reading, void (*keep_facts)(tree function, BodyCopy& copy)) {
+    BodyCopier copier(function);
+    tree parameters = NULL_TREE;
+    tree* last = &parameters;
+    for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
+        *last = copier.copy_decl(parameter);
+        last = &DECL_CHAIN(*last);
+    }
+    tree result = copier.copy_decl(DECL_RESULT(function));
+    tree body = copier.copy(DECL_SAVED_TREE(function));
+    tree held = NULL_TREE;
+    if (keep_facts != nullptr) {
+        bool is_exact = true;
+        BodyCopy copy;
+        copy.copy_of = [&](tree expression) {
+            tree made = copier.copy(expression);
+            held = tree_cons(NULL_TREE, made, held);
+            is_exact = add_twins(expression, made, copy.twins) && is_exact;
+            return made;
+        };
+        copy.add_body = [&] { is_exact = add_twins(DECL_SAVED_TREE(function), body, copy.twins) && is_exact; };
+        keep_facts(function, copy);
+        if (!is_exact) {
+            return false;
+        }
+    }
+    tree kept = make_tree_vec(4);
+    TREE_VEC_ELT(kept, 0) = body;
+    TREE_VEC_ELT(kept, 1) = parameters;
+    TREE_VEC_ELT(kept, 2) = result;
+    TREE_VEC_ELT(kept, 3) = held;
+    kept_bodies = tree_cons(function, kept, kept_bodies);
+    kept_readings.push_back(std::move(reading));
+    return true;
+}
+
+// Reads each kept body again, at the end of the unit.  The function has its copy
+// during the reading, and its own body after it.  After a compile error the
+// findings of the first run count.  Complexity: linear in the kept bodies.
+void read_kept_bodies() {
+    tree const bodies = nreverse(kept_bodies);
+    kept_bodies = NULL_TREE;
+    std::vector<KeptReading> const readings = std::move(kept_readings);
+    kept_readings.clear();
+    std::size_t index = 0;
+    for (tree entry = bodies; entry != NULL_TREE; entry = TREE_CHAIN(entry), ++index) {
+        tree const function = TREE_PURPOSE(entry);
+        tree const kept = TREE_VALUE(entry);
+        if (seen_error()) {
+            add_held_findings(readings[index].findings);
+            continue;
+        }
+        tree const body = std::exchange(DECL_SAVED_TREE(function), TREE_VEC_ELT(kept, 0));
+        tree const parameters = std::exchange(DECL_ARGUMENTS(function), TREE_VEC_ELT(kept, 1));
+        tree const result = std::exchange(DECL_RESULT(function), TREE_VEC_ELT(kept, 2));
+        readings[index].read(function);
+        DECL_SAVED_TREE(function) = body;
+        DECL_ARGUMENTS(function) = parameters;
+        DECL_RESULT(function) = result;
+    }
+}
+
 // The parse_file hook of the front end, before parse_and_walk wraps it.
 void (*front_end_parse_file)() = nullptr;
 
@@ -554,6 +779,7 @@ void walk_unit() {
     was_unit_walked = true;
     state.is_unit_parsed = true;
     run_waiting_checks();
+    read_kept_bodies();
     walk_declarations();
     finish_expression_rules();
     finish_niche_access();
@@ -619,20 +845,31 @@ void check_or_wait(tree subject, const std::string& name, void (*check)(tree sub
         return;
     }
     std::vector<HeldFinding> findings;
-    std::vector<HeldFinding>* const outer_findings = std::exchange(state.held_findings, &findings);
-    unsigned const outer_parts = std::exchange(unread_parts, 0U);
-    check(subject, name);
-    bool const is_open = unread_parts != 0;
-    // A check inside another check gives its findings also when the other check
-    // waits: the second run of the other check does not run it again.
-    state.held_findings = nullptr;
-    if (is_open) {
+    if (run_and_hold([&] { check(subject, name); }, findings)) {
         waiting_checks.push_back(WaitingCheck{subject, name, check, std::move(findings)});
     } else {
         add_held_findings(findings);
     }
-    state.held_findings = outer_findings;
-    unread_parts = outer_parts;
+}
+
+bool read_or_keep_body(tree function, const BodyReader& reader) {
+    if (state.is_unit_parsed) {
+        reader.read(function);
+        return false;
+    }
+    std::vector<HeldFinding> findings;
+    bool is_open = run_and_hold([&] { reader.read(function); }, findings) && !seen_error();
+    if (is_open && reader.read_wide != nullptr) {
+        std::vector<HeldFinding> wide_findings;
+        bool can_give_fact = false;
+        run_and_hold([&] { can_give_fact = reader.read_wide(function); }, wide_findings);
+        is_open = can_give_fact || !wide_findings.empty();
+    }
+    if (is_open && keep_body(function, KeptReading{reader.read, findings}, reader.keep_facts)) {
+        return true;
+    }
+    add_held_findings(findings);
+    return false;
 }
 
 tree annotation_class(tree attribute) {
@@ -1064,5 +1301,7 @@ int plugin_init(plugin_name_args* plugin_info, plugin_gcc_version* version) {
     register_callback(plugin_info->base_name, PLUGIN_FINISH, on_finish, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_START, on_collection, nullptr);
     register_callback(plugin_info->base_name, PLUGIN_GGC_MARKING, on_marking, nullptr);
+    register_callback(plugin_info->base_name, PLUGIN_REGISTER_GGC_ROOTS, nullptr,
+                      const_cast<ggc_root_tab*>(kept_body_roots));
     return 0;
 }

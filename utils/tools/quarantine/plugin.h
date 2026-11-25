@@ -707,6 +707,7 @@
 //         pt.cc, a function body keeps the classes and the lambdas that it
 //         declares, and the cgraph keeps each function that the unit defines.
 //         The comment of each such record names its root
+//       * a tree that a root of the plugin holds (plugin.cpp, the kept bodies)
 //     The walks of the end of the parse are the last readers of such records
 //     (plugin.cpp, parse_and_walk).  The middle end frees the bodies that it
 //     emits, and each collection after the parse frees each identifier that no
@@ -728,6 +729,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
 #include <set>
 #include <string>
@@ -3019,6 +3021,46 @@ inline void add_finding(Kind kind, const AdmitRow* pending, const Place& place, 
 // end of the unit when it is open.  NAME is the part of the entity that the
 // caller gives.  A check that runs inside another check waits by itself.
 void check_or_wait(tree subject, const std::string& name, void (*check)(tree subject, const std::string& name));
+
+// The copy of a body that waits, for a family whose tables hold trees of the
+// body (the kept bodies of plugin.cpp).
+struct BodyCopy {
+    // Adds the nodes of the body to the twins.
+    std::function<void()> add_body;
+    // Each node of the body, after add_body, and of each expression that copy_of
+    // copied, with its twin in the copy.  A node that the body holds at two places
+    // has two twins.
+    std::vector<std::pair<tree, tree>> twins;
+    // The copy of an expression that is no part of the body, or of a local or a
+    // parameter, with the locals and the parameters of the copy.  The plugin
+    // holds it to the end of the unit.
+    std::function<tree(tree)> copy_of;
+};
+
+// How a family reads a body.
+struct BodyReader {
+    // The reading.
+    void (*read)(tree function) = nullptr;
+    // A reading that takes an open question as each of its answers at once, or
+    // null.  It returns true when an answer can give a fact.  A wide reading with
+    // no finding and no fact shows that no answer gives one.
+    bool (*read_wide)(tree function) = nullptr;
+    // Keeps the facts of the body that the family holds in tables of its own
+    // with the copy, or null.
+    void (*keep_facts)(tree function, BodyCopy& copy) = nullptr;
+};
+
+// Reads the body of FUNCTION with READER, at PLUGIN_PRE_GENERICIZE.  An open
+// reading waits too, unless a wide reading shows that no answer matters.  The
+// front end changes the body in place after that event, so the plugin keeps a
+// copy of the body as it is there.  The end of the unit gives the copy to
+// FUNCTION and reads it again (plugin.cpp, the kept bodies).  Returns true when
+// the reading waits.
+bool read_or_keep_body(tree function, const BodyReader& reader);
+
+// True in a check or a reading that the end of the unit runs again.  A check
+// that records a fact in a table of its own records none then.
+inline bool is_run_again() { return unread_parts != 0 && !state.is_unit_parsed; }
 
 // The macro assert of a system header outside the root.  A file under the
 // root that marks itself as a system header and defines assert does not hide

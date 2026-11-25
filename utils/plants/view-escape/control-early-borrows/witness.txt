@@ -1,0 +1,6 @@
+# Bodies that name an owner of a class that is incomplete there, and that hold no
+# borrow at the end of the unit, give no line of the rule.
+
+compile early src/early.cpp
+flag early -freflection
+exit early pass

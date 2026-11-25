@@ -1,0 +1,48 @@
+// The bodies of early.cpp in a unit with no include, so that a compile with a
+// garbage collection at each opportunity is short.  The unit defines the marks
+// that it states, and each collection keeps the copies of the open bodies.
+namespace foundation::transfer {
+
+struct by_arguments final {};
+struct refers final {};
+
+}  // namespace foundation::transfer
+
+namespace planted {
+
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct Node;
+
+Own<Node> wrap(int const& place) noexcept;
+
+void store_early(Own<Node>& out) noexcept {
+    int const local = 1;
+    out = wrap(local);
+}
+template <class T>
+Own<T> return_early(T const* /*tag*/) noexcept {
+    int const local = 2;
+    return wrap(local);
+}
+Own<Node> instance_early() noexcept { return return_early<Node>(nullptr); }
+
+// Definitions between the bodies and the class, where a collection runs.
+int first(int word) noexcept { return word + 1; }
+int second(int word) noexcept { return first(word) + 1; }
+int third(int word) noexcept { return second(word) + 1; }
+
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+struct Node {
+    Borrow<int> borrow;
+};
+
+int fourth(int word) noexcept { return third(word) + 1; }
+
+}  // namespace planted

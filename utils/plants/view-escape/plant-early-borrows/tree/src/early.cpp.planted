@@ -1,0 +1,72 @@
+// Bodies that name an owner of a class that is incomplete there (the waiting
+// checks of plugin.h).  The class holds a borrow.  Each function with the suffix
+// _early comes before the class is complete, and its twin comes after it.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct Node;
+
+Own<Node> wrap(int const& place) noexcept;
+Own<Node> pass(Own<Node> node) noexcept;
+
+// A store into an object of the caller, a result, a local that carries the
+// borrow, and the result of a closure.
+void store_early(Own<Node>& out) noexcept {
+    int const local = 1;
+    out = wrap(local);
+}
+Own<Node> return_early() noexcept {
+    int const local = 2;
+    return wrap(local);
+}
+Own<Node> carry_early() noexcept {
+    int const local = 3;
+    Own<Node> const held = wrap(local);
+    return pass(held);
+}
+int close_early() noexcept {
+    auto const body = [](int word) noexcept {
+        int const local = word;
+        return wrap(local);
+    };
+    return body(4).word;
+}
+
+// A borrow with no brand.
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+struct Node {
+    Borrow<int> borrow;
+};
+
+void store_late(Own<Node>& out) noexcept {
+    int const local = 1;
+    out = wrap(local);
+}
+Own<Node> return_late() noexcept {
+    int const local = 2;
+    return wrap(local);
+}
+Own<Node> carry_late() noexcept {
+    int const local = 3;
+    Own<Node> const held = wrap(local);
+    return pass(held);
+}
+int close_late() noexcept {
+    auto const body = [](int word) noexcept {
+        int const local = word;
+        return wrap(local);
+    };
+    return body(4).word;
+}
+
+}  // namespace planted

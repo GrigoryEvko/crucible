@@ -99,6 +99,12 @@
 //   copy holds a view of a member that it declares first.  Neither of the two
 //   meets a return or a store of a borrow of a local.
 //
+// Open bodies
+//   A body can name an owner of a class that is incomplete there, and the unit
+//   can complete the class later.  The rule cannot tell whether such an owner
+//   holds a borrow, so it reads the body again at the end of the unit, on a copy
+//   (the kept bodies of plugin.cpp).  Only the last reading gives findings.
+//
 // Stores
 //   A function can also keep a borrow past its frame with no return: it
 //   stores the borrow into an object that outlives the frame.  Such an object
@@ -311,12 +317,39 @@ bool reaches_borrow(tree type, ReachWalk& walk, int depth) {
     return walk.leave(type, is_held);
 }
 
-// True when TYPE holds a borrow (the borrow).  Complexity: linear in the
-// classes that the type reaches (ReachWalk).
-bool holds_borrow(tree type) {
+// How the reading in progress takes an open question about a class (the kept
+// bodies of plugin.cpp): as a "no", or as the two answers at once.  A wide
+// reading gives each origin that an answer of each open question can give.  So a
+// body with no finding and no borrowed parameter in it needs no second reading.
+enum class OpenAnswer : std::uint8_t {
+    no,
+    each,
+};
+
+OpenAnswer open_answer = OpenAnswer::no;
+
+// True after a wide reading that can note a borrowed parameter.
+bool has_wide_parameter = false;
+
+// The answer of the question whether a type holds a borrow (the borrow).  A wide
+// reading takes an open question as the two answers.
+struct BorrowAnswer {
+    bool can_hold = false;
+    bool can_hold_none = false;
+    bool is_open = false;
+};
+
+// Complexity: linear in the classes that the type reaches (ReachWalk).
+BorrowAnswer borrow_answer(tree type) {
     ReachWalk walk(borrow_classes);
-    return reaches_borrow(type, walk, 0);
+    bool const holds = reaches_borrow(type, walk, 0);
+    bool const is_open = !holds && walk.is_open();
+    return BorrowAnswer{holds || (is_open && open_answer == OpenAnswer::each), !holds, is_open};
 }
+
+// True when TYPE can hold a borrow, and true when it can hold none.
+bool can_hold_borrow(tree type) { return borrow_answer(type).can_hold; }
+bool can_hold_no_borrow(tree type) { return borrow_answer(type).can_hold_none; }
 
 // True for a function of the namespace std that gives a reference.
 bool is_standard_reference(tree function) {
@@ -332,7 +365,9 @@ constexpr int kNameDepth = 6;
 // Adds the types that a borrow of TYPE names: the element of a reference or a
 // pointer, the first type argument of a class with a refers mark, and the
 // targets of each part of a class that holds a borrow, such as an Option of a
-// Ref.  Complexity: linear in the parts of the type, to the depth kNameDepth.
+// Ref.  A class with an open answer can name each type in a wide reading, which
+// the target null stands for.  Complexity: linear in the parts of the type, to
+// the depth kNameDepth.
 void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
     if (type == NULL_TREE || type == error_mark_node || depth > kNameDepth) {
         return;
@@ -342,7 +377,15 @@ void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
         return;
     }
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || !holds_borrow(type)) {
+    if (!CLASS_TYPE_P(type)) {
+        return;
+    }
+    BorrowAnswer const answer = borrow_answer(type);
+    if (!answer.can_hold) {
+        return;
+    }
+    if (answer.is_open) {
+        out.push_back(NULL_TREE);
         return;
     }
     tree info = CLASSTYPE_TEMPLATE_INFO(type);
@@ -376,13 +419,8 @@ enum class OutsideRuns : std::uint8_t {
     read,
 };
 
-// True when WHOLE holds a part of the type PART: the type itself, the element
-// of an array, a base, a member, or a type argument of a class template, which
-// an owner holds in its bytes or on the heap.  With RUNS read, an owner whose
-// run lives outside it (outside_run_core) holds no part through its type
-// arguments or its core, which name the elements of the run.  Complexity:
-// linear in the parts of the type, to the depth kNameDepth.
-bool holds_part(tree whole, tree part, int depth, OutsideRuns runs) {
+// True when WHOLE holds a part of the type PART, in the walk of holds_part.
+bool reaches_part(tree whole, tree part, int depth, OutsideRuns runs) {
     if (whole == NULL_TREE || whole == error_mark_node || depth > kNameDepth) {
         return false;
     }
@@ -391,9 +429,13 @@ bool holds_part(tree whole, tree part, int depth, OutsideRuns runs) {
         return true;
     }
     if (TREE_CODE(whole) == ARRAY_TYPE) {
-        return holds_part(TREE_TYPE(whole), part, depth + 1, runs);
+        return reaches_part(TREE_TYPE(whole), part, depth + 1, runs);
     }
-    if (!CLASS_TYPE_P(whole) || !COMPLETE_TYPE_P(whole)) {
+    if (!CLASS_TYPE_P(whole)) {
+        return false;
+    }
+    if (!COMPLETE_TYPE_P(whole)) {
+        ++unread_parts;
         return false;
     }
     tree const outside_core = runs == OutsideRuns::read ? outside_run_core(whole) : NULL_TREE;
@@ -402,7 +444,7 @@ bool holds_part(tree whole, tree part, int depth, OutsideRuns runs) {
         info != NULL_TREE && outside_core == NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
     for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
         tree argument = TREE_VEC_ELT(arguments, index);
-        if (argument != NULL_TREE && TYPE_P(argument) && holds_part(argument, part, depth + 1, runs)) {
+        if (argument != NULL_TREE && TYPE_P(argument) && reaches_part(argument, part, depth + 1, runs)) {
             return true;
         }
     }
@@ -411,17 +453,56 @@ bool holds_part(tree whole, tree part, int depth, OutsideRuns runs) {
         if (BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)) == outside_core) {
             continue;
         }
-        if (holds_part(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), part, depth + 1, runs)) {
+        if (reaches_part(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), part, depth + 1, runs)) {
             return true;
         }
     }
     for (tree field = TYPE_FIELDS(whole); field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)
-            && holds_part(TREE_TYPE(field), part, depth + 1, runs)) {
+            && reaches_part(TREE_TYPE(field), part, depth + 1, runs)) {
             return true;
         }
     }
     return false;
+}
+
+// The answers of holds_part for each reading of the runs, by the TYPE_UID of the
+// whole and of the part, which no collection reuses: the final answers, and the
+// open "no" answers of the body in progress, where no class becomes complete.
+std::unordered_map<std::uint64_t, bool> part_answers[2];
+std::unordered_set<std::uint64_t> open_parts[2];
+
+// True when WHOLE holds a part of the type PART: the type itself, the element
+// of an array, a base, a member, or a type argument of a class template, which
+// an owner holds in its bytes or on the heap.  With RUNS read, an owner whose
+// run lives outside it (outside_run_core) holds no part through its type
+// arguments or its core, which name the elements of the run.  A "no" is final
+// when the walk read each part, and at the end of the unit.  Complexity: linear
+// in the parts of the type, to the depth kNameDepth, one time for each pair with
+// a final answer, and one time in each body for each other pair.
+bool holds_part(tree whole, tree part, OutsideRuns runs) {
+    if (whole == NULL_TREE || whole == error_mark_node || part == NULL_TREE) {
+        return false;
+    }
+    std::uint64_t const key =
+        (static_cast<std::uint64_t>(TYPE_UID(TYPE_MAIN_VARIANT(whole))) << 32) | TYPE_UID(TYPE_MAIN_VARIANT(part));
+    std::unordered_map<std::uint64_t, bool>& answers = part_answers[static_cast<std::size_t>(runs)];
+    std::unordered_set<std::uint64_t>& open = open_parts[static_cast<std::size_t>(runs)];
+    auto const found = answers.find(key);
+    if (found != answers.end()) {
+        return found->second;
+    }
+    if (open.count(key) != 0) {
+        return open_answer == OpenAnswer::each;
+    }
+    unsigned const first_unread = unread_parts;
+    bool const is_held = reaches_part(whole, part, 0, runs);
+    if (is_held || unread_parts == first_unread || state.is_unit_parsed) {
+        answers.emplace(key, is_held);
+        return is_held;
+    }
+    open.insert(key);
+    return open_answer == OpenAnswer::each;
 }
 
 // How a call can lend an object that an argument names (the origins).
@@ -441,7 +522,7 @@ bool could_name(tree result, tree object, Lend lend, OutsideRuns runs) {
     add_borrow_targets(result, targets, 0);
     tree const bare = object != NULL_TREE ? TYPE_MAIN_VARIANT(object) : NULL_TREE;
     for (tree target : targets) {
-        if (lend == Lend::exact ? bare == target : holds_part(object, target, 0, runs)) {
+        if (target == NULL_TREE || (lend == Lend::exact ? bare == target : holds_part(object, target, runs))) {
             return true;
         }
     }
@@ -458,7 +539,8 @@ bool could_forward(tree result, tree held, OutsideRuns runs) {
     add_borrow_targets(held, helds, 0);
     for (tree result_target : results) {
         for (tree held_target : helds) {
-            if (holds_part(held_target, result_target, 0, runs)) {
+            if (held_target == NULL_TREE || result_target == NULL_TREE
+                || holds_part(held_target, result_target, runs)) {
                 return true;
             }
         }
@@ -518,7 +600,8 @@ public:
             if (is_this_parameter(decl)) {
                 return false;
             }
-            return TREE_CODE(type) != REFERENCE_TYPE || (TYPE_REF_IS_RVALUE(type) && !holds_borrow(TREE_TYPE(type)));
+            return TREE_CODE(type) != REFERENCE_TYPE
+                || (TYPE_REF_IS_RVALUE(type) && can_hold_no_borrow(TREE_TYPE(type)));
         }
         if (!VAR_P(decl) || TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
             || decl_function_context(decl) != function_ || TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE) {
@@ -577,9 +660,11 @@ public:
                 // A capture by reference of an object that holds a borrow, as
                 // in a closure, carries on the borrows of the object.
                 tree object = TREE_OPERAND(expression, 0);
-                if (holds_borrow(TREE_TYPE(object))) {
+                BorrowAnswer const answer = borrow_answer(TREE_TYPE(object));
+                if (answer.can_hold) {
                     add_origins(object, out, depth + 1);
-                } else {
+                }
+                if (answer.can_hold_none) {
                     add_object(object, out, depth + 1);
                 }
                 return;
@@ -616,9 +701,12 @@ public:
                 // A name of a structured binding reads a member of its hidden
                 // variable, so it holds the origins of that member.
                 auto found = local_origins_.find(DECL_UID(expression));
-                if (found != local_origins_.end()) {
+                bool const is_noted = found != local_origins_.end();
+                if (is_noted) {
                     out.insert(out.end(), found->second.begin(), found->second.end());
-                } else if (VAR_P(expression) && DECL_HAS_VALUE_EXPR_P(expression) && !is_capture_proxy(expression)) {
+                }
+                if ((!is_noted || open_answer == OpenAnswer::each) && VAR_P(expression)
+                    && DECL_HAS_VALUE_EXPR_P(expression) && !is_capture_proxy(expression)) {
                     add_origins(DECL_VALUE_EXPR(expression), out, depth + 1);
                 }
                 return;
@@ -746,7 +834,7 @@ public:
                 continue;
             }
             if (!POINTER_TYPE_P(type)) {
-                if (holds_borrow(type) && could_forward(result, type, runs_)) {
+                if (can_hold_borrow(type) && could_forward(result, type, runs_)) {
                     add_named_origins(argument, result, out, depth + 1);
                 }
                 continue;
@@ -762,6 +850,11 @@ public:
             } else if (is_marked_owner_argument(callee, index, argument)) {
                 add_object(argument_object(argument), out, depth + 1);
             }
+        }
+        // An answer can take an object out of the moved ones, so a wide reading
+        // keeps each origin.
+        if (open_answer == OpenAnswer::each) {
+            return;
         }
         out.erase(std::remove_if(
                       out.begin() + static_cast<std::ptrdiff_t>(first_found), out.end(),
@@ -791,7 +884,7 @@ public:
         tree object_type = TREE_TYPE(TREE_TYPE(stripped));
         bool const is_run_outside = runs_ == OutsideRuns::read && outside_run_core(object_type) != NULL_TREE;
         return object_type != NULL_TREE && !is_run_outside
-            && (!holds_borrow(object_type) || owns_its_storage(object_type));
+            && (can_hold_no_borrow(object_type) || owns_its_storage(object_type));
     }
 
     // The object that an argument by reference names: the operand of an
@@ -861,17 +954,21 @@ public:
             return true;
         }
         tree object = is_address ? TREE_OPERAND(stripped, 0) : stripped;
-        if (holds_borrow(object_type)) {
+        BorrowAnswer const answer = borrow_answer(object_type);
+        if (answer.can_hold) {
             if (lend == Lend::object) {
                 add_origins(object, out, depth + 1);
             } else if (could_forward(result, object_type, runs_)) {
                 add_named_origins(object, result, out, depth + 1);
             }
-        } else if (lend == Lend::object
-                   || (lend != Lend::forward_only && could_name(result, object_type, lend, runs_))) {
+        }
+        if (answer.can_hold_none
+            && (lend == Lend::object || (lend != Lend::forward_only && could_name(result, object_type, lend, runs_)))) {
             add_object(object, out, depth + 1);
         }
-        return true;
+        // An incomplete class can be empty, so a wide reading also lends the next
+        // argument.
+        return open_answer == OpenAnswer::no || !CLASS_TYPE_P(object_type) || COMPLETE_TYPE_P(object_type);
     }
 
 private:
@@ -928,7 +1025,7 @@ private:
         bool const is_reference = TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE;
         if (is_reference) {
             add_reference_argument(value, Lend::object, NULL_TREE, found, 0);
-        } else if (holds_borrow(TREE_TYPE(decl))) {
+        } else if (can_hold_borrow(TREE_TYPE(decl))) {
             add_origins(value, found, 0);
         } else {
             return;
@@ -1073,14 +1170,14 @@ tree collect_store(tree* node, int*, void* data) {
     if (TREE_CODE(current) == INIT_EXPR || TREE_CODE(current) == MODIFY_EXPR) {
         tree target = TREE_OPERAND(current, 0);
         tree place = outer_place_of(target, false);
-        if (place != NULL_TREE && holds_borrow(TREE_TYPE(target))) {
+        if (place != NULL_TREE && can_hold_borrow(TREE_TYPE(target))) {
             stores.push_back(Store{place, TREE_OPERAND(current, 1), false, location});
         }
         return NULL_TREE;
     }
     if (TREE_CODE(current) == AGGR_INIT_EXPR) {
         tree place = outer_place_of(AGGR_INIT_EXPR_SLOT(current), false);
-        if (place != NULL_TREE && holds_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)))) {
+        if (place != NULL_TREE && can_hold_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)))) {
             stores.push_back(Store{place, current, true, location});
         }
         return NULL_TREE;
@@ -1106,7 +1203,7 @@ tree collect_store(tree* node, int*, void* data) {
         return NULL_TREE;
     }
     tree place = outer_place_of(object, true);
-    if (place != NULL_TREE && holds_borrow(TREE_TYPE(object_type))) {
+    if (place != NULL_TREE && can_hold_borrow(TREE_TYPE(object_type))) {
         tree value = is_assignment ? argument_at(current, 1) : current;
         stores.push_back(Store{place, value, is_construction, location});
     }
@@ -1199,7 +1296,9 @@ bool is_deduced_lvalue_parameter(tree function, int index) {
 // back its object by its convention, and an rvalue reference in the result
 // forwards the parameter on, as get of an rvalue Record does, so the rule
 // reads neither.  A parameter whose type holds a borrow lends the objects of
-// its borrows, and an empty class holds nothing to borrow.
+// its borrows, and an empty class holds nothing to borrow.  A reading that the
+// end of the unit runs again notes none, and a wide reading only tells that it
+// can note one.
 void note_borrowed_parameters(tree function, tree body) {
     tree result = TREE_TYPE(DECL_RESULT(function));
     if (DECL_ASSIGNMENT_OPERATOR_P(function) || is_closure_function(function)
@@ -1212,6 +1311,7 @@ void note_borrowed_parameters(tree function, tree body) {
     std::vector<tree> found;
     ParameterWalk walk{&origins, &found};
     cp_walk_tree_without_duplicates(&body, add_return_origins, &walk);
+    std::vector<std::pair<tree, int>> borrowed;
     int index = 0;
     for (tree parameter = FUNCTION_FIRST_USER_PARM(function); parameter != NULL_TREE;
          parameter = DECL_CHAIN(parameter), ++index) {
@@ -1220,28 +1320,28 @@ void note_borrowed_parameters(tree function, tree body) {
             continue;
         }
         tree referred = TREE_TYPE(type);
-        bool const is_value = !holds_borrow(referred) && !(CLASS_TYPE_P(referred) && is_empty_class(referred));
+        bool const is_value = can_hold_no_borrow(referred) && !(CLASS_TYPE_P(referred) && is_empty_class(referred));
         if (is_value && std::find(found.begin(), found.end(), parameter) != found.end()
             && !is_deduced_lvalue_parameter(function, index)) {
-            note_borrowed_parameter(function, parameter, index);
+            borrowed.emplace_back(parameter, index);
+        }
+    }
+    if (open_answer == OpenAnswer::each) {
+        has_wide_parameter = has_wide_parameter || !borrowed.empty();
+    } else if (!is_run_again()) {
+        for (auto const& [parameter, place] : borrowed) {
+            note_borrowed_parameter(function, parameter, place);
         }
     }
 }
 
-void on_pre_genericize(void* gcc_data, void*) {
-    tree function = static_cast<tree>(gcc_data);
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
-        || DECL_CLONED_FUNCTION_P(function) || !is_body_read_here(function, UNKNOWN_LOCATION)) {
-        return;
-    }
-    // The constant evaluator refuses a read of an ended object in a consteval
-    // function itself, so the rule reads no such function.
-    tree result = DECL_RESULT(function);
-    if (result == NULL_TREE || DECL_IMMEDIATE_FUNCTION_P(function)) {
-        return;
-    }
+// The rule on the body of FUNCTION: the stores, the returns and the borrowed
+// parameters.
+void read_body(tree function) {
+    open_parts[0].clear();
+    open_parts[1].clear();
     tree body = DECL_SAVED_TREE(function);
-    bool const returns_borrow = holds_borrow(TREE_TYPE(result));
+    bool const returns_borrow = can_hold_borrow(TREE_TYPE(DECL_RESULT(function)));
     std::vector<Store> stores;
     cp_walk_tree_without_duplicates(&body, collect_store, &stores);
     // The walk of the stores reads the runs outside, and the walk of the
@@ -1259,6 +1359,29 @@ void on_pre_genericize(void* gcc_data, void*) {
     ReturnWalk walk{&origins, function};
     cp_walk_tree_without_duplicates(&body, check_return, &walk);
     note_borrowed_parameters(function, body);
+}
+
+// The wide reading of the body of FUNCTION (BodyReader of plugin.h).  Returns
+// true when an answer of the open questions can give a borrowed parameter.
+bool read_body_wide(tree function) {
+    open_answer = OpenAnswer::each;
+    has_wide_parameter = false;
+    read_body(function);
+    open_answer = OpenAnswer::no;
+    return has_wide_parameter;
+}
+
+void on_pre_genericize(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
+        || DECL_CLONED_FUNCTION_P(function) || !is_body_read_here(function, UNKNOWN_LOCATION)) {
+        return;
+    }
+    // The constant evaluator refuses a read of an ended object in a consteval
+    // function itself, so the rule reads no such function.
+    if (DECL_RESULT(function) != NULL_TREE && !DECL_IMMEDIATE_FUNCTION_P(function)) {
+        read_or_keep_body(function, BodyReader{&read_body, &read_body_wide, nullptr});
+    }
 }
 
 // The answers of holds_unstatic_borrow (the statics, ReachWalk).
