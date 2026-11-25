@@ -1,11 +1,13 @@
-// Microbench of the hot verbs of the small containers of the Region family on
-// one thread: test and set of a BitSet and of a HeapBitSet, get of a SlotMap,
-// a pair of a remove and an insert of a SlotMap, and the appends of a
-// SmallList in its inline slots and past them.
+// Microbench of the hot verbs of the containers of the Region family on one
+// thread: test and set of a BitSet and of a HeapBitSet, get of a SlotMap, a
+// pair of a remove and an insert of a SlotMap, the appends of a SmallList in
+// its inline slots and past them, and the five verbs of a log of events in a
+// SegmentList and in a GrowList.
 //
-// Each row is one pass of 4096 operations, which the cache of the core holds
-// after the first pass.  Each row of a container has a reference row: the raw
-// form of the state of the art for the same verb, on the same positions.
+// Each row of a set, a map and a SmallList is one pass of 4096 operations,
+// which the cache of the core holds after the first pass.  Each row of a
+// container has a reference row: the raw form of the state of the art for the
+// same verb, on the same positions.
 //   raw bitmap          the words of 64 bits and the shift of a bit, the code
 //                       of std::bitset and of a bitmap by hand.  The
 //                       reference of BitSet
@@ -18,6 +20,27 @@
 //                       first element, one compare with the capacity, and a
 //                       growth that doubles the storage.  The reference of
 //                       SmallList
+//   raw segments        the segment table of the concurrent vectors of oneTBB
+//                       and of the two-level vectors of databases, for one
+//                       thread: segments that double, and the segment of an
+//                       index from its top bit.  The reference of SegmentList
+//   raw event vector    the push_back of std::vector.  The reference of
+//                       GrowList
+//
+// Log rows
+//   append              one append of an event of 72 bytes to a log that grows
+//                       to 131072 events.  A sample is one append, so the
+//                       maximum is the most expensive one of the log
+//   appends             4096 appends to an empty log, and its end
+//   growth              the one append that meets a full log of about 65536
+//                       events.  The hook before each sample fills the log, and
+//                       no sample times it
+//   get                 the first word of 4096 events at random positions
+//   walk                the sum of the first word of 4096 events
+// The rows of a reserved run are the floor of an append: five stores of the
+// event, the tail and the count into storage that is there and is warm.  A
+// core with two stores for each cycle needs 2.5 cycles for them.
+//
 // The rule codegen-shapes compares the machine code of test, set and get with
 // the raw forms of test/shape/core_shapes.cpp.  This bench gives the times.
 //
@@ -105,6 +128,159 @@ struct ListReports final {
     bench::Report inline_appends;
     bench::Report spilled_appends;
 };
+
+// The event of a log: 72 bytes, as an event of a session log.
+struct BenchEvent final {
+    std::uint64_t value = 0;
+    fixy::FixedArray<std::uint64_t, 8> payload{};
+};
+
+// The appends of the row append: the count of the events of the log at the end
+// of that row.
+constexpr std::size_t kLogAppends = std::size_t{1} << 17;
+
+// The samples of the row growth.  Each one fills a log of about 65536 events.
+constexpr std::size_t kGrowthSamples = 2000;
+
+// The step of the sum of the values of the events, for a fold of a walk.
+constexpr auto kAddValue = [](std::uint64_t acc, BenchEvent const& event) noexcept { return acc + event.value; };
+
+// The names and the rows of a log (the log rows).
+struct LogNames final {
+    fixy::TextView append;
+    fixy::TextView appends;
+    fixy::TextView growth;
+    fixy::TextView get;
+    fixy::TextView walk;
+};
+struct LogReports final {
+    bench::Report append;
+    bench::Report appends;
+    bench::Report growth;
+    bench::Report get;
+    bench::Report walk;
+};
+
+// Writes the five rows of a log, each with the row of its reference log and the
+// ratio of the two medians.
+template <class Log, class Reference>
+void print_log(LogReports const& log, LogReports const& reference) noexcept {
+    LogNames const& names = Log::kNames;
+    LogNames const& others = Reference::kNames;
+    print_pair(Pair{.container = Row{names.append, log.append}, .reference = Row{others.append, reference.append}});
+    print_pair(Pair{.container = Row{names.appends, log.appends}, .reference = Row{others.appends, reference.appends}});
+    print_pair(Pair{.container = Row{names.growth, log.growth}, .reference = Row{others.growth, reference.growth}});
+    print_pair(Pair{.container = Row{names.get, log.get}, .reference = Row{others.get, reference.get}});
+    print_pair(Pair{.container = Row{names.walk, log.walk}, .reference = Row{others.walk, reference.walk}});
+}
+
+// The log of a SegmentList.  kFullCount is the count of the events of the
+// segments 0 to 13, which hold 4, 8 and so on to 32768 events.
+struct SegmentLog final {
+    static constexpr std::size_t kFullCount = 65532;
+    static constexpr LogNames kNames{.append = "SegmentList, one append",
+                                     .appends = "SegmentList, 4096 appends",
+                                     .growth = "SegmentList, append into a full log",
+                                     .get = "SegmentList, get of 4096 events",
+                                     .walk = "SegmentList, walk of 4096 events"};
+
+    fixy::SegmentList<BenchEvent> events{};
+
+    void append(BenchEvent const& event) noexcept { events.append(kAlloc, event); }
+    [[nodiscard]] std::uint64_t value_at(std::size_t position) const noexcept {
+        return events.get(position).match([](auto event) noexcept { return event->value; },
+                                          [] noexcept { return std::uint64_t{0}; });
+    }
+    [[nodiscard]] std::uint64_t sum() const noexcept { return events.walk().fold(std::uint64_t{0}, kAddValue); }
+    void clear() noexcept { events = fixy::SegmentList<BenchEvent>{}; }
+};
+
+// The log of a GrowList.  kFullCount is one of its capacities: the first
+// storage holds one event, and each growth doubles it.
+struct GrowLog final {
+    static constexpr std::size_t kFullCount = 65536;
+    static constexpr std::size_t kMaximum = std::size_t{1} << 20;
+    static constexpr LogNames kNames{.append = "GrowList, one append",
+                                     .appends = "GrowList, 4096 appends",
+                                     .growth = "GrowList, append into a full log",
+                                     .get = "GrowList, read of 4096 events",
+                                     .walk = "GrowList, walk of 4096 events"};
+
+    ::foundation::core::GrowList<BenchEvent> events = ::foundation::core::mint_grow_list<BenchEvent>(kMaximum);
+
+    void append(BenchEvent const& event) noexcept {
+        events.append(kAlloc, event).expect("the log is below its maximum");
+    }
+    [[nodiscard]] std::uint64_t value_at(std::size_t position) const noexcept {
+        return events.with_element(
+            position, [](BenchEvent const& event) noexcept { return event.value; },
+            [] noexcept { return std::uint64_t{0}; });
+    }
+    [[nodiscard]] std::uint64_t sum() const noexcept {
+        return events.with_view(
+            [](fixy::View<BenchEvent const> run) noexcept { return run.walk().fold(std::uint64_t{0}, kAddValue); });
+    }
+    void clear() noexcept { events = ::foundation::core::mint_grow_list<BenchEvent>(kMaximum); }
+};
+
+// The append that meets a full log.  The hook before each sample gives the log
+// back and fills a new one, outside the timed region.
+template <class Log>
+struct GrowthBody final {
+    Log log{};
+    BenchEvent event{};
+
+    void before_sample() noexcept {
+        log.clear();
+        for (std::size_t count = 0; count != Log::kFullCount; ++count) {
+            log.append(event);
+        }
+    }
+    void operator()() noexcept {
+        log.append(event);
+        bench::do_not_optimize(log);
+    }
+};
+
+// The five rows of one log.
+template <class Log>
+[[gnu::noinline]] LogReports measure_log(Positions const& positions) noexcept {
+    constexpr LogNames const& names = Log::kNames;
+    BenchEvent event{};
+    Log growing{};
+    Log events{};
+    for (std::size_t value = 0; value != kOperations; ++value) {
+        event.value = value;
+        events.append(event);
+    }
+    GrowthBody<Log> growth{};
+    return LogReports{
+        .append =
+            bench::Run(names.append).batch(1).warmup(0).samples(kLogAppends).measure([&] { growing.append(event); }),
+        .appends = bench::run(names.appends,
+                              [&] {
+                                  Log fresh{};
+                                  for (std::size_t count = 0; count != kOperations; ++count) {
+                                      fresh.append(event);
+                                  }
+                                  bench::do_not_optimize(fresh);
+                              }),
+        .growth = bench::Run(names.growth).batch(1).warmup(4).samples(kGrowthSamples).measure(growth),
+        .get = bench::run(names.get,
+                          [&] {
+                              std::uint64_t sum = 0;
+                              for (fixy::Index<kOperations> const position : positions) {
+                                  sum += events.value_at(position.raw());
+                              }
+                              bench::do_not_optimize(sum);
+                          }),
+        .walk = bench::run(names.walk,
+                           [&] {
+                               std::uint64_t sum = events.sum();
+                               bench::do_not_optimize(sum);
+                           }),
+    };
+}
 
 // Measures.  GCC compiles main and each lambda in it for size, as code
 // that runs one time, so a loop in main keeps the step of its cursor as a
@@ -322,6 +498,170 @@ struct RawSmallVector final {
     }
 };
 
+// The raw segments: segment k holds 4 << k events, the directory is in the
+// object, and the top bit of the index plus 4 gives the segment.
+struct RawSegmentLog final {
+    static constexpr std::size_t kFullCount = 65532;
+    static constexpr LogNames kNames{.append = "raw segments, one append",
+                                     .appends = "raw segments, 4096 appends",
+                                     .growth = "raw segments, append into a full log",
+                                     .get = "raw segments, get of 4096 events",
+                                     .walk = "raw segments, walk of 4096 events"};
+
+    BenchEvent* segments[32] = {};
+    BenchEvent* tail = nullptr;
+    BenchEvent* tail_end = nullptr;
+    std::size_t count = 0;
+
+    RawSegmentLog() noexcept = default;
+    RawSegmentLog(RawSegmentLog const&) = delete("the log owns its segments");
+    RawSegmentLog& operator=(RawSegmentLog const&) = delete("the log owns its segments");
+    ~RawSegmentLog() { clear(); }
+
+    void append(BenchEvent const& event) noexcept {
+        if (tail == tail_end) [[unlikely]] {
+            grow();
+        }
+        *tail++ = event;
+        ++count;
+    }
+
+    [[gnu::cold, gnu::noinline]] void grow() noexcept {
+        unsigned const segment = 61u - static_cast<unsigned>(__builtin_clzll(count + 4));
+        std::size_t const slots = std::size_t{4} << segment;
+        tail = static_cast<BenchEvent*>(__builtin_malloc(slots * sizeof(BenchEvent)));
+        if (tail == nullptr) fixy::fatal("the raw segments of the bench got their storage");
+        segments[segment] = tail;
+        tail_end = tail + slots;
+    }
+
+    [[nodiscard]] std::uint64_t value_at(std::size_t position) const noexcept {
+        if (position >= count) return 0;
+        std::size_t const key = position + 4;
+        unsigned const top = 63u - static_cast<unsigned>(__builtin_clzll(key));
+        return segments[top - 2][key ^ (std::size_t{1} << top)].value;
+    }
+
+    [[nodiscard]] std::uint64_t sum() const noexcept {
+        std::uint64_t total = 0;
+        std::size_t left = count;
+        for (unsigned segment = 0; left != 0; ++segment) {
+            std::size_t const slots = std::size_t{4} << segment;
+            std::size_t const run = left < slots ? left : slots;
+            for (std::size_t offset = 0; offset < run; ++offset) {
+                total += segments[segment][offset].value;
+            }
+            left -= run;
+        }
+        return total;
+    }
+
+    void clear() noexcept {
+        for (BenchEvent*& segment : segments) {
+            __builtin_free(segment);
+            segment = nullptr;
+        }
+        tail = nullptr;
+        tail_end = nullptr;
+        count = 0;
+    }
+};
+
+// The raw event vector: the push_back of std::vector.
+struct RawVectorLog final {
+    static constexpr std::size_t kFullCount = 65536;
+    static constexpr LogNames kNames{.append = "raw event vector, one append",
+                                     .appends = "raw event vector, 4096 appends",
+                                     .growth = "raw event vector, append into a full log",
+                                     .get = "raw event vector, get of 4096 events",
+                                     .walk = "raw event vector, walk of 4096 events"};
+
+    BenchEvent* first = nullptr;
+    std::size_t count = 0;
+    std::size_t capacity = 0;
+
+    RawVectorLog() noexcept = default;
+    RawVectorLog(RawVectorLog const&) = delete("the log owns its storage");
+    RawVectorLog& operator=(RawVectorLog const&) = delete("the log owns its storage");
+    ~RawVectorLog() { clear(); }
+
+    void append(BenchEvent const& event) noexcept {
+        if (count == capacity) [[unlikely]] {
+            grow();
+        }
+        first[count] = event;
+        ++count;
+    }
+
+    [[gnu::cold, gnu::noinline]] void grow() noexcept {
+        std::size_t const next = capacity == 0 ? 1 : capacity * 2;
+        auto* const target = static_cast<BenchEvent*>(__builtin_malloc(next * sizeof(BenchEvent)));
+        if (target == nullptr) fixy::fatal("the raw event vector of the bench got its storage");
+        if (count != 0) __builtin_memcpy(static_cast<void*>(target), first, count * sizeof(BenchEvent));
+        __builtin_free(first);
+        first = target;
+        capacity = next;
+    }
+
+    [[nodiscard]] std::uint64_t value_at(std::size_t position) const noexcept {
+        return position < count ? first[position].value : 0;
+    }
+
+    [[nodiscard]] std::uint64_t sum() const noexcept {
+        std::uint64_t total = 0;
+        for (std::size_t position = 0; position < count; ++position) {
+            total += first[position].value;
+        }
+        return total;
+    }
+
+    void clear() noexcept {
+        __builtin_free(first);
+        first = nullptr;
+        count = 0;
+        capacity = 0;
+    }
+};
+
+// The two rows of the reserved run, the floor of an append: one append, and
+// 4096 appends from the start of the run.
+struct FloorReports final {
+    bench::Report append;
+    bench::Report appends;
+};
+
+[[gnu::noinline]] FloorReports measure_reserved_run() noexcept {
+    BenchEvent event{};
+    auto* const first = static_cast<BenchEvent*>(__builtin_calloc(kLogAppends, sizeof(BenchEvent)));
+    if (first == nullptr) fixy::fatal("the reserved run of the bench got its storage");
+    for (std::size_t position = 0; position < kLogAppends; ++position) {
+        first[position].value = position;
+    }
+    BenchEvent* tail = first;
+    std::size_t count = 0;
+    FloorReports reports{
+        .append = bench::Run("reserved run append").batch(1).warmup(0).samples(kLogAppends).measure([&] {
+            *tail++ = event;
+            ++count;
+            bench::do_not_optimize(tail);
+            bench::do_not_optimize(count);
+        }),
+        .appends = bench::run("reserved run appends",
+                              [&] {
+                                  tail = first;
+                                  count = 0;
+                                  for (std::size_t step = 0; step != kOperations; ++step) {
+                                      *tail++ = event;
+                                      ++count;
+                                      bench::do_not_optimize(tail);
+                                      bench::do_not_optimize(count);
+                                  }
+                              }),
+    };
+    __builtin_free(first);
+    return reports;
+}
+
 [[gnu::noinline]] BitReports measure_raw_bits(Positions const& positions) noexcept {
     std::uint64_t words[kWords] = {};
     auto* const heap_words = static_cast<std::uint64_t*>(__builtin_malloc(kWords * sizeof(std::uint64_t)));
@@ -463,5 +803,16 @@ int main() {
                     .reference = Row{"raw small vector inline appends", raw_lists.inline_appends}});
     print_pair(Pair{.container = Row{"SmallList of 2 inline, 8 appends, 512 lists", lists.spilled_appends},
                     .reference = Row{"raw small vector spilled appends", raw_lists.spilled_appends}});
+
+    FloorReports const floor = measure_reserved_run();
+    print_row(Row{"reserved run, one append", floor.append});
+    print_row(Row{"reserved run, 4096 appends", floor.appends});
+    LogReports const raw_segments = measure_log<RawSegmentLog>(positions);
+    LogReports const raw_vector = measure_log<RawVectorLog>(positions);
+    LogReports const segments = measure_log<SegmentLog>(positions);
+    LogReports const grown = measure_log<GrowLog>(positions);
+    print_log<SegmentLog, RawSegmentLog>(segments, raw_segments);
+    print_log<GrowLog, RawVectorLog>(grown, raw_vector);
+    print_log<SegmentLog, GrowLog>(segments, grown);
     return 0;
 }
