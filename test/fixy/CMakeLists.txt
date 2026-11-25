@@ -7078,6 +7078,25 @@ fixy_neg_compile_test(neg_os_handle_ref_stored_from_local
   "neg_os_handle_ref_stored_from_local\\.cpp:19:[0-9]+: error: this function stores a borrow of the local owner into the parameter kept"
   "and the borrowed object ends with the frame of the function")
 
+# The duplicate of a handle: the use of it after the first handle closed, the
+# borrow that is not open, and a duplicate of a second thread.  The tsan preset
+# runs the two threads.  The fixtures are a duplicate that moves the position of
+# its file, one that adds a right, one of a perf event, and a context without
+# Block.
+fixy_test(test_os_duplicate)
+fixy_neg_compile_test(neg_os_duplicate_moves_the_position
+  "no matching function for call to .mint_duplicate<fixy::os::RightSet::read>\\("
+  "required for the satisfaction of .DuplicatesWith<Kind, Fewer>. \\[with Kind = fixy::os::kind::File; Fewer = fixy::os::RightSet::read\\]")
+fixy_neg_compile_test(neg_os_duplicate_adds_a_right
+  "no matching function for call to .mint_duplicate<fixy::os::RightSet::write>\\("
+  "required for the satisfaction of .HoldsRights<Held, Fewer>. \\[with Held = fixy::os::RightSet::read; Fewer = fixy::os::RightSet::write\\]")
+fixy_neg_compile_test(neg_os_duplicate_of_a_perf_event
+  "no matching function for call to .mint_duplicate<fixy::os::RightSet::read>\\("
+  "required for the satisfaction of .DuplicatesWith<Kind, Fewer>. \\[with Kind = fixy::os::kind::PerfEvent; Fewer = fixy::os::RightSet::read\\]")
+fixy_neg_compile_test(neg_os_duplicate_ctx_lacks_block
+  "no matching function for call to .mint_duplicate<fixy::net::socket_rights>\\(const \\{anonymous\\}::IoOnlyCtx&"
+  "required for the satisfaction of .CtxOwnsAllOf<Ctx, foundation::effects::Effect::IO, foundation::effects::Effect::Block>.")
+
 # The fixtures, each named for what it refuses.  Every second
 # regex is a string the compiler emits and the fixture source does not:
 # the anonymous-namespace prefix on the context type, the libstdc++
@@ -7102,6 +7121,12 @@ fixy_neg_compile_test(neg_os_socket_ctx_lacks_block
 fixy_neg_compile_test(neg_os_socket_unmapped_kind
   "no matching function for call"
   "mint_socket<\\{anonymous\\}::NotASocketKind>\\(\\{anonymous\\}::IoBlockCtx&\\)")
+
+# A ref of a socket stays on its thread, so no body of a second thread carries
+# one.
+fixy_neg_compile_test(neg_net_foreign_socket_on_a_second_thread
+  "the body captures .shared. \\(field __shared, type const fixy::net::ForeignSocketRef<fixy::net::socket_kind::TcpStream"
+  "The value moves to another thread, and its type is not Sendable")
 
 # The perf event mint and the identity reads.  The first fixture is a
 # context without Block, and the second a context without IO: the row of

@@ -6,6 +6,8 @@
 #include <fixy/os/Fd.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Ctx.h>
+#include <foundation/effects/Row.h>
 
 #include <cstdint>
 #include <meta>
@@ -94,5 +96,67 @@ static_assert(!std::is_constructible_v<HandleRef<kind::File, kReadWrite>, ReadFi
               "no conversion adds a right to a borrow");
 static_assert(!std::is_default_constructible_v<HandleDoor> && !std::is_copy_constructible_v<HandleDoor>,
               "no object of the door of a descriptor exists");
+
+namespace eff = ::foundation::effects;
+using IoBlockCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO, eff::Effect::Block>>;
+using IoOnlyCtx = eff::ExecCtx<eff::Test, eff::Row<eff::Effect::Test, eff::Effect::IO>>;
+using AnySocket = kind::Socket<NotAKind>;
+
+inline constexpr RightSet kEachCall = RightSet::read | RightSet::write | RightSet::seek | RightSet::map
+                                    | RightSet::map_exec | RightSet::sync | RightSet::lookup | RightSet::create
+                                    | RightSet::remove | RightSet::ioctl_ptp | RightSet::ioctl_socket
+                                    | RightSet::ioctl_perf;
+
+// The rights that a duplicate of a kind can hold, when its borrow holds each
+// right.
+template <class Kind, RightSet Fewer, typename Ctx = IoBlockCtx>
+inline constexpr bool duplicates = CtxFitsDuplicate<Ctx, Kind, kEachCall, Fewer>;
+
+// The row of each kind states what its duplicate shares.
+consteval SharedState shared_state_of(std::meta::info kind) { return kind_table[kind_row_of_(kind)].shared; }
+static_assert(kind_count == 8, "a new row has a pin of its shared state below");
+static_assert(shared_state_of(^^kind::File) == SharedState::position
+              && shared_state_of(^^kind::CharacterDevice) == SharedState::position
+              && shared_state_of(^^kind::Directory) == SharedState::position
+              && shared_state_of(^^kind::SealedMemory) == SharedState::position);
+static_assert(shared_state_of(^^kind::Socket) == SharedState::socket);
+static_assert(shared_state_of(^^kind::PtpClock) == SharedState::none);
+static_assert(shared_state_of(^^kind::PerfEvent) == SharedState::owned
+              && shared_state_of(^^kind::IoRing) == SharedState::owned);
+
+// A duplicate of a socket and of a PTP clock holds each right of its borrow.
+static_assert(duplicates<AnySocket, RightSet::read | RightSet::write | RightSet::ioctl_socket>);
+static_assert(duplicates<kind::PtpClock, RightSet::ioctl_ptp>);
+
+// A kind with a position gives no duplicate that reads, writes or seeks.
+static_assert(duplicates<kind::File, RightSet::map> && duplicates<kind::File, RightSet::sync | RightSet::map_exec>);
+static_assert(!duplicates<kind::File, RightSet::read> && !duplicates<kind::File, RightSet::write>
+                  && !duplicates<kind::File, RightSet::seek>,
+              "two handles of one file must not move one position");
+static_assert(!duplicates<kind::File, RightSet::map | RightSet::write>);
+static_assert(!duplicates<kind::CharacterDevice, RightSet::read>
+              && !duplicates<kind::CharacterDevice, RightSet::write>);
+static_assert(duplicates<kind::Directory, RightSet::lookup | RightSet::create | RightSet::remove>);
+static_assert(duplicates<kind::SealedMemory, RightSet::map>
+              && !duplicates<kind::SealedMemory, RightSet::read | RightSet::write | RightSet::map>);
+
+// A perf event and a ring give no duplicate, with no right either.
+static_assert(!duplicates<kind::PerfEvent, RightSet::none> && !duplicates<kind::IoRing, RightSet::none>,
+              "a state with one owner gives no duplicate");
+static_assert(KindRow{}.shared == SharedState::owned, "a row that states no shared state gives no duplicate");
+
+// The gate: the rights of the borrow, and a context that admits a call that
+// can wait.
+static_assert(!CtxFitsDuplicate<IoBlockCtx, AnySocket, RightSet::read, RightSet::write>,
+              "a duplicate gives no right that its borrow lacks");
+static_assert(!duplicates<AnySocket, RightSet::read, IoOnlyCtx>, "the growth of the table of the numbers can wait");
+static_assert(!DuplicatesWith<int, RightSet::none> && !DuplicatesWith<NotAKind, RightSet::none>,
+              "a class that is no kind has no duplicate");
+
+// The door: no object of it exists, and the mint is its one caller.
+static_assert(!std::is_default_constructible_v<DuplicateDoor> && !std::is_copy_constructible_v<DuplicateDoor>);
+template <class Door>
+concept OwnsANumber = requires { Door::template own_<kind::File, RightSet::map>(3); };
+static_assert(!OwnsANumber<DuplicateDoor>, "a number becomes a duplicate only through the mint");
 
 }  // namespace fixy::os::detail::handle_invariants

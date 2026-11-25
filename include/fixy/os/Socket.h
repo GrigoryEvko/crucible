@@ -123,23 +123,30 @@ using SocketIdentity = ::foundation::core::Id<struct SocketIdentityTag, std::uin
 //   A ForeignSocketRef is the borrow of a socket by value.  A table that
 //   stores, compares or keys a socket that it gives back to a door holds
 //   one, because a HandleRef is a borrow, which the rule view-escape keeps
-//   inside the frame of its Handle.  Two doors make one: share_socket, from
-//   the borrow of a Handle of the base, and admit_foreign_socket, from the
-//   descriptor of a socket that a C library opened.  Each ref carries one
-//   promise of the code that made it: the owner of the socket keeps it open
-//   for the life of each copy of the ref.  The ref holds the stamp of its
+//   inside the frame of its Handle.  The ref stays on its thread
+//   (thread_bound{} and not_shareable{} of foundation/Transfer.h), as a
+//   HandleRef does, and so does each class that holds one.  A table of another
+//   thread holds a Handle of its own, from mint_duplicate of
+//   fixy/os/Handle.h.
+//
+//   Two doors make a ref: share_socket, from the borrow of a Handle of the
+//   base, and admit_foreign_socket, from the descriptor of a socket that a C
+//   library opened.  Each ref carries one promise of the code that made it: the
+//   owner of the socket keeps it open for the life of each copy of the ref,
+//   on the thread of the ref.  The ref holds the stamp of its
 //   descriptor (the stamp of a descriptor of fixy/os/Fd.h), as a HandleRef
 //   does, and a Handle of the base advances the generation of the number at
 //   its open, at its close and at its release to an ABI.  So a ref that
 //   outlives its Handle is not current, and each door gives ebadf for it and
 //   makes no call on the number, which the kernel can have given to a later
 //   descriptor.  abi_descriptor() gives -1 for such a ref.  The two routes
-//   that the stamp leaves open stay open here: a close of the Handle while a
-//   door of another thread makes its call, and a foreign socket that a C
-//   library closes and a C library opens again on its number with no Handle
-//   between.  A number at or past descriptor_generation_slots has no
-//   generation, so its ref is never current, and each door refuses it.  The
-//   default ref is empty, and a door gives ebadf for it.
+//   that the stamp leaves open stay open here: a close of a Handle that moved
+//   to a second thread while a door of the first thread makes its call, and a
+//   foreign socket that a C library closes and a C library opens again on its
+//   number with no Handle between.  A number at or past
+//   descriptor_generation_slots has no generation, so its ref is never
+//   current, and each door refuses it.  The default ref is empty, and a door
+//   gives ebadf for it.
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
 class ForeignSocketRef;
@@ -166,7 +173,8 @@ struct ForeignSocketDoor final : ::foundation::NoObject<ForeignSocketDoor> {
 
 template <typename Kind, ::fixy::os::RightSet Rights>
     requires MappedSocketKind<Kind>
-class [[nodiscard]] ForeignSocketRef final {
+class [[nodiscard]][[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]]
+    ForeignSocketRef final {
     // The number of the socket and its generation when a door made the ref,
     // or the empty stamp for the empty ref.  The stamp holds the seal of
     // foundation/ByteSeal.h, so a number becomes a ref only through a door.

@@ -7,6 +7,9 @@
 //   HandleRef<Kind, Rights>  the borrow of the descriptor of a Handle
 //   RightSet                 the rights of a handle: a set of named bits
 //   kind::*                  the kinds of a handle: a closed list of tags
+//   mint_duplicate<Fewer>(ctx, borrow)
+//                            a second Handle of the open file of a borrow, with
+//                            the rights Fewer
 //
 // Rights
 //   RightSet is an enum class of named bits in 64 bits.  A class type that
@@ -51,14 +54,61 @@
 //   the check of the generation and the call, while the thread of the Handle
 //   closes it, so the borrow stays on its thread.  A table that stores a
 //   socket holds a ForeignSocketRef of fixy/os/Socket.h, which holds the same
-//   stamp and is no borrow.
+//   stamp and is no borrow of a frame, and which stays on its thread too.  A
+//   second thread that uses the open file holds a duplicate.
 //   restrict<Fewer>() gives a borrow with fewer rights, and no form gives
 //   more rights.  A borrow of a temporary Handle does not compile.
 //
+// Duplicate
+//   mint_duplicate gives a second number to the open file of a borrow, and a
+//   Handle that owns the number (F_DUPFD_CLOEXEC).  Each of the two handles
+//   closes its own number, and each number has its own generation, so a close
+//   of one handle makes no borrow of the other one stale, and no door of one
+//   handle can act on the number of the other.  The kernel counts the numbers
+//   of the open file, and the file closes when the last of them closes.  So a
+//   connection of a socket ends for its peer when the last handle of the socket
+//   closes.  The rights of the duplicate are rights that the borrow holds.
+//
+//   A duplicate is the form of a second thread.  A HandleRef and a
+//   ForeignSocketRef stay on their thread, because a door of a second thread
+//   can act on the number while the thread of the Handle closes it.  A second
+//   thread that uses the open file holds a duplicate of its own, so no such
+//   time exists.
+//
+//   The mint can wait, because the growth of the table of the numbers of a
+//   process with threads waits for each reader of the old table.
+//
+// Shared state
+//   The two handles of a duplicate share the open file description of the
+//   kernel, which holds the position of the file and the status flags (open(2)).
+//   No door of the base changes the status flags of an open file.  read_full and
+//   write_full of fixy/os/Fs.h read and move the position, so a duplicate of a
+//   kind with a position holds no read, write or seek right (DuplicatesWith).
+//   It can map the file, sync it, or look up paths beneath a directory.  An open
+//   of the path gives a handle with a position of its own.
+//
+//   A perf event and a ring of io_uring give no duplicate.  A count of a perf
+//   event is the difference of two reads, and a call of the right ioctl_perf of
+//   the other handle can stop or reset the event between the two.  The queues of
+//   a ring have one owner.
+//
+//   A socket shares its options, its queues and its shutdown state, and a
+//   duplicate of it holds each right of its borrow.  The kernel orders each call
+//   of the two handles, and a read takes bytes that the other handle does not
+//   get, so no call reads a state that another one left half-changed.  Each door
+//   of fixy/os/Socket.h makes one call for one message.  Three doors of the base
+//   make more than one call for one run: read_full and write_full of
+//   fixy/os/Fs.h, and zerocopy_transfer of fixy/os/Io.h.  A read of the other
+//   handle between two calls takes bytes from the middle of the run, and the run
+//   then holds bytes that do not follow each other in the stream.  A write of the
+//   other handle puts its bytes into the middle of the run.  So two threads
+//   divide a stream socket by direction: one reads, and the other writes.  No
+//   type holds that rule.
+//
 // Doors
 //   The constructor of a Handle from a descriptor is private.  Its friends
-//   are the door classes that make the open, socket, perf_event_open and
-//   PTP open calls, and each door admits only its gated mints.  The
+//   are the door classes that make the open, socket, perf_event_open, PTP open
+//   and duplicate calls, and each door admits only its gated mints.  The
 //   constructor takes an OpenedDescriptor of fixy/os/Fd.h, so each number of
 //   a Handle has a generation and a file of the type of its kind.  The doors
 //   of the base read the descriptor of a borrow, and an owner reads the
@@ -81,6 +131,7 @@
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Choice.h>
+#include <foundation/effects/Ctx.h>
 #include <foundation/os/Errno.h>
 #include <foundation/os/PathText.h>
 
@@ -106,6 +157,8 @@ class PerfEventDoor;
 }  // namespace fixy::perf
 
 namespace fixy::os {
+
+class DuplicateDoor;
 
 // The rights of a handle.  Each named value is one bit, and none is the
 // empty set.
@@ -160,26 +213,43 @@ struct SealedMemory final {};
 
 namespace detail {
 
+// The state of an open file that two numbers of it share (the shared state).
+enum class SharedState : std::uint8_t {
+    // A state with one owner: the count and the enable of a perf event, and the
+    // queues of a ring of io_uring.
+    owned,
+    // The position of the file, which read_full and write_full of fixy/os/Fs.h
+    // read and move.
+    position,
+    // The options, the queues and the shutdown state of a socket.
+    socket,
+    // None: each call of the base on a PTP clock reads the device, and it keeps
+    // no state in the open file.
+    none,
+};
+
 // One row of the table of the kinds: a kind, or the template of a family of
-// kinds, and the type of the opened number of its handles (the opened
-// descriptor of fixy/os/Fd.h).
+// kinds, the type of the opened number of its handles (the opened descriptor
+// of fixy/os/Fd.h), and the state that a duplicate shares.  A row that states
+// no shared state gives no duplicate.
 struct KindRow final {
     std::meta::info kind{};
     ::fixy::fs::OpenedType type{};
+    SharedState shared = SharedState::owned;
 };
 
 // The table of the kinds.  A node of /dev/ptpN can be another device, and the
 // kernel refuses each PTP call on one, so the row of a PTP clock states the
 // device and no more.
 inline constexpr KindRow kind_table[] = {
-    {^^kind::File, ::fixy::fs::OpenedType::regular_file},
-    {^^kind::CharacterDevice, ::fixy::fs::OpenedType::character_device},
-    {^^kind::PtpClock, ::fixy::fs::OpenedType::character_device},
-    {^^kind::Directory, ::fixy::fs::OpenedType::of_call},
-    {^^kind::Socket, ::fixy::fs::OpenedType::of_call},
-    {^^kind::PerfEvent, ::fixy::fs::OpenedType::of_call},
-    {^^kind::IoRing, ::fixy::fs::OpenedType::of_call},
-    {^^kind::SealedMemory, ::fixy::fs::OpenedType::of_call},
+    {^^kind::File, ::fixy::fs::OpenedType::regular_file, SharedState::position},
+    {^^kind::CharacterDevice, ::fixy::fs::OpenedType::character_device, SharedState::position},
+    {^^kind::PtpClock, ::fixy::fs::OpenedType::character_device, SharedState::none},
+    {^^kind::Directory, ::fixy::fs::OpenedType::of_call, SharedState::position},
+    {^^kind::Socket, ::fixy::fs::OpenedType::of_call, SharedState::socket},
+    {^^kind::PerfEvent, ::fixy::fs::OpenedType::of_call, SharedState::owned},
+    {^^kind::IoRing, ::fixy::fs::OpenedType::of_call, SharedState::owned},
+    {^^kind::SealedMemory, ::fixy::fs::OpenedType::of_call, SharedState::position},
 };
 inline constexpr std::size_t kind_count = sizeof kind_table / sizeof kind_table[0];
 
@@ -208,6 +278,33 @@ template <class Kind>
 [[nodiscard]] consteval ::fixy::fs::OpenedType opened_type_of() noexcept {
     return detail::kind_table[detail::kind_row_of_(^^Kind)].type;
 }
+
+namespace detail {
+
+// True when a duplicate that shares the state can hold the rights fewer (the
+// shared state).  A state with no arm gives no duplicate.
+[[nodiscard]] consteval bool duplicates_with_(SharedState shared, RightSet fewer) noexcept {
+    switch (shared) {
+        case SharedState::none:
+        case SharedState::socket:
+            return true;
+        case SharedState::position:
+            return (std::to_underlying(fewer) & std::to_underlying(RightSet::read | RightSet::write | RightSet::seek))
+                == 0;
+        case SharedState::owned:
+        default:
+            return false;
+    }
+}
+
+}  // namespace detail
+
+// A duplicate of a handle of the kind Kind can hold the rights Fewer (the shared
+// state).  A kind whose open file has a position gives no duplicate that reads,
+// writes or seeks, so no two handles move one position.
+template <class Kind, RightSet Fewer>
+concept DuplicatesWith =
+    HandleKind<Kind> && detail::duplicates_with_(detail::kind_table[detail::kind_row_of_(^^Kind)].shared, Fewer);
 
 template <class Kind, RightSet Rights>
     requires HandleKind<Kind>
@@ -334,6 +431,7 @@ class [[nodiscard]] Handle final {
     friend class ::fixy::net::SocketDoor;
     friend class ::fixy::time::PtpDeviceDoor;
     friend class ::fixy::perf::PerfEventDoor;
+    friend class DuplicateDoor;
     friend struct detail::HandleDoor;
 
 public:
@@ -396,6 +494,52 @@ private:
 template <class Kind, RightSet Rights>
 [[nodiscard]] int detail::HandleDoor::owned_descriptor_of(Handle<Kind, Rights> const& owner) noexcept {
     return owner.descriptor_;
+}
+
+// The gate of a duplicate: the context admits a call that can wait, the borrow
+// holds the rights Fewer, and the kind gives a duplicate with them.
+template <typename Ctx, class Kind, RightSet Held, RightSet Fewer>
+concept CtxFitsDuplicate = ::fixy::fs::CtxAdmitsFs<Ctx> && HoldsRights<Held, Fewer> && DuplicatesWith<Kind, Fewer>;
+
+// Declared here and defined below DuplicateDoor, because DuplicateDoor names it
+// as its friend, and a friend must already have been declared.
+template <RightSet Fewer, class Kind, RightSet Rights, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsDuplicate<Ctx, Kind, Rights, Fewer>
+[[nodiscard]] inline ::foundation::core::Result<Handle<Kind, Fewer>, ::foundation::os::Errno>
+mint_duplicate(Ctx const&, HandleRef<Kind, Rights> borrow) noexcept;
+
+// The door to the duplicate of a number.  No object of it exists.  Its member
+// is private, and its one friend is mint_duplicate.  A Handle befriends this
+// class, so a duplicate comes only from that mint, after its gate.  The two
+// numbers have one open file, whose type the Handle of the first one states.
+class DuplicateDoor final : ::foundation::NoObject<DuplicateDoor> {
+    template <RightSet FriendFewer, class FriendKind, RightSet FriendRights, ::foundation::effects::IsExecCtx FriendCtx>
+        requires CtxFitsDuplicate<FriendCtx, FriendKind, FriendRights, FriendFewer>
+    friend auto mint_duplicate(FriendCtx const&, HandleRef<FriendKind, FriendRights>) noexcept
+        -> ::foundation::core::Result<Handle<FriendKind, FriendFewer>, ::foundation::os::Errno>;
+
+    template <class Kind, RightSet Fewer>
+    [[nodiscard]] static ::foundation::core::Result<Handle<Kind, Fewer>, ::foundation::os::Errno>
+    own_(int descriptor) noexcept {
+        constexpr ::fixy::fs::OpenedType type = opened_type_of<Kind>();
+        return ::fixy::fs::detail::OpenedDescriptorDoor::admit_duplicate<type>(
+            ::fixy::fs::detail::duplicate_descriptor_(descriptor),
+            [](::fixy::fs::OpenedDescriptor<type> opened) noexcept { return Handle<Kind, Fewer>{std::move(opened)}; });
+    }
+};
+
+// A Handle with the rights Fewer of the open file of borrow (the duplicate).  A
+// borrow that is not open gives ebadf, and a process with no free number gives
+// emfile.
+template <RightSet Fewer, class Kind, RightSet Rights, ::foundation::effects::IsExecCtx Ctx>
+    requires CtxFitsDuplicate<Ctx, Kind, Rights, Fewer>
+[[nodiscard]] inline ::foundation::core::Result<Handle<Kind, Fewer>, ::foundation::os::Errno>
+mint_duplicate(Ctx const&, HandleRef<Kind, Rights> borrow) noexcept {
+    int const descriptor = detail::HandleDoor::descriptor_of(borrow);
+    if (descriptor < 0) {
+        return ::foundation::core::err(::foundation::os::Errno::ebadf);
+    }
+    return DuplicateDoor::own_<Kind, Fewer>(descriptor);
 }
 
 }  // namespace fixy::os

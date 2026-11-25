@@ -153,6 +153,11 @@ inline constexpr unsigned int kMemoryFileCloseOnExec = 0x1;
 inline constexpr unsigned int kMemoryFileAllowSeals = 0x2;
 inline constexpr unsigned int kMemoryFileNoExecSeal = 0x8;
 
+// The command of fcntl that gives a second number to the open file of a
+// descriptor, at or above its argument.  The second number closes when a
+// thread of the process starts a program (F_DUPFD_CLOEXEC).
+inline constexpr int kFcntlDuplicateCloseOnExec = 1030;
+
 // The command of fcntl that adds seals to a memory file (F_ADD_SEALS), and
 // the seals.  The file takes no later seal (F_SEAL_SEAL), and its size does
 // not decrease (F_SEAL_SHRINK).

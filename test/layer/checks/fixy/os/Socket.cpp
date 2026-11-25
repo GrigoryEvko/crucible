@@ -55,6 +55,10 @@ static_assert(!std::is_trivially_copyable_v<TcpForeign>, "std::bit_cast must not
 static_assert(!std::is_constructible_v<TcpForeign, int>, "a number becomes a ref only through a door.");
 static_assert(!std::is_constructible_v<TcpForeign, NonNegative<int>>, "a number becomes a ref only through a door.");
 static_assert(!std::is_constructible_v<TcpForeign, NetlinkForeign>, "a ref keeps the kind of its socket.");
+static_assert(!::foundation::transfer::Sendable<TcpForeign> && !::foundation::transfer::Shareable<TcpForeign>
+                  && !::foundation::transfer::SendableBeside<TcpForeign>
+                  && !::foundation::transfer::SendableOwned<TcpForeign>,
+              "a ref of a socket stays on its thread, so no door of a second thread acts on its number");
 static_assert(!TcpForeign{}.is_open() && TcpForeign{}.abi_descriptor() == -1);
 static_assert(std::is_same_v<TcpForeign::kind_type, TcpBorrow::kind_type> && TcpForeign::rights == socket_rights);
 static_assert(std::is_same_v<decltype(TcpForeign{}.restrict<::fixy::os::RightSet::read>()),

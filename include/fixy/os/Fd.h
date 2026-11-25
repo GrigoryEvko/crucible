@@ -65,6 +65,13 @@ namespace detail {
 // door does not report one.
 void close_descriptor_(int descriptor) noexcept;
 
+// Gives a second number to the open file of descriptor, which closes when a
+// thread of the process starts a program (F_DUPFD_CLOEXEC).  The result is the
+// number, or the error of the kernel.  The call can wait, because the growth of
+// the table of the numbers of a process with threads waits for each reader of
+// the old table.  The duplicate of fixy/os/Handle.h is the one caller.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno> duplicate_descriptor_(int descriptor) noexcept;
+
 // Sends the ioctl request to descriptor, with the address argument
 // of the memory that the request reads or writes.  The door is only for a
 // request that the kernel answers at once, such as a query of the
@@ -126,12 +133,17 @@ struct OpenedDescriptorDoor;
 //   open all fail closed.  A move of a Handle keeps the generation, so a
 //   stamp of a Handle that moved stays current while the descriptor is open.
 //
-//   Two routes stay open.  A close of the Handle on a second thread between
-//   the check of the generation and the call of the door lets the call act
-//   on the number, which the kernel can give to a later open in that time.
-//   A C library that closes a number that a Handle owns changes no
-//   generation, so a later open of the number by the C library keeps each
-//   stamp current.
+//   Both borrows stay on one thread (HandleRef and ForeignSocketRef), so a
+//   door that checks a stamp and then makes its call has no close of the same
+//   thread between the two.  A table of another thread holds a Handle of its
+//   own from mint_duplicate of fixy/os/Handle.h, and no borrow.
+//
+//   Two routes stay open.  A Handle that moves to a second thread, while a
+//   borrow of it stays on the first one, can close there between the check of
+//   the generation and the call of the door.  The call then acts on the number,
+//   which the kernel can give to a later open in that time.  A C library that
+//   closes a number that a Handle owns changes no generation, so a later open
+//   of the number by the C library keeps each stamp current.
 class DescriptorStamp final {
     // The number of the descriptor, or -1 for the empty stamp.
     int number_ = -1;
@@ -296,6 +308,16 @@ struct OpenedDescriptorDoor final : ::foundation::NoObject<OpenedDescriptorDoor>
                                              Make make) noexcept {
         return admit_opened_number_(opened).map(
             [&make](int descriptor) noexcept { return make(OpenedDescriptor<OpenedType::regular_file>{descriptor}); });
+    }
+
+    // Gives make(opened descriptor) for the second number of an open file whose
+    // type Type a Handle states, so the door reads no type.
+    template <OpenedType Type, class Make>
+    [[nodiscard]] static auto admit_duplicate(::foundation::core::Result<int, ::foundation::os::Errno> duplicated,
+                                              Make make) noexcept {
+        return admit_opened_number_(duplicated).map([&make](int descriptor) noexcept {
+            return make(OpenedDescriptor<Type>{descriptor});
+        });
     }
 
 private:

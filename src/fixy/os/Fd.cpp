@@ -1,6 +1,6 @@
-// The descriptor door of fixy (fixy/os/Fd.h): the open, the close and the
-// query of a descriptor, the read of the type of an opened file, and the
-// generations of the numbers.  It issues the raw primitive of
+// The descriptor door of fixy (fixy/os/Fd.h): the open, the duplicate, the
+// close and the query of a descriptor, the read of the type of an opened file,
+// and the generations of the numbers.  It issues the raw primitive of
 // foundation/os/Syscall.h, and foundation/os/OpenFlags.h gives the words of the
 // open.  It is the one includer of <linux/stat.h>, for the struct of statx.
 
@@ -137,6 +137,12 @@ void advance_descriptor_generation_(int descriptor) noexcept {
 
 void close_descriptor_(int descriptor) noexcept {
     static_cast<void>(::foundation::os::raw_syscall(::foundation::os::Syscall::close, descriptor));
+}
+
+::foundation::core::Result<int, ::foundation::os::Errno> duplicate_descriptor_(int descriptor) noexcept {
+    namespace os = ::foundation::os;
+    return os::result_of(os::raw_syscall(os::Syscall::fcntl, descriptor, os::kFcntlDuplicateCloseOnExec, 0))
+        .map([](std::uint64_t number) noexcept { return static_cast<int>(number); });
 }
 
 void close_owned_descriptor_(int descriptor) noexcept {

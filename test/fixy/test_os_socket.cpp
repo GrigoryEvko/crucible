@@ -6,10 +6,10 @@
 // survive execve, that a netlink request gets its reply through the door,
 // that each TCP option of the door reaches the TCP option of the kernel,
 // that the timestamp calls reach the kernel, that a shared ref of a socket
-// reaches the same socket, and that a send and a full
-// write of the file door to a socket with no connection give an error and no
-// signal.  The check file of the
-// header holds the walk of the control data of each kind of message.
+// reaches the same socket, that a duplicate of a socket is a second handle of
+// it, and that a send and a full write of the file door to a socket with no
+// connection give an error and no signal.  The check file of the header holds
+// the walk of the control data of each kind of message.
 
 #include <fixy/Core.h>
 #include <fixy/os/Fs.h>
@@ -314,6 +314,39 @@ struct LinkDumpRequest final {
     return 0;
 }
 
+// A duplicate of a socket is a second handle of the one socket, with a number
+// of its own.  Its number closes when a thread starts a program.  An option
+// that one handle sets reads back through the other.  After the first handle
+// closes, its number goes to a later socket, the ref of the first handle gives
+// ebadf, and the duplicate still names the first socket.
+[[nodiscard]] int check_duplicate_socket() noexcept {
+    IoBlockCtx ctx{eff::testing::test()};
+    TcpSocket first = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!first.is_open()) return 111;
+    TcpSocket const second = fixy::os::mint_duplicate<fixy::net::socket_rights>(ctx, first.ref()).value_or(TcpSocket{});
+    if (!second.is_open()) return 112;
+    SharedTcp const first_shared = fixy::net::share_socket(first.ref());
+    SharedTcp const second_shared = fixy::net::share_socket(second.ref());
+    if (first_shared.identity() == second_shared.identity()) return 113;
+    if (!is_close_on_exec(second.ref())) return 114;
+    if (fixy::net::set_tcp_congestion(ctx, first.ref(), "reno").is_err()) return 115;
+    auto const name = congestion_of(ctx, second.ref());
+    if (!(name.view() == fixy::TextView{"reno"})) return 116;
+    first = TcpSocket{};
+    TcpSocket const later = descriptor_of(fixy::net::mint_socket<fixy::net::socket_kind::TcpStream>(ctx));
+    if (!later.is_open()) return 117;
+    if (!(fixy::net::share_socket(later.ref()).identity() == first_shared.identity())) return 118;
+    if (first_shared.is_current() || !second_shared.is_current()) return 119;
+    if (fixy::net::read_tcp_congestion(ctx, first_shared).err().value_or(foundation::os::Errno::eio)
+        != foundation::os::Errno::ebadf) {
+        return 120;
+    }
+    auto const kept = congestion_of(ctx, second.ref());
+    if (!(kept.view() == fixy::TextView{"reno"})) return 121;
+    // A duplicate takes the rights that the caller names, and no right more.
+    return fixy::os::mint_duplicate<fixy::os::RightSet::ioctl_socket>(ctx, second.ref()).is_ok() ? 0 : 122;
+}
+
 // The loopback interface has no hardware clock.  The kernel refuses
 // SIOCSHWTSTAMP on it with eperm for a caller with no CAP_NET_ADMIN, and
 // with eopnotsupp for a caller with it.  A name past the limit is refused
@@ -455,6 +488,7 @@ int main() {
     if (failed == 0) failed = check_socket_timestamping();
     if (failed == 0) failed = check_shared_socket();
     if (failed == 0) failed = check_stale_shared_socket();
+    if (failed == 0) failed = check_duplicate_socket();
     if (failed == 0) failed = check_hardware_timestamping();
     if (failed == 0) failed = check_receive_with_timestamps();
     if (failed == 0) failed = check_receive_with_timestamps_into_view();

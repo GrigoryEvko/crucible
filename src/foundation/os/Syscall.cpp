@@ -93,6 +93,8 @@ static_assert(kMemoryFileAllowSeals == MFD_ALLOW_SEALING,
               "kMemoryFileAllowSeals is not MFD_ALLOW_SEALING of <linux/memfd.h>");
 static_assert(kMemoryFileNoExecSeal == MFD_NOEXEC_SEAL,
               "kMemoryFileNoExecSeal is not MFD_NOEXEC_SEAL of <linux/memfd.h>");
+static_assert(kFcntlDuplicateCloseOnExec == F_DUPFD_CLOEXEC,
+              "kFcntlDuplicateCloseOnExec is not F_DUPFD_CLOEXEC of <linux/fcntl.h>");
 static_assert(kFcntlAddSeals == F_ADD_SEALS, "kFcntlAddSeals is not F_ADD_SEALS of <linux/fcntl.h>");
 static_assert(kSealSeal == F_SEAL_SEAL, "kSealSeal is not F_SEAL_SEAL of <linux/fcntl.h>");
 static_assert(kSealShrink == F_SEAL_SHRINK, "kSealShrink is not F_SEAL_SHRINK of <linux/fcntl.h>");

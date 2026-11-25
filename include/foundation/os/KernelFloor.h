@@ -99,6 +99,8 @@ void report_kernel_fallbacks_once(KernelVersion running) noexcept;
 enum class KernelFlag : std::uint8_t {
     // O_CLOEXEC of each open of the file doors.
     open_close_on_exec,
+    // F_DUPFD_CLOEXEC of the duplicate of a handle of fixy/os/Handle.h.
+    duplicate_close_on_exec,
     // O_SYNC with the bit of a full sync, of a durable open of fixy/os/Fs.h.
     open_full_sync,
     // O_PATH of the open of a directory of the file doors.
@@ -250,6 +252,8 @@ inline constexpr KernelVersion kBpfAtomics{5, 12, 0};
     switch (flag) {
         case KernelFlag::open_close_on_exec:
             return FlagFloor{.release = {2, 6, 23}, .need = FlagNeed::each_call, .word = "O_CLOEXEC"};
+        case KernelFlag::duplicate_close_on_exec:
+            return FlagFloor{.release = {2, 6, 24}, .need = FlagNeed::each_call, .word = "F_DUPFD_CLOEXEC"};
         case KernelFlag::open_full_sync:
             return FlagFloor{.release = {2, 6, 33},
                              .need = FlagNeed::fallback,
