@@ -4,15 +4,15 @@
 // context of a Vigil's producer claim.  The context of another state's
 // claim proves that its holder owns that state, not a Vigil.
 
-#include <crucible/ReplayEngine.h>
+#include <crucible/CrucibleContext.h>
 
 namespace {
 struct Stranger {};
 }  // namespace
 
 int main() {
-    crucible::ReplayEngine engine;
-    auto av = engine.mint_active_view(::foundation::effects::testing::foreground<Stranger>());
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    auto av = ctx.engine().mint_active_view(::foundation::effects::testing::foreground<Stranger>());
     (void)av;
     return 0;
 }

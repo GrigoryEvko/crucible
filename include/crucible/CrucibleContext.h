@@ -129,7 +129,7 @@ struct CrucibleContext {
         if (mode_ == ContextMode::COMPILED) deactivate();
 
         pool_.init(allocation_, *plan);
-        engine_.init(region, ::fixy::to(pool_));
+        engine_.init_(region, pool_);
         active_region_ = link_active_region_(region);
         mode_ = ContextMode::COMPILED;
 
@@ -226,7 +226,7 @@ struct CrucibleContext {
         pool_.init(allocation_, *new_plan);
         migrate_prefix_slots_(old_region, alt, old_pool.view(), div_pos);
 
-        engine_.init(alt, ::fixy::to(pool_));
+        engine_.init_(alt, pool_);
         active_region_ = link_active_region_(alt);
 
         // Replay the prefix the two regions share, so the new region resumes
@@ -486,6 +486,12 @@ struct CrucibleContext {
     [[nodiscard]] const ReplayEngine& engine() const& { return engine_; }
     const ReplayEngine& engine() const&& =
         delete("a temporary context releases its engine at the end of the statement. Use a context that has a name");
+    // The test door of the engine: a test or a bench of the engine alone drives
+    // the engine of a context, which owns the pool that the engine reads.  The
+    // capability of a test keeps product code out.  An advance or a reset
+    // through the door counts no iteration and moves no cursor of the external
+    // reads.
+    [[nodiscard]] ReplayEngine& engine(::foundation::effects::Test const& /*test*/) & noexcept { return engine_; }
     [[nodiscard]] const PoolAllocator& pool() const& { return pool_; }
     const PoolAllocator& pool() const&& =
         delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");

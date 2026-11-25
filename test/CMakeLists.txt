@@ -3997,15 +3997,15 @@ crucible_neg_compile_test(neg_mimic_semaphore_default_construct
   "use of deleted function .crucible::mimic::DeviceSemaphore<Backend>::DeviceSemaphore\\(\\) \\[with foundation::algebra::lattices::VendorBackend Backend = foundation::algebra::lattices::VendorBackend::CPU\\]."
   ".: A DeviceSemaphore borrows a counter. Take one from mint_device_semaphore.")
 
-# ReplayEngine::init takes the pool as a fixy::Ref of a PoolAllocator.  A raw
-# pointer and a Ref of another owner type are both refused at the init
-# boundary.
-crucible_neg_compile_test(neg_replay_engine_pool_raw_pointer
-  "mismatched types .foundation::core::Ref<[A-Za-z]+, [A-Za-z]+>. and .const crucible::PoolAllocator\\*."
-  "neg_replay_engine_pool_raw_pointer.cpp:19")
-crucible_neg_compile_test(neg_replay_engine_pool_wrong_borrow
-  "required for the satisfaction of .ReplayPool<Pool>. \\[with Pool = crucible::RegionNode\\]"
-  "neg_replay_engine_pool_wrong_borrow.cpp:17")
+# A replay engine keeps a View of the column of its pool, so only the context
+# that owns the two builds an engine and binds it to a pool.  The test door of a
+# context gives its engine, and no code binds that engine to another pool.
+crucible_neg_compile_test(neg_replay_engine_built_alone
+  "crucible::ReplayEngine::ReplayEngine\\(\\). is private within this context"
+  "neg_replay_engine_built_alone\\.cpp:10:")
+crucible_neg_compile_test(neg_replay_engine_bound_outside_its_context
+  "void crucible::ReplayEngine::init_\\(const crucible::RegionNode&, const crucible::PoolAllocator&\\). is private within this context"
+  "neg_replay_engine_bound_outside_its_context\\.cpp:17:")
 
 # Production-call-site fence: a hot-path consumer that requires the
 # Pool allocation class refuses a Heap band.  This is the rejection that

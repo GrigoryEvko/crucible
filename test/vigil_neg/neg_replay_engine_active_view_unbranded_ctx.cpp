@@ -4,11 +4,11 @@
 // context of a Vigil's producer claim.  A context that names no claim
 // states only that some thread holds some claim, so the gate refuses it.
 
-#include <crucible/ReplayEngine.h>
+#include <crucible/CrucibleContext.h>
 
 int main() {
-    crucible::ReplayEngine engine;
-    auto av = engine.mint_active_view(::foundation::effects::testing::foreground());
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    auto av = ctx.engine().mint_active_view(::foundation::effects::testing::foreground());
     (void)av;
     return 0;
 }

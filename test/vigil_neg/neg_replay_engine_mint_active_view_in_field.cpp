@@ -23,14 +23,7 @@
 // (rg "\bmint_active_view\b" across test/*_neg/) counts this file.
 // The anchor itself does not change the discipline being tested — the
 // static_assert below is the actual neg-compile gate.
-[[maybe_unused]] static auto anchor_active_view_mint() {
-    crucible::ReplayEngine engine;
-    // mint_active_view's pre `is_initialized()` would fire on the
-    // default-constructed engine, which has no ops, at runtime — but
-    // this fixture is a compile-time test and runtime is never
-    // reached.  The function-body-execution would also be suppressed
-    // by the file's static_assert failure below.  The anchor exists
-    // solely for grep-discoverability of the bare-name token.
+[[maybe_unused]] static auto anchor_active_view_mint(crucible::ReplayEngine const& engine) {
     return engine.mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
 }
 

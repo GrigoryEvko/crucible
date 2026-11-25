@@ -446,10 +446,9 @@ int main() {
 
     bench::add_report(reports, [&] {
         BenchRegion br{SCHEMA.view(), SHAPE.view()};
-        PoolAllocator pool;
-        pool.init(::foundation::effects::testing::test().alloc, *br.plan);
-        ReplayEngine engine;
-        engine.init(*br.region, ::fixy::to(pool));
+        CrucibleContext engine_owner{br.test.alloc};
+        (void)engine_owner.activate(*br.region);
+        ReplayEngine& engine = engine_owner.engine(br.test);
         auto av = engine.mint_active_view(kVigilForeground);
 
         // At the end of the cycle the engine starts the region again.
@@ -462,7 +461,6 @@ int main() {
             if (next.is_none()) engine.reset(av);
             slot = std::move(next).value_or(OpSlot{::fixy::index<0>()});
         });
-        pool.destroy();
         return r;
     }());
 

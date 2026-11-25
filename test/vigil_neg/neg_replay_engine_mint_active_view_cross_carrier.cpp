@@ -18,7 +18,7 @@
 // distinct mismatch classes (value-level call-time vs structural
 // field-storage).
 
-#include <crucible/ReplayEngine.h>
+#include <crucible/CrucibleContext.h>
 #include <crucible/CKernel.h>
 
 // A fixture-local helper that consumes a CKernelTable::MutableView.
@@ -28,13 +28,11 @@
 static void requires_ckernel_mutable_view(crucible::CKernelTable::MutableView const&) noexcept {}
 
 int main() {
-    crucible::ReplayEngine engine;
-    // Default-constructed ReplayEngine has ops_ == nullptr, so
-    // mint_active_view()'s `CRUCIBLE_PRE(is_initialized())` would fire at
-    // runtime — but this neg-compile fixture never gets to runtime.
-    // GCC type-checks the requires_ckernel_mutable_view call below
-    // and rejects the cross-carrier conversion at parse time.
-    auto av = engine.mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
+    crucible::CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+    // The context records, so its engine has no region, and the precondition
+    // of mint_active_view would end the process at run time.  The fixture does
+    // not run: the call of requires_ckernel_mutable_view does not compile.
+    auto av = ctx.engine().mint_active_view(::foundation::effects::testing::foreground<crucible::Vigil>());
     requires_ckernel_mutable_view(av);  // Error: cross-carrier mismatch
     return 0;
 }

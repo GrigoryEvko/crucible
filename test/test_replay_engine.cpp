@@ -1,3 +1,4 @@
+#include <crucible/CrucibleContext.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/BackgroundThread.h>
 #include <foundation/effects/Effect.h>
@@ -28,6 +29,7 @@ using crucible::DagArena;
 // they take that context from the test door.
 static constexpr crucible::VigilFgCtx kVigilForeground = ::foundation::effects::testing::foreground<crucible::Vigil>();
 
+using crucible::CrucibleContext;
 using crucible::ReplayEngine;
 using crucible::ReplayStatus;
 using crucible::ReplayStep;
@@ -69,8 +71,11 @@ static void set_output_slots(TraceEntry& op, ::fixy::ArenaRun<SlotId const, DagA
 }
 
 // Every slot is internal and 256 bytes wide, so slot i sits at offset
-// i * 256 and no two slots overlap.
-static MemoryPlan make_simple_plan(::fixy::ArenaRun<TensorSlot, DagArena> slots) {
+// i * 256 and no two slots overlap.  The plan is in the arena of the slots,
+// and a context that replays its region owns the pool of the plan.
+static crucible::DagRef<MemoryPlan> make_simple_plan(::foundation::effects::Alloc alloc,
+                                                     ::fixy::BumpArena<DagArena>& arena,
+                                                     ::fixy::ArenaRun<TensorSlot, DagArena> slots) {
     const uint32_t n = static_cast<uint32_t>(slots.size());
     uint32_t i = 0;
     for (TensorSlot& slot : slots.view()) {
@@ -88,12 +93,12 @@ static MemoryPlan make_simple_plan(::fixy::ArenaRun<TensorSlot, DagArena> slots)
                 .pad2 = {}};
         ++i;
     }
-    MemoryPlan plan{};
-    plan.slots = slots;
-    plan.num_external = 0;
-    plan.pool_bytes = n * 256;
-    plan.device_type = DeviceType::CPU;
-    plan.device_idx = 0;
+    const crucible::DagRef<MemoryPlan> plan = arena.make<MemoryPlan>(alloc);
+    plan->slots = slots;
+    plan->num_external = 0;
+    plan->pool_bytes = n * 256;
+    plan->device_type = DeviceType::CPU;
+    plan->device_idx = 0;
     return plan;
 }
 
@@ -115,13 +120,13 @@ static void test_linear_match() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 3, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
 
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
 
     CRUCIBLE_TEST_ASSERT(kTest, engine.is_initialized());
@@ -177,12 +182,12 @@ static void test_schema_divergence() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av).status() == ReplayStatus::MATCH);
 
@@ -217,12 +222,12 @@ static void test_shape_divergence() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{100}, ShapeHash{200}, av).status() == ReplayStatus::MATCH);
 
@@ -253,12 +258,12 @@ static void test_reset() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{10}, ShapeHash{20}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{11}, ShapeHash{21}, av).status() == ReplayStatus::COMPLETE);
@@ -306,12 +311,12 @@ static void test_input_ptr() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 2, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{50}, ShapeHash{60}, av).status() == ReplayStatus::MATCH);
     CRUCIBLE_TEST_ASSERT(kTest, engine.output_ptr(0, av) == pool.slot_ptr(SlotId{0}, pv));
@@ -341,12 +346,12 @@ static void test_invalid_slot() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest, engine.advance(SchemaHash{77}, ShapeHash{88}, av).status() == ReplayStatus::COMPLETE);
 
@@ -375,12 +380,12 @@ static void test_current_entry() {
     init_region(*region, ops_run);
 
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const PoolAllocator& pool = ctx.pool();
     auto pv = pool.mint_initialized_view(kVigilForeground);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         const ReplayStep step = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i}, av);
@@ -411,11 +416,10 @@ static void test_matched_index_after_reset() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t i = 0; i < 3; i++) {
         static_cast<void>(engine.advance(SchemaHash{500 + i}, ShapeHash{600 + i}, av));
@@ -459,11 +463,10 @@ static void test_matched_index_follows_the_cursor() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(test.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    region->plan = crucible::make_plan_link(make_simple_plan(test.alloc, arena, slots_run));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     for (uint32_t round = 0; round < 2; round++) {
         for (uint32_t i = 0; i < 3; i++) {
@@ -503,11 +506,10 @@ static void test_rewind_in_the_middle_drops_the_matched_op(::fixy::TestRunnerCtx
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
+    CrucibleContext ctx{source.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{700}, ShapeHash{800}, av).status() == ReplayStatus::MATCH);
     engine.reset(av);
@@ -542,11 +544,10 @@ static void test_diverged_step_has_no_matched_position(::fixy::TestRunnerCtx con
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
+    CrucibleContext ctx{source.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     const ReplayStep diverged = engine.advance(SchemaHash{999}, ShapeHash{910}, av);
     CRUCIBLE_FATAL_INVARIANT(diverged.status() == ReplayStatus::DIVERGED);
@@ -573,11 +574,10 @@ static void test_advance_after_the_end_guards_the_first_op() {
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(source.alloc, 1, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
+    CrucibleContext ctx{source.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    ReplayEngine& engine = ctx.engine(source);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_FATAL_INVARIANT(engine.advance(SchemaHash{70}, ShapeHash{71}, av).status() == ReplayStatus::COMPLETE);
     // A hash that differs from the first op diverges at the first op.
@@ -592,7 +592,7 @@ static void test_advance_after_the_end_guards_the_first_op() {
 }
 
 // A slot id of the region past the count of the plan is a defect of the
-// build.  The init refuses it, so no replay reads past the slot table.
+// build.  The activation refuses it, so no replay reads past the slot table.
 static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const& test) {
     auto source = ::foundation::effects::testing::test();
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
@@ -610,12 +610,13 @@ static void test_slot_id_past_the_table_aborts_init(::fixy::TestRunnerCtx const&
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(source.alloc, arena);
     init_region(*region, ops_run);
     auto slots_run = arena.array(source.alloc, 2, TensorSlot{});
-    auto plan = make_simple_plan(slots_run);
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    ReplayEngine engine;
+    region->plan = crucible::make_plan_link(make_simple_plan(source.alloc, arena, slots_run));
     ::fixy::check::expect_dies(
-        test, [&engine, region, &pool] noexcept { engine.init(*region, ::fixy::to(pool)); },
+        test,
+        [region] noexcept {
+            CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+            static_cast<void>(ctx.activate(*region));
+        },
         ::fixy::TextView{"op 1 has the input slot id 5"});
 
     ::fixy::check::pass(kTest, "  test_slot_id_past_the_table_aborts_init: PASSED\n");
@@ -680,16 +681,6 @@ static void test_integration_with_pool() {
         static_cast<void>(crucible::BackgroundThread::compute_memory_plan(alloc, target, plan_storage, epoch, slots_run)
                               .expect("the slots of the test fit in 64 bits"));
     });
-    // The plan is in the arena of the slots.
-    const crucible::MemoryPlan& plan = *plan_storage;
-
-    PoolAllocator pool;
-    pool.init(::foundation::effects::testing::test().alloc, plan);
-    auto pv = pool.mint_initialized_view(kVigilForeground);
-
-    alignas(256) char fake_param[128];
-    pool.register_external(SlotId{2}, crucible::test::host_data(fake_param), pv);
-
     const auto op0_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{0});
     const auto op0_in = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{2});
     const auto op1_out = ::fixy::check::run_of(kTest, test.alloc, arena, SlotId{1});
@@ -710,9 +701,18 @@ static void test_integration_with_pool() {
 
     const crucible::DagRef<RegionNode> region = crucible::mint_dag_node<RegionNode>(test.alloc, arena);
     init_region(*region, ops_run);
+    // The plan is in the arena of the slots.
+    region->plan = crucible::make_plan_link(plan_storage);
 
-    ReplayEngine engine;
-    engine.init(*region, ::fixy::to(pool));
+    CrucibleContext ctx{test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    alignas(256) char fake_param[128];
+    ctx.register_external(SlotId{2}, crucible::test::host_data(fake_param), ctx.mint_compiled_view(kVigilForeground))
+        .expect("the plan marks slot 2 external");
+    const PoolAllocator& pool = ctx.pool();
+    auto pv = pool.mint_initialized_view(kVigilForeground);
+
+    ReplayEngine& engine = ctx.engine(test);
     auto av = engine.mint_active_view(kVigilForeground);
     CRUCIBLE_TEST_ASSERT(kTest,
                          engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}, av).status() == ReplayStatus::MATCH);
@@ -749,8 +749,6 @@ static void test_integration_with_pool() {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     ::fixy::report(::fixy::Sink::Out, "test_replay_engine:\n");
-    static_assert(crucible::ReplayPool<PoolAllocator> && crucible::ReplayPool<const PoolAllocator>);
-    static_assert(!crucible::ReplayPool<crucible::RegionNode>);
     test_linear_match();
     test_schema_divergence();
     test_shape_divergence();

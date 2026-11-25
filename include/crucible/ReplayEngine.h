@@ -89,27 +89,16 @@ private:
     OpIndex matched_{};
 };
 
-// The pool of an activation: a PoolAllocator, with or without a const.
-template <class Pool>
-concept ReplayPool = std::same_as<std::remove_const_t<Pool>, PoolAllocator>;
-
+// The engine keeps a View of the column of addresses of its pool from an init
+// to the next init or clear.  So only the context, which owns the engine and
+// that pool, builds an engine and binds it to a pool.  It clears the engine
+// before the pool ends.  A test reaches the engine of a context through the test
+// door CrucibleContext::engine.
 struct ReplayEngine {
-    ReplayEngine() = default;
-
     ReplayEngine(const ReplayEngine&) = delete("ReplayEngine tracks mutable cursor position");
     ReplayEngine& operator=(const ReplayEngine&) = delete("ReplayEngine tracks mutable cursor position");
     ReplayEngine(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
     ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
-
-    // An empty region is legitimate, but a non-empty one must have operations.
-    // Init runs at the activation of a region, and the check of the slot ids
-    // reads each slot id of the region once: O(ops + slot ids).  The engine
-    // reads the pool only during the call, so the Ref keeps its brand, and
-    // the engine reads it only as const.
-    template <ReplayPool Pool, ::foundation::brand::IsBrand Brand>
-    void init(const RegionNode& region, ::fixy::Ref<Pool, Brand> pool) CRUCIBLE_NO_THREAD_SAFETY {
-        init_(region, *pool);
-    }
 
     // Rewinds to the first operation for the next iteration. A rewind at the
     // first op keeps the last matched entry: the advance that completes the
@@ -227,11 +216,15 @@ struct ReplayEngine {
     CRUCIBLE_INLINE void reset(ActiveView const&) { reset(); }
 
 private:
-    // The context mints the view on paths that the gate of its Vigil
-    // already passed, so it reaches the view without a context.  It also
-    // calls the advance with no view, only in its compiled mode, so the
-    // engine is initialized there.
+    // The context owns the engine and its pool, and it builds the engine and
+    // binds it.  It mints the view on paths that the gate of its Vigil already
+    // passed, so it reaches the view without a context.  It also calls the
+    // advance with no view, only in its compiled mode, so the engine is
+    // initialized there.
     friend struct CrucibleContext;
+
+    // The engine of no region.
+    ReplayEngine() = default;
 
     // The match of the op at the cursor.  The cursor goes around the ops of
     // the region (CyclicCursor), so the read needs no test, and the step that
@@ -270,8 +263,11 @@ private:
             stepped == ::foundation::core::CycleStep::wrapped ? ReplayStatus::COMPLETE : ReplayStatus::MATCH, matched};
     }
 
-    // The body of init.  It is no template, so the callers of each brand
-    // share one copy of it.
+    // Binds the engine to the region and to the column of addresses of the
+    // pool, from the first op.  An empty region is legitimate, but a non-empty
+    // one must have operations.  The context calls it at the activation and at
+    // the switch of a region, and the check of the slot ids reads each slot id
+    // of the region once: O(ops + slot ids).
     void init_(const RegionNode& region, const PoolAllocator& pool) CRUCIBLE_NO_THREAD_SAFETY {
         CRUCIBLE_PRE(pool.is_initialized());
         // A region counts its ops in 32 bits, so each position below fits the

@@ -9,6 +9,12 @@ namespace crucible {
 static_assert(sizeof(ReplayEngine) == 72,
               "ReplayEngine: 16 guard + 24 cursor + 8 matched + 16 table + 4 count + 4 pad = 72");
 
+// Only the context builds an engine: no code outside it constructs one, and no
+// copy of bytes makes one.
+static_assert(!std::is_default_constructible_v<ReplayEngine>);
+static_assert(!std::is_copy_constructible_v<ReplayEngine> && !std::is_move_constructible_v<ReplayEngine>);
+static_assert(!std::is_trivially_copyable_v<ReplayEngine> && !std::is_implicit_lifetime_v<ReplayEngine>);
+
 // A view must not outlive the frame that minted it, so storing one in a field
 // would let it escape.
 static_assert(::fixy::no_scoped_view_field_check<ReplayEngine>());

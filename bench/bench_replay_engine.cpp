@@ -165,17 +165,16 @@ int main() {
 
     constexpr ::fixy::FixedArray<uint32_t, 3> kSizes{8u, 100u, 1000u};
     for (uint32_t const n : kSizes) {
-        // Each size scope owns a BenchRegion, a PoolAllocator, the
-        // ReplayEngine, and a CrucibleContext — all shared across the 4
-        // Runs for this N. IIFE-lambdas capture by reference.
+        // Each size scope owns a BenchRegion, the context of the rows of
+        // the engine alone, and the context of the fourth row — all shared
+        // across the 4 Runs for this N. IIFE-lambdas capture by reference.
         BenchRegion br{n};
-        PoolAllocator pool;
-        pool.init(::foundation::effects::testing::test().alloc, *br.plan);
+        const ::foundation::effects::Test test = ::foundation::effects::testing::test();
+        CrucibleContext engine_owner{test.alloc};
+        (void)engine_owner.activate(*br.region);
+        ReplayEngine& engine = engine_owner.engine(test);
 
-        ReplayEngine engine;
-        engine.init(*br.region, ::fixy::to(pool));
-
-        CrucibleContext ctx{::foundation::effects::testing::test().alloc};
+        CrucibleContext ctx{test.alloc};
         (void)ctx.activate(*br.region);
 
         // The ops of the region, which each walk reads.
@@ -202,8 +201,6 @@ int main() {
                               auto p = walk_context(ctx, region_ops);
                               bench::do_not_optimize(p);
                           }));
-
-        pool.destroy();
     }
 
     bench::emit_reports_text(reports.view());
