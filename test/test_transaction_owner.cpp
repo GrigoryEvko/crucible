@@ -11,14 +11,14 @@
 // publications.  This test keeps regions in flight while it rolls back, and
 // under the thread sanitizer preset it runs with no report.  In every build
 // it checks that a rollback still restores a region.  It also checks where
-// a job runs: on its caller while no publish stage runs, on the stage while
-// one runs, and nowhere when a job posts a job, which ends the process.
+// a job runs: on its caller while no publish stage runs, and on the stage
+// while one runs.  test_background_thread_quiescence checks that a job that
+// waits on its own stage ends the process.
 
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
-#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 #include "test_harness.h"
 #include "trace_rig.h"
@@ -227,35 +227,11 @@ void job_runs_on_the_stage_while_it_runs() {
     if (thread_of_one_job(background) != caller) fail("a job after stop() did not run on its caller");
 }
 
-// A job that posts a second job to the same background thread would wait
-// on itself, because the thread that runs it holds the stage.  The view of a
-// job has no door that posts a job, and the door refuses a capture that
-// reaches the background thread, so the job names a background thread of
-// static storage, which it does not capture.  The thread holds the sides of a
-// rig of static storage, which the region declares before the thread, so the
-// rig ends after it.  The contract ends the process instead of letting it
-// hang.  The refused call runs in a child through expect_dies of the Check
-// family, before the test starts a thread.
-void nested_job_ends_the_process() {
-    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a nested publish job names the thread with no capture, in a child process")
-    static crucible::test::TraceRig rig{};
-    static crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
-                                                 rig.log_side()};
-    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-    background.run_on_publish_stage(
-        [](crucible::BackgroundThread::PublishStageView&, crucible::BackgroundThread::PublishStage const&) noexcept {
-            background.run_on_publish_stage([](crucible::BackgroundThread::PublishStageView&,
-                                               crucible::BackgroundThread::PublishStage const&) noexcept {});
-        });
-}
-
 }  // namespace
 
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     job_runs_on_the_caller_without_a_stage();
-    ::fixy::check::expect_dies(test, nested_job_ends_the_process,
-                               ::fixy::TextView{"foundation: contract violation: !holds_stage_on_this_thread_()"});
     rollback_on_a_fresh_vigil();
     rollback_while_regions_are_in_flight();
     rollback_reads_its_region_while_the_store_sweeps();

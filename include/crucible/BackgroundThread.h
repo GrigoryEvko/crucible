@@ -429,7 +429,8 @@ public:
     // Cold path.  The caller spins while the publish stage finishes the
     // publication in hand, which is bounded by one region build.  A thread
     // that holds the stage already, in a region callback or in a job, must
-    // not call this: it would wait on itself, so the contract stops it.
+    // not call this: it would wait on itself, so the check ends the process in
+    // each build.
     //
     // A job that gives a value gives one that the door can build empty and
     // then assign, such as an Option.
@@ -478,7 +479,7 @@ private:
     // runs it on the caller while no publish stage runs (run_on_publish_stage).
     template <typename Call>
     void post_owner_job_(Call& call) noexcept {
-        CRUCIBLE_PRE(!holds_stage_on_this_thread_());
+        CRUCIBLE_FATAL_INVARIANT(!holds_stage_on_this_thread_());
         OwnerJob request{.call = OwnerJobCall{call}};
         const JobLink posted = ::fixy::some(::fixy::erase_brand(::fixy::to(request)));
         while (true) {
@@ -1033,7 +1034,8 @@ public:
     // The publish stage notifies the event count after each count, and the
     // pipeline thread notifies it after the stop, so no wake is lost (the
     // protocol of fixy/concurrent/EventCount.h).  A region callback or a job
-    // of the publish stage must not flush: it would wait on its own stage.
+    // of the publish stage must not flush: it would wait on its own stage, so
+    // the check ends the process in each build.
     //
     // The head of the ring counts each op that the ring ever took, and the
     // flush compares it with count_processed_ring_ops, so a BackgroundThread
@@ -1046,7 +1048,7 @@ public:
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) const noexcept {
-        CRUCIBLE_PRE(!holds_stage_on_this_thread_());
+        CRUCIBLE_FATAL_INVARIANT(!holds_stage_on_this_thread_());
         const uint64_t target_produced =
             ring_->with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
         const auto is_settled = [this, target_produced]() noexcept {
@@ -1250,8 +1252,8 @@ private:
     }
 
     // The key of the background thread whose stage this thread holds, or no
-    // value.  Read only by the contracts of run_on_publish_stage and of
-    // flush, on the cold path.  It is one object for each thread of the
+    // value.  Only the checks of run_on_publish_stage and of flush read it, on
+    // the cold path.  It is one object for each thread of the
     // process, so each shared library reads the same copy on a thread.  It is
     // a static local of its function, so it is no member, and no splice of a
     // member reaches it.
