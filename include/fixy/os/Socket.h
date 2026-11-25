@@ -353,9 +353,9 @@ class SocketDoor final : ::foundation::NoObject<SocketDoor> {
     [[nodiscard]] static ::foundation::core::Result<Linear<SocketHandle<Kind>>, ::foundation::os::Errno>
     open_() noexcept {
         constexpr detail::socket_triple triple = socket_triple_of(^^Kind);
-        return ::fixy::fs::detail::admit_opened_descriptor_(
-                   detail::open_socket_(triple.domain, triple.type, triple.protocol))
-            .map([](::fixy::fs::OpenedDescriptor opened) noexcept {
+        return ::fixy::fs::detail::OpenedDescriptorDoor::admit(
+            detail::open_socket_(triple.domain, triple.type, triple.protocol),
+            [](::fixy::fs::OpenedDescriptor opened) noexcept {
                 return mint_linear<SocketHandle<Kind>>(SocketHandle<Kind>{std::move(opened)});
             });
     }

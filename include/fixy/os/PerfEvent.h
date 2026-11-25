@@ -210,11 +210,9 @@ class PerfEventDoor final : ::foundation::NoObject<PerfEventDoor> {
     // Returns the error of the kernel on failure and no handle.
     [[nodiscard]] static ::foundation::core::Result<PerfEventHandle, ::foundation::os::Errno>
     open_(Event event, std::uint64_t period, Task task) noexcept {
-        return ::fixy::fs::detail::admit_opened_descriptor_(
-                   detail::open_event_(detail::user_sample_attributes(event, period, task.children()), task.id()))
-            .map([](::fixy::fs::OpenedDescriptor descriptor) noexcept {
-                return PerfEventHandle{std::move(descriptor)};
-            });
+        return ::fixy::fs::detail::OpenedDescriptorDoor::admit(
+            detail::open_event_(detail::user_sample_attributes(event, period, task.children()), task.id()),
+            [](::fixy::fs::OpenedDescriptor descriptor) noexcept { return PerfEventHandle{std::move(descriptor)}; });
     }
 };
 

@@ -204,7 +204,9 @@ template <typename T>
         return 1;
     }
     fixy::Result<int, Errno> const refused{fixy::err(Errno::eacces)};
-    if (!refuses_with(detail::admit_opened_descriptor_(refused), Errno::eacces)) {
+    auto const passed = detail::OpenedDescriptorDoor::admit(
+        refused, [](fs::OpenedDescriptor opened) noexcept { return opened.number(); });
+    if (!refuses_with(passed, Errno::eacces)) {
         fixy::report(fixy::Sink::Err, "the door of an open changed the error of the open\n");
         return 1;
     }

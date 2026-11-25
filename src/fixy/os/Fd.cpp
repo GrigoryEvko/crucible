@@ -1,7 +1,7 @@
 // The descriptor door of fixy (fixy/os/Fd.h): the open, the close and the
-// query of a descriptor.  It issues the raw primitive of
-// foundation/os/Syscall.h, and foundation/os/OpenFlags.h gives the words of
-// the open, so this file includes no system header.
+// query of a descriptor, and the generations of the numbers.  It issues the
+// raw primitive of foundation/os/Syscall.h, and foundation/os/OpenFlags.h gives
+// the words of the open, so this file includes no system header.
 
 #include <fixy/os/Fd.h>
 
@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 namespace fixy::fs::detail {
 
@@ -48,16 +49,22 @@ using GenerationIndex = ::foundation::core::Index<descriptor_generation_slots>;
 
 }  // namespace
 
-std::uint32_t descriptor_generation_(int descriptor) noexcept {
-    return slot_of(descriptor)
-        .map([](GenerationIndex slot) noexcept { return descriptor_generations_.at(slot).load_acquire(); })
-        .value_or(0);
-}
-
 bool is_descriptor_generation_(int descriptor, std::uint32_t generation) noexcept {
     return slot_of(descriptor).is_some_and([generation](GenerationIndex const& slot) noexcept {
         return descriptor_generations_.at(slot).load_acquire() == generation;
     });
+}
+
+::foundation::core::Result<int, ::foundation::os::Errno>
+admit_opened_number_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
+    return std::move(opened).and_then([](int descriptor) noexcept {
+        return OpenedDescriptorDoor::admit_below<descriptor_generation_slots>(descriptor)
+            .map([](OpenedDescriptor admitted) noexcept { return admitted.number(); });
+    });
+}
+
+int current_descriptor_(int descriptor, std::uint32_t generation) noexcept {
+    return is_descriptor_generation_(descriptor, generation) ? descriptor : -1;
 }
 
 void advance_descriptor_generation_(int descriptor) noexcept {
@@ -83,6 +90,11 @@ void close_descriptor_(int descriptor) noexcept {
     static_cast<void>(::foundation::os::raw_syscall(::foundation::os::Syscall::close, descriptor));
 }
 
+void close_owned_descriptor_(int descriptor) noexcept {
+    advance_descriptor_generation_(descriptor);
+    close_descriptor_(descriptor);
+}
+
 ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcept {
     namespace core = ::foundation::core;
@@ -92,3 +104,21 @@ query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcep
 }
 
 }  // namespace fixy::fs::detail
+
+namespace fixy::fs {
+
+// A number past the slots gives the generation zero, and no stamp of it is
+// current (the generation of a descriptor).
+DescriptorStamp DescriptorStamp::read_now(int descriptor) noexcept {
+    if (descriptor < 0) {
+        return DescriptorStamp{};
+    }
+    std::uint32_t const generation = detail::slot_of(descriptor)
+                                         .map([](detail::GenerationIndex slot) noexcept {
+                                             return detail::descriptor_generations_.at(slot).load_acquire();
+                                         })
+                                         .value_or(0);
+    return DescriptorStamp{descriptor, generation};
+}
+
+}  // namespace fixy::fs

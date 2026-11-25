@@ -607,10 +607,10 @@ class PtpDeviceDoor final : ::foundation::NoObject<PtpDeviceDoor> {
         }
         path[length] = '\0';
 
-        return ::fixy::fs::detail::admit_opened_descriptor_(
-                   ::fixy::fs::detail::open_descriptor_(
-                       path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0))
-            .map([](::fixy::fs::OpenedDescriptor descriptor) noexcept {
+        return ::fixy::fs::detail::OpenedDescriptorDoor::admit(
+            ::fixy::fs::detail::open_descriptor_(
+                path.data(), ::foundation::os::kOpenReadOnly | ::foundation::os::kOpenCloseOnExec, 0),
+            [](::fixy::fs::OpenedDescriptor descriptor) noexcept {
                 return PtpClockReader{PtpClockHandle{std::move(descriptor)}};
             });
     }

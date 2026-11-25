@@ -90,16 +90,23 @@ query_descriptor_(int descriptor, std::uint64_t request, void* argument) noexcep
 // has no generation, so a ref of it is never current.
 inline constexpr std::size_t descriptor_generation_slots = std::size_t{1} << 20;
 
-// The generation of the number of descriptor, or zero for a number with no
-// generation.
-[[nodiscard]] std::uint32_t descriptor_generation_(int descriptor) noexcept;
-
 // True when the number of descriptor has a generation and it is generation.
 [[nodiscard]] bool is_descriptor_generation_(int descriptor, std::uint32_t generation) noexcept;
+
+// The number of descriptor when is_descriptor_generation_ is true, or -1.
+// The check and the choice are in the door file, so a door that takes a borrow
+// holds one call in place of them.
+[[nodiscard]] int current_descriptor_(int descriptor, std::uint32_t generation) noexcept;
 
 // Advances the generation of the number of descriptor.  A negative number and
 // a number with no generation change nothing.
 void advance_descriptor_generation_(int descriptor) noexcept;
+
+// Ends the ownership of descriptor: the generation of its number advances
+// first, while the owner still holds the number, and then the descriptor
+// closes.  The order keeps an open of another thread, which can take the
+// number after the close, from a generation of the old one.
+void close_owned_descriptor_(int descriptor) noexcept;
 
 // The door that makes an opened descriptor (below).
 struct OpenedDescriptorDoor;
@@ -141,14 +148,10 @@ public:
     constexpr DescriptorStamp() noexcept = default;
 
     // The stamp of descriptor with the generation of its number now.  A
-    // negative number gives the empty stamp and reads no generation.
+    // negative number gives the empty stamp and reads no generation.  The body
+    // is in the door file, so a borrow of a Handle is one call.
     // Complexity: one acquire load.
-    [[nodiscard]] static DescriptorStamp read_now(int descriptor) noexcept {
-        if (descriptor < 0) {
-            return DescriptorStamp{};
-        }
-        return DescriptorStamp{descriptor, detail::descriptor_generation_(descriptor)};
-    }
+    [[nodiscard]] static DescriptorStamp read_now(int descriptor) noexcept;
 
     // False for the empty stamp.  A stamp that is open can still be stale.
     [[nodiscard]] constexpr bool is_open() const noexcept { return number_ >= 0; }
@@ -156,13 +159,11 @@ public:
     // True when the number has a generation and it is the generation of the
     // stamp: no Handle opened, closed or released the number since the read.
     // False for the empty stamp.  Complexity: one acquire load.
-    [[nodiscard]] bool is_current() const noexcept {
-        return number_ >= 0 && detail::is_descriptor_generation_(number_, generation_);
-    }
+    [[nodiscard]] bool is_current() const noexcept { return detail::is_descriptor_generation_(number_, generation_); }
 
     // The number of a current stamp, or -1, so a door that gets it gives
     // ebadf and makes no system call.  Complexity: one acquire load.
-    [[nodiscard]] int current_number() const noexcept { return is_current() ? number_ : -1; }
+    [[nodiscard]] int current_number() const noexcept { return detail::current_descriptor_(number_, generation_); }
 
     // The number with no check of the generation, for a constant evaluation
     // and for an identity that names a socket only while it is open.
@@ -180,9 +181,10 @@ public:
 //   generation.  The private constructor of a Handle takes one, so each number
 //   that a Handle owns has a generation.  A number at or past the limit, which
 //   a host with a raised fs.nr_open and a raised limit of open files can
-//   give, has no generation: admit_opened_descriptor_ closes it and gives
-//   emfile.  The value moves and does not copy, so no two Handles take one
-//   number.  detail::OpenedDescriptorDoor is the one friend that makes one.
+//   give, has no generation: the door of an open closes it and gives emfile
+//   (admit_opened_number_).  The value moves and does not copy, so no two
+//   Handles take one number.  detail::OpenedDescriptorDoor is the one friend
+//   that makes one.
 class OpenedDescriptor final {
     int number_ = -1;
 
@@ -207,6 +209,12 @@ public:
 
 namespace detail {
 
+// The number of the result of an open when it has a generation.  A number
+// with no generation is closed, and the result is emfile (the opened
+// descriptor).  The error of the open stays.
+[[nodiscard]] ::foundation::core::Result<int, ::foundation::os::Errno>
+admit_opened_number_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept;
+
 // The door that makes an opened descriptor.  No object of it exists.
 struct OpenedDescriptorDoor final : ::foundation::NoObject<OpenedDescriptorDoor> {
     // The opened descriptor of the number descriptor that an open gave, when
@@ -222,17 +230,20 @@ struct OpenedDescriptorDoor final : ::foundation::NoObject<OpenedDescriptorDoor>
         }
         return OpenedDescriptor{descriptor};
     }
-};
 
-// The opened descriptor of the result of an open, or the error of the open,
-// or emfile for a number with no generation (the opened descriptor).  A door
-// of an open gives the result to the constructor of a Handle.
-[[nodiscard]] inline ::foundation::core::Result<OpenedDescriptor, ::foundation::os::Errno>
-admit_opened_descriptor_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-    return std::move(opened).and_then([](int descriptor) noexcept {
-        return OpenedDescriptorDoor::admit_below<descriptor_generation_slots>(descriptor);
-    });
-}
+    // Gives make(opened descriptor) for the result of an open, or the error of
+    // the open, or emfile for a number with no generation (the opened
+    // descriptor).  A door of an open gives the opened descriptor to the
+    // constructor of a Handle in make.  The check and the close of a refused
+    // number are one call in the door file, whose result is in registers, so
+    // each open holds that call and the body of make.
+    template <class Make>
+    [[nodiscard]] static auto admit(::foundation::core::Result<int, ::foundation::os::Errno> opened,
+                                    Make make) noexcept {
+        return admit_opened_number_(opened).map(
+            [&make](int descriptor) noexcept { return make(OpenedDescriptor{descriptor}); });
+    }
+};
 
 }  // namespace detail
 

@@ -783,16 +783,15 @@ class FileDoor final : ::foundation::NoObject<FileDoor> {
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Owned, ::foundation::os::Errno>
     own_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return detail::admit_opened_descriptor_(std::move(opened)).map([](OpenedDescriptor descriptor) noexcept {
-            return Owned{std::move(descriptor)};
-        });
+        return detail::OpenedDescriptorDoor::admit(
+            opened, [](OpenedDescriptor descriptor) noexcept { return Owned{std::move(descriptor)}; });
     }
 
     // The handle Owned of the open, in a Linear, or the error of the open.
     template <class Owned>
     [[nodiscard]] static ::foundation::core::Result<Linear<Owned>, ::foundation::os::Errno>
     own_linear_(::foundation::core::Result<int, ::foundation::os::Errno> opened) noexcept {
-        return detail::admit_opened_descriptor_(std::move(opened)).map([](OpenedDescriptor descriptor) noexcept {
+        return detail::OpenedDescriptorDoor::admit(opened, [](OpenedDescriptor descriptor) noexcept {
             return mint_linear<Owned>(Owned{std::move(descriptor)});
         });
     }

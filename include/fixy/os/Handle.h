@@ -332,12 +332,11 @@ public:
     }
 
 private:
-    // The generation advances before the close, while this Handle still owns
-    // the number, so no open of another thread takes the number first.
+    // The generation advances before the close (close_owned_descriptor_ of
+    // fixy/os/Fd.h), so no open of another thread takes the number first.
     void close_() noexcept {
         if (descriptor_ >= 0) {
-            ::fixy::fs::detail::advance_descriptor_generation_(descriptor_);
-            ::fixy::fs::detail::close_descriptor_(descriptor_);
+            ::fixy::fs::detail::close_owned_descriptor_(descriptor_);
             descriptor_ = -1;
         }
     }
