@@ -53,5 +53,6 @@ void test_store_releases_what_left_the_queue();
 void test_sweep_waits_for_no_write();
 void test_region_handed_again_keeps_no_old_mark();
 void test_kept_region_keeps_no_old_mark();
+void test_sweep_matches_a_walk_of_each_region();
 
 }  // namespace test_background_thread_run_in_row

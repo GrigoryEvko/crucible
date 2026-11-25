@@ -219,12 +219,11 @@ void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThrea
         [] noexcept {});
 }
 
-// The transaction log holds each region that a rollback can restore, the slot
-// holds the region that the foreground did not get, and the cells of
-// held_regions_ hold the regions of the foreground.
+// The slot holds the region that the foreground did not get, the cells of
+// held_regions_ hold the regions of the foreground, and the transaction log
+// holds each region that a rollback can restore.
 BackgroundThread::RegionMarks Vigil::read_region_marks_(BackgroundThread::PublishStage const& stage) noexcept {
     BackgroundThread::RegionMarks marks{};
-    tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
     const PendingRegion handed = pending_region_.load_acquire();
     for (const auto& record : handed)
         marks.handed = record->region;
@@ -236,6 +235,7 @@ BackgroundThread::RegionMarks Vigil::read_region_marks_(BackgroundThread::Publis
             marks.foreground_generation = read.generation;
         },
         [&marks] noexcept { marks.foreground = BackgroundThread::RegionMarks::Foreground::Writing; });
+    tx_log_.for_each_region(stage, [&marks](ConstRegionLink held) noexcept { marks.hold(held); });
     return marks;
 }
 

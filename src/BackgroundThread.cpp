@@ -488,10 +488,15 @@ BackgroundThread::BackgroundThread(BackgroundThreadKey const& /*key*/, ::foundat
       scratch_retained_limit_{setup.limits.scratch_retained},
       region_store_{::fixy::mint_heap_array_with<RegionMemory>(allocation, setup.limits.region_store.raw(),
                                                                [](size_t) noexcept { return RegionMemory{}; })},
+      free_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
+      swept_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
+      settled_slots_{::fixy::mint_heap_bit_set<RegionStoreSlots>(allocation, setup.limits.region_store)},
       uncompiled_regions_{allocation, setup.limits.uncompiled_queue},
       pipeline_{::fixy::mint_box<Pipeline>(allocation)} {
     build_scratch_.arena.set_retained_limit(scratch_retained_limit_);
     publish_scratch_.arena.set_retained_limit(scratch_retained_limit_);
+    for (uint32_t position = 0; position < free_slots_.extent().raw(); ++position)
+        free_slots_.set(RegionSlot{position});
 }
 
 ::fixy::Box<BgBuildWork> BackgroundThread::make_commit_work(::foundation::effects::Alloc alloc, uint32_t count) {
@@ -654,11 +659,11 @@ void BackgroundThread::release_meta_log(PublishStage const& stage, uint64_t meta
 // Only the publish stage reads the queue, so no reader of the queue finds the
 // region between the push and the exchange.
 //
-// Complexity: O(S) for S slots of the store, for the search of a free slot
-// and for the sweep, with the marks (sweep_regions_).
+// Complexity: O(S / 64) for S slots of the store, for the search of a free
+// slot, and the sweep (sweep_regions_).
 void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                                       StreamPoint reset_point) {
-    ::fixy::Option<size_t> free_slot = find_free_slot_();
+    ::fixy::Option<RegionSlot> free_slot = find_free_slot_();
     if (free_slot.is_none()) [[unlikely]] {
         free_slot = free_a_slot_(stage);
     }
@@ -666,7 +671,7 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
         ++regions_dropped_full_;
         return;
     }
-    const size_t free_position = std::move(free_slot).expect("the test above found a free slot");
+    const RegionSlot slot = std::move(free_slot).expect("the test above found a free slot");
 
     // Each caller gives a region of a build, which holds its arena.  A sum type of the publish message will prove it.
     ::fixy::Box<::fixy::BumpArena<DagArena>> arena =
@@ -691,35 +696,60 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
     parts.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>::some(std::move(arena));
     const ConstRegionLink const_published = ConstRegionLink::some(region);
 
+    // The sweep reads the new region, and the region that its push took out of
+    // the queue.
+    QueuePush pushed = uncompiled_regions_.push(stage, region, slot);
+    for (const RegionSlot pushed_out : pushed.pushed_out)
+        swept_slots_.set(pushed_out);
+    free_slots_.reset(slot);
+    swept_slots_.set(slot);
     // The free slot holds no region, so the memory that the exchange gives
     // back holds nothing.
     static_cast<void>(region_store_.exchange(
-        free_position, RegionMemory{.parts = std::move(parts),
-                                    .queued = uncompiled_regions_.push(stage, region),
-                                    .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
-                                    .left_generation = RegionMemory::NOT_LEFT}));
+        slot.raw(), RegionMemory{.parts = std::move(parts),
+                                 .queued = std::move(pushed.queued),
+                                 .published = PublishedRegion{.region = const_published, .reset_point = reset_point},
+                                 .left_generation = RegionMemory::NOT_LEFT}));
     last_published_ = const_published;
 
     active_region_.store_release(RegionLink::some(region));
     // The callback gets a proof of its own, which dies with the call, and
     // the record in the slot of the store, whose address it can keep.
-    (*region_ready_)(bg, PublishStage{},
-                     region_store_.view()
-                         .get(free_position)
-                         .expect("the search above found a free slot of the region store")
-                         ->published);
+    (*region_ready_)(
+        bg, PublishStage{},
+        region_store_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store")->published);
     sweep_regions_(stage, (*region_marks_)(PublishStage{}));
 }
 
-::fixy::Option<size_t> BackgroundThread::find_free_slot_() const noexcept {
+void BackgroundThread::set_left_generation_(RegionSlot slot, uint64_t generation) noexcept {
+    region_store_.with_element(
+        slot.raw(), [generation](RegionMemory& memory) noexcept { memory.left_generation = generation; },
+        [] noexcept { ::fixy::fatal("an id of a slot lies below the count of the store"); });
+}
+
+::fixy::Option<RegionSlot> BackgroundThread::find_free_slot_() const noexcept {
+    return free_slots_.with_keys([](auto const& slots) noexcept -> ::fixy::Option<RegionSlot> {
+        for (const RegionSlot slot : slots)
+            return ::fixy::some(slot);
+        return ::fixy::none;
+    });
+}
+
+::fixy::Option<RegionSlot> BackgroundThread::find_slot_of_(ConstRegionLink region) const noexcept {
     return ::fixy::find_if(region_store_.view(),
-                           [](RegionMemory const& memory) noexcept { return memory.queued.node().is_none(); });
+                           [region](RegionMemory const& memory) noexcept {
+                               return memory.queued.node().is_some()
+                                   && ::fixy::same_target(memory.queued.node(), region);
+                           })
+        .map([](size_t position) noexcept {
+            return RegionSlot{::fixy::narrow<uint32_t>(position).expect("the count of the store is a uint32_t")};
+        });
 }
 
 // The last publish into the full store swept it with the marks of that time.
 // The foreground can have written its holders after it, and the write lets
 // regions go.
-::fixy::Option<size_t> BackgroundThread::free_a_slot_(PublishStage const& stage) noexcept {
+::fixy::Option<RegionSlot> BackgroundThread::free_a_slot_(PublishStage const& stage) noexcept {
     sweep_regions_(stage, (*region_marks_)(PublishStage{}));
     return find_free_slot_();
 }
@@ -733,92 +763,103 @@ void BackgroundThread::publish_region(::foundation::effects::Bg const& bg, Publi
 // releases a region with no holder at once.  While the foreground writes its
 // holders, the sweep marks no region left and releases none (RegionMarks).
 //
-// The sweep runs after each publish, and it reads each slot of the store.  The
-// uncompiled queue answers in O(1) (UncompiledRegionQueue::holds), and only a
-// region that left the queue reads the marks.  Complexity: O(S + L * M) for S
-// slots, L regions that left the queue and M marks.  With no foreground, the
-// sweep after the last publish released each other region that left the queue,
-// so L is at most one.
+// Slots of a sweep.  The sweep runs after each publish, and it reads the slots
+// of swept_slots_ only.  The set holds the slot of each region that a sweep can
+// change:
+//   - each region that a sweep did not mark left: the last published region,
+//     the handed region, and a region that the owner kept (keep_region)
+//   - each region that left the uncompiled queue.
+// Each other region is out of the view of the foreground and has its mark, and
+// the queue holds it.  No sweep changes it before it leaves the queue, and the
+// push that takes it out gives its slot.  A publish and keep_region put the
+// slots of their regions into the set, and a sweep puts in the slot of a handed
+// region that left the view before.  A slot leaves the set when the sweep
+// settles its region in the queue or releases it.  The set decides only which
+// slots the sweep reads, and the rule above decides each release.
+//
+// With no foreground, a region in the queue needs no mark.  If the marks of the
+// owner name a foreground at a later time, the mark of such a region comes when
+// it leaves the queue, which is later than a walk of each slot gives it, and
+// never earlier.
+//
+// Complexity: O(S / 64 + W * M) for S slots of the store, W slots of the set and
+// M marks, and O(S) more when the owner hands a region that is not the last
+// published one.  W is at most the count of regions that left the queue, plus
+// the last published region, the one before it, the handed region and the kept
+// regions.
 //
 // The sweep reads each slot through the View of the const store, and then
 // writes the step for the slot through the element door of the store.
 void BackgroundThread::sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept {
-    // The write of the sweep to one slot.
-    enum class SweepStep : uint8_t {
-        None,  // a free slot, or a region that a holder names or that waits for a write of the foreground
-        Keep,  // the last published region or the handed region
-        MarkLeft,  // the first sweep that found the region out of the view of the foreground
-        Release,
-    };
-    using Foreground = RegionMarks::Foreground;
-    const uint64_t generation = marks.foreground_generation;
-    for (size_t position = 0; position < region_store_.size(); ++position) {
-        const RegionMemory& memory =
-            *region_store_.view().get(position).expect("the position is below the count of the store");
-        SweepStep step = SweepStep::None;
-        for (DagRef<RegionNode> const node : memory.queued.node()) {
-            const ConstRegionLink region = ConstRegionLink::some(node);
-            if (::fixy::same_target(region, last_published_) || ::fixy::same_target(region, marks.handed)) {
-                step = SweepStep::Keep;
-            } else if (marks.foreground == Foreground::Writing) {
-                step = SweepStep::None;
-            } else if (marks.foreground == Foreground::Read && memory.left_generation == RegionMemory::NOT_LEFT) {
-                step = SweepStep::MarkLeft;
-            } else if (!is_held_(stage, memory.queued, marks)
-                       && !(marks.foreground == Foreground::Read && generation <= memory.left_generation)) {
-                step = SweepStep::Release;
-            }
+    if (marks.handed.is_some() && !::fixy::same_target(marks.handed, last_published_)) [[unlikely]] {
+        for (const RegionSlot handed : find_slot_of_(marks.handed))
+            swept_slots_.set(handed);
+    }
+    swept_slots_.with_keys([this, &stage, &marks](auto const& slots) noexcept {
+        for (const RegionSlot slot : slots) {
+            if (!sweep_slot_(stage, marks, slot)) settled_slots_.set(slot);
         }
-        if (step == SweepStep::None) continue;
-        region_store_.with_element(
-            position,
-            [step, generation](RegionMemory& slot) noexcept {
-                switch (step) {
-                    case SweepStep::Keep:
-                        slot.left_generation = RegionMemory::NOT_LEFT;
-                        break;
-                    case SweepStep::MarkLeft:
-                        slot.left_generation = generation;
-                        break;
-                    case SweepStep::Release:
-                        slot = RegionMemory{};
-                        break;
-                    case SweepStep::None:
-                    default:
-                        break;
-                }
-            },
-            [] noexcept { ::fixy::fatal("the position is below the count of the store"); });
+    });
+    swept_slots_.subtract(settled_slots_).expect("the two sets have the count of the store");
+    settled_slots_.clear();
+}
+
+bool BackgroundThread::sweep_slot_(PublishStage const& stage, RegionMarks const& marks, RegionSlot slot) noexcept {
+    const RegionMemory& memory =
+        *region_store_.view().get(slot.raw()).expect("an id of a slot lies below the count of the store");
+    const bool is_queued = uncompiled_regions_.holds(stage, memory.queued);
+    switch (find_sweep_step_(stage, marks, memory)) {
+        case SweepStep::Keep:
+            set_left_generation_(slot, RegionMemory::NOT_LEFT);
+            return true;
+        case SweepStep::Wait:
+            return true;
+        case SweepStep::MarkLeft:
+            set_left_generation_(slot, marks.foreground_generation);
+            return !is_queued;
+        case SweepStep::Settle:
+            return false;
+        case SweepStep::Release:
+            region_store_.with_element(
+                slot.raw(), [](RegionMemory& released) noexcept { released = RegionMemory{}; },
+                [] noexcept { ::fixy::fatal("an id of a slot lies below the count of the store"); });
+            free_slots_.set(slot);
+            return false;
+        default:
+            ::fixy::unreachable();
     }
 }
 
-bool BackgroundThread::is_held_(PublishStage const& stage, QueuedRegion const& queued,
-                                RegionMarks const& marks) const noexcept {
-    if (uncompiled_regions_.holds(stage, queued)) return true;
-    for (const ConstRegionLink& held :
-         marks.held.view().window(0, marks.count).expect("the marks hold at most CAP regions")) {
-        if (::fixy::same_target(held, queued.node())) return true;
+BackgroundThread::SweepStep BackgroundThread::find_sweep_step_(PublishStage const& stage, RegionMarks const& marks,
+                                                               RegionMemory const& memory) const noexcept {
+    using Foreground = RegionMarks::Foreground;
+    const DagRef<RegionNode const> region =
+        memory.queued.node().expect("the sweep reads only slots that hold a region");
+    const auto is_region = [region](DagRef<RegionNode const> other) noexcept {
+        return ::fixy::same_object(region, other);
+    };
+    if (last_published_.is_some_and(is_region) || marks.handed.is_some_and(is_region)) return SweepStep::Keep;
+    if (marks.foreground == Foreground::Writing) return SweepStep::Wait;
+    const bool has_read_foreground = marks.foreground == Foreground::Read;
+    if (has_read_foreground && memory.left_generation == RegionMemory::NOT_LEFT) return SweepStep::MarkLeft;
+    if (uncompiled_regions_.holds(stage, memory.queued)) return SweepStep::Settle;
+    if (has_read_foreground && marks.foreground_generation <= memory.left_generation) return SweepStep::Wait;
+    for (DagRef<RegionNode const> const held : marks.held) {
+        if (is_region(held)) return SweepStep::Wait;
     }
-    return false;
+    return SweepStep::Release;
 }
 
 void BackgroundThread::keep_region(PublishStage const&, ConstRegionLink region) noexcept {
-    ::fixy::Option<size_t> kept = ::fixy::find_if(region_store_.view(), [region](RegionMemory const& memory) noexcept {
-        return memory.queued.node().is_some() && ::fixy::same_target(memory.queued.node(), region);
-    });
-    if (kept.is_none()) return;
-    region_store_.with_element(
-        std::move(kept).expect("the test above found the slot"),
-        [](RegionMemory& memory) noexcept { memory.left_generation = RegionMemory::NOT_LEFT; },
-        [] noexcept { ::fixy::fatal("the search above found the slot of the region"); });
+    for (const RegionSlot kept : find_slot_of_(region)) {
+        set_left_generation_(kept, RegionMemory::NOT_LEFT);
+        swept_slots_.set(kept);
+    }
 }
 
 uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
-    uint32_t count = 0;
-    for (const RegionMemory& memory : region_store_) {
-        if (memory.queued.node().is_some()) ++count;
-    }
-    return count;
+    return ::fixy::narrow<uint32_t>(region_store_.size() - free_slots_.size())
+        .expect("the count of the store is a uint32_t");
 }
 
 ::fixy::Quantity<::fixy::unit::Byte, size_t> BackgroundThread::region_bytes(PublishStage const&) const noexcept {

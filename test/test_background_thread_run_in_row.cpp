@@ -184,16 +184,25 @@ void test_uncompiled_queue_is_bounded() {
             return *regions.get(i).expect("a test reads an element at or past the count of its array");
         };
 
+        // The slot of a push is the number of the push here, because the queue
+        // only gives it back.
+        auto push_region = [&queue, &stage, &region_at](uint64_t i) {
+            return queue.push(stage, region_at(i).expect("each link holds a node"),
+                              crucible::RegionSlot{static_cast<uint32_t>(i)});
+        };
         for (uint64_t i = 0; i < CAP; ++i) {
-            static_cast<void>(queue.push(stage, region_at(i).expect("each link holds a node")));
+            CRUCIBLE_TEST_ASSERT(kTest, push_region(i).pushed_out.is_none() && "a free entry held no region");
             CRUCIBLE_TEST_ASSERT(kTest, queue.total() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, queue.size() == i + 1);
             CRUCIBLE_TEST_ASSERT(kTest, ::fixy::same_target(queue.at(stage, 0), region_at(i)) && "age 0 is the newest");
         }
 
         // One past the bound: the total keeps counting, the retention does not.
-        for (uint64_t i = CAP; i < OVERRUN; ++i)
-            static_cast<void>(queue.push(stage, region_at(i).expect("each link holds a node")));
+        // Each push takes out the oldest region, and gives its slot.
+        for (uint64_t i = CAP; i < OVERRUN; ++i) {
+            CRUCIBLE_TEST_ASSERT(kTest, push_region(i).pushed_out
+                                            == ::fixy::some(crucible::RegionSlot{static_cast<uint32_t>(i - CAP)}));
+        }
 
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == OVERRUN);
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == CAP && "retention must stop at the bound");
@@ -231,8 +240,10 @@ void test_uncompiled_queue_refuses_past_its_capacity() {
                 crucible::RegionLink{
                     *regions.get(i).expect("a test reads an element at or past the count of its array")}
                     .expect("each link holds a node");
-            static_cast<void>(three.push(stage, node));
-            static_cast<void>(none.push(stage, node));
+            const crucible::RegionSlot slot{static_cast<uint32_t>(i)};
+            static_cast<void>(three.push(stage, node, slot));
+            CRUCIBLE_TEST_ASSERT(kTest, none.push(stage, node, slot).pushed_out.is_none()
+                                            && "a queue of no entry takes no region out");
         }
         CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
         for (uint32_t age = 0; age < 3; ++age) {
@@ -269,8 +280,16 @@ void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
     ::fixy::FixedArray<crucible::QueuedRegion, PUSHES> pushes{};
     for (const ::fixy::Index<PUSHES> position : pushes.indices()) {
         CRUCIBLE_TEST_ASSERT(kTest, !queue.holds(stage, pushes.at(position)) && "no queue holds the region of no push");
-        static_cast<void>(
-            pushes.exchange(position, queue.push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena))));
+        crucible::QueuePush pushed = queue.push(stage, crucible::mint_dag_node<crucible::RegionNode>(alloc, arena),
+                                                crucible::RegionSlot{static_cast<uint32_t>(position.raw())});
+        // The push takes out the region of the push capacity pushes before it.
+        const bool takes_out = capacity.raw() != 0 && position.raw() >= capacity.raw();
+        CRUCIBLE_TEST_ASSERT(kTest, pushed.pushed_out.is_some() == takes_out);
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             pushed.pushed_out.is_none_or([&position, capacity](crucible::RegionSlot out) noexcept {
+                                 return out.raw() == position.raw() - capacity.raw();
+                             }));
+        static_cast<void>(pushes.exchange(position, std::move(pushed.queued)));
         uint32_t held = 0;
         for (const ::fixy::Index<PUSHES> earlier : pushes.indices()) {
             if (earlier.raw() > position.raw()) break;
@@ -338,7 +357,8 @@ int main() {
     test_sweep_waits_for_no_write();
     test_region_handed_again_keeps_no_old_mark();
     test_kept_region_keeps_no_old_mark();
+    test_sweep_matches_a_walk_of_each_region();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 34 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 35 groups, all passed\n");
     return 0;
 }

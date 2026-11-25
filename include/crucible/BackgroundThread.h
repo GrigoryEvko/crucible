@@ -339,6 +339,11 @@ struct BuiltTrace {
     BuiltRegion region;
 };
 
+// The slots of the region store of a pipeline, as the domain of their ids.
+struct RegionStoreSlots final {};
+// One slot of the region store.
+using RegionSlot = ::fixy::Id<RegionStoreSlots, uint32_t>;
+
 // One push into the uncompiled queue, or none: the node of the region, and the
 // count of the pushes before it.  Only UncompiledRegionQueue::push builds one
 // with a node, no code copies it, and a move leaves the source with none.  So
@@ -375,6 +380,13 @@ private:
 
     RegionLink node_{};
     uint64_t pushes_before_ = 0;
+};
+
+// What one push into the uncompiled queue gives: the push of the region, and
+// the slot of the region that the push took out of the queue, or none.
+struct QueuePush {
+    QueuedRegion queued{};
+    ::fixy::Option<RegionSlot> pushed_out{};
 };
 
 // The memory of one published region: its parts, and its push into the
@@ -426,28 +438,35 @@ struct RegionMemory {
 // No door takes a region out.  The queue holds the region of a push until
 // capacity() more pushes came after it, and the count of the pushes goes on
 // after a stop and a start.  So the count that a push gives tells when its
-// region left the queue (holds), with no walk of the slots.
+// region left the queue (holds), with no walk of the entries.  The push that
+// takes a region out gives the slot of that region, one time for each region.
 template <class Stage>
 class UncompiledRegionQueue {
 public:
-    // A queue that keeps the capacity newest regions, in slots that the
+    // A queue that keeps the capacity newest regions, in entries that the
     // allocation capability allocates.  A capacity of zero keeps no region, and
     // push then only counts.
     UncompiledRegionQueue(::foundation::effects::Alloc allocation,
                           ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
-        : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), RegionLink{})} {}
+        : entries_{::fixy::mint_heap_array(allocation, capacity.raw(), Entry{})} {}
 
-    // Adds the region and gives its push.  The sweep after the push releases
-    // the region that the slot held before.
-    [[nodiscard]] QueuedRegion push(Stage const& /*stage*/, DagRef<RegionNode> region) noexcept {
+    // Adds the region, which stands in the slot of the region store.  It gives
+    // the push of the region, and the slot of the region that the entry held
+    // before, which left the queue.  A queue of no entry takes no region out:
+    // it held none.  Complexity: O(1).
+    [[nodiscard]] QueuePush push(Stage const& /*stage*/, DagRef<RegionNode> region, RegionSlot slot) noexcept {
         const uint64_t pushes_before = total_.peek_relaxed();
-        const uint64_t capacity = slots_.size();
+        const uint64_t capacity = entries_.size();
+        ::fixy::Option<RegionSlot> pushed_out{};
         if (capacity != 0) {
-            // The exchange takes the link by value and calls no body.
-            static_cast<void>(slots_.exchange(pushes_before % capacity, RegionLink::some(region)));
+            // The exchange takes the entry by value and calls no body.
+            pushed_out = entries_
+                             .exchange(pushes_before % capacity,
+                                       Entry{.region = RegionLink::some(region), .slot = ::fixy::some(slot)})
+                             .slot;
         }
         (void)total_.bump();
-        return QueuedRegion{region, pushes_before};
+        return QueuePush{.queued = QueuedRegion{region, pushes_before}, .pushed_out = pushed_out};
     }
 
     // True while the queue holds the region of the push: fewer than capacity()
@@ -456,7 +475,7 @@ public:
     [[nodiscard]] bool holds(Stage const& /*stage*/, QueuedRegion const& queued) const noexcept {
         if (queued.node_.is_none()) return false;
         const uint64_t pushes_after = total_.peek_relaxed() - queued.pushes_before_ - 1u;
-        return pushes_after < slots_.size();
+        return pushes_after < entries_.size();
     }
 
     // Every region ever published, including the ones the bound dropped.
@@ -465,7 +484,7 @@ public:
 
     // The count of regions that the queue keeps at most.
     [[nodiscard]] uint32_t capacity() const noexcept {
-        return ::fixy::narrow<uint32_t>(slots_.size()).expect("the capacity came from a uint32_t");
+        return ::fixy::narrow<uint32_t>(entries_.size()).expect("the capacity came from a uint32_t");
     }
 
     [[nodiscard]] uint32_t size() const noexcept {
@@ -475,21 +494,29 @@ public:
 
     // age 0 is the most recently published region.  The bound is size() rather
     // than the capacity so that a fresh queue cannot hand back the empty
-    // reference a never-written slot still holds.  The clause is the in-body
+    // reference a never-written entry still holds.  The clause is the in-body
     // macro because its predicate reaches a member through `this`, which a
     // plain pre() skips when the compiler folds this body.  The publish stage
-    // writes the slots with no order, so the read takes the proof of the
+    // writes the entries with no order, so the read takes the proof of the
     // publish stage: a job of run_on_publish_stage holds it, and so does its
     // caller while no publish stage runs.
     [[nodiscard]] RegionLink at(Stage const& /*stage*/, uint32_t age) const noexcept {
         CRUCIBLE_PRE(age < size());
         const uint64_t seen = total_.get();
-        const uint64_t capacity = slots_.size();
-        return *slots_.get((seen + capacity - 1u - age) % capacity).expect("a count modulo the capacity is below it");
+        const uint64_t capacity = entries_.size();
+        return entries_.get((seen + capacity - 1u - age) % capacity)
+            .expect("a count modulo the capacity is below it")
+            ->region;
     }
 
 private:
-    ::fixy::HeapArray<RegionLink> slots_;
+    // One region of the queue, and the slot of the region store that holds it.
+    struct Entry {
+        RegionLink region{};
+        ::fixy::Option<RegionSlot> slot{};
+    };
+
+    ::fixy::HeapArray<Entry> entries_;
     // The publish stage is the one writer of the count (the writer of a COUNTER
     // of fixy/Mutation.h), so push and holds read it with relaxed order.
     struct TotalWriter final {};
@@ -820,8 +847,10 @@ public:
             Read,
         };
 
-        ::fixy::FixedArray<ConstRegionLink, CAP> held{};
-        uint32_t count = 0;
+        // The regions that the owner holds.  The sweep looks for a region that
+        // left the queue in this order, so an owner names the holders of its
+        // foreground first, which can hold a region for a long time.
+        ::fixy::FixedList<DagRef<RegionNode const>, CAP> held{};
         // The region that the owner can still give to its foreground, such
         // as the region in a publication slot.  The store keeps it as it
         // keeps the last published region, also while the foreground writes.
@@ -832,11 +861,10 @@ public:
         // Adds a region to the held regions.  An empty reference adds
         // nothing.
         void hold(ConstRegionLink region) noexcept {
-            if (region.is_none()) return;
-            held.set(::fixy::Index<CAP>::check(count).expect(
-                         "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
-                     region);
-            ++count;
+            for (DagRef<RegionNode const> const node : region) {
+                static_cast<void>(held.append(node).expect(
+                    "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"));
+            }
         }
     };
 
@@ -1162,23 +1190,54 @@ private:
     ConstRegionLink last_published_{};
     uint64_t regions_dropped_full_ = 0;
 
-    // The position of a slot that holds no region, or none.  Complexity: O(S)
+    // The slots of the store that hold no region.
+    ::fixy::HeapBitSet<RegionStoreSlots> free_slots_;
+
+    // The slots that the next sweep reads (the slots of a sweep, in the
+    // comment of sweep_regions_).  A slot that the set does not hold is free,
+    // or its region is one that the sweep does not change.
+    ::fixy::HeapBitSet<RegionStoreSlots> swept_slots_;
+
+    // The slots that a sweep takes out of swept_slots_ at its end.  It is empty
+    // between two sweeps.
+    ::fixy::HeapBitSet<RegionStoreSlots> settled_slots_;
+
+    // What a sweep does with one region (find_sweep_step_).
+    enum class SweepStep : uint8_t {
+        Keep,  // the last published region or the handed region
+        Wait,  // a holder names the region, or the region waits for a write of the foreground
+        MarkLeft,  // the first sweep that found the region out of the view of the foreground
+        Settle,  // the queue holds the region, so nothing changes before it leaves the queue
+        Release,  // no holder names the region
+    };
+
+    // The slot of the store that holds no region, or none.  Complexity: O(S / 64)
     // for S slots of the store.
-    [[nodiscard]] ::fixy::Option<size_t> find_free_slot_() const noexcept;
+    [[nodiscard]] ::fixy::Option<RegionSlot> find_free_slot_() const noexcept;
+
+    // The slot of the region, or none when the store does not hold it.
+    // Complexity: O(S).
+    [[nodiscard]] ::fixy::Option<RegionSlot> find_slot_of_(ConstRegionLink region) const noexcept;
 
     // Sweeps a full store with fresh marks, and gives a slot that is free after
     // it, or none.
-    [[nodiscard]] CRUCIBLE_COLD ::fixy::Option<size_t> free_a_slot_(PublishStage const& stage) noexcept;
+    [[nodiscard]] CRUCIBLE_COLD ::fixy::Option<RegionSlot> free_a_slot_(PublishStage const& stage) noexcept;
 
     // Releases each region of the store that no holder names, on the
     // publish stage after each publish.  The body tells the rule.
     void sweep_regions_(PublishStage const& stage, RegionMarks const& marks) noexcept;
 
-    // True when the uncompiled queue or the marks of the owner name the region
-    // of the push.  Complexity: O(M) for M marks, which are at most
-    // RegionMarks::CAP.
-    [[nodiscard]] bool is_held_(PublishStage const& stage, QueuedRegion const& queued,
-                                RegionMarks const& marks) const noexcept;
+    // Sweeps the region of one slot.  True when the next sweep must read the
+    // slot too.
+    [[nodiscard]] bool sweep_slot_(PublishStage const& stage, RegionMarks const& marks, RegionSlot slot) noexcept;
+
+    // The step of the region of a slot.  Complexity: O(M) for M marks, which are
+    // at most RegionMarks::CAP.
+    [[nodiscard]] SweepStep find_sweep_step_(PublishStage const& stage, RegionMarks const& marks,
+                                             RegionMemory const& memory) const noexcept;
+
+    // Writes the left generation of the region of one slot.
+    void set_left_generation_(RegionSlot slot, uint64_t generation) noexcept;
 
 public:
     // The queue of the published regions, for a read.  Only the publish stage
