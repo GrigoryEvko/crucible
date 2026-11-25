@@ -472,10 +472,15 @@ public:
 
     [[nodiscard]] consteval bool is_empty() const noexcept { return size_ == 0; }
 
-    // True when the list holds a goal of the same type and property.
+    // True when the list holds a goal of the same type and property.  The scan
+    // reads the members of the list one time, because each read of a member in
+    // a constant evaluation counts as some operations.
     [[nodiscard]] consteval bool holds(Goal goal) const noexcept {
-        for (std::size_t index = 0; index < size_; ++index) {
-            if (goals_[index].type == goal.type && goals_[index].property == goal.property) return true;
+        Goal const* const goals = goals_;
+        std::size_t const size = size_;
+        std::meta::info const type = goal.type;
+        for (std::size_t index = 0; index < size; ++index) {
+            if (goals[index].type == type && goals[index].property == goal.property) return true;
         }
         return false;
     }
@@ -500,6 +505,20 @@ private:
 [[nodiscard]] consteval bool states(std::meta::info type, std::meta::info annotation) {
     return ::foundation::reflect::carries_annotation(type, annotation);
 }
+
+// The annotations of one complete class.  A walk asks for some of them, and a
+// class with no annotation answers each question with one read.
+class StatedMarks {
+public:
+    consteval explicit StatedMarks(std::meta::info type)
+        : type_{type}, has_any_{::foundation::reflect::has_annotations(type)} {}
+
+    [[nodiscard]] consteval bool has(std::meta::info annotation) const { return has_any_ && states(type_, annotation); }
+
+private:
+    std::meta::info type_{};
+    bool has_any_ = false;
+};
 
 // Each function below has no constant definition.  A call to one stops the
 // constant evaluation, and the diagnostic names it (the opaque types).
@@ -629,16 +648,17 @@ consteval void check_synchronized_statement(std::meta::info type);
             if (statement_of(type).is_synchronized) continue;
             return type;
         }
-        if (states(type, ^^not_shareable) || states(type, ^^thread_bound)) return type;
+        const StatedMarks marks{type};
+        if (marks.has(^^not_shareable) || marks.has(^^thread_bound)) return type;
         // A cell of a payload (the annotations).
-        if (states(type, ^^payload_cell)) {
+        if (marks.has(^^payload_cell)) {
             const std::meta::info payload = payload_of_cell(type);
             if (payload == std::meta::info{} || !::foundation::transfer::holds(payload, Property::Send)) return type;
             continue;
         }
         // A statement of the shared write, which the check reads (the
         // annotations).
-        if (states(type, ^^synchronized)) {
+        if (marks.has(^^synchronized)) {
             check_synchronized_statement(type);
             continue;
         }
@@ -1171,10 +1191,11 @@ struct DoorFinding {
     // A class that refers to or owns the object of its first type argument
     // states it, as a Ref, a ChannelBinding and a Box do.  Each other type
     // argument can be a tag or a brand, which names no object.
-    const bool is_first_argument_held = states(bare, ^^refers) || states(bare, ^^refers_unique)
-                                     || states(bare, ^^refers_deep) || states(bare, ^^by_arguments)
-                                     || states(bare, ^^payload_cell);
-    if (!is_first_argument_held || !std::meta::has_template_arguments(bare)) return false;
+    if (!std::meta::has_template_arguments(bare)) return false;
+    const StatedMarks marks{bare};
+    const bool is_first_argument_held = marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep)
+                                     || marks.has(^^by_arguments) || marks.has(^^payload_cell);
+    if (!is_first_argument_held) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
     return arguments.begin()->type == owner || can_write_owner(arguments.begin()->type, owner, depth - 1);
@@ -1216,9 +1237,11 @@ consteval bool can_write_plain_through(std::meta::info type, std::meta::info own
                                                  : holds_plain_borrow(part.type, owner, depth - 1);
         if (is_plain) return true;
     }
-    const bool is_referred = states(bare, ^^refers) || states(bare, ^^refers_unique) || states(bare, ^^refers_deep);
-    const bool is_owned = states(bare, ^^by_arguments) || states(bare, ^^payload_cell);
-    if ((!is_referred && !is_owned) || !std::meta::has_template_arguments(bare)) return false;
+    if (!std::meta::has_template_arguments(bare)) return false;
+    const StatedMarks marks{bare};
+    const bool is_referred = marks.has(^^refers) || marks.has(^^refers_unique) || marks.has(^^refers_deep);
+    const bool is_owned = marks.has(^^by_arguments) || marks.has(^^payload_cell);
+    if (!is_referred && !is_owned) return false;
     const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
     if (arguments.empty() || arguments.begin()->is_value_argument || arguments.begin()->was_const) return false;
     return is_referred ? can_write_plain_through(arguments.begin()->type, owner, depth - 1)
@@ -1571,10 +1594,11 @@ struct ReferenceAnswer {
             return bare;
         }
         // Rule 5.  A class of one owner thread moves to no other thread.
-        if (detail::states(bare, detail::refusing_annotation(goal.property))) return bare;
-        if (goal.property != Property::Share && detail::states(bare, ^^thread_bound)) return bare;
+        const detail::StatedMarks marks{bare};
+        if (marks.has(detail::refusing_annotation(goal.property))) return bare;
+        if (goal.property != Property::Share && marks.has(^^thread_bound)) return bare;
         // A cell of a payload holds each property when its payload moves.
-        if (detail::states(bare, ^^payload_cell)) {
+        if (marks.has(^^payload_cell)) {
             const std::meta::info payload = detail::payload_of_cell(bare);
             if (payload == std::meta::info{}) return bare;
             const Property moved = goal.property == Property::Share ? Property::Send : goal.property;
@@ -1583,14 +1607,14 @@ struct ReferenceAnswer {
         }
         // A statement of the shared write states the read of two threads too,
         // and the check reads it (the annotations).
-        if (goal.property == Property::Share && detail::states(bare, ^^synchronized)) {
+        if (goal.property == Property::Share && marks.has(^^synchronized)) {
             detail::check_synchronized_statement(bare);
             continue;
         }
-        if (detail::states(bare, detail::stating_annotation(goal.property))) continue;
+        if (marks.has(detail::stating_annotation(goal.property))) continue;
         const bool is_specialization = std::meta::has_template_arguments(bare);
         // Rule 1, a class that refers to the object of its first argument.
-        if (detail::states(bare, ^^refers)) {
+        if (marks.has(^^refers)) {
             if (!is_specialization) return bare;
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
@@ -1602,7 +1626,7 @@ struct ReferenceAnswer {
         // Rule 1, a class that is the one writer of the object of its first
         // argument.  A value moves with its target, and a read through a
         // reference to const of it can still write the target.
-        if (detail::states(bare, ^^refers_unique)) {
+        if (marks.has(^^refers_unique)) {
             if (!is_specialization) return bare;
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
@@ -1622,7 +1646,7 @@ struct ReferenceAnswer {
         // Rule 1, a class that refers to the object of its first argument, and
         // that gives only const access to it through a const object.  A copy
         // of a const object would give a writer, so such a class refuses.
-        if (detail::states(bare, ^^refers_deep)) {
+        if (marks.has(^^refers_deep)) {
             if (!is_specialization || std::meta::is_copy_constructible_type(bare)
                 || std::meta::is_copy_assignable_type(bare)) {
                 return bare;
@@ -1640,7 +1664,7 @@ struct ReferenceAnswer {
         }
         // Rule 6.  The class holds an object of its first argument, and no
         // value of its other arguments.
-        if (detail::states(bare, ^^by_arguments)) {
+        if (marks.has(^^by_arguments)) {
             if (!is_specialization) return bare;
             const refl::TypeNodeList arguments = refl::argument_components_of(refl::TypeNode{bare, true});
             if (arguments.empty() || arguments.begin()->is_value_argument) return bare;
@@ -1654,11 +1678,13 @@ struct ReferenceAnswer {
             if (answer.has_next) pending.push(answer.next);
             continue;
         }
-        // Rule 7.
-        if (refl::holds_unreadable_state(refl::TypeNode{bare, true})) return bare;
+        // Rule 7.  Only a class that shows no part can hold a state that the
+        // walk cannot read.
+        const refl::TypeNodeList parts = refl::member_components_of(refl::TypeNode{bare, true});
+        if (parts.empty() && refl::holds_unreadable_state(refl::TypeNode{bare, true})) return bare;
         // Rule 8.  A member that is a reference is not held by value, and its
         // node is its target.
-        for (const refl::TypeNode& part : refl::member_components_of(refl::TypeNode{bare, true})) {
+        for (const refl::TypeNode& part : parts) {
             if (!part.is_held_by_value) {
                 const detail::ReferenceAnswer answer = detail::answer_reference(part, goal.property);
                 if (answer.is_refused) return bare;
