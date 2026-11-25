@@ -237,6 +237,15 @@ mint_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& o
     return Region::template mint_region<Modifiers...>(ctx, owner, source...);
 }
 
+// The region of a map of a descriptor that a C library opened, over the
+// modifier list of a pack.
+template <typename Region, typename... Modifiers, typename Ctx, typename Owner>
+[[nodiscard]] ::foundation::core::Result<Region, ::foundation::os::Errno>
+map_foreign_region_with_(region_modifiers<Modifiers...>, Ctx const& ctx, Owner const& owner,
+                         ForeignDescriptor descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+    return Region::template map_foreign_region<Modifiers...>(ctx, owner, descriptor, length, offset);
+}
+
 // The gate of the map of a file, read over the modifier list of a pack, as
 // region_mint_admits_v reads the gate of a region.
 template <typename Ctx, typename Prot, typename Share, typename Kind, ::fixy::os::RightSet Held, typename List>

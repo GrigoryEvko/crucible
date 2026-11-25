@@ -1,6 +1,6 @@
-// The constructor of a LockedMmap takes a key that only the door of the two
-// mints builds.  So no code puts a mapping that it already holds, with the
-// Views that it took of it, in a LockedMmap.
+// The constructor of a LockedMmap takes a key that only the door of the mints
+// builds.  So no code puts a mapping that it already holds, with the Views that
+// it took of it, in a LockedMmap.
 
 #include <fixy/os/LockedMmap.h>
 

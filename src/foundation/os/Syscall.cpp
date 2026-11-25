@@ -120,6 +120,8 @@ static_assert(kAdviseHugePage == MADV_HUGEPAGE, "kAdviseHugePage is not MADV_HUG
 static_assert(kAdviseNoHugePage == MADV_NOHUGEPAGE, "kAdviseNoHugePage is not MADV_NOHUGEPAGE of <linux/mman.h>");
 static_assert(kAdviseDontDump == MADV_DONTDUMP, "kAdviseDontDump is not MADV_DONTDUMP of <linux/mman.h>");
 static_assert(kAdviseWipeOnFork == MADV_WIPEONFORK, "kAdviseWipeOnFork is not MADV_WIPEONFORK of <linux/mman.h>");
+static_assert(kAdvisePopulateRead == MADV_POPULATE_READ,
+              "kAdvisePopulateRead is not MADV_POPULATE_READ of <linux/mman.h>");
 static_assert(kAdvisePopulateWrite == MADV_POPULATE_WRITE,
               "kAdvisePopulateWrite is not MADV_POPULATE_WRITE of <linux/mman.h>");
 static_assert(kAdviseCollapse == MADV_COLLAPSE, "kAdviseCollapse is not MADV_COLLAPSE of <linux/mman.h>");

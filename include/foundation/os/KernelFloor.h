@@ -125,6 +125,9 @@ enum class KernelFlag : std::uint8_t {
     advise_free,
     // MADV_WIPEONFORK of a range that a child process gets as zeros.
     advise_wipe_on_fork,
+    // MADV_POPULATE_READ of the test of a foreign object of
+    // fixy/os/LockedMmap.h.
+    advise_populate_read,
     // MADV_POPULATE_WRITE of the populate door of fixy/os/Pages.h and of the
     // populate of the page source door of foundation/os/PageSource.h.
     advise_populate_write,
@@ -294,6 +297,12 @@ struct FlagFloor {
                              .word = "MADV_WIPEONFORK",
                              .fallback = "The advice gives the error of the kernel. A child process gets a copy of "
                                          "the range."};
+        case KernelFlag::advise_populate_read:
+            return FlagFloor{.release = {5, 14, 0},
+                             .need = FlagNeed::fallback,
+                             .word = "MADV_POPULATE_READ",
+                             .fallback = "The mint of a locked mapping refuses each descriptor of a C library, "
+                                         "because it cannot test that the pages come back after a discard."};
         case KernelFlag::advise_populate_write:
             return FlagFloor{.release = {5, 14, 0},
                              .need = FlagNeed::fallback,

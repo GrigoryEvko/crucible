@@ -41,10 +41,10 @@
 //   write for a shared map that writes (file_map_rights).  The open mode of
 //   the file gives those rights, so a map of a file that the open cannot
 //   read does not compile.  map_foreign_region maps a descriptor that a C
-//   library opened, such as the map of a BPF object.  It takes the int of
-//   the C library and refuses a negative one with ebadf.  Each call of the
-//   product code is inside an opt-out region of the class ABI (the ABI
-//   descriptor of fixy/os/Handle.h).
+//   library opened, such as the map of a BPF object.  It takes the
+//   ForeignDescriptor of the int of the C library and refuses a negative one
+//   with ebadf.  Each call of the product code is inside an opt-out region of
+//   the class ABI (the ABI descriptor of fixy/os/Handle.h).
 //
 // End of a shared file
 //   A read or a write of a shared map past the end of its file ends the
@@ -171,7 +171,36 @@ concept RegionLicence = std::is_same_v<Modifier, ::fixy::atom::mmap::trusted_jit
 template <typename Modifier>
 concept RegionModifier = (MappedShare<Modifier> && !PrimaryShare<Modifier>) || RegionLicence<Modifier>;
 
+// Why a descriptor of a C library has no locked mapping (the test of a foreign
+// object of fixy/os/LockedMmap.h).
+enum class ForeignMapFault : std::uint8_t {
+    // The kernel refused the map of the object, so there is no mapping.
+    map_refused,
+    // The kernel refused the second map of the object, on which the test runs.
+    test_map_refused,
+    // The kernel does not have MADV_POPULATE_READ, or it gives success for an
+    // advice that does not exist, as qemu user mode does.  So no test of the
+    // object is possible.
+    no_populate_read,
+    // The kernel does not discard the pages of the object.
+    no_discard,
+    // The first page did not come back after the discard.  The object has no
+    // fault door, or it ends before the page.
+    first_page_lost,
+    // The first page came back, and the last page did not.  The object ends
+    // before the last page.
+    last_page_lost,
+    // The kernel did not load a page for a reason other than a lost page.
+    no_load,
+};
+
 namespace detail {
+
+// The fault of the test of a foreign object, and the error of the kernel.
+struct ForeignTestFault final {
+    ForeignMapFault fault = ForeignMapFault::map_refused;
+    ::foundation::os::Errno error{};
+};
 
 // The calls of the door file src/fixy/os/Mmap.cpp.  Each call gives the
 // error of the kernel in its Result.
@@ -200,6 +229,15 @@ void unmap_region_(void* address, std::size_t length) noexcept;
 // EINVAL and makes no system call.
 [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
 advise_region_(void* address, std::size_t length, int advice) noexcept;
+
+// Tests that the pages of an object come back after a discard.  It maps the
+// object a second time, as map_region_ does, discards the pages of that map,
+// asks the kernel to load the first page and the last page again with
+// MADV_POPULATE_READ, and unmaps that map.  The kernel loads a page with no
+// signal and gives efault for a page that does not come back.  The test reads
+// no byte of the object, and it changes no page of another map.
+[[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ForeignTestFault>
+test_foreign_object_(std::size_t length, int protection, int flags, int descriptor, std::int64_t offset) noexcept;
 
 // The MAP_* bits of a modifier.  A licence adds no bit.
 template <typename Modifier>
@@ -346,6 +384,25 @@ concept CtxFitsFileRegionMint =
     CtxFitsRegionMint<Ctx, Prot, Share, Modifiers...> && !std::is_same_v<Share, share::Anonymous>
     && MappedFileKind<Kind> && SealedMapIsShared<Kind, Share> && SharedFileMapIsLicensed<Kind, Share, Modifiers...>
     && ::fixy::os::HoldsRights<Held, file_map_rights<Prot, Share>()>;
+
+// A descriptor that a C library opened, such as the descriptor of the map of a
+// BPF object (the source of a map).  It holds the int of the C library and owns
+// nothing.  The C library keeps the descriptor open for the time of the map,
+// and no type of the base reads that promise.  A negative int names no
+// descriptor, so a map of it gives ebadf.
+class ForeignDescriptor final {
+    int number_ = -1;
+
+public:
+    explicit constexpr ForeignDescriptor(int abi_descriptor) noexcept : number_{abi_descriptor} {}
+
+    // False for a negative int.
+    [[nodiscard]] constexpr bool is_open() const noexcept { return number_ >= 0; }
+
+    // The int of the C library, for the map door and for a call of a C ABI (the
+    // ABI descriptor of fixy/os/Handle.h).
+    [[nodiscard]] constexpr int abi_descriptor() const noexcept { return number_; }
+};
 
 // The gate of the map of a descriptor that a C library opened.
 template <typename Ctx, typename Prot, typename Share, typename... Modifiers>
@@ -787,20 +844,19 @@ public:
     }
 
     // The map of a descriptor that a C library opened, such as the map of a
-    // BPF object, from the byte at offset (the source of a map).  The
-    // descriptor is the int of the C library, and a negative descriptor
-    // gives ebadf with no call to the kernel.  The permission is read as in
-    // the anonymous form.
+    // BPF object, from the byte at offset (the source of a map).  A negative
+    // descriptor gives ebadf with no call to the kernel.  The permission is
+    // read as in the anonymous form.
     template <typename... Modifiers, ::foundation::effects::IsExecCtx Ctx>
         requires mmap::CtxFitsForeignRegionMap<Ctx, Prot, Share, Modifiers...>
     [[nodiscard]] static auto
     map_foreign_region(Ctx const&, ::foundation::permissions::Permission<Tag, Brand> const& /*owner*/,
-                       int abi_descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
+                       mmap::ForeignDescriptor descriptor, std::size_t length, ::fixy::fs::FileOffset offset) noexcept {
         using Mapped = ::foundation::core::Result<OwnedMmap, ::foundation::os::Errno>;
-        if (abi_descriptor < 0) {
+        if (!descriptor.is_open()) {
             return Mapped{::foundation::core::err(::foundation::os::Errno::ebadf)};
         }
-        return map_<&mmap::detail::map_region_, Modifiers...>(abi_descriptor, length, offset);
+        return map_<&mmap::detail::map_region_, Modifiers...>(descriptor.abi_descriptor(), length, offset);
     }
 
     OwnedMmap(const OwnedMmap&) = delete("mmap region is unique; copy would double-unmap on destruction");

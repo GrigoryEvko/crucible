@@ -316,8 +316,8 @@ template <class Tag, int MaxLinks, ::foundation::effects::IsExecCtx Ctx>
         ::foundation::permissions::mint_singleton_root<bpf_map_region<Tag>>();
     // The map door refuses a negative descriptor with ebadf.
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ABI: libbpf opened the descriptor of the BPF map, and the map door maps it")
-    ::fixy::Result<ReadOnlyMapping<Tag>, ::foundation::os::Errno> mapped =
-        ReadOnlyMapping<Tag>::map_foreign_region(ctx, owner, map_descriptor.value(), length, ::fixy::fs::FileOffset{0});
+    ::fixy::Result<ReadOnlyMapping<Tag>, ::foundation::os::Errno> mapped = ReadOnlyMapping<Tag>::map_foreign_region(
+        ctx, owner, ::fixy::mmap::ForeignDescriptor{map_descriptor.value()}, length, ::fixy::fs::FileOffset{0});
     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     ::foundation::permissions::release_singleton_root(std::move(owner));
     for (::foundation::os::Errno const error : mapped.err()) {

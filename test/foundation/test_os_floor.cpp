@@ -240,6 +240,10 @@ void test_judges_each_flag_above_the_floor() {
     using os::FlagVerdict;
     using os::KernelFlag;
     using os::KernelVersion;
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_read, KernelVersion{5, 13, 19})
+                             == FlagVerdict::fallback);
+    CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_read, KernelVersion{5, 14, 0})
+                             == FlagVerdict::admitted);
     CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_write, KernelVersion{5, 13, 19})
                              == FlagVerdict::fallback);
     CRUCIBLE_FATAL_INVARIANT(os::judge_flag(KernelFlag::advise_populate_write, KernelVersion{5, 14, 0})

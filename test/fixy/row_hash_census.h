@@ -1276,6 +1276,12 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::mmap::ReadersLive, kPayload},
     {^^::fixy::mmap::LockedRegion, "the mapping inside a locked mapping: a body of the lock gets it by reference, and "
                                    "it is never a value in a signature"},
+    {^^::fixy::mmap::ForeignMapRefusal,
+     "the refusal of a map of a descriptor of a C library: the cause, the errno, the mapping and the exclusive back, "
+     "the error of the result of a mint and never a value in a signature"},
+    {^^::fixy::mmap::ForeignDescriptor,
+     "the int of a descriptor that a C library opened: it owns nothing and makes no claim about the object, and it is "
+     "never a value in a kernel signature"},
     {^^::fixy::mmap::LockedMmapKey, kPasskey},
     {^^::fixy::mmap::LockedMmapDoor, kDescriptorDoor},
     {^^::fixy::mmap::MapRefusal,

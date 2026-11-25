@@ -724,8 +724,8 @@ witness <fixy/os/SharedLocked.h> private | fixy::SharedLockEndKey<forge::brand> 
 witness <fixy/os/OwnedMmap.h> private | fixy::mmap::SharedView<std::uint64_t, 4> | fixy::mmap::SharedView<std::uint64_t, 4>{forge::lvalue<std::uint64_t*>()}
 # A locked mapping claims that no code has its mapping without its pool.  Its
 # constructor and the constructor of its region take a key that only the door
-# of its two mints builds.  No object of the door exists, and its friends are
-# the two mints, which map the region.
+# of its mints builds.  No object of the door exists, and its friends are the
+# three mints, which map the region.
 witness <fixy/os/LockedMmap.h> private | fixy::mmap::LockedMmapKey | fixy::mmap::LockedMmapKey{}
 witness <fixy/os/LockedMmap.h> no-match | fixy::mmap::LockedRegion<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand> | fixy::mmap::LockedRegion<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand>{}
 witness <fixy/os/LockedMmap.h> no-match | fixy::LockedMmap<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand> | fixy::LockedMmap<forge::brand, fixy::mmap::prot::WriteCopy, fixy::mmap::share::Anonymous, forge::brand>{}

@@ -88,6 +88,11 @@ static_assert(Ends<Locked, AllRowsCtx> && Ends<Locked, NoBlockCtx>);
 static_assert(!Ends<Locked, NoPoolCtx> && !Ends<Locked const, AllRowsCtx>);
 static_assert(::foundation::linear::is_linear_type(^^Locked::ended_type));
 
+// The int of a C library is no descriptor of a map until the caller names it
+// one, and a descriptor gives no int by conversion.
+static_assert(!std::is_convertible_v<int, ForeignDescriptor> && !std::is_convertible_v<ForeignDescriptor, int>);
+static_assert(!ForeignDescriptor{-1}.is_open() && ForeignDescriptor{0}.is_open());
+
 // The region gives its mapping up only under the key of the end of its own
 // lock.  No code outside SharedLocked builds the key, and the key of another T
 // is no key of the region.
@@ -101,6 +106,9 @@ static_assert(!std::is_convertible_v<SharedLockEndKey<ReadOnlyRegion> const&, En
 // drops it gets an error.
 static_assert(::foundation::linear::is_linear_type(^^MapRefusal<ProbeRegion, ProbeBrand>));
 static_assert(::foundation::core::ErrorValue<MapRefusal<ProbeRegion, ProbeBrand>>);
+using ForeignRefusal = ForeignMapRefusal<ProbeRegion, prot::ReadWrite, share::Shared, ProbeBrand>;
+static_assert(::foundation::linear::is_linear_type(^^ForeignRefusal));
+static_assert(::foundation::core::ErrorValue<ForeignRefusal>);
 static_assert(::foundation::core::ErrorValue<ReleaseRefusal>);
 
 }  // namespace fixy::mmap::detail::locked_mmap_invariants

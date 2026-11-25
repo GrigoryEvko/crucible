@@ -45,12 +45,32 @@
 // (fixy/os/NumaPlacement.h) or to the release of OwnedMmap.  The exclusive that
 // comes out can mint a new LockedMmap.
 //
-// The two mints map a file of a Handle or no file, and not a descriptor of a C
-// library.
+// The three mints map a file of a Handle, no file, and a descriptor that a C
+// library opened.
+//
+// Test of a foreign object
+//   Some objects insert their pages at the map and have no fault door in the
+//   kernel, such as the map of a BPF object and the ring of io_uring.  A discard
+//   of such a mapping succeeds, a page that it drops does not come back, and
+//   the next read ends the process with SIGBUS.  So the mint of a descriptor of
+//   a C library tests the object before any body exists.  It maps the object a
+//   second time, discards that map, and asks the kernel to load its first page
+//   and its last page again, which raises no signal (MADV_POPULATE_READ).  The
+//   test reads no byte, and the mapping of the lock keeps its pages.  A kernel
+//   that has no such advice refuses each object.  A refusal names its cause
+//   (ForeignMapFault) and gives the mapping and the exclusive back.
+//   What stays the promise of the caller:
+//   - A page between the first and the last that the object cannot load
+//   - An object that gets shorter later.  Memory with a seal cannot, and the
+//     atom faults_on_truncate states the risk
+//   The mint of a file of a Handle makes no test.  A shared map takes sealed
+//   memory or the atom faults_on_truncate.  A Handle of the kind File can also
+//   name a character device, and no gate asks if a private map of a device
+//   loads its pages again.
 //
 // The object is pinned, and a map can fail, so a mint gives a Box of the
 // object, which is one allocation on a cold door.  A map that fails gives the
-// exclusive back (MapRefusal).
+// exclusive back (MapRefusal and ForeignMapRefusal).
 
 #include <fixy/Qtt.h>
 #include <fixy/os/Fd.h>
@@ -116,6 +136,37 @@ public:
     }
 };
 
+// A descriptor of a C library that has no locked mapping: the cause, the error
+// of the kernel, the mapping when the kernel gave one, and the exclusive that
+// the mint took (the test of a foreign object).  The mapping is a plain
+// OwnedMmap, which no door discards, so it keeps its pages.
+template <typename Tag, typename Prot, typename Share, typename Brand>
+class [[nodiscard]] ForeignMapRefusal final {
+public:
+    using mapping_type = OwnedMmap<Tag, Prot, Share, Brand>;
+    using parts_type = ::foundation::core::Record<::foundation::core::Option<Linear<mapping_type>>,
+                                                  ::foundation::permissions::Permission<Tag, Brand>>;
+
+private:
+    ForeignMapFault cause_;
+    ::foundation::os::Errno error_;
+    ::foundation::core::Option<Linear<mapping_type>> mapping_;
+    [[no_unique_address]] ::foundation::permissions::Permission<Tag, Brand> exclusive_;
+
+public:
+    ForeignMapRefusal(ForeignMapFault cause, ::foundation::os::Errno error,
+                      ::foundation::core::Option<Linear<mapping_type>>&& mapping,
+                      ::foundation::permissions::Permission<Tag, Brand>&& exclusive) noexcept
+        : cause_{cause}, error_{error}, mapping_{std::move(mapping)}, exclusive_{std::move(exclusive)} {}
+
+    [[nodiscard]] ForeignMapFault cause() const noexcept { return cause_; }
+
+    [[nodiscard]] ::foundation::os::Errno error() const noexcept { return error_; }
+
+    // The mapping, or none when the kernel refused the map, and the exclusive.
+    [[nodiscard]] parts_type parts() && noexcept { return parts_type{std::move(mapping_), std::move(exclusive_)}; }
+};
+
 // The gate of the advice that discards pages.  The advice gives the rows of
 // the system call, and the pool gives the row of the upgrade (PoolCtx).
 template <typename Ctx, typename Advice, typename Tag>
@@ -131,7 +182,7 @@ concept CtxFitsRegionPolicy = ::fixy::numa::CtxFitsNumaBind<Ctx> && std::is_same
 class LockedMmapDoor;
 
 // The key of the constructor of a LockedMmap and of its region.  The door of
-// the two mints is its one friend, so each LockedMmap holds a mapping that its
+// the mints is its one friend, so each LockedMmap holds a mapping that its
 // mint made.
 class [[nodiscard]] LockedMmapKey final {
     friend class LockedMmapDoor;
@@ -315,14 +366,27 @@ template <typename Tag, typename Brand, typename... Atoms>
 using LockedMint =
     ::foundation::core::Result<::foundation::core::Box<locked_mmap_of_t<Tag, Brand, Atoms...>>, MapRefusal<Tag, Brand>>;
 
-// The gates of the two mints: the gate of the map, and the allocation
-// capability of the Box.
+// The result of the mint of a descriptor of a C library: the Box of the object,
+// or the refusal with the mapping and the exclusive.
+template <typename Tag, typename Brand, typename... Atoms>
+using LockedForeignMint = ::foundation::core::Result<
+    ::foundation::core::Box<locked_mmap_of_t<Tag, Brand, Atoms...>>,
+    ForeignMapRefusal<Tag, detail::prot_of_t<Atoms...>, detail::primary_share_of_t<Atoms...>, Brand>>;
+
+// The gates of the three mints: the gate of the map, and the allocation
+// capability of the Box.  The map of a descriptor of a C library has the gate
+// of the pack, and its region is not anonymous (CtxFitsForeignRegionMap of
+// fixy/os/OwnedMmap.h).
 template <typename Ctx, typename Marker, typename Kind, ::fixy::os::RightSet Held, typename... Atoms>
 concept CtxFitsLockedFileMint =
     CtxFitsFileMmapMint<Ctx, Kind, Held, Atoms...> && ::foundation::core::AllocationCapability<Marker>;
 
 template <typename Ctx, typename Marker, typename... Atoms>
 concept CtxFitsLockedAnonMint = CtxFitsAnonMmapMint<Ctx, Atoms...> && ::foundation::core::AllocationCapability<Marker>;
+
+template <typename Ctx, typename Marker, typename... Atoms>
+concept CtxFitsLockedForeignMint = CtxFitsMmapMint<Ctx, Atoms...> && !detail::pack_has_anonymous_v<Atoms...>
+                                && ::foundation::core::AllocationCapability<Marker>;
 
 template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Marker, typename Tag,
           ::foundation::brand::IsFreshBrand Brand, class Kind, ::fixy::os::RightSet Rights>
@@ -341,7 +405,16 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Mark
                                          ::foundation::core::ByteCount length) noexcept
     -> LockedMint<Tag, Brand, Atoms...>;
 
-// The door of the two mints to the key of a LockedMmap.  It puts the mapping
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Marker, typename Tag,
+          ::foundation::brand::IsFreshBrand Brand>
+    requires CtxFitsLockedForeignMint<Ctx, Marker, Atoms...>
+[[nodiscard]] auto mint_locked_mmap_foreign(Ctx const& ctx, Marker allocation,
+                                            ::foundation::permissions::Permission<Tag, Brand>&& exclusive,
+                                            ForeignDescriptor descriptor, ::foundation::core::ByteCount length,
+                                            ::fixy::fs::FileOffset offset = ::fixy::fs::FileOffset{0}) noexcept
+    -> LockedForeignMint<Tag, Brand, Atoms...>;
+
+// The door of the mints to the key of a LockedMmap.  It puts the mapping
 // of a map and its exclusive in the object of a Box, or gives the exclusive
 // back beside the error of the map.
 class LockedMmapDoor final : ::foundation::NoObject<LockedMmapDoor> {
@@ -352,6 +425,34 @@ class LockedMmapDoor final : ::foundation::NoObject<LockedMmapDoor> {
         for (::foundation::os::Errno const error : mapped.err())
             return ::foundation::core::err(MapRefusal<Tag, Brand>{error, std::move(exclusive)});
         auto mapping = std::move(mapped).expect("a map with no error gives a mapping");
+        return ::foundation::core::mint_box<Locked>(allocation, LockedMmapKey{}, std::move(exclusive),
+                                                    std::move(mapping));
+    }
+
+    // The object of a map of a descriptor of a C library whose test passed, or
+    // the refusal with the mapping and the exclusive (the test of a foreign
+    // object).
+    template <typename Locked, typename Marker, typename Tag, typename Brand>
+    [[nodiscard]] static ::foundation::core::Result<
+        ::foundation::core::Box<Locked>,
+        ForeignMapRefusal<Tag, typename Locked::prot_type, typename Locked::share_type, Brand>>
+    lock_foreign_(Marker allocation, ::foundation::permissions::Permission<Tag, Brand>&& exclusive,
+                  ::foundation::core::Result<typename Locked::mapping_type, ::foundation::os::Errno> mapped,
+                  ForeignDescriptor descriptor, ::fixy::fs::FileOffset offset) noexcept {
+        using Mapping = typename Locked::mapping_type;
+        using Refusal = ForeignMapRefusal<Tag, typename Locked::prot_type, typename Locked::share_type, Brand>;
+        using Held = ::foundation::core::Option<Linear<Mapping>>;
+        for (::foundation::os::Errno const error : mapped.err())
+            return ::foundation::core::err(
+                Refusal{ForeignMapFault::map_refused, error, Held{::foundation::core::none}, std::move(exclusive)});
+        auto mapping = std::move(mapped).expect("a map with no error gives a mapping");
+        constexpr int protection = prot_bits_of(^^typename Locked::prot_type);
+        constexpr int flags = share_flags_of(^^typename Locked::share_type);
+        auto const tested =
+            detail::test_foreign_object_(mapping.size(), protection, flags, descriptor.abi_descriptor(), offset.raw());
+        for (detail::ForeignTestFault const fault : tested.err())
+            return ::foundation::core::err(Refusal{
+                fault.fault, fault.error, Held::some(mint_linear<Mapping>(std::move(mapping))), std::move(exclusive)});
         return ::foundation::core::mint_box<Locked>(allocation, LockedMmapKey{}, std::move(exclusive),
                                                     std::move(mapping));
     }
@@ -372,6 +473,15 @@ class LockedMmapDoor final : ::foundation::NoObject<LockedMmapDoor> {
                                       ::foundation::permissions::Permission<FriendTag, FriendBrand>&&,
                                       ::foundation::core::ByteCount) noexcept
         -> LockedMint<FriendTag, FriendBrand, FriendAtoms...>;
+
+    template <typename... FriendAtoms, ::foundation::effects::IsExecCtx FriendCtx, typename FriendMarker,
+              typename FriendTag, ::foundation::brand::IsFreshBrand FriendBrand>
+        requires CtxFitsLockedForeignMint<FriendCtx, FriendMarker, FriendAtoms...>
+    friend auto mint_locked_mmap_foreign(FriendCtx const&, FriendMarker,
+                                         ::foundation::permissions::Permission<FriendTag, FriendBrand>&&,
+                                         ForeignDescriptor, ::foundation::core::ByteCount,
+                                         ::fixy::fs::FileOffset) noexcept
+        -> LockedForeignMint<FriendTag, FriendBrand, FriendAtoms...>;
 };
 
 // The map of a file in a LockedMmap, from the byte at offset.  The pack of
@@ -403,6 +513,26 @@ template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Mark
     auto mapped = detail::mint_region_with_<typename Locked::mapping_type>(detail::region_modifiers_t<Atoms...>{}, ctx,
                                                                            exclusive, length.raw());
     return LockedMmapDoor::lock_<Locked>(allocation, std::move(exclusive), std::move(mapped));
+}
+
+// The map of a descriptor that a C library opened in a LockedMmap, from the
+// byte at offset, such as the descriptor of shared memory.  The C library keeps
+// the descriptor open for the call.  The mint tests the object (the test of a
+// foreign object), and a refusal gives its cause, the mapping and the
+// exclusive.  A negative descriptor gives ebadf with no call to the kernel.
+template <typename... Atoms, ::foundation::effects::IsExecCtx Ctx, typename Marker, typename Tag,
+          ::foundation::brand::IsFreshBrand Brand>
+    requires CtxFitsLockedForeignMint<Ctx, Marker, Atoms...>
+[[nodiscard]] auto mint_locked_mmap_foreign(Ctx const& ctx, Marker allocation,
+                                            ::foundation::permissions::Permission<Tag, Brand>&& exclusive,
+                                            ForeignDescriptor descriptor, ::foundation::core::ByteCount length,
+                                            ::fixy::fs::FileOffset offset) noexcept
+    -> LockedForeignMint<Tag, Brand, Atoms...> {
+    using Locked = locked_mmap_of_t<Tag, Brand, Atoms...>;
+    auto mapped = detail::map_foreign_region_with_<typename Locked::mapping_type>(
+        detail::region_modifiers_t<Atoms...>{}, ctx, exclusive, descriptor, length.raw(), offset);
+    return LockedMmapDoor::lock_foreign_<Locked>(allocation, std::move(exclusive), std::move(mapped), descriptor,
+                                                 offset);
 }
 
 }  // namespace mmap

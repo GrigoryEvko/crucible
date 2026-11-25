@@ -198,7 +198,7 @@ int check_the_foreign_map_refuses_a_negative_descriptor(perm::Permission<PageTag
                                                         std::size_t len) {
     MapCtx ctx{eff::testing::test()};
     auto const refused = ::fixy::OwnedMmap<PageTag, mm::prot::ReadOnly, mm::share::Shared, Brand>::map_foreign_region(
-        ctx, owner, -1, len, ::fixy::fs::FileOffset{0});
+        ctx, owner, mm::ForeignDescriptor{-1}, len, ::fixy::fs::FileOffset{0});
     if (refused.is_ok()) return 60;
     if (refused.err().value_or(::foundation::os::Errno{}) != ::foundation::os::Errno::ebadf) return 61;
     return 0;

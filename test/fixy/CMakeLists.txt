@@ -6560,6 +6560,10 @@ fixy_neg_compile_test(neg_os_io_uring_ring_repeated_flag
 # that a read body sets, a memory policy of a shared mapping, an end of the
 # lock with no Nondet or of a const object, a write body that takes the mapping
 # out of its lock, and a discard of the mapping that left its lock.
+# test_os_locked_mmap_foreign maps the descriptor of shared memory, of a ring of
+# io_uring, of a BPF array and of a perf ring, and shows which object the test
+# of a foreign object refuses.
+fixy_test(test_os_locked_mmap_foreign)
 fixy_test(test_os_locked_mmap)
 fixy_neg_compile_test(neg_os_locked_mmap_discard_of_a_plain_mapping
   "neg_os_locked_mmap_discard_of_a_plain_mapping\\.cpp:37:[0-9]+: error:"
@@ -6594,9 +6598,10 @@ fixy_neg_compile_test(neg_os_locked_mmap_write_body_takes_the_mapping
 fixy_neg_compile_test(neg_os_locked_mmap_discard_after_the_end
   "neg_os_locked_mmap_discard_after_the_end\\.cpp:34:[0-9]+: error: .class fixy::OwnedMmap<"
   "has no member named .advise_release_aware.")
-# The two mints of a LockedMmap have the gates of the mints of a mapping.
+# The three mints of a LockedMmap have the gates of the mints of a mapping.
 # Two fixtures for each mint: a context without Block, and the licence of a
-# shared file or the fresh brand of the exclusive.
+# shared file, the fresh brand of the exclusive, or the share of a foreign
+# descriptor.  A third fixture of the last mint gives it a raw int.
 fixy_neg_compile_test(neg_os_locked_mmap_ctx_lacks_block
   "no matching function for call to .mint_locked_mmap<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared, \\{anonymous\\}::Faults>\\(\\{anonymous\\}::IoOnlyCtx&, "
   "required for the satisfaction of .CtxFitsLockedFileMint<Ctx, Marker, Kind, Rights, Atoms ...>."
@@ -6611,6 +6616,17 @@ fixy_neg_compile_test(neg_os_locked_mmap_anon_ctx_lacks_block
 fixy_neg_compile_test(neg_os_locked_mmap_anon_erased_exclusive
   "no matching function for call to .mint_locked_mmap_anon<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::IoBlockCtx&, "
   "required for the satisfaction of .IsFreshBrand<Brand>. .with Brand = foundation::brand::DefaultBrand.")
+fixy_neg_compile_test(neg_os_locked_mmap_foreign_ctx_lacks_block
+  "no matching function for call to .mint_locked_mmap_foreign<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoOnlyCtx&, "
+  "required for the satisfaction of .CtxFitsLockedForeignMint<Ctx, Marker, Atoms ...>."
+  "the expression .is_subrow\\(.*\\(\\^\\^ R1, \\^\\^ R2\\) .with R1 = foundation::effects::Row<foundation::effects::Effect::IO, foundation::effects::Effect::Block>. R2 = foundation::effects::Row<foundation::effects::Effect::Test, foundation::effects::Effect::IO>.. evaluated to .false.")
+fixy_neg_compile_test(neg_os_locked_mmap_foreign_anonymous_pack
+  "no matching function for call to .mint_locked_mmap_foreign<\\{anonymous\\}::WriteAnon, \\{anonymous\\}::Anonymous>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "required for the satisfaction of .CtxFitsLockedForeignMint<Ctx, Marker, Atoms ...>."
+  "the expression .!\\(pack_has_anonymous_v<Atoms ...>\\) .*evaluated to .false.")
+fixy_neg_compile_test(neg_os_locked_mmap_foreign_raw_int
+  "no matching function for call to .mint_locked_mmap_foreign<\\{anonymous\\}::ReadOnly, \\{anonymous\\}::Shared>\\(\\{anonymous\\}::IoBlockCtx&, "
+  "cannot convert .3. \\(type .int.\\) to type .fixy::mmap::ForeignDescriptor.")
 
 # The plain advise surface refuses each advice that lets the kernel
 # discard the pages, Free as well as DontNeed.  The MADV_* value of a tag
