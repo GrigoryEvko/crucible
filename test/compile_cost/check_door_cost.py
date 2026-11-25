@@ -1,6 +1,6 @@
 """Compile the probe of the keyed frame door in each form, and fail when one call of the door costs too much.
 
-usage: check_door_cost.py BUILD_DIR SOURCE_ROOT [--measure]
+usage: check_door_cost.py BUILD_DIR SOURCE_ROOT [--measure], or check_door_cost.py --selftest
 
 Probe
     door_cost_with_mut.cpp of this directory gives four writers: a raw loop
@@ -42,17 +42,20 @@ Ceilings
                  each door that takes a closure costs more than 1.4 times
                  that, so the ceiling is the measure of one call of the door
                  with a margin of MARGIN (ABSOLUTE_CEILINGS).
-      optimized  -O3 and no word -fsanitize=, as in the presets release,
-                 release-v1 to release-v4, bench, verify and vessel: an
-                 absolute ceiling, as for tsan, for each target level of the
-                 last -march word.  The level changes the cost: x86-64 and
-                 x86-64-v2 cost about 14 % more than native.  A level with no
-                 measure has no kind.
+      optimized  -O3 and no sanitizer with a runtime, as in the presets
+                 release, release-v1 to release-v4, bench, verify and vessel:
+                 an absolute ceiling, as for tsan, for each target level of
+                 the last -march word.  Each such preset has trap flags: some
+                 words -fsanitize= with the word TRAP_WORD.  They give no
+                 runtime and no call, so they do not change the kind.  The
+                 level changes the cost: x86-64 and x86-64-v2 cost about 14 %
+                 more than native.  A level with no measure has no kind.
     A build of a different kind, such as ubsan-strict, aarch64 or a build
     with a profile or the analyzer (UNMEASURED_PREFIXES), compiles nothing
     and gives the exit SKIPPED.
 
---measure prints the cost of each form and judges no ceiling.  Exit 0 when
+--measure prints the cost of each form and judges no ceiling.  --selftest
+compiles nothing and checks the kind of the words of each preset.  Exit 0 when
 each door is at or below its ceiling, 1 when one is above it or a compile
 fails, 2 on a usage error, 77 for a skip.  Complexity: at most 1 + 2 x
 len(DOORS) compiles.
@@ -98,6 +101,21 @@ ABSOLUTE_CEILINGS = {kind: {door: MARGIN * value for door, value in doors.items(
 # The words of a compile whose cost no ceiling measured: the profile of the presets pgo-generate, pgo and
 # pgo-release, and the analyzer of the preset analyzer.  Such a build has no kind (the ceilings).
 UNMEASURED_PREFIXES = ("-fprofile-", "-fanalyzer", "-fauto-profile")
+# The word that makes each sanitizer of a compile trap, with no runtime (the ceilings).
+TRAP_WORD = "-fsanitize-trap=all"
+# The words of a compile of each preset that decide its kind, and the kind (--selftest).
+TRAPS = "-fsanitize=signed-integer-overflow -fsanitize=shift -fsanitize=integer-divide-by-zero " + TRAP_WORD
+KIND_CASES = (
+    ("default", "-O1 -fsanitize=address", "asan"),
+    ("tsan", "-O1 -fsanitize=thread", "tsan"),
+    ("ubsan-strict", "-O1 -fsanitize=undefined,float-cast-overflow", None),
+    ("release", f"-O3 -march=native {TRAPS}", "optimized native"),
+    ("release-v3", f"-O3 -march=native -march=x86-64-v3 {TRAPS}", "optimized x86-64-v3"),
+    ("an optimized build with a runtime sanitizer", "-O3 -march=native -fsanitize=undefined", None),
+    ("an optimized build with no sanitizer", "-O3 -march=native", "optimized native"),
+    ("a level with no measure", f"-O3 -march=armv8.2-a {TRAPS}", None),
+    ("a profile", f"-O3 -march=native -fprofile-use=/p {TRAPS}", None),
+)
 GIGA = 1e9
 # The exits of the check.
 OK, FAILED, USAGE, SKIPPED = 0, 1, 2, 77
@@ -126,7 +144,8 @@ def kind_of(words: list[str]) -> str | None:
         return "asan"
     if "-fsanitize=thread" in words:
         return "tsan"
-    if "-O3" in words and not any(word.startswith("-fsanitize=") for word in words):
+    has_sanitizer = any(word.startswith("-fsanitize=") for word in words)
+    if "-O3" in words and (not has_sanitizer or TRAP_WORD in words):
         levels = [word.removeprefix("-march=") for word in words if word.startswith("-march=")]
         kind = f"optimized {levels[-1]}" if levels else None
         return kind if kind in MEASURED_CALLS else None
@@ -167,8 +186,21 @@ def verdict(kind: str, door: str, per_call: dict[str, float]) -> bool:
     return is_over
 
 
+def selftest() -> int:
+    """Check the kind of the compile words of each preset (KIND_CASES), and return the exit."""
+    failures = 0
+    for name, words, expected in KIND_CASES:
+        found = kind_of(words.split())
+        is_right = found == expected
+        failures += int(not is_right)
+        print(f"check_door_cost: {'ok  ' if is_right else 'FAIL'} the kind of {name} is {found}, expected {expected}")
+    return FAILED if failures else OK
+
+
 def main(argv: list[str]) -> int:
     """Compile the probe in each form, and judge the cost of each door (the ceilings)."""
+    if argv == ["--selftest"]:
+        return selftest()
     if len(argv) not in (2, 3) or (len(argv) == 3 and argv[2] != "--measure"):
         print(__doc__.splitlines()[2], file=sys.stderr)
         return USAGE

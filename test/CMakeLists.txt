@@ -225,6 +225,11 @@ crucible_script_test(NAME compile_door_cost
   COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_door_cost.py ${CMAKE_BINARY_DIR} ${CMAKE_SOURCE_DIR})
 set_tests_properties(compile_door_cost PROPERTIES SKIP_RETURN_CODE 77)
 
+# The kind that compile_door_cost gives to the compile words of each preset, so
+# a new flag of a preset does not make the check skip its ceilings.
+crucible_script_test(NAME compile_door_cost_kinds
+  COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/compile_cost/check_door_cost.py --selftest)
+
 # A regression test for the constant-evaluator defect that the patch
 # series in utils/toolchain/gcc fixes: memchr, strchr, strrchr and strstr from
 # an offset pointer.  A compiler without the fix cannot compile it.
