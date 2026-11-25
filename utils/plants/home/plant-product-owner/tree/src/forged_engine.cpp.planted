@@ -1,0 +1,13 @@
+#include <crucible/Pool.h>
+
+namespace crucible {
+
+struct Engine {
+    [[nodiscard]] static int read(const Pool& pool) noexcept { return pool.column_(); }
+};
+
+}  // namespace crucible
+
+int read_forged(const crucible::Pool& pool) noexcept;
+
+int read_forged(const crucible::Pool& pool) noexcept { return crucible::Engine::read(pool); }

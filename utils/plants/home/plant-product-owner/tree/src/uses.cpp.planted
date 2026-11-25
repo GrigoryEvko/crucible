@@ -1,0 +1,8 @@
+#include <crucible/Context.h>
+
+int use_context() noexcept;
+
+int use_context() noexcept {
+    const crucible::Context context{};
+    return static_cast<int>(sizeof(context));
+}

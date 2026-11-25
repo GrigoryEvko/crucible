@@ -1,0 +1,19 @@
+#pragma once
+
+#include <crucible/Pool.h>
+
+namespace crucible {
+
+// Only a context builds an engine and binds it to a pool.
+struct Engine {
+private:
+    friend struct Context;
+
+    Engine() noexcept = default;
+
+    void bind_(const Pool& pool) noexcept { column_ = pool.column_(); }
+
+    int column_ = 0;
+};
+
+}  // namespace crucible

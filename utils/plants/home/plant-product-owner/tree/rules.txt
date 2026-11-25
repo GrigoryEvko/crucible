@@ -1,0 +1,8 @@
+# The rule table of the plant of the owner rows of two classes of the product:
+# include/foundation/ is base code, and include/crucible/ and src/ are
+# quarantined.  Each of the two classes has one home.
+layer low 0 include/foundation/
+quarantine include/crucible/
+quarantine src/
+home owner crucible::Context include/crucible/Context.h | the owner of an engine and its pool, which the engine befriends
+home owner crucible::Engine include/crucible/Engine.h | the engine of a context, which the pool befriends

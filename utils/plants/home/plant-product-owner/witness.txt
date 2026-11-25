@@ -1,0 +1,17 @@
+# A class of the product that a header befriends has one home.  A unit that
+# includes the header of the friend declaration, and not the home of the class,
+# can define the class itself.  Each such definition is a finding of the rule
+# home.  The unit of the home is the control.
+compile forged_context src/forged_context.cpp mode=error
+exit forged_context fail
+finding forged_context home owner-outside-home src/forged_context.cpp:5:8 | crucible::Context
+finding forged_context home at-home include/crucible/Engine.h:8:8 | crucible::Engine
+error forged_context src/forged_context.cpp:5 | quarantine: owner-outside-home crucible::Context;
+compile forged_engine src/forged_engine.cpp mode=error
+exit forged_engine fail
+finding forged_engine home owner-outside-home src/forged_engine.cpp:5:8 | crucible::Engine
+error forged_engine src/forged_engine.cpp:5 | quarantine: owner-outside-home crucible::Engine;
+compile uses src/uses.cpp mode=error
+exit uses pass
+finding uses home at-home include/crucible/Context.h:8:8 | crucible::Context
+finding uses home at-home include/crucible/Engine.h:8:8 | crucible::Engine

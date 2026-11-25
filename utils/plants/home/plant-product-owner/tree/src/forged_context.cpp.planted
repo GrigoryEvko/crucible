@@ -1,0 +1,15 @@
+#include <crucible/Engine.h>
+
+namespace crucible {
+
+struct Context {
+    Engine engine{};
+
+    void bind(const Pool& pool) noexcept { engine.bind_(pool); }
+};
+
+}  // namespace crucible
+
+void bind_forged(crucible::Context& forged, const crucible::Pool& pool) noexcept;
+
+void bind_forged(crucible::Context& forged, const crucible::Pool& pool) noexcept { forged.bind(pool); }

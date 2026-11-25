@@ -798,10 +798,8 @@ test/shape/ | region | 1 | PROBE: the probe measures the moves of the core state
 test/tensor_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/tensor_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/vigil_neg/ | opted-out | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | opted-out | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture forges an object from bytes with std::bit_cast | -
-test/vigil_neg/ | region | 1 | PROBE: the fixture gives a raw pointer to a typed door, and the door refuses it | -
 test/vigil_neg/ | region | 1 | PROBE: the fixture starts the lifetime of an object in raw bytes | -
 vessel/torch/ | opted-out | 3 | ABI: Library::impl of PyTorch registers the kernel of one operator | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open
 vessel/torch/ | opted-out | 1 | ABI: Library::impl of PyTorch takes the operator name as a C text | a finding of a unit that only the vessel build compiles (crucible_fallback.cpp, storage_generation.cpp and the shards of register.cpp), which the reduce of the vessel build counts since the vessel step checks this rule; the review of the finding is open

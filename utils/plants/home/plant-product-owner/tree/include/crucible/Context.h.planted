@@ -1,0 +1,15 @@
+#pragma once
+
+#include <crucible/Engine.h>
+
+namespace crucible {
+
+// The context binds its engine only to its own pool.
+struct Context {
+    Context() noexcept { engine.bind_(pool); }
+
+    Pool pool{};
+    Engine engine{};
+};
+
+}  // namespace crucible
