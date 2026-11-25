@@ -62,6 +62,16 @@
 //     throw.  The rule reads no exception path, because the tree does not
 //     throw (CLAUDE.md section XII).
 //
+// Calls
+//     The front end gives a call as a CALL_EXPR, but a call whose result is a
+//     class that a call cannot pass in registers (a class with a destructor, or
+//     with a copy or a move that is not trivial) as an AGGR_INIT_EXPR, which
+//     builds the result in place.  Each rule of the family reads the two forms
+//     as one call (is_call_tree).  A call through a pointer, a reference or a
+//     member pointer names no function, and its callee expression gives the
+//     types of its parameters (function_type_of).  The walk reads the callee
+//     expression too, because it can hold a consume.
+//
 // Folds
 //     The front end replaces an initializer whose value is a constant with
 //     that value.  A move of an empty token gives a constant, so the fold
@@ -1127,7 +1137,7 @@ std::unordered_set<unsigned> named_bodies_summarized;
 // capture out, with an implicit object parameter (the closures that move a
 // capture).
 bool calls_moving_closure(tree call) {
-    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+    if (call == NULL_TREE || !is_call_tree(call)) {
         return false;
     }
     tree callee = cp_get_callee_fndecl_nofold(call);
@@ -1181,15 +1191,15 @@ bool calls_with_moving_closure(tree call) {
     if (calls_moving_closure(call)) {
         return true;
     }
-    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+    if (call == NULL_TREE || !is_call_tree(call)) {
         return false;
     }
     tree callee = cp_get_callee_fndecl_nofold(call);
     if (callee == NULL_TREE || !carries_annotation(DECL_ATTRIBUTES(callee), linear_names.once_door)) {
         return false;
     }
-    for (int index = 0; index < call_expr_nargs(call); ++index) {
-        if (is_moving_closure_type(TREE_TYPE(CALL_EXPR_ARG(call, index)))) {
+    for (int index = 0; index < argument_count(call); ++index) {
+        if (is_moving_closure_type(TREE_TYPE(argument_at(call, index)))) {
             return true;
         }
     }
@@ -1363,7 +1373,7 @@ bool carries_linear_annotation(tree function, tree name) {
 // such a call is read, also when each object of the body is behind a
 // reference or a pointer.
 bool is_move_assignment_call(tree call) {
-    if (call == NULL_TREE || TREE_CODE(call) != CALL_EXPR) {
+    if (call == NULL_TREE || !is_call_tree(call)) {
         return false;
     }
     tree callee = cp_get_callee_fndecl_nofold(call);
@@ -1502,15 +1512,18 @@ int forwarded_parameter_index(tree function) {
     return index;
 }
 
-// The type of the function that a call names, or null.
+// The type of the function that a call names, or null.  A call through a
+// pointer, a reference or a member pointer has no CALLEE, and its callee
+// expression gives the type.
 tree function_type_of(tree call, tree callee) {
     if (callee != NULL_TREE) {
         return TREE_TYPE(callee);
     }
-    if (TREE_CODE(call) != CALL_EXPR || CALL_EXPR_FN(call) == NULL_TREE) {
+    tree named = callee_of(call);
+    if (named == NULL_TREE) {
         return NULL_TREE;
     }
-    tree type = TREE_TYPE(CALL_EXPR_FN(call));
+    tree type = TREE_TYPE(named);
     if (type != NULL_TREE && POINTER_TYPE_P(type)) {
         type = TREE_TYPE(type);
     }
@@ -3492,15 +3505,12 @@ private:
     }
 
     void walk_call(tree call, FlowState& state) {
-        bool is_aggregate = TREE_CODE(call) == AGGR_INIT_EXPR;
         tree callee = cp_get_callee_fndecl_nofold(call);
         if (callee != NULL_TREE && TREE_CODE(callee) != FUNCTION_DECL) {
             callee = NULL_TREE;
         }
         refill_at_call(call, callee, state);
-        if (!is_aggregate) {
-            walk_expression(CALL_EXPR_FN(call), state);
-        }
+        walk_expression(callee_of(call), state);
         int count = argument_count(call);
         for (int index = 0; index < count; ++index) {
             walk_expression(argument_at(call, index), state);
@@ -5948,7 +5958,7 @@ void check_call(tree call, ShapeWalk& walk) {
             break;
         }
     }
-    if (walk.is_exempt_from_drops || count < 1 || TREE_CODE(call) != CALL_EXPR) {
+    if (walk.is_exempt_from_drops || count < 1) {
         return;
     }
     tree first = argument_at(call, 0);
@@ -6395,7 +6405,7 @@ tree walk_closure_fills(tree* node_pointer, int* walk_subtrees, void* data) {
         note_fill(walk, capture_field_of(TREE_OPERAND(node, 0), walk.closure));
         return NULL_TREE;
     }
-    if (TREE_CODE(node) != CALL_EXPR) {
+    if (!is_call_tree(node)) {
         return NULL_TREE;
     }
     tree callee = cp_get_callee_fndecl_nofold(node);
@@ -6503,7 +6513,7 @@ tree walk_kept_reference(tree* node_pointer, int* walk_subtrees, void* data) {
         }
         return NULL_TREE;
     }
-    if (TREE_CODE(node) != CALL_EXPR) {
+    if (!is_call_tree(node)) {
         return NULL_TREE;
     }
     tree callee = cp_get_callee_fndecl_nofold(node);

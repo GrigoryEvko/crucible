@@ -1,0 +1,48 @@
+# Calls that return a class by value (the calls of linear.cpp).  The front end
+# builds the result of each one in place, so the call is an AGGR_INIT_EXPR.
+# The unit calls.cpp holds a second consume through a pointer (38), through a
+# pointer with a parameter by value (46) and through a member pointer (53), a
+# move out of a lent parameter through a pointer (60) and through a reference
+# (65), a consume in the callee expression with a second one after it (76), two
+# calls of a closure that gives its capture out (86 and 87), the once door with
+# a closure that a parameter lends (97), and a self-move through a move
+# assignment that returns a class (124).  The unit fills.cpp holds a closure
+# that fills a sum after its consume through a callee (46) and through a
+# pointer (57), and a body that gives its reference to a call that can keep it:
+# in its result (90), through a constructor (97), in a callee with no body (104)
+# and through a pointer (111).  A function pointer is a raw function pointer of
+# the rule quarantine too.
+
+compile calls src/calls.cpp must-consume=on errors=calls
+flag calls -freflection
+exit calls fail
+judge calls
+finding calls quarantine raw-function-pointer src/calls.cpp:36:38 | take
+finding calls must-consume double-consume src/calls.cpp:38:30 | planted::twice_through_a_pointer: token (planted::Token)
+finding calls quarantine raw-function-pointer src/calls.cpp:44:29 | take
+finding calls must-consume double-consume src/calls.cpp:46:9 | planted::twice_by_value: token (planted::Token)
+finding calls quarantine raw-function-pointer src/calls.cpp:51:51 | take
+finding calls must-consume double-consume src/calls.cpp:53:9 | planted::twice_through_a_member_pointer: token (planted::Token)
+finding calls quarantine raw-function-pointer src/calls.cpp:59:48 | take
+finding calls must-consume borrow-move-out src/calls.cpp:60:29 | planted::out_of_a_borrow_through_a_pointer: token (planted::Token)
+finding calls must-consume borrow-move-out src/calls.cpp:65:29 | planted::out_of_a_borrow_through_a_reference: token (planted::Token)
+finding calls quarantine raw-function-pointer src/calls.cpp:72:21 | pick
+finding calls must-consume double-consume src/calls.cpp:76:9 | planted::consume_in_the_callee: token (planted::Token)
+finding calls must-consume closure-move-out src/calls.cpp:86:29 | planted::two_calls_of_a_moving_closure: give (planted::two_calls_of_a_moving_closure()::<lambda()>)
+finding calls must-consume closure-move-out src/calls.cpp:87:30 | planted::two_calls_of_a_moving_closure: give (planted::two_calls_of_a_moving_closure()::<lambda()>)
+finding calls must-consume closure-move-out src/calls.cpp:97:55 | planted::give_borrowed_to_the_once_door: body (planted::borrowed_closure_to_the_once_door_twice()::<lambda()>)
+finding calls must-consume self-move src/calls.cpp:124:46 | planted::move_into_itself: held (planted::Handle)
+error calls src/calls.cpp:124 | a move assignment moves an object into itself, so the move keeps nothing that the target owes: planted::move_into_itself: held
+
+compile fills src/fills.cpp must-consume=on errors=fills
+flag fills -freflection
+exit fills fail
+finding fills must-consume option-unconsumed src/fills.cpp:46:19 | planted::closure_fills_after_the_consume: held (foundation::core::Option<planted::Token>)
+finding fills quarantine raw-function-pointer src/fills.cpp:56:46 | fill
+finding fills must-consume option-unconsumed src/fills.cpp:57:19 | planted::closure_fills_through_a_pointer: held (foundation::core::Option<planted::Token>)
+finding fills quarantine raw-function-pointer src/fills.cpp:84:52 | look
+finding fills must-consume option-unconsumed src/fills.cpp:90:19 | planted::kept_by_the_result: held (foundation::core::Option<planted::Token>)
+finding fills must-consume option-unconsumed src/fills.cpp:97:19 | planted::kept_by_a_constructor: held (foundation::core::Option<planted::Token>)
+finding fills must-consume option-unconsumed src/fills.cpp:104:19 | planted::kept_by_an_opaque_callee: held (foundation::core::Option<planted::Token>)
+finding fills quarantine raw-function-pointer src/fills.cpp:110:32 | look
+finding fills must-consume option-unconsumed src/fills.cpp:111:19 | planted::kept_by_a_pointer: held (foundation::core::Option<planted::Token>)

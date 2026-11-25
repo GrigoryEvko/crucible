@@ -1,0 +1,117 @@
+// Calls that return a class by value and that can fill a sum (the calls and
+// the summaries of linear.cpp).  Each function can end a full Option of a
+// linear payload.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that a call cannot pass in registers.
+struct Plain {
+    int value = 0;
+    constexpr explicit Plain(int given) noexcept : value{given} {}
+    constexpr Plain(Plain const& other) noexcept : value{other.value} {}
+    constexpr ~Plain() {}
+};
+
+// A class that keeps the reference in the object that a call builds in place.
+struct Keeper {
+    Option<Token>& kept;
+    explicit Keeper(Option<Token>& held) noexcept : kept{held} {}
+    Keeper(Keeper const& other) noexcept : kept{other.kept} {}
+    ~Keeper() {}
+};
+
+void sink(Token&& token) noexcept;
+void after() noexcept;
+Plain refill(Option<Token>& held) noexcept;
+
+// A closure fills the sum through a callee that returns a class.
+void closure_fills_after_the_consume() {
+    Option<Token> held = Option<Token>::some(Token{1});
+    auto again = [&held] {
+        Plain const made = refill(held);
+        static_cast<void>(made);
+    };
+    sink(std::move(held).expect("the Option holds the first token"));
+    again();
+}
+
+// The same through a pointer.
+void closure_fills_through_a_pointer(Plain (*fill)(Option<Token>&) noexcept) {
+    Option<Token> held = Option<Token>::some(Token{2});
+    auto again = [&held, fill] {
+        Plain const made = fill(held);
+        static_cast<void>(made);
+    };
+    sink(std::move(held).expect("the Option holds the second token"));
+    again();
+}
+
+// A callee whose body gives its reference to a callee with a class result that
+// keeps it, to a constructor that keeps it, to a callee with no body in the
+// unit, and to a call through a pointer.  Each one can keep the reference, so
+// the call after the consume can fill the sum.
+Keeper keep_in_the_result(Option<Token>& held) noexcept { return Keeper{held}; }
+int through_the_result(Option<Token>& held) noexcept {
+    Keeper const made = keep_in_the_result(held);
+    return made.kept.is_some() ? 1 : 0;
+}
+int through_a_constructor(Option<Token>& held) noexcept {
+    Keeper const made{held};
+    return made.kept.is_some() ? 1 : 0;
+}
+Plain opaque(Option<Token>& held) noexcept;
+int through_an_opaque_callee(Option<Token>& held) noexcept {
+    Plain const made = opaque(held);
+    return made.value;
+}
+int through_a_pointer(Option<Token>& held, Plain (*look)(Option<Token>&) noexcept) noexcept {
+    Plain const made = look(held);
+    return made.value;
+}
+
+void kept_by_the_result() {
+    Option<Token> held = Option<Token>::some(Token{3});
+    static_cast<void>(through_the_result(held));
+    sink(std::move(held).expect("the Option holds the third token"));
+    after();
+}
+
+void kept_by_a_constructor() {
+    Option<Token> held = Option<Token>::some(Token{4});
+    static_cast<void>(through_a_constructor(held));
+    sink(std::move(held).expect("the Option holds the fourth token"));
+    after();
+}
+
+void kept_by_an_opaque_callee() {
+    Option<Token> held = Option<Token>::some(Token{5});
+    static_cast<void>(through_an_opaque_callee(held));
+    sink(std::move(held).expect("the Option holds the fifth token"));
+    after();
+}
+
+void kept_by_a_pointer(Plain (*look)(Option<Token>&) noexcept) {
+    Option<Token> held = Option<Token>::some(Token{6});
+    static_cast<void>(through_a_pointer(held, look));
+    sink(std::move(held).expect("the Option holds the sixth token"));
+    after();
+}
+
+}  // namespace planted

@@ -1,0 +1,8 @@
+# The rule table of this plant.  The unit of src/ is quarantined, and it can
+# name the vocabulary of the linear marker and of the byte seal of the
+# repository, and std::move.
+
+admit foundation::lifetime | the byte seal, which the planted code names
+admit foundation::linear | the vocabulary of the linear marker, which the planted code names
+admit std::move | the cast of the consume
+quarantine src/

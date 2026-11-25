@@ -1,0 +1,8 @@
+# A move assignment that returns a class by value drops the old value of the
+# member that it assigns (the calls of linear.cpp).
+
+compile assigns src/assigns.cpp linear-shapes=on
+flag assigns -freflection
+exit assigns pass
+judge assigns
+finding assigns drop-door untracked-assignment src/assigns.cpp:36:52 | planted::assign_member: held (planted::Token)

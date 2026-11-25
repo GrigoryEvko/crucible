@@ -1,0 +1,128 @@
+// Calls that return a class by value (the calls of linear.cpp).  The front end
+// builds the result of such a call in place, so the call is an AGGR_INIT_EXPR
+// and no CALL_EXPR.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that a call cannot pass in registers.
+struct Plain {
+    int value = 0;
+    constexpr explicit Plain(int given) noexcept : value{given} {}
+    constexpr Plain(Plain const& other) noexcept : value{other.value} {}
+    constexpr ~Plain() {}
+};
+
+struct Owner {
+    int value = 0;
+};
+
+void sink(Token&& token) noexcept;
+
+// Two calls through a pointer take one token.
+void twice_through_a_pointer(Plain (*take)(Token&&) noexcept, Token&& token) {
+    Plain const first = take(std::move(token));
+    Plain const second = take(std::move(token));
+    static_cast<void>(first);
+    static_cast<void>(second);
+}
+
+// The same through a pointer that takes the token by value.
+void twice_by_value(Plain (*take)(Token) noexcept, Token&& token) {
+    Plain const first = take(std::move(token));
+    sink(std::move(token));
+    static_cast<void>(first);
+}
+
+// The same through a member pointer.
+void twice_through_a_member_pointer(Owner& owner, Plain (Owner::*take)(Token&&) noexcept, Token&& token) {
+    Plain const first = (owner.*take)(std::move(token));
+    sink(std::move(token));
+    static_cast<void>(first);
+}
+
+// A call through a pointer and one through a reference take the token of the
+// caller, which the caller lends.
+void out_of_a_borrow_through_a_pointer(Plain (*take)(Token&&) noexcept, Token& token) {
+    Plain const taken = take(std::move(token));
+    static_cast<void>(taken);
+}
+
+void out_of_a_borrow_through_a_reference(Plain (&take)(Token&&) noexcept, Token& token) {
+    Plain const taken = take(std::move(token));
+    static_cast<void>(taken);
+}
+
+// The callee expression takes the token, and the code after the call takes it
+// again.
+using Maker = Plain (*)(int) noexcept;
+[[nodiscard]] Maker pick(Token&& token) noexcept;
+
+void consume_in_the_callee(Token&& token) {
+    Plain const made = pick(std::move(token))(1);
+    sink(std::move(token));
+    static_cast<void>(made);
+}
+
+// Two calls of a closure that gives its capture out, before the once door.
+void two_calls_of_a_moving_closure() {
+    auto give = [token = Token{1}]() mutable noexcept {
+        sink(std::move(token));
+        return Plain{1};
+    };
+    Plain const first = give();
+    Plain const second = give();
+    Plain const last = ::foundation::linear::call_once(std::move(give));
+    static_cast<void>(first);
+    static_cast<void>(second);
+    static_cast<void>(last);
+}
+
+// The once door with a closure that a parameter lends.
+template <class Body>
+void give_borrowed_to_the_once_door(Body& body) noexcept {
+    Plain const made = ::foundation::linear::call_once(std::move(body));
+    static_cast<void>(made);
+}
+
+void borrowed_closure_to_the_once_door_twice() {
+    Token held{2};
+    auto give = [&held]() noexcept {
+        sink(std::move(held));
+        return Plain{2};
+    };
+    give_borrowed_to_the_once_door(give);
+    give_borrowed_to_the_once_door(give);
+}
+
+// A move assignment that returns a class by value, from the same object.
+struct [[= ::foundation::linear::linear{}]] Handle {
+    int handle = 0;
+    constexpr explicit Handle(int value) noexcept : handle{value} {}
+    constexpr Handle(Handle&&) noexcept = default;
+    constexpr Plain operator=(Handle&& other) noexcept {
+        handle = other.handle;
+        return Plain{handle};
+    }
+    Handle(const Handle&) = delete;
+};
+
+void move_into_itself(Handle& held) {
+    Plain const made = (held = std::move(held));
+    static_cast<void>(made);
+}
+
+}  // namespace planted

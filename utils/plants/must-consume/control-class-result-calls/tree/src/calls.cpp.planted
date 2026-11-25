@@ -1,0 +1,97 @@
+// Calls that return a class by value, each one a correct use of its linear
+// values (the calls of linear.cpp).
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A class that a call cannot pass in registers.
+struct Plain {
+    int value = 0;
+    constexpr explicit Plain(int given) noexcept : value{given} {}
+    constexpr Plain(Plain const& other) noexcept : value{other.value} {}
+    constexpr ~Plain() {}
+};
+
+struct Owner {
+    int value = 0;
+};
+
+void sink(Token&& token) noexcept;
+void after() noexcept;
+
+// One call through a pointer, a pointer that takes the token by value, a
+// reference and a member pointer consumes the token.
+void once_through_a_pointer(Plain (*take)(Token&&) noexcept, Token&& token) {
+    Plain const taken = take(std::move(token));
+    static_cast<void>(taken);
+}
+
+void once_by_value(Plain (*take)(Token) noexcept, Token&& token) {
+    Plain const taken = take(std::move(token));
+    static_cast<void>(taken);
+}
+
+void once_through_a_reference(Plain (&take)(Token&&) noexcept, Token&& token) {
+    Plain const taken = take(std::move(token));
+    static_cast<void>(taken);
+}
+
+void once_through_a_member_pointer(Owner& owner, Plain (Owner::*take)(Token&&) noexcept, Token&& token) {
+    Plain const taken = (owner.*take)(std::move(token));
+    static_cast<void>(taken);
+}
+
+// A call that takes the lent token and gives it back in its place.
+void renew(Token (*exchange)(Token&&) noexcept, Token& token) { token = exchange(std::move(token)); }
+
+// The callee expression consumes the token one time.
+using Maker = Plain (*)(int) noexcept;
+[[nodiscard]] Maker pick(Token&& token) noexcept;
+
+void consume_in_the_callee(Token&& token) {
+    Plain const made = pick(std::move(token))(1);
+    static_cast<void>(made);
+}
+
+// The once door calls a closure that gives its capture out.
+void call_once_gives_the_token() {
+    auto give = [token = Token{1}]() mutable noexcept {
+        sink(std::move(token));
+        return Plain{1};
+    };
+    Plain const made = ::foundation::linear::call_once(std::move(give));
+    static_cast<void>(made);
+}
+
+// A body that gives its parameter to a callee that keeps no reference, and
+// that returns a class.  So the caller consumes the sum for each later call.
+Plain look(Option<Token>& held) noexcept { return Plain{held.is_some() ? 1 : 0}; }
+int through_the_class_result(Option<Token>& held) noexcept {
+    Plain const made = look(held);
+    return made.value;
+}
+
+void read_then_consume() {
+    Option<Token> held = Option<Token>::some(Token{2});
+    static_cast<void>(through_the_class_result(held));
+    sink(std::move(held).expect("the Option holds the second token"));
+    after();
+}
+
+}  // namespace planted

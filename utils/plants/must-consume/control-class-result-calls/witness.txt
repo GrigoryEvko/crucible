@@ -1,0 +1,16 @@
+# A call that returns a class by value is the same call as one that returns a
+# number (the calls of linear.cpp).  The rule admits each form of this unit:
+# one call through a pointer, a pointer with a parameter by value, a reference
+# and a member pointer, a call that gives the lent token back, a consume in the
+# callee expression, the once door with a closure that gives its capture out,
+# and a callee that reads a sum and returns a class.  The unit compiles and
+# gives no line of the rule.  A function pointer is a raw function pointer of
+# the rule quarantine.
+compile calls src/calls.cpp must-consume=on
+flag calls -freflection
+exit calls pass
+finding calls quarantine raw-function-pointer src/calls.cpp:40:37 | take
+finding calls quarantine raw-function-pointer src/calls.cpp:45:28 | take
+finding calls quarantine raw-function-pointer src/calls.cpp:55:50 | take
+finding calls quarantine raw-function-pointer src/calls.cpp:61:20 | exchange
+finding calls quarantine raw-function-pointer src/calls.cpp:65:21 | pick

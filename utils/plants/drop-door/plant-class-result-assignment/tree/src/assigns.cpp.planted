@@ -1,0 +1,40 @@
+// A move assignment that returns a class by value (the calls of linear.cpp),
+// over a member of an object of the caller.  The front end builds the result
+// in place, so the call is an AGGR_INIT_EXPR.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+// A class that a call cannot pass in registers.
+struct Plain {
+    int value = 0;
+    constexpr explicit Plain(int given) noexcept : value{given} {}
+    constexpr Plain(Plain const& other) noexcept : value{other.value} {}
+    constexpr ~Plain() {}
+};
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Plain operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return Plain{handle};
+    }
+    Token(const Token&) = delete;
+};
+
+struct Cell {
+    Token held;
+};
+
+// The old value of the member drops.
+void assign_member(Cell& cell, Token&& token) {
+    Plain const made = (cell.held = std::move(token));
+    static_cast<void>(made);
+}
+
+}  // namespace planted

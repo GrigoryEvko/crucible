@@ -3405,6 +3405,10 @@ void for_each_function(tree callee, Visit&& visit, int depth = 0) {
     }
 }
 
+// True when NODE is a call: a CALL_EXPR, or the AGGR_INIT_EXPR of a call
+// that builds a class result in place.
+inline bool is_call_tree(tree node) { return TREE_CODE(node) == CALL_EXPR || TREE_CODE(node) == AGGR_INIT_EXPR; }
+
 // The callee tree of a call: the function of a CALL_EXPR or of an
 // AGGR_INIT_EXPR.
 inline tree callee_of(tree call) {
