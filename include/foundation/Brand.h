@@ -46,6 +46,35 @@
 //     or the EndpointClaim of foundation/ChannelBinding.h for the one live
 //     handle of a role.
 //
+//     No type can stand for that id.  A brand is a type, and a run is an
+//     event of the program: a loop or a recursion gives as many live runs of
+//     one site as it likes, and the type of each is the same.  A scope brand
+//     needs one frame from the mint to the end of each value.  A loan that
+//     travels in a message has no such frame: the send of a session mints the
+//     loan, and a later receive ends it.  Two sessions of one site have one
+//     type, so a peer that holds the loans of the two can give each one back
+//     on the other session, and only the id of the loan tells the two apart.
+//
+//     So each door that pairs two values of one fresh brand, where a swap of
+//     two runs gives two writers of one region or a writer beside a reader,
+//     compares a run-time id, and each door that counts the live values of
+//     one object or one tag counts at run time.  Each such check runs once at
+//     a call of its door and never for each element, and it stays in each
+//     build, because no compile-time rule stands for it.  The doors:
+//       - EndpointClaim::take of foundation/ChannelBinding.h
+//       - expect_writer_ of fixy/session/VigilModeCell.h and of
+//         foundation/core/Atomic.h
+//       - the live root of a tag in mint_singleton_root of
+//         foundation/permissions/Permission.h
+//       - the dispatch window of fixy/concurrent/Dispatch.h
+//       - mint_shared_read of fixy/SharedRegion.h
+//       - is_lease_of of foundation/permissions/SharedPermission.h
+//       - the frame-door ends of an SPSC split in fixy/concurrent/SpscEnds.h
+//       - mint_permission_after_loan of foundation/permissions/ReadView.h.
+//     No memory door reads under a swapped token only because these checks
+//     run.  A new door that pairs two values of one fresh brand takes an id
+//     too, and it joins this list.
+//
 // 3.  A brand refuses by identity and a deleted rvalue twin refuses by
 //     value category.  They are two mechanisms for two failures.  The
 //     twin stops a borrow being taken from a temporary, which no brand
