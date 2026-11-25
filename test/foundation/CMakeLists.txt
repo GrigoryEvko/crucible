@@ -5221,8 +5221,10 @@ foundation_neg_compile_test(neg_core_small_list_nested_frame_door
 # The frame doors of foundation/core/Frame.h write each owner of the Region
 # family and each sum of the Choice family.  The door of an owner gives the
 # owner back, and the name that the caller moved from holds no storage while
-# the body runs.  The frames of two call sites have two brands.
+# the body runs.  The frames of two call sites have two brands.  The death
+# tests of a ViewMut that gave its run up run in a child process of fixy.
 foundation_test(test_core_frame)
+target_link_libraries(test_core_frame PRIVATE fixy)
 
 # A body holds one unique borrow of its frame: a ViewMut and a RefMut have no
 # copy, a frame door takes an owner only by move, and a second frame of one

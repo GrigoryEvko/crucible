@@ -334,9 +334,38 @@ template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcept;
 
 // The run of view, which view gives up: a door that takes a ViewMut by rvalue
-// reference reads the run here, so no name of the caller keeps it.
+// reference reads the run here, so no name of the caller keeps it.  take_run_
+// ends the process for a view of a fixed extent that gave its run up before
+// (require_run_), so a part of the run and a View of a dynamic extent always
+// name live elements.  take_whole_run_ does no test.  Only a door whose result
+// is a ViewMut of the extent of the view, from its first element, reads it.  So
+// the extent of an emptied view stays in the type of the result and never
+// becomes a count, and the result is an emptied view too.
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept;
+template <class T, class Brand, std::size_t Extent>
+[[nodiscard]] constexpr View<T, Extent> take_whole_run_(ViewMut<T, Brand, Extent>& view) noexcept;
+
+// Ends the process when a ViewMut of a fixed extent gave its run up.  Its
+// extent stays in its type, so no count refuses a read of it.  A second name of
+// a moved ViewMut, such as a second reference parameter that names one object,
+// is the route to such a view, and the rule use-after-move does not see it.
+// The doors that trust two brands test it, and each door that drops the fixed
+// extent or gives a part of the run.  A ViewMut of a dynamic extent that gave
+// its run up has no element, so it needs no test.
+template <class T, class Brand, std::size_t Extent>
+constexpr void require_run_(ViewMut<T, Brand, Extent> const& view) noexcept;
+
+// The bytes from the address zero that a process does not map: the smallest
+// page of x86-64 and of aarch64.  Linux maps no page below the first 64 KiB for
+// a process with no privilege.
+inline constexpr std::size_t null_page_bytes = 4096;
+
+// The end of the process for a read of a ViewMut of a fixed extent that gave
+// its run up, out of the path of the doors.
+[[noreturn]] CRUCIBLE_COLD inline void report_given_up_run_() noexcept {
+    fatal("a ViewMut gave its run up, and a door reads the run under its old name");
+}
 
 // The door of View and ViewMut to the key of a cursor (the doors of the key
 // of foundation/core/Cursor.h).  Its one member is private, and View and
@@ -1006,11 +1035,19 @@ namespace detail {
 
 // The View of the elements of a C array.  The type of the array proves Extent
 // live elements, as a reference to the array does.  The View borrows the
-// array, so it lives no longer than the array.
+// array, so it lives no longer than the array.  A reference names an object,
+// and the build keeps each test of an address for null
+// (-fno-delete-null-pointer-checks), so an assumption states the fact.  The
+// array reference is its proof.  The fact holds for the address that this door
+// takes, and no stored pointer holds it: a view that gave its run up has a null
+// address of its own, and require_run_ still finds it.  The ViewMut of a new
+// frame over an inline array takes no test of require_run_.
 template <class T, std::size_t Extent>
     requires ViewElement<T> && ViewExtent<T, Extent>
 constexpr View<T, Extent> view_of_array_(T (&array)[Extent]) noexcept {
-    return View<T, Extent>{array};
+    T* const first = array;
+    [[assume(first != nullptr)]];
+    return View<T, Extent>{first};
 }
 
 // The View of one object.  The reference proves one live object.  The View
@@ -1197,10 +1234,14 @@ public:
 // object, names no run, and the alias proof of two brands holds (the alias
 // proof of Frame.h).  The rule use-after-move does not see each such name.
 // The source of a dynamic extent has no element.  The source of a fixed extent
-// keeps its extent, and its first address is null.  An assignment drops the
-// old run of the target, and a self move keeps the run.  The move constructor
-// is user-provided, so the ABI passes a ViewMut by value in memory, and
-// std::bit_cast builds no ViewMut.
+// keeps its extent, and its first address is null.  The doors that trust two
+// brands, and the doors that drop the fixed extent, end the process for it.
+// Each other read of a run of more than detail::null_page_bytes bytes ends the
+// process too.  Each other read of a smaller run lies in the page at the
+// address zero, which a process does not map, so the read faults.  An
+// assignment drops the old run of the target, and a self move keeps the run.
+// The move constructor is user-provided, so the ABI passes a ViewMut by value
+// in memory, and std::bit_cast builds no ViewMut.
 //
 //   size(), for (x : view)   as a View gives them
 //   get(position)            the element as an Option<Ref<T const, Brand>>,
@@ -1289,12 +1330,42 @@ class [[nodiscard]][[= ::foundation::transfer::refers_unique{}]] ViewMut final {
     friend class ViewMut;
 
     template <class U, class OtherBrand, std::size_t OtherExtent>
-    friend constexpr View<U, OtherExtent> detail::take_run_(ViewMut<U, OtherBrand, OtherExtent>& view) noexcept;
+    friend constexpr View<U, OtherExtent> detail::take_whole_run_(ViewMut<U, OtherBrand, OtherExtent>& view) noexcept;
 
     // Gives up the run.  A ViewMut of a dynamic extent then has no element.
     constexpr void give_up_() noexcept {
         first_ = nullptr;
         if constexpr (Extent == dynamic_extent) count_.count = 0;
+    }
+
+    // The first element, for each read of the run.  A run of a fixed extent of
+    // more bytes than the page at the address zero ends the process here when
+    // the view gave it up, because an index into such a run can name mapped
+    // memory.  A smaller run needs no test: each of its addresses lies in the
+    // page at the address zero, which a process does not map, so the read
+    // faults.  The size is a constant, so a smaller run has no branch.
+    //
+    // The rule use-after-move refuses a read of the old name in the function of
+    // the move, and that is the compile-time answer.  This test is the backstop
+    // for a second name behind a reference parameter, which the rule does not
+    // see.  test_given_up_large_run_ends_the_process of
+    // test/foundation/test_core_frame.cpp gives such a name to each door.  The
+    // test holds under each contract semantic, and it puts one test and one
+    // branch on the path.
+    [[nodiscard]] constexpr T* read_first_() const noexcept {
+        if constexpr (Extent != dynamic_extent && Extent > detail::null_page_bytes / sizeof(T)) {
+            CRUCIBLE_FATAL_INVARIANT(first_ != nullptr);
+        }
+        return first_;
+    }
+
+    // The run as a plain View of its extent, with no test (take_whole_run_).
+    [[nodiscard]] constexpr View<T, Extent> whole_run_() const noexcept {
+        if constexpr (Extent == dynamic_extent) {
+            return View<T>{first_, size()};
+        } else {
+            return View<T, Extent>{first_};
+        }
     }
 
 public:
@@ -1311,10 +1382,13 @@ public:
     }
 
     // The ViewMut of the same run with a dynamic extent.  The source moves
-    // in, so the run keeps one writer.
+    // in, so the run keeps one writer.  A source that gave its run up before,
+    // which a hidden second name of it reaches, ends the process, because the
+    // count of the target would name no element.
     template <std::size_t OtherExtent>
         requires(Extent == dynamic_extent && OtherExtent != dynamic_extent)
     constexpr ViewMut(ViewMut<T, Brand, OtherExtent>&& other) noexcept : first_{other.first_}, count_{OtherExtent} {
+        detail::require_run_(other);
         other.give_up_();
     }
 
@@ -1336,7 +1410,7 @@ public:
     // layer, such as copy() and write_each().  The tag keeps each caller
     // outside the base out, as for first_of_ of a View.
     [[nodiscard]] friend constexpr T* first_of_(detail::BaseLayerRead const& /*tag*/, ViewMut const& view) noexcept {
-        return view.first_;
+        return view.read_first_();
     }
 
     // The View of the run bounds the count, so the optimizer reads that
@@ -1347,14 +1421,17 @@ public:
         return count;
     }
 
+    // A loop reads its begin before its end, so the end makes no test.
     [[nodiscard]] constexpr ViewCursor<T> begin() & noexcept {
-        return ViewCursor<T>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+        T* const first = read_first_();
+        return ViewCursor<T>{detail::ViewCursorDoor::key(), first, first + size()};
     }
     [[nodiscard]] constexpr ViewCursor<T> end() & noexcept {
         return ViewCursor<T>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
     }
     [[nodiscard]] constexpr ViewCursor<T const> begin() const& noexcept {
-        return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_, first_ + size()};
+        T const* const first = read_first_();
+        return ViewCursor<T const>{detail::ViewCursorDoor::key(), first, first + size()};
     }
     [[nodiscard]] constexpr ViewCursor<T const> end() const& noexcept {
         return ViewCursor<T const>{detail::ViewCursorDoor::key(), first_ + size(), first_ + size()};
@@ -1371,7 +1448,7 @@ public:
     template <class... Refused>
         requires(sizeof...(Refused) == 0)
     [[nodiscard]] constexpr auto get(std::size_t position) const& noexcept {
-        return RegionRefDoor::element_at_<Brand>(static_cast<T const*>(first_), size(), position);
+        return RegionRefDoor::element_at_<Brand>(static_cast<T const*>(read_first_()), size(), position);
     }
 
     // The element at position, as an Option<RefMut<T, Brand>> with the brand
@@ -1387,7 +1464,7 @@ public:
         if (position >= size()) [[unlikely]] {
             return Option<RefMut<T, Brand>>{none};
         }
-        return Option<RefMut<T, Brand>>::some(RefMut<T, Brand>{RegionFrameKeyDoor::key_(), first_[position]});
+        return Option<RefMut<T, Brand>>::some(RefMut<T, Brand>{RegionFrameKeyDoor::key_(), read_first_()[position]});
     }
     template <class... Refused>
     void get_mut(std::size_t) const& = delete("a const ViewMut writes nothing, so it gives no writer of an element");
@@ -1401,7 +1478,7 @@ public:
         if constexpr (Extent == dynamic_extent) {
             return View<T const>{first_, size()};
         } else {
-            return View<T const, Extent>{first_};
+            return View<T const, Extent>{read_first_()};
         }
     }
 };
@@ -1592,7 +1669,7 @@ namespace detail {
 
 template <class T, class Brand, std::size_t Extent>
 [[nodiscard]] constexpr auto erased_run_mut_(ViewMut<T, Brand, Extent>&& view) noexcept {
-    return ViewMut<T, ::foundation::brand::DefaultBrand, Extent>{RegionFrameKeyDoor::key_(), take_run_(view)};
+    return ViewMut<T, ::foundation::brand::DefaultBrand, Extent>{RegionFrameKeyDoor::key_(), take_whole_run_(view)};
 }
 
 }  // namespace detail
@@ -1749,10 +1826,24 @@ constexpr View<T, Extent> run_of_(ViewMut<T, Brand, Extent> const& view) noexcep
 }
 
 template <class T, class Brand, std::size_t Extent>
-constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept {
-    View<T, Extent> const run = run_of_(view);
+constexpr void require_run_([[maybe_unused]] ViewMut<T, Brand, Extent> const& view) noexcept {
+    if constexpr (Extent != dynamic_extent) {
+        if (first_of_(BaseLayerRead{}, view) == nullptr) [[unlikely]]
+            report_given_up_run_();
+    }
+}
+
+template <class T, class Brand, std::size_t Extent>
+constexpr View<T, Extent> take_whole_run_(ViewMut<T, Brand, Extent>& view) noexcept {
+    View<T, Extent> const run = view.whole_run_();
     view.give_up_();
     return run;
+}
+
+template <class T, class Brand, std::size_t Extent>
+constexpr View<T, Extent> take_run_(ViewMut<T, Brand, Extent>& view) noexcept {
+    require_run_(view);
+    return take_whole_run_(view);
 }
 
 }  // namespace detail
@@ -2760,7 +2851,11 @@ template <class T, class Op, class... Elements>
 // Two brands prove that the runs do not overlap, so the copy is one memcpy.
 // One brand proves no difference, so the copy is the memmove of
 // copy(View, View).  The counts can differ, so the copy gives a Result, with
-// LengthMismatch when they differ, and the copy then writes nothing.
+// LengthMismatch when they differ, and the copy then writes nothing.  The proof
+// of two brands is the run of each ViewMut, so the memcpy tests a ViewMut of a
+// fixed extent that can have given its run up.  A second name of a moved
+// ViewMut, such as a second reference parameter that names one object, is the
+// route to such a view.
 template <class T, class Brand, std::size_t Extent, class SourceBrand, std::size_t SourceExtent>
     requires RegionCopyElement<T>
 [[nodiscard]] Result<Unit, LengthMismatch> copy(ViewMut<T, Brand, Extent> dst,
@@ -2771,6 +2866,8 @@ template <class T, class Brand, std::size_t Extent, class SourceBrand, std::size
     if constexpr (std::is_same_v<Brand, SourceBrand>) {
         __builtin_memmove(target, source, dst.size() * sizeof(T));
     } else {
+        detail::require_run_(dst);
+        detail::require_run_(src);
         __builtin_memcpy(target, source, dst.size() * sizeof(T));
     }
     return Unit{};
@@ -2807,7 +2904,9 @@ void copy(ViewMut<T, Brand, Extent> dst, View<Source, Extent> src) noexcept {
 // restrict pointers.  Each other call takes the loop of plain pointers.  The
 // two loops give the same values, because the
 // loop of plain pointers reads each input at a position before it writes out
-// at that position.  Complexity: O(out.size()).
+// at that position.  The loop of restrict pointers tests a ViewMut of a fixed
+// extent that can have given its run up, as the memcpy of copy does.
+// Complexity: O(out.size()).
 template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
     requires KernelOp<Op, T, Inputs...>
 [[nodiscard]] Result<Unit, LengthMismatch> write_each(ViewMut<T, Brand, Extent> out, Op op,
@@ -2816,6 +2915,8 @@ template <class T, class Brand, std::size_t Extent, class Op, class... Inputs>
     if (((inputs.size() != count) || ...)) return err(LengthMismatch{});
     T* const target = first_of_(detail::BaseLayerRead{}, out);
     if constexpr (RestrictKernel<T, Brand, Inputs...>) {
+        detail::require_run_(out);
+        (detail::require_run_(inputs), ...);
         detail::write_each_disjoint_(target, count, op, first_of_(detail::BaseLayerRead{}, inputs)...);
     } else {
         detail::write_each_aliased_(target, count, op, first_of_(detail::BaseLayerRead{}, inputs)...);
@@ -2902,7 +3003,7 @@ byte_view(View<T, Extent> run) noexcept {
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>
     requires std::same_as<T, unsigned char>
 [[nodiscard]] ViewMut<std::byte, Brand, Extent> byte_view(ViewMut<T, Brand, Extent>&& run) noexcept {
-    return ViewMut<std::byte, Brand, Extent>{RegionFrameKeyDoor::key_(), byte_view(detail::take_run_(run))};
+    return ViewMut<std::byte, Brand, Extent>{RegionFrameKeyDoor::key_(), byte_view(detail::take_whole_run_(run))};
 }
 
 template <class T, ::foundation::brand::IsBrand Brand, std::size_t Extent>

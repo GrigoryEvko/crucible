@@ -799,12 +799,15 @@ auto with_region(::foundation::core::HeapArray<T, Align>&& storage, Body&& body)
 
 // The region scope door over a ViewMut.  The borrow moves into the frame, and
 // the door gives it back, so the region covers the run of the borrow only
-// while the frame holds it.
+// while the frame holds it.  A borrow of a fixed extent that gave its run up,
+// which a hidden second name of it reaches, ends the process, because the
+// region would hold its count and no element.
 template <typename Tag, class... Refused, typename T, typename RunBrand, std::size_t Extent, typename Body,
           ::foundation::brand::IsBrand Fresh>
     requires(sizeof...(Refused) == 0) && RegionScopeTag<Tag> && RegionScopeBody<Body, T, Tag, Fresh>
 auto with_region(::foundation::core::ViewMut<T, RunBrand, Extent>&& run, Body&& body) noexcept {
     using Run = ::foundation::core::ViewMut<T, RunBrand, Extent>;
+    ::foundation::core::detail::require_run_(run);
     Run held{std::move(run)};
     using Value = typename detail::region_scope_value<std::invoke_result_t<Body&&, OwnedRegion<T, Tag, Fresh>&&>,
                                                       OwnedRegion<T, Tag, Fresh>>::type;

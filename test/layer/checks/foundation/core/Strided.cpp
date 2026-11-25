@@ -92,6 +92,15 @@ static_assert(!std::is_trivially_move_constructible_v<StridedViewMut<int, 2, Che
 static_assert(!std::is_constructible_v<StridedViewMut<int, 2, CheckBrand>, StridedView<int, 2>>);
 static_assert(!std::is_default_constructible_v<StridedViewMut<int, 2, CheckBrand>>);
 
+// A View has no extent 0, so the mint gives no unique view of the static rank
+// 0.  Such a view would keep its count of 1 after a move, so no count would
+// refuse a read of the moved view.  A door that gives a unique view of rank 0
+// needs the test of require_run_ (foundation/core/Region.h) on the first
+// element, in view() and in detail::writable_view_of_ of a StridedViewMut.
+template <std::size_t Extent>
+concept ExtentOfAView = requires { typename View<std::size_t const, Extent>; };
+static_assert(ExtentOfAView<1> && !ExtentOfAView<0>);
+
 // The plain view of a unique view reads: its elements are const, also for a
 // unique view that is not const.  A copy of a plain view that writes would be
 // a second writer.

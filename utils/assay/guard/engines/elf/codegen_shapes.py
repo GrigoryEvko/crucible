@@ -605,12 +605,14 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "keyed_frame_copy",
         "a copy between the frames of two keyed arrays is the memcpy of the raw form: the two frames have two brands, "
-        "so the alias proof keeps the memcpy",
+        "so the alias proof keeps the memcpy.  The test of a run that its view gave up folds away, because each frame "
+        "names an array",
     ),
     Probe(
         "keyed_frame_write_each",
         "write_each between the frames of two keyed arrays is the loop of the restrict pointers of the raw form: the "
-        "two brands keep the restrict loop",
+        "two brands keep the restrict loop.  The test of a run that its view gave up folds away, because each frame "
+        "names an array",
     ),
     Probe(
         "keyed_heap_array_frame_copy",

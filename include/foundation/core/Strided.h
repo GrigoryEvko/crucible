@@ -988,9 +988,10 @@ template <class Lanes>
 // leaves the source with none, and so does each door that takes a unique view
 // by rvalue reference.  So a second name of a moved view names no element, and
 // the alias proof holds.  The rule use-after-move does not see each such name.
-// The source of a static rank above 0 keeps its rank, and one of its sizes is
-// 0.  The source of a dynamic rank has one axis of no element.  The source of
-// rank 0 has no axis, so its count stays 1, and it names no element.
+// The source of a static rank keeps its rank, and one of its sizes is 0.  The
+// source of a dynamic rank has one axis of no element.  The mint gives no
+// unique view of the static rank 0, because a View has no extent 0.  Such a
+// view would keep its count of 1 after a move.
 //
 //   rank(), count(), sizes(), strides(), size(axis), stride(axis), is_dense()
 //                       as the StridedView of the same parts gives them
@@ -1125,7 +1126,7 @@ mint_strided_view_mut(ViewMut<T, Brand, RunExtent> run, View<S, SizesExtent> siz
     // The arms of a match would give the brand of the frame through a return
     // type that no template argument of the match names, so the mint takes
     // the view through CRUCIBLE_TRY.
-    CRUCIBLE_TRY(view, mint_strided_view(detail::run_of_(run), sizes, strides, offset));
+    CRUCIBLE_TRY(view, mint_strided_view(detail::take_run_(run), sizes, strides, offset));
     if (view.count() != 0 && !detail::has_no_overlap_(detail::strided_lanes_of_(view))) {
         return Minted{none};
     }

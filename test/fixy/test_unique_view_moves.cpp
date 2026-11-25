@@ -17,6 +17,8 @@
 //   - A plain view of the run proves no difference, so the doors take the
 //     stated order over it: each build gives one result for an input that
 //     overlaps the output at a shift of one element.
+//   - A view of a fixed extent keeps its extent after a move, so each door that
+//     drops the extent ends the process for it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -238,6 +240,79 @@ void test_overlap_takes_the_stated_order(::fixy::TestRunnerCtx const& test) {
     pass(test, "  test_overlap_takes_the_stated_order: PASSED\n");
 }
 
+// The text of the end of a door that reads a run that its view gave up.
+constexpr ::fixy::TextView kGivenUp{"a ViewMut gave its run up, and a door reads the run under its old name"};
+
+// Moves a ViewMut of a fixed extent out of its name, and gives the old name to
+// door.  Its extent tells its elements, and it names none.
+constexpr std::size_t kFixed = 64;
+
+template <class Door>
+void give_the_old_name(Door door) noexcept {
+    ::fixy::HeapArray<float> items = ones();
+    items = ::fixy::with_mut(std::move(items), [door](auto lent) noexcept {
+        auto part = core::take_window<kFixed>(std::move(lent), 0).expect("the part fits");
+        [door](auto& view, auto& old_name) noexcept {
+            auto const moved = std::move(view);
+            static_cast<void>(moved);
+            door(old_name);
+        }(part, part);
+    });
+}
+
+// The region scope door, the mint of a strided view and the parallel forms drop
+// a fixed extent, so each one ends the process for an emptied view.
+void test_given_up_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
+    expect_dies(
+        test,
+        [] noexcept {
+            give_the_old_name([](auto& old_name) noexcept {
+                static_cast<void>(
+                    ::fixy::with_region<RegionWhole>(std::move(old_name), [](auto region) noexcept { return region; }));
+            });
+        },
+        kGivenUp);
+    expect_dies(
+        test,
+        [] noexcept {
+            give_the_old_name([](auto& old_name) noexcept {
+                ::fixy::FixedArray<std::size_t, 1> const sizes{kFixed};
+                ::fixy::FixedArray<std::size_t, 1> const strides{1};
+                static_cast<void>(
+                    ::fixy::mint_strided_view_mut(std::move(old_name), sizes.view(), strides.view(), 0).is_some());
+            });
+        },
+        kGivenUp);
+    expect_dies(
+        test,
+        [] noexcept {
+            give_the_old_name([](auto& old_name) noexcept {
+                BgCtx const ctx{eff::testing::bg()};
+                ::fixy::HeapArray<float> sums = ::fixy::mint_heap_array(eff::testing::test().alloc, kFixed, 0.0f);
+                sums = ::fixy::with_mut(std::move(sums), [&ctx, &old_name](auto out) noexcept {
+                    ::fixy::concurrent::scan_sums_in_parallel<BodyCoupling::WaitOnEachOther, 2>(
+                        ctx, eff::testing::test().alloc, core::ScanKind::Inclusive, old_name, std::move(out));
+                });
+            });
+        },
+        kGivenUp);
+    expect_dies(
+        test,
+        [] noexcept {
+            give_the_old_name([](auto& old_name) noexcept {
+                BgCtx const ctx{eff::testing::bg()};
+                ::fixy::FixedArray<std::size_t, 2> const offsets{0, kFixed};
+                ::fixy::HeapArray<float> sums = ::fixy::mint_heap_array(eff::testing::test().alloc, 1, 0.0f);
+                sums = ::fixy::with_mut(std::move(sums), [&ctx, &offsets, &old_name](auto out) noexcept {
+                    ::fixy::concurrent::sum_segments_by_tree_in_parallel<BodyCoupling::WaitOnEachOther, 2>(
+                        ctx, old_name, offsets.view(), std::move(out));
+                });
+            });
+        },
+        kGivenUp);
+    pass(test, "  test_given_up_run_ends_the_process: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
@@ -246,6 +321,7 @@ int main() {
     test_region_empties_its_run(test);
     test_sort_gets_no_run_two_times(test);
     test_overlap_takes_the_stated_order(test);
+    test_given_up_run_ends_the_process(test);
     pass(test, "test_unique_view_moves: all tests passed\n");
     return 0;
 }

@@ -156,10 +156,12 @@ concept TreeInput =
     ::foundation::core::KernelInput<In> && std::same_as<std::remove_const_t<typename In::element_type>, T>;
 
 // The View of const elements of an input, which each shard copies and only
-// reads.
+// reads.  A ViewMut of a fixed extent that gave its run up, which a hidden
+// second name of it reaches, ends the process before a shard starts.
 template <class T, class In>
 [[nodiscard]] constexpr ::foundation::core::View<T const> input_view_(In const& input) noexcept {
     if constexpr (::foundation::reflect::IsInstanceOf<In, ^^::foundation::core::ViewMut>) {
+        ::foundation::core::detail::require_run_(input);
         return ::foundation::core::View<T const>{input.view()};
     } else {
         return ::foundation::core::View<T const>{input};

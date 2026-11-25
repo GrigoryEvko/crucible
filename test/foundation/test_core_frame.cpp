@@ -842,6 +842,125 @@ void test_old_name_of_a_fixed_extent() {
         ::foundation::core::fill(std::move(view), 3);
         CRUCIBLE_TEST_ASSERT(kTest, names_none_of(elements, old_name));
     }>();
+    // A door whose result keeps the extent gives an emptied result.
+    check_old_name_of_a_fixed_extent<[](View<int const> elements, auto& view, auto& old_name) noexcept {
+        auto const moved = std::move(view);
+        static_cast<void>(moved);
+        auto const erased = ::foundation::core::erase_brand(std::move(old_name));
+        CRUCIBLE_TEST_ASSERT(kTest, names_none_of(elements, erased));
+    }>();
+}
+
+// The text of the end of a door that reads a run that its view gave up.
+constexpr ::fixy::TextView kGivenUp{"a ViewMut gave its run up, and a door reads the run under its old name"};
+
+// The text of the end of a read of a run of more than 4096 bytes that its view
+// gave up.  Each door reads such a run through its first element, so this test
+// ends the process before each other one.
+constexpr ::fixy::TextView kLargeGivenUp{"foundation: fatal invariant failed: first_ != nullptr"};
+
+// Moves a ViewMut of the fixed extent Count out of its name, and gives the old
+// name to Door.  Two parameters name the view, so the rule use-after-move does
+// not see that the old name moved.  Door ends the process in a child.
+template <auto Door, std::size_t Count = 6>
+void expect_given_up() {
+    constexpr bool is_large = Count * sizeof(int) > 4096;
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), Count + 4, 1);
+            run = with_mut(std::move(run), [](auto whole) noexcept {
+                auto part = ::foundation::core::take_window<Count>(std::move(whole), 2).expect("the window fits");
+                [](auto& view, auto& old_name) noexcept {
+                    auto const moved = std::move(view);
+                    static_cast<void>(moved);
+                    Door(old_name);
+                }(part, part);
+            });
+        },
+        is_large ? kLargeGivenUp : kGivenUp);
+}
+
+// A door that gives a part of the run or drops the fixed extent, and a door
+// that trusts two brands, ends the process for a ViewMut of a fixed extent that
+// gave its run up.  Its extent tells six elements, and it names none.
+void test_given_up_run_ends_the_process() {
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(split_at<2>(std::move(old_name))); }>();
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(split_at(std::move(old_name), 2)); }>();
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(split_chunks(std::move(old_name), 4)); }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        static_cast<void>(::foundation::core::take_window(std::move(old_name), 1, 2));
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        static_cast<void>(::foundation::core::take_window<2>(std::move(old_name), 1));
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        static_cast<void>(::foundation::core::for_each_chunk<2>(std::move(old_name), [](auto) noexcept {}));
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        static_cast<void>(::foundation::core::take_prefix_up_to(std::move(old_name), 0));
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        FixedArray<int, 6> const other{};
+        static_cast<void>(::foundation::core::for_each_chunk_pair<2>(std::move(old_name), View<int const>{other.view()},
+                                                                     [](auto, auto) noexcept {}));
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        using Dynamic = ViewMut<int, typename std::remove_cvref_t<decltype(old_name)>::brand_type>;
+        Dynamic const dynamic{std::move(old_name)};
+        static_cast<void>(dynamic);
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        HeapArray<int> other = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+        other = with_mut(std::move(other), [&old_name](auto out) noexcept {
+            ::foundation::core::write_each(std::move(out), TwiceOp{}, old_name).expect("six elements");
+        });
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        HeapArray<int> other = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+        other = with_mut(std::move(other), [&old_name](auto in) noexcept {
+            ::foundation::core::write_each(std::move(old_name), TwiceOp{}, in).expect("six elements");
+        });
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        HeapArray<int> other = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+        other = with_mut(std::move(other), [&old_name](auto out) noexcept {
+            ::foundation::core::copy(std::move(out), old_name).expect("six elements");
+        });
+    }>();
+    expect_given_up<[](auto& old_name) noexcept {
+        HeapArray<int> other = ::foundation::core::mint_heap_array(allocation(), 6, 0);
+        other = with_mut(std::move(other), [&old_name](auto in) noexcept {
+            ::foundation::core::copy(std::move(old_name), in).expect("six elements");
+        });
+    }>();
+}
+
+// A run of more bytes than the page at the address zero, 4096: an index into it
+// can name mapped memory, so each read of the old name ends the process.
+constexpr std::size_t kLarge = 2 * 4096 / sizeof(int);
+
+void test_given_up_large_run_ends_the_process() {
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(old_name.get(kLarge - 1).is_some()); }, kLarge>();
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(old_name.get_mut(kLarge - 1).is_some()); },
+                    kLarge>();
+    expect_given_up<[](auto& old_name) noexcept { CRUCIBLE_TEST_ASSERT(kTest, sum_of(old_name) == 0); }, kLarge>();
+    expect_given_up<[](auto& old_name) noexcept { static_cast<void>(old_name.view().size()); }, kLarge>();
+    expect_given_up<[](auto& old_name) noexcept { ::foundation::core::fill(std::move(old_name), 3); }, kLarge>();
+    constexpr auto lend_it = [](auto& old_name) noexcept {
+        static_cast<void>(::foundation::core::reborrow(std::move(old_name), [](auto) noexcept {}));
+    };
+    expect_given_up<lend_it, kLarge>();
+    constexpr auto copy_into_it = [](auto& old_name) noexcept {
+        HeapArray<int> const source = ::foundation::core::mint_heap_array(allocation(), kLarge, 0);
+        ::foundation::core::copy(std::move(old_name), source.view()).expect("one count");
+    };
+    expect_given_up<copy_into_it, kLarge>();
+    constexpr auto write_into_it = [](auto& old_name) noexcept {
+        HeapArray<int> const source = ::foundation::core::mint_heap_array(allocation(), kLarge, 0);
+        ::foundation::core::write_each(std::move(old_name), TwiceOp{}, source.view()).expect("one count");
+    };
+    expect_given_up<write_into_it, kLarge>();
 }
 
 }  // namespace
@@ -884,5 +1003,7 @@ int main() {
     test_copy_of_fixed_extent();
     test_old_name_of_a_dynamic_extent();
     test_old_name_of_a_fixed_extent();
+    test_given_up_run_ends_the_process();
+    test_given_up_large_run_ends_the_process();
     return 0;
 }
