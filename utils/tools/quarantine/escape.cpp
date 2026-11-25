@@ -705,6 +705,11 @@ public:
                 if (is_noted) {
                     out.insert(out.end(), found->second.begin(), found->second.end());
                 }
+                // A local reference as a value is the address of its object.
+                if (TREE_CODE(TREE_TYPE(expression)) == REFERENCE_TYPE) {
+                    add_object(expression, out, depth + 1);
+                    return;
+                }
                 if ((!is_noted || open_answer == OpenAnswer::each) && VAR_P(expression)
                     && DECL_HAS_VALUE_EXPR_P(expression) && !is_capture_proxy(expression)) {
                     add_origins(DECL_VALUE_EXPR(expression), out, depth + 1);

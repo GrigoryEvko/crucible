@@ -1,0 +1,62 @@
+// A local reference names an object of a local owner, and its initializer is a call.
+// Each value of the name that leaves the function is a finding: the return of the
+// name, the name in an aggregate, a name of a range loop, one arm of a conditional, a
+// name of a name, and the name that a closure returns.
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct Kept {
+    int const& value;
+};
+
+int const& name() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    return element;
+}
+
+Kept name_in_an_aggregate() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    return Kept{element};
+}
+
+int const& name_of_a_loop() {
+    static constexpr int other = 0;
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(3));
+    for (int const& element : list) {
+        return element;
+    }
+    return other;
+}
+
+int const& name_in_an_arm(bool is_first) {
+    static constexpr int other = 0;
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    return is_first ? element : other;
+}
+
+int const& name_of_a_name() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    int const& same = element;
+    return same;
+}
+
+int read_closure() {
+    auto const of_local = []() -> int const& {
+        fc::FixedArray<int, 4> const array{};
+        int const& element = array.at(fc::index<0>());
+        return element;
+    };
+    return of_local();
+}
+
+}  // namespace planted

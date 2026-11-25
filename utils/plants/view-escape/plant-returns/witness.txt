@@ -6,7 +6,10 @@
 # parameter that a temporary binds (59), and a closure that returns a View of
 # its local (66), of its parameter by value (68) or of its capture by value
 # (69), give the same error.
-# The second compile shows that a parse with no object gives the same errors.
+# The second compile shows that a parse with no object gives the same errors.  The unit
+# names has a local reference whose initializer is a call: the return of the name (20),
+# the name in an aggregate (26), a name of a range loop (34), one arm of a conditional
+# (43), a name of a name (50), and the name that a closure returns (57).
 
 compile returns src/returns.cpp
 flag returns -freflection
@@ -39,3 +42,19 @@ text returns | PROBE: reason
 compile syntax src/returns.cpp out=no stage=syntax errors=returns notes=returns
 flag syntax -freflection
 exit syntax fail
+
+compile names src/names.cpp
+flag names -freflection
+exit names fail
+finding names view-escape escaped-borrow src/names.cpp:20:12 | borrow of the local array
+finding names view-escape escaped-borrow src/names.cpp:26:24 | borrow of the local array
+finding names view-escape escaped-borrow src/names.cpp:34:16 | borrow of the local list
+finding names view-escape escaped-borrow src/names.cpp:43:33 | borrow of the local array
+finding names view-escape escaped-borrow src/names.cpp:50:12 | borrow of the local array
+finding names view-escape escaped-borrow src/names.cpp:57:16 | borrow of the local array
+error names src/names.cpp:20 | this function gives back a borrow of the local array, and that object ends with the frame of the function
+error names src/names.cpp:26 | this function gives back a borrow of the local array, and that object ends with the frame of the function
+error names src/names.cpp:34 | this function gives back a borrow of the local list, and that object ends with the frame of the function
+error names src/names.cpp:43 | this function gives back a borrow of the local array, and that object ends with the frame of the function
+error names src/names.cpp:50 | this function gives back a borrow of the local array, and that object ends with the frame of the function
+error names src/names.cpp:57 | this function gives back a borrow of the local array, and that object ends with the frame of the function

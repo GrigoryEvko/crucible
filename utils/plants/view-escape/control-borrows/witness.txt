@@ -1,8 +1,14 @@
 # No return names an object that ends with the frame, and no line names the
 # rule view-escape: a borrow of a parameter by reference, a View that a
 # parameter by value holds, a window of a View, an erased Ref of a parameter by
-# reference, a value that a local list holds, and a local list by value.
+# reference, a value that a local list holds, and a local list by value.  The unit names
+# has a local reference to an object that stays, and a local reference whose value stays
+# in the function.
 
 compile borrows src/borrows.cpp
 flag borrows -freflection
 exit borrows pass
+
+compile names src/names.cpp
+flag names -freflection
+exit names pass

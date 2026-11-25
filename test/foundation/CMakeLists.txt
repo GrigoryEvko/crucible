@@ -3436,7 +3436,8 @@ foundation_neg_compile_test(neg_heap_scope_block_in_static
   "KeepsBlock::operator\\(\\): kept")
 foundation_neg_compile_test(neg_heap_scope_block_in_returned_closure
   "a scope mint gives a result that holds its own scope brand"
-  "foundation::heap::mint_heap_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)")
+  "foundation::heap::mint_heap_scope: the result .anonymous.::ReturnsClosure::operator\\(\\)"
+  "this function gives back a borrow of the local block")
 # The scope mint of foundation/permissions/Permission.h: it refuses the erased
 # brand and a tag with an effect row, also from the door of the tag, and the
 # key of a tag does not build outside the door that the tag names.

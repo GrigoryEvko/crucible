@@ -1,0 +1,56 @@
+// A local reference names an object that stays, or its value stays in the function, and
+// no line names the rule view-escape: a name of an element of a parameter by reference,
+// a name of a static object, a copy of the element of a local, a name that a callee
+// reads, and a name that a closure inside the function returns.
+#include <foundation/Platform.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+int const& name_of_a_parameter(fc::FixedArray<int, 4> const& array CRUCIBLE_LIFETIMEBOUND) {
+    int const& element = array.at(fc::index<0>());
+    return element;
+}
+int const& name_of_a_parameter(fc::FixedArray<int, 4> const&&) = delete("an element of a temporary array dangles");
+
+int const& name_of_a_static() {
+    static constexpr fc::FixedArray<int, 4> array{};
+    int const& element = array.at(fc::index<0>());
+    return element;
+}
+
+int copy_of_a_local() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    return element;
+}
+
+int sum_of_a_list() {
+    fc::FixedList<int, 4> list{};
+    static_cast<void>(list.append(3));
+    int total = 0;
+    for (int const& element : list) {
+        total += element;
+    }
+    return total;
+}
+
+int read(int const& value) { return value; }
+
+int read_by_a_callee() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    return read(element);
+}
+
+int read_by_a_closure() {
+    fc::FixedArray<int, 4> const array{};
+    int const& element = array.at(fc::index<0>());
+    auto const of_capture = [&element]() -> int const& { return element; };
+    return of_capture();
+}
+
+}  // namespace planted

@@ -2,7 +2,8 @@
 // reference.  The type of a closure has no template argument, so the concept
 // of the mint does not see the brand in it, and the block leaves the scope
 // of its heap.  The rule brand-escape refuses each result of a scope mint that
-// holds its own scope brand, also in a capture by reference.
+// holds its own scope brand, also in a capture by reference.  The reference
+// names a local of the body, so the rule view-escape refuses the return too.
 
 #include <foundation/alloc/HeapState.h>
 #include <foundation/alloc/Layout.h>
