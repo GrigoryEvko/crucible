@@ -171,8 +171,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
 
     auto free_block = [&](uint64_t offset, uint64_t size) {
         for (const FreeSlot next : FreeSlot::check(free_list_count)) {
-            free_list_offsets.with_element(next, [offset](uint64_t& held) noexcept { held = offset; });
-            free_list_sizes.with_element(next, [size](uint64_t& held) noexcept { held = size; });
+            free_list_offsets.set(next, offset);
+            free_list_sizes.set(next, size);
             ++free_list_count;
         }
     };
@@ -189,16 +189,12 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
             if (free_list_sizes.at(block) == aligned_size) {
                 --free_list_count;
                 const FreeSlot last = FreeSlot::check(free_list_count).expect("the last block is below MAX_FREE");
-                const uint64_t last_size = free_list_sizes.at(last);
-                const uint64_t last_offset = free_list_offsets.at(last);
-                free_list_sizes.with_element(block, [last_size](uint64_t& held) noexcept { held = last_size; });
-                free_list_offsets.with_element(block, [last_offset](uint64_t& held) noexcept { held = last_offset; });
+                free_list_sizes.set(block, free_list_sizes.at(last));
+                free_list_offsets.set(block, free_list_offsets.at(last));
             } else {
                 // The fit is larger than the size, so its cut stays inside it.
-                free_list_offsets.with_element(
-                    block, [aligned_size](uint64_t& held) noexcept { held = ::fixy::strict_add(held, aligned_size); });
-                free_list_sizes.with_element(
-                    block, [aligned_size](uint64_t& held) noexcept { held = ::fixy::strict_sub(held, aligned_size); });
+                free_list_offsets.set(block, ::fixy::strict_add(free_list_offsets.at(block), aligned_size));
+                free_list_sizes.set(block, ::fixy::strict_sub(free_list_sizes.at(block), aligned_size));
             }
             return;
         }
@@ -250,7 +246,7 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                 const TensorSlot& dying_slot = slot_at(detail::csr_element_(dead_slots, dying_begin + i));
                 const DyingInfo dying = {.aligned_size = aligned_bytes_of(dying_slot.nbytes),
                                          .offset = dying_slot.offset_bytes};
-                dying_slot_info.with_element(prove_per_op(i), [dying](DyingInfo& held) noexcept { held = dying; });
+                dying_slot_info.set(prove_per_op(i), dying);
             }
 
             for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
@@ -272,9 +268,8 @@ BackgroundThread::compute_memory_plan(::foundation::effects::Alloc a, PlanTarget
                 if (best_dying_match_idx != UINT32_MAX) {
                     const PerOpSlot best_match = prove_per_op(best_dying_match_idx);
                     born_slot.offset_bytes = dying_slot_info.at(best_match).offset;
-                    dying_consumed.with_element(best_match, [](bool& is_consumed) noexcept { is_consumed = true; });
-                    born_assigned.with_element(prove_per_op(born_idx),
-                                               [](bool& is_assigned) noexcept { is_assigned = true; });
+                    dying_consumed.set(best_match, true);
+                    born_assigned.set(prove_per_op(born_idx), true);
                     if (best_waste_bytes > 0)
                         free_block(::fixy::strict_add(dying_slot_info.at(best_match).offset, born_aligned_size),
                                    best_waste_bytes);
