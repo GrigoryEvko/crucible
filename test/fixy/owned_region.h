@@ -167,14 +167,13 @@ void split_and_recombine_every_total(TestRunnerCtx const& test) {
             });
         CRUCIBLE_TEST_ASSERT(test, storage.size() == total);
     }
-    ::foundation::core::FixedArray<std::uint32_t, 1> block{};
-    block.with_mut([&test](auto run) noexcept {
+    static_cast<void>(::foundation::core::build_fixed_array<std::uint32_t, 1>([&test](auto run) noexcept {
         auto [empty, rest] = ::foundation::core::split_at(std::move(run), 0).expect("each run holds the offset zero");
         static_cast<void>(rest);
         static_cast<void>(::fixy::with_region<DataScope>(std::move(empty), [&test](auto region) noexcept {
             return split_and_recombine_one_region<N>(test, 0, std::move(region));
         }));
-    });
+    }));
 }
 
 // Every total from 0 to 64 into the shard counts of one range

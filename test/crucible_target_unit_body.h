@@ -85,16 +85,14 @@ template <std::meta::info Home>
     }
 
     auto const codec = ::crucible::cntp::mint_reed_solomon<4, 2>(::foundation::effects::testing::init());
-    ::fixy::FixedArray<std::byte, 64> payload{};
-    payload.with_mut([](auto run) noexcept {
+    ::fixy::FixedArray<std::byte, 64> const payload = ::fixy::build_fixed_array<std::byte, 64>([](auto run) noexcept {
         std::uint8_t next = 1;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(next);
             next = static_cast<std::uint8_t>(next * 29u + 7u);
         }
     });
-    ::fixy::FixedArray<std::byte, 96> encoded{};
-    bool const is_encoded = encoded.with_mut(
+    auto const [is_encoded, encoded] = ::fixy::build_fixed_array<std::byte, 96>(
         [&codec, &payload](auto run) noexcept { return codec.encode(payload.view(), std::move(run)).is_ok(); });
     digest = fold_word(digest, is_encoded ? 1u : 0u);
     for (std::byte const byte : encoded) {
@@ -103,14 +101,14 @@ template <std::meta::info Home>
 
     // The control bytes hold the tags 0x28 to 0x2F and some empty slots, so
     // the tag 0x2A matches at the positions 9, 17, 25, 33, 49 and 57.
-    ::fixy::FixedArray<std::int8_t, 64> control{};
-    control.with_mut([](auto run) noexcept {
-        std::uint8_t tag = 3;
-        for (std::int8_t& byte : run) {
-            byte = tag % 5u == 0 ? ::crucible::detail::kEmpty : static_cast<std::int8_t>(0x28u | (tag & 0x07u));
-            tag = static_cast<std::uint8_t>(tag * 13u + 11u);
-        }
-    });
+    ::fixy::FixedArray<std::int8_t, 64> const control =
+        ::fixy::build_fixed_array<std::int8_t, 64>([](auto run) noexcept {
+            std::uint8_t tag = 3;
+            for (std::int8_t& byte : run) {
+                byte = tag % 5u == 0 ? ::crucible::detail::kEmpty : static_cast<std::int8_t>(0x28u | (tag & 0x07u));
+                tag = static_cast<std::uint8_t>(tag * 13u + 11u);
+            }
+        });
     // The masks of the groups of one width join into one mask of the 64
     // positions, so each width folds the same two words.
     constexpr std::size_t width = ::crucible::detail::group_width();

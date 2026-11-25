@@ -183,8 +183,9 @@ void test_adopt_refuses_a_run_of_another_count(TestRunnerCtx const& test) {
 // lends.  The region proves ownership of the bytes but does not own the
 // storage, so a write through it lands in the array of the caller.
 void test_region_scope_door_writes_its_storage(TestRunnerCtx const& test) {
-    ::fixy::FixedArray<std::uint64_t, 6> storage{1, 2, 3, 4, 5, 6};
-    storage.with_mut([&test](auto run) noexcept {
+    auto [storage, storage_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint64_t, 6>,
+                                                           ::fixy::FixedArray<std::uint64_t, 6>{1, 2, 3, 4, 5, 6});
+    storage.with_mut(storage_key, [&test](auto run) noexcept {
         auto [sum, back] = ::fixy::with_region<DataScope>(std::move(run), [](auto region) noexcept {
             auto written = ::fixy::with_mut(std::move(region), [](auto elements) noexcept {
                 auto element = elements.get_mut(5).expect("the region holds six elements");

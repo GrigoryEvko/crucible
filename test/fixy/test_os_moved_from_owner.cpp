@@ -97,14 +97,14 @@ template <typename T>
     if (!source.is_open()) return answered(name, "nothing: the open of a file under /tmp failed");
     fs::TemporaryFile const live = std::move(source);
 
-    foundation::core::FixedArray<std::byte, 4> bytes{};
+    auto [bytes, bytes_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, 4>);
     foundation::core::View<std::byte const> const sent{bytes.view()};
     if (source.is_open() || source.ref().is_open()) return answered(name, "is_open");
     if (!refuses_with(fs::sync<fs::sync_op::Fdatasync>(ctx, source.ref()), Errno::ebadf)) {
         return answered(name, "Fdatasync");
     }
     if (!refuses_with(fs::sync<fs::sync_op::Fsync>(ctx, source.ref()), Errno::ebadf)) return answered(name, "Fsync");
-    bool const refuses_read = bytes.with_mut([&ctx, &source](auto run) noexcept {
+    bool const refuses_read = bytes.with_mut(bytes_key, [&ctx, &source](auto run) noexcept {
         return refuses_with(fs::read_full(ctx, source.ref(), std::move(run)), Errno::ebadf);
     });
     if (!refuses_read) {
@@ -137,13 +137,13 @@ template <typename T>
     if (!source.is_open()) return answered(name, "nothing: the open of a netlink socket failed");
     NetlinkSocket const live = std::move(source);
 
-    foundation::core::FixedArray<std::byte, 4> bytes{};
+    auto [bytes, bytes_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, 4>);
     foundation::core::View<std::byte const> const sent{bytes.view()};
     if (source.is_open() || source.ref().is_open()) return answered(name, "is_open");
     if (!refuses_with(fixy::net::send_bytes(ctx, source.ref(), sent), Errno::ebadf)) {
         return answered(name, "send_bytes");
     }
-    bool const refuses_receive = bytes.with_mut([&ctx, &source](auto run) noexcept {
+    bool const refuses_receive = bytes.with_mut(bytes_key, [&ctx, &source](auto run) noexcept {
         return refuses_with(fixy::net::receive_bytes(ctx, source.ref(), std::move(run)), Errno::ebadf);
     });
     if (!refuses_receive) {

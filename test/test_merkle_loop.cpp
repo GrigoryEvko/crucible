@@ -112,10 +112,9 @@ using crucible::SchemaHash;
     CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature({}) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::feedback_signature(loop.feedback_edges.view()) != 0);
 
-    ::foundation::core::FixedArray<crucible::RegionNode const*, 16> collected{};
     auto const& loop_read = loop;
-    uint32_t n_collected =
-        collected.with_mut([&loop_read](auto run) noexcept { return crucible::collect_regions(loop_read, run); });
+    auto const [n_collected, collected] = ::foundation::core::build_fixed_array<crucible::RegionNode const*, 16>(
+        [&loop_read](auto run) noexcept { return crucible::collect_regions(loop_read, run); });
     // Two body regions, counted once, plus the region after the loop.
     CRUCIBLE_TEST_ASSERT(kTest, n_collected == 3);
     CRUCIBLE_TEST_ASSERT(kTest, *collected.view().get(0).expect("the run holds 16 regions") == &body_r1);

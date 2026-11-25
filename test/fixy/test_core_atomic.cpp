@@ -740,8 +740,8 @@ void test_shared_cells_of_one_frame() {
     CRUCIBLE_FATAL_INVARIANT(total == 4 * sum_of_threads + 5);
 
     // The run of a FixedArray gives a shared View of its fixed extent.
-    ::fixy::FixedArray<Atomic<std::uint64_t>, 4> fixed{};
-    std::uint64_t const fixed_total = fixed.with_mut([](auto run) noexcept {
+    auto [fixed, fixed_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Atomic<std::uint64_t>, 4>);
+    std::uint64_t const fixed_total = fixed.with_mut(fixed_key, [](auto run) noexcept {
         ::fixy::View<Atomic<std::uint64_t>, 4> const shared = ::foundation::core::share_atomic_cells(run);
         for (Atomic<std::uint64_t>& cell : shared) {
             static_cast<void>(cell.fetch_add_acq_rel(3));

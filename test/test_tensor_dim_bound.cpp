@@ -92,8 +92,9 @@ using Lanes = ::fixy::FixedArray<std::int64_t, kMaxTensorNDim>;
 // True when read_meta reads the image of the fields with no refusal.  A
 // refused read gives the default descriptor.
 [[nodiscard]] bool is_read(UncheckedTensorMeta const& fields) noexcept {
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<UncheckedTensorMeta>> image{};
-    image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<UncheckedTensorMeta>> const image =
+        ::fixy::build_fixed_array<std::byte, ::fixy::encoded_size_v<UncheckedTensorMeta>>(
+            [&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
     ::crucible::detail_ser::Reader reader{.image = image.view()};
     TensorMeta const meta = ::crucible::detail_ser::read_meta(reader);
     return reader.refusal.is_none() && meta.ndim == fields.ndim;
@@ -104,8 +105,7 @@ using TraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_META_BYTES>;
 
 [[nodiscard]] TraceRecord trace_record_of(UncheckedTensorMeta const& fields) noexcept {
     using ::crucible::detail::write_record_field_;
-    TraceRecord record{};
-    record.with_mut([&fields](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, ::crucible::TRACE_META_BYTES>([&fields](auto run) noexcept {
         write_record_field_<offsetof(TensorMeta, sizes)>(run, fields.sizes);
         write_record_field_<offsetof(TensorMeta, strides)>(run, fields.strides);
         write_record_field_<offsetof(TensorMeta, ndim)>(run, fields.ndim);
@@ -114,7 +114,6 @@ using TraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_META_BYTES>;
         write_record_field_<offsetof(TensorMeta, device_idx)>(run, fields.device_idx);
         write_record_field_<offsetof(TensorMeta, layout)>(run, fields.layout);
     });
-    return record;
 }
 
 // The record of the first version of the fields, at its fixed offsets.
@@ -123,8 +122,7 @@ using FirstTraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_FIRST_M
 [[nodiscard]] FirstTraceRecord first_trace_record_of(UncheckedTensorMeta const& fields) noexcept {
     namespace detail = ::crucible::detail;
     using detail::write_record_field_;
-    FirstTraceRecord record{};
-    record.with_mut([&fields](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, ::crucible::TRACE_FIRST_META_BYTES>([&fields](auto run) noexcept {
         write_record_field_<detail::kFirstMetaSizesAt>(run, fields.sizes);
         write_record_field_<detail::kFirstMetaStridesAt>(run, fields.strides);
         write_record_field_<detail::kFirstMetaNdimAt>(run, fields.ndim);
@@ -133,7 +131,6 @@ using FirstTraceRecord = ::fixy::FixedArray<std::byte, ::crucible::TRACE_FIRST_M
         write_record_field_<detail::kFirstMetaDeviceIdxAt>(run, fields.device_idx);
         write_record_field_<detail::kFirstMetaLayoutAt>(run, fields.layout);
     });
-    return record;
 }
 
 [[nodiscard]] bool is_trace_decoded(UncheckedTensorMeta const& fields) noexcept {

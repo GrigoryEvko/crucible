@@ -1047,7 +1047,7 @@ int main() {
         const crucible::ContentHash latest_hash =
             persisted_hash(cipher.persist_session_events(store_ctx(), ov, g_test.alloc, latest_batch.view()));
         ::fixy::FixedArray<std::byte, 24> garbage{};
-        garbage.with_mut([](auto cells) noexcept { ::fixy::fill(std::move(cells), std::byte{0x5A}); });
+        garbage.fill(std::byte{0x5A});
         overwrite_batch_file(cipher, session, latest_hash, garbage.view());
         ::fixy::FixedText<16> latest_digits{};
         ::fixy::append_hex<16>(latest_digits, latest_hash.raw()).expect("sixteen digits fit the text");
@@ -1080,16 +1080,16 @@ int main() {
     // must not change.  Each value is the hash of the release of this
     // format: the bytes 0 to 143, 72 bytes of 0xAB, and no byte.
     {
-        ::foundation::core::FixedArray<std::byte, 144> counting{};
-        counting.with_mut([](auto cells) noexcept {
-            std::size_t position = 0;
-            for (std::byte& byte : cells) {
-                byte = static_cast<std::byte>(position);
-                ++position;
-            }
-        });
+        ::foundation::core::FixedArray<std::byte, 144> const counting =
+            ::foundation::core::build_fixed_array<std::byte, 144>([](auto cells) noexcept {
+                std::size_t position = 0;
+                for (std::byte& byte : cells) {
+                    byte = static_cast<std::byte>(position);
+                    ++position;
+                }
+            });
         ::foundation::core::FixedArray<std::byte, 72> repeated{};
-        repeated.with_mut([](auto cells) noexcept { ::fixy::fill(std::move(cells), std::byte{0xAB}); });
+        repeated.fill(std::byte{0xAB});
         CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(counting.view())
                                         == crucible::ContentHash{0xeb48340c1ea14751ULL});
         CRUCIBLE_TEST_ASSERT(kTest, crucible::Cipher::session_event_batch_hash(repeated.view())

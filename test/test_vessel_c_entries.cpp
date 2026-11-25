@@ -94,8 +94,9 @@ enum class RegionPhase : uint8_t {
 // The bytes of an array of the caller, so that a case can give a pointer one
 // byte past an aligned element.
 template <class Element, std::size_t Count>
-struct alignas(Element) CallerBytes {
-    ::fixy::FixedArray<std::byte, sizeof(Element) * Count + 1> bytes{};
+struct CallerBytes {
+    ::fixy::HeapArray<std::byte, alignof(Element)> bytes = ::fixy::mint_heap_array_zeroed<std::byte, alignof(Element)>(
+        ::foundation::effects::testing::test().alloc, sizeof(Element) * Count + 1);
 };
 
 // The C entries take and give the raw pointers of the C interface, and a
@@ -131,10 +132,12 @@ enum class Place : uint8_t {
 // byte past the first byte.
 template <class Element, std::size_t Count, class Entry>
 [[nodiscard]] auto call_with_array(CallerBytes<Element, Count>& bytes, Place place, Entry&& entry) noexcept {
-    return bytes.bytes.with_mut([place, entry](auto run) noexcept {
+    auto [result, held] = ::fixy::with_mut(std::move(bytes.bytes), [place, entry](auto run) noexcept {
         std::byte* const first = ::foundation::core::foreign_first(run);
         return entry(std::bit_cast<Element*>(place == Place::Aligned ? first : first + 1));
     });
+    bytes.bytes = std::move(held);
+    return result;
 }
 
 // True when each byte of bytes is zero, so no entry wrote into them.

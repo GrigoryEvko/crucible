@@ -174,14 +174,14 @@ struct LinkDumpRequest final {
     if (fixy::net::bind_netlink(ctx, socket).is_err()) return 12;
     LinkDumpRequest const request{};
     if (fixy::net::send_bytes(ctx, socket, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 13;
-    foundation::core::FixedArray<std::byte, 8192> reply{};
     // The part that the receive filled names the brand of the frame, so the
     // check reads it in the frame.
-    return reply.with_mut([&ctx, &socket](auto run) noexcept -> int {
+    auto const [status, reply] = fixy::build_fixed_array<std::byte, 8192>([&ctx, &socket](auto run) noexcept -> int {
         auto const received = fixy::net::receive_bytes(ctx, socket, std::move(run));
         return received.match([](auto const& part) noexcept { return part.size() < 16 ? 14 : 0; },
                               [](foundation::os::Errno) noexcept { return 14; });
     });
+    return status;
 }
 
 // The congestion control of a TCP socket reads back as the door set it, so
@@ -214,13 +214,13 @@ struct LinkDumpRequest final {
     // mode answers TCP_INFO with the four bytes of one int.
     // The part that the read filled names the brand of the frame, so the
     // check reads it in the frame.
-    foundation::core::FixedArray<std::byte, 256> info{};
-    return info.with_mut([&ctx, &socket](auto run) noexcept -> int {
+    auto const [status, info] = fixy::build_fixed_array<std::byte, 256>([&ctx, &socket](auto run) noexcept -> int {
         auto const info_read = fixy::net::read_tcp_option(ctx, socket, fixy::net::TcpOption::info, std::move(run));
         return info_read.match(
             [](auto const& written) noexcept { return written.size() < 8 && !kIsUnderEmulator ? 28 : 0; },
             [](foundation::os::Errno) noexcept { return 28; });
     });
+    return status;
 }
 
 // The door sets SO_TIMESTAMPING, and the kernel reads back the flags of
@@ -349,8 +349,8 @@ struct LinkDumpRequest final {
     if (!handle.is_open()) return 51;
     auto const netlink = handle.ref();
     if (fixy::net::bind_netlink(ctx, netlink).is_err()) return 52;
-    foundation::core::FixedArray<std::byte, 8192> reply{};
-    foundation::os::Errno const first_error = reply.with_mut([&ctx, &netlink](auto run) noexcept {
+    auto [reply, reply_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, 8192>);
+    foundation::os::Errno const first_error = reply.with_mut(reply_key, [&ctx, &netlink](auto run) noexcept {
         return fixy::net::receive_with_timestamps(ctx, netlink, std::move(run))
             .err()
             .value_or(foundation::os::Errno::eio);
@@ -362,7 +362,7 @@ struct LinkDumpRequest final {
     if (fixy::net::send_bytes(ctx, netlink, foundation::core::bytes(request)).value_or(0) != sizeof(request)) return 54;
     // The payload names the brand of the frame, so the check reads the
     // message in the frame.
-    return reply.with_mut([&ctx, &netlink](auto run) noexcept -> int {
+    return reply.with_mut(reply_key, [&ctx, &netlink](auto run) noexcept -> int {
         auto const received = fixy::net::receive_with_timestamps(ctx, netlink, std::move(run));
         return received.match(
             [](auto const& message) noexcept -> int {

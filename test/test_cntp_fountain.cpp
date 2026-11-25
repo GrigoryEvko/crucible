@@ -41,7 +41,7 @@ template <typename Packet>
     Packet packet{};
     packet.source_bytes = Packet::admit_source_bytes(Packet::max_source_bytes).expect("the full capacity fits");
     packet.mask = mask;
-    packet.payload.with_mut([fill](auto run) noexcept { ::fixy::fill(std::move(run), fill); });
+    packet.payload.fill(fill);
     return packet;
 }
 
@@ -97,16 +97,16 @@ int main() {
         // The copy of the source bytes into the run of a frame gives the same
         // bytes.  A run of another count gives InvalidOutputSize and writes
         // nothing.
-        Bytes<payload.size()> copied{};
-        bool const is_copied =
-            copied.with_mut([&decoder](auto run) noexcept { return decoder.extract_decoded(std::move(run)).is_ok(); });
+        auto const [is_copied, copied] = ::foundation::core::build_fixed_array<std::byte, payload.size()>(
+            [&decoder](auto run) noexcept { return decoder.extract_decoded(std::move(run)).is_ok(); });
         CRUCIBLE_TEST_ASSERT(kTest, is_copied && ::fixy::equal(payload.view(), copied.view()));
-        Bytes<payload.size() + 1> longer{};
-        bool const is_refused = longer.with_mut([&decoder](auto run) noexcept {
-            return decoder.extract_decoded(std::move(run))
-                .match([](::fixy::Unit) noexcept { return false; },
-                       [](ci::FountainError error) noexcept { return error == ci::FountainError::InvalidOutputSize; });
-        });
+        auto const [is_refused, longer] =
+            ::foundation::core::build_fixed_array<std::byte, payload.size() + 1>([&decoder](auto run) noexcept {
+                return decoder.extract_decoded(std::move(run))
+                    .match(
+                        [](::fixy::Unit) noexcept { return false; },
+                        [](ci::FountainError error) noexcept { return error == ci::FountainError::InvalidOutputSize; });
+            });
         Bytes<payload.size() + 1> const untouched{};
         CRUCIBLE_TEST_ASSERT(kTest, is_refused && ::fixy::equal(untouched.view(), longer.view()));
     }

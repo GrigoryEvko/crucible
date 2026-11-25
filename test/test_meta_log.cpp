@@ -78,9 +78,9 @@ static void test_batch_append_and_monotonic() {
     CRUCIBLE_TEST_ASSERT(kTest, log.size().peek() == 8);
 
     // The copy of the two appends is the eight records in their order.
-    ::fixy::FixedArray<TensorMeta, 8> copied{};
     auto const& log_read = log;
-    copied.with_mut([&log_read](auto run) noexcept { log_read.copy_run(0, std::move(run)); });
+    ::fixy::FixedArray<TensorMeta, 8> const copied = ::fixy::build_fixed_array<TensorMeta, 8>(
+        [&log_read](auto run) noexcept { log_read.copy_run(0, std::move(run)); });
     for (size_t i = 0; i < 8; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -141,9 +141,9 @@ static void test_copy_run_across_the_end() {
 
     // The copy joins the three records at the end of the buffer and the two
     // at its start, in the order of the append.
-    ::fixy::FixedArray<TensorMeta, 5> copied{};
     auto const& log_read = log;
-    copied.with_mut([&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end, std::move(run)); });
+    ::fixy::FixedArray<TensorMeta, 5> const copied = ::fixy::build_fixed_array<TensorMeta, 5>(
+        [&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end, std::move(run)); });
     for (uint32_t i = 0; i < 5; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,
@@ -152,8 +152,8 @@ static void test_copy_run_across_the_end() {
     }
 
     // A run that does not pass the end is one copy.
-    ::fixy::FixedArray<TensorMeta, 2> head2{};
-    head2.with_mut([&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end + 3, std::move(run)); });
+    ::fixy::FixedArray<TensorMeta, 2> const head2 = ::fixy::build_fixed_array<TensorMeta, 2>(
+        [&log_read, near_end](auto run) noexcept { log_read.copy_run(near_end + 3, std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<0>()).data_ptr.value()
                                     == tail5.at(::fixy::index<3>()).data_ptr.value());
     CRUCIBLE_TEST_ASSERT(kTest, head2.at(::fixy::index<1>()).data_ptr.value()
@@ -186,9 +186,9 @@ static void test_counters_pass_two_to_the_32() {
 
     // The records keep their order across the boundary, in the copy of the
     // run and in the copy of one record at each index.
-    ::fixy::FixedArray<TensorMeta, 32> copied{};
     auto const& log_read = log;
-    copied.with_mut([&log_read, first](auto cells) noexcept { log_read.copy_run(first.raw(), std::move(cells)); });
+    ::fixy::FixedArray<TensorMeta, 32> const copied = ::fixy::build_fixed_array<TensorMeta, 32>(
+        [&log_read, first](auto cells) noexcept { log_read.copy_run(first.raw(), std::move(cells)); });
     for (uint32_t i = 0; i < 32; ++i) {
         CRUCIBLE_TEST_ASSERT(
             kTest,

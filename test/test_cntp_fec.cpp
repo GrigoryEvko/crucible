@@ -43,29 +43,31 @@ template <std::size_t N>
 // Writes the byte fill over the shard at position shard of an encoded block.
 template <std::size_t N>
 void poison_shard(Bytes<N>& encoded, std::size_t shard, std::size_t shard_bytes, std::byte fill) {
-    encoded.with_mut([shard, shard_bytes, fill](auto run) noexcept {
-        ::fixy::fill(::fixy::take_window(std::move(run), shard * shard_bytes, shard_bytes)
-                         .expect("the shard lies inside the block"),
-                     fill);
-    });
+    Bytes<N> filler{};
+    filler.fill(fill);
+    encoded.copy_window(shard * shard_bytes, filler.view().window(0, shard_bytes).expect("a shard fits the block"))
+        .expect("the shard lies inside the block");
 }
 
-// The encode of input into the block encoded, through the frame door of the
-// block.
+// The encode of input into the block encoded.
 template <typename Codec, std::size_t EncodedBytes>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, ci::FecError>
 encode_into(Codec const& codec, ::fixy::View<std::byte const> input, Bytes<EncodedBytes>& encoded) noexcept {
-    return encoded.with_mut([&codec, input](auto run) noexcept { return codec.encode(input, std::move(run)); });
+    auto [result, block] = ::fixy::build_fixed_array<std::byte, EncodedBytes>(
+        [&codec, input](auto run) noexcept { return codec.encode(input, std::move(run)); });
+    encoded = block;
+    return std::move(result);
 }
 
-// The decode of the received block into decoded, through the frame door of
-// decoded.
+// The decode of the received block into decoded.
 template <typename Codec, std::size_t DecodedBytes>
 [[nodiscard]] ::fixy::Result<::fixy::Unit, ci::FecError>
 decode_into(Codec const& codec, ::fixy::View<std::byte const> received, ::fixy::View<bool const> erasures,
             Bytes<DecodedBytes>& decoded) noexcept {
-    return decoded.with_mut(
+    auto [result, block] = ::fixy::build_fixed_array<std::byte, DecodedBytes>(
         [&codec, received, erasures](auto run) noexcept { return codec.decode(received, erasures, std::move(run)); });
+    decoded = block;
+    return std::move(result);
 }
 
 template <typename Codec, std::size_t InputBytes, std::size_t EncodedBytes>
@@ -130,12 +132,14 @@ void verify_mul_xor_against_scalar_product() {
                     expected.set(position, expected.at(position) ^ product);
                 }
                 auto const source = source_seed.view().window(offset, len).expect("the run lies inside the source");
-                target.with_mut([offset, len, source, factor](auto run) noexcept {
+                auto [product, product_key] =
+                    ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, buffer_bytes>, target);
+                product.with_mut(product_key, [offset, len, source, factor](auto run) noexcept {
                     auto part =
                         ::fixy::take_window(std::move(run), offset, len).expect("the run lies inside the target");
                     detail::mul_xor(part, source, factor);
                 });
-                CRUCIBLE_TEST_ASSERT(kTest, expected == target);
+                CRUCIBLE_TEST_ASSERT(kTest, ::fixy::equal(expected.view(), product.view()));
             }
         }
     }
@@ -270,8 +274,7 @@ int main() {
     }
 
     {
-        Bytes<1> block{};
-        auto rejected = block.with_mut([&rs42](auto run) noexcept {
+        auto const [rejected, block] = ::foundation::core::build_fixed_array<std::byte, 1>([&rs42](auto run) noexcept {
             return rs42.encode(::fixy::View<std::byte const>{},
                                ::fixy::take_window(std::move(run), 0, 0).expect("an empty window fits"));
         });

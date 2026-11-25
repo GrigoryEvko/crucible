@@ -92,7 +92,7 @@ OpPacket build_op(uint32_t iter, uint32_t op_idx) {
 
     uint16_t m = 0;
 
-    p.metas.with_mut([&m, iter, op_idx](auto run) noexcept {
+    p.metas = ::fixy::build_fixed_array<TensorMeta, decltype(p.metas)::size()>([&m, iter, op_idx](auto run) noexcept {
         // Writes meta into the next element of the run.
         const auto append_meta = [&run, &m](TensorMeta const& meta) noexcept {
             auto element = run.get_mut(m++).expect("a test reads an element at or past the count of its array");

@@ -66,8 +66,7 @@ void prefix(Whole const&&, Rest&&...) = delete("the View borrows the buffer, and
 // The key of a federation of the tests: the bytes first, first + 1, and so
 // on.
 [[nodiscard]] static constexpr fed::FederationHashKey hash_key_from(std::uint8_t first) noexcept {
-    Bytes<32> bytes{};
-    bytes.with_mut([first](auto run) noexcept {
+    Bytes<32> const bytes = ::foundation::core::build_fixed_array<std::byte, 32>([first](auto run) noexcept {
         std::uint8_t next = first;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(next);
@@ -241,11 +240,11 @@ static void test_t10_codec_round_trip() {
     const auto body =
         bytes_of(0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10);
 
-    Bytes<kHeader + 16> buf{};
-    auto written = buf.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
+    auto const [written, buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
     ASSERT_TRUE(written.is_ok());
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
@@ -261,24 +260,19 @@ static void test_t10_codec_round_trip() {
 // One function and one argument list across four rows. The streams differ
 // because the key differs, so a receiver cannot confuse two rows.
 static void test_t11_cross_row_on_wire_distinct() {
-    Bytes<kHeader> buf_r0{};
-    Bytes<kHeader> buf_rbg{};
-    Bytes<kHeader> buf_rio{};
-    Bytes<kHeader> buf_rbgio{};
-
-    auto w0 = buf_r0.with_mut([](auto run) noexcept {
+    auto const [w0, buf_r0] = ::foundation::core::build_fixed_array<std::byte, kHeader>([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
             local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
-    auto wb = buf_rbg.with_mut([](auto run) noexcept {
+    auto const [wb, buf_rbg] = ::foundation::core::build_fixed_array<std::byte, kHeader>([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBg, int>(
             local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
-    auto wi = buf_rio.with_mut([](auto run) noexcept {
+    auto const [wi, buf_rio] = ::foundation::core::build_fixed_array<std::byte, kHeader>([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RIO, int>(
             local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
-    auto wbi = buf_rbgio.with_mut([](auto run) noexcept {
+    auto const [wbi, buf_rbgio] = ::foundation::core::build_fixed_array<std::byte, kHeader>([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
             local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
@@ -324,11 +318,11 @@ static void test_t14_header_smoke_test() {
 // rather than into a copy.
 static void test_t15_payload_aliases_input() {
     const auto body = bytes_of(1, 2, 3, 4, 5, 6, 7, 8);
-    Bytes<kHeader + 16> buf{};
-    auto written = buf.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
+    auto const [written, buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
     ASSERT_TRUE(written.is_ok());
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),
@@ -353,19 +347,19 @@ static void test_t16_content_addressed_payload_elision() {
     const auto body =
         bytes_of(0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF);
 
-    Bytes<kHeader + 16> full_buf{};
-    auto full_written = full_buf.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), Payload{body.view()});
-    });
+    auto const [full_written, full_buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), Payload{body.view()});
+        });
     ASSERT_TRUE(full_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(full_written) == fed::FEDERATION_HEADER_BYTES + body.size());
 
-    Bytes<kHeader + 16> hash_only_buf{};
-    auto hash_only_written = hash_only_buf.with_mut([](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), Payload::hash_only());
-    });
+    auto const [hash_only_written, hash_only_buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, R0, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), Payload::hash_only());
+        });
     ASSERT_TRUE(hash_only_written.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(hash_only_written) == fed::FEDERATION_HEADER_BYTES);
 
@@ -385,8 +379,7 @@ static void test_t16_content_addressed_payload_elision() {
 static void test_wire_byte_offset_stability() {
     const fed::FederationKey key = fed::federation_key<&t_unary, RBgIO, int>(test_hash_key());
 
-    Bytes<kHeader> buf{};
-    auto written = buf.with_mut([](auto run) noexcept {
+    auto const [written, buf] = ::foundation::core::build_fixed_array<std::byte, kHeader>([](auto run) noexcept {
         return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
             local_cipher_permission(), test_hash_key(), std::move(run), ::fixy::View<std::byte const>{});
     });
@@ -415,13 +408,13 @@ static void test_cross_universe_cardinality_rejection() {
     static_assert(current_cardinality >= 1u, "The fixture subtracts one to build a smaller receiver cardinality, "
                                              "so the universe must hold at least one atom.");
 
-    Bytes<kHeader + 16> buf{};
     const auto body = bytes_of(0xAA, 0xBB, 0xCC, 0xDD);
 
-    auto written = buf.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
+    auto const [written, buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
     ASSERT_TRUE(written.is_ok());
 
     // A receiver at the writer's cardinality accepts.
@@ -448,17 +441,16 @@ static void test_cross_universe_cardinality_rejection() {
 static void test_row_permutation_byte_invariance() {
     const auto body = bytes_of(0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80);
 
-    Bytes<kHeader + 16> buf_bgio{};
-    Bytes<kHeader + 16> buf_iobg{};
-
-    auto wa = buf_bgio.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
-    auto wb = buf_iobg.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, RIOBg, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
+    auto const [wa, buf_bgio] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, RBgIO, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
+    auto const [wb, buf_iobg] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, RIOBg, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
     ASSERT_TRUE(wa.is_ok());
     ASSERT_TRUE(wb.is_ok());
     CRUCIBLE_TEST_ASSERT(kTest, value_of(wa) == value_of(wb));
@@ -475,11 +467,11 @@ static void test_saturation_row_round_trip() {
     CRUCIBLE_TEST_ASSERT(kTest, !k_full.is_sentinel());
 
     const auto body = bytes_of(0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x02, 0x03, 0x04);
-    Bytes<kHeader + 16> buf{};
-    auto written = buf.with_mut([&body](auto run) noexcept {
-        return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
-            local_cipher_permission(), test_hash_key(), std::move(run), body.view());
-    });
+    auto const [written, buf] =
+        ::foundation::core::build_fixed_array<std::byte, kHeader + 16>([&body](auto run) noexcept {
+            return fed::serialize_computation_cache_federation_entry<&t_unary, RFull, int>(
+                local_cipher_permission(), test_hash_key(), std::move(run), body.view());
+        });
     ASSERT_TRUE(written.is_ok());
 
     auto view = fed::deserialize_untrusted_federation_entry(prefix(buf, value_of(written)),

@@ -69,7 +69,7 @@ OpData make_op(uint32_t iter, uint32_t op_idx) {
     d.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     d.entry.num_outputs = 1;
 
-    d.metas.with_mut([iter, op_idx](auto run) noexcept {
+    d.metas = ::fixy::build_fixed_array<TensorMeta, decltype(d.metas)::size()>([iter, op_idx](auto run) noexcept {
         uint16_t idx = 0;
         if (op_idx > 0) {
             auto input = run.get_mut(idx++).expect("a test reads an element at or past the count of its array");

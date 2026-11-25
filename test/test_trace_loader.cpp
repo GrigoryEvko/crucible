@@ -124,12 +124,10 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_image(::fixy::View<std::
 // An image of Bytes bytes of zero, with the bytes of header at its start.
 template <std::size_t Bytes>
 static ::fixy::FixedArray<std::byte, Bytes> make_image(HeaderImage const& header) {
-    ::fixy::FixedArray<std::byte, Bytes> image{};
-    image.with_mut([&header](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, Bytes>([&header](auto run) noexcept {
         ::fixy::copy(::fixy::take_window<sizeof(HeaderImage)>(std::move(run), 0).expect("the header fits the image"),
                      ::fixy::bytes(header));
     });
-    return image;
 }
 
 // True when the load refused its file for the reason error.
@@ -213,22 +211,27 @@ static void test_adversarial_num_ops_rejected() {
     ::fixy::check::pass(kTest, "  test_adversarial_counts:        PASSED\n");
 }
 
+// Puts value at the offset FieldOffset of the bytes.
+template <std::size_t FieldOffset, class Field, std::size_t Count>
+    requires(FieldOffset + sizeof(Field) <= Count)
+static void put_field(::fixy::FixedArray<std::byte, Count>& bytes, Field value) {
+    bytes.copy_window(FieldOffset, ::fixy::bytes(value)).expect("the bound of the template puts the field inside");
+}
+
 static void test_round_trip_single_op() {
     // Header, one op record, no metas, and a name table of no name.
-    ::fixy::FixedArray<std::byte, 16 + sizeof(TraceOpRecord) + kEmptyNameTable> buf =
-        make_image<16 + sizeof(TraceOpRecord) + kEmptyNameTable>(
-            HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 0});
+    constexpr std::size_t kBytes = 16 + sizeof(TraceOpRecord) + kEmptyNameTable;
+    ::fixy::FixedArray<std::byte, kBytes> buf = make_image<kBytes>(
+        HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 0});
 
     const uint64_t schema = 0xAABBCCDDEEFF0011ULL;
     const uint64_t shape = 0x1122334455667788ULL;
     const uint64_t scope = 0xDEADBEEFCAFEBABEULL;
     const uint64_t callsite = 0xFEEDFACE000000ADULL;
-    buf.with_mut([schema, shape, scope, callsite](auto run) noexcept {
-        write_record_field_<16 + 0>(run, schema);
-        write_record_field_<16 + 8>(run, shape);
-        write_record_field_<16 + 16>(run, scope);
-        write_record_field_<16 + 24>(run, callsite);
-    });
+    put_field<16 + 0>(buf, schema);
+    put_field<16 + 8>(buf, shape);
+    put_field<16 + 16>(buf, scope);
+    put_field<16 + 24>(buf, callsite);
     // The rest of the record is the scalar values, the tensor and scalar
     // counts, the flag bytes, the depth, the tags and the pad, all left zero.
     // The round trip of the encoders below gives the depth a value.
@@ -291,21 +294,22 @@ static void test_encoders_round_trip_through_the_loader() {
     constexpr size_t kBytes = kMetaAt + TRACE_META_BYTES + sizeof(uint32_t);
     const ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header_bytes = encode_trace_header(1, 1);
     const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
-    ::fixy::FixedArray<std::byte, kBytes> image{};
-    image.with_mut([&header_bytes, &op_bytes, &meta_bytes](auto run) noexcept {
-        run = ::fixy::reborrow(std::move(run), [&header_bytes](auto lent) noexcept {
+    const ::fixy::FixedArray<std::byte, kBytes> image =
+        ::fixy::build_fixed_array<std::byte, kBytes>([&header_bytes, &op_bytes, &meta_bytes](auto run) noexcept {
+            run = ::fixy::reborrow(std::move(run), [&header_bytes](auto lent) noexcept {
+                ::fixy::copy(
+                    ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image"),
+                    header_bytes.view());
+            });
+            run = ::fixy::reborrow(std::move(run), [&op_bytes](auto lent) noexcept {
+                ::fixy::copy(
+                    ::fixy::take_window<sizeof(TraceOpRecord)>(std::move(lent), kOpAt).expect("the op fits the image"),
+                    op_bytes.view());
+            });
             ::fixy::copy(
-                ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image"),
-                header_bytes.view());
+                ::fixy::take_window<TRACE_META_BYTES>(std::move(run), kMetaAt).expect("the meta fits the image"),
+                meta_bytes.view());
         });
-        run = ::fixy::reborrow(std::move(run), [&op_bytes](auto lent) noexcept {
-            ::fixy::copy(
-                ::fixy::take_window<sizeof(TraceOpRecord)>(std::move(lent), kOpAt).expect("the op fits the image"),
-                op_bytes.view());
-        });
-        ::fixy::copy(::fixy::take_window<TRACE_META_BYTES>(std::move(run), kMetaAt).expect("the meta fits the image"),
-                     meta_bytes.view());
-    });
 
     const LoadedTrace trace = load_image(image.view(), "crtrace-encoders.bin").expect("an encoded trace loads");
 
@@ -363,49 +367,49 @@ static void test_first_format_loads() {
     constexpr uint64_t kScope = 0xDEADBEEFCAFEBABEULL;
     constexpr uint64_t kCallsite = 0xFEEDFACE000000ADULL;
     constexpr uint64_t kGradFnHash = 0x0123456789ABCDEFULL;
-    ::fixy::FixedArray<std::byte, kBytes> image{};
+    const ::fixy::FixedArray<std::byte, kBytes> image = ::fixy::build_fixed_array<std::byte, kBytes>(
+        [kSchema, kShape, kScope, kCallsite, kGradFnHash](auto run) noexcept {
+            run = ::fixy::reborrow(std::move(run), [](auto lent) noexcept {
+                auto header =
+                    ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image");
+                write_record_field_<0>(header, TRACE_MAGIC);
+                write_record_field_<4>(header, TRACE_FORMAT_FIRST_VERSION);
+                write_record_field_<8>(header, uint32_t{1});
+                write_record_field_<12>(header, uint32_t{1});
+            });
 
-    image.with_mut([kSchema, kShape, kScope, kCallsite, kGradFnHash](auto run) noexcept {
-        run = ::fixy::reborrow(std::move(run), [](auto lent) noexcept {
-            auto header =
-                ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image");
-            write_record_field_<0>(header, TRACE_MAGIC);
-            write_record_field_<4>(header, TRACE_FORMAT_FIRST_VERSION);
-            write_record_field_<8>(header, uint32_t{1});
-            write_record_field_<12>(header, uint32_t{1});
+            run = ::fixy::reborrow(std::move(run), [kSchema, kShape, kScope, kCallsite](auto lent) noexcept {
+                auto op =
+                    ::fixy::take_window<TRACE_FIRST_OP_BYTES>(std::move(lent), kOpAt).expect("the op fits the image");
+                write_record_field_<0>(op, kSchema);
+                write_record_field_<8>(op, kShape);
+                write_record_field_<16>(op, kScope);
+                write_record_field_<24>(op, kCallsite);
+                write_record_field_<32>(op, int64_t{-9});
+                write_record_field_<72>(op, uint16_t{0});
+                write_record_field_<74>(op, uint16_t{1});
+                write_record_field_<76>(op, uint16_t{1});
+                write_record_field_<78>(op, uint8_t{1});
+            });
+
+            auto meta =
+                ::fixy::take_window<TRACE_FIRST_META_BYTES>(std::move(run), kMetaAt).expect("the meta fits the image");
+            write_record_field_<0>(meta, int64_t{3});
+            write_record_field_<8>(meta, int64_t{4});
+            write_record_field_<64>(meta, int64_t{4});
+            write_record_field_<72>(meta, int64_t{1});
+            write_record_field_<136>(meta, uint8_t{2});
+            write_record_field_<137>(meta, std::to_underlying(ScalarType::Float));
+            write_record_field_<138>(meta, std::to_underlying(DeviceType::CPU));
+            write_record_field_<139>(meta, int8_t{-1});
+            write_record_field_<140>(meta, std::to_underlying(Layout::Strided));
+            write_record_field_<141>(meta, uint8_t{1});
+            write_record_field_<143>(meta, uint8_t{1});
+            write_record_field_<144>(meta, int64_t{5});
+            write_record_field_<152>(meta, uint32_t{7});
+            write_record_field_<156>(meta, uint32_t{64});
+            write_record_field_<160>(meta, kGradFnHash);
         });
-
-        run = ::fixy::reborrow(std::move(run), [kSchema, kShape, kScope, kCallsite](auto lent) noexcept {
-            auto op = ::fixy::take_window<TRACE_FIRST_OP_BYTES>(std::move(lent), kOpAt).expect("the op fits the image");
-            write_record_field_<0>(op, kSchema);
-            write_record_field_<8>(op, kShape);
-            write_record_field_<16>(op, kScope);
-            write_record_field_<24>(op, kCallsite);
-            write_record_field_<32>(op, int64_t{-9});
-            write_record_field_<72>(op, uint16_t{0});
-            write_record_field_<74>(op, uint16_t{1});
-            write_record_field_<76>(op, uint16_t{1});
-            write_record_field_<78>(op, uint8_t{1});
-        });
-
-        auto meta =
-            ::fixy::take_window<TRACE_FIRST_META_BYTES>(std::move(run), kMetaAt).expect("the meta fits the image");
-        write_record_field_<0>(meta, int64_t{3});
-        write_record_field_<8>(meta, int64_t{4});
-        write_record_field_<64>(meta, int64_t{4});
-        write_record_field_<72>(meta, int64_t{1});
-        write_record_field_<136>(meta, uint8_t{2});
-        write_record_field_<137>(meta, std::to_underlying(ScalarType::Float));
-        write_record_field_<138>(meta, std::to_underlying(DeviceType::CPU));
-        write_record_field_<139>(meta, int8_t{-1});
-        write_record_field_<140>(meta, std::to_underlying(Layout::Strided));
-        write_record_field_<141>(meta, uint8_t{1});
-        write_record_field_<143>(meta, uint8_t{1});
-        write_record_field_<144>(meta, int64_t{5});
-        write_record_field_<152>(meta, uint32_t{7});
-        write_record_field_<156>(meta, uint32_t{64});
-        write_record_field_<160>(meta, kGradFnHash);
-    });
 
     const LoadedTrace trace =
         load_image(image.view(), ::fixy::CText{"crtrace-first-format.bin"}).expect("a trace of the first format loads");
@@ -453,18 +457,19 @@ static void test_recorded_first_format_trace_loads() {
 static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op(TraceOpRecord const& record) {
     constexpr size_t kOpAt = TRACE_HEADER_BYTES;
     constexpr size_t kBytes = kOpAt + sizeof(TraceOpRecord) + sizeof(uint32_t);
-    ::fixy::FixedArray<std::byte, kBytes> image{};
     const ::fixy::FixedArray<std::byte, TRACE_HEADER_BYTES> header_bytes = encode_trace_header(1, 0);
     const ::fixy::FixedArray<std::byte, sizeof(TraceOpRecord)> op_bytes = encode_trace_op(record);
-    image.with_mut([&header_bytes, &op_bytes](auto run) noexcept {
-        run = ::fixy::reborrow(std::move(run), [&header_bytes](auto lent) noexcept {
+    const ::fixy::FixedArray<std::byte, kBytes> image =
+        ::fixy::build_fixed_array<std::byte, kBytes>([&header_bytes, &op_bytes](auto run) noexcept {
+            run = ::fixy::reborrow(std::move(run), [&header_bytes](auto lent) noexcept {
+                ::fixy::copy(
+                    ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image"),
+                    header_bytes.view());
+            });
             ::fixy::copy(
-                ::fixy::take_window<TRACE_HEADER_BYTES>(std::move(lent), 0).expect("the header fits the image"),
-                header_bytes.view());
+                ::fixy::take_window<sizeof(TraceOpRecord)>(std::move(run), kOpAt).expect("the op fits the image"),
+                op_bytes.view());
         });
-        ::fixy::copy(::fixy::take_window<sizeof(TraceOpRecord)>(std::move(run), kOpAt).expect("the op fits the image"),
-                     op_bytes.view());
-    });
     return load_image(image.view(), "crtrace-one-op.bin");
 }
 
@@ -1102,11 +1107,9 @@ static ::fixy::Result<LoadedTrace, TraceLoadError> load_one_op_with_metas(InputC
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = MetaCount});
     // The op record begins at offset 16.  The schema hash is its first
     // field, and the two tensor counts sit at +72 and +74 inside it.
-    buf.with_mut([input_count = num_inputs.value(), output_count = num_outputs.value()](auto run) noexcept {
-        write_record_field_<16>(run, kCaseSchemaHash);
-        write_record_field_<16 + 72>(run, input_count);
-        write_record_field_<16 + 74>(run, output_count);
-    });
+    put_field<16>(buf, kCaseSchemaHash);
+    put_field<16 + 72>(buf, num_inputs.value());
+    put_field<16 + 74>(buf, num_outputs.value());
     return load_image(buf.view(), "crtrace-one-op-metas.bin");
 }
 
@@ -1204,13 +1207,6 @@ static void test_counts_past_the_file_allocate_nothing() {
 // valid descriptor of rank zero.
 using MetaRecord = ::fixy::FixedArray<std::byte, sizeof(TensorMeta)>;
 
-// Puts value at the offset FieldOffset of the record.  The bound of the
-// template puts the field inside the record.
-template <std::size_t FieldOffset, class Field>
-static void set_meta_field(MetaRecord& record, Field value) {
-    record.with_mut([value](auto run) noexcept { write_record_field_<FieldOffset>(run, value); });
-}
-
 // Loads a trace of one op with one tensor, whose metadata is the record, and a
 // name table of no name.
 static bool loads_with_meta(const MetaRecord& record) {
@@ -1218,14 +1214,9 @@ static bool loads_with_meta(const MetaRecord& record) {
     constexpr std::size_t kBytes = kMetaAt + sizeof(TensorMeta) + kEmptyNameTable;
     ::fixy::FixedArray<std::byte, kBytes> buf = make_image<kBytes>(
         HeaderImage{.magic = kMagic, .version = crucible::TRACE_FORMAT_VERSION, .n_ops = 1, .n_metas = 1});
-    const uint16_t num_inputs = 1;
-    buf.with_mut([num_inputs, &record](auto run) noexcept {
-        write_record_field_<16>(run, kCaseSchemaHash);
-        write_record_field_<16 + 72>(run, num_inputs);
-        ::fixy::copy(::fixy::take_window<sizeof(TensorMeta)>(std::move(run), kMetaAt)
-                         .expect("the metadata record fits the image"),
-                     record.view());
-    });
+    put_field<16>(buf, kCaseSchemaHash);
+    put_field<16 + 72>(buf, uint16_t{1});
+    buf.copy_window(kMetaAt, record.view()).expect("the metadata record fits the image");
     const auto loaded = load_image(buf.view(), "crtrace-meta.bin");
     // Only the metadata record differs from a valid trace, so a refusal has
     // the one reason of a corrupt record.
@@ -1236,7 +1227,7 @@ static bool loads_with_meta(const MetaRecord& record) {
 template <std::size_t FieldOffset, class Field>
 static bool loads_with_meta_field(Field value) {
     MetaRecord record{};
-    set_meta_field<FieldOffset>(record, value);
+    put_field<FieldOffset>(record, value);
     return loads_with_meta(record);
 }
 
@@ -1250,10 +1241,10 @@ static void test_meta_bytes_break_no_claim_of_the_type() {
     // A size lane inside the rank must fit the extent bound.
     {
         MetaRecord rank_one{};
-        set_meta_field<offsetof(TensorMeta, ndim)>(rank_one, uint8_t{1});
-        set_meta_field<offsetof(TensorMeta, sizes)>(rank_one, kMaxTensorDimExtent);
+        put_field<offsetof(TensorMeta, ndim)>(rank_one, uint8_t{1});
+        put_field<offsetof(TensorMeta, sizes)>(rank_one, kMaxTensorDimExtent);
         CRUCIBLE_TEST_ASSERT(kTest, loads_with_meta(rank_one));
-        set_meta_field<offsetof(TensorMeta, sizes)>(rank_one, ::fixy::max_of<int64_t>);
+        put_field<offsetof(TensorMeta, sizes)>(rank_one, ::fixy::max_of<int64_t>);
         CRUCIBLE_TEST_ASSERT(kTest, !loads_with_meta(rank_one));
     }
 

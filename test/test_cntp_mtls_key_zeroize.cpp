@@ -32,15 +32,13 @@ namespace cntp = ::crucible::cntp;
 using PemBytes = ::fixy::FixedArray<std::byte, cntp::MtlsPrivateKeyBytes::max_bytes>;
 
 [[nodiscard]] PemBytes pattern() noexcept {
-    PemBytes bytes{};
-    bytes.with_mut([](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::byte, PemBytes::size()>([](auto run) noexcept {
         std::size_t position = 0;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(0x41U + (position % 26U));
             ++position;
         }
     });
-    return bytes;
 }
 
 // The bytes of a key with the pattern and an algorithm other than the zero

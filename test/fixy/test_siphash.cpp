@@ -43,8 +43,7 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
 };
 
 [[nodiscard]] constexpr SipKeyBytes reference_key() noexcept {
-    SipKeyBytes key{};
-    key.with_mut([](auto run) noexcept {
+    SipKeyBytes const key = fc::build_fixed_array<std::byte, SipKeyBytes::size()>([](auto run) noexcept {
         std::uint8_t next = 0;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(next);
@@ -55,22 +54,21 @@ inline constexpr fc::FixedArray<std::uint64_t, kVectorCount> kReferenceTags{
 }
 
 [[nodiscard]] constexpr fc::FixedArray<std::byte, kVectorCount> reference_message() noexcept {
-    fc::FixedArray<std::byte, kVectorCount> message{};
-    message.with_mut([](auto run) noexcept {
-        std::uint8_t next = 0;
-        for (std::byte& byte : run) {
-            byte = static_cast<std::byte>(next);
-            ++next;
-        }
-    });
+    fc::FixedArray<std::byte, kVectorCount> const message =
+        fc::build_fixed_array<std::byte, kVectorCount>([](auto run) noexcept {
+            std::uint8_t next = 0;
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(next);
+                ++next;
+            }
+        });
     return message;
 }
 
 // The tag of the vector at length: its word, as eight little-endian bytes.
 [[nodiscard]] constexpr SipTag expected_tag(std::size_t length) noexcept {
     std::uint64_t const word = kReferenceTags.at(fc::Index<kVectorCount>::check(length).expect("a vector length"));
-    SipTag tag{};
-    tag.with_mut([word](auto run) noexcept {
+    SipTag const tag = fc::build_fixed_array<std::byte, SipTag::size()>([word](auto run) noexcept {
         int shift = 0;
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(static_cast<std::uint8_t>(word >> shift));
@@ -114,8 +112,7 @@ static_assert(same_tag(signed_tag_of(15), expected_tag(15)));
 // The tag of a text is the tag of its characters as bytes.
 constexpr bool text_gives_the_bytes_tag() noexcept {
     constexpr fc::TextView text{"a text of nineteen."};
-    fc::FixedArray<std::byte, 19> bytes{};
-    bytes.with_mut([text](auto run) noexcept {
+    fc::FixedArray<std::byte, 19> const bytes = fc::build_fixed_array<std::byte, 19>([text](auto run) noexcept {
         auto cursor = run.begin();
         for (char const letter : text) {
             *cursor = static_cast<std::byte>(letter);

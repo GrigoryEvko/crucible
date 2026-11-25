@@ -199,18 +199,21 @@ static void test_mint_topology_graph_round_trip() {
 
     CRUCIBLE_TEST_ASSERT(kTest, g.edge_by_id(topology::EdgeId{42}).is_none());
 
-    ::foundation::core::FixedArray<topology::EdgeId, 8> incident{};
+    auto [incident, incident_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<topology::EdgeId, 8>);
     auto const& g_read = g;
-    auto found = incident.with_mut(
-        [&g_read](auto run) noexcept { return g_read.edges_incident_on(topology::NodeId{1}, std::move(run)); });
+    auto found = incident.with_mut(incident_key, [&g_read](auto run) noexcept {
+        return g_read.edges_incident_on(topology::NodeId{1}, std::move(run));
+    });
     // The middle node is named as the far end of both links, once
     // from each side.
     CRUCIBLE_TEST_ASSERT(kTest, found == 2);
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<0>()) == topology::EdgeId{0});
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<1>()) == topology::EdgeId{3});
 
-    auto found_on_end_node = incident.with_mut(
-        [&g_read](auto run) noexcept { return g_read.edges_incident_on(topology::NodeId{0}, std::move(run)); });
+    auto found_on_end_node = incident.with_mut(incident_key, [&g_read](auto run) noexcept {
+        return g_read.edges_incident_on(topology::NodeId{0}, std::move(run));
+    });
     // An end node is named by one half-edge only.
     CRUCIBLE_TEST_ASSERT(kTest, found_on_end_node == 1);
     CRUCIBLE_TEST_ASSERT(kTest, incident.at(index<0>()) == topology::EdgeId{1});

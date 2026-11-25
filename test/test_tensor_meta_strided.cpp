@@ -61,45 +61,47 @@ using Elements = ::fixy::FixedArray<std::int32_t, 6>;
 
 // A dense matrix, its transpose, a broadcast row and a scalar, over one run.
 void views_of_descriptors(::fixy::TestRunnerCtx const& test) noexcept {
-    Elements values{0, 1, 2, 3, 4, 5};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::int32_t, 6>,
+                                                         ::fixy::FixedArray<std::int32_t, 6>{0, 1, 2, 3, 4, 5});
     ::fixy::FixedArray<std::int64_t, 2> const sizes{2, 3};
     ::fixy::FixedArray<std::int64_t, 2> const strides{3, 1};
     ::fixy::FixedArray<std::int64_t, 2> const turned_sizes{3, 2};
     ::fixy::FixedArray<std::int64_t, 2> const turned_strides{1, 3};
     ::fixy::FixedArray<std::int64_t, 2> const row_strides{0, 1};
 
-    values.with_mut([&test, &sizes, &strides, &turned_sizes, &turned_strides, &row_strides](auto run) noexcept {
-        ::fixy::View<std::int32_t const> const storage = run.view();
-        TensorMeta const matrix = int_meta(sizes.view(), strides.view());
-        ::fixy::StridedView<std::int32_t const> const dense =
-            ::crucible::strided_view_of(matrix, storage).ok().expect("a dense matrix fits its slot");
-        CRUCIBLE_TEST_ASSERT(test, dense.rank() == 2 && dense.count() == 6 && dense.is_dense());
-        CRUCIBLE_TEST_ASSERT(test, walk_order(dense) == (Elements{0, 1, 2, 3, 4, 5}));
+    values.with_mut(
+        values_key, [&test, &sizes, &strides, &turned_sizes, &turned_strides, &row_strides](auto run) noexcept {
+            ::fixy::View<std::int32_t const> const storage = run.view();
+            TensorMeta const matrix = int_meta(sizes.view(), strides.view());
+            ::fixy::StridedView<std::int32_t const> const dense =
+                ::crucible::strided_view_of(matrix, storage).ok().expect("a dense matrix fits its slot");
+            CRUCIBLE_TEST_ASSERT(test, dense.rank() == 2 && dense.count() == 6 && dense.is_dense());
+            CRUCIBLE_TEST_ASSERT(test, walk_order(dense) == (Elements{0, 1, 2, 3, 4, 5}));
 
-        ::fixy::StridedView<std::int32_t const> const turned =
-            ::crucible::strided_view_of(int_meta(turned_sizes.view(), turned_strides.view()), storage)
-                .ok()
-                .expect("a transpose fits its slot");
-        CRUCIBLE_TEST_ASSERT(test, walk_order(turned) == (Elements{0, 3, 1, 4, 2, 5}));
+            ::fixy::StridedView<std::int32_t const> const turned =
+                ::crucible::strided_view_of(int_meta(turned_sizes.view(), turned_strides.view()), storage)
+                    .ok()
+                    .expect("a transpose fits its slot");
+            CRUCIBLE_TEST_ASSERT(test, walk_order(turned) == (Elements{0, 3, 1, 4, 2, 5}));
 
-        ::fixy::StridedView<std::int32_t const> const rows =
-            ::crucible::strided_view_of(int_meta(sizes.view(), row_strides.view()), storage)
-                .ok()
-                .expect("a broadcast row fits its slot");
-        CRUCIBLE_TEST_ASSERT(test, walk_order(rows) == (Elements{0, 1, 2, 0, 1, 2}));
+            ::fixy::StridedView<std::int32_t const> const rows =
+                ::crucible::strided_view_of(int_meta(sizes.view(), row_strides.view()), storage)
+                    .ok()
+                    .expect("a broadcast row fits its slot");
+            CRUCIBLE_TEST_ASSERT(test, walk_order(rows) == (Elements{0, 1, 2, 0, 1, 2}));
 
-        // A tensor of rank zero reads the first element of its slot.
-        ::fixy::View<std::int64_t const> const no_axes{};
-        ::fixy::StridedView<std::int32_t const> const scalar =
-            ::crucible::strided_view_of(int_meta(no_axes, no_axes), storage).ok().expect("a scalar fits its slot");
-        CRUCIBLE_TEST_ASSERT(test, scalar.rank() == 0 && scalar.count() == 1);
+            // A tensor of rank zero reads the first element of its slot.
+            ::fixy::View<std::int64_t const> const no_axes{};
+            ::fixy::StridedView<std::int32_t const> const scalar =
+                ::crucible::strided_view_of(int_meta(no_axes, no_axes), storage).ok().expect("a scalar fits its slot");
+            CRUCIBLE_TEST_ASSERT(test, scalar.rank() == 0 && scalar.count() == 1);
 
-        // Two indexes of the broadcast row name one element, so the row has
-        // no unique view, which writes.
-        CRUCIBLE_TEST_ASSERT(
-            test, ::crucible::strided_view_of(int_meta(sizes.view(), row_strides.view()), std::move(run)).err()
-                      == ::fixy::some(TensorViewRefusal::Overlap));
-    });
+            // Two indexes of the broadcast row name one element, so the row has
+            // no unique view, which writes.
+            CRUCIBLE_TEST_ASSERT(
+                test, ::crucible::strided_view_of(int_meta(sizes.view(), row_strides.view()), std::move(run)).err()
+                          == ::fixy::some(TensorViewRefusal::Overlap));
+        });
     pass(test, "  views_of_descriptors: PASSED\n");
 }
 
@@ -107,13 +109,14 @@ void views_of_descriptors(::fixy::TestRunnerCtx const& test) noexcept {
 // slice keeps the slot of its base, so its view starts at its storage offset
 // and reads the elements of the base.
 void slices_at_an_offset(::fixy::TestRunnerCtx const& test) noexcept {
-    Elements values{0, 1, 2, 3, 4, 5};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::int32_t, 6>,
+                                                         ::fixy::FixedArray<std::int32_t, 6>{0, 1, 2, 3, 4, 5});
     ::fixy::FixedArray<std::int64_t, 1> const row_sizes{3};
     ::fixy::FixedArray<std::int64_t, 1> const row_strides{1};
     ::fixy::FixedArray<std::int64_t, 1> const column_sizes{2};
     ::fixy::FixedArray<std::int64_t, 1> const column_strides{3};
 
-    values.with_mut([&test, &row_sizes, &row_strides, &column_sizes, &column_strides](auto run) noexcept {
+    values.with_mut(values_key, [&test, &row_sizes, &row_strides, &column_sizes, &column_strides](auto run) noexcept {
         ::fixy::View<std::int32_t const> const storage = run.view();
         TensorMeta second_row = int_meta(row_sizes.view(), row_strides.view());
         second_row.storage_offset = 3;
@@ -134,7 +137,8 @@ void slices_at_an_offset(::fixy::TestRunnerCtx const& test) noexcept {
         bool const is_walked = ::fixy::walk([](std::int32_t& cell) noexcept { cell = cell * 10; }, unique_row).is_ok();
         CRUCIBLE_TEST_ASSERT(test, is_walked);
     });
-    CRUCIBLE_TEST_ASSERT(test, values == (Elements{0, 1, 2, 30, 40, 50}));
+    Elements const expected{0, 1, 2, 30, 40, 50};
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::equal(values.view(), expected.view()));
     pass(test, "  slices_at_an_offset: PASSED\n");
 }
 
@@ -154,14 +158,14 @@ void slices_at_an_offset(::fixy::TestRunnerCtx const& test) noexcept {
 
 // Each refusal of the door.
 void refusals(::fixy::TestRunnerCtx const& test) noexcept {
-    Elements values{};
     ::fixy::FixedArray<std::int64_t, 2> const sizes{2, 3};
     ::fixy::FixedArray<std::int64_t, 2> const strides{3, 1};
     ::fixy::FixedArray<std::int64_t, 2> const negative_size{-2, 3};
     ::fixy::FixedArray<std::int64_t, 2> const negative_stride{-3, 1};
     ::fixy::FixedArray<std::int64_t, 2> const wide_strides{4, 1};
 
-    values.with_mut([&test, &sizes, &strides, &negative_size, &negative_stride, &wide_strides](auto run) noexcept {
+    static_cast<void>(::fixy::build_fixed_array<std::int32_t, 6>([&test, &sizes, &strides, &negative_size,
+                                                                  &negative_stride, &wide_strides](auto run) noexcept {
         ::fixy::View<std::int32_t const> const storage = run.view();
         TensorMeta sparse = int_meta(sizes.view(), strides.view());
         sparse.layout = ::crucible::Layout::Sparse;
@@ -195,17 +199,16 @@ void refusals(::fixy::TestRunnerCtx const& test) noexcept {
         shifted.storage_offset = -1;
         CRUCIBLE_TEST_ASSERT(test, is_refused(shifted, storage, TensorViewRefusal::OutsideStorage));
         CRUCIBLE_TEST_ASSERT(test, refusal_of(int_meta(sizes.view(), strides.view()), storage).is_none());
-    });
+    }));
     pass(test, "  refusals: PASSED\n");
 }
 
 // A storage format of the base is the element of a tensor of its dtype, and
 // of no other dtype of its size.
 void storage_formats(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<::fixy::f16, 4> halves{};
     ::fixy::FixedArray<std::int64_t, 1> const sizes{4};
     ::fixy::FixedArray<std::int64_t, 1> const strides{1};
-    halves.with_mut([&test, &sizes, &strides](auto run) noexcept {
+    static_cast<void>(::fixy::build_fixed_array<::fixy::f16, 4>([&test, &sizes, &strides](auto run) noexcept {
         ::fixy::View<::fixy::f16 const> const storage = run.view();
         TensorMeta half = int_meta(sizes.view(), strides.view());
         half.dtype = ScalarType::Half;
@@ -213,7 +216,7 @@ void storage_formats(::fixy::TestRunnerCtx const& test) noexcept {
         TensorMeta brain = half;
         brain.dtype = ScalarType::BFloat16;
         CRUCIBLE_TEST_ASSERT(test, ::crucible::strided_view_of(brain, storage).err().is_some());
-    });
+    }));
     CRUCIBLE_TEST_ASSERT(test, ::crucible::scalar_type_of<::fixy::bf16> == ScalarType::BFloat16
                                    && ::crucible::scalar_type_of<::fixy::fp8_e4m3> == ScalarType::Float8_e4m3fn
                                    && ::crucible::scalar_type_of<::fixy::fp8_e5m2> == ScalarType::Float8_e5m2);

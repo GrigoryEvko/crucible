@@ -267,14 +267,12 @@ private:
     }
 
     static void negate(Words& value) noexcept {
-        value.with_mut([](auto run) noexcept {
-            std::uint64_t carry = 1;
-            for (std::uint64_t& word : run) {
-                std::uint64_t const flipped = ~word;
-                word = flipped + carry;
-                carry = (carry != 0 && word == 0) ? 1u : 0u;
-            }
-        });
+        std::uint64_t carry = 1;
+        for (auto const index : value.indices()) {
+            std::uint64_t const word = ~value.at(index) + carry;
+            value.set(index, word);
+            carry = (carry != 0 && word == 0) ? 1u : 0u;
+        }
     }
 
     [[nodiscard]] static bool bit_at(Words const& value, int bit) noexcept {

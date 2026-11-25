@@ -58,15 +58,16 @@ constexpr uint32_t kFillRecords = 4096;
 
 // Drains one entry and its metadata index.  The ring holds at least one.
 [[nodiscard]] MetaIndex drain_meta_start(LocalRing& ring, TraceRing::Entry& out_entry) {
-    ::fixy::FixedArray<TraceRing::Entry, 1> entries{};
-    ::fixy::FixedArray<MetaIndex, 1> meta_starts{};
-    uint32_t const drained = ring.with_consumer([&entries, &meta_starts](TraceRing::Consumer& end) noexcept {
-        return entries.with_mut([&end, &meta_starts](auto entry_run) noexcept {
-            return meta_starts.with_mut([&end, &entry_run](auto meta_run) noexcept {
-                return TraceRing::drain(end, std::move(entry_run), std::move(meta_run));
+    auto [entries, entries_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, 1>);
+    auto [meta_starts, meta_starts_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, 1>);
+    uint32_t const drained =
+        ring.with_consumer([&entries, &entries_key, &meta_starts, &meta_starts_key](TraceRing::Consumer& end) noexcept {
+            return entries.with_mut(entries_key, [&end, &meta_starts, &meta_starts_key](auto entry_run) noexcept {
+                return meta_starts.with_mut(meta_starts_key, [&end, &entry_run](auto meta_run) noexcept {
+                    return TraceRing::drain(end, std::move(entry_run), std::move(meta_run));
+                });
             });
         });
-    });
     CRUCIBLE_TEST_ASSERT(kTest, drained == 1);
     out_entry = entries.at(::fixy::index<0>());
     return meta_starts.at(::fixy::index<0>());

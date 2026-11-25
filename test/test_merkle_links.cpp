@@ -214,10 +214,9 @@ namespace {
     CRUCIBLE_TEST_ASSERT(kTest, crucible::dag_node_count(crucible::TraceLink{}) == 0);
 
     // collect_regions reads the region of each arm.
-    ::foundation::core::FixedArray<crucible::RegionNode const*, 4> collected{};
-    CRUCIBLE_TEST_ASSERT(kTest, collected.with_mut([&branch_read](auto run) noexcept {
-        return crucible::collect_regions(branch_read, run);
-    }) == 2);
+    auto const [collected_count, collected] = ::foundation::core::build_fixed_array<crucible::RegionNode const*, 4>(
+        [&branch_read](auto run) noexcept { return crucible::collect_regions(branch_read, run); });
+    CRUCIBLE_TEST_ASSERT(kTest, collected_count == 2);
     CRUCIBLE_TEST_ASSERT(kTest, crucible::compute_merkle_hash(branch) == branch.merkle_hash);
 
     // dag_diff agrees on one DAG and on two empty links, and reports an end

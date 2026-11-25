@@ -79,7 +79,11 @@ public:
     // gives the count that body gives.
     template <class Body>
     [[nodiscard]] std::size_t with_each(Body&& body) noexcept {
-        return cells_.with_mut([&body](auto run) noexcept -> std::size_t { return body(std::move(run)); });
+        auto [popped, cells] =
+            ::fixy::build_fixed_array<T, N>([&body](auto run) noexcept -> std::size_t { return body(std::move(run)); });
+        cells_.copy_window(0, cells.view().window(0, popped).expect("a pop fits the run"))
+            .expect("the cells hold each popped value");
+        return popped;
     }
 };
 

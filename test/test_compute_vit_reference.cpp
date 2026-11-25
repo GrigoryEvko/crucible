@@ -89,20 +89,6 @@ void fill_weights(Weights& weights) {
 }
 
 void compute_reference(const Weights& weights, Reference& reference) {
-    ::fixy::FixedArray<float, B * S * D> ref_norm1{};
-    ::fixy::FixedArray<float, B * S * D> ref_Q{};
-    ::fixy::FixedArray<float, B * S * D> ref_K{};
-    ::fixy::FixedArray<float, B * S * D> ref_V{};
-    ::fixy::FixedArray<float, B * S * D> ref_attn{};
-    ::fixy::FixedArray<float, B * S * D> ref_proj{};
-    ::fixy::FixedArray<float, B * S * D> ref_res1{};
-    ::fixy::FixedArray<float, B * S * D> ref_norm2{};
-    ::fixy::FixedArray<float, B * S * D_FF> ref_ff1{};
-    ::fixy::FixedArray<float, B * S * D_FF> ref_relu{};
-    ::fixy::FixedArray<float, B * S * D> ref_ff2{};
-    ::fixy::FixedArray<float, B * D> ref_cls{};
-    ::fixy::FixedArray<float, B * N_CLS> ref_logits{};
-
     // A matrix product of [B*S, D] with [D, D].
     const auto square_mm = [](::fixy::Side<LeftFactor, ::fixy::View<float const>> left,
                               ::fixy::Side<RightFactor, ::fixy::View<float const>> right, auto out) noexcept {
@@ -110,66 +96,82 @@ void compute_reference(const Weights& weights, Reference& reference) {
                 make_dim<roles::Inner>(D));
     };
 
-    ref_norm1.with_mut([&weights](auto out) noexcept {
-        cpu::layer_norm(kTest, read_floats(weights.X), make_input<roles::Scale>(read_floats(weights.gamma1)),
-                        make_input<roles::Shift>(read_floats(weights.beta1)), std::move(out),
-                        make_dim<roles::Rows>(B * S), make_dim<roles::Width>(D));
-    });
-    ref_Q.with_mut([&](auto out) noexcept {
-        square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_q)),
-                  std::move(out));
-    });
-    ref_K.with_mut([&](auto out) noexcept {
-        square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_k)),
-                  std::move(out));
-    });
-    ref_V.with_mut([&](auto out) noexcept {
-        square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_v)),
-                  std::move(out));
-    });
-    ref_attn.with_mut([&](auto out) noexcept {
-        cpu::sdpa(kTest, ref_Q.view(), make_input<roles::Keys>(ref_K.view()), make_input<roles::Values>(ref_V.view()),
-                  std::move(out), make_dim<roles::Batch>(B), make_dim<roles::Sequence>(S), make_dim<roles::Width>(D));
-    });
-    ref_proj.with_mut([&](auto out) noexcept {
-        square_mm(make_input<LeftFactor>(ref_attn.view()), make_input<RightFactor>(read_floats(weights.W_out)),
-                  std::move(out));
-    });
-    ref_res1.with_mut([&](auto out) noexcept {
-        cpu::add(kTest, make_input<roles::Augend>(ref_proj.view()), make_input<roles::Addend>(read_floats(weights.X)),
-                 std::move(out), make_dim<roles::Count>(B * S * D));
-    });
-    ref_norm2.with_mut([&](auto out) noexcept {
-        cpu::layer_norm(kTest, ref_res1.view(), make_input<roles::Scale>(read_floats(weights.gamma2)),
-                        make_input<roles::Shift>(read_floats(weights.beta2)), std::move(out),
-                        make_dim<roles::Rows>(B * S), make_dim<roles::Width>(D));
-    });
-    ref_ff1.with_mut([&](auto out) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(ref_norm2.view()), make_input<RightFactor>(read_floats(weights.W_ff1)),
-                std::move(out), make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D_FF),
-                make_dim<roles::Inner>(D));
-    });
-    ref_relu.with_mut([&ref_ff1](auto out) noexcept {
-        cpu::relu(kTest, ref_ff1.view(), std::move(out), make_dim<roles::Count>(B * S * D_FF));
-    });
-    ref_ff2.with_mut([&](auto out) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(read_floats(weights.W_ff2)),
-                std::move(out), make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D),
-                make_dim<roles::Inner>(D_FF));
-    });
-    reference.res2.with_mut([&](auto out) noexcept {
+    ::fixy::FixedArray<float, B * S * D> const ref_norm1 =
+        ::fixy::build_fixed_array<float, B * S * D>([&weights](auto out) noexcept {
+            cpu::layer_norm(kTest, read_floats(weights.X), make_input<roles::Scale>(read_floats(weights.gamma1)),
+                            make_input<roles::Shift>(read_floats(weights.beta1)), std::move(out),
+                            make_dim<roles::Rows>(B * S), make_dim<roles::Width>(D));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_Q =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_q)),
+                      std::move(out));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_K =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_k)),
+                      std::move(out));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_V =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            square_mm(make_input<LeftFactor>(ref_norm1.view()), make_input<RightFactor>(read_floats(weights.W_v)),
+                      std::move(out));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_attn =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            cpu::sdpa(kTest, ref_Q.view(), make_input<roles::Keys>(ref_K.view()),
+                      make_input<roles::Values>(ref_V.view()), std::move(out), make_dim<roles::Batch>(B),
+                      make_dim<roles::Sequence>(S), make_dim<roles::Width>(D));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_proj =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            square_mm(make_input<LeftFactor>(ref_attn.view()), make_input<RightFactor>(read_floats(weights.W_out)),
+                      std::move(out));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_res1 =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            cpu::add(kTest, make_input<roles::Augend>(ref_proj.view()),
+                     make_input<roles::Addend>(read_floats(weights.X)), std::move(out),
+                     make_dim<roles::Count>(B * S * D));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_norm2 =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            cpu::layer_norm(kTest, ref_res1.view(), make_input<roles::Scale>(read_floats(weights.gamma2)),
+                            make_input<roles::Shift>(read_floats(weights.beta2)), std::move(out),
+                            make_dim<roles::Rows>(B * S), make_dim<roles::Width>(D));
+        });
+    ::fixy::FixedArray<float, B * S * D_FF> const ref_ff1 =
+        ::fixy::build_fixed_array<float, B * S * D_FF>([&](auto out) noexcept {
+            cpu::mm(kTest, make_input<LeftFactor>(ref_norm2.view()),
+                    make_input<RightFactor>(read_floats(weights.W_ff1)), std::move(out), make_dim<roles::Rows>(B * S),
+                    make_dim<roles::Columns>(D_FF), make_dim<roles::Inner>(D));
+        });
+    ::fixy::FixedArray<float, B * S * D_FF> const ref_relu =
+        ::fixy::build_fixed_array<float, B * S * D_FF>([&ref_ff1](auto out) noexcept {
+            cpu::relu(kTest, ref_ff1.view(), std::move(out), make_dim<roles::Count>(B * S * D_FF));
+        });
+    ::fixy::FixedArray<float, B * S * D> const ref_ff2 =
+        ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
+            cpu::mm(kTest, make_input<LeftFactor>(ref_relu.view()), make_input<RightFactor>(read_floats(weights.W_ff2)),
+                    std::move(out), make_dim<roles::Rows>(B * S), make_dim<roles::Columns>(D),
+                    make_dim<roles::Inner>(D_FF));
+        });
+    reference.res2 = ::fixy::build_fixed_array<float, B * S * D>([&](auto out) noexcept {
         cpu::add(kTest, make_input<roles::Augend>(ref_ff2.view()), make_input<roles::Addend>(ref_res1.view()),
                  std::move(out), make_dim<roles::Count>(B * S * D));
     });
-    ref_cls.with_mut([&reference](auto out) noexcept {
-        cpu::index_select(kTest, reference.res2.view(), std::move(out), make_dim<roles::Batch>(B),
-                          make_dim<roles::Sequence>(S), make_dim<roles::Width>(D), make_dim<roles::Selected>(0));
-    });
-    ref_logits.with_mut([&](auto out) noexcept {
-        cpu::mm(kTest, make_input<LeftFactor>(ref_cls.view()), make_input<RightFactor>(read_floats(weights.W_head)),
-                std::move(out), make_dim<roles::Rows>(B), make_dim<roles::Columns>(N_CLS), make_dim<roles::Inner>(D));
-    });
-    reference.probs.with_mut([&ref_logits](auto out) noexcept {
+    ::fixy::FixedArray<float, B * D> const ref_cls =
+        ::fixy::build_fixed_array<float, B * D>([&reference](auto out) noexcept {
+            cpu::index_select(kTest, reference.res2.view(), std::move(out), make_dim<roles::Batch>(B),
+                              make_dim<roles::Sequence>(S), make_dim<roles::Width>(D), make_dim<roles::Selected>(0));
+        });
+    ::fixy::FixedArray<float, B * N_CLS> const ref_logits =
+        ::fixy::build_fixed_array<float, B * N_CLS>([&](auto out) noexcept {
+            cpu::mm(kTest, make_input<LeftFactor>(ref_cls.view()), make_input<RightFactor>(read_floats(weights.W_head)),
+                    std::move(out), make_dim<roles::Rows>(B), make_dim<roles::Columns>(N_CLS),
+                    make_dim<roles::Inner>(D));
+        });
+    reference.probs = ::fixy::build_fixed_array<float, B * N_CLS>([&ref_logits](auto out) noexcept {
         cpu::softmax(kTest, ref_logits.view(), std::move(out), make_dim<roles::Rows>(B), make_dim<roles::Width>(N_CLS));
     });
 }

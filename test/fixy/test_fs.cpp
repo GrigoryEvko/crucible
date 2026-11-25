@@ -84,10 +84,9 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     IoBlockCtx const ctx{eff::testing::test()};
     Opened<ReadOnlyFile> in = opened_of(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (in.error_number != 0) return false;
-    fixy::FixedArray<std::byte, kPayloadBytes> readback{};
-    if (readback.with_mut([&ctx, &in](auto run) noexcept { return fs::read_full(ctx, in.file.ref(), std::move(run)); })
-            .value_or(0)
-        != kPayloadBytes) {
+    auto [read_count, readback] = fixy::build_fixed_array<std::byte, kPayloadBytes>(
+        [&ctx, &in](auto run) noexcept { return fs::read_full(ctx, in.file.ref(), std::move(run)); });
+    if (std::move(read_count).value_or(0) != kPayloadBytes) {
         return false;
     }
     return fixy::equal(readback.view(), foundation::core::bytes(expected));
@@ -203,9 +202,10 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         std::fprintf(stderr, "mint_file ReadOnly failed (errno %d)\n", reader.error_number);
         return 1;
     }
-    fixy::FixedArray<std::byte, kPayloadBytes * 2> readback{};
+    auto [readback, readback_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, kPayloadBytes * 2>);
     if (readback
             .with_mut(
+                readback_key,
                 [&ctx, &reader](auto run) noexcept { return fs::read_full(ctx, reader.file.ref(), std::move(run)); })
             .value_or(0)
         != kPayloadBytes) {
@@ -220,7 +220,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
 
     const fs::TemporaryFile empty{};
     const auto refused = readback.with_mut(
-        [&ctx, &empty](auto run) noexcept { return fs::read_full(ctx, empty.ref(), std::move(run)); });
+        readback_key, [&ctx, &empty](auto run) noexcept { return fs::read_full(ctx, empty.ref(), std::move(run)); });
     if (refused.is_ok() || errno_of(refused) != EBADF) {
         std::fprintf(stderr, "read_full on an empty handle was not refused with EBADF\n");
         return 1;
@@ -280,49 +280,56 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         }
         return is_same;
     };
-    core::FixedArray<std::byte, 4> part{};
+    auto [part, part_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, 4>);
     const auto part_holds = [&part, &holds_text](core::TextView expected, std::size_t count) {
         return count == expected.size() && holds_text(part.view(), expected);
     };
-    const auto middle = part.with_mut([&ctx, &reader](auto run) noexcept {
+    const auto middle = part.with_mut(part_key, [&ctx, &reader](auto run) noexcept {
         return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{3});
     });
     if (middle.err().is_some() || !part_holds(core::TextView{"3456"}, 4)
-        || part.with_mut([&ctx, &reader](auto run) noexcept {
-                   return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{3});
-               }).value_or(0)
+        || part.with_mut(part_key,
+                         [&ctx, &reader](auto run) noexcept {
+                             return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{3});
+                         })
+                   .value_or(0)
                != 4) {
         fixy::report(fixy::Sink::Err, "read_full_at at offset 3 did not give the bytes 3456\n");
         return 1;
     }
-    part.with_mut([](auto run) noexcept { core::fill(std::move(run), std::byte{0}); });
-    if (part.with_mut([&ctx, &reader](auto run) noexcept {
-                return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{8});
-            }).value_or(0)
+    part.with_mut(part_key, [](auto run) noexcept { core::fill(std::move(run), std::byte{0}); });
+    if (part.with_mut(part_key,
+                      [&ctx, &reader](auto run) noexcept {
+                          return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{8});
+                      })
+                .value_or(0)
             != 2
         || !part_holds(core::TextView{"89"}, 2)) {
         fixy::report(fixy::Sink::Err, "read_full_at at offset 8 did not stop at the end of the file\n");
         return 1;
     }
-    if (part.with_mut([&ctx, &reader](auto run) noexcept {
-                return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{20});
-            })
+    if (part.with_mut(part_key,
+                      [&ctx, &reader](auto run) noexcept {
+                          return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{20});
+                      })
             .value_or(1)
         != 0) {
         fixy::report(fixy::Sink::Err, "read_full_at past the end of the file gave bytes\n");
         return 1;
     }
-    if (errno_of(part.with_mut([&ctx, &reader](auto run) noexcept {
-            return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{-1});
-        }))
+    if (errno_of(part.with_mut(part_key,
+                               [&ctx, &reader](auto run) noexcept {
+                                   return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{-1});
+                               }))
         != EINVAL) {
         fixy::report(fixy::Sink::Err, "read_full_at at a negative offset did not give EINVAL\n");
         return 1;
     }
     // The reads at an offset left the offset of the descriptor at zero.
-    if (part.with_mut([&ctx, &reader](auto run) noexcept {
-                return fs::read_full(ctx, reader.file.ref(), std::move(run));
-            }).value_or(0)
+    if (part.with_mut(
+                part_key,
+                [&ctx, &reader](auto run) noexcept { return fs::read_full(ctx, reader.file.ref(), std::move(run)); })
+                .value_or(0)
             != 4
         || !part_holds(core::TextView{"0123"}, 4)) {
         fixy::report(fixy::Sink::Err, "read_full_at moved the offset of the descriptor\n");
@@ -340,19 +347,23 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         fixy::report(fixy::Sink::Err, "set_file_size did not cut the file of the append open to 5 bytes\n");
         return 1;
     }
-    core::FixedArray<std::byte, 16> whole{};
-    if (whole.with_mut([&ctx, &reader](auto run) noexcept {
-                 return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{0});
-             }).value_or(0)
+    auto [whole, whole_key] = fixy::mint_keyed_owner(fixy::fixed_array_owner<std::byte, 16>);
+    if (whole.with_mut(whole_key,
+                       [&ctx, &reader](auto run) noexcept {
+                           return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{0});
+                       })
+                .value_or(0)
             != 7
         || !holds_text(whole.view(), core::TextView{"01234ab"})) {
         fixy::report(fixy::Sink::Err, "the append after the cut did not write at the new end\n");
         return 1;
     }
     if (fs::set_file_size(ctx, appender.file.ref(), fs::FileOffset{9}).is_err()
-        || whole.with_mut([&ctx, &reader](auto run) noexcept {
-                    return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{0});
-                }).value_or(0)
+        || whole.with_mut(whole_key,
+                          [&ctx, &reader](auto run) noexcept {
+                              return fs::read_full_at(ctx, reader.file.ref(), std::move(run), fs::FileOffset{0});
+                          })
+                   .value_or(0)
                != 9
         || *whole.get(7).expect("the buffer holds nine bytes") != std::byte{0}
         || *whole.get(8).expect("the buffer holds nine bytes") != std::byte{0}) {
@@ -365,9 +376,11 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
     }
 
     const fs::TemporaryFile empty{};
-    if (errno_of(part.with_mut([&ctx, &empty](auto run) noexcept {
-            return fs::read_full_at(ctx, empty.ref(), std::move(run), fs::FileOffset{0});
-        })) != EBADF
+    if (errno_of(part.with_mut(part_key,
+                               [&ctx, &empty](auto run) noexcept {
+                                   return fs::read_full_at(ctx, empty.ref(), std::move(run), fs::FileOffset{0});
+                               }))
+            != EBADF
         || errno_of(fs::set_file_size(ctx, empty.ref(), fs::FileOffset{0})) != EBADF) {
         fixy::report(fixy::Sink::Err, "a door at an offset on an empty handle was not refused with EBADF\n");
         return 1;
@@ -605,7 +618,7 @@ void fill_pattern(std::uint8_t* out, std::uint8_t salt) {
         return 1;
     }
     core::FixedArray<std::byte, 3> bytes{};
-    bytes.with_mut([](auto run) noexcept { core::fill(std::move(run), std::byte{'x'}); });
+    bytes.fill(std::byte{'x'});
     if (fs::write_full(ctx, writer.file.ref(), bytes.view()).is_err()
         || fs::write_full(ctx, writer.file.ref(), core::TextView{"yz"}).is_err()) {
         fixy::report(fixy::Sink::Err, "a write_full of a View or of a TextView failed\n");

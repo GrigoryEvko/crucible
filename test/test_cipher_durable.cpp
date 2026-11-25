@@ -94,9 +94,8 @@ template <typename T>
     auto reader = opened(fs::mint_file<fs::read_only>(ctx, sanitized(path)));
     if (reader.is_err()) return false;
     fs::FileOf<fs::read_only> const file = std::move(reader).expect("the reader opened");
-    Payload readback{};
     // A failed read gives the count zero, so it returns false too.
-    auto const read_count = readback.with_mut(
+    auto const [read_count, readback] = ::fixy::build_fixed_array<std::byte, kPayloadBytes>(
         [&ctx, &file](auto run) noexcept { return fs::read_full(ctx, file.ref(), std::move(run)).value_or(0); });
     if (read_count != kPayloadBytes) return false;
     return readback == expected;

@@ -172,12 +172,13 @@ void test_dispatch_boundary() {
                     .expect("a SHARP switch makes a plan");
 
     ::foundation::core::FixedArray<float, 4> const input_values{1.0f, 2.0f, 3.0f, 4.0f};
-    ::foundation::core::FixedArray<float, 4> output_values{};
+    auto [output_values, output_values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, 4>);
     ::fixy::View<float const> const input = input_values.view();
-    shp::DeclaredSharpDispatch const unavailable = take(output_values.with_mut([input, plan](auto cells) noexcept {
-        return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
-                                             plan);
-    }));
+    shp::DeclaredSharpDispatch const unavailable =
+        take(output_values.with_mut(output_values_key, [input, plan](auto cells) noexcept {
+            return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(),
+                                                 shp::sharp_recipe_laws<GoodRecipe>(), plan);
+        }));
     CRUCIBLE_TEST_ASSERT(kTest, unavailable.value().fallback == shp::SharpFallback::RingOrTree);
     CRUCIBLE_TEST_ASSERT(kTest, unavailable.value().element_count == input.size());
 
@@ -186,7 +187,7 @@ void test_dispatch_boundary() {
                                     shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true)
             .expect("a loaded runtime makes a plan");
     shp::DeclaredSharpDispatch const deferred =
-        take(output_values.with_mut([input, deferred_plan](auto cells) noexcept {
+        take(output_values.with_mut(output_values_key, [input, deferred_plan](auto cells) noexcept {
             return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(),
                                                  shp::sharp_recipe_laws<GoodRecipe>(), deferred_plan);
         }));
@@ -201,22 +202,23 @@ void test_dispatch_boundary() {
                             init, switch_identity(), switch_caps(),
                             shp::admit_sharp_participant_count(8).expect("8 participants is positive"), true, true)
                             .expect("a plan that asks for the backend makes a plan");
-    shp::DeclaredSharpDispatch const backend = take(output_values.with_mut([input, backend_plan](auto cells) noexcept {
-        return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
-                                             backend_plan);
-    }));
+    shp::DeclaredSharpDispatch const backend =
+        take(output_values.with_mut(output_values_key, [input, backend_plan](auto cells) noexcept {
+            return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(),
+                                                 shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
+        }));
     CRUCIBLE_TEST_ASSERT(kTest, backend.value().fallback == shp::SharpFallback::RingOrTree);
 
     shp::DeclaredSharpDispatch const strict_fallback =
-        take(output_values.with_mut([input, backend_plan](auto cells) noexcept {
+        take(output_values.with_mut(output_values_key, [input, backend_plan](auto cells) noexcept {
             return shp::dispatch_sharp_allreduce(
                 input, std::move(cells), recipe(crucible::ReductionDeterminism::BITEXACT_STRICT),
                 shp::SharpRecipeLaws{.associative = true, .commutative = true}, backend_plan);
         }));
     CRUCIBLE_TEST_ASSERT(kTest, strict_fallback.value().fallback == shp::SharpFallback::BitexactTree);
 
-    ::foundation::core::FixedArray<float, 2> short_values{};
-    auto shape = short_values.with_mut([input, backend_plan](auto cells) noexcept {
+    auto [short_values, short_values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, 2>);
+    auto shape = short_values.with_mut(short_values_key, [input, backend_plan](auto cells) noexcept {
         return shp::dispatch_sharp_allreduce(input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
                                              backend_plan);
     });
@@ -227,23 +229,24 @@ void test_dispatch_boundary() {
     CRUCIBLE_TEST_ASSERT(kTest, context.peek().switch_uuid() == switch_identity().uuid);
     CRUCIBLE_TEST_ASSERT(kTest, context.peek().participant_count().value() == 8);
     shp::SharpReducer reducer{std::move(context)};
-    auto reduced = output_values.with_mut([&reducer, &bg, input, backend_plan](auto cells) noexcept {
+    auto reduced = output_values.with_mut(output_values_key, [&reducer, &bg, input, backend_plan](auto cells) noexcept {
         return reducer.allreduce_via_sharp(bg, input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
                                            backend_plan);
     });
     CRUCIBLE_TEST_ASSERT(kTest, reduced.err() == ::fixy::some(shp::SharpError::VendorBackendUnavailable));
 
-    auto short_reduced = short_values.with_mut([&reducer, &bg, input, backend_plan](auto cells) noexcept {
-        return reducer.allreduce_via_sharp(bg, input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
-                                           backend_plan);
-    });
+    auto short_reduced =
+        short_values.with_mut(short_values_key, [&reducer, &bg, input, backend_plan](auto cells) noexcept {
+            return reducer.allreduce_via_sharp(bg, input, std::move(cells), recipe(),
+                                               shp::sharp_recipe_laws<GoodRecipe>(), backend_plan);
+        });
     CRUCIBLE_TEST_ASSERT(kTest, short_reduced.err() == ::fixy::some(shp::SharpError::OutputShapeMismatch));
 
     auto other_plan = shp::mint_sharp_fabric_plan(
                           init, switch_identity(), switch_caps(),
                           shp::admit_sharp_participant_count(4).expect("4 participants is positive"), true, true)
                           .expect("a plan of four participants makes a plan");
-    auto mismatch = output_values.with_mut([&reducer, &bg, input, other_plan](auto cells) noexcept {
+    auto mismatch = output_values.with_mut(output_values_key, [&reducer, &bg, input, other_plan](auto cells) noexcept {
         return reducer.allreduce_via_sharp(bg, input, std::move(cells), recipe(), shp::sharp_recipe_laws<GoodRecipe>(),
                                            other_plan);
     });

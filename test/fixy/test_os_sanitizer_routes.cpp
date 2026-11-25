@@ -158,10 +158,10 @@ constexpr std::size_t kOpenTries = 64;
         {
             NullFile const null = open_null(thread_ctx, devices);
             first_number = number_of(null);
-            foundation::core::FixedArray<std::byte, 8> bytes{};
-            bool const is_read = bytes.with_mut([&thread_ctx, &null](auto run) noexcept {
-                return fs::read_full(thread_ctx, null.ref(), std::move(run)).is_ok();
-            });
+            auto const [is_read, bytes] =
+                fixy::build_fixed_array<std::byte, 8>([&thread_ctx, &null](auto run) noexcept {
+                    return fs::read_full(thread_ctx, null.ref(), std::move(run)).is_ok();
+                });
             has_read.store_release(is_read);
         }
         closed.publish_relaxed(static_cast<std::uint64_t>(first_number) + 1U);

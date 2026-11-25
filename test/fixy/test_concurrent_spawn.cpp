@@ -454,11 +454,10 @@ struct ShardThreads {
     ::fixy::FixedArray<ShardRecord, Shards> records{};
 
     // Runs the shards under one budget and records who ran each one.  The
-    // region scope door covers the run that the frame door of the records
-    // lends.
+    // region scope door covers the run of the new records.
     void run(fixy::concurrent::WorkBudget budget) noexcept {
         BgCtx ctx{eff::testing::bg()};
-        records.with_mut([&ctx, budget](auto elements) noexcept {
+        records = ::fixy::build_fixed_array<ShardRecord, Shards>([&ctx, budget](auto elements) noexcept {
             static_cast<void>(fixy::with_region<RegionWhole>(std::move(elements), [&ctx, budget](auto region) noexcept {
                 return spawn::mint_parallel_for<spawn::BodyCoupling::Independent, Shards>(
                     ctx, budget, std::move(region), [](auto shard, auto) noexcept {

@@ -103,11 +103,11 @@ template <core::FpMode Mode>
             .expect("one row fits")
             .broadcast_to(square_sizes.view())
             .expect("a row broadcasts to a square");
-    ::fixy::FixedArray<float, kElements> output{};
-    output.with_mut([&ctx, &input, &bias](auto run) noexcept {
-        ::fixy::run_kernel(ctx, scale_and_add<Mode, typename decltype(run)::brand_type>,
-                           ::fixy::View<float const, kElements>{input.view()}, std::move(run), bias, 1e-10F);
-    });
+    ::fixy::FixedArray<float, kElements> const output =
+        ::fixy::build_fixed_array<float, kElements>([&ctx, &input, &bias](auto run) noexcept {
+            ::fixy::run_kernel(ctx, scale_and_add<Mode, typename decltype(run)::brand_type>,
+                               ::fixy::View<float const, kElements>{input.view()}, std::move(run), bias, 1e-10F);
+        });
     ::fixy::FixedArray<std::uint32_t, kElements> bits{};
     for (::fixy::Index<kElements> const index : output.indices()) {
         std::uint32_t const word = ::fixy::bit_cast<std::uint32_t>(output.at(index));

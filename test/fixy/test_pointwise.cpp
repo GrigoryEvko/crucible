@@ -46,24 +46,24 @@ static_assert(!::foundation::core::LaneOpOf<ScalarAdd, float, float, float>, "Sc
 // An input of another frame, with a brand of its own, takes the proof of the
 // brands, and a dense add over two frames writes each sum.
 void branded_inputs(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<float, 40> values{};
-    ::fixy::FixedArray<float, 40> addends{};
-    values.with_mut([](auto run) noexcept {
+    auto [values, values_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, 40>);
+    auto [addends, addends_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, 40>);
+    values.with_mut(values_key, [](auto run) noexcept {
         float next = 0.5f;
         for (float& value : run) {
             value = next;
             next += 1.0f;
         }
     });
-    addends.with_mut([](auto run) noexcept {
+    addends.with_mut(addends_key, [](auto run) noexcept {
         for (float& addend : run) {
             addend = 100.0f;
         }
     });
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 20};
     ::fixy::FixedArray<std::size_t, 2> const strides{20, 1};
-    bool const is_written = values.with_mut([&](auto target_run) noexcept {
-        return addends.with_mut([&](auto source_run) noexcept {
+    bool const is_written = values.with_mut(values_key, [&](auto target_run) noexcept {
+        return addends.with_mut(addends_key, [&](auto source_run) noexcept {
             auto const source = ::fixy::mint_strided_view_mut(std::move(source_run), sizes.view(), strides.view(), 0)
                                     .expect("a dense matrix has no overlap");
             auto out = ::fixy::mint_strided_view_mut(std::move(target_run), sizes.view(), strides.view(), 0)
@@ -84,7 +84,6 @@ void branded_inputs(::fixy::TestRunnerCtx const& test) noexcept {
 
 // Views of different sizes give ShapeMismatch, and the walk writes nothing.
 void shape_mismatch(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<int, 12> values{};
     ::fixy::FixedArray<int, 12> const others{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
@@ -92,7 +91,7 @@ void shape_mismatch(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<std::size_t, 2> const other_strides{3, 1};
     ::fixy::StridedView<int const, 2> const wrong =
         ::fixy::mint_strided_view(others.view(), other_sizes.view(), other_strides.view(), 0).expect("it fits");
-    bool const is_refused = values.with_mut([&](auto run) noexcept {
+    auto const [is_refused, values] = ::fixy::build_fixed_array<int, 12>([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("dense");
         return ::foundation::core::write_pointwise(out, Negate{}, wrong).is_err();
     });
@@ -103,11 +102,10 @@ void shape_mismatch(::fixy::TestRunnerCtx const& test) noexcept {
 // An op with no input fills each element of the output, and a view with no
 // element and a view of rank zero take one path each.
 void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<double, 21> values{};
     ::fixy::FixedArray<std::size_t, 1> const sizes{7};
     ::fixy::FixedArray<std::size_t, 1> const strides{3};
     ::fixy::View<std::size_t const> const no_axes{};
-    bool const is_filled = values.with_mut([&](auto run) noexcept {
+    auto const [is_filled, values] = ::fixy::build_fixed_array<double, 21>([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("it fits");
         return ::foundation::core::write_pointwise(out, [] noexcept { return 2.5; }).is_ok();
     });
@@ -118,11 +116,12 @@ void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
     CRUCIBLE_TEST_ASSERT(test,
                          is_filled && ::fixy::bit_cast<std::uint64_t>(total) == ::fixy::bit_cast<std::uint64_t>(17.5));
 
-    ::fixy::FixedArray<double, 3> point{1.0, 2.0, 3.0};
+    auto [point, point_key] =
+        ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<double, 3>, ::fixy::FixedArray<double, 3>{1.0, 2.0, 3.0});
     ::fixy::FixedArray<double, 3> const source{4.0, 5.0, 6.0};
     ::fixy::StridedView<double const> const one =
         ::fixy::mint_strided_view(source.view(), no_axes, no_axes, 2).expect("one element fits");
-    bool const is_one = point.with_mut([&](auto run) noexcept {
+    bool const is_one = point.with_mut(point_key, [&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), no_axes, no_axes, 1).expect("one element fits");
         return ::foundation::core::write_pointwise(out, Negate{}, one).is_ok();
     });
@@ -137,17 +136,14 @@ void fill_and_edges(::fixy::TestRunnerCtx const& test) noexcept {
 // one axis, so it takes the lanes and no tile.  A dense input and a step-two
 // input give out[i] = (0.5 + i) + (20.5 + 2i).
 void static_rank_one(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<float, 20> values{};
-    ::fixy::FixedArray<float, 60> sources{};
-    ::fixy::FixedArray<float, 20> expected{};
-    sources.with_mut([](auto run) noexcept {
+    ::fixy::FixedArray<float, 60> const sources = ::fixy::build_fixed_array<float, 60>([](auto run) noexcept {
         float next = 0.5f;
         for (float& source : run) {
             source = next;
             next += 1.0f;
         }
     });
-    expected.with_mut([](auto run) noexcept {
+    ::fixy::FixedArray<float, 20> const expected = ::fixy::build_fixed_array<float, 20>([](auto run) noexcept {
         float sum = 21.0f;
         for (float& element : run) {
             element = sum;
@@ -161,7 +157,7 @@ void static_rank_one(::fixy::TestRunnerCtx const& test) noexcept {
         ::fixy::mint_strided_view(sources.view(), sizes.view(), dense.view(), 0).expect("the input fits");
     ::fixy::StridedView<float const, 1> const second =
         ::fixy::mint_strided_view(sources.view(), sizes.view(), step_two.view(), 20).expect("the input fits");
-    bool const is_written = values.with_mut([&](auto run) noexcept {
+    auto const [is_written, values] = ::fixy::build_fixed_array<float, 20>([&](auto run) noexcept {
         auto out = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), dense.view(), 0).expect("dense");
         return ::foundation::core::write_pointwise(out, Add{}, first, second).is_ok();
     });

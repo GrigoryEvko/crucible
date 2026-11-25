@@ -131,15 +131,13 @@ constexpr bool kIsUnderEmulator = CRUCIBLE_TEST_UNDER_EMULATOR != 0;
 // relocation in a segment with no write access, so a write fault there is
 // refused.
 [[nodiscard]] consteval ::fixy::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
-    ::fixy::FixedArray<std::uint64_t, 4096> words{};
-    words.with_mut([](auto run) noexcept {
+    return ::fixy::build_fixed_array<std::uint64_t, 4096>([](auto run) noexcept {
         std::uint64_t value = 1;
         for (std::uint64_t& word : run) {
             word = value;
             ++value;
         }
     });
-    return words;
 }
 
 constexpr ::fixy::FixedArray<std::uint64_t, 4096> kReadOnlyWords = make_read_only_words();

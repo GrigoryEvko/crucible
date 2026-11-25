@@ -58,8 +58,8 @@ static OpDepth make_depth(uint64_t i) noexcept { return OpDepth{static_cast<uint
 
 // The call of try_pop_batch of this file.  The batch drain inlines with its
 // copies, and the function is not inlined, so each caller holds one call.
-// Each frame gives its runs a brand of their own, so each caller has its own
-// instance.
+// Each frame gives its runs a brand of their own, so each of the two callers
+// has its own instance.
 template <class Entries, class Metas, class Scopes, class Calls, class Depths>
 [[gnu::noinline]] static uint32_t pop_batch(crucible::test::OpenRing& ring, Entries entries, Metas metas, Scopes scopes,
                                             Calls calls, Depths depths) noexcept {
@@ -67,27 +67,65 @@ template <class Entries, class Metas, class Scopes, class Calls, class Depths>
                               std::move(depths));
 }
 
-static void test_empty_returns_zero() {
-    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
+// The five outputs of a drain, each a heap array of one count.
+struct Outputs {
+    ::fixy::HeapArray<TraceRing::Entry> entries;
+    ::fixy::HeapArray<MetaIndex> metas;
+    ::fixy::HeapArray<ScopeHash> scopes;
+    ::fixy::HeapArray<CallsiteHash> calls;
+    ::fixy::HeapArray<OpDepth> depths;
+};
 
-    ::fixy::FixedArray<TraceRing::Entry, 8> out_entries{};
-    ::fixy::FixedArray<MetaIndex, 8> out_metas{};
-    ::fixy::FixedArray<ScopeHash, 8> out_scopes{};
-    ::fixy::FixedArray<CallsiteHash, 8> out_calls{};
-    ::fixy::FixedArray<OpDepth, 8> out_depths{};
+[[nodiscard]] static Outputs make_outputs(std::size_t count) noexcept {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    return Outputs{.entries = ::fixy::mint_heap_array(alloc, count, TraceRing::Entry{}),
+                   .metas = ::fixy::mint_heap_array(alloc, count, MetaIndex{}),
+                   .scopes = ::fixy::mint_heap_array(alloc, count, ScopeHash{}),
+                   .calls = ::fixy::mint_heap_array(alloc, count, CallsiteHash{}),
+                   .depths = ::fixy::mint_heap_array(alloc, count, OpDepth{})};
+}
 
-    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
-        return out_metas.with_mut([&](auto meta_run) noexcept {
-            return out_scopes.with_mut([&](auto scope_run) noexcept {
-                return out_calls.with_mut([&](auto call_run) noexcept {
-                    return out_depths.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
-                                         std::move(call_run), std::move(depth_run));
+// The two drains of the ring.
+enum class DrainForm : uint8_t {
+    PopBatch,
+    Drain
+};
+
+// Drains at most count entries of the ring into the outputs, from the position
+// first, and gives the count of the entries.
+[[nodiscard]] static uint32_t drain_into(crucible::test::OpenRing& ring, Outputs& outputs, std::size_t first,
+                                         std::size_t count, DrainForm form) noexcept {
+    uint32_t drained = 0;
+    outputs.entries = ::fixy::with_mut(std::move(outputs.entries), [&](auto entry_run) noexcept {
+        auto entries = ::fixy::take_window(std::move(entry_run), first, count).expect("the batch fits");
+        outputs.metas = ::fixy::with_mut(std::move(outputs.metas), [&](auto meta_run) noexcept {
+            auto metas = ::fixy::take_window(std::move(meta_run), first, count).expect("the batch fits");
+            outputs.scopes = ::fixy::with_mut(std::move(outputs.scopes), [&](auto scope_run) noexcept {
+                auto scopes = ::fixy::take_window(std::move(scope_run), first, count).expect("the batch fits");
+                outputs.calls = ::fixy::with_mut(std::move(outputs.calls), [&](auto call_run) noexcept {
+                    auto calls = ::fixy::take_window(std::move(call_run), first, count).expect("the batch fits");
+                    outputs.depths = ::fixy::with_mut(std::move(outputs.depths), [&](auto depth_run) noexcept {
+                        auto depths = ::fixy::take_window(std::move(depth_run), first, count).expect("the batch fits");
+                        if (form == DrainForm::PopBatch) {
+                            drained = pop_batch(ring, std::move(entries), std::move(metas), std::move(scopes),
+                                                std::move(calls), std::move(depths));
+                        } else {
+                            drained = ring.drain(std::move(entries), std::move(metas), std::move(scopes),
+                                                 std::move(calls), std::move(depths));
+                        }
                     });
                 });
             });
         });
     });
+    return drained;
+}
+
+static void test_empty_returns_zero() {
+    ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
+
+    Outputs out = make_outputs(8);
+    uint32_t const n = drain_into(*ring, out, 0, 8, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 0);
 
@@ -104,32 +142,16 @@ static void test_max_count_zero() {
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);
 
     // Five empty windows of five frames.
-    ::fixy::FixedArray<TraceRing::Entry, 1> out_entries{};
-    ::fixy::FixedArray<MetaIndex, 1> out_metas{};
-    ::fixy::FixedArray<ScopeHash, 1> out_scopes{};
-    ::fixy::FixedArray<CallsiteHash, 1> out_calls{};
-    ::fixy::FixedArray<OpDepth, 1> out_depths{};
-    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
-        return out_metas.with_mut([&](auto meta_run) noexcept {
-            return out_scopes.with_mut([&](auto scope_run) noexcept {
-                return out_calls.with_mut([&](auto call_run) noexcept {
-                    return out_depths.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, ::fixy::take_window(std::move(entry_run), 0, 0).expect("empty"),
-                                         ::fixy::take_window(std::move(meta_run), 0, 0).expect("empty"),
-                                         ::fixy::take_window(std::move(scope_run), 0, 0).expect("empty"),
-                                         ::fixy::take_window(std::move(call_run), 0, 0).expect("empty"),
-                                         ::fixy::take_window(std::move(depth_run), 0, 0).expect("empty"));
-                    });
-                });
-            });
-        });
-    });
+    Outputs out = make_outputs(1);
+    uint32_t const n = drain_into(*ring, out, 0, 0, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == 0);
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == 1);  // entry not drained
 
     ::fixy::check::pass(kTest, "  test_max_count_zero: PASSED\n");
 }
 
+// The outputs are five keyed arrays, so the drain has the fixed extent of a
+// batch, as the drain stage of the background thread has.
 static void test_single_thread_fifo() {
     ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
@@ -140,17 +162,17 @@ static void test_single_thread_fifo() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, ring->size().peek() == N);
 
-    ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
-    ::fixy::FixedArray<MetaIndex, N> out_metas{};
-    ::fixy::FixedArray<ScopeHash, N> out_scopes{};
-    ::fixy::FixedArray<CallsiteHash, N> out_calls{};
-    ::fixy::FixedArray<OpDepth, N> out_depths{};
+    auto [out_entries, out_entries_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, N>);
+    auto [out_metas, out_metas_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, N>);
+    auto [out_scopes, out_scopes_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<ScopeHash, N>);
+    auto [out_calls, out_calls_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<CallsiteHash, N>);
+    auto [out_depths, out_depths_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<OpDepth, N>);
 
-    uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
-        return out_metas.with_mut([&](auto meta_run) noexcept {
-            return out_scopes.with_mut([&](auto scope_run) noexcept {
-                return out_calls.with_mut([&](auto call_run) noexcept {
-                    return out_depths.with_mut([&](auto depth_run) noexcept {
+    uint32_t n = out_entries.with_mut(out_entries_key, [&](auto entry_run) noexcept {
+        return out_metas.with_mut(out_metas_key, [&](auto meta_run) noexcept {
+            return out_scopes.with_mut(out_scopes_key, [&](auto scope_run) noexcept {
+                return out_calls.with_mut(out_calls_key, [&](auto call_run) noexcept {
+                    return out_depths.with_mut(out_depths_key, [&](auto depth_run) noexcept {
                         return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
                                          std::move(call_run), std::move(depth_run));
                     });
@@ -197,11 +219,7 @@ static void test_multi_batch_drain() {
             kTest, ring->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
-    ::fixy::FixedArray<TraceRing::Entry, N> out_entries{};
-    ::fixy::FixedArray<MetaIndex, N> out_metas{};
-    ::fixy::FixedArray<ScopeHash, N> out_scopes{};
-    ::fixy::FixedArray<CallsiteHash, N> out_calls{};
-    ::fixy::FixedArray<OpDepth, N> out_depths{};
+    Outputs out = make_outputs(N);
 
     // The sizes are irregular on purpose, so no drain starts or ends on
     // a round boundary and none of them is a multiple of another.  The
@@ -209,37 +227,20 @@ static void test_multi_batch_drain() {
     constexpr ::fixy::FixedArray<uint32_t, 9> batch_sizes{7, 13, 31, 64, 100, 200, 500, 100, 50};
     uint32_t total = 0;
     for (uint32_t batch_size : batch_sizes) {
-        const uint32_t batch = ::fixy::min(batch_size, N - total);
-        uint32_t n = out_entries.with_mut([&](auto entry_run) noexcept {
-            return out_metas.with_mut([&](auto meta_run) noexcept {
-                return out_scopes.with_mut([&](auto scope_run) noexcept {
-                    return out_calls.with_mut([&](auto call_run) noexcept {
-                        return out_depths.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(
-                                *ring, ::fixy::take_window(std::move(entry_run), total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(meta_run), total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(scope_run), total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(call_run), total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(depth_run), total, batch).expect("the batch fits"));
-                        });
-                    });
-                });
-            });
-        });
-        total += n;
+        total += drain_into(*ring, out, total, ::fixy::min(batch_size, N - total), DrainForm::PopBatch);
         if (total >= N) break;
     }
 
     CRUCIBLE_TEST_ASSERT(kTest, total == N);
     for (uint32_t i = 0; i < N; ++i) {
         CRUCIBLE_TEST_ASSERT(
-            kTest, out_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+            kTest, out.entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
                        == SchemaHash{i});
         CRUCIBLE_TEST_ASSERT(kTest,
-                             *out_metas.get(i).expect("a test reads an element at or past the count of its array")
+                             *out.metas.get(i).expect("a test reads an element at or past the count of its array")
                                  == make_meta(i));
         CRUCIBLE_TEST_ASSERT(kTest,
-                             *out_depths.get(i).expect("a test reads an element at or past the count of its array")
+                             *out.depths.get(i).expect("a test reads an element at or past the count of its array")
                                  == make_depth(i));
     }
 
@@ -254,31 +255,13 @@ static void test_multi_batch_drain() {
 static void test_wrap_around() {
     ::fixy::Box<crucible::test::OpenRing> ring = make_ring();
 
-    // The staging buffers have static storage: an array of half the ring's
-    // entries would not fit on the stack.
     constexpr uint32_t HALF = TraceRing::CAPACITY / 2;
     for (uint64_t i = 0; i < HALF; ++i) {
         CRUCIBLE_TEST_ASSERT(kTest, ring->try_append(make_entry(i)));
     }
     {
-        static ::fixy::FixedArray<TraceRing::Entry, HALF> half_e{};
-        static ::fixy::FixedArray<MetaIndex, HALF> half_m{};
-        static ::fixy::FixedArray<ScopeHash, HALF> half_s{};
-        static ::fixy::FixedArray<CallsiteHash, HALF> half_c{};
-        static ::fixy::FixedArray<OpDepth, HALF> half_d{};
-        uint32_t n = half_e.with_mut([&](auto entry_run) noexcept {
-            return half_m.with_mut([&](auto meta_run) noexcept {
-                return half_s.with_mut([&](auto scope_run) noexcept {
-                    return half_c.with_mut([&](auto call_run) noexcept {
-                        return half_d.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
-                                             std::move(call_run), std::move(depth_run));
-                        });
-                    });
-                });
-            });
-        });
-        CRUCIBLE_TEST_ASSERT(kTest, n == HALF);
+        Outputs half = make_outputs(HALF);
+        CRUCIBLE_TEST_ASSERT(kTest, drain_into(*ring, half, 0, HALF, DrainForm::PopBatch) == HALF);
     }
 
     constexpr uint32_t WRAP_N = 1000;
@@ -289,31 +272,17 @@ static void test_wrap_around() {
                                                      CallsiteHash{}, make_depth(i)));
     }
 
-    ::fixy::FixedArray<TraceRing::Entry, WRAP_N> e{};
-    ::fixy::FixedArray<MetaIndex, WRAP_N> m{};
-    ::fixy::FixedArray<ScopeHash, WRAP_N> s{};
-    ::fixy::FixedArray<CallsiteHash, WRAP_N> c{};
-    ::fixy::FixedArray<OpDepth, WRAP_N> d{};
-    uint32_t n = e.with_mut([&](auto entry_run) noexcept {
-        return m.with_mut([&](auto meta_run) noexcept {
-            return s.with_mut([&](auto scope_run) noexcept {
-                return c.with_mut([&](auto call_run) noexcept {
-                    return d.with_mut([&](auto depth_run) noexcept {
-                        return pop_batch(*ring, std::move(entry_run), std::move(meta_run), std::move(scope_run),
-                                         std::move(call_run), std::move(depth_run));
-                    });
-                });
-            });
-        });
-    });
+    Outputs out = make_outputs(WRAP_N);
+    uint32_t const n = drain_into(*ring, out, 0, WRAP_N, DrainForm::PopBatch);
     CRUCIBLE_TEST_ASSERT(kTest, n == WRAP_N);
 
     for (uint32_t i = 0; i < WRAP_N; ++i) {
+        CRUCIBLE_TEST_ASSERT(
+            kTest, out.entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
+                       == SchemaHash{0x10000ULL + i});
         CRUCIBLE_TEST_ASSERT(kTest,
-                             e.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
-                                 == SchemaHash{0x10000ULL + i});
-        CRUCIBLE_TEST_ASSERT(kTest, *d.get(i).expect("a test reads an element at or past the count of its array")
-                                        == make_depth(i));
+                             *out.depths.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_depth(i));
     }
 
     ::fixy::check::pass(kTest, "  test_wrap_around: PASSED\n");
@@ -336,18 +305,8 @@ static void test_equivalence_with_single_pop() {
             kTest, ring_b->try_append(make_entry(i), make_meta(i), make_scope(i), make_callsite(i), make_depth(i)));
     }
 
-    // The outputs have static storage: the two entry arrays would not fit
-    // on the stack.
-    static ::fixy::FixedArray<TraceRing::Entry, N> a_entries{};
-    static ::fixy::FixedArray<TraceRing::Entry, N> b_entries{};
-    static ::fixy::FixedArray<MetaIndex, N> a_metas{};
-    static ::fixy::FixedArray<MetaIndex, N> b_metas{};
-    static ::fixy::FixedArray<ScopeHash, N> a_scopes{};
-    static ::fixy::FixedArray<ScopeHash, N> b_scopes{};
-    static ::fixy::FixedArray<CallsiteHash, N> a_calls{};
-    static ::fixy::FixedArray<CallsiteHash, N> b_calls{};
-    static ::fixy::FixedArray<OpDepth, N> a_depths{};
-    static ::fixy::FixedArray<OpDepth, N> b_depths{};
+    Outputs a_out = make_outputs(N);
+    Outputs b_out = make_outputs(N);
 
     // The seed is fixed, so a failing schedule is reproducible.  Each batch
     // size from 1 to 64 comes from the next block of Philox under the seed.
@@ -359,77 +318,39 @@ static void test_equivalence_with_single_pop() {
         ++draw;
         const uint32_t drawn = 1u + block.at(::fixy::index<0>()) % 64u;
         uint32_t batch = ::fixy::min(drawn, N - a_total);
-        uint32_t n = a_entries.with_mut([&](auto entry_run) noexcept {
-            return a_metas.with_mut([&](auto meta_run) noexcept {
-                return a_scopes.with_mut([&](auto scope_run) noexcept {
-                    return a_calls.with_mut([&](auto call_run) noexcept {
-                        return a_depths.with_mut([&](auto depth_run) noexcept {
-                            return pop_batch(
-                                *ring_a,
-                                ::fixy::take_window(std::move(entry_run), a_total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(meta_run), a_total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(scope_run), a_total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(call_run), a_total, batch).expect("the batch fits"),
-                                ::fixy::take_window(std::move(depth_run), a_total, batch).expect("the batch fits"));
-                        });
-                    });
-                });
-            });
-        });
+        uint32_t const n = drain_into(*ring_a, a_out, a_total, batch, DrainForm::PopBatch);
         CRUCIBLE_TEST_ASSERT(kTest, n == batch);  // the batch is clamped, so it always fills
         a_total += n;
     }
 
     for (uint32_t i = 0; i < N; ++i) {
-        uint32_t n = b_entries.with_mut([&](auto entry_run) noexcept {
-            return b_metas.with_mut([&](auto meta_run) noexcept {
-                return b_scopes.with_mut([&](auto scope_run) noexcept {
-                    return b_calls.with_mut([&](auto call_run) noexcept {
-                        return b_depths.with_mut([&](auto depth_run) noexcept {
-                            return ring_b->drain(
-                                ::fixy::take_window(std::move(entry_run), i, 1).expect("one entry fits"),
-                                ::fixy::take_window(std::move(meta_run), i, 1).expect("one entry fits"),
-                                ::fixy::take_window(std::move(scope_run), i, 1).expect("one entry fits"),
-                                ::fixy::take_window(std::move(call_run), i, 1).expect("one entry fits"),
-                                ::fixy::take_window(std::move(depth_run), i, 1).expect("one entry fits"));
-                        });
-                    });
-                });
-            });
-        });
-        CRUCIBLE_TEST_ASSERT(kTest, n == 1);
+        CRUCIBLE_TEST_ASSERT(kTest, drain_into(*ring_b, b_out, i, 1, DrainForm::Drain) == 1);
     }
 
     for (uint32_t i = 0; i < N; ++i) {
+        TraceRing::Entry const& a_entry =
+            *a_out.entries.get(i).expect("a test reads an element at or past the count of its array");
+        TraceRing::Entry const& b_entry =
+            *b_out.entries.get(i).expect("a test reads an element at or past the count of its array");
+        CRUCIBLE_TEST_ASSERT(kTest, a_entry.schema_hash == b_entry.schema_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, a_entry.shape_hash == b_entry.shape_hash);
+        CRUCIBLE_TEST_ASSERT(kTest, a_entry.num_inputs == b_entry.num_inputs);
+        CRUCIBLE_TEST_ASSERT(kTest, a_entry.num_outputs == b_entry.num_outputs);
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            a_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash
-                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->schema_hash);
+            kTest, *a_out.metas.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_out.metas.get(i).expect("a test reads an element at or past the count of its array"));
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            a_entries.get(i).expect("a test reads an element at or past the count of its array")->shape_hash
-                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->shape_hash);
+            kTest, *a_out.scopes.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_out.scopes.get(i).expect("a test reads an element at or past the count of its array"));
         CRUCIBLE_TEST_ASSERT(
-            kTest,
-            a_entries.get(i).expect("a test reads an element at or past the count of its array")->num_inputs
-                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->num_inputs);
-        CRUCIBLE_TEST_ASSERT(
-            kTest,
-            a_entries.get(i).expect("a test reads an element at or past the count of its array")->num_outputs
-                == b_entries.get(i).expect("a test reads an element at or past the count of its array")->num_outputs);
-        CRUCIBLE_TEST_ASSERT(
-            kTest, *a_metas.get(i).expect("a test reads an element at or past the count of its array")
-                       == *b_metas.get(i).expect("a test reads an element at or past the count of its array"));
-        CRUCIBLE_TEST_ASSERT(
-            kTest, *a_scopes.get(i).expect("a test reads an element at or past the count of its array")
-                       == *b_scopes.get(i).expect("a test reads an element at or past the count of its array"));
-        CRUCIBLE_TEST_ASSERT(
-            kTest, *a_calls.get(i).expect("a test reads an element at or past the count of its array")
-                       == *b_calls.get(i).expect("a test reads an element at or past the count of its array"));
-        CRUCIBLE_TEST_ASSERT(kTest, *a_depths.get(i).expect("a test reads an element at or past the count of its array")
-                                        == make_depth(i));
-        CRUCIBLE_TEST_ASSERT(kTest, *b_depths.get(i).expect("a test reads an element at or past the count of its array")
-                                        == make_depth(i));
+            kTest, *a_out.calls.get(i).expect("a test reads an element at or past the count of its array")
+                       == *b_out.calls.get(i).expect("a test reads an element at or past the count of its array"));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *a_out.depths.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_depth(i));
+        CRUCIBLE_TEST_ASSERT(kTest,
+                             *b_out.depths.get(i).expect("a test reads an element at or past the count of its array")
+                                 == make_depth(i));
     }
 
     ::fixy::check::pass(kTest, "  test_equivalence_with_single_pop: PASSED ({} entries)\n", N);
@@ -469,65 +390,32 @@ static void test_spsc_stress() {
     };
 
     auto consumer = [&] noexcept {
-        ::fixy::FixedArray<TraceRing::Entry, 64> out_entries{};
-        ::fixy::FixedArray<MetaIndex, 64> out_metas{};
-        ::fixy::FixedArray<ScopeHash, 64> out_scopes{};
-        ::fixy::FixedArray<CallsiteHash, 64> out_calls{};
-        ::fixy::FixedArray<OpDepth, 64> out_depths{};
-
-        // The first batch entries of each output.
-        const auto drain_batch = [&](uint32_t batch, bool is_pop_batch) -> uint32_t {
-            return out_entries.with_mut([&](auto entry_run) noexcept {
-                return out_metas.with_mut([&](auto meta_run) noexcept {
-                    return out_scopes.with_mut([&](auto scope_run) noexcept {
-                        return out_calls.with_mut([&](auto call_run) noexcept {
-                            return out_depths.with_mut([&](auto depth_run) noexcept {
-                                auto entries =
-                                    ::fixy::take_window(std::move(entry_run), 0, batch).expect("the batch fits");
-                                auto metas =
-                                    ::fixy::take_window(std::move(meta_run), 0, batch).expect("the batch fits");
-                                auto scopes =
-                                    ::fixy::take_window(std::move(scope_run), 0, batch).expect("the batch fits");
-                                auto calls =
-                                    ::fixy::take_window(std::move(call_run), 0, batch).expect("the batch fits");
-                                auto depths =
-                                    ::fixy::take_window(std::move(depth_run), 0, batch).expect("the batch fits");
-                                if (is_pop_batch) {
-                                    return pop_batch(*ring, std::move(entries), std::move(metas), std::move(scopes),
-                                                     std::move(calls), std::move(depths));
-                                }
-                                return ring->drain(std::move(entries), std::move(metas), std::move(scopes),
-                                                   std::move(calls), std::move(depths));
-                            });
-                        });
-                    });
-                });
-            });
-        };
+        Outputs out = make_outputs(64);
 
         uint64_t mode = 0;
         while (received < N) {
             uint32_t got = 0;
             const uint64_t m = mode++ & 0x3;
             if (m == 0) {
-                got = drain_batch(64, true);
+                got = drain_into(*ring, out, 0, 64, DrainForm::PopBatch);
             } else if (m == 1) {
-                got = drain_batch(16, true);
+                got = drain_into(*ring, out, 0, 16, DrainForm::PopBatch);
             } else if (m == 2) {
-                got = drain_batch(32, false);
+                got = drain_into(*ring, out, 0, 32, DrainForm::Drain);
             } else {
-                got = drain_batch(1, false);
+                got = drain_into(*ring, out, 0, 1, DrainForm::Drain);
             }
 
             if (got > 0) {
-                mirror = ::fixy::with_mut(std::move(mirror), [&out_entries, received, got](auto run) noexcept {
-                    for (uint32_t i = 0; i < got; ++i) {
-                        auto slot = run.get_mut(received + i).expect("the ring delivers at most N entries");
-                        *slot = out_entries.get(i)
-                                    .expect("a test reads an element at or past the count of its array")
-                                    ->schema_hash.raw();
-                    }
-                });
+                mirror =
+                    ::fixy::with_mut(std::move(mirror), [&entries = out.entries, received, got](auto run) noexcept {
+                        for (uint32_t i = 0; i < got; ++i) {
+                            auto slot = run.get_mut(received + i).expect("the ring delivers at most N entries");
+                            *slot = entries.get(i)
+                                        .expect("a test reads an element at or past the count of its array")
+                                        ->schema_hash.raw();
+                        }
+                    });
                 received += got;
             } else if (producer_done.load_acquire() && ring->size().peek() == 0) {
                 break;

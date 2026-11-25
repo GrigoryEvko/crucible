@@ -225,7 +225,8 @@ void view_of(Run const&&, Layout const&) = delete("the view borrows the run, and
 
 // A 3 x 4 matrix in row-major order, its transpose, and its reads.
 void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(
+        ::fixy::fixed_array_owner<int, 12>, ::fixy::FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
     ::fixy::StridedView<int const, 2> const matrix =
@@ -249,7 +250,7 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
 
     // A write through the walk reaches the run, and the second view of the
     // pair reads each element at the same index.
-    bool const is_added = values.with_mut([&sizes, &strides](auto run) noexcept {
+    bool const is_added = values.with_mut(values_key, [&sizes, &strides](auto run) noexcept {
         auto unique_writer =
             ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), strides.view(), 0).expect("the matrix fits");
         auto writer_columns = std::move(unique_writer).transpose(::fixy::index<0>(), ::fixy::index<1>());
@@ -257,10 +258,8 @@ void matrix_and_transpose(::fixy::TestRunnerCtx const& test) noexcept {
                             writer_columns.view())
             .is_ok();
     });
-    CRUCIBLE_TEST_ASSERT(
-        test,
-        is_added
-            && values == (::fixy::FixedArray<int, 12>{0, 101, 202, 303, 404, 505, 606, 707, 808, 909, 1010, 1111}));
+    ::fixy::FixedArray<int, 12> const added{0, 101, 202, 303, 404, 505, 606, 707, 808, 909, 1010, 1111};
+    CRUCIBLE_TEST_ASSERT(test, is_added && ::fixy::equal(values.view(), added.view()));
     pass(test, "  matrix_and_transpose: PASSED\n");
 }
 
@@ -292,8 +291,8 @@ void walk_reads_of_each_mix(::fixy::TestRunnerCtx const& test) noexcept {
         std::size_t const out_step = 1 + (mix & 1);
         std::size_t const left_step = 1 + ((mix >> 1) & 1);
         std::size_t const right_step = 1 + ((mix >> 2) & 1);
-        ::fixy::FixedArray<int, 16> out{};
-        bool const is_walked = out.with_mut([&](auto run) noexcept {
+        auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int, 16>);
+        bool const is_walked = out.with_mut(out_key, [&](auto run) noexcept {
             auto unique_out = unique_view_of(std::move(run), out_step);
             return ::fixy::walk([](int& sum, int const& first, int const& second) noexcept { sum = first + second; },
                                 unique_out, ::fixy::StridedView<int const, 2>{view_of(left.view(), left_step)},
@@ -495,7 +494,7 @@ void mismatch_and_dynamic_axes(::fixy::TestRunnerCtx const& test) noexcept {
 void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::FixedArray<int, 6> left{1, 2, 3, 4, 5, 6};
     ::fixy::FixedArray<int, 6> right{10, 20, 30, 40, 50, 60};
-    ::fixy::FixedArray<int, 6> output{};
+    auto [output, output_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int, 6>);
     ::fixy::FixedArray<std::size_t, 2> const sizes{2, 3};
     ::fixy::FixedArray<std::size_t, 2> const row_major{3, 1};
     ::fixy::FixedArray<std::size_t, 2> const column_major{1, 2};
@@ -507,7 +506,7 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     ::fixy::StridedView<int const, 2> const wrong_view =
         ::fixy::mint_strided_view(output.view(), wrong_sizes.view(), column_major.view(), 0).expect("fits");
 
-    bool const is_summed = output.with_mut([&](auto run) noexcept {
+    bool const is_summed = output.with_mut(output_key, [&](auto run) noexcept {
         auto unique_output =
             ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), row_major.view(), 0).expect("fits");
         return ::fixy::mint_strided_scope(unique_output, [&](auto target) noexcept {
@@ -525,13 +524,14 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     });
     // The right view reads the run in column-major order, so its element at
     // (i, j) is the element at the position i + 2 * j.
-    CRUCIBLE_TEST_ASSERT(test, is_summed && output == (::fixy::FixedArray<int, 6>{11, 32, 53, 24, 45, 66}));
+    ::fixy::FixedArray<int, 6> const sums{11, 32, 53, 24, 45, 66};
+    CRUCIBLE_TEST_ASSERT(test, is_summed && ::fixy::equal(output.view(), sums.view()));
 
     // The walk over the branded views of the scope visits the indices in
     // row-major order and writes the same sums, with no compare of the sizes.
-    ::fixy::FixedArray<int, 6> walked{};
+    auto [walked, walked_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int, 6>);
     ::fixy::FixedArray<int, 6> order{};
-    std::size_t const visits = walked.with_mut([&](auto run) noexcept {
+    std::size_t const visits = walked.with_mut(walked_key, [&](auto run) noexcept {
         auto unique_walked =
             ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), column_major.view(), 0).expect("fits");
         return ::fixy::mint_strided_scope(unique_walked, [&](auto target) noexcept {
@@ -551,7 +551,8 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
     // The output is column-major, so its element at (i, j) is at the
     // position i + 2 * j.
     CRUCIBLE_TEST_ASSERT(test, visits == 6 && order == (::fixy::FixedArray<int, 6>{1, 2, 3, 4, 5, 6}));
-    CRUCIBLE_TEST_ASSERT(test, walked == (::fixy::FixedArray<int, 6>{11, 24, 32, 45, 53, 66}));
+    ::fixy::FixedArray<int, 6> const walked_sums{11, 24, 32, 45, 53, 66};
+    CRUCIBLE_TEST_ASSERT(test, ::fixy::equal(walked.view(), walked_sums.view()));
     pass(test, "  scope_and_parallel: PASSED\n");
 }
 
@@ -559,8 +560,7 @@ void scope_and_parallel(::fixy::TestRunnerCtx const& test) noexcept {
 // sizes and the strides.
 [[nodiscard]] bool mints_unique(::fixy::View<std::size_t const> sizes, ::fixy::View<std::size_t const> strides,
                                 std::size_t offset) noexcept {
-    ::fixy::FixedArray<int, 12> values{};
-    bool const is_minted = values.with_mut([sizes, strides, offset](auto run) noexcept {
+    auto const [is_minted, values] = ::fixy::build_fixed_array<int, 12>([sizes, strides, offset](auto run) noexcept {
         return ::fixy::mint_strided_view_mut(std::move(run), sizes, strides, offset).is_some();
     });
     return is_minted;
@@ -598,13 +598,14 @@ void unique_door_cases(::fixy::TestRunnerCtx const& test) noexcept {
 // its own element.  A unique view of a different layout of the same run comes
 // from the mint, after a reborrow gives the run back.
 void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(
+        ::fixy::fixed_array_owner<int, 12>, ::fixy::FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const strides{4, 1};
     // Columns 1 and 3 of the matrix: the rows 1 and 3 of the transpose.
     ::fixy::FixedArray<std::size_t, 2> const odd_sizes{2, 3};
     ::fixy::FixedArray<std::size_t, 2> const odd_strides{2, 4};
-    bool const is_written = values.with_mut([&](auto run) noexcept {
+    bool const is_written = values.with_mut(values_key, [&](auto run) noexcept {
         auto [is_scaled, back] = ::fixy::reborrow(std::move(run), [&sizes, &strides](auto lent) noexcept {
             auto unique = ::fixy::mint_strided_view_mut(std::move(lent), sizes.view(), strides.view(), 0)
                               .expect("a dense matrix has no overlap");
@@ -619,8 +620,8 @@ void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
         bool const is_added = ::fixy::walk([](int& element) noexcept { element += 1; }, odd).is_ok();
         return is_scaled && is_added;
     });
-    CRUCIBLE_TEST_ASSERT(
-        test, is_written && values == (::fixy::FixedArray<int, 12>{0, 11, 20, 31, 40, 51, 60, 71, 80, 91, 100, 111}));
+    ::fixy::FixedArray<int, 12> const expected{0, 11, 20, 31, 40, 51, 60, 71, 80, 91, 100, 111};
+    CRUCIBLE_TEST_ASSERT(test, is_written && ::fixy::equal(values.view(), expected.view()));
     pass(test, "  unique_view_writes: PASSED\n");
 }
 
@@ -628,10 +629,11 @@ void unique_view_writes(::fixy::TestRunnerCtx const& test) noexcept {
 // its frame.  A scope on the erased writer writes each element in row-major
 // order, and the frame holds the bits after the door gives the run back.
 void erased_writer_writes(::fixy::TestRunnerCtx const& test) noexcept {
-    ::fixy::FixedArray<int, 12> values{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+    auto [values, values_key] = ::fixy::mint_keyed_owner(
+        ::fixy::fixed_array_owner<int, 12>, ::fixy::FixedArray<int, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11});
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
     ::fixy::FixedArray<std::size_t, 2> const column_major{1, 3};
-    bool const is_written = values.with_mut([&sizes, &column_major](auto run) noexcept {
+    bool const is_written = values.with_mut(values_key, [&sizes, &column_major](auto run) noexcept {
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), sizes.view(), column_major.view(), 0)
                           .expect("a column-major matrix has no overlap");
         auto erased = ::fixy::erase_brand(std::move(unique));
@@ -649,10 +651,8 @@ void erased_writer_writes(::fixy::TestRunnerCtx const& test) noexcept {
     });
     // The element at (i, j) is at the position i + 3 * j, and the scope visits
     // it as the visit 4 * i + j.
-    CRUCIBLE_TEST_ASSERT(
-        test,
-        is_written
-            && values == (::fixy::FixedArray<int, 12>{0, 104, 208, 301, 405, 509, 602, 706, 810, 903, 1007, 1111}));
+    ::fixy::FixedArray<int, 12> const expected{0, 104, 208, 301, 405, 509, 602, 706, 810, 903, 1007, 1111};
+    CRUCIBLE_TEST_ASSERT(test, is_written && ::fixy::equal(values.view(), expected.view()));
     pass(test, "  erased_writer_writes: PASSED\n");
 }
 
@@ -1053,8 +1053,10 @@ void unique_door_agrees_with_model(::fixy::TestRunnerCtx const& test) noexcept {
         Sequence const model = model_sequence(layout);
         bool const is_distinct = has_distinct_offsets(model);
         bool const passes = passes_sorted_strides(layout);
-        Run fresh = make_run();
-        bool const is_agreed = fresh.with_mut([&](auto run) noexcept {
+        Run const source = make_run();
+        auto [fresh, fresh_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint32_t, kRun>);
+        fresh.with_mut(fresh_key, [&source](auto run) noexcept { ::fixy::copy(std::move(run), source.view()); });
+        bool const is_agreed = fresh.with_mut(fresh_key, [&](auto run) noexcept {
             return ::fixy::mint_strided_view_mut(std::move(run), sizes_of(layout), strides_of(layout), layout.offset)
                 .match(
                     [&](auto unique) noexcept {

@@ -73,14 +73,14 @@ void test_a_kernel_writes_and_a_test_reads(TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) == 0);
     os::FpScope<core::kFpModeIeee> const scope = os::mint_fp_scope<core::kFpModeIeee>();
     ::fixy::Kernel<KernelBrand, core::kFpModeIeee> const ctx = ::fixy::mint_kernel_context<KernelBrand>(scope);
-    ::fixy::FixedArray<std::uint64_t, 4> out{};
-    out.with_mut([&ctx, &sink](auto run) noexcept {
+    auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint64_t, 4>);
+    out.with_mut(out_key, [&ctx, &sink](auto run) noexcept {
         ::fixy::run_kernel(ctx, timed_kernel<typename decltype(run)::brand_type>, sink, std::move(run));
     });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kMarkSlot) != 0);
     CRUCIBLE_TEST_ASSERT(test, out.at(::fixy::index<3>()) == 121u);
     std::uint64_t const first_span = sink.read(nondet, kSpanSlot);
-    out.with_mut([&ctx, &sink](auto run) noexcept {
+    out.with_mut(out_key, [&ctx, &sink](auto run) noexcept {
         ::fixy::run_kernel(ctx, timed_kernel<typename decltype(run)::brand_type>, sink, std::move(run));
     });
     CRUCIBLE_TEST_ASSERT(test, sink.read(nondet, kSpanSlot) >= first_span);

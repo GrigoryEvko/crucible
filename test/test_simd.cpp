@@ -123,12 +123,12 @@ static void test_load_lanes() {
 // little-endian word, and touches no byte outside the window.  A bit cast
 // keeps each bit of the register.
 static void test_store_bytes_and_bit_cast() {
-    ::foundation::core::FixedArray<std::byte, 34> bytes{};
     simd::u64x4 const v{simd::u64x4::raw_type{0x0807060504030201ULL, 0x100F0E0D0C0B0A09ULL, 0x1817161514131211ULL,
                                               0x201F1E1D1C1B1A19ULL}};
-    bytes.with_mut([v](auto run) noexcept {
-        simd::store(v, ::fixy::take_window<32>(std::move(run), 1).expect("32 bytes fit after the first"));
-    });
+    ::foundation::core::FixedArray<std::byte, 34> const bytes =
+        ::foundation::core::build_fixed_array<std::byte, 34>([v](auto run) noexcept {
+            simd::store(v, ::fixy::take_window<32>(std::move(run), 1).expect("32 bytes fit after the first"));
+        });
     for (auto index : bytes.indices()) {
         auto const expected = index.raw() == 0 || index.raw() == 33 ? 0U : index.raw();
         CRUCIBLE_TEST_ASSERT(kTest, bytes.at(index) == static_cast<std::byte>(expected));
@@ -145,11 +145,11 @@ static void test_store_bytes_and_bit_cast() {
 // the alignment of the element.  A load of the same window gives the vector
 // back.
 static void test_store_lanes() {
-    ::foundation::core::FixedArray<int64_t, 10> lanes{};
     simd::i64x8 const v = simd::iota_v<simd::i64x8>() * simd::i64x8{int64_t{-3}} + simd::i64x8{int64_t{7}};
-    lanes.with_mut([v](auto run) noexcept {
-        simd::store(v, ::fixy::take_window<8>(std::move(run), 1).expect("8 lanes fit after the first"));
-    });
+    ::foundation::core::FixedArray<int64_t, 10> const lanes =
+        ::foundation::core::build_fixed_array<int64_t, 10>([v](auto run) noexcept {
+            simd::store(v, ::fixy::take_window<8>(std::move(run), 1).expect("8 lanes fit after the first"));
+        });
     for (auto index : lanes.indices()) {
         auto const lane = static_cast<int64_t>(index.raw());
         auto const expected = index.raw() == 0 || index.raw() == 9 ? int64_t{0} : (lane - 1) * -3 + 7;
@@ -160,11 +160,11 @@ static void test_store_lanes() {
         CRUCIBLE_TEST_ASSERT(kTest, back[lane] == v[lane]);
     }
 
-    ::foundation::core::FixedArray<std::uint32_t, 10> words{};
     simd::u32x8 const w = simd::iota_v<simd::u32x8>() + simd::u32x8{std::uint32_t{0xA0000000U}};
-    words.with_mut([w](auto run) noexcept {
-        simd::store(w, ::fixy::take_window<8>(std::move(run), 2).expect("8 lanes fit after the second"));
-    });
+    ::foundation::core::FixedArray<std::uint32_t, 10> const words =
+        ::foundation::core::build_fixed_array<std::uint32_t, 10>([w](auto run) noexcept {
+            simd::store(w, ::fixy::take_window<8>(std::move(run), 2).expect("8 lanes fit after the second"));
+        });
     for (auto index : words.indices()) {
         auto const expected = index.raw() < 2 ? 0U : 0xA0000000U + static_cast<std::uint32_t>(index.raw() - 2);
         CRUCIBLE_TEST_ASSERT(kTest, words.at(index) == expected);
@@ -210,21 +210,24 @@ static void test_collect_bits() {
 // rest.  The form of two Views reads the same runs.
 static void test_for_each_register_run() {
     using Bytes = simd::vec<std::uint8_t, 16>;
-    ::foundation::core::FixedArray<std::byte, 37> target{};
-    ::foundation::core::FixedArray<std::byte, 37> source{};
-    for (auto index : source.indices()) {
-        source.set(index, static_cast<std::byte>(index.raw() + 1));
-    }
+    ::foundation::core::FixedArray<std::byte, 37> const source =
+        ::foundation::core::build_fixed_array<std::byte, 37>([](auto run) noexcept {
+            std::size_t position = 0;
+            for (std::byte& byte : run) {
+                byte = static_cast<std::byte>(++position);
+            }
+        });
     int runs = 0;
-    target.with_mut([&runs, &source](auto run) noexcept {
-        auto [target_rest, source_rest] = simd::for_each_register_run<Bytes>(
-            std::move(run), ::fixy::View<std::byte const>{source.view()}, [&runs](auto out, auto in) noexcept {
-                simd::store(simd::load<Bytes>(in), std::move(out));
-                ++runs;
-            });
-        CRUCIBLE_TEST_ASSERT(kTest, runs == 2);
-        CRUCIBLE_TEST_ASSERT(kTest, target_rest.size() == 5 && source_rest.size() == 5);
-    });
+    ::foundation::core::FixedArray<std::byte, 37> const target =
+        ::foundation::core::build_fixed_array<std::byte, 37>([&runs, &source](auto run) noexcept {
+            auto [target_rest, source_rest] = simd::for_each_register_run<Bytes>(
+                std::move(run), ::fixy::View<std::byte const>{source.view()}, [&runs](auto out, auto in) noexcept {
+                    simd::store(simd::load<Bytes>(in), std::move(out));
+                    ++runs;
+                });
+            CRUCIBLE_TEST_ASSERT(kTest, runs == 2);
+            CRUCIBLE_TEST_ASSERT(kTest, target_rest.size() == 5 && source_rest.size() == 5);
+        });
     for (auto index : target.indices()) {
         auto const expected = index.raw() < 32 ? index.raw() + 1 : 0U;
         CRUCIBLE_TEST_ASSERT(kTest, target.at(index) == static_cast<std::byte>(expected));

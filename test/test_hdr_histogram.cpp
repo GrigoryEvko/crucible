@@ -229,16 +229,15 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, nonzero >= 3);
     CRUCIBLE_TEST_ASSERT(kTest, exported_count == h.total_count());
 
-    ::foundation::core::FixedArray<Hist::LogEncodedBucket, 2> partial_export{};
-    const auto partial_result =
-        partial_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
+    auto const [partial_result, partial_export] = ::foundation::core::build_fixed_array<Hist::LogEncodedBucket, 2>(
+        [&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, partial_result.written == partial_export.size());
     CRUCIBLE_TEST_ASSERT(kTest, partial_result.required == nonzero);
     CRUCIBLE_TEST_ASSERT(kTest, !partial_result.complete());
 
-    ::foundation::core::FixedArray<Hist::LogEncodedBucket, Hist::bucket_slots> full_export{};
-    const auto full_result =
-        full_export.with_mut([&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
+    auto const [full_result, full_export] =
+        ::foundation::core::build_fixed_array<Hist::LogEncodedBucket, Hist::bucket_slots>(
+            [&h](auto run) noexcept { return h.serialize_log_into(std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, full_result.complete());
     CRUCIBLE_TEST_ASSERT(kTest, full_result.written == nonzero);
     std::uint64_t serialized_count = 0;

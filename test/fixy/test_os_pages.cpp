@@ -73,14 +73,14 @@ template <class Owner>
 // Words that the program only reads.  The linker puts a constant with no
 // relocation in a segment with no write access.
 [[nodiscard]] consteval core::FixedArray<std::uint64_t, 4096> make_read_only_words() noexcept {
-    core::FixedArray<std::uint64_t, 4096> words{};
-    words.with_mut([](auto run) noexcept {
-        std::uint64_t value = 1;
-        for (std::uint64_t& word : run) {
-            word = value;
-            ++value;
-        }
-    });
+    core::FixedArray<std::uint64_t, 4096> const words =
+        ::fixy::build_fixed_array<std::uint64_t, 4096>([](auto run) noexcept {
+            std::uint64_t value = 1;
+            for (std::uint64_t& word : run) {
+                word = value;
+                ++value;
+            }
+        });
     return words;
 }
 

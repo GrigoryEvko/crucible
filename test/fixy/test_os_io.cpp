@@ -111,8 +111,7 @@ descriptor_of(fixy::Result<fixy::Linear<File>, foundation::os::Errno> minted) {
         descriptor_of(fs::mint_file<fs::read_only>(ctx, sanitized(crucible::test::make_scratch_path(scratch, "dst"))));
     if (opened.is_err()) return false;
     ReadOnlyFile const reader = std::move(opened).expect("the destination opened for a read");
-    fixy::FixedArray<std::byte, 5 * kPayloadBytes> whole{};
-    std::size_t const count = whole.with_mut(
+    auto const [count, whole] = fixy::build_fixed_array<std::byte, 5 * kPayloadBytes>(
         [&ctx, &reader](auto run) noexcept { return fs::read_full(ctx, reader.ref(), std::move(run)).value_or(0); });
     if (count < offset + expected.size()) return false;
     return fixy::equal(whole.view().window(offset, expected.size()).expect("the window is inside the bytes read"),
@@ -388,7 +387,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     fs::TemporaryFile const source =
                         fs::mint_temporary_file_at(ctx, tmp.ref()).expect("the file of the source opens").consume();
                     fixy::FixedArray<std::byte, 64> bytes{};
-                    bytes.with_mut([](auto run) noexcept { fixy::fill(std::move(run), std::byte{0x5A}); });
+                    bytes.fill(std::byte{0x5A});
                     if (fs::write_full(ctx, source.ref(), bytes.view()).is_err()) {
                         fixy::fatal("the test does not write the source of the sendfile");
                     }

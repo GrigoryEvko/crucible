@@ -50,7 +50,7 @@ OpData op_at(uint32_t iter, uint32_t op_idx) {
     made.entry.num_inputs = (op_idx == 0) ? 0 : 1;
     made.entry.num_outputs = 1;
 
-    made.metas.with_mut([iter, op_idx](auto run) noexcept {
+    made.metas = ::fixy::build_fixed_array<crucible::TensorMeta, 2>([iter, op_idx](auto run) noexcept {
         uint16_t idx = 0;
         if (op_idx > 0) {
             auto input = run.get_mut(idx++).expect("a test reads an element at or past the count of its array");

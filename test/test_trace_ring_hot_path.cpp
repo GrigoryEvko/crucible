@@ -93,11 +93,11 @@ void test_ring_append_under_the_foreground() {
     auto const foreground = eff::testing::foreground();
     CRUCIBLE_TEST_ASSERT(
         kTest, ring->try_append_pure(foreground, make_entry(1), MetaIndex::none(), ScopeHash{0}, CallsiteHash{0}));
-    ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
-    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
+    auto [drained, drained_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, 4>);
+    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
         return ring->drain_pure(foreground, std::move(run));
     }) == 1u);
-    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
+    CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut(drained_key, [&ring, &foreground](auto run) noexcept {
         return ring->drain_pure(foreground, std::move(run));
     }) == 0u);
 }
@@ -123,10 +123,11 @@ void test_fixture_ends_take_the_foreground_row() {
         CRUCIBLE_TEST_ASSERT(kTest, TraceRing::try_append_pure(foreground, ring, make_entry(2)));
     });
     crucible::test::with_ring_consumer([&foreground](TraceRing::Consumer& ring) noexcept {
-        ::fixy::FixedArray<TraceRing::Entry, 4> drained{};
-        CRUCIBLE_TEST_ASSERT(kTest, drained.with_mut([&ring, &foreground](auto run) noexcept {
-            return TraceRing::drain_pure(foreground, ring, std::move(run));
-        }) == 0u);
+        auto const [drained_count, drained] =
+            ::fixy::build_fixed_array<TraceRing::Entry, 4>([&ring, &foreground](auto run) noexcept {
+                return TraceRing::drain_pure(foreground, ring, std::move(run));
+            });
+        CRUCIBLE_TEST_ASSERT(kTest, drained_count == 0u);
     });
     const ::fixy::FixedArray<TensorMeta, 1> record{};
     ::fixy::View<const TensorMeta> const records = record.view();

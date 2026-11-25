@@ -172,11 +172,13 @@ static void check_descriptor_images_agree() {
     fields.pad0 = 0xFFFFFFFFu;
     fields.grad_fn_hash = 0x5EED;
 
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>> meta_image{};
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> fields_image{};
     auto const& meta_read = meta;
-    meta_image.with_mut([&meta_read](auto run) noexcept { ::fixy::encode(meta_read, std::move(run)); });
-    fields_image.with_mut([&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>> const meta_image =
+        ::fixy::build_fixed_array<std::byte, ::fixy::encoded_size_v<crucible::TensorMeta>>(
+            [&meta_read](auto run) noexcept { ::fixy::encode(meta_read, std::move(run)); });
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>> const fields_image =
+        ::fixy::build_fixed_array<std::byte, ::fixy::encoded_size_v<crucible::UncheckedTensorMeta>>(
+            [&fields](auto run) noexcept { ::fixy::encode(fields, std::move(run)); });
     CRUCIBLE_TEST_ASSERT(kTest, meta_image == fields_image && "the image of a descriptor is the image of its fields");
 
     // The reader decodes the image, so the local parts of the fields come
