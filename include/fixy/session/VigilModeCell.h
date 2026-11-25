@@ -20,8 +20,9 @@
 // back with the writer in it.  A moved-from writer authorizes no write, so
 // the owner cannot write while the writer is lent.
 //
-// The cell keeps the run-time identity of the writer that built it, so the
-// writer of one cell cannot write a different cell.
+// The cell keeps the run-time identity of the writer that built it, so only
+// that writer writes the cell.  A writer that builds two cells writes the two,
+// and each write of a cell is atomic.
 
 #include <fixy/session/NetworkModel.h>
 
@@ -89,8 +90,8 @@ public:
 };
 
 // Mints the writer of a new mode cell.  The cell takes the writer at its
-// construction and keeps its identity, so the writer writes that cell and
-// no other.  The cost is one atomic add.
+// construction and keeps its identity, so no other writer writes that cell.
+// The cost is one atomic add.
 [[nodiscard]] inline ModeWriter mint_mode_writer() noexcept { return ModeWriter{::foundation::core::mint_identity()}; }
 
 namespace detail {

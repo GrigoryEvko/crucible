@@ -11,8 +11,11 @@
 //
 // The brand is the brand of the Ref, such as the arena family of a graph
 // (foundation/core/BumpArena.h).  It is a fresh brand and never the erased
-// brand DefaultBrand, and the mint keeps it, so a Published of one store does
-// not stand in for a Published of a different store.
+// brand DefaultBrand, and the mint keeps it.  So a Published of one family, or
+// of one mint site, does not stand in for a Published of another one.  Two
+// stores of one family, or two runs of one mint site, give one type (fact 2 of
+// foundation/Brand.h).  No door takes a Published as the key of other memory:
+// it gives only its own object.
 //
 // A Published is a reference to a const T, and nothing more.  Its class
 // template takes the const type, and it states refers{} (foundation/Transfer.h),

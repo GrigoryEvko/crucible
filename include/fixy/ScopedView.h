@@ -13,12 +13,14 @@
 //
 // A view is a typestate over a Ref of the const carrier
 // (foundation/core/Ref.h).  It carries the brand of that Ref: the
-// carrier's own when the carrier has one, so the view is pinned to that
-// instance, and a fresh one per mint site otherwise.  A callee that wants
-// a view of a particular carrier asks for the carrier's brand, and a view
-// of another carrier of the same type fails to unify.  A view spelled
-// without a brand is on the erased identity, and erase_brand(view) is the
-// one door to it.
+// carrier's own when the carrier has one, and a fresh one per mint site
+// otherwise.  A callee that wants a view of a particular carrier asks for the
+// carrier's brand, and a view of a carrier of another brand fails to unify.
+// Two carriers of one mint site, such as two turns of a loop, have one brand
+// (fact 2 of foundation/Brand.h).  A view spelled without a brand is on the
+// erased identity, and it names no carrier in its type.  erase_brand(view) is
+// the one door to it.  A door that must know that the view is of its own
+// object compares the address of the carrier at run time.
 //
 // A carrier opts into the field audit by writing a static_assert on
 // no_scoped_view_field_check for its own type.
