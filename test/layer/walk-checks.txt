@@ -105,6 +105,7 @@ fixy/concurrent/Spawn.cpp | 0.5 | unknown
 fixy/concurrent/SpscEnds.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/concurrent/Stage.cpp | 1.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/OneShotFlag.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
+fixy/handle/PublishOnce.cpp | unmeasured | ::foundation::transfer::door_probe_contexts, unknown
 fixy/handle/Published.cpp | 0.1 | ::foundation::transfer::door_probe_contexts, unknown
 fixy/os/Fs.cpp | 0.1 | ::fixy::session::combinators, unknown
 fixy/os/Handle.cpp | unmeasured | ::fixy::os::kind, ::foundation::transfer::door_probe_contexts, unknown
