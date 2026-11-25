@@ -260,6 +260,15 @@ static_assert(!borrows_owner<ValueClosure<HoldsOwner>>() && borrows_owner<Refere
 static_assert(borrows_owner<ValueClosure<BorrowsHolder>>() && borrows_owner<ValueClosure<HoldsOwner*>>());
 static_assert(!borrows_owner<ReferenceClosure<Scalars>>());
 
+// The element of an array behind a pointer or a reference is read, and an
+// incomplete element is refused.
+struct OnlyDeclared;
+static_assert(reaches_key<HoldsReference (*)[2]>() && !reaches_key<HoldsOther (*)[2]>());
+static_assert(reaches_key<NamesType<HoldsReference (&)[2]>>() && !reaches_key<NamesType<HoldsOther (&)[2]>>());
+static_assert(reaches_key<ReferenceClosure<HoldsReference[2]>>() && !reaches_key<ReferenceClosure<HoldsOther[2]>>());
+static_assert(reaches_key<OnlyDeclared (*)[2]>() && borrows_owner<OnlyDeclared (*)[2]>());
+static_assert(borrows_owner<HoldsOwner (*)[2]>() && !borrows_owner<Scalars (*)[2]>());
+
 }  // namespace detail::key_walk_checks
 
 }  // namespace foundation::core

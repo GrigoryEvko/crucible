@@ -235,7 +235,9 @@ struct KeylessTest final {
 
 // Lists the parts of a type that is no class: the target of a pointer and each
 // type that a function type or a pointer to member names in the region target,
-// and the element of an array in the region of the array.
+// and the element of an array in the region of the array.  The element of an
+// array behind a pointer can be incomplete, so each element is a node of its
+// own.
 consteval void list_parts_of_no_class_(KeyNodeList& list, KeyNode const& node, BorrowRegion target) {
     std::meta::info const type = node.type;
     if (std::meta::is_pointer_type(type)) {
@@ -243,8 +245,7 @@ consteval void list_parts_of_no_class_(KeyNodeList& list, KeyNode const& node, B
         return;
     }
     if (std::meta::is_array_type(type)) {
-        std::meta::info const element = ::foundation::reflect::bare_type(std::meta::remove_all_extents(type));
-        list.push(KeyNode{element, std::meta::info{}, node.region, node.may_read});
+        list.push(indirect_key_node_(std::meta::remove_all_extents(type), node.region));
         return;
     }
     for (::foundation::reflect::TypeNode const& component : ::foundation::reflect::argument_components_of(
