@@ -1203,6 +1203,7 @@ template <typename Tag, typename... Args>
                       "mint_singleton_root<Tag>() without an ExecCtx is only valid for permission_row<Tag> == "
                       "Row<>.  Mint an effectful tag with mint_singleton_root<Tag>(ctx) so Ctx admits the row.");
     }
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     if (detail::singleton_live_of_<Tag>().exchange_acq_rel(true)) [[unlikely]] {
         detail::singleton_root_taken_abort_(detail::singleton_tag_name<Tag>);
     }

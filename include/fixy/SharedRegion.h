@@ -369,6 +369,7 @@ mint_shared_read(Ctx const& /*ctx*/,
     // guard is read once, here: two regions minted at one site share a
     // brand, so the type cannot tell their guards apart, and one pointer
     // comparison can.  After the mint the read runs at the speed of a View.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     CRUCIBLE_FATAL_INVARIANT(guard.is_share_of(region.pool_));
     return SharedRead<T, Tag, Brand>{detail::shared_read_mint_t{}, ::foundation::core::View<T const>{region.run_}};
 }

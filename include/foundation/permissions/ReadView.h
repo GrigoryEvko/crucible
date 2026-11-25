@@ -466,6 +466,7 @@ template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
 [[nodiscard]] Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
                                                                 ReadLoan<Tag, Brand>&& loan) noexcept {
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     CRUCIBLE_FATAL_INVARIANT(lent.identity_.pairs_with(loan.identity_));
     ReadLoan<Tag, Brand> ended{std::move(loan)};
     (void)ended;

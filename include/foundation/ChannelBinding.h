@@ -202,6 +202,7 @@ public:
 
     // Takes the role for a new handle, or ends the process when a live
     // handle holds it.  The detail names the role in the report.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     void take(::foundation::core::TextView detail) noexcept {
         if (held_.exchange_acq_rel(true)) [[unlikely]] {
             second_holder_abort_(detail);

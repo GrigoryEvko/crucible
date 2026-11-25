@@ -283,6 +283,7 @@ public:
     ~ExclusiveLease() = default;
 
     // True when the lease came out of that one pool.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     [[nodiscard]] bool is_lease_of(SharedPermissionPool<Tag, Brand> const& pool) const noexcept {
         return pool_word_ == word_of_(pool);
     }

@@ -78,6 +78,7 @@ CRUCIBLE_PROCESS_WIDE [[gnu::tls_model("initial-exec")]] inline constinit thread
 class [[nodiscard]] DispatchWindow_ final {
 public:
     DispatchWindow_() noexcept {
+        // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
         if (is_in_dispatch_window_) [[unlikely]] {
             refuse_nested_dispatch_();
         }

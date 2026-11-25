@@ -586,6 +586,7 @@ public:
     // The producer end, for a frame door, which holds the key of the frame
     // doors and the producer token of this split.  Complexity: O(1), one
     // compare of a word.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     [[nodiscard]] constexpr producer_end& producer_end_(SpscFrameKey const& /*key*/, producer_token& token) & noexcept {
         CRUCIBLE_FATAL_INVARIANT(token.split_.names(identity_));
         return producer_;

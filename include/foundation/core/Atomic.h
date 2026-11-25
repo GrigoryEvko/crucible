@@ -768,6 +768,7 @@ class[[= ::foundation::transfer::payload_cell{}]]
     // Choice.h refuses a borrow in a thread task, and a thread task is how a
     // writer goes to its thread.  A cell that the code of one owner writes
     // takes the cell of an owner below, with no compare.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     void expect_writer_(SoleWriter<Role, Identity> const& writer) const noexcept {
         if (writer.identity_ != writer_identity_) [[unlikely]] {
             fatal("Atomic<T, SoleWriter<Role, Brand>>: a writer of a different run of the mint site used the cell.  "

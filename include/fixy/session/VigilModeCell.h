@@ -129,6 +129,7 @@ class ModeCell : public ::foundation::Pinned<ModeCell> {
 
     // Each write shows the writer that built the cell, held, and not a
     // writer that a move emptied.
+    // The check stands for fact 2 of foundation/Brand.h, because no type tells two runs of one site apart.
     void expect_writer_(const ModeWriter& writer) const noexcept {
         if (!writer.is_held_ || !(writer.identity_ == writer_)) [[unlikely]]
             detail::abort_on_foreign_mode_writer();
