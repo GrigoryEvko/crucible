@@ -952,15 +952,19 @@ public:
     // the object of a reference is its referent, and the object of a pointer
     // value is what the pointer names, whose origins are the origins of the
     // value.  An object of an empty class, such as a key or a tag, holds
-    // nothing that a borrow can name.  Returns true when the argument names an
-    // object that holds a value.
+    // nothing that a borrow can name, so it is an origin only when the result
+    // can name its class.  Returns true when the argument names an object that
+    // holds a value.
     bool add_reference_argument(tree argument, Lend lend, tree result, std::vector<tree>& out, int depth) {
         tree stripped = strip_conversions(argument);
         if (stripped == NULL_TREE || TREE_TYPE(stripped) == NULL_TREE || !POINTER_TYPE_P(TREE_TYPE(stripped))) {
             return false;
         }
         tree object_type = TREE_TYPE(TREE_TYPE(stripped));
-        if (object_type != NULL_TREE && CLASS_TYPE_P(object_type) && is_empty_class(object_type)) {
+        // An empty object holds no part that a borrow can name, but a result can name
+        // the object itself, as a closure that captures it by reference does.
+        if (object_type != NULL_TREE && CLASS_TYPE_P(object_type) && is_empty_class(object_type)
+            && !could_name(result, object_type, Lend::exact, runs_)) {
             return false;
         }
         bool const is_address = TREE_CODE(stripped) == ADDR_EXPR;

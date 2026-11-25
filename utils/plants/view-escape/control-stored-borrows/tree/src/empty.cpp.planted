@@ -1,0 +1,18 @@
+// An object of an empty class goes to a call as a tag, and the result names no
+// object.  So no store keeps a borrow of the tag.
+namespace planted {
+
+struct Empty {};
+
+template <class Parameter>
+int read(Parameter& parameter) noexcept {
+    static_cast<void>(parameter);
+    return 1;
+}
+
+struct KeepsCount {
+    explicit KeepsCount(Empty given) noexcept : count{read(given)} {}
+    int count = 0;
+};
+
+}  // namespace planted

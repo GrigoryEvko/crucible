@@ -12,3 +12,10 @@
 compile stores src/stores.cpp
 flag stores -freflection
 exit stores pass
+
+# An object of an empty class goes to a call as a tag, and the result names no
+# object, so a constructor that keeps the result keeps no borrow.
+
+compile empty src/empty.cpp
+flag empty -freflection
+exit empty pass

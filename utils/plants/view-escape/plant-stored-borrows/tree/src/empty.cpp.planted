@@ -1,0 +1,35 @@
+// A constructor keeps a closure that captures its parameter by value by reference.
+// The parameter is an object of an empty class: a plain empty class, and an empty
+// class with an end and no move, as a key is.  The closure names the object itself.
+#include <utility>
+
+namespace planted {
+
+template <class Parameter>
+auto keep_by_reference(Parameter& parameter) {
+    return [&parameter]() noexcept { static_cast<void>(parameter); };
+}
+
+struct Empty {};
+
+struct Key {
+    Key() noexcept {}
+    Key(Key const&) = delete("a key does not copy");
+    Key(Key&&) = delete("a key does not move");
+    ~Key() {}
+};
+
+using EmptyClosure = decltype(keep_by_reference(std::declval<Empty&>()));
+using KeyClosure = decltype(keep_by_reference(std::declval<Key&>()));
+
+struct KeepsEmpty {
+    explicit KeepsEmpty(Empty given) noexcept : kept{keep_by_reference(given)} {}
+    EmptyClosure kept;
+};
+
+struct KeepsKey {
+    explicit KeepsKey(Key given) noexcept : kept{keep_by_reference(given)} {}
+    KeyClosure kept;
+};
+
+}  // namespace planted

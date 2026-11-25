@@ -45,3 +45,16 @@ finding results view-escape stored-borrow src/class_results.cpp:35:22 | borrow o
 finding results view-escape stored-borrow src/class_results.cpp:40:23 | borrow of the local local into the parameter out
 finding results view-escape stored-borrow src/class_results.cpp:45:9 | borrow of the local local into the parameter out
 finding results view-escape stored-borrow src/class_results.cpp:51:40 | borrow of the local local into the parameter out
+
+# A constructor keeps a closure that captures its parameter by value by reference,
+# and the parameter is an object of an empty class: a plain one (26) and one with an
+# end and no move, as a key is (31).  An empty object holds nothing that a borrow
+# can name, but the closure names the object itself.
+
+compile empty src/empty.cpp
+flag empty -freflection
+exit empty fail
+finding empty view-escape stored-borrow src/empty.cpp:26:49 | borrow of the parameter given into the object of the member function
+finding empty view-escape stored-borrow src/empty.cpp:31:45 | borrow of the parameter given into the object of the member function
+error empty src/empty.cpp:26 | this function stores a borrow of the parameter given into the object of the member function, and the borrowed object ends with the frame of the function
+error empty src/empty.cpp:31 | this function stores a borrow of the parameter given into the object of the member function, and the borrowed object ends with the frame of the function
