@@ -1738,15 +1738,9 @@ auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, 
     using handle_type = detail::producer_handle_of_t<Channel, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     ChannelFrameKey const key{};
-    // The frame keeps the test and the expect of the lent end.  The refusal
-    // ends the body and returns, and the body moves again below, and the rule
-    // use-after-move reads no return in CRUCIBLE_LET_ELSE.
-    auto lent = channel.producer(key, nondet);
-    if (lent.is_none()) {
-        return detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
-    }
-    handle_type handle =
-        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    CRUCIBLE_LET_ELSE(lent, channel.producer(key, nondet),
+                      detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body)));
+    handle_type handle = ChannelFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return detail::lent_value_<Body, result_type>(::foundation::core::Unit{});
@@ -1765,14 +1759,9 @@ auto with_producer(Channel& channel, ::foundation::effects::cap::Nondet nondet, 
     using handle_type = detail::producer_handle_of_t<Channel, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     ChannelFrameKey const key{};
-    // The frame keeps the test and the expect of the lent end, for the reason
-    // of the frame above.
-    auto lent = channel.producer(key, nondet, lane);
-    if (lent.is_none()) {
-        return detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
-    }
-    handle_type handle =
-        ChannelFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent producer end"));
+    CRUCIBLE_LET_ELSE(lent, channel.producer(key, nondet, lane),
+                      detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body)));
+    handle_type handle = ChannelFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return detail::lent_value_<Body, result_type>(::foundation::core::Unit{});

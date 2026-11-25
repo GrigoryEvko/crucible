@@ -576,15 +576,9 @@ auto with_reader(Ctx const& ctx, Swmr& session, Body&& body) noexcept -> ::fixy:
     using handle_type = detail::reader_handle_of_t<Swmr, Scope>;
     using result_type = std::invoke_result_t<Body&&, handle_type>;
     SwmrFrameKey const key{};
-    // The frame keeps the test and the expect of the lent end.  The refusal
-    // ends the body and returns, and the body moves again below, and the rule
-    // use-after-move reads no return in CRUCIBLE_LET_ELSE.
-    auto lent = session.reader(key, ctx);
-    if (lent.is_none()) {
-        return ::fixy::concurrent::detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body));
-    }
-    handle_type handle =
-        SwmrFrameKey::build_handle_<handle_type>(std::move(lent).expect("the test above found a lent reader end"));
+    CRUCIBLE_LET_ELSE(lent, session.reader(key, ctx),
+                      ::fixy::concurrent::detail::refuse_lend_<Body, result_type>(static_cast<Body&&>(body)));
+    handle_type handle = SwmrFrameKey::build_handle_<handle_type>(std::move(lent));
     if constexpr (std::is_void_v<result_type>) {
         ::foundation::linear::call_once(static_cast<Body&&>(body), std::move(handle));
         return ::fixy::concurrent::detail::lent_value_<Body, result_type>(::foundation::core::Unit{});
