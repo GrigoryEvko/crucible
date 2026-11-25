@@ -20,5 +20,5 @@
 #   python3 utils/bin/guard write --rule instruction-total --build-dir build --reason TEXT
 format 1
 rule instruction-total
-- | x86_64-debug-asan-v3 | 17882356934808 | fixtures | the owner decision of 2026-11-15: a correct change raises the limit
-- | x86_64-debug-asan-v3 | 25486195952586 | objects | the owner decision of 2026-11-15: a correct change raises the limit
+- | x86_64-debug-asan-v3 | 20630636941979 | fixtures | the owner decision of 2026-11-15: a correct change raises the limit
+- | x86_64-debug-asan-v3 | 26249354682816 | objects | the owner decision of 2026-11-15: a correct change raises the limit

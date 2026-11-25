@@ -31,7 +31,9 @@
 # in a call (139), with a wrapper in a temporary (146), and through a callee (153).  A
 # callee keeps the wrapper and gives a different owner (160), also on one path (167).  A
 # callee takes the owner on one path, and then it replaces the wrapper (192) or drops it
-# (199) on each path.
+# (199) on each path.  In the unit constructs a construct at a pointer moves an owner
+# into a local that ends before the use: a named owner (27), and an owner in an
+# aggregate (37).
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -194,6 +196,14 @@ error inner_owners src/inner_owners.cpp:160 | this use reads a borrow of wrapper
 error inner_owners src/inner_owners.cpp:167 | this use reads a borrow of wrapper in view after a call of planted::drain_at_times with wrapper
 error inner_owners src/inner_owners.cpp:192 | this use reads a borrow of wrapper in view after a call of planted::drain_or_replace with wrapper
 error inner_owners src/inner_owners.cpp:199 | this use reads a borrow of wrapper in view after a call of planted::drain_or_drop with wrapper
+
+compile constructs src/constructs.cpp
+flag constructs -freflection
+exit constructs fail
+finding constructs view-escape stale-borrow src/constructs.cpp:27:12 | borrow of items in view after the end of the scope of target
+finding constructs view-escape stale-borrow src/constructs.cpp:37:12 | borrow of items in view after the end of the scope of target
+error constructs src/constructs.cpp:27 | this use reads a borrow of items in view after the end of the scope of target
+error constructs src/constructs.cpp:37 | this use reads a borrow of items in view after the end of the scope of target
 
 compile early src/early.cpp
 flag early -freflection

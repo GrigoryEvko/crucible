@@ -1,0 +1,51 @@
+// A construct at a pointer moves an owner into the new object, and the object keeps
+// the storage of the owner.  So a borrow of the owner stays correct: a named owner, an
+// owner in an aggregate, an object of a caller, and a local that lives on.
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+#include <memory>
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+
+struct Header {
+    unsigned long generation = 0;
+    Items inner;
+};
+
+unsigned long construct_of_a_named_owner(Items& place) noexcept {
+    Items items{};
+    auto const view = items.view();
+    std::construct_at(&place, std::move(items));
+    return view.size();
+}
+
+unsigned long construct_of_an_aggregate(Header& place) noexcept {
+    Items items{};
+    auto const view = items.view();
+    std::construct_at(&place, Header{.generation = 1, .inner = std::move(items)});
+    return view.size();
+}
+
+unsigned long construct_of_a_named_aggregate(Header& place) noexcept {
+    Items items{};
+    auto const view = items.view();
+    Header header{.generation = 1, .inner = std::move(items)};
+    std::construct_at(&place, std::move(header));
+    return view.size();
+}
+
+unsigned long construct_into_a_live_local() noexcept {
+    Items items{};
+    auto const view = items.view();
+    Items target{};
+    std::construct_at(&target, std::move(items));
+    return view.size() + target.size();
+}
+
+}  // namespace planted

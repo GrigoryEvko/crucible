@@ -11,6 +11,7 @@ admit foundation::permissions | the permission of a lock
 admit foundation::brand | the annotation of the family tag of an arena
 admit fixy | the locks and the regions of the planted code
 admit std::move | a cast to an rvalue reference
+admit std::construct_at | a construct at a pointer
 admit std::as_const | a read through a const reference
 
 quarantine src/

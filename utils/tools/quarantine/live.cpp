@@ -47,7 +47,11 @@
 //     An owner can also leave its wrapper, as the array leaves in take() of a class
 //     that holds it.  Then the result cannot hold the wrapper, but it can hold each
 //     owner of the route whose own pointers name a target.  The loan goes to the
-//     result, unless the body of the call ends such an owner.
+//     result, unless the body of the call ends such an owner.  When the result holds
+//     no owner of the object, and one different argument by a pointer or a reference
+//     that is not const can hold the object, as the pointer of std::construct_at
+//     does, the loan goes to the object of that argument.  An object behind a pointer
+//     is no local of the body, so a body that moves an owner into it ends nothing.
 //
 // Effects
 //     The effect of a body on a parameter is the set of the classes with an end
@@ -1140,8 +1144,18 @@ private:
             && (!is_indirect_type(TREE_TYPE(decl)) || is_rvalue_reference(TREE_TYPE(decl)));
     }
 
-    // The local ROOT gets the owner at PLACE by a move.
+    // The local ROOT gets the owner at PLACE by a move.  An object behind a pointer
+    // is no local: the storage that the pointer names keeps the owner, and no end
+    // of the frame ends it.
     void hold_owner(int root, int place, tree type) {
+        if (root != kNoPlace && places_.has_dereference(root)) {
+            if (parameter_index(place) >= 0) {
+                state_.taken_out.insert(place);
+            } else {
+                state_.held.erase(root_id(place));
+            }
+            return;
+        }
         if (root == kNoPlace || parameter_index(place) < 0) {
             move_held(place, root);
             return;
@@ -2118,6 +2132,12 @@ private:
         for (std::size_t index = 0; index < arguments.size(); ++index) {
             take_argument(facts, arguments, index);
         }
+        // An argument that keeps a moved object gets its loans after the call takes
+        // the argument itself, so a change of its old value ends none of them.
+        for (const KeptObject& kept : std::exchange(kept_objects_, {})) {
+            transfer_loans(kept.from, kept.to, kept.type);
+            note_kept(kept.from, kept.to, kept.type);
+        }
         for (const Argument& argument : arguments) {
             for (int loan : argument.loans) {
                 if (loans_[loan].source == LoanSource::capture) {
@@ -2249,6 +2269,26 @@ private:
     }
 
     // A call that takes the object at PLACE by a move.
+    // The place of the one argument other than INDEX that can keep the object of the
+    // argument INDEX: a pointer or a reference that is not const, to a class that can
+    // hold it.  kNoPlace when no argument or more than one can.
+    int keeping_place(const std::vector<Argument>& arguments, std::size_t index) const {
+        const Argument& argument = arguments[index];
+        int found = kNoPlace;
+        int count = 0;
+        for (std::size_t other = 0; other < arguments.size(); ++other) {
+            const Argument& keeper = arguments[other];
+            if (other == index || keeper.parameter == NULL_TREE || keeper.is_closure || keeper.is_rvalue
+                || !keeper.is_write || !is_indirect_type(keeper.parameter)
+                || !can_hold_object(keeper.held, argument.held)) {
+                continue;
+            }
+            ++count;
+            found = keeper.places.size() == 1 ? keeper.places[0] : kNoPlace;
+        }
+        return count == 1 ? found : kNoPlace;
+    }
+
     void take_moved(const CallFacts& facts, const std::vector<Argument>& arguments, std::size_t index, int place) {
         const Argument& argument = arguments[index];
         bool const is_same_class = facts.is_constructor && element_class(facts.result) == element_class(argument.held);
@@ -2271,9 +2311,18 @@ private:
                                   && can_hold_owner(facts.result, ended_parts(argument.held));
             tree const result = gives_inner ? facts.result : NULL_TREE;
             end_by_call(facts, argument, index, place, result);
-            transfer_loans(place, gives_inner ? holder : kNoPlace, argument.held, result);
             if (gives_inner) {
+                transfer_loans(place, holder, argument.held, result);
                 hold_owner(holder, place, argument.held);
+                return;
+            }
+            // A different argument can keep the object, as the pointer of a construct
+            // does.
+            int const keeper = keeping_place(arguments, index);
+            if (keeper == kNoPlace) {
+                transfer_loans(place, kNoPlace, argument.held);
+            } else {
+                kept_objects_.push_back(KeptObject{place, keeper, argument.held});
             }
             return;
         }
@@ -2397,6 +2446,13 @@ private:
     location_t location_ = UNKNOWN_LOCATION;
     // The object that the call in hand initializes.
     tree result_slot_ = NULL_TREE;
+    // The objects that a different argument of the call in hand keeps.
+    struct KeptObject {
+        int from = kNoPlace;
+        int to = kNoPlace;
+        tree type = NULL_TREE;
+    };
+    std::vector<KeptObject> kept_objects_;
     // The temporaries with an end of the full expression in hand.
     std::vector<tree> temporaries_;
     // True where the hidden cursor of a range loop is a use.

@@ -5,7 +5,8 @@
 # that keeps its blocks.  The unit blocks has a result that names a store, and not an
 # element of the list that the store holds.  The unit typed_owners has owners of the
 # base that keep their blocks and that hold no raw block.  In the unit inner_owners an
-# owner leaves its wrapper and lives while a borrow of it is in use.
+# owner leaves its wrapper and lives while a borrow of it is in use.  In the unit
+# constructs a construct at a pointer moves an owner into an object that lives on.
 
 compile live src/live.cpp
 flag live -freflection
@@ -22,3 +23,7 @@ exit typed_owners pass
 compile inner_owners src/inner_owners.cpp
 flag inner_owners -freflection
 exit inner_owners pass
+
+compile constructs src/constructs.cpp
+flag constructs -freflection
+exit constructs pass

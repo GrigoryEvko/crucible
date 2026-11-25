@@ -1,0 +1,40 @@
+// A construct at a pointer moves an owner into the new object, and the object ends
+// before the use of a borrow of the owner: a named owner, and an owner in an aggregate.
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+#include <memory>
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+
+struct Header {
+    unsigned long generation = 0;
+    Items inner;
+};
+
+unsigned long construct_into_a_local_that_ends() noexcept {
+    Items items{};
+    auto const view = items.view();
+    {
+        Items target{};
+        std::construct_at(&target, std::move(items));
+    }
+    return view.size();
+}
+
+unsigned long construct_into_an_aggregate_that_ends() noexcept {
+    Items items{};
+    auto const view = items.view();
+    {
+        Header target{};
+        std::construct_at(&target, Header{.generation = 1, .inner = std::move(items)});
+    }
+    return view.size();
+}
+
+}  // namespace planted
