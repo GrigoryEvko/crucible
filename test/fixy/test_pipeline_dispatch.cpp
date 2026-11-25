@@ -106,6 +106,23 @@ static void keyed_stage(Consumer<1 * KiB>&&, Producer<1 * KiB>&&,
 static_assert(cc::StageArity<&keyed_stage>::key_count == 1 && cc::StageArity<&keyed_stage>::handle_count == 2);
 static_assert(cc::PipelineStage<&keyed_stage>);
 
+// A stage that names its context and then a key.  The stage gives the body its
+// own context, and the key comes after it.
+static fixy::Atomic<int> keyed_ctx_calls{0};
+static void keyed_ctx_stage(Consumer<1536>&&, Producer<1536>&&, fixy::HotFgCtx const& /*ctx*/,
+                            ::foundation::core::LoanKey<StageHolderBrand>& key) noexcept {
+    StageHolder holder{};
+    holder.array.with_mut(key, [](auto run) noexcept {
+        auto element = run.get_mut(1).expect("the array holds the element");
+        *element = 7;
+    });
+    CRUCIBLE_FATAL_INVARIANT(holder.array.at(::foundation::core::index<1>()) == 7);
+    static_cast<void>(keyed_ctx_calls.fetch_add_acq_rel(1));
+}
+static_assert(cc::StageArity<&keyed_ctx_stage>::key_count == 1 && cc::StageArity<&keyed_ctx_stage>::ctx_count == 1);
+static_assert(cc::CtxFitsStage<&keyed_ctx_stage, fixy::HotFgCtx>
+              && !cc::CtxFitsStage<&keyed_ctx_stage, fixy::BgDrainCtx>);
+
 using SmallA = cc::Stage<&small_a, fixy::HotFgCtx>;
 using SmallB = cc::Stage<&small_b, fixy::HotFgCtx>;
 using SmallC = cc::Stage<&small_c, fixy::HotFgCtx>;
@@ -173,14 +190,15 @@ static void test_small_pipeline_runs_inline() {
             "small inline pipeline unexpectedly spawned a worker thread");
 }
 
-// The keyed stage checks the write of its holder itself.
+// Each keyed stage checks the write of its holder itself.
 static void test_keyed_stage_gets_its_key() {
     fixy::HotFgCtx ctx = ::foundation::effects::testing::foreground();
     const fixy::BgDrainCtx coordinator{::foundation::effects::testing::bg()};
     auto s0 = cc::mint_stage<&keyed_stage>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
-    auto s1 = cc::mint_stage<&small_b>(ctx, Consumer<1536>{}, Producer<1536>{});
+    auto s1 = cc::mint_stage<&keyed_ctx_stage>(ctx, Consumer<1536>{}, Producer<1536>{});
     auto p = cc::mint_pipeline(coordinator, std::move(s0), std::move(s1));
     std::move(p).run(coordinator);
+    CRUCIBLE_FATAL_INVARIANT(keyed_ctx_calls.load_acquire() == 1);
 }
 
 static void test_large_pipeline_spawns_threads() {

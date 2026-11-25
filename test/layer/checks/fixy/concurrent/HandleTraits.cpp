@@ -106,6 +106,123 @@ static_assert(std::is_same_v<producer_handle_value_t<synthetic_double_producer>,
 static_assert(std::is_same_v<producer_handle_value_t<synthetic_producer&>, int>);
 static_assert(std::is_same_v<producer_handle_value_t<synthetic_producer const&>, int>);
 
+// ── the context form of the two poles ───────────────────────────────
+
+struct synthetic_ctx_consumer {
+    template <class Ctx>
+    [[nodiscard]] ::foundation::core::Option<int> try_pop(Ctx const&) noexcept {
+        return {};
+    }
+};
+
+struct synthetic_ctx_producer {
+    using value_type = int;
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, int const&) noexcept {
+        return true;
+    }
+};
+
+// The push of an owner, which moves and does not copy, takes it by move.
+struct synthetic_owner {
+    synthetic_owner() noexcept = default;
+    synthetic_owner(synthetic_owner&&) noexcept = default;
+    synthetic_owner(synthetic_owner const&) = delete("an owner has one holder");
+    synthetic_owner& operator=(synthetic_owner&&) noexcept = default;
+    synthetic_owner& operator=(synthetic_owner const&) = delete("an owner has one holder");
+    ~synthetic_owner() = default;
+};
+
+struct synthetic_ctx_owner_producer {
+    using value_type = synthetic_owner;
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, synthetic_owner&&) noexcept {
+        return true;
+    }
+};
+
+struct synthetic_ctx_bool_pop {
+    template <class Ctx>
+    [[nodiscard]] bool try_pop(Ctx const&) noexcept {
+        return false;
+    }
+};
+
+struct synthetic_ctx_void_push {
+    using value_type = int;
+    template <class Ctx>
+    void try_push(Ctx const&, int const&) noexcept {}
+};
+
+// A push that names no payload.
+struct synthetic_ctx_unnamed_push {
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, int const&) noexcept {
+        return true;
+    }
+};
+
+struct synthetic_ctx_hybrid {
+    using value_type = int;
+    template <class Ctx>
+    [[nodiscard]] ::foundation::core::Option<int> try_pop(Ctx const&) noexcept {
+        return {};
+    }
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, int const&) noexcept {
+        return true;
+    }
+};
+
+// A plain pop beside a context push, and a plain push beside a context pop.
+struct synthetic_plain_pop_ctx_push {
+    using value_type = int;
+    [[nodiscard]] ::foundation::core::Option<int> try_pop() noexcept { return {}; }
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, int const&) noexcept {
+        return true;
+    }
+};
+
+struct synthetic_ctx_pop_plain_push {
+    template <class Ctx>
+    [[nodiscard]] ::foundation::core::Option<int> try_pop(Ctx const&) noexcept {
+        return {};
+    }
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
+};
+
+static_assert(is_ctx_consumer_handle_v<synthetic_ctx_consumer> && is_ctx_consumer_handle_v<synthetic_ctx_consumer&&>);
+static_assert(is_ctx_producer_handle_v<synthetic_ctx_producer> && is_ctx_producer_handle_v<synthetic_ctx_producer&&>);
+static_assert(is_ctx_producer_handle_v<synthetic_ctx_owner_producer>);
+
+// The plain predicates read no context door, and the context predicates read
+// no plain door.
+static_assert(!is_consumer_handle_v<synthetic_ctx_consumer> && !is_producer_handle_v<synthetic_ctx_producer>);
+static_assert(!is_ctx_consumer_handle_v<synthetic_consumer> && !is_ctx_producer_handle_v<synthetic_producer>);
+static_assert(!is_ctx_consumer_handle_v<synthetic_ctx_producer> && !is_ctx_producer_handle_v<synthetic_ctx_consumer>);
+
+static_assert(!is_ctx_consumer_handle_v<int> && !is_ctx_consumer_handle_v<void>);
+static_assert(!is_ctx_producer_handle_v<int> && !is_ctx_producer_handle_v<void>);
+static_assert(!is_ctx_consumer_handle_v<synthetic_ctx_bool_pop>);
+static_assert(!is_ctx_producer_handle_v<synthetic_ctx_void_push>);
+static_assert(!is_ctx_producer_handle_v<synthetic_ctx_unnamed_push>);
+
+// A type that shows a door of both poles is no handle of either form.
+static_assert(!is_ctx_consumer_handle_v<synthetic_ctx_hybrid> && !is_ctx_producer_handle_v<synthetic_ctx_hybrid>);
+static_assert(!is_consumer_handle_v<synthetic_plain_pop_ctx_push>
+              && !is_ctx_producer_handle_v<synthetic_plain_pop_ctx_push>);
+static_assert(!is_ctx_consumer_handle_v<synthetic_ctx_pop_plain_push>
+              && !is_producer_handle_v<synthetic_ctx_pop_plain_push>);
+
+static_assert(is_stage_input_handle_v<synthetic_consumer> && is_stage_input_handle_v<synthetic_ctx_consumer>);
+static_assert(is_stage_output_handle_v<synthetic_producer> && is_stage_output_handle_v<synthetic_ctx_producer>);
+static_assert(!is_stage_input_handle_v<synthetic_ctx_hybrid> && !is_stage_output_handle_v<synthetic_ctx_hybrid>);
+static_assert(std::is_same_v<stage_input_handle_value_t<synthetic_ctx_consumer&&>, int>);
+static_assert(std::is_same_v<stage_input_handle_value_t<synthetic_double_consumer>, double>);
+static_assert(std::is_same_v<stage_output_handle_value_t<synthetic_ctx_owner_producer&&>, synthetic_owner>);
+static_assert(std::is_same_v<stage_output_handle_value_t<synthetic_double_producer>, double>);
+
 // ── the single-writer poles ─────────────────────────────────────────
 
 struct synthetic_writer {

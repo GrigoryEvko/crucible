@@ -67,19 +67,30 @@
 //     would notify nothing, and a waiter of the other side would park with
 //     no wake.
 //
+// Stages
+//     A stage takes a parked handle as an input or an output.  Each door of
+//     the handle takes the context of its caller, so the body of the stage
+//     names the context of its stage (fixy/concurrent/StageShape.h), and it
+//     has no second context.  The two ends of one channel name the channel
+//     and its identity, and state its capacity, so a pipeline joins them as it
+//     joins the ends of a plain channel.  The body ends each of its parked
+//     handles with close or release.
+//
 // Cost
 //     Each push and each pop pays one seq_cst fence and one load of the count
 //     that it notifies, and a notify that finds a waiter makes one system
-//     call.  The pipeline of a background thread pays the same by hand.
+//     call.
 
 #include <fixy/Qtt.h>
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/EventCount.h>
 #include <fixy/concurrent/PermissionedChannel.h>
+#include <fixy/concurrent/WorkingSet.h>
 #include <fixy/os/Futex.h>
 
 #include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
+#include <foundation/ChannelBinding.h>
 #include <foundation/Linear.h>
 #include <foundation/Pinned.h>
 #include <foundation/Platform.h>
@@ -244,14 +255,26 @@ public:
     public:
         using brand_type = typename Channel::brand_type;
         using value_type = typename Channel::row_payload;
+        // The channel that the end names, and its identity below, are those of
+        // the inner end (stages).
+        using channel_type = typename Channel::ProducerEnd::channel_type;
         static constexpr ChannelForm channel_form = Channel::channel_form;
         static constexpr std::size_t channel_capacity = Channel::channel_capacity;
+        // A push touches the lines of the inner push and the line of the count
+        // that it notifies.
+        static constexpr std::size_t per_call_working_set =
+            saturating_ws_add(Channel::ProducerEnd::per_call_working_set, sizeof(EventCount));
 
         ProducerEnd(ProducerEnd const&) = delete("a parked producer end owns the producer token");
         ProducerEnd& operator=(ProducerEnd const&) = delete("a parked producer end owns the producer token");
         ProducerEnd(ProducerEnd&&) noexcept = default;
         ProducerEnd& operator=(ProducerEnd&&) = delete("a parked producer end binds to one channel for its life");
         ~ProducerEnd() = default;
+
+        // The identity of the channel instance of the end (stages).
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
+            return inner_.channel_identity();
+        }
 
         // Pushes item, and notifies items when the ring took it.  The error
         // tells a full ring from a consumer that closed.  A wire of values
@@ -275,13 +298,12 @@ public:
         [[nodiscard]] push_result try_push(Ctx const& ctx, value_type&& item) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Option<value_type> pending =
-                ::foundation::core::Option<value_type>::some(std::move(item));
-            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            PushRefusal why = PushRefusal::Full;
-            if (push_once_(ctx, attempt, why)) [[likely]]
+            ::foundation::core::Option<value_type> refused = inner_.try_push(std::move(item));
+            if (refused.is_none()) [[likely]] {
+                channel_->items_.notify_one(ctx);
                 return ::foundation::core::Unit{};
-            return refuse_owner_(pending, why);
+            }
+            return refuse_owner_(refused, channel_->refusal_of_full_());
         }
 
         // Pushes item, and waits by Policy while the ring is full: Spin spins,
@@ -307,13 +329,12 @@ public:
         [[nodiscard]] push_result push_waiting(Ctx const& ctx, value_type&& item) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Option<value_type> pending =
-                ::foundation::core::Option<value_type>::some(std::move(item));
-            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            PushRefusal why = PushRefusal::Full;
-            if (push_waiting_<Policy>(ctx, attempt, why)) [[likely]]
+            ::foundation::core::Option<value_type> refused = inner_.try_push(std::move(item));
+            if (refused.is_none()) [[likely]] {
+                channel_->items_.notify_one(ctx);
                 return ::foundation::core::Unit{};
-            return refuse_owner_(pending, why);
+            }
+            return push_refused_<Policy>(ctx, std::move(refused));
         }
 
         // As push_waiting, but the wait ends at deadline with
@@ -341,13 +362,12 @@ public:
                                                      ::fixy::futex::Deadline const& deadline) noexcept {
             this->require_live("a push through a parked producer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Option<value_type> pending =
-                ::foundation::core::Option<value_type>::some(std::move(item));
-            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
-            PushRefusal why = PushRefusal::Full;
-            if (push_waiting_<Policy>(ctx, attempt, why, deadline)) [[likely]]
+            ::foundation::core::Option<value_type> refused = inner_.try_push(std::move(item));
+            if (refused.is_none()) [[likely]] {
+                channel_->items_.notify_one(ctx);
                 return ::foundation::core::Unit{};
-            return refuse_owner_(pending, why);
+            }
+            return push_refused_<Policy>(ctx, std::move(refused), deadline);
         }
 
         // Ends the stream, and then notifies items, so a consumer that parks
@@ -378,16 +398,19 @@ public:
             return pending.is_none();
         }
 
-        // The two bodies below hold the one notify of items of the push doors.
-        // A body gives true when the ring took the item, and it writes the
-        // reason of a refusal into why.  Each door then builds its result in
-        // its own two arms, so a push that the ring took returns a constant,
-        // as a door with its own body does.  A body that gives a result or an
-        // optional reason makes GCC build the result at the join of the arms,
-        // which adds instructions to that path.
+        // The two bodies below hold the notify of items of the push doors of a
+        // wire of values, and of the waits of a wire that moves its items.  A
+        // push that moves its item pushes one time in its door, and only a
+        // refused push goes to the wait (push_refused_).  A body gives true
+        // when the ring took the item, and it writes the reason of a refusal
+        // into why.  Each door then builds its result in its own two arms, so
+        // a push that the ring took returns a constant, as a door with its own
+        // body does.  A body that gives a result or an optional reason makes
+        // GCC build the result at the join of the arms, which adds
+        // instructions to that path.
 
-        // The push of each door with no wait: attempt pushes one time, and a
-        // push that the ring took notifies items.  A refusal writes Full, or
+        // The push of a value with no wait: attempt pushes one time, and a push
+        // that the ring took notifies items.  A refusal writes Full, or
         // ConsumerGone when the consumer closed.
         template <class Ctx, class Attempt>
         [[nodiscard]] bool push_once_(Ctx const& ctx, Attempt& attempt, PushRefusal& why) noexcept {
@@ -426,6 +449,20 @@ public:
             return true;
         }
 
+        // The wait of a push that moves its item, after a first push that the
+        // full ring refused: pending holds the item.  The call is out of line,
+        // so a push that the ring takes at once holds no code of the wait and
+        // no end of an item that it does not hold.
+        template <WaitPolicy Policy, class Ctx, class... Bound>
+        [[nodiscard]] CRUCIBLE_COLD push_result push_refused_(Ctx const& ctx,
+                                                              ::foundation::core::Option<value_type> pending,
+                                                              Bound const&... bound) noexcept {
+            auto attempt = [this, &pending]() noexcept { return push_pending_(pending); };
+            PushRefusal why = PushRefusal::Full;
+            if (push_waiting_<Policy>(ctx, attempt, why, bound...)) return ::foundation::core::Unit{};
+            return refuse_owner_(pending, why);
+        }
+
         // The error of a push door of a wire that moves its items: the item
         // that pending still holds, back to the caller, and the reason.
         [[nodiscard]] static push_result refuse_owner_(::foundation::core::Option<value_type>& pending,
@@ -447,14 +484,26 @@ public:
     public:
         using brand_type = typename Channel::brand_type;
         using value_type = typename Channel::row_payload;
+        // The channel that the end names, and its identity below, are those of
+        // the inner end (stages).
+        using channel_type = typename Channel::ConsumerEnd::channel_type;
         static constexpr ChannelForm channel_form = Channel::channel_form;
         static constexpr std::size_t channel_capacity = Channel::channel_capacity;
+        // A pop touches the lines of the inner pop and the line of the count
+        // that it notifies.
+        static constexpr std::size_t per_call_working_set =
+            saturating_ws_add(Channel::ConsumerEnd::per_call_working_set, sizeof(EventCount));
 
         ConsumerEnd(ConsumerEnd const&) = delete("a parked consumer end owns the consumer token");
         ConsumerEnd& operator=(ConsumerEnd const&) = delete("a parked consumer end owns the consumer token");
         ConsumerEnd(ConsumerEnd&&) noexcept = default;
         ConsumerEnd& operator=(ConsumerEnd&&) = delete("a parked consumer end binds to one channel for its life");
         ~ConsumerEnd() = default;
+
+        // The identity of the channel instance of the end (stages).
+        [[nodiscard]] constexpr ::foundation::ChannelIdentity<channel_type> channel_identity() const noexcept {
+            return inner_.channel_identity();
+        }
 
         // The oldest item, or no value when the ring is empty.  A pop that
         // takes an item notifies room.
@@ -489,12 +538,12 @@ public:
         [[nodiscard]] ::foundation::core::Result<value_type, NoItem> receive_waiting(Ctx const& ctx) noexcept {
             this->require_live("a receive through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>> got{::foundation::core::none};
-            wait_for<Policy>(ctx, channel_->items_, [this, &ctx, &got]() noexcept { return has_received_(ctx, got); });
-            ::foundation::core::Result<value_type, NoItem> received =
-                std::move(got).expect("the wait ends after a receive that gives an item or the end");
-            if (received.is_ok()) channel_->room_.notify_one(ctx);
-            return received;
+            ::foundation::core::Result<value_type, NoItem> received = receive_(ctx);
+            if (received.is_ok()) {
+                channel_->room_.notify_one(ctx);
+                return received;
+            }
+            return receive_after_wait_<Policy>(ctx);
         }
 
         // As receive_waiting, but the wait ends at deadline with
@@ -516,6 +565,26 @@ public:
                 std::move(got).expect("the test above found a receive");
             if (received.is_ok()) channel_->room_.notify_one(ctx);
             return received;
+        }
+
+        // Waits by Policy on items until the ring holds an item or the stream
+        // is closed, or until deadline.  The call takes no item, so the caller
+        // can do other work between the end of the wait and the pop, such as a
+        // job of a mailbox that notifies no count.  The result is
+        // deadline_passed when the ring is still empty and the stream is still
+        // open.  A deadline needs the park, so Policy parks.  The call is out
+        // of line, so its caller holds no code of the wait.
+        template <WaitPolicy Policy, class Ctx>
+            requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park) && ::fixy::futex::CtxMayUseFutex<Ctx>
+        [[nodiscard]] CRUCIBLE_COLD EventWaitEnd wait_for_item_until(Ctx const& ctx,
+                                                                     ::fixy::futex::Deadline const& deadline) noexcept {
+            this->require_live("a wait through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
+                               __LINE__);
+            ::foundation::effects::cap::Nondet const nondet =
+                ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
+            return wait_for<Policy>(
+                ctx, channel_->items_,
+                [this, nondet]() noexcept { return !inner_.empty_approx(nondet) || inner_.is_closed(); }, deadline);
         }
 
         // True when the stream ended, with acquire order.
@@ -578,6 +647,20 @@ public:
             if (received.is_err_and([](NoItem why) noexcept { return why == NoItem::Empty; })) return false;
             got = ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>>::some(std::move(received));
             return true;
+        }
+
+        // The wait of receive_waiting, after a first receive that found no
+        // item.  The call is out of line, so a receive that finds an item at
+        // once holds no code of the wait.
+        template <WaitPolicy Policy, class Ctx>
+        [[nodiscard]] CRUCIBLE_COLD ::foundation::core::Result<value_type, NoItem>
+        receive_after_wait_(Ctx const& ctx) noexcept {
+            ::foundation::core::Option<::foundation::core::Result<value_type, NoItem>> got{::foundation::core::none};
+            wait_for<Policy>(ctx, channel_->items_, [this, &ctx, &got]() noexcept { return has_received_(ctx, got); });
+            ::foundation::core::Result<value_type, NoItem> received =
+                std::move(got).expect("the wait ends after a receive that gives an item or the end");
+            if (received.is_ok()) channel_->room_.notify_one(ctx);
+            return received;
         }
     };
 
@@ -681,9 +764,11 @@ public:
 
     using brand_type = typename End::brand_type;
     using value_type = typename End::value_type;
+    using channel_type = typename End::channel_type;
     using scope_type = Scope;
     static constexpr ChannelForm channel_form = End::channel_form;
     static constexpr std::size_t channel_capacity = End::channel_capacity;
+    static constexpr std::size_t per_call_working_set = End::per_call_working_set;
 
     ParkedProducerHandle(ParkedProducerHandle&&) noexcept = default;
     ParkedProducerHandle(ParkedProducerHandle const&) = delete("a parked producer handle owns the producer token");
@@ -692,6 +777,8 @@ public:
     ParkedProducerHandle&
     operator=(ParkedProducerHandle&&) = delete("a parked producer handle binds to one channel for its life");
     ~ParkedProducerHandle() = default;
+
+    [[nodiscard]] constexpr auto channel_identity() const noexcept { return End::channel_identity(); }
 
     // The push doors of a wire of values take the item by reference to const,
     // and the push doors of a wire that moves its items take it by move.
@@ -772,9 +859,11 @@ public:
 
     using brand_type = typename End::brand_type;
     using value_type = typename End::value_type;
+    using channel_type = typename End::channel_type;
     using scope_type = Scope;
     static constexpr ChannelForm channel_form = End::channel_form;
     static constexpr std::size_t channel_capacity = End::channel_capacity;
+    static constexpr std::size_t per_call_working_set = End::per_call_working_set;
 
     ParkedConsumerHandle(ParkedConsumerHandle&&) noexcept = default;
     ParkedConsumerHandle(ParkedConsumerHandle const&) = delete("a parked consumer handle owns the consumer token");
@@ -783,6 +872,8 @@ public:
     ParkedConsumerHandle&
     operator=(ParkedConsumerHandle&&) = delete("a parked consumer handle binds to one channel for its life");
     ~ParkedConsumerHandle() = default;
+
+    [[nodiscard]] constexpr auto channel_identity() const noexcept { return End::channel_identity(); }
 
     // A pop door of a merge takes a context that owns Nondet.  Each pop door
     // names that gate first (pops_with), so a refusal of a context names it.
@@ -813,6 +904,13 @@ public:
              && requires(End& end) { end.template receive_waiting_until<Policy>(ctx, deadline); }
     {
         return End::template receive_waiting_until<Policy>(ctx, deadline);
+    }
+
+    template <WaitPolicy Policy, class Ctx>
+    [[nodiscard]] EventWaitEnd wait_for_item_until(Ctx const& ctx, ::fixy::futex::Deadline const& deadline) noexcept
+        requires requires(End& end) { end.template wait_for_item_until<Policy>(ctx, deadline); }
+    {
+        return End::template wait_for_item_until<Policy>(ctx, deadline);
     }
 
     [[nodiscard]] bool is_closed() const noexcept { return End::is_closed(); }

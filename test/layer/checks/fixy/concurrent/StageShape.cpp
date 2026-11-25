@@ -72,6 +72,58 @@ static_assert(!PipelineStage<&f_by_value_in>);
 inline int f_returns_int(fake_consumer<int>&&, fake_producer<int>&&) noexcept { return 0; }
 static_assert(!PipelineStage<&f_returns_int>);
 
+// ── the context of a stage ──────────────────────────────────────────
+
+template <typename T>
+struct ctx_consumer {
+    template <class Ctx>
+    [[nodiscard]] ::foundation::core::Option<T> try_pop(Ctx const&) noexcept {
+        return {};
+    }
+};
+
+template <typename T>
+struct ctx_producer {
+    using value_type = T;
+    template <class Ctx>
+    [[nodiscard]] bool try_push(Ctx const&, T const&) noexcept {
+        return true;
+    }
+};
+
+using WideCtx = ::fixy::BgLoadCtx;
+using NarrowCtx = ::fixy::BgDrainCtx;
+
+// A body of plain handles can name its context.
+inline void f_plain_with_ctx(fake_consumer<int>&&, fake_producer<int>&&, NarrowCtx const&) noexcept {}
+static_assert(PipelineStage<&f_plain_with_ctx>);
+static_assert(StageArity<&f_plain_with_ctx>::ctx_count == 1 && StageArity<&f_plain_with_ctx>::handle_count == 2);
+static_assert(StageBodyTakesCtx<&f_plain_with_ctx, NarrowCtx> && !StageBodyTakesCtx<&f_plain_with_ctx, WideCtx>);
+static_assert(StageBodyTakesCtx<&f_one_to_one, NarrowCtx> && StageBodyTakesCtx<&f_one_to_one, WideCtx>,
+              "a body that names no context runs in each context");
+
+// A body of a handle of the context form names its context.
+inline void f_ctx_handles(ctx_consumer<int>&&, ctx_producer<float>&&, WideCtx const&) noexcept {}
+inline void f_ctx_input(ctx_consumer<int>&&, fake_producer<int>&&, WideCtx const&) noexcept {}
+inline void f_ctx_output(fake_consumer<int>&&, ctx_producer<int>&&, WideCtx const&) noexcept {}
+static_assert(PipelineStage<&f_ctx_handles> && PipelineStage<&f_ctx_input> && PipelineStage<&f_ctx_output>);
+static_assert(StageArity<&f_ctx_handles>::ctx_handle_count == 2 && StageArity<&f_ctx_input>::ctx_handle_count == 1);
+static_assert(std::is_same_v<pipeline_stage_input_value_t<&f_ctx_handles>, int>);
+static_assert(std::is_same_v<pipeline_stage_output_value_t<&f_ctx_handles>, float>);
+inline void f_ctx_handles_no_ctx(ctx_consumer<int>&&, ctx_producer<int>&&) noexcept {}
+inline void f_ctx_output_no_ctx(fake_consumer<int>&&, ctx_producer<int>&&) noexcept {}
+static_assert(!StageNamesCtxOfItsHandles<&f_ctx_handles_no_ctx> && !PipelineStage<&f_ctx_handles_no_ctx>);
+static_assert(!StageNamesCtxOfItsHandles<&f_ctx_output_no_ctx> && !PipelineStage<&f_ctx_output_no_ctx>);
+
+// The context comes one time, after the handles and by reference to const.
+inline void f_ctx_first(WideCtx const&, fake_consumer<int>&&, fake_producer<int>&&) noexcept {}
+inline void f_ctx_between(fake_consumer<int>&&, WideCtx const&, fake_producer<int>&&) noexcept {}
+inline void f_two_ctx(fake_consumer<int>&&, fake_producer<int>&&, WideCtx const&, WideCtx const&) noexcept {}
+inline void f_ctx_by_value(fake_consumer<int>&&, fake_producer<int>&&, WideCtx) noexcept {}
+inline void f_ctx_by_mutable(fake_consumer<int>&&, fake_producer<int>&&, WideCtx&) noexcept {}
+static_assert(!PipelineStage<&f_ctx_first> && !PipelineStage<&f_ctx_between> && !PipelineStage<&f_two_ctx>);
+static_assert(!PipelineStage<&f_ctx_by_value> && !PipelineStage<&f_ctx_by_mutable>);
+
 static_assert(pipeline_stage_is_value_preserving_v<&f_one_to_one>);
 
 inline void f_int_to_float(fake_consumer<int>&&, fake_producer<float>&&) noexcept {}

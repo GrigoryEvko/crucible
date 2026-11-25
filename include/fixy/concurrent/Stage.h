@@ -19,7 +19,11 @@
 // the mint of this header.
 //
 // The body names the handles of a stage, so the type of a stage holds only
-// the body and the context.
+// the body and the context.  A body can also name the context, and the stage
+// gives it its own one (the context of a stage in
+// fixy/concurrent/StageShape.h).  So a wait or a notify of the body, such as
+// a door of a parked channel, has only the effects of the context of its
+// stage.
 //
 // A stage can run on a thread of its own, so each gate also asks that each
 // parameter of the body and the context move to another thread
@@ -89,17 +93,28 @@ template <auto FnPtr>
     return true;
 }
 
-// Calls the stage with its handles.  A stage that names keys gets them from
-// the entry of the root doors, on the thread of the stage, and the entry checks
-// the handles (the keys of a stage in fixy/concurrent/StageShape.h).
-template <auto FnPtr, class... Handles>
-void call_stage_(Handles&&... handles) noexcept {
-    if constexpr (StageArity<FnPtr>::key_count == 0) {
+// Calls the body of the stage with its handles, and with the context of the
+// stage when the body names it (the context of a stage in
+// fixy/concurrent/StageShape.h).  A body that names keys gets them from the
+// entry of the root doors, on the thread of the stage, and the entry checks
+// the handles and the context (the keys of a stage in the same header).
+template <auto FnPtr, class Ctx, class... Handles>
+void call_stage_(Ctx const& ctx, Handles&&... handles) noexcept {
+    constexpr std::size_t ctx_count = StageArity<FnPtr>::ctx_count;
+    if constexpr (StageArity<FnPtr>::key_count == 0 && ctx_count == 0) {
         FnPtr(static_cast<Handles&&>(handles)...);
+    } else if constexpr (StageArity<FnPtr>::key_count == 0) {
+        FnPtr(static_cast<Handles&&>(handles)..., ctx);
     } else {
         // A function pointer holds no capture, so the entry takes a copy of it.
         auto function = FnPtr;
-        ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(function, static_cast<Handles&&>(handles)...);
+        if constexpr (ctx_count == 0) {
+            ::foundation::core::detail::run_root_body_<sizeof...(Handles)>(function,
+                                                                           static_cast<Handles&&>(handles)...);
+        } else {
+            ::foundation::core::detail::run_root_body_<sizeof...(Handles) + ctx_count>(
+                function, static_cast<Handles&&>(handles)..., ctx);
+        }
     }
 }
 
@@ -111,8 +126,8 @@ concept StageCrossesThreads = detail::are_stage_parameters_sendable<FnPtr>() && 
 
 template <auto FnPtr, class Ctx>
 concept CtxFitsStage =
-    PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageInputRowAdmitted<FnPtr, Ctx>
-    && StageOutputRowAdmitted<FnPtr, Ctx> && StageCrossesThreads<FnPtr, Ctx>;
+    PipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageBodyTakesCtx<FnPtr, Ctx>
+    && StageInputRowAdmitted<FnPtr, Ctx> && StageOutputRowAdmitted<FnPtr, Ctx> && StageCrossesThreads<FnPtr, Ctx>;
 
 namespace detail {
 
@@ -229,8 +244,9 @@ template <auto FnPtr>
 using variadic_stage_row_union_t = typename detail::variadic_stage_row_union<FnPtr>::type;
 
 template <auto FnPtr, class Ctx>
-concept CtxFitsVariadicStage = VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx>
-                            && detail::variadic_stage_rows_admitted<FnPtr, Ctx>() && StageCrossesThreads<FnPtr, Ctx>;
+concept CtxFitsVariadicStage =
+    VariadicPipelineStage<FnPtr> && ::foundation::effects::IsExecCtx<Ctx> && StageBodyTakesCtx<FnPtr, Ctx>
+    && detail::variadic_stage_rows_admitted<FnPtr, Ctx>() && StageCrossesThreads<FnPtr, Ctx>;
 
 template <auto FnPtr, class... Handles>
 concept VariadicStageHandlesMatch = detail::can_variadic_stage_take_handles<FnPtr, Handles...>::value;
@@ -301,7 +317,7 @@ public:
     void run() && noexcept {
         consumer_handle_type in = std::move(in_);
         producer_handle_type out = std::move(out_);
-        detail::call_stage_<FnPtr>(std::move(in), std::move(out));
+        detail::call_stage_<FnPtr>(ctx_, std::move(in), std::move(out));
     }
 
     [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
@@ -415,14 +431,14 @@ private:
 
     template <std::size_t... Is>
     void run_impl_(std::index_sequence<Is...>) && noexcept {
-        run_body_(std::move(std::get<Is>(handles_))...);
+        run_body_(ctx_, std::move(std::get<Is>(handles_))...);
     }
 
     // The handles move into the parameters of this call, so they end when
     // the body returns, as for Stage::run.
     template <class... Handles>
-    static void run_body_(Handles... handles) noexcept {
-        detail::call_stage_<FnPtr>(std::move(handles)...);
+    static void run_body_(Ctx const& ctx, Handles... handles) noexcept {
+        detail::call_stage_<FnPtr>(ctx, std::move(handles)...);
     }
 
     [[no_unique_address]] Ctx ctx_;

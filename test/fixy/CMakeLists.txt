@@ -5016,6 +5016,21 @@ fixy_test(test_parked_box_channel)
 # The merge form of the parked channel: three producers through a full merge,
 # and a consumer close that wakes each parked producer.
 fixy_test(test_parked_merge_channel)
+# A pipeline over parked channels: each stage gives its own context to the
+# doors of its handles, and each item comes out in order.
+fixy_test(test_parked_pipeline)
+# A body of a parked handle names its context, the context of the body is the
+# context of its stage, and a stage of a context with no Block parks in no
+# door.
+fixy_neg_compile_test(neg_stage_ctx_handle_body_names_no_ctx
+  "no matching function for call to .mint_stage<neg_stage_ctx_handle_body_names_no_ctx_types::body>"
+  "required for the satisfaction of .StageNamesCtxOfItsHandles<FnPtr>.")
+fixy_neg_compile_test(neg_stage_body_names_another_ctx
+  "no matching function for call to .mint_stage<neg_stage_body_names_another_ctx_types::body>"
+  "required for the satisfaction of .StageBodyTakesCtx<FnPtr, Ctx>.")
+fixy_neg_compile_test(neg_stage_parks_with_no_block
+  "no matching function for call to .fixy::concurrent::ParkedConsumerHandle<.*receive_waiting<fixy::concurrent::SpinThenPark<0> >\\(const foundation::effects::ExecCtx<foundation::effects::Bg, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc> >&\\)"
+  "required from .void neg_stage_parks_with_no_block_types::drain\\(Input&&, Sink&&, const Ctx&\\)")
 # A pop of a parked merge takes a context that owns Nondet, and a parked
 # producer of a merge has no release.
 fixy_neg_compile_test(neg_parked_merge_pop_without_nondet

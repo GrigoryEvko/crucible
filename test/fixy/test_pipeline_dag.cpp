@@ -69,13 +69,18 @@ static void one_to_one_body(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept {
 
 // A fan-out stage has two output ports, and a fan-in stage has two input
 // ports.  Each edge names the port that it leaves and the port that it
-// enters.
+// enters.  The fan-in body names the context of its stage.
 static void fan_out_body(FakeConsumer<int>&&, FakeProducer<int>&&, FakeProducer<int>&&) noexcept { dag_calls.add(1); }
-static void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&) noexcept { dag_calls.add(1); }
+static void fan_in_body(FakeConsumer<int>&&, FakeConsumer<int>&&, FakeProducer<int>&&, fixy::HotFgCtx const&) noexcept {
+    dag_calls.add(1);
+}
 
 using PlainStage = cc::Stage<&one_to_one_body, fixy::HotFgCtx>;
 using FanOutStage = cc::MpmcStage<&fan_out_body, fixy::HotFgCtx>;
 using FanInStage = cc::MpmcStage<&fan_in_body, fixy::HotFgCtx>;
+
+static_assert(cc::CtxFitsVariadicStage<&fan_in_body, fixy::HotFgCtx>
+              && !cc::CtxFitsVariadicStage<&fan_in_body, fixy::BgDrainCtx>);
 
 static_assert(cc::stage_input_count_v<FanOutStage> == 1 && cc::stage_output_count_v<FanOutStage> == 2);
 static_assert(cc::stage_input_count_v<FanInStage> == 2 && cc::stage_output_count_v<FanInStage> == 1);

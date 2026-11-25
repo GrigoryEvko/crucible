@@ -11,7 +11,9 @@
 // notifies has such a case: each pop door at the stride items of the full
 // wire, the two push doors at the stride items of the slow producer, the
 // close of the producer at the end of the slow producer, and the close of
-// the consumer in the case of a consumer that ends.
+// the consumer in the case of a consumer that ends.  A receive that waited for
+// its item has the wire of one cell.  There the producer must park before the
+// consumer wakes, which the schedule gives in most of the items.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -26,6 +28,7 @@
 
 #include "../foundation/philox_stream.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -209,17 +212,20 @@ template <class Parked, class Consumer>
     return result;
 }
 
-// A wire of 4 cells with a slow consumer: the producer waits for room with
-// push_waiting, and the consumer takes each item through the door of plan.
-// Before each stride item, the consumer waits until the producer parks on the
-// full ring, so the pop must wake it.  No caller notifies a count.  Each item
-// comes in order, and then the end.
+// A wire of Capacity cells: the producer waits for room with push_waiting, and
+// the consumer takes each item through the door of plan.  Before each stride
+// item of a slow consumer, the consumer waits until the producer parks on the
+// full ring, so the pop must wake it.  A fast consumer parks before most items.
+// On a wire of one cell, the producer then often parks for its next item before
+// the consumer wakes, so a receive that waited must wake the producer too.  No
+// caller notifies a count.  Each item comes in order, and then the end.
+template <std::size_t Capacity>
 void expect_each_item_through_a_full_wire(::fixy::BgLoadCtx const& ctx, ConsumerPlan const& plan) {
     auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, WireTag>>();
-    using Parked = cc::ParkedChannel<cc::channel_t<Item, 4, decltype(root)>>;
+    using Parked = cc::ParkedChannel<cc::channel_t<Item, Capacity, decltype(root)>>;
     Parked channel{};
     auto [producer_perm, consumer_perm] =
-        perm::mint_permission_split<Parked::producer_tag, Parked::consumer_tag>(std::move(root));
+        perm::mint_permission_split<typename Parked::producer_tag, typename Parked::consumer_tag>(std::move(root));
     cc::with_ends(channel, std::move(producer_perm), std::move(consumer_perm),
                   [&ctx, &channel, &plan](auto producer, auto consumer) noexcept {
                       static_assert(!ReceivesOnACount<decltype(consumer)>);
@@ -558,11 +564,14 @@ void expect_the_timed_push_ends_at_its_deadline(::fixy::BgLoadCtx const& ctx) {
 int main() {
     ::fixy::BgLoadCtx const ctx{eff::testing::bg()};
     constexpr ParkWait kAtStride = ParkWait::producer_at_stride;
-    expect_each_item_through_a_full_wire(ctx, ConsumerPlan{PopDoor::receive_waiting, Pace::with_delays, kAtStride, 11});
-    expect_each_item_through_a_full_wire(
+    expect_each_item_through_a_full_wire<4>(ctx,
+                                            ConsumerPlan{PopDoor::receive_waiting, Pace::with_delays, kAtStride, 11});
+    expect_each_item_through_a_full_wire<4>(
         ctx, ConsumerPlan{PopDoor::receive_waiting_until, Pace::with_delays, kAtStride, 12});
-    expect_each_item_through_a_full_wire(ctx, ConsumerPlan{PopDoor::try_receive, Pace::with_delays, kAtStride, 13});
-    expect_each_item_through_a_full_wire(ctx, ConsumerPlan{PopDoor::try_pop, Pace::with_delays, kAtStride, 14});
+    expect_each_item_through_a_full_wire<4>(ctx, ConsumerPlan{PopDoor::try_receive, Pace::with_delays, kAtStride, 13});
+    expect_each_item_through_a_full_wire<4>(ctx, ConsumerPlan{PopDoor::try_pop, Pace::with_delays, kAtStride, 14});
+    expect_each_item_through_a_full_wire<1>(ctx,
+                                            ConsumerPlan{PopDoor::receive_waiting, Pace::at_once, ParkWait::none, 15});
     expect_a_slow_producer_wakes_a_parked_consumer(ctx);
     expect_consumer_gone_ends_a_parked_producer(ctx);
     expect_a_parked_producer_waits_through_a_consumer_release(ctx);

@@ -11,6 +11,12 @@
 // context, so a call with a witness context names no payload, and the reader
 // pole also reads that shape from such a call.
 //
+// The context form of the first two poles is the form of a parked channel
+// (fixy/concurrent/ParkedChannel.h): try_pop(ctx) and try_push(ctx, item).
+// Its predicates are apart from the plain ones, because a caller of a plain
+// pole gives no context.  Only a stage takes the two forms, because it gives
+// its own context to its body (fixy/concurrent/StageShape.h).
+//
 // The predicates sit here, beside the channels whose handles they
 // examine, under the plain names.
 //
@@ -143,6 +149,60 @@ struct try_push_shape<T, std::void_t<decltype(&door_source_t<T>::try_push)>> {
     using decomp = producer_signature_decomp<mptr_t>;
     static constexpr bool matches = decomp::matches;
     using payload = typename decomp::payload;
+};
+
+// ── the context form: Option<P> try_pop(ctx), and try_push(ctx, item) ─
+//
+// Each door of a parked channel notifies the other side, so it takes the
+// context of its caller, and it is a template over that context.  The address
+// of a template names no one function, so the two shapes are read from a call
+// with a witness context.  The witness owns Block, the effect of a notify, and
+// Nondet, the effect of the pop of a merge.  The push takes the payload that
+// the handle names as value_type, by reference or by move, and it gives a
+// result, which tells a full channel from a push.
+
+using door_witness_ctx = ::fixy::BgLoadCtx;
+
+// The payload of the Option that a pop gives, or void for another result.  A
+// partial specialization over Option<P> would form the Option, whose gate
+// reads an open template, so the read goes through the reflection of the
+// result.
+template <typename R>
+struct popped_payload {
+    using type = void;
+};
+
+template <::foundation::core::detail::IsOption R>
+struct popped_payload<R> {
+    using type = ::foundation::core::detail::option_payload_t<R>;
+};
+
+template <typename T, typename = void>
+struct ctx_try_pop_shape {
+    static constexpr bool matches = false;
+    using payload = void;
+};
+
+template <typename T>
+struct ctx_try_pop_shape<T,
+                         std::void_t<decltype(std::declval<T&>().try_pop(std::declval<door_witness_ctx const&>()))>> {
+    using popped = decltype(std::declval<T&>().try_pop(std::declval<door_witness_ctx const&>()));
+    static constexpr bool matches = ::foundation::core::detail::IsOption<popped>;
+    using payload = typename popped_payload<popped>::type;
+};
+
+template <typename T, typename = void>
+struct ctx_try_push_shape {
+    static constexpr bool matches = false;
+    using payload = void;
+};
+
+template <typename T>
+struct ctx_try_push_shape<T, std::void_t<decltype(std::declval<T&>().try_push(
+                                 std::declval<door_witness_ctx const&>(), std::declval<typename T::value_type>()))>> {
+    static constexpr bool matches = !std::is_void_v<decltype(std::declval<T&>().try_push(
+        std::declval<door_witness_ctx const&>(), std::declval<typename T::value_type>()))>;
+    using payload = typename T::value_type;
 };
 
 // ── the single-writer poles: void publish(P const&) / P load() const ─
@@ -290,7 +350,8 @@ struct has_load : std::bool_constant<load_member_probe<T>::found || ctx_load_sha
 
 template <typename T>
 inline constexpr bool is_consumer_handle_v =
-    detail::try_pop_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_push<std::remove_cvref_t<T>>::value;
+    detail::try_pop_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_push<std::remove_cvref_t<T>>::value
+    && !detail::ctx_try_push_shape<std::remove_cvref_t<T>>::matches;
 
 template <typename T>
 concept IsConsumerHandle = is_consumer_handle_v<T>;
@@ -313,7 +374,8 @@ inline constexpr bool is_merge_consumer_handle_v =
 
 template <typename T>
 inline constexpr bool is_producer_handle_v =
-    detail::try_push_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_pop<std::remove_cvref_t<T>>::value;
+    detail::try_push_shape<std::remove_cvref_t<T>>::matches && !detail::has_try_pop<std::remove_cvref_t<T>>::value
+    && !detail::ctx_try_pop_shape<std::remove_cvref_t<T>>::matches;
 
 template <typename T>
 concept IsProducerHandle = is_producer_handle_v<T>;
@@ -321,6 +383,43 @@ concept IsProducerHandle = is_producer_handle_v<T>;
 template <typename T>
     requires is_producer_handle_v<T>
 using producer_handle_value_t = typename detail::try_push_shape<std::remove_cvref_t<T>>::payload;
+
+// The context form of the two poles.  A type that shows a door of the other
+// pole, or a plain door of its own pole, is no handle of this form, because
+// nothing then decides which door a caller gets.
+
+template <typename T>
+inline constexpr bool is_ctx_consumer_handle_v =
+    detail::ctx_try_pop_shape<std::remove_cvref_t<T>>::matches
+    && !detail::ctx_try_push_shape<std::remove_cvref_t<T>>::matches
+    && !detail::has_try_push<std::remove_cvref_t<T>>::value && !detail::has_try_pop<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+inline constexpr bool is_ctx_producer_handle_v =
+    detail::ctx_try_push_shape<std::remove_cvref_t<T>>::matches
+    && !detail::ctx_try_pop_shape<std::remove_cvref_t<T>>::matches
+    && !detail::has_try_push<std::remove_cvref_t<T>>::value && !detail::has_try_pop<std::remove_cvref_t<T>>::value;
+
+// A handle that a stage body takes as an input or as an output: a pole of the
+// plain form or of the context form, and its payload.
+
+template <typename T>
+inline constexpr bool is_stage_input_handle_v = is_consumer_handle_v<T> || is_ctx_consumer_handle_v<T>;
+
+template <typename T>
+inline constexpr bool is_stage_output_handle_v = is_producer_handle_v<T> || is_ctx_producer_handle_v<T>;
+
+template <typename T>
+    requires is_stage_input_handle_v<T>
+using stage_input_handle_value_t =
+    std::conditional_t<is_consumer_handle_v<T>, typename detail::try_pop_shape<std::remove_cvref_t<T>>::payload,
+                       typename detail::ctx_try_pop_shape<std::remove_cvref_t<T>>::payload>;
+
+template <typename T>
+    requires is_stage_output_handle_v<T>
+using stage_output_handle_value_t =
+    std::conditional_t<is_producer_handle_v<T>, typename detail::try_push_shape<std::remove_cvref_t<T>>::payload,
+                       typename detail::ctx_try_push_shape<std::remove_cvref_t<T>>::payload>;
 
 // The void return on publish is part of the shape, not an accident. A publish
 // that returns bool belongs to a capacity-limited endpoint that can refuse a

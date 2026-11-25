@@ -5,7 +5,7 @@
 // of the consumer.  The count of the live parcels shows that no object leaks
 // and none ends two times.  The waits and their notifies are those of the
 // wire of values (test_parked_channel), and this test shows the Box form of
-// each push door.
+// each push door, and the timed wait that takes no item.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -40,8 +40,11 @@ constexpr std::uint64_t kParcels = 2000;
 constexpr std::uint64_t kParkStride = 64;
 // The turns of the pause after a thread sees a waiter in a count.
 constexpr std::uint64_t kSettleTurns = 20000;
-// The bound of one timed push.
+// The bound of one timed push, and of one timed wait that ends at its bound.
 constexpr std::uint64_t kTimedStepNanos = 1000000;
+// The bound of a timed wait that a notify must end, 600 seconds.  A lost wake
+// keeps the test until its timeout.
+constexpr std::uint64_t kFarNanos = 600000000000;
 
 // The count of the live parcels.  Each object must end one time, and no
 // object may leak.
@@ -267,10 +270,132 @@ void expect_each_box_through_a_full_wire(::fixy::BgLoadCtx const& ctx) {
     CRUCIBLE_FATAL_INVARIANT(live_parcels.load_acquire() == 0);
 }
 
+// The deadline of one timed wait from this time on.
+[[nodiscard]] ::fixy::futex::Deadline soon(::fixy::BgLoadCtx const& ctx) noexcept {
+    auto const clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
+    return ::fixy::futex::Deadline::after(clock, nondet_of(ctx), kTimedStepNanos).expect("the clock reads");
+}
+
+// The timed wait for an item takes no item.  It ends at its deadline while the
+// wire is empty and open, and at once while the wire holds an item or its
+// stream is closed.
+void expect_the_timed_wait_takes_no_item(::fixy::BgLoadCtx const& ctx) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, ParcelTag>>();
+    using Parked = cc::ParkedChannel<cc::box_channel_t<Parcel, 2, decltype(root)>>;
+    {
+        Parked channel{};
+        auto [producer_perm, consumer_perm] =
+            perm::mint_permission_split<Parked::producer_tag, Parked::consumer_tag>(std::move(root));
+        cc::with_ends(
+            channel, std::move(producer_perm), std::move(consumer_perm), [&ctx](auto producer, auto consumer) noexcept {
+                using enum cc::EventWaitEnd;
+                CRUCIBLE_FATAL_INVARIANT(consumer.template wait_for_item_until<ParkAtOnce>(ctx, soon(ctx))
+                                         == deadline_passed);
+                CRUCIBLE_FATAL_INVARIANT(is_pushed(producer.try_push(ctx, make_parcel(0))));
+                CRUCIBLE_FATAL_INVARIANT(consumer.template wait_for_item_until<ParkAtOnce>(ctx, soon(ctx)) == notified);
+                CRUCIBLE_FATAL_INVARIANT(label_of(consumer.try_pop(ctx).expect("the wait took no item")) == 0);
+                CRUCIBLE_FATAL_INVARIANT(consumer.template wait_for_item_until<ParkAtOnce>(ctx, soon(ctx))
+                                         == deadline_passed);
+                std::move(producer).close(ctx);
+                CRUCIBLE_FATAL_INVARIANT(consumer.template wait_for_item_until<ParkAtOnce>(ctx, soon(ctx)) == notified);
+                std::move(consumer).close(ctx);
+            });
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_parcels.load_acquire() == 0);
+}
+
+// The push doors of a wire that moves its items.  A push that the ring takes
+// at once notifies items in its own door, so each door needs a case.
+enum class PushDoor : std::uint8_t {
+    try_push,
+    push_waiting,
+    push_waiting_until,
+};
+
+constexpr std::uint32_t kPushDoors = 3;
+
+// The push door of one round of a test.
+[[nodiscard]] constexpr PushDoor push_door_of(std::uint32_t round) noexcept {
+    if (round == 0) return PushDoor::try_push;
+    return round == 1 ? PushDoor::push_waiting : PushDoor::push_waiting_until;
+}
+
+// True when the ring took the Box through door.
+template <class Producer>
+[[nodiscard]] bool is_pushed_through(::fixy::BgLoadCtx const& ctx, Producer& producer, PushDoor door,
+                                     ParcelBox parcel) noexcept {
+    if (door == PushDoor::try_push) return is_pushed(producer.try_push(ctx, std::move(parcel)));
+    if (door == PushDoor::push_waiting) {
+        return is_pushed(producer.template push_waiting<ParkAtOnce>(ctx, std::move(parcel)));
+    }
+    return is_pushed(producer.template push_waiting_until<ParkAtOnce>(ctx, std::move(parcel), soon(ctx)));
+}
+
+// A push through each door wakes the consumer out of a wait whose deadline is
+// far, and so does the close of the producer.  The producer acts only after it
+// sees the consumer park, so a wait that no notify ends would reach its
+// deadline.  The consumer counts its pops, so the producer knows that the next
+// park is the park after the pop.
+void expect_the_timed_wait_wakes(::fixy::BgLoadCtx const& ctx) {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::wire, ParcelTag>>();
+    using Parked = cc::ParkedChannel<cc::box_channel_t<Parcel, 2, decltype(root)>>;
+    {
+        Parked channel{};
+        auto [producer_perm, consumer_perm] =
+            perm::mint_permission_split<Parked::producer_tag, Parked::consumer_tag>(std::move(root));
+        cc::with_ends(
+            channel, std::move(producer_perm), std::move(consumer_perm),
+            [&ctx, &channel](auto producer, auto consumer) noexcept {
+                fixy::Atomic<std::uint32_t> pops{0};
+                auto wait_for_each = [&pops,
+                                      handle = std::move(consumer)](::fixy::BgLoadCtx const& bg) mutable noexcept {
+                    auto const clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(bg);
+                    ::fixy::futex::Deadline const far =
+                        ::fixy::futex::Deadline::after(clock, nondet_of(bg), kFarNanos).expect("the clock reads");
+                    bool is_each_woken = true;
+                    for (std::uint32_t round = 0; round < kPushDoors; ++round) {
+                        bool const is_woken =
+                            handle.template wait_for_item_until<ParkAtOnce>(bg, far) == cc::EventWaitEnd::notified;
+                        bool const is_taken = handle.try_pop(bg).is_some();
+                        is_each_woken = is_each_woken && is_woken && is_taken;
+                        pops.store_release(round + 1);
+                    }
+                    bool const is_woken_for_the_end =
+                        handle.template wait_for_item_until<ParkAtOnce>(bg, far) == cc::EventWaitEnd::notified;
+                    std::move(handle).close(bg);
+                    return is_each_woken && is_woken_for_the_end;
+                };
+                auto push_each_then_close = [&ctx, &channel, &pops, owned = std::move(producer)]() mutable noexcept {
+                    eff::cap::Nondet const nondet = nondet_of(ctx);
+                    for (std::uint32_t round = 0; round <= kPushDoors; ++round) {
+                        while (pops.load_acquire() < round) {
+                            CRUCIBLE_SPIN_PAUSE;
+                        }
+                        while (!channel.has_parked_consumer(nondet)) {
+                            CRUCIBLE_SPIN_PAUSE;
+                        }
+                        settle();
+                        if (round == kPushDoors) break;
+                        CRUCIBLE_FATAL_INVARIANT(
+                            is_pushed_through(ctx, owned, push_door_of(round), make_parcel(round)));
+                    }
+                    std::move(owned).close(ctx);
+                };
+                auto values = ::fixy::thread::run_beside(ctx, ::fixy::thread::ThreadOptions{}, std::move(wait_for_each),
+                                                         std::move(push_each_then_close))
+                                  .expect("the thread door starts a consumer");
+                CRUCIBLE_FATAL_INVARIANT(values.at(::fixy::index<0>()));
+            });
+    }
+    CRUCIBLE_FATAL_INVARIANT(live_parcels.load_acquire() == 0);
+}
+
 }  // namespace
 
 int main() {
     ::fixy::BgLoadCtx const ctx{eff::testing::bg()};
+    expect_the_timed_wait_takes_no_item(ctx);
+    expect_the_timed_wait_wakes(ctx);
     expect_a_full_ring_gives_the_box_back(ctx);
     expect_the_timed_push_gives_the_box_back(ctx);
     expect_a_consumer_close_gives_the_box_back(ctx);
