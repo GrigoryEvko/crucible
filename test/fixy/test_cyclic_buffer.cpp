@@ -235,6 +235,25 @@ template <class Element>
     return 0;
 }
 
+// A fresh claim of a keyed ring of a trivially copyable element gives a
+// value-initialized element too, and such a ring copies.
+[[nodiscard]] int fresh_claim_of_a_trivial_element() {
+    auto [ring, key] = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<Level, 2>);
+    ring.with_claim(key, [](Level& level) noexcept { level.value = 11; });
+    ring.with_claim(key, [](Level& level) noexcept { level.value = 12; });
+    const std::uint64_t fresh = ring.with_fresh_claim(key, [](Level& level) noexcept {
+        std::uint64_t const started = level.value;
+        level.value = 13;
+        return started;
+    });
+    if (fresh != 0) return 1;
+    auto const copied = ring;
+    const auto level_of = [](Level const& level) noexcept { return level.value; };
+    if (copied.with_slot(key, copied.slot_back(::fixy::index<0>()), level_of) != 13) return 2;
+    if (copied.with_slot(key, copied.slot_back(::fixy::index<1>()), level_of) != 12) return 3;
+    return 0;
+}
+
 // A keyed ring takes its key at each door that writes.  The move form gives
 // the key back, and the borrow form keeps it with the caller.
 [[nodiscard]] int keyed_ring_writes_with_its_key() {
@@ -274,5 +293,6 @@ int main() {
     if (const int failed = push_new_of_each_kind_of_element(); failed != 0) return 80 + failed;
     if (const int failed = update_loses_a_nested_step(); failed != 0) return 90 + failed;
     if (const int failed = update_of_an_element_with_no_assignment(); failed != 0) return 100 + failed;
+    if (const int failed = fresh_claim_of_a_trivial_element(); failed != 0) return 110 + failed;
     return 0;
 }

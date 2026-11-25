@@ -206,10 +206,22 @@ private:
     // an element with a counter that only goes up, recycles its slots.  Value
     // initialization zeroes an element with no user-provided default
     // constructor first, so each padding byte of such an element is zero.
+    //
+    // The end and the start of an element can be code that reaches the ring
+    // through a second name.  Each read of a keyed ring takes its key, which
+    // the door holds, apart from a copy of the ring.  Only a keyed ring of a
+    // trivially copyable element copies, and its new element then starts in a
+    // local object, whose bytes go into the slot.
     [[nodiscard]] T& fresh_slot_() noexcept {
         T* const slot = __builtin_addressof(slot_at_(claim_slot_()));
-        slot->~T();
-        return *::new(static_cast<void*>(slot)) T();
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            T const fresh = T();
+            __builtin_memcpy(static_cast<void*>(slot), static_cast<void const*>(__builtin_addressof(fresh)), sizeof(T));
+            return *__builtin_launder(slot);
+        } else {
+            slot->~T();
+            return *::new(static_cast<void*>(slot)) T();
+        }
     }
 
     // Runs body on the element, and gives the key back: alone for a body that
@@ -231,12 +243,20 @@ private:
 public:
     constexpr CyclicBuffer() = default;
 
-    // A copy only reads the elements of the source.  A keyed ring moves only
-    // when a move reads its elements and writes none of them, as a keyed
-    // FixedArray does: a body of a frame of the ring can reach the ring by a
-    // name, and a move out of it would end the element that the body holds.
-    // The counter of the fill refuses each assignment of a ring.
-    constexpr CyclicBuffer(CyclicBuffer const&) = default;
+    // A copy only reads the elements of the source.  A keyed ring copies and
+    // moves only when a copy and a move read the bytes of its elements and write
+    // none of them, as a keyed FixedArray moves: a body of a frame of the ring
+    // can reach the ring by a name, and a move out of it would end the element
+    // that the body holds.  The code of an element that a fresh claim ends could
+    // copy the ring by a name, and the copy would read the ended element.  The
+    // counter of the fill refuses each assignment of a ring.
+    constexpr CyclicBuffer(CyclicBuffer const&)
+        requires(!is_keyed_) || std::is_trivially_copyable_v<T>
+    = default;
+    CyclicBuffer(CyclicBuffer const&)
+        requires is_keyed_ && (!std::is_trivially_copyable_v<T>)
+    = delete("a copy of a keyed CyclicBuffer runs code of its elements, and a fresh claim of the ring could be open: "
+             "read the elements with with_slot(key, slot, body)");
     constexpr CyclicBuffer(CyclicBuffer&&)
         requires(!is_keyed_) || std::is_trivially_copyable_v<T>
     = default;
