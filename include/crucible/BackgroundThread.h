@@ -119,17 +119,18 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // time.
 //
 // Each public door that writes or reads the state of a stage from outside
-// the pipeline takes a proof.  run_in_row, trace_build_state,
+// the pipeline takes a proof.  run_in_row, with_trace_build_state,
 // pending_op_count, detector_history_count and scratch_retained_bytes take
-// the proof that no pipeline runs (prove_quiescence), and at() of the
-// uncompiled queue takes the publish-stage proof.  The mailbox of the publish
-// stage and its two sentinels are private.  The requests, the flush and
-// rearm_stop write only atomic cells, so they are const.  These doors take no
-// proof that the check of the statement reads: set_numerics, start, stop,
-// run_on_publish_stage, run_in_row and trace_build_state.  compute_memory_plan
-// is static and takes no BackgroundThread, so it is no door.  The check
-// exempts this one class until the keyed doors of the owner-key member series
-// replace those doors (the exemption of foundation/Transfer.h).
+// the proof that no pipeline runs (prove_quiescence), and each claims the run
+// state until it returns (hold_run_state_).  at() of the uncompiled queue
+// takes the publish-stage proof.  The mailbox of the publish stage and its two
+// sentinels are private.  The requests, the flush and rearm_stop write only
+// atomic cells, so they are const.  These doors take no proof that the check
+// of the statement reads: set_numerics, start, stop, run_on_publish_stage,
+// run_in_row and with_trace_build_state.  compute_memory_plan is static and
+// takes no BackgroundThread, so it is no door.  The check exempts this one
+// class until the keyed doors of the owner-key member series replace those
+// doors (the exemption of foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -516,11 +517,15 @@ private:
 public:
     // The count of ops in the history of the detector.  The detect stage
     // writes the detector with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence).
+    // pipeline runs (prove_quiescence), and it holds the run state
+    // (hold_run_state_).  It gives a copy of the count, which no later start
+    // changes.
     [[nodiscard]] uint64_t
     detector_history_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
-        expect_quiescent_(proof);
-        return detector_.pos_ - detector_.base_;
+        hold_run_state_(proof);
+        const uint64_t count = detector_.pos_ - detector_.base_;
+        release_run_state_();
+        return count;
     }
 
     // The ops that the detect stage holds, from the oldest op that a future
@@ -624,12 +629,15 @@ private:
 public:
     // The count of the ops that the detect stage holds.  The detect stage
     // writes the count with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence).  The ops stay after stop(), and a
-    // later start reads them.
+    // pipeline runs (prove_quiescence), and it holds the run state
+    // (hold_run_state_).  It gives a copy of the count, which no later start
+    // changes.  The ops stay after stop(), and a later start reads them.
     [[nodiscard]] uint64_t
     pending_op_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
-        expect_quiescent_(proof);
-        return pending_ops_.size();
+        hold_run_state_(proof);
+        const uint64_t count = pending_ops_.size();
+        release_run_state_();
+        return count;
     }
 
     // Own cache line: the background writes it, the foreground reads it for
@@ -1053,7 +1061,7 @@ public:
             ring_->with_owner([](TraceRing const& ring) noexcept { return ring.total_produced(); });
         const auto is_settled = [this, target_produced]() noexcept {
             return count_processed_ring_ops() >= target_produced
-                || pipeline_run_.load_acquire() == PipelineRun::stopped;
+                || pipeline_run_.load_acquire() != PipelineRun::running;
         };
         ::fixy::concurrent::wait_for<FlushPolicy>(ctx, processed_events_, is_settled);
         if (count_processed_ring_ops() >= target_produced) return ::fixy::Unit{};
@@ -1430,13 +1438,22 @@ public:
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
     // The init context is the authority to start the thread.  A start while a
-    // pipeline thread runs breaks the contract: call stop() first.
+    // pipeline thread runs breaks the contract: call stop() first.  The start
+    // claims the run state before it writes the state of a stage, so a start
+    // while a run of run_in_row is active, or while a door holds the run state
+    // (hold_run_state_), ends the process.
     //
     // A start after stop() continues the stream of the last pipeline.  The
     // ring keeps the ops that the last pipeline did not read, and the detect
     // stage keeps its held ops, its detector and its cursor of the log.  Each
     // start reads the two sides of the constructor, so no start can name a
     // different side.
+    //
+    // A stop gives no side back, because this object holds the Refs to the two
+    // sides for its whole life.  So after a stop no caller has the consumer
+    // end that a reset of the ring or of the log takes.  Such a reset would
+    // also break this object, because ring_base_, total_processed, the cursor
+    // of the log and the held ops count from the first op of the stream.
     void start(::fixy::InitLoadCtx const& startup, int32_t rank = -1, int32_t world_size = 0, uint64_t device_cap = 0)
         CRUCIBLE_NO_THREAD_SAFETY;
 
@@ -1492,11 +1509,16 @@ public:
 
     // The bytes of blocks that the two scratch arenas hold.  The build stage
     // and the publish stage write the arenas with no order, so the read takes
-    // the proof that no pipeline runs (prove_quiescence).
+    // the proof that no pipeline runs (prove_quiescence), and it holds the run
+    // state (hold_run_state_).  It gives a copy of the count, which no later
+    // start changes.
     [[nodiscard]] size_t
     scratch_retained_bytes(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
-        expect_quiescent_(proof);
-        return ::fixy::saturating_add(build_scratch_.arena.retained_bytes(), publish_scratch_.arena.retained_bytes());
+        hold_run_state_(proof);
+        const size_t bytes =
+            ::fixy::saturating_add(build_scratch_.arena.retained_bytes(), publish_scratch_.arena.retained_bytes());
+        release_run_state_();
+        return bytes;
     }
 
     // The retained limit of each of the two scratch arenas
@@ -1576,11 +1598,6 @@ public:
         BackgroundThread& owner_;
     };
 
-    // The bench of the phases of a build (bench/bench_phases.cpp) times each
-    // phase against the scratch of the build stage, so it reads the scratch
-    // through this class, which it defines.
-    friend struct BuildScratchOfBench;
-
     static constexpr uint32_t MIN_PTR_MAP_CAP = 4096;
     static constexpr uint32_t MIN_SCRATCH_SLOT_CAP = 8192;
     // std::bit_ceil is undefined at 2^31, so the cap stops one power below.
@@ -1649,9 +1666,9 @@ public:
     // The state of the trace build that outlives one build: the pointer map
     // of the build stage, its generation and its capacity, and the cap of the
     // slots of one build.  The build stage is its one writer, or a caller
-    // that holds the proof that no stage runs (trace_build_state).  It holds
-    // no arena, so the body of an epoch of the build scratch can capture it
-    // by a reference that is not const.
+    // that holds the run state (with_trace_build_state).  It holds no arena,
+    // so the body of an epoch of the build scratch can capture it by a
+    // reference that is not const.
     class TraceBuildState {
     public:
         TraceBuildState(TraceBuildState const&) = delete("the state of the trace build has one owner");
@@ -1663,6 +1680,9 @@ public:
 
     private:
         friend struct BackgroundThread;
+        // The bench of the phases of a build (bench/bench_phases.cpp) times
+        // each phase against the state that its frame gives, so it reads the
+        // state through this class, which it defines.
         friend struct BuildScratchOfBench;
 
         TraceBuildState() noexcept = default;
@@ -1842,13 +1862,13 @@ private:
     // pipeline.
     void run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
-    // Stores running in the run state, which holds stopped.  A run state of
-    // running means that a pipeline runs already, and the claim then ends the
-    // process.
+    // Stores running in the run state, which holds stopped.  In each other run
+    // state a pipeline runs already, or a door holds the run state
+    // (hold_run_state_), and the claim then ends the process.
     void claim_pipeline_run_() noexcept {
         if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::running).is_err()) [[unlikely]] {
-            ::fixy::fatal("BackgroundThread: a run of the pipeline while another run of it is active.  Stop the "
-                          "first run before the second one starts");
+            ::fixy::fatal("BackgroundThread: a run of the pipeline while another run of it is active, or while a door "
+                          "holds the state of a stage.  Stop the first run, or end the door, before the run starts");
         }
     }
 
@@ -1859,12 +1879,38 @@ private:
         CRUCIBLE_FATAL_INVARIANT(proof.holds_part(thread_) && proof.is_quiescent());
     }
 
-    // Ends the process unless the proof is right (expect_own_proof_) and no
-    // run of the pipeline is active.  A door that writes or reads the state of
-    // a stage with no pipeline asks it.
-    void expect_quiescent_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+    // Claims the run state for a door that writes or reads the state of a
+    // stage with no pipeline, until release_run_state_.  The proof is right
+    // (expect_own_proof_), and the run state holds stopped.  Else the door
+    // ends the process.  Until the release, a start, a run of run_in_row and a
+    // second such door end the process, and a flush finds no pipeline.
+    //
+    // The proof shows the state only at the call, so the claim is the run-time
+    // half of the rule.  The owner key of this class, which start takes too,
+    // gives the rule at compile time.  It replaces the claim with the keyed
+    // doors of the owner-key member series (the exemption of
+    // foundation/Transfer.h).
+    void hold_run_state_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
         expect_own_proof_(proof);
-        CRUCIBLE_FATAL_INVARIANT(pipeline_run_.load_acquire() == PipelineRun::stopped);
+        if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::held).is_err()) [[unlikely]] {
+            ::fixy::fatal("BackgroundThread: a door of the state of a stage while a run of the pipeline is active, or "
+                          "while another such door holds the state.  Stop the run, or end the first door");
+        }
+    }
+
+    // Ends the claim of hold_run_state_.  A later start or run reads each
+    // write of the door.
+    void release_run_state_() const noexcept { pipeline_run_.store_release(PipelineRun::stopped); }
+
+    // True when an object of the type reaches the state of the trace build or
+    // a BackgroundThread, or a class that the walk cannot read.
+    [[nodiscard]] static consteval bool reaches_build_state_(std::meta::info type) {
+        namespace refl = ::foundation::reflect;
+        return refl::any_component_satisfies<[](refl::TypeNode node) consteval {
+            const std::meta::info bare = refl::bare_type(node.type);
+            return bare == ^^TraceBuildState || bare == ^^BackgroundThread || refl::holds_unreadable_state(node);
+        },
+                                             refl::SpecializationRead::Instantiating>(type);
     }
 
 public:
@@ -1886,28 +1932,51 @@ public:
     // made none.
     using TraceBuild = ::fixy::Result<BuiltTrace, BuildRefusal>;
 
-    // The state of the trace build, for a test or a bench that builds a
-    // trace with no pipeline (build_trace_from).  The proof shows that no
-    // stage writes the state (prove_quiescence).
-    [[nodiscard]] TraceBuildState&
-    trace_build_state(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept
+    // Calls the body with the state of the trace build, for a test or a bench
+    // that builds a trace with no pipeline (build_trace_from), and gives the
+    // value of the body.  The proof shows that no stage writes the state
+    // (prove_quiescence), and the frame holds the run state until the body
+    // returns (hold_run_state_).
+    //
+    // No reference to the state leaves the frame.  Neither a capture nor the
+    // value of the body reaches the state, and neither reaches a
+    // BackgroundThread.  So a body names no door of this thread, and it can
+    // give the region of a build, which holds none of the state.
+    template <class Body>
+        requires std::is_nothrow_invocable_v<Body&, TraceBuildState&> && ::foundation::linear::HoldsNoLinearValue<Body>
+    std::invoke_result_t<Body&, TraceBuildState&>
+    with_trace_build_state(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, Body&& body) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
-        expect_quiescent_(proof);
-        return build_state_;
+        using Value = std::invoke_result_t<Body&, TraceBuildState&>;
+        static_assert(!reaches_build_state_(^^std::remove_cvref_t<Body>),
+                      "with_trace_build_state: a capture of the body reaches the state of the trace build, a "
+                      "BackgroundThread or a class that the walk cannot read.  Capture the parts that the body uses");
+        hold_run_state_(proof);
+        if constexpr (std::is_void_v<Value>) {
+            body(build_state_);
+            release_run_state_();
+        } else {
+            static_assert(!reaches_build_state_(^^Value),
+                          "with_trace_build_state: the value of the body reaches the state of the trace build, a "
+                          "BackgroundThread or a class that the walk cannot read.  Give the region or a plain value");
+            Value value = body(build_state_);
+            release_run_state_();
+            return value;
+        }
     }
 
     // Turns the ring entries of trace and their tensor metadata into a CSR
     // property graph in scratch, and the parts of its region, with the state
-    // of the trace build.  A test or a bench takes the state from
-    // trace_build_state, and the build stage gives its own state on each work
-    // item.  The caller owns the five arrays, which hold one element for each
-    // op: meta_starts, scope_hashes, callsite_hashes and depths are parallel
-    // to trace.  meta_starts holds MetaIndex::none() for an op with no tensor
-    // arguments.  The build reads meta_log and never writes its tail.  The
-    // graph and its CSR arrays go into scratch.  The ops, their tensor
-    // metadata, their side arrays and their slots go into the parts of the
-    // region, which own their memory.  The content hash of the region folds
-    // numerics, the numerics of the stream at the cut of the ops
+    // of the trace build.  A test or a bench takes the state in
+    // with_trace_build_state, and the build stage gives its own state on each
+    // work item.  The caller owns the five arrays, which hold one element for
+    // each op: meta_starts, scope_hashes, callsite_hashes and depths are
+    // parallel to trace.  meta_starts holds MetaIndex::none() for an op with
+    // no tensor arguments.  The build reads meta_log and never writes its
+    // tail.  The graph and its CSR arrays go into scratch.  The ops, their
+    // tensor metadata, their side arrays and their slots go into the parts of
+    // the region, which own their memory.  The content hash of the region
+    // folds numerics, the numerics of the stream at the cut of the ops
     // (BgBuildWork::numerics).
     [[nodiscard]] static TraceBuild
     build_trace_from(TraceBuildState& state, MetaLog const& meta_log, ::foundation::effects::Alloc a,
@@ -2000,10 +2069,13 @@ private:
 
     // Whether a run of the pipeline is active: start() stores running before
     // it starts the thread, and run_in_row claims running on the thread of its
-    // caller.  Each run stores stopped after the pipeline returns.
+    // caller.  Each run stores stopped after the pipeline returns.  A door that
+    // writes or reads the state of a stage with no pipeline stores held for
+    // the time of the door (hold_run_state_).
     enum class PipelineRun : uint8_t {
         stopped,
         running,
+        held,
     };
 
     // The end of a run of the pipeline.  The pipeline joined each stage, so
@@ -2014,10 +2086,10 @@ private:
         processed_events_.notify_all(ctx);
     }
 
-    // The thread that holds the BackgroundThread, start() and a run of
-    // run_in_row write the run state, and each flush reads it.  It has a line
-    // of its own.
-    alignas(64)::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
+    // start(), a run of run_in_row and each door that holds the run state
+    // write the run state, and each flush reads it.  It has a line of its own.
+    // It is mutable, because a const door holds the run state too.
+    alignas(64) mutable ::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
 
     // The event count of each flush that waits.  The publish stage notifies
     // it after each count of total_processed, and the pipeline thread after

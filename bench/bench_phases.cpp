@@ -43,32 +43,32 @@
 
 namespace crucible {
 
-// The door of this bench to the scratch of the build stage, which
-// BackgroundThread names as a friend.  The bench times each phase of a build
-// against that scratch, on a BackgroundThread that runs no pipeline.
+// The door of this bench to the scratch of the build stage, which the state of
+// the trace build names as a friend.  The bench times each phase of a build
+// against that scratch, in a frame of with_trace_build_state, on a
+// BackgroundThread that runs no pipeline.
 struct BuildScratchOfBench {
-    [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(BackgroundThread& bg) noexcept {
-        return bg.build_state_.scratch_map_;
+    using State = BackgroundThread::TraceBuildState;
+
+    [[nodiscard]] static ::fixy::MaskedArray<BackgroundThread::PtrSlot>& map(State& state) noexcept {
+        return state.scratch_map_;
     }
     // Empties each slot of the map through the frame door of the map, as the
     // build does when its generation wraps.
-    static void clear_map(BackgroundThread& bg) noexcept {
-        bg.build_state_.scratch_map_ =
-            ::fixy::with_mut(std::move(bg.build_state_.scratch_map_), [](auto slots) noexcept {
-                for (BackgroundThread::PtrSlot& slot : slots) {
-                    slot = BackgroundThread::PtrSlot{};
-                }
-            });
+    static void clear_map(State& state) noexcept {
+        state.scratch_map_ = ::fixy::with_mut(std::move(state.scratch_map_), [](auto slots) noexcept {
+            for (BackgroundThread::PtrSlot& slot : slots) {
+                slot = BackgroundThread::PtrSlot{};
+            }
+        });
     }
-    [[nodiscard]] static uint8_t& map_generation(BackgroundThread& bg) noexcept { return bg.build_state_.map_gen_; }
-    [[nodiscard]] static uint32_t slot_capacity(BackgroundThread const& bg) noexcept {
-        return bg.build_state_.slot_cap_max_.get();
-    }
+    [[nodiscard]] static uint8_t& map_generation(State& state) noexcept { return state.map_gen_; }
+    [[nodiscard]] static uint32_t slot_capacity(State const& state) noexcept { return state.slot_cap_max_.get(); }
     // The growth of the scratch buffers that the build makes after its scan.
     // The counts pass through as the build gives them.
     template <class... Counts>
-    static void ensure_buffers(BackgroundThread& bg, ::foundation::effects::Alloc alloc, Counts... counts) {
-        bg.build_state_.ensure_scratch_buffers(alloc, counts...);
+    static void ensure_buffers(State& state, ::foundation::effects::Alloc alloc, Counts... counts) {
+        state.ensure_scratch_buffers(alloc, counts...);
     }
 };
 
@@ -163,9 +163,9 @@ void check_ops_without_metas(::fixy::View<const TraceEntry> ops, ::fixy::View<co
 
 // Builds the trace graph of the recorded trace into the epoch, with the state
 // of the trace build of a BackgroundThread that runs no pipeline
-// (trace_build_state).  The build reads the arrays of the trace and does not
-// write them.  Each body of an epoch captures the state, the metadata log by
-// a const reference and the trace by a const reference, and not the
+// (with_trace_build_state).  The build reads the arrays of the trace and does
+// not write them.  Each body of an epoch captures the state, the metadata log
+// by a const reference and the trace by a const reference, and not the
 // BackgroundThread, so it reaches no arena of the BackgroundThread.
 BackgroundThread::TraceBuild build_recorded(BackgroundThread::TraceBuildState& state, MetaLog const& meta_log,
                                             const LoadedTrace& trace, NumericsHash numerics,
@@ -181,11 +181,10 @@ BackgroundThread::TraceBuild build_recorded(BackgroundThread::TraceBuildState& s
 // refills the MetaLog every call, then opens an epoch of the scratch arena,
 // runs the build, and ends the epoch. The build does not write the arrays
 // of the trace, so each sample measures the same work.
-bench::Report run_fullpipeline(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace) {
+bench::Report run_fullpipeline(BackgroundThread::TraceBuildState& state, crucible::test::OpenLog& meta_log,
+                               const LoadedTrace& trace, NumericsHash numerics) {
     TraceScratch scratch{compute_trace_block(trace)};
-    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = *meta_log.view();
-    NumericsHash const numerics = bg.numerics();
 
     bench::Run r{bench::format_name("build_trace (full pipeline, {} ops)", trace.num_ops)};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
@@ -205,7 +204,8 @@ bench::Report run_fullpipeline(BackgroundThread& bg, crucible::test::OpenLog& me
 // Each phase's rdtsc_start/end pair reads the TSC with LFENCE bracketing
 // (Intel "How to Benchmark..." 2010 §3.2.1, via bench::rdtsc_start/end).
 
-void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace,
+void bench_phases_toplevel(BackgroundThread::TraceBuildState& state, BackgroundThread::PlanTarget target,
+                           crucible::test::OpenLog& meta_log, const LoadedTrace& trace, NumericsHash numerics,
                            uint32_t iters) {
     bench::print("\n=== Top-level phase breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
@@ -214,9 +214,7 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
     TraceScratch scratch{arena_block};
     // The sweep of each plan takes its arrays from this scratch.
     PlanScratch plan_scratch{arena_block};
-    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = *meta_log.view();
-    NumericsHash const numerics = bg.numerics();
 
     // Warmup: 5 full pipeline runs to hit the cache.
     for (uint32_t w = 0; w < 5; w++) {
@@ -305,7 +303,6 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
 
             // The plan is in the arena of the slots.
             const DagRef<MemoryPlan> plan_storage = slot_arena.make<MemoryPlan>(A);
-            BackgroundThread::PlanTarget const target = bg.plan_target();
             ns_memplan += plan_scratch.arena.with_epoch(
                 [target, plan_storage, &slots_run, nspc](PlanScratch::Epoch& epoch) noexcept {
                     const uint64_t t0 = bench::rdtsc_start();
@@ -330,8 +327,8 @@ void bench_phases_toplevel(BackgroundThread& bg, crucible::test::OpenLog& meta_l
     }
 }
 
-void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_log, const LoadedTrace& trace,
-                           uint32_t iters) {
+void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::test::OpenLog& meta_log,
+                           const LoadedTrace& trace, NumericsHash numerics, uint32_t iters) {
     bench::print("\n=== Phase 2 sub-part breakdown ({} ops, {} iters) ===\n", trace.num_ops, iters);
 
     const uint32_t count = trace.num_ops;
@@ -340,9 +337,7 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
     // the heap, as build_trace does.  build_trace takes its graph from
     // build_scratch.
     TraceScratch build_scratch{compute_trace_block(trace)};
-    BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
     MetaLog const& log = *meta_log.view();
-    NumericsHash const numerics = bg.numerics();
 
     uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
     for (const TraceRing::Entry& entry : trace.entries) {
@@ -435,8 +430,8 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         const ::fixy::View<OpIndex const> producer_run = producer_arena_run.view();
         // A plain View of an arena run: the View carries no brand of its arena.
         const ::fixy::View<SlotId const> slot_run = slot_arena_run.view();
-        BuildScratchOfBench::ensure_buffers(bg, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
-        const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(bg),
+        BuildScratchOfBench::ensure_buffers(state, A, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{total_outputs});
+        const uint32_t slot_cap = ::fixy::min(BuildScratchOfBench::slot_capacity(state),
                                               ::fixy::max(uint32_t{256}, total_inputs + total_outputs));
         build_scratch.arena.with_epoch([slot_cap](TraceScratch::Epoch& epoch) noexcept {
             const auto slot_infos = epoch.array(A, slot_cap, BackgroundThread::SlotInfo{});
@@ -680,19 +675,19 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            BuildScratchOfBench::map_generation(bg)++;
-            if (BuildScratchOfBench::map_generation(bg) == 0) {
-                BuildScratchOfBench::clear_map(bg);
-                BuildScratchOfBench::map_generation(bg) = 1;
+            BuildScratchOfBench::map_generation(state)++;
+            if (BuildScratchOfBench::map_generation(state) == 0) {
+                BuildScratchOfBench::clear_map(state);
+                BuildScratchOfBench::map_generation(state) = 1;
             }
-            const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
+            const uint8_t local_gen = BuildScratchOfBench::map_generation(state);
 
             uint32_t i = 0;
             for (const TraceEntry& te : ref_ops) {
                 uint8_t port = 0;
                 for (const TensorMeta& m : te.output_metas()) {
                     if (m.data_ptr.value() != nullptr)
-                        (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(bg), local_gen,
+                        (void)BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state), local_gen,
                                                                crucible::storage_key(m), OpIndex{i}, port, SlotId{0});
                     ++port;
                 }
@@ -704,7 +699,7 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
             uint32_t dummy_edges = 0;
             for (const TraceEntry& te : ref_ops) {
                 for (const TensorMeta& m : te.input_metas()) {
-                    auto lookup = BackgroundThread::ptr_map_lookup(BuildScratchOfBench::map(bg), local_gen,
+                    auto lookup = BackgroundThread::ptr_map_lookup(BuildScratchOfBench::map(state), local_gen,
                                                                    crucible::storage_key(m));
                     if (lookup.op_index.is_valid()) dummy_edges++;
                 }
@@ -729,12 +724,12 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
         const ::fixy::View<TraceEntry const> ref_ops = ref.ops();
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            BuildScratchOfBench::map_generation(bg)++;
-            if (BuildScratchOfBench::map_generation(bg) == 0) {
-                BuildScratchOfBench::clear_map(bg);
-                BuildScratchOfBench::map_generation(bg) = 1;
+            BuildScratchOfBench::map_generation(state)++;
+            if (BuildScratchOfBench::map_generation(state) == 0) {
+                BuildScratchOfBench::clear_map(state);
+                BuildScratchOfBench::map_generation(state) = 1;
             }
-            const uint8_t local_gen = BuildScratchOfBench::map_generation(bg);
+            const uint8_t local_gen = BuildScratchOfBench::map_generation(state);
 
             const uint64_t t0 = bench::rdtsc_start();
 
@@ -746,7 +741,7 @@ void bench_phase2_subparts(BackgroundThread& bg, crucible::test::OpenLog& meta_l
                     const uint8_t this_port = port++;
                     if (m.data_ptr.value() == nullptr) continue;
                     auto result =
-                        BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(bg), local_gen,
+                        BackgroundThread::ptr_map_insert(BuildScratchOfBench::map(state), local_gen,
                                                          crucible::storage_key(m), OpIndex{i}, this_port, SlotId{0});
                     if (result.was_alias) aliases++;
                 }
@@ -916,12 +911,23 @@ int run_bench(::fixy::os::Args const& arguments) {
 
     BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
 
+    // A frame holds the state of the build for a whole section, so no sample
+    // of a section takes the claim of the run state.
+    NumericsHash const numerics = bg.numerics();
+    BackgroundThread::PlanTarget const target = bg.plan_target();
     bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
-    ::fixy::FixedArray<bench::Report, 1> const reports{run_fullpipeline(bg, meta_log, trace)};
+    ::fixy::FixedArray<bench::Report, 1> const reports{bg.with_trace_build_state(
+        bg.prove_quiescence(), [&meta_log, &trace, numerics](BackgroundThread::TraceBuildState& state) noexcept {
+            return run_fullpipeline(state, meta_log, trace, numerics);
+        })};
     bench::emit_reports_text(reports.view());
 
-    bench_phases_toplevel(bg, meta_log, trace, iters);
-    bench_phase2_subparts(bg, meta_log, trace, iters);
+    const auto run_phases = [target, &meta_log, &trace, numerics,
+                             iters](BackgroundThread::TraceBuildState& state) noexcept {
+        bench_phases_toplevel(state, target, meta_log, trace, numerics, iters);
+        bench_phase2_subparts(state, meta_log, trace, numerics, iters);
+    };
+    bg.with_trace_build_state(bg.prove_quiescence(), run_phases);
 
     bench::print("\nDone.\n");
     // The JSON tail comes last, because the reader reads each line after its

@@ -1106,6 +1106,12 @@ BackgroundThread::~BackgroundThread() = default;
 void BackgroundThread::start(::fixy::InitLoadCtx const& startup, int32_t rank, int32_t world_size,
                              uint64_t device_cap) {
     CRUCIBLE_PRE_MSG(!thread_.holds_thread(), "a start while the pipeline thread runs: stop the pipeline first");
+    // The claim comes before the writes below, so a start while a run of
+    // run_in_row is active, or while a door holds the run state, ends the
+    // process and writes nothing.  It also comes before the thread starts, so
+    // a flush after this start waits for the pipeline, and the thread stores
+    // stopped at its end.
+    claim_pipeline_run_();
     global_schema_table().seal(startup);
     global_ckernel_table().value()->seal(startup);
     rank_ = rank;
@@ -1122,12 +1128,7 @@ void BackgroundThread::start(::fixy::InitLoadCtx const& startup, int32_t rank, i
     // The lambda is the entry of the pipeline thread, so it takes the
     // background context of that thread from the door.  It borrows this
     // object through the door, which keeps the thread in thread_.  The
-    // process ends when the host has no resource for one more thread.  The
-    // start claims the run state before the thread starts, so a flush after
-    // this start waits for the pipeline, and the thread stores stopped at its
-    // end.  A start while a run of run_in_row is active ends the process at
-    // the claim.
-    claim_pipeline_run_();
+    // process ends when the host has no resource for one more thread.
     ::fixy::thread::mint_owner_thread<&BackgroundThread::thread_, &BackgroundThread::request_stop_>(
         startup, ::fixy::thread::ThreadOptions{}, *this,
         [](BackgroundThread& owner) noexcept {

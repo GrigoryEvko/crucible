@@ -60,6 +60,8 @@ namespace {
     return meta;
 }
 
+using BuildState = BackgroundThread::TraceBuildState;
+
 // One work item for build_trace_from: the parallel arrays of a run of ops.
 struct Work {
     static constexpr uint32_t CAPACITY = 8;
@@ -71,8 +73,8 @@ struct Work {
     ::fixy::FixedArray<crucible::OpDepth, CAPACITY> depths{};
 
     // The graph of the count ops of the work, in the epoch, with the state of
-    // the build of a thread that runs no pipeline (trace_build_state).  The
-    // build reads the first count elements of each array.
+    // the build of a thread that runs no pipeline (with_trace_build_state).
+    // The build reads the first count elements of each array.
     [[nodiscard]] BackgroundThread::TraceBuild build(BackgroundThread::TraceBuildState& state, MetaLog const& log,
                                                      crucible::NumericsHash numerics,
                                                      ::foundation::effects::Alloc alloc,
@@ -184,14 +186,16 @@ struct PublishedBytes {
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> built{};
-    scratch.arena.with_epoch(
-        [&work, &state, &log, numerics, alloc = test.alloc, &built](crucible::TraceScratch::Epoch& epoch) noexcept {
-            built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-                work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
-        });
+    const auto build = [&work, &log, numerics, &test, &scratch, &built](BuildState& state) noexcept {
+        scratch.arena.with_epoch(
+            [&work, &state, &log, numerics, alloc = test.alloc, &built](crucible::TraceScratch::Epoch& epoch) noexcept {
+                built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                    work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
+            });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
     BackgroundThread::BuiltRegion region = std::move(built).expect("the epoch built the region");
     PublishedBytes bytes{.built = region.arena_bytes()};
     bt.run_on_publish_stage(
@@ -218,9 +222,8 @@ void test_overflow_build_leaves_tail() {
     crucible::test::RigRing ring{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
-    // The bodies of the epochs capture the state of the build and the log by
-    // a const reference, and not the thread.
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
+    // The bodies of the frames and of the epochs capture the log by a const
+    // reference, and not the thread.
     MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
 
@@ -230,25 +233,27 @@ void test_overflow_build_leaves_tail() {
     overflowing.push_op_without_meta(2);
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    scratch.arena.with_epoch(
-        [&overflowing, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
-            const BackgroundThread::TraceBuild built = overflowing.build(state, log, numerics, alloc, epoch);
-            CRUCIBLE_TEST_ASSERT(kTest, built.err().expect("the overflow refuses the build")
-                                            == BackgroundThread::BuildRefusal::MetaLogOverflow);
-        });
+    const auto expect_overflow = [&log, numerics, &test, &scratch](BuildState& state, Work const& work) noexcept {
+        scratch.arena.with_epoch(
+            [&work, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
+                const BackgroundThread::TraceBuild built = work.build(state, log, numerics, alloc, epoch);
+                CRUCIBLE_TEST_ASSERT(kTest, built.err().expect("the overflow refuses the build")
+                                                == BackgroundThread::BuildRefusal::MetaLogOverflow);
+            });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), [&expect_overflow, &overflowing](BuildState& state) noexcept {
+        expect_overflow(state, overflowing);
+    });
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(metalog, 4);
-    scratch.arena.with_epoch([&overflowing_at_start, &state, &log, numerics,
-                              alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
-        const BackgroundThread::TraceBuild built_at_start =
-            overflowing_at_start.build(state, log, numerics, alloc, epoch);
-        CRUCIBLE_TEST_ASSERT(kTest, built_at_start.err().expect("the overflow refuses the build")
-                                        == BackgroundThread::BuildRefusal::MetaLogOverflow);
-    });
+    bt.with_trace_build_state(bt.prove_quiescence(),
+                              [&expect_overflow, &overflowing_at_start](BuildState& state) noexcept {
+                                  expect_overflow(state, overflowing_at_start);
+                              });
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u);
 
     ::fixy::check::pass(kTest, "  overflow_build_leaves_tail:                PASSED\n");
@@ -268,7 +273,6 @@ void test_unrecorded_nest_refuses_the_build() {
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     // The build reads no record of this log.
     MetaLog const& log = *rig.log_view();
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     crucible::NumericsHash const numerics = bt.numerics();
 
     Work raised;
@@ -276,22 +280,26 @@ void test_unrecorded_nest_refuses_the_build() {
     raised.depths.set(::fixy::index<0>(), crucible::OpDepth{1});
     raised.push_closing_entry(crucible::OpDepth{0});
     raised.push_op_with_scalars(1, 3, 4);
-    scratch.arena.with_epoch(
-        [&raised, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
-            const BackgroundThread::TraceBuild refused = raised.build(state, log, numerics, alloc, epoch);
-            CRUCIBLE_TEST_ASSERT(kTest, refused.err().expect("the closing entry refuses the build")
-                                            == BackgroundThread::BuildRefusal::UnrecordedNest);
-        });
 
     Work recorded;
     recorded.push_op_with_scalars(0, 1, 2);
     recorded.depths.set(::fixy::index<0>(), crucible::OpDepth{1});
     recorded.push_op_with_scalars(1, 3, 4);
-    scratch.arena.with_epoch(
-        [&recorded, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
-            CRUCIBLE_TEST_ASSERT(kTest, recorded.build(state, log, numerics, alloc, epoch).is_ok()
-                                            && "the work with no closing entry builds");
-        });
+
+    const auto build = [&raised, &recorded, &log, numerics, &test, &scratch](BuildState& state) noexcept {
+        scratch.arena.with_epoch(
+            [&raised, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
+                const BackgroundThread::TraceBuild refused = raised.build(state, log, numerics, alloc, epoch);
+                CRUCIBLE_TEST_ASSERT(kTest, refused.err().expect("the closing entry refuses the build")
+                                                == BackgroundThread::BuildRefusal::UnrecordedNest);
+            });
+        scratch.arena.with_epoch(
+            [&recorded, &state, &log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
+                CRUCIBLE_TEST_ASSERT(kTest, recorded.build(state, log, numerics, alloc, epoch).is_ok()
+                                                && "the work with no closing entry builds");
+            });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
 
     ::fixy::check::pass(kTest, "  unrecorded_nest_refuses_the_build:         PASSED\n");
 }
@@ -325,22 +333,25 @@ void test_publish_stage_releases_in_order() {
     // No pipeline runs, so each job runs on this thread, and the caller reads
     // the tail after each one.
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     MetaLog const& read_log = *log.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> first_built{};
-    scratch.arena.with_epoch([&first, &state, &read_log, numerics, alloc = test.alloc,
-                              &first_built](crucible::TraceScratch::Epoch& epoch) noexcept {
-        BackgroundThread::TraceBuild built = first.build(state, read_log, numerics, alloc, epoch);
-        CRUCIBLE_TEST_ASSERT(kTest, built.is_ok());
-        first_built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-            std::move(built).expect("the first work builds").region);
-    });
-    scratch.arena.with_epoch(
-        [&overflowing, &state, &read_log, numerics, alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
+    const auto build = [&first, &overflowing, &read_log, numerics, &test, &scratch,
+                        &first_built](BuildState& state) noexcept {
+        scratch.arena.with_epoch([&first, &state, &read_log, numerics, alloc = test.alloc,
+                                  &first_built](crucible::TraceScratch::Epoch& epoch) noexcept {
+            BackgroundThread::TraceBuild built = first.build(state, read_log, numerics, alloc, epoch);
+            CRUCIBLE_TEST_ASSERT(kTest, built.is_ok());
+            first_built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                std::move(built).expect("the first work builds").region);
+        });
+        scratch.arena.with_epoch([&overflowing, &state, &read_log, numerics,
+                                  alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
             const BackgroundThread::TraceBuild overflowed = overflowing.build(state, read_log, numerics, alloc, epoch);
             CRUCIBLE_TEST_ASSERT(kTest, overflowed.is_err());
         });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
     CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u);
 
     BackgroundThread::BuiltRegion first_region = std::move(first_built).expect("the first epoch built the region");
@@ -450,32 +461,35 @@ void test_built_graph_owns_its_metadata() {
         (void)work.push_op_with_meta(metalog, op);
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
-    scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
-                              &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
-        auto [graph, region_parts] = work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph");
+    const auto build = [&work, &log, numerics, &test, &scratch, &built_parts](BuildState& state) noexcept {
+        scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
+                                  &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
+            auto [graph, region_parts] =
+                work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph");
 
-        for (uint32_t op = 0; op < OPS; ++op) {
-            // The expect ends the process when the op holds no output metadata.
-            const crucible::TensorMeta& first_meta =
-                *graph->op(crucible::OpIndex{op})
-                     .output_metas()
-                     .get(0)
-                     .expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, !log.holds_record(first_meta)
-                                            && "an op of the graph points into the buffer of the metadata log");
-            CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
-            CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
-        }
-        // The ops of the graph are the ops of the region of the build.
-        CRUCIBLE_TEST_ASSERT(kTest,
-                             ::fixy::address_of(::fixy::to(graph->op(crucible::OpIndex{0})))
-                                 == ::fixy::address_of(region_parts.ops().get(0).expect("the region holds op 0")));
-        built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
-    });
+            for (uint32_t op = 0; op < OPS; ++op) {
+                // The expect ends the process when the op holds no output metadata.
+                const crucible::TensorMeta& first_meta =
+                    *graph->op(crucible::OpIndex{op})
+                         .output_metas()
+                         .get(0)
+                         .expect("a test reads an element at or past the count of its View");
+                CRUCIBLE_TEST_ASSERT(kTest, !log.holds_record(first_meta)
+                                                && "an op of the graph points into the buffer of the metadata log");
+                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+                CRUCIBLE_TEST_ASSERT(kTest, crucible::raw_tensor_dim(first_meta.sizes[0]) == 64);
+            }
+            // The ops of the graph are the ops of the region of the build.
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 ::fixy::address_of(::fixy::to(graph->op(crucible::OpIndex{0})))
+                                     == ::fixy::address_of(region_parts.ops().get(0).expect("the region holds op 0")));
+            built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
+        });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
     BackgroundThread::BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
     ::fixy::Address const first_op_address =
         ::fixy::address_of(parts.ops().get(0).expect("the region of the build holds op 0"));
@@ -518,23 +532,26 @@ void test_build_and_release_pass_two_to_the_32() {
     CRUCIBLE_TEST_ASSERT(kTest, run_end == uint64_t{BELOW_WRAP} + OPS);
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     MetaLog const& log = *metalog.view();
     crucible::NumericsHash const numerics = bt.numerics();
     ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
-    scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
-                              &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
-        auto [graph, region_parts] = work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph");
-        for (uint32_t op = 0; op < OPS; ++op) {
-            const crucible::TensorMeta& first_meta =
-                *graph->op(crucible::OpIndex{op})
-                     .output_metas()
-                     .get(0)
-                     .expect("a test reads an element at or past the count of its View");
-            CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
-        }
-        built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
-    });
+    const auto build = [&work, &log, numerics, &test, &scratch, &built_parts](BuildState& state) noexcept {
+        scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
+                                  &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
+            auto [graph, region_parts] =
+                work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph");
+            for (uint32_t op = 0; op < OPS; ++op) {
+                const crucible::TensorMeta& first_meta =
+                    *graph->op(crucible::OpIndex{op})
+                         .output_metas()
+                         .get(0)
+                         .expect("a test reads an element at or past the count of its View");
+                CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
+            }
+            built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
+        });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
     BackgroundThread::BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
 
     bt.run_on_publish_stage(
@@ -561,7 +578,6 @@ void test_scalars_of_an_op_with_no_tensors() {
     const auto test = ::foundation::effects::testing::test();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     MetaLog const& log = *rig.log_view();
-    BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
     crucible::NumericsHash const numerics = bt.numerics();
 
     Work five_six;
@@ -570,13 +586,17 @@ void test_scalars_of_an_op_with_no_tensors() {
     five_seven.push_op_with_scalars(0, 5, 7);
     ::fixy::Option<BackgroundThread::BuiltRegion> built_a{};
     ::fixy::Option<BackgroundThread::BuiltRegion> built_b{};
-    scratch.arena.with_epoch([&five_six, &five_seven, &state, &log, numerics, alloc = test.alloc, &built_a,
-                              &built_b](crucible::TraceScratch::Epoch& epoch) noexcept {
-        built_a = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-            five_six.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
-        built_b = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-            five_seven.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
-    });
+    const auto build = [&five_six, &five_seven, &log, numerics, &test, &scratch, &built_a,
+                        &built_b](BuildState& state) noexcept {
+        scratch.arena.with_epoch([&five_six, &five_seven, &state, &log, numerics, alloc = test.alloc, &built_a,
+                                  &built_b](crucible::TraceScratch::Epoch& epoch) noexcept {
+            built_a = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                five_six.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
+            built_b = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                five_seven.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
+        });
+    };
+    bt.with_trace_build_state(bt.prove_quiescence(), build);
     BackgroundThread::BuiltRegion const region_a = std::move(built_a).expect("the epoch built the first region");
     BackgroundThread::BuiltRegion const region_b = std::move(built_b).expect("the epoch built the second region");
 

@@ -146,23 +146,25 @@ struct Work {
     void first_ops(::fixy::FixedArray<T, CAPACITY> const&&) const =
         delete("the View borrows the column, and a temporary ends with the full expression");
 
-    // The region of the work.  The body of the epoch captures the state of
-    // the build and the log by a const reference, and not the thread.
+    // The region of the work.  The bodies of the frame and of the epoch capture
+    // the log by a const reference, and not the thread.
     [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt, MetaLog const& meta_log) const {
-        crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-        BackgroundThread::TraceBuildState& state = bt.trace_build_state(bt.prove_quiescence());
         crucible::NumericsHash const numerics = bt.numerics();
-        ::fixy::Option<BackgroundThread::BuiltRegion> region{};
-        scratch.arena.with_epoch([this, &state, &meta_log, numerics,
-                                  &region](crucible::TraceScratch::Epoch& epoch) noexcept {
-            auto built =
-                BackgroundThread::build_trace_from(state, meta_log, ::foundation::effects::testing::test().alloc, epoch,
-                                                   first_ops(trace), first_ops(meta_starts), first_ops(scope_hashes),
-                                                   first_ops(callsite_hashes), first_ops(depths), numerics);
-            region = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-                std::move(built).expect("a work with the metadata of each op builds").region);
-        });
-        return std::move(region).expect("the epoch built the region");
+        return bt.with_trace_build_state(
+            bt.prove_quiescence(), [this, &meta_log, numerics](BackgroundThread::TraceBuildState& state) noexcept {
+                crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
+                ::fixy::Option<BackgroundThread::BuiltRegion> region{};
+                scratch.arena.with_epoch(
+                    [this, &state, &meta_log, numerics, &region](crucible::TraceScratch::Epoch& epoch) noexcept {
+                        auto built = BackgroundThread::build_trace_from(
+                            state, meta_log, ::foundation::effects::testing::test().alloc, epoch, first_ops(trace),
+                            first_ops(meta_starts), first_ops(scope_hashes), first_ops(callsite_hashes),
+                            first_ops(depths), numerics);
+                        region = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                            std::move(built).expect("a work with the metadata of each op builds").region);
+                    });
+                return std::move(region).expect("the epoch built the region");
+            });
     }
 };
 

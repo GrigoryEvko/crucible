@@ -4,6 +4,11 @@
 // process for the proof of another BackgroundThread, for a proof while the
 // pipeline thread runs, and while a run of run_in_row is active.
 //
+// A door that reads or writes the state of a stage with no pipeline claims the
+// run state until it returns.  So a start, a run and a second such door end the
+// process while a frame of with_trace_build_state holds the state, and a flush
+// finds no pipeline.
+//
 // A thread that holds the publish stage runs a job or a region callback.  A
 // wait of that thread on its own stage has no end, so a nested job and a flush
 // end the process.
@@ -43,17 +48,19 @@ using crucible::MetaIndex;
 using crucible::TraceRing;
 using crucible::test::TraceRig;
 using Proof = ::fixy::thread::QuiescenceProof<BackgroundThread>;
+using BuildState = BackgroundThread::TraceBuildState;
 
 constexpr uint64_t kOps = 40;
 
 constexpr ::fixy::TextView kNotItsProof{"fatal invariant failed: proof.holds_part(thread_) && proof.is_quiescent()"};
-constexpr ::fixy::TextView kActiveRun{"fatal invariant failed: pipeline_run_.load_acquire() == PipelineRun::stopped"};
+constexpr ::fixy::TextView kActiveRun{"a door of the state of a stage while a run of the pipeline is active"};
+constexpr ::fixy::TextView kHeldState{"a run of the pipeline while another run of it is active, or while a door holds"};
 constexpr ::fixy::TextView kOwnStage{"fatal invariant failed: !holds_stage_on_this_thread_()"};
 
 // The doors that take a proof of quiescence.
 enum class ProofDoor : uint8_t {
     run_in_row,
-    trace_build_state,
+    with_trace_build_state,
     detector_history_count,
     pending_op_count,
     scratch_retained_bytes,
@@ -87,19 +94,22 @@ struct Subject {
 
 void call_door(BackgroundThread& bt, Proof const& proof, ProofDoor door) noexcept {
     if (door == ProofDoor::run_in_row) return bt.run_in_row(proof, background());
-    if (door == ProofDoor::trace_build_state) return static_cast<void>(bt.trace_build_state(proof));
+    if (door == ProofDoor::with_trace_build_state) return bt.with_trace_build_state(proof, [](BuildState&) noexcept {});
     if (door == ProofDoor::detector_history_count) return static_cast<void>(bt.detector_history_count(proof));
     if (door == ProofDoor::scratch_retained_bytes) return static_cast<void>(bt.scratch_retained_bytes(proof));
     static_cast<void>(bt.pending_op_count(proof));
 }
 
-// A proof of its own object, taken while no pipeline runs, opens each door.
+// A proof of its own object, taken while no pipeline runs, opens each door,
+// and each door gives the run state back.  A frame gives the value of its body.
 // The stop signal ends the run of run_in_row.
 void test_own_proof_opens_each_door(BackgroundThread& bt) {
     Proof const proof = bt.prove_quiescence();
     CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(proof) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count(proof) == 0);
-    call_door(bt, proof, ProofDoor::trace_build_state);
+    const uint64_t given = bt.with_trace_build_state(proof, [](BuildState&) noexcept { return kOps; });
+    CRUCIBLE_TEST_ASSERT(kTest, given == kOps);
+    call_door(bt, proof, ProofDoor::with_trace_build_state);
     call_door(bt, proof, ProofDoor::scratch_retained_bytes);
     bt.stop_requested.signal();
     call_door(bt, proof, ProofDoor::run_in_row);
@@ -161,6 +171,61 @@ void test_active_run_ends_the_process(TraceRig& rig, BackgroundThread& bt, Proof
         kActiveRun);
 }
 
+// Runs the body on a second thread while a frame of the first thread holds the
+// state of the trace build.  The frame ends after the body returns.
+template <class Body>
+void run_beside_a_frame(BackgroundThread& bt, Body const& body) {
+    ::fixy::Atomic<bool> is_held{false};
+    ::fixy::Atomic<bool> has_returned{false};
+    auto hold = [&bt, &is_held, &has_returned]() noexcept {
+        bt.with_trace_build_state(bt.prove_quiescence(), [&is_held, &has_returned](BuildState&) noexcept {
+            is_held.store_release(true);
+            while (!has_returned.load_acquire()) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+        });
+    };
+    auto use = [&body, &is_held, &has_returned]() noexcept {
+        while (!is_held.load_acquire()) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
+        body();
+        has_returned.store_release(true);
+    };
+    ::fixy::BgLoadCtx const bg = background();
+    static_cast<void>(::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(hold), std::move(use)));
+}
+
+// A start beside a frame ends the process at its claim of the run state.
+void test_start_beside_a_frame_ends_the_process(BackgroundThread& bt) {
+    ::fixy::check::expect_dies(
+        kTest, [&bt] noexcept { run_beside_a_frame(bt, [&bt]() noexcept { bt.start(startup()); }); }, kHeldState);
+}
+
+// Each door that takes a proof ends the process beside a frame.  The proof is
+// right, because no pipeline thread runs.  The stop signal ends a run that a
+// door with no claim would start.
+void test_door_beside_a_frame_ends_the_process(BackgroundThread& bt, ProofDoor door, ::fixy::TextView text) {
+    ::fixy::check::expect_dies(
+        kTest,
+        [&bt, door] noexcept {
+            bt.stop_requested.signal();
+            run_beside_a_frame(bt, [&bt, door]() noexcept { call_door(bt, bt.prove_quiescence(), door); });
+        },
+        text);
+}
+
+// A frame is no run of the pipeline, so a flush beside it does not wait for
+// its end.  The ring holds an op that no pipeline reads.
+void test_flush_beside_a_frame_does_not_wait(TraceRig& rig, BackgroundThread& bt) {
+    CRUCIBLE_TEST_ASSERT(kTest, rig.append_entry(TraceRing::Entry{}, MetaIndex::none()));
+    run_beside_a_frame(bt, [&bt]() noexcept {
+        CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_err_and([](crucible::FlushRefusal why) noexcept {
+            return why == crucible::FlushRefusal::pipeline_stopped;
+        }));
+    });
+}
+
 // The two waits of a thread on its own publish stage.
 enum class OwnStageWait : uint8_t {
     nested_job,
@@ -194,22 +259,29 @@ int main() {
     TraceRig other_rig{};
     BackgroundThread other{::foundation::effects::testing::test().alloc, other_rig.ring_side(), other_rig.log_side()};
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::run_in_row);
-    test_foreign_proof_ends_the_process(bt, other, ProofDoor::trace_build_state);
+    test_foreign_proof_ends_the_process(bt, other, ProofDoor::with_trace_build_state);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::detector_history_count);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::pending_op_count);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::scratch_retained_bytes);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::run_in_row);
-    test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::trace_build_state);
+    test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::with_trace_build_state);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::detector_history_count);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::pending_op_count);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::scratch_retained_bytes);
-    test_active_run_ends_the_process(rig, bt, ProofDoor::trace_build_state);
+    test_active_run_ends_the_process(rig, bt, ProofDoor::with_trace_build_state);
     test_active_run_ends_the_process(rig, bt, ProofDoor::detector_history_count);
     test_active_run_ends_the_process(rig, bt, ProofDoor::pending_op_count);
     test_active_run_ends_the_process(rig, bt, ProofDoor::scratch_retained_bytes);
+    test_start_beside_a_frame_ends_the_process(bt);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::run_in_row, kHeldState);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::with_trace_build_state, kActiveRun);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::detector_history_count, kActiveRun);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::pending_op_count, kActiveRun);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::scratch_retained_bytes, kActiveRun);
     test_wait_on_the_own_stage_ends_the_process(OwnStageWait::nested_job);
     test_wait_on_the_own_stage_ends_the_process(OwnStageWait::flush);
     test_own_proof_opens_each_door(bt);
+    test_flush_beside_a_frame_does_not_wait(rig, bt);
     ::fixy::check::pass(kTest, "test_background_thread_quiescence: all passed\n");
     return 0;
 }

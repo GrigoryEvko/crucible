@@ -2249,11 +2249,21 @@ crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
   "Capture the parts that the body uses, not the whole object")
 # A build of a trace outside the pipeline writes the state of the trace build
-# of the build stage, so the door of that state takes the proof that no
-# pipeline runs.
+# of the build stage, so the frame of that state takes the proof that no
+# pipeline runs.  No reference to the state leaves the frame, and no body of
+# the frame reaches a BackgroundThread.
 crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
-  "no matching function for call to .crucible::BackgroundThread::trace_build_state\\(\\)"
-  "candidate expects 1 argument, 0 provided")
+  "no matching function for call to .crucible::BackgroundThread::with_trace_build_state\\("
+  "candidate expects 2 arguments, 1 provided")
+crucible_neg_compile_test(neg_trace_build_state_leaves_as_the_value
+  "static assertion failed: with_trace_build_state: the value of the body reaches the state of the trace build"
+  "Give the region or a plain value")
+crucible_neg_compile_test(neg_trace_build_state_leaves_through_a_capture
+  "static assertion failed: with_trace_build_state: a capture of the body reaches the state of the trace build"
+  "Capture the parts that the body uses")
+crucible_neg_compile_test(neg_trace_build_frame_starts_the_pipeline
+  "static assertion failed: with_trace_build_state: a capture of the body reaches the state of the trace build"
+  "Capture the parts that the body uses")
 # The bytes of the two scratch arenas belong to two stages, so the read of them
 # takes the proof that no pipeline runs.
 crucible_neg_compile_test(neg_background_thread_scratch_bytes_without_a_proof

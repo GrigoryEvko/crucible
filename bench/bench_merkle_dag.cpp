@@ -415,23 +415,27 @@ int run_bench(::fixy::os::Args const& arguments) {
             depth_batch.view().window(0, n).expect("the drain fills at most the batch");
 
         TraceScratch scratch{Bytes{size_t{1} << 20}};
-        // No pipeline of the bench runs, so the proof stays valid for each
-        // iteration.  The body captures the state of the build and the
+        // One frame holds the state of the build for each iteration, so no
+        // iteration takes the claim of the run state.  The bodies capture the
         // metadata log by a const reference, and not the BackgroundThread.
-        BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
         MetaLog const& log = *meta_log.view();
         NumericsHash const numerics = bg.numerics();
-        return bench::run("build_trace (481 ops, full pipeline)", [&] {
-            repopulate_meta_log();
-            scratch.arena.with_epoch([&state, &log, alloc = test.alloc, drained, drained_metas, drained_scopes,
-                                      drained_callsites, drained_depths,
-                                      numerics](TraceScratch::Epoch& epoch) noexcept {
-                auto built =
-                    BackgroundThread::build_trace_from(state, log, alloc, epoch, drained, drained_metas, drained_scopes,
-                                                       drained_callsites, drained_depths, numerics);
-                bench::do_not_optimize(built);
+        const auto measure = [&repopulate_meta_log, &scratch, &log, &test, drained, drained_metas, drained_scopes,
+                              drained_callsites, drained_depths,
+                              numerics](BackgroundThread::TraceBuildState& state) noexcept {
+            return bench::run("build_trace (481 ops, full pipeline)", [&] {
+                repopulate_meta_log();
+                scratch.arena.with_epoch([&state, &log, alloc = test.alloc, drained, drained_metas, drained_scopes,
+                                          drained_callsites, drained_depths,
+                                          numerics](TraceScratch::Epoch& epoch) noexcept {
+                    auto built =
+                        BackgroundThread::build_trace_from(state, log, alloc, epoch, drained, drained_metas,
+                                                           drained_scopes, drained_callsites, drained_depths, numerics);
+                    bench::do_not_optimize(built);
+                });
             });
-        });
+        };
+        return bg.with_trace_build_state(bg.prove_quiescence(), measure);
     }());
 
     // ── Optional: build_trace from real .crtrace argv paths ──────────
@@ -472,23 +476,26 @@ int run_bench(::fixy::os::Args const& arguments) {
             constexpr ::fixy::ArenaBlockSize kFloor{Bytes{kFloorBytes}};
             const size_t op_bytes = static_cast<size_t>(trace.num_ops) * 256;
             TraceScratch scratch{kFloor.plus(Bytes{op_bytes - ::fixy::min(op_bytes, kFloorBytes)})};
-            // The body captures the state of the build and the metadata log
-            // by a const reference, and not the BackgroundThread.
-            BackgroundThread::TraceBuildState& state = bg.trace_build_state(bg.prove_quiescence());
+            // The bodies capture the metadata log by a const reference, and
+            // not the BackgroundThread.
             MetaLog const& log = *meta_log.view();
             NumericsHash const numerics = bg.numerics();
 
-            return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
-                const LoadedTrace& loaded = trace;
-                bench::refill_meta_log(meta_log, loaded);
-                scratch.arena.with_epoch(
-                    [&state, &log, alloc = test.alloc, &loaded, numerics](TraceScratch::Epoch& epoch) noexcept {
+            const auto measure = [&meta_log, &log, &scratch, &trace, &test, path_view,
+                                  numerics](BackgroundThread::TraceBuildState& state) noexcept {
+                return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
+                    const LoadedTrace& loaded = trace;
+                    bench::refill_meta_log(meta_log, loaded);
+                    scratch.arena.with_epoch([&state, &log, alloc = test.alloc, &loaded,
+                                              numerics](TraceScratch::Epoch& epoch) noexcept {
                         auto built = BackgroundThread::build_trace_from(
                             state, log, alloc, epoch, loaded.entries.view(), loaded.meta_starts.view(),
                             loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), numerics);
                         bench::do_not_optimize(built);
                     });
-            });
+                });
+            };
+            return bg.with_trace_build_state(bg.prove_quiescence(), measure);
         }());
     }
 
