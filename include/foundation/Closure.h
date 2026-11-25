@@ -41,6 +41,10 @@
 //     calls_one_object_concurrently
 //                  the door calls one body object from many threads at the
 //                  same time.
+//     lends_runs   Exclusive for a door that lends each body a run that only
+//                  this body writes, such as a parallel loop over the shards
+//                  of a region.  Such a door takes the runs that its bodies
+//                  read as inputs of its own, in reads().
 //
 // Rules (check_closure)
 //     1. A body that owns a linear value (is_linear_type of
@@ -69,6 +73,13 @@
 //        OwnValue field is SendableBeside there, not only Sendable: a value
 //        that refers to an object of the frame, such as a View, refers only
 //        to a Synchronized object.
+//     9. A door that lends exclusive runs (RunLoan::Exclusive) asks the facts
+//        of rule 8 of each field.  A borrow of a plain object in the body can
+//        name an element of a run that a second body writes while this body
+//        reads it.  A run has no name in the type of a View, of a Ref or of a
+//        reference, so the check cannot see that the two runs are apart.  The
+//        door reads the runs of its inputs itself, and it knows each run that
+//        it lends, so a body takes such a run from reads() of the door.
 //     The properties are those of foundation/Transfer.h.
 //
 // Cost
@@ -111,6 +122,14 @@ enum class Crossing : unsigned char {
     BesideCaller = 4,
 };
 
+// Which runs a door lends to its bodies (the policy of a door).
+enum class RunLoan : unsigned char {
+    // The door lends no run, or a run that no body writes.
+    None = 0,
+    // The door lends each body a run that only this body writes.
+    Exclusive = 1,
+};
+
 // The policy of a door (the policy of a door).
 struct DoorPolicy {
     Crossing crossing = Crossing::SameThread;
@@ -120,6 +139,7 @@ struct DoorPolicy {
     // the raw probe of fixy/os/ThreadTasks.h does.  Rules 1, 3 and 4 still
     // hold at such a door.
     bool asks_transfer_facts = true;
+    RunLoan lends_runs = RunLoan::None;
 };
 
 // The reason of a refusal (the rules).
@@ -334,7 +354,8 @@ private:
 
     // The cause and the fix of the refusal of one field (the rules).  part is
     // the first part of the target that refuses, or a null reflection.
-    consteval void explain_(CaptureFact const& fact, std::meta::info part, Crossing crossing) noexcept {
+    consteval void explain_(CaptureFact const& fact, std::meta::info part, DoorPolicy policy) noexcept {
+        const bool lends_exclusive_runs = policy.lends_runs == RunLoan::Exclusive;
         switch (reason_) {
             case Refusal::CapturedContext:
                 append_("A context names the thread of its owner.  Take the context that the door gives to the body "
@@ -358,13 +379,25 @@ private:
                         "type with no unsynchronized part");
                 break;
             case Refusal::NotSendableBeside:
-                append_("The value moves to a thread that runs beside the caller, and its type is not "
-                        "SendableBeside.  The caller can write each object that the value refers to while the body "
-                        "reads it.  Capture a value that owns its parts, or one that refers only to an Atomic or a "
-                        "channel");
+                if (lends_exclusive_runs) {
+                    append_("The value can refer to a run that a second body of this door writes while this body "
+                            "reads it, and its type is not SendableBeside.  Give the run to the door in reads(), "
+                            "which lends the body a View of it, or capture a value that refers only to an Atomic "
+                            "or a channel");
+                } else {
+                    append_("The value moves to a thread that runs beside the caller, and its type is not "
+                            "SendableBeside.  The caller can write each object that the value refers to while the "
+                            "body reads it.  Capture a value that owns its parts, or one that refers only to an "
+                            "Atomic or a channel");
+                }
                 break;
             case Refusal::NotSynchronized:
-                if (crossing == Crossing::BesideCaller) {
+                if (lends_exclusive_runs) {
+                    append_("The object of this borrow can lie in a run that a second body of this door writes "
+                            "while this body reads it, also through a borrow to const.  Give the run to the door in "
+                            "reads(), which lends the body a View of it, capture a plain value by value, or use an "
+                            "Atomic or a channel");
+                } else if (policy.crossing == Crossing::BesideCaller) {
                     append_("The caller runs at the same time as the body, and it can write the object that the "
                             "body uses through this borrow, also a borrow to const.  Capture it by value, or use an "
                             "Atomic or a channel");
@@ -425,11 +458,11 @@ namespace detail {
 }
 
 // The property that the rules ask of one field at a door on another thread,
-// as the refusal that it gives (rules 5 to 8).
+// as the refusal that it gives (rules 5 to 9).
 [[nodiscard]] consteval Refusal asked_property(CaptureFact const& fact, DoorPolicy policy) {
-    const bool is_beside = policy.crossing == Crossing::BesideCaller;
+    const bool is_beside = policy.crossing == Crossing::BesideCaller || policy.lends_runs == RunLoan::Exclusive;
     if (fact.kind == CaptureKind::OwnValue) return is_beside ? Refusal::NotSendableBeside : Refusal::NotSendable;
-    // Rule 8.
+    // Rules 8 and 9.
     if (is_beside) return Refusal::NotSynchronized;
     if (fact.kind == CaptureKind::BorrowConst) return Refusal::NotShareable;
     const bool is_unique_borrow = policy.crossing == Crossing::SoleThread && !policy.calls_one_object_concurrently;
@@ -456,7 +489,7 @@ struct FieldRefusal {
         return FieldRefusal{Refusal::Borrow};
     }
     if (!policy.asks_transfer_facts) return FieldRefusal{};
-    // Rules 5 to 8.
+    // Rules 5 to 9.
     const Refusal asked = asked_property(fact, policy);
     const std::meta::info part = refusing_part(fact.target, asked);
     if (part != std::meta::info{}) return FieldRefusal{asked, part};
@@ -508,7 +541,7 @@ struct FieldRefusal {
         const detail::FieldRefusal refusal = detail::refusal_of_field(fact, policy);
         if (refusal.reason != Refusal::None) {
             verdict.refuse_field_(refusal.reason, index, door, fact);
-            verdict.explain_(fact, refusal.part, policy.crossing);
+            verdict.explain_(fact, refusal.part, policy);
             return verdict;
         }
         ++index;
