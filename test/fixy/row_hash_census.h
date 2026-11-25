@@ -1350,6 +1350,8 @@ inline constexpr StatedZero kZeros[] = {
      "an inline list of at most N elements: it holds storage and makes no claim about what the elements hold"},
     {^^::foundation::core::GrowList,
      "a list of elements on the heap that grows: it holds storage and makes no claim about what the elements hold"},
+    {^^::foundation::core::Sealed,
+     "an object that no code changes after its construction: it holds the object and makes no claim about it"},
     {^^::foundation::core::SegmentList,
      "an append-only list of elements in segments on the heap: it holds storage and makes no claim about what the "
      "elements hold"},

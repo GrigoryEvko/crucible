@@ -94,7 +94,9 @@
 //   A read writes no state of the list, so a list is Shareable when its
 //   element is (by_arguments{} of foundation/Transfer.h).  The bodies of
 //   run_joined of fixy/os/ThreadTasks.h read one list through references to
-//   const, while the caller waits for them.
+//   const, while the caller waits for them.  A body of run_beside reads a
+//   Sealed of the list (foundation/core/Sealed.h), because the caller that
+//   runs beside it can append to the list.
 //
 // A list owns its segments alone, on the owner core of
 // foundation/core/Owner.h.  A move gives the segments to the target and

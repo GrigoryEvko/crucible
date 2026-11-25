@@ -5137,6 +5137,24 @@ foundation_neg_compile_test(neg_core_segment_list_run_after_assignment
 foundation_neg_compile_test(neg_core_segment_list_ref_across_append_of_borrows
   "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:19:[0-9]+: error: this use reads a borrow of list in element after a call of foundation::core::SegmentList::append with list"
   "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:18:")
+# A Sealed gives its object only as a const object, so no code appends to a
+# sealed list.  It does not move, a temporary gives no object, and an object
+# that a read writes and a linear object do not seal.  test/fixy has the test.
+foundation_neg_compile_test(neg_core_sealed_list_append
+  "no matching function for call to .foundation::core::SegmentList<int>::append\\(foundation::core::Alloc, int\\) const."
+  "passing .const foundation::core::SegmentList<int>. as .this. argument discards qualifiers")
+foundation_neg_compile_test(neg_core_sealed_moved
+  "use of deleted function .foundation::core::Sealed<T>::Sealed\\(const foundation::core::Sealed<T>&\\)"
+  "a move would write the object that a reader on another thread reads")
+foundation_neg_compile_test(neg_core_sealed_read_of_temporary
+  "use of deleted function .void foundation::core::Sealed<T>::operator\\*\\(\\) &&"
+  "the object of a temporary Sealed dangles at the end of the full expression")
+foundation_neg_compile_test(neg_core_sealed_of_lent_list
+  "template constraint failure for .template<class T>  requires  SealableObject<T> class foundation::core::Sealed."
+  "required for the satisfaction of .Shareable<T>. \\[with T = foundation::core::GrowList<int>\\]")
+foundation_neg_compile_test(neg_core_sealed_of_linear_list
+  "template constraint failure for .template<class T>  requires  SealableObject<T> class foundation::core::Sealed."
+  "required for the satisfaction of .DroppablePayload<T>. \\[with T = foundation::core::SegmentList<")
 
 # A BitSet and a HeapBitSet set, reset and test each index, walk the indexes
 # in their order, and agree with a model of plain flags at counts that end

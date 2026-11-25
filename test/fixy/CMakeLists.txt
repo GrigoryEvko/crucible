@@ -6061,6 +6061,9 @@ fixy_test(test_check_family)
 # freeze and the end of a growable owner from a callee of a frame door end
 # the process, each in a child process of expect_dies.
 fixy_test(test_core_grow_lend)
+# The sealed object of foundation/core/Sealed.h: threads beside the owner read
+# a sealed list while the owner reads it too.
+fixy_test(test_core_sealed)
 fixy_neg_compile_test(neg_check_expect_dies_without_test_context
   "no matching function for call to .expect_dies"
   "TestContext")
@@ -7626,6 +7629,9 @@ fixy_neg_compile_test(neg_thread_raw_probe_reason_of_no_literal
 # the body reads them.
 fixy_neg_compile_test(neg_thread_run_beside_reads_through_a_const_borrow
   "static assertion failed: run_beside: the body captures .read_limit. \\(field [_a-z]+, type const int&\\)"
+  "The caller runs at the same time as the body")
+fixy_neg_compile_test(neg_thread_run_beside_reads_an_unsealed_list
+  "static assertion failed: run_beside: the body captures .read_list. \\(field [_a-z]+, type const foundation::core::SegmentList<int>&\\)"
   "The caller runs at the same time as the body")
 fixy_neg_compile_test(neg_thread_run_beside_each_writes_a_plain_int
   "static assertion failed: run_beside_each: the body captures .count. \\(field [_a-z]+, type int&\\)"
