@@ -7,8 +7,8 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/SegmentList.h>
+#include <foundation/core/SmallList.h>
 #include <foundation/core/Verbs.h>
 
 #include <concepts>
@@ -64,7 +64,7 @@ struct ThrowingMove final {
 static_assert(SealableObject<int> && SealableObject<HeapArray<int>> && SealableObject<SegmentList<int>>);
 static_assert(SealableObject<SegmentList<SegmentList<int>>>);
 static_assert(!SealableObject<LinearToken> && !SealableObject<SegmentList<LinearToken>>);
-static_assert(!SealableObject<GrowList<int>> && !SealableObject<CountsItsReads> && !SealableObject<ThrowingMove>);
+static_assert(!SealableObject<SmallList<int, 2>> && !SealableObject<CountsItsReads> && !SealableObject<ThrowingMove>);
 static_assert(!SealableObject<SegmentList<int*>> && !SealableObject<int const> && !SealableObject<int[2]>);
 static_assert(!SealableObject<int&>);
 

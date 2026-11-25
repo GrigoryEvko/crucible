@@ -484,10 +484,10 @@ static_assert(std::is_same_v<decltype(write_each(std::declval<ViewMut<int, Uniqu
 // protocol of the Choice family, and its check reads it.
 inline constexpr TextView region_names{
     "View ViewMut Index StaticIndex IndexRange BrandedIndex TextView CText FixedText GrowText HeapText FixedArray "
-    "FixedList HeapArray GrowList HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
+    "FixedList HeapArray HeapRing RingView FixedTable HeapTable Full Held LengthMismatch dynamic_extent "
     "element_type brand_type extent capacity window split_at prefix prefix_up_to suffix get_mut indices index parallel "
     "check mask raw rest take take_first take_last expect_empty clear with_view with_element with_mut build_at "
-    "append_self copy_at freeze is_at_end remaining set exchange update insert remove drain fill copy_from copy_window "
+    "append_self freeze is_at_end remaining set exchange update insert remove drain fill copy_from copy_window "
     "next_cyclic prev_cyclic Ranged lo hi constant narrow"};
 
 // The brand that the check of a branded type names.  A program gets each
@@ -514,8 +514,6 @@ CRUCIBLE_CLOSED_SURFACE(region_names, HeapArray<std::uint8_t, 64>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<int, 4>);
 CRUCIBLE_CLOSED_SURFACE(region_names, FixedList<Record, 2>);
 CRUCIBLE_CLOSED_SURFACE(region_names, Full<int>);
-CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<int>);
-CRUCIBLE_CLOSED_SURFACE(region_names, GrowList<Record>);
 CRUCIBLE_CLOSED_SURFACE(region_names, GrowText);
 CRUCIBLE_CLOSED_SURFACE(region_names, HeapText);
 CRUCIBLE_CLOSED_SURFACE(region_names, BrandedIndex<SurfaceBrand>);

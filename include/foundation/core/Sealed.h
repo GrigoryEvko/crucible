@@ -29,7 +29,7 @@
 //   has no operation that changes it.  A move would write the object that a
 //   reader reads, so a Sealed does not move.
 //
-//   The type of T must be Shareable.  A GrowList writes its lend count in a
+//   The type of T must be Shareable.  A SmallList writes its lend count in a
 //   read, so it is not Shareable, and it does not seal.
 //
 // A Sealed ends its object at its own end, with no consume, so a linear object

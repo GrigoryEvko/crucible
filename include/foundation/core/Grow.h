@@ -1,78 +1,48 @@
 #pragma once
 
-// The growable owners of the Region family: a list and a text on the heap,
-// each with a maximum that its mint states, and the text that a GrowText
-// gives after its last append.
+// The growable text of the Region family, with a maximum that its mint states,
+// and the text that it gives after its last append.  A list that grows is a
+// SegmentList (foundation/core/SegmentList.h), whose elements do not move, or a
+// SmallList (foundation/core/SmallList.h).
 //
-//   GrowList<T>     the elements on the heap, in the order of their appends
 //   GrowText        the characters on the heap
 //   HeapText        the characters of a GrowText after its last append, which
 //                   no operation changes
 //
-// Mints
-//   mint_grow_list<T>(maximum)   the one door of a GrowList: an empty list
-//                       that holds no storage.  No append takes the list
-//                       past maximum elements
+// Mint
 //   mint_grow_text(maximum)      the one door of a GrowText: an empty text
 //                       that holds no storage.  No append takes the text past
 //                       maximum characters
-// A mint allocates nothing, so it takes no allocation capability.  A maximum
+// The mint allocates nothing, so it takes no allocation capability.  A maximum
 // past the largest count of a View becomes that count.
 //
-// Operations
-//   append(alloc, value)   of a GrowList: puts value after the last element,
-//                       and gives Unit, or Full<T> when the list holds maximum
-//                       elements.  For a linear T the Full holds the value, so
-//                       the caller gets it back
-//   append(alloc, text)    of a GrowText: puts the characters of a TextView, of
-//                       a View<char const> or one character after the last
-//                       one, and gives Unit, or Full<char> when they do not
-//                       fit below the maximum.  A refused append changes
-//                       nothing
+// Operations of a GrowText
+//   append(alloc, text)    puts the characters of a TextView, of a
+//                       View<char const> or one character after the last one,
+//                       and gives Unit, or Full<char> when they do not fit
+//                       below the maximum.  A refused append changes nothing
 //   append_self(alloc, offset, count)
-//                       of a GrowText: puts the count characters of the text
-//                       from offset after the last one, as append does.  The
-//                       growth copies them before it gives the old storage
-//                       back
-//   size() and clear()  as FixedList gives them
-//   take_last() and std::move(list).expect_empty(why)
-//                       of a GrowList: as FixedList gives them.  A take frees
-//                       the slot and keeps the storage
-//   copy_at(position)   of a GrowList: gives a copy of the element at position,
-//                       or no value at or past size().  The copy of the element
-//                       is trivial, and it holds no borrow (CopiedElement)
+//                       puts the count characters of the text from offset after
+//                       the last one, as append does.  The growth copies them
+//                       before it gives the old storage back
+//   size() and clear()  as FixedText gives them
 //   freeze(std::move(text))
-//                       of a GrowText: gives the characters to a HeapText with
-//                       no copy, and leaves the text empty with its maximum
-//
-// Frame doors
-//   with_view(body)     of a GrowList and of a GrowText: calls body with the
-//                       View of the const elements, or with the TextView of
-//                       the characters, and gives the result of body.  A
-//                       body that writes the elements takes with_mut
-//   with_element(position, on_some, on_none)
-//                       of a GrowList: calls on_some with the element at
-//                       position, or on_none at or past size(), and gives the
-//                       result of the arm that it calls: one compare
-//   with_mut(std::move(list), body)
-//                       of a GrowList: the list moves into the frame of the
-//                       door, body gets the ViewMut of the elements, and the
-//                       door gives the list back (foundation/core/Frame.h)
-// A frame door lends the storage of its owner to the body for the time of
-// the call (the lend count).  The frame doors and copy_at are the only reads of
-// the elements and of the characters, and copy_at gives a value that holds no
-// borrow.  So no borrow of a growable owner outlives its frame.
+//                       gives the characters to a HeapText with no copy, and
+//                       leaves the text empty with its maximum
+//   with_view(body)     the frame door: calls body with the TextView of the
+//                       characters, and gives the result of body
+// The frame door lends the storage of the text to the body for the time of the
+// call (the lend count).  It is the only read of the characters, so no borrow of
+// a GrowText outlives its frame.
 //
 // The allocation capability comes first in each append, so each growth shows
 // at its call.  A growth doubles the capacity, up to the maximum, and an
 // exhausted memory ends the process in the allocation door of
-// foundation/core/Heap.h.  The first storage of a list holds one cache line
-// of elements, and at least one.  The owners have no reserve and no resize:
-// a count that is known at the start is a HeapArray.
+// foundation/core/Heap.h.  The first storage holds one cache line.  The text has
+// no reserve and no resize.
 //
-// A growth moves each element into new storage, so append gives no
-// reference, and a growth would end each borrow of the owner.  So the owners
-// give no View, no cursor, no TextView and no Ref out of a frame.  A text
+// A growth moves each character into new storage, so it would end each borrow of
+// the text.  So the text gives no TextView and no cursor out of a frame.  A text
 // appends a part of itself through append_self, which copies the characters
 // before the growth gives the old storage back.
 //
@@ -94,23 +64,15 @@
 //   count is a plain byte, with no atomic step.  A frame door of an owner
 //   from a second thread is a race on the count.
 //
-//   copy_at of a GrowList takes no lend and writes no state.  It calls no body
-//   of a caller, and the copy of the element is trivial, so no code of T runs.
-//   So no code changes the list while copy_at reads it, on the thread that
-//   calls it.  Two threads can call copy_at and size() of one list at the same
-//   time while no thread changes the list or opens a frame of it, as the
-//   readers of a finished log do.  No type states that sharing: a GrowList is
-//   not Shareable (foundation/Transfer.h), because a frame door of a const list
-//   writes the count.  The caller orders the last change before the first read.
-//
 //   The result of a body holds no borrow (HoldsNoBorrow of Choice.h), so no
 //   body gives the View, a Ref or an address out.  The concept refuses each
 //   class that holds an address, an owner too, so a body that builds an
-//   owner writes it to a variable of the caller.  A body can still copy its
-//   View into a variable that it captures by reference, and the next growth
-//   then ends what that copy borrows.  No rule of the quarantine plugin
-//   refuses that route.  The escape rules of the linear design
-//   (misc/12_10_2026_linear.md, section 11) are its planned refusal.
+//   owner writes it to a variable of the caller.  A body that can store its
+//   View in a variable that it captures by reference does not compile
+//   (StoresNoBorrowOutside of CaptureStore.h).
+//
+//   A SmallList counts its lends in a LendCount of one byte
+//   (foundation/core/LendCount.h), and its doors refuse the same changes.
 //
 // A HeapText holds the characters that a GrowText held at its freeze, and no
 // operation of it changes them.  Its view() and its loop then give borrows
@@ -118,36 +80,30 @@
 // HeapArray does.  A name that a table keeps for the life of the table is a
 // HeapText.
 //
-// An owner owns its storage alone.  A copy would allocate with no
-// capability at its call, so an owner does not copy.  A move gives the
-// storage to the target and leaves the source empty, with its maximum.  The
-// destructor ends each element and gives the storage back.  A list of a
-// linear element is linear itself, so each path of its holder consumes it,
-// and it has no clear().
+// A text owns its storage alone.  A copy would allocate with no capability at
+// its call, so a text does not copy.  A move gives the storage to the target
+// and leaves the source empty, with its maximum.
 //
 // The growth of a text and the arithmetic of a capacity are cold, and their
 // bodies are in src/foundation/core/Grow.cpp.
 
-#include <foundation/Brand.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
 #include <foundation/NoObject.h>
-#include <foundation/Pinned.h>
 #include <foundation/Platform.h>
+#include <foundation/core/AllocTag.h>
 #include <foundation/core/Array.h>
+#include <foundation/core/CaptureStore.h>
 #include <foundation/core/Choice.h>
-#include <foundation/core/Frame.h>
+#include <foundation/core/Cursor.h>
+#include <foundation/core/Full.h>
 #include <foundation/core/Heap.h>
-#include <foundation/core/List.h>
 #include <foundation/core/Owner.h>
-#include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Report.h>
 #include <foundation/core/Text.h>
-#include <foundation/reflect/Instance.h>
 
 #include <cstddef>
-#include <new>
 #include <type_traits>
 
 namespace foundation::core {
@@ -204,62 +160,11 @@ public:
 
 namespace owner {
 
-// The fields of a GrowList.  The storage holds capacity elements, or it is
-// null when the capacity is zero, and the first count slots hold the
-// elements.  The storage names no type of an element, so an assignment of it
-// drops no element: each element ends through end_slot_.  A moved-from list
-// keeps its maximum.  The lend count is mutable, because a frame door of a
-// const list lends it too (the lend count).  The core empties the state at a
-// move and releases it at a move assignment and at the end, so emptied and
-// release refuse a lent list.
-template <class T>
-struct GrowListState {
-    using owner_state_mark = OwnerStateMark;
-    using released_element = T;
-
-    void* storage = nullptr;
-    std::size_t count = 0;
-    std::size_t capacity = 0;
-    std::size_t maximum = 0;
-    mutable unsigned char lend_count = 0;
-    FixedArray<unsigned char, 7> padding_{};
-
-    [[nodiscard]] static constexpr GrowListState emptied(GrowListState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
-        return GrowListState{nullptr, 0, 0, state.maximum};
-    }
-
-    // The door that ends the element in one slot: a growth ends each element
-    // that it moved out, and clear() and the end of the list end each
-    // element that the list holds.
-    [[= ::foundation::linear::drop_door{}]] static constexpr void end_slot_(T& element) noexcept { element.~T(); }
-
-    // Ends each element from the last.  Complexity: O(count).
-    static constexpr void end_each_(GrowListState const& state) noexcept {
-        if constexpr (!std::is_trivially_destructible_v<T>) {
-            T* const first = static_cast<T*>(state.storage);
-            for (std::size_t position = state.count; position != 0; --position) {
-                end_slot_(first[position - 1]);
-            }
-        }
-    }
-
-    // Ends each element, and gives the storage back to the allocation door
-    // with the bytes and the alignment of its allocation, unpoisoned (the
-    // spare storage of Heap.h).
-    static constexpr void release(GrowListState const& state) noexcept {
-        refuse_lent_owner_change_(state.lend_count);
-        end_each_(state);
-        if (state.storage != nullptr) {
-            unpoison_slots_(static_cast<T const*>(state.storage), state.capacity);
-            heap_release_(state.storage, slots_layout_<T>(state.capacity));
-        }
-    }
-};
-
 // The fields of a GrowText: the characters, or null when the capacity is
-// zero.  A moved-from text keeps its maximum.  The lend count is that of the
-// state of a GrowList.
+// zero.  A moved-from text keeps its maximum.  The lend count is mutable,
+// because the frame door of a const text lends it too (the lend count).  The
+// core empties the state at a move and releases it at a move assignment and at
+// the end, so emptied and release refuse a lent text.
 struct GrowTextState {
     using owner_state_mark = OwnerStateMark;
     static constexpr bool runs_element_code = false;
@@ -315,394 +220,10 @@ struct HeapTextState {
 
 }  // namespace detail
 
-// The element of a GrowList: an owned element that moves with no throw,
-// because a growth moves each element.  A pinned element derives from
-// foundation::Pinned, because its address is its identity, such as an
-// Atomic.  A growth would change that address, so the list refuses such an
-// element, also when the element writes a move of its own.  A growable set of
-// pinned elements is a GrowList of Box<T>, and a fixed set is a HeapArray
-// from mint_heap_array_with.
-template <class T>
-concept GrowListElement =
-    OwnedElement<T> && std::is_nothrow_move_constructible_v<T> && !std::is_base_of_v<::foundation::Pinned<T>, T>;
-
-// An element that copy_at of a GrowList gives by value with no lend: its copy
-// is trivial, so no code of T runs in the call, and it holds no borrow, so the
-// value outlives each growth of the list (the lend count).
-template <class T>
-concept CopiedElement = std::is_trivially_copy_constructible_v<T> && HoldsNoBorrow<T>;
-
-template <class T>
-    requires GrowListElement<T>
-class GrowList;
-
 class GrowText;
 
-// The two mints are the friends of their owners, and each owner has one
-// private constructor.  The rule specialization-home refuses a
-// specialization of the list mint outside this header.
-template <class T>
-    requires GrowListElement<T>
-[[nodiscard]] constexpr GrowList<T> mint_grow_list(std::size_t maximum) noexcept;
-
+// The mint is the friend of the text, whose one constructor is private.
 [[nodiscard]] constexpr GrowText mint_grow_text(std::size_t maximum) noexcept;
-
-template <class T>
-    requires GrowListElement<T>
-class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
-                   [[= ::foundation::lifetime::no_start_over_bytes{}]] GrowList final
-    : public OwnerCore<detail::owner::GrowListState<T>, GrowList<T>> {
-    using State = detail::owner::GrowListState<T>;
-    using Core = OwnerCore<State, GrowList>;
-    // The key of the run, for the frame door lend_elements_, a friend.
-    using Core::run_key_;
-
-    // A storage door: the elements are in the storage that the list owns.
-    [[= ::foundation::linear::moves_own_storage{}]] [[nodiscard]] constexpr T* first_() const noexcept {
-        return static_cast<T*>(this->state_.storage);
-    }
-
-    // Ends each element from the last, and poisons each slot of the storage
-    // (the spare storage of Heap.h).  Complexity: O(size()).
-    constexpr void end_each_() noexcept {
-        State::end_each_(this->state_);
-        this->state_.count = 0;
-        detail::poison_slots_(first_(), this->state_.capacity);
-    }
-
-    // Moves each element into new storage of the next capacity, ends each
-    // moved-out element, and gives the old storage back.  The slots of the
-    // new storage past the count are poisoned (the spare storage of Heap.h).
-    // The count is below the maximum.  The capacity is at most the largest
-    // count of a View, so the bytes fit in size_t.  Complexity: one
-    // allocation and O(size()) moves.
-    [[gnu::cold, gnu::noinline]] void grow_() noexcept {
-        State& state = this->state_;
-        std::size_t const count = state.count;
-        std::size_t const next = detail::next_capacity_(state.capacity, count + 1, state.maximum, sizeof(T));
-        void* const target = detail::heap_allocate_(detail::slots_layout_<T>(next));
-        if constexpr (detail::BytewiseListElement<T>) {
-            if (count != 0) {
-                __builtin_memcpy(target, state.storage, count * sizeof(T));
-            }
-        } else {
-            T* const moved = static_cast<T*>(target);
-            for (std::size_t position = 0; position != count; ++position) {
-                ::new(static_cast<void*>(moved + position)) T(static_cast<T&&>(first_()[position]));
-            }
-            end_each_();
-        }
-        if (state.storage != nullptr) {
-            detail::unpoison_slots_(first_(), state.capacity);
-            detail::heap_release_(state.storage, detail::slots_layout_<T>(state.capacity));
-        }
-        state.storage = target;
-        state.count = count;
-        state.capacity = next;
-        detail::poison_slots_(first_() + count, next - count);
-    }
-
-    // The empty list of at most maximum elements.  Only mint_grow_list calls
-    // it.
-    constexpr explicit GrowList(std::size_t maximum) noexcept : Core{State{nullptr, 0, 0, maximum}} {}
-
-    template <class U>
-        requires GrowListElement<U>
-    friend constexpr GrowList<U> mint_grow_list(std::size_t maximum) noexcept;
-
-public:
-    using element_type = T;
-
-    // The core of foundation/core/Owner.h gives the moves and the end of a
-    // list.  The assignment ends each element that this list holds after it
-    // takes the storage and the maximum of other, so other can live in one
-    // of those elements.  The assignment drops the elements, so a list of a
-    // linear element has none.
-    constexpr GrowList(GrowList&&) noexcept = default;
-    constexpr GrowList& operator=(GrowList&&) noexcept
-        requires DroppablePayload<T>
-    = default;
-    GrowList& operator=(GrowList&&)
-        requires(!DroppablePayload<T>)
-    = delete("an assignment drops the elements that the GrowList holds, and a linear element must not be dropped: "
-             "build a new GrowList instead");
-
-    GrowList(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
-    GrowList&
-    operator=(GrowList const&) = delete("a copy of a GrowList allocates, and no allocation capability shows at a copy");
-
-    [[nodiscard]] constexpr std::size_t size() const noexcept { return this->state_.count; }
-
-    // A copy of the element at position, or no value at or past size().  The
-    // call takes no lend and writes no state of the list (the lend count).  One
-    // compare and the copy.
-    [[nodiscard]] constexpr Option<T> copy_at(std::size_t position) const noexcept
-        requires CopiedElement<T>
-    {
-        if (position >= this->state_.count) {
-            return Option<T>{none};
-        }
-        return Option<T>::some(static_cast<T const*>(first_())[position]);
-    }
-    Option<T> copy_at(std::size_t position) const
-        requires(!CopiedElement<T>)
-    = delete("copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow: read "
-             "another element in a frame door of the list");
-
-    // Moves the last element out, or gives no value for an empty list.  A
-    // lent list ends the process (the lend count).  One compare, and the
-    // poison of the freed slot under ASan.
-    [[nodiscard]] Option<T> take_last() & noexcept {
-        detail::refuse_lent_owner_change_(this->state_.lend_count);
-        if (this->state_.count == 0) {
-            return Option<T>{none};
-        }
-        --this->state_.count;
-        Option<T> result = Option<T>::some(static_cast<T&&>(first_()[this->state_.count]));
-        State::end_slot_(first_()[this->state_.count]);
-        detail::poison_slots_(first_() + this->state_.count, 1);
-        return result;
-    }
-
-    // The end of an empty list that the caller gives up: the process ends
-    // with the reason when the list still holds an element.  A list of a
-    // linear element ends here after the caller gives each element to its
-    // consumer, as an empty Option ends at expect_none.  One compare.
-    constexpr void expect_empty(Fmt<> why) && noexcept {
-        if (this->state_.count != 0) [[unlikely]] {
-            fatal(why);
-        }
-    }
-
-    // Puts value after the last element, or gives Full<T> when the list
-    // holds maximum elements.  Three compares, and a growth when the storage
-    // is full.  The growth moves each element, so the append gives no
-    // reference, and a lent list ends the process (the lend count).
-    template <class Marker>
-        requires AllocationCapability<Marker>
-    [[nodiscard]] Result<Unit, Full<T>> append(Marker /*allocation*/, T value) & noexcept {
-        detail::refuse_lent_owner_change_(this->state_.lend_count);
-        if (this->state_.count == this->state_.maximum) [[unlikely]] {
-            if constexpr (::foundation::linear::is_linear_type(^^T)) {
-                return err(Full<T>{static_cast<T&&>(value)});
-            } else {
-                return err(Full<T>{});
-            }
-        }
-        if (this->state_.count == this->state_.capacity) [[unlikely]] {
-            grow_();
-        }
-        detail::unpoison_slots_(first_() + this->state_.count, 1);
-        ::new(static_cast<void*>(first_() + this->state_.count)) T(static_cast<T&&>(value));
-        ++this->state_.count;
-        return Unit{};
-    }
-
-    // Ends each element and keeps the storage.  Only an element that a
-    // holder can drop has clear(): the end of a linear element would lose
-    // what it proves.  A lent list ends the process (the lend count).
-    // Complexity: O(size()).
-    constexpr void clear() & noexcept
-        requires DroppablePayload<T>
-    {
-        detail::refuse_lent_owner_change_(this->state_.lend_count);
-        end_each_();
-    }
-
-    // The frame door of the elements (the frame doors): body gets the View
-    // of the const elements, and the list lends its storage until body
-    // returns.  The result of body holds no borrow.  A body that writes the
-    // elements takes with_mut, so no two Views of one list write the same
-    // elements.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
-              && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<Body, View<T const>>
-        with_view(Body&& body) const& noexcept(std::is_nothrow_invocable_v<Body, View<T const>>) {
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<Body&&>(body)(View<T const>{this->run_key_(), first_(), this->state_.count});
-    }
-
-    // A body that holds a linear value by value binds to this overload, so
-    // the refusal gives its reason.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T const>> && HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>
-                  && (!::foundation::linear::HoldsNoLinearValue<Body>)
-    void with_view(Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-
-    // The lend of the elements to the frame door with_mut (the lend count):
-    // body gets the View of the elements, and the list lends its storage
-    // until body returns.  The key of a frame keeps each caller outside the
-    // base out, so only with_mut gives a View that writes the elements.  The
-    // list lives in the frame of with_mut, and no body can name it.
-    template <class Body>
-    friend constexpr decltype(auto) lend_elements_(detail::FrameKey const& /*key*/, GrowList& list,
-                                                   Body&& body) noexcept {
-        [[maybe_unused]] detail::OwnerLend const lend{list.state_.lend_count};
-        return static_cast<Body&&>(body)(View<T>{GrowList::run_key_(), list.first_(), list.state_.count});
-    }
-
-    // A body whose result holds a borrow binds to this overload, so the
-    // refusal gives its reason.
-    template <class Body>
-        requires std::is_invocable_v<Body, View<T const>> && (!HoldsNoBorrow<std::invoke_result_t<Body, View<T const>>>)
-    void with_view(Body&& body) const& = delete("the result of a frame door holds no borrow: the next append can end "
-                                                "the storage of the list.  Give a value with no reference and no "
-                                                "address");
-    template <class Body>
-    void with_view(Body&& body) && = delete("a frame door of a temporary GrowList lends storage that the full "
-                                            "expression frees");
-    template <class Body>
-    void with_view(Body&& body) const&& = delete("a frame door of a temporary GrowList lends storage that the full "
-                                                 "expression frees");
-
-    // The frame door of one element (the frame doors): on_some gets the
-    // element at position, and the list lends its storage until on_some
-    // returns.  At or past size(), on_none runs, with no lend.  The two arms
-    // give the same type, which holds no borrow.  One compare.
-    template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
-              && std::same_as<std::invoke_result_t<OnSome, T&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
-        with_element(std::size_t position, OnSome&& on_some,
-                     OnNone&& on_none) & noexcept(std::is_nothrow_invocable_v<OnSome, T&>
-                                                  && std::is_nothrow_invocable_v<OnNone>) {
-        if (position >= this->state_.count) {
-            return static_cast<OnNone&&>(on_none)();
-        }
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<OnSome&&>(on_some)(first_()[position]);
-    }
-    template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
-              && std::same_as<std::invoke_result_t<OnSome, T const&>, std::invoke_result_t<OnNone>>
-              && HoldsNoBorrow<std::invoke_result_t<OnNone>> && ::foundation::linear::HoldsNoLinearValue<OnSome>
-              && ::foundation::linear::HoldsNoLinearValue<OnNone> && ArmsStoreNoBorrowOutside<OnSome, OnNone>
-    [[= ::foundation::linear::borrow_match{}]] constexpr std::invoke_result_t<OnNone>
-        with_element(std::size_t position, OnSome&& on_some,
-                     OnNone&& on_none) const& noexcept(std::is_nothrow_invocable_v<OnSome, T const&>
-                                                       && std::is_nothrow_invocable_v<OnNone>) {
-        if (position >= this->state_.count) {
-            return static_cast<OnNone&&>(on_none)();
-        }
-        [[maybe_unused]] detail::OwnerLend const lend{this->state_.lend_count};
-        return static_cast<OnSome&&>(on_some)(static_cast<T const*>(first_())[position]);
-    }
-    template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T&> && std::is_invocable_v<OnNone>
-                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
-                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
-    void with_element(std::size_t position, OnSome&& on_some,
-                      OnNone&& on_none) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-    template <class OnSome, class OnNone>
-        requires std::is_invocable_v<OnSome, T const&> && std::is_invocable_v<OnNone>
-                  && (!::foundation::linear::HoldsNoLinearValue<OnSome>
-                      || !::foundation::linear::HoldsNoLinearValue<OnNone>)
-    void with_element(std::size_t position, OnSome&& on_some,
-                      OnNone&& on_none) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-    template <class OnSome, class OnNone>
-    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) && =
-        delete("a frame door of a temporary GrowList lends storage that the full expression frees");
-    template <class OnSome, class OnNone>
-    void with_element(std::size_t position, OnSome&& on_some, OnNone&& on_none) const&& =
-        delete("a frame door of a temporary GrowList lends storage that the full expression frees");
-};
-
-// The one door of a GrowList: an empty list of at most maximum elements.  It
-// allocates nothing.  Complexity: O(1).
-template <class T>
-    requires GrowListElement<T>
-[[nodiscard]] constexpr GrowList<T> mint_grow_list(std::size_t maximum) noexcept {
-    std::size_t const largest = max_view_count(sizeof(T));
-    return GrowList<T>{maximum < largest ? maximum : largest};
-}
-
-// The frame door of a GrowList (the definition below).  GrowFrameKeyDoor
-// names it as a friend, so this declaration stands before the door, and the
-// default argument of the brand belongs to it.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
-          && FrameBody<Body, typename Owner::element_type, Fresh>
-[[nodiscard]] constexpr detail::frame_return_t<
-    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
-with_mut(Owner&& owner, Body&& body) noexcept;
-
-// The door of the frame door of a GrowList to the key of the frame doors (the
-// doors of the owners above foundation/core/Frame.h).  Its one member is
-// private, and the frame door is its one friend.  The invariant: the frame
-// door holds the list by move in its frame, the list lends its storage for
-// the time of the body, and the door lends the run of its live elements with
-// the scope brand of its call.  A home owner row of utils/rule-table.txt keeps
-// this definition in this header.
-class GrowFrameKeyDoor final : ::foundation::NoObject<GrowFrameKeyDoor> {
-    template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-        requires NamesNoArgument<Refused...> && MovedOwner<Owner>
-              && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
-              && FrameBody<Body, typename Owner::element_type, Fresh>
-    friend constexpr auto ::foundation::core::with_mut(Owner&& owner, Body&& body) noexcept
-        -> detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>;
-
-    // The key of the frame doors, for the run of the list in the frame.
-    [[nodiscard]] CRUCIBLE_INLINE static constexpr detail::FrameKey key_() noexcept { return detail::FrameDoor::key(); }
-};
-
-// The frame door of a GrowList (foundation/core/Frame.h).  The list moves
-// into the frame, body gets the ViewMut of its elements, and the door gives
-// the list back: alone for a body that gives void, and after the result in a
-// Record for each other body.  The list lends its storage through with_view
-// for the time of the body (the lend count), and no code outside the frame
-// can reach the list in that time, so no growth moves the storage.  The pack
-// refuses each explicit argument, so no caller names the brand of the frame.
-// Complexity: two moves of the state, two plain steps of the lend count, and
-// the cost of the body.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh>
-    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
-          && FrameBody<Body, typename Owner::element_type, Fresh>
-[[nodiscard]] constexpr detail::frame_return_t<
-    detail::body_result_t<Body&&, ViewMut<typename Owner::element_type, Fresh>>, Owner>
-with_mut(Owner&& owner, Body&& body) noexcept {
-    using T = typename Owner::element_type;
-    using Given = detail::body_result_t<Body&&, ViewMut<T, Fresh>>;
-    Owner held{static_cast<Owner&&>(owner)};
-    if constexpr (std::is_void_v<Given>) {
-        lend_elements_(GrowFrameKeyDoor::key_(), held, [&body](View<T> run) noexcept {
-            static_cast<Body&&>(body)(ViewMut<T, Fresh>{GrowFrameKeyDoor::key_(), run});
-        });
-        return held;
-    } else {
-        std::remove_cv_t<Given> result =
-            lend_elements_(GrowFrameKeyDoor::key_(), held, [&body](View<T> run) noexcept -> std::remove_cv_t<Given> {
-                return static_cast<Body&&>(body)(ViewMut<T, Fresh>{GrowFrameKeyDoor::key_(), run});
-            });
-        return detail::frame_return_t<Given, Owner>{static_cast<std::remove_cv_t<Given>&&>(result),
-                                                    static_cast<Owner&&>(held)};
-    }
-}
-
-// A body that is no frame callable binds to this overload, the refused twin
-// (FrameBody of foundation/core/Region.h), so the refusal gives its reason.
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires NamesNoArgument<Refused...> && MovedOwner<Owner> && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
-              && FrameGates<Body>
-void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
-template <class... Refused, class Owner, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-    requires(sizeof...(Refused) == 0) && (!std::is_reference_v<Owner>) && (!std::is_const_v<Owner>)
-             && ::foundation::reflect::IsInstanceOf<Owner, ^^GrowList>
-             && LinearFrameBody<Body, typename Owner::element_type, Fresh>
-void with_mut(Owner&& owner, Body&& body) = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-
-// A named list stays with the caller while the body runs, so the body could
-// append to it through a capture and move the storage of the ViewMut.  This
-// twin refuses a named list and a const one, which cannot move into the
-// frame.
-template <class Owner, class Body>
-    requires(std::is_lvalue_reference_v<Owner> || std::is_const_v<std::remove_reference_t<Owner>>)
-             && ::foundation::reflect::IsInstanceOf<std::remove_cvref_t<Owner>, ^^GrowList>
-void with_mut(Owner&& owner, Body&& body) = delete(
-    "with_mut takes the owner into its frame and gives it back: pass std::move(owner), and keep the owner that the "
-    "call returns");
 
 // The door of a HeapText and a GrowText to the raw constructor of a TextView
 // (the doors of a text of foundation/core/Text.h).  Its one member is
@@ -868,9 +389,9 @@ public:
         detail::poison_slots_(state_.first, state_.capacity);
     }
 
-    // The frame door of the characters (the frame doors): body gets the
-    // TextView of the characters, and the text lends its storage until body
-    // returns.  The result of body holds no borrow.
+    // The frame door of the characters: body gets the TextView of the
+    // characters, and the text lends its storage until body returns.  The
+    // result of body holds no borrow.
     template <class Body>
         requires std::is_invocable_v<Body, TextView> && HoldsNoBorrow<std::invoke_result_t<Body, TextView>>
               && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>

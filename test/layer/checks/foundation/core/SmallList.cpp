@@ -52,7 +52,7 @@ static_assert(OwnerState<owner::SmallListState<int, 4>>
 // user-provided, so an Index is no bytewise element.
 static_assert(SmallListElement<int> && SmallListElement<Id<OpTag, std::uint32_t>> && !SmallListElement<Index<8>>);
 static_assert(!SmallListElement<CountedCopy> && !SmallListElement<Wide> && !SmallListElement<int const>);
-static_assert(!SmallListElement<Box<int>> && !SmallListElement<GrowList<int>>);
+static_assert(!SmallListElement<Box<int>> && !SmallListElement<SmallList<int, 4>>);
 static_assert(SmallListInline<int, 1> && !SmallListInline<int, 0>);
 
 // An append takes the allocation capability first.  A list gives no View, no

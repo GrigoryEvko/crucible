@@ -2948,7 +2948,7 @@ foundation_neg_compile_test(neg_core_frame_door_private
 foundation_neg_compile_test(neg_core_frame_door_lookalike
   "static constexpr foundation::core::detail::FrameKey foundation::core::detail::FrameDoor::key\\(\\). is private within this context"
   "Frame\\.h:[0-9]+:[0-9]+: note: declared private here")
-foreach(_frame_key_door region:Region array:Array list:List grow:Grow small_list:SmallList
+foreach(_frame_key_door region:Region array:Array list:List small_list:SmallList
         fixed_heap_array:FixedHeapArray box:Box choice:Choice one_of:OneOf root_keys:RootKeys
         window_loan:WindowLoan sort:Sort reduce:Reduce protocol:Protocol aligned_bytes:AlignedBytes
         keyed_mint:KeyedMint)
@@ -3536,13 +3536,13 @@ endif()
 
 # The spare storage of the growable owners (the spare storage of
 # foundation/core/Heap.h).  Each program reads a slot of its owner that holds
-# no element: a GrowList and a GrowText after a clear, a SmallList on the heap
-# after take_last, a SegmentList past its count, and a SlotMap after remove.
-# Each passes only on the text of the report of AddressSanitizer, and only a
-# build with AddressSanitizer registers them.
+# no element: a GrowText after a clear, a SmallList on the heap after take_last,
+# a SegmentList past its count, and a SlotMap after remove.  Each passes only on
+# the text of the report of AddressSanitizer, and only a build with
+# AddressSanitizer registers them.
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
-  foreach(_poison_test test_core_grow_list_poison test_core_grow_text_poison test_core_segment_list_poison
-                       test_core_small_list_poison test_core_slot_map_poison)
+  foreach(_poison_test test_core_grow_text_poison test_core_segment_list_poison test_core_small_list_poison
+                       test_core_slot_map_poison)
     foundation_test(${_poison_test})
     set_tests_properties(${_poison_test} PROPERTIES PASS_REGULAR_EXPRESSION "AddressSanitizer: use-after-poison")
   endforeach()
@@ -3566,9 +3566,6 @@ foundation_neg_compile_test(neg_core_heap_array_element_ref_kept_past_its_frame
 foundation_neg_compile_test(neg_core_masked_array_element_ref_kept_past_its_frame
   "no matching function for call to .foundation::core::MaskedArray<.anonymous.::Node>::with_masked"
   "StoresNoBorrowOutside")
-foundation_neg_compile_test(neg_core_grow_list_element_ref_kept_past_its_frame
-  "no matching function for call to .foundation::core::GrowList<.anonymous.::Node>::with_element"
-  "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_option_frame_ref_kept_past_its_frame
   "no matching function for call to .foundation::core::Option<foundation::core::Box<.anonymous.::Node> >::with_mut"
   "StoresNoBorrowOutside")
@@ -3577,9 +3574,6 @@ foundation_neg_compile_test(neg_core_box_chain_ref_kept_past_its_frame
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_small_list_view_kept_past_its_frame
   "no matching function for call to .foundation::core::SmallList<long unsigned int, 2>::with_view"
-  "StoresNoBorrowOutside")
-foundation_neg_compile_test(neg_core_grow_list_view_kept_past_its_frame
-  "no matching function for call to .foundation::core::GrowList<long unsigned int>::with_view"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_grow_text_view_kept_past_its_frame
   "no matching function for call to .foundation::core::GrowText::with_view"
@@ -5012,62 +5006,26 @@ foundation_neg_compile_test(neg_core_lend_count_lend_copied
   "use of deleted function .foundation::core::LendCount<Word>::Lend::Lend\\(const foundation::core::LendCount<Word>::Lend&\\)"
   "a lend lives in one frame door, so no copy of it counts a second one")
 
-# A GrowList and a GrowText grow through many doublings up to the maximum of
-# their mint, refuse an append past it, move each element at a growth and end
-# it one time.  The foreign doors give a View and a TextView of a run that a
-# caller holds.
+# A GrowText grows through many doublings up to the maximum of its mint, and
+# refuses an append past it.  The foreign doors give a View and a TextView of a
+# run that a caller holds.
 foundation_test(test_core_grow)
 
-# An append takes the allocation capability, a list refuses an element whose
-# move can throw, and a text does not copy.
-foundation_neg_compile_test(neg_core_grow_list_append_without_allocation_marker
-  "no matching function for call to .foundation::core::GrowList<int>::append\\(foundation::effects::cap::IO, int\\)."
-  "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
-foundation_neg_compile_test(neg_core_grow_list_throwing_move
-  "no matching function for call to .mint_grow_list<ThrowingMove>\\(int\\)."
-  "the expression .is_nothrow_move_constructible_v<T> \\[with T = ThrowingMove\\]. evaluated to .false.")
-# A growth moves each element, so a GrowList refuses a pinned element by its
-# type, also an element that writes a move of its own.
-foundation_neg_compile_test(neg_core_grow_list_pinned_element
-  "no matching function for call to .mint_grow_list<Cell>\\(int\\)."
-  "the expression .!\\(is_base_of_v<foundation::Pinned<T>, T>\\) \\[with T = Cell\\]. evaluated to .false.")
+# An append takes the allocation capability, and a text does not copy.
 foundation_neg_compile_test(neg_core_grow_text_append_without_allocation_marker
   "no matching function for call to .foundation::core::GrowText::append\\(foundation::effects::cap::IO, const char \\[9\\]\\)."
   "required for the satisfaction of .AllocationCapability<Marker>. \\[with Marker = foundation::effects::cap::IO\\]")
 foundation_neg_compile_test(neg_core_grow_text_copied
   "use of deleted function .foundation::core::GrowText::GrowText\\(const foundation::core::GrowText&\\)."
   "a copy of a GrowText allocates, and no allocation capability shows at a copy")
-# A growth ends each borrow of the owner.  The rule borrow-match refuses an
-# append in the body of a frame door, and a frame door refuses a body that
-# gives its View out.
-foundation_neg_compile_test(neg_core_grow_list_append_in_frame
-  "this arm of a borrow match writes the sum that the match reads .mutating-call list."
-  "the payload that the arm borrows can end while the arm holds its reference")
+# A growth ends each borrow of the text.  The rule borrow-match refuses an
+# append in the body of the frame door, and the text gives no view.
 foundation_neg_compile_test(neg_core_grow_text_append_in_frame
   "this arm of a borrow match writes the sum that the match reads .mutating-call text."
   "the payload that the arm borrows can end while the arm holds its reference")
-foundation_neg_compile_test(neg_core_grow_list_ref_across_append
-  "has no member named .get."
-  "foundation::core::GrowList<int>")
 foundation_neg_compile_test(neg_core_grow_text_view_across_append
   "has no member named .view."
   "foundation::core::GrowText")
-foundation_neg_compile_test(neg_core_grow_list_frame_gives_view
-  "use of deleted function .void foundation::core::GrowList<T>::with_view\\(Body&&\\) const &"
-  "the result of a frame door holds no borrow: the next append can end the storage of the list")
-# copy_at gives an element by value with no lend, so it refuses an element
-# whose copy runs code and an element that holds a borrow.
-foundation_neg_compile_test(neg_core_grow_list_copy_runs_code
-  "use of deleted function .*GrowList<T>::copy_at\\(std::size_t\\) const requires .*with T = CountsItsCopies"
-  "copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow")
-foundation_neg_compile_test(neg_core_grow_list_copy_of_a_borrow
-  "use of deleted function .*GrowList<T>::copy_at\\(std::size_t\\) const requires .*with T = NamesARun"
-  "copy_at gives an element by value with no lend, so its copy is trivial and it holds no borrow")
-# The frame door with_view gives a View of the const elements, so no two
-# copies of its View write the elements of one list.
-foundation_neg_compile_test(neg_core_grow_list_two_mutable_views
-  "binding reference of type .int&. to .const int. discards qualifiers"
-  "neg_core_grow_list_two_mutable_views\\.cpp:17:")
 
 # A SegmentList agrees with an oracle around each edge of its segments, keeps
 # each element at its address across appends and a move of the list, builds a

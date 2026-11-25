@@ -62,8 +62,8 @@ heap_take_zeroed_words_(std::size_t bytes, std::size_t alignment) noexcept;
 }
 
 // The layout of count slots of T, for an owner that holds a run of slots,
-// such as a GrowList.  count is above zero, and the bytes of the slots fit
-// in kMaxLayoutBytes, or the process ends.  Complexity: O(1).
+// such as a segment of a SegmentList.  count is above zero, and the bytes of
+// the slots fit in kMaxLayoutBytes, or the process ends.  Complexity: O(1).
 template <class T>
 [[nodiscard]] constexpr ::foundation::alloc::Layout slots_layout_(std::size_t count) noexcept {
     return ::foundation::alloc::Layout::of_array<T>(ElementCount{count})
@@ -82,7 +82,7 @@ template <class T>
 }
 
 // Spare storage.  An owner that holds storage past its elements, such as
-// a GrowList between its count and its capacity, tells AddressSanitizer which
+// a GrowText between its count and its capacity, tells AddressSanitizer which
 // slots hold no element.  heap_poison_ marks a run of bytes as not
 // addressable, and heap_unpoison_ marks it as addressable again before the
 // owner writes it.  A load or a store of a poisoned byte then ends the

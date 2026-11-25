@@ -8,10 +8,10 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Atomic.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/Owner.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/SmallList.h>
 #include <foundation/core/Verbs.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/reflect/Annotation.h>
@@ -215,7 +215,7 @@ concept Takes = requires(List& list) { list.take_last(); };
 template <class List>
 concept Clears = requires(List& list) { list.clear(); };
 static_assert(!HasSubscript<SegmentList<int>> && !Views<SegmentList<int>> && !Takes<SegmentList<int>>);
-static_assert(!Clears<SegmentList<int>> && Clears<GrowList<int>>);
+static_assert(!Clears<SegmentList<int>> && Clears<SmallList<int, 2>> && Takes<SmallList<int, 2>>);
 
 // A drain takes each element by value with no throw.  A body that takes a
 // reference would drop a linear element, and a list that does not move its

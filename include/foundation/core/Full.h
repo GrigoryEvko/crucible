@@ -1,7 +1,7 @@
 #pragma once
 
 // The one error of an append into a full owner of the Region family:
-// FixedList, FixedText, SmallList, GrowList and GrowText.
+// FixedList, FixedText, SmallList and GrowText.
 //
 //   Full<T>    the owner holds no more room, so the value of the append did
 //              not become an element.  For a linear T it holds the value, so

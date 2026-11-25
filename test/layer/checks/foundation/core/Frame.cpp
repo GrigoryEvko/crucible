@@ -83,8 +83,8 @@ struct OpenKeyDoor final {
 static_assert(ReachesFrameKey<OpenKeyDoor> && ReachesDoorKey<OpenKeyDoor>);
 static_assert(!ReachesFrameKey<FrameDoor>);
 static_assert(!ReachesDoorKey<RegionFrameKeyDoor> && !ReachesDoorKey<ArrayFrameKeyDoor>);
-static_assert(!ReachesDoorKey<ListFrameKeyDoor> && !ReachesDoorKey<GrowFrameKeyDoor>);
-static_assert(!ReachesDoorKey<BoxFrameKeyDoor> && !ReachesDoorKey<ChoiceFrameKeyDoor>);
+static_assert(!ReachesDoorKey<ListFrameKeyDoor> && !ReachesDoorKey<BoxFrameKeyDoor>);
+static_assert(!ReachesDoorKey<ChoiceFrameKeyDoor>);
 static_assert(!std::is_default_constructible_v<FrameDoor> && !std::is_trivially_copyable_v<FrameDoor>);
 static_assert(!std::is_default_constructible_v<RegionFrameKeyDoor>);
 static_assert(!std::is_trivially_copyable_v<RegionFrameKeyDoor>);
@@ -112,7 +112,6 @@ static_assert(std::is_same_v<decltype(with_mut(std::declval<HeapArray<int>>(), C
 static_assert(std::is_same_v<decltype(with_mut(std::declval<MaskedArray<int>>(), WritesNothing{})), MaskedArray<int>>);
 static_assert(std::is_same_v<decltype(with_mut(std::declval<FixedList<int, 4>>(), CountsElements{})),
                              Record<std::size_t, FixedList<int, 4>>>);
-static_assert(std::is_same_v<decltype(with_mut(std::declval<GrowList<int>>(), WritesNothing{})), GrowList<int>>);
 
 // The free door takes an owner only by move, and only an owner of the
 // family: a named owner, a const owner, a View and a text have no frame
@@ -121,8 +120,7 @@ static_assert(std::is_same_v<decltype(with_mut(std::declval<GrowList<int>>(), Wr
 // concepts, because they gate nothing.
 template <class Owner>
 constexpr bool frames = requires(Owner&& owner) { with_mut(static_cast<Owner&&>(owner), WritesNothing{}); };
-static_assert(frames<HeapArray<int>> && frames<GrowList<int>>);
-static_assert(!frames<HeapArray<int>&> && !frames<HeapArray<int> const>);
+static_assert(frames<HeapArray<int>> && !frames<HeapArray<int>&> && !frames<HeapArray<int> const>);
 static_assert(!frames<FixedArray<int, 2>> && !frames<FixedArray<int, 2>&>);
 static_assert(!frames<View<int>> && !frames<GrowText> && !frames<HeapText>);
 

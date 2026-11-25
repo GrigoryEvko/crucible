@@ -125,7 +125,7 @@
 //   count.
 //
 //   The hash folds the image as the hash folds an image, and then one block
-//   with the count of the bytes of the image in its low word.  A GrowList
+//   with the count of the bytes of the image in its low word.  A SegmentList
 //   and a GrowText are builders, and no part: freeze a GrowText into a
 //   HeapText first.
 //

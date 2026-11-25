@@ -2,7 +2,7 @@
 // thread: test and set of a BitSet and of a HeapBitSet, get of a SlotMap, a
 // pair of a remove and an insert of a SlotMap, the appends of a SmallList in
 // its inline slots and past them, and the five verbs of a log of events in a
-// SegmentList and in a GrowList.
+// SegmentList.
 //
 // Each row of a set, a map and a SmallList is one pass of 4096 operations,
 // which the cache of the core holds after the first pass.  Each row of a
@@ -24,8 +24,8 @@
 //                       and of the two-level vectors of databases, for one
 //                       thread: segments that double, and the segment of an
 //                       index from its top bit.  The reference of SegmentList
-//   raw event vector    the push_back of std::vector.  The reference of
-//                       GrowList
+//   raw event vector    the push_back of std::vector, one contiguous run.  The
+//                       second reference of SegmentList
 //
 // Log rows
 //   append              one append of an event of 72 bytes to a log that grows
@@ -193,34 +193,6 @@ struct SegmentLog final {
     }
     [[nodiscard]] std::uint64_t sum() const noexcept { return events.walk().fold(std::uint64_t{0}, kAddValue); }
     void clear() noexcept { events = fixy::SegmentList<BenchEvent>{}; }
-};
-
-// The log of a GrowList.  kFullCount is one of its capacities: the first
-// storage holds one event, and each growth doubles it.
-struct GrowLog final {
-    static constexpr std::size_t kFullCount = 65536;
-    static constexpr std::size_t kMaximum = std::size_t{1} << 20;
-    static constexpr LogNames kNames{.append = "GrowList, one append",
-                                     .appends = "GrowList, 4096 appends",
-                                     .growth = "GrowList, append into a full log",
-                                     .get = "GrowList, read of 4096 events",
-                                     .walk = "GrowList, walk of 4096 events"};
-
-    ::foundation::core::GrowList<BenchEvent> events = ::foundation::core::mint_grow_list<BenchEvent>(kMaximum);
-
-    void append(BenchEvent const& event) noexcept {
-        events.append(kAlloc, event).expect("the log is below its maximum");
-    }
-    [[nodiscard]] std::uint64_t value_at(std::size_t position) const noexcept {
-        return events.with_element(
-            position, [](BenchEvent const& event) noexcept { return event.value; },
-            [] noexcept { return std::uint64_t{0}; });
-    }
-    [[nodiscard]] std::uint64_t sum() const noexcept {
-        return events.with_view(
-            [](fixy::View<BenchEvent const> run) noexcept { return run.walk().fold(std::uint64_t{0}, kAddValue); });
-    }
-    void clear() noexcept { events = ::foundation::core::mint_grow_list<BenchEvent>(kMaximum); }
 };
 
 // The append that meets a full log.  The hook before each sample gives the log
@@ -810,9 +782,7 @@ int main() {
     LogReports const raw_segments = measure_log<RawSegmentLog>(positions);
     LogReports const raw_vector = measure_log<RawVectorLog>(positions);
     LogReports const segments = measure_log<SegmentLog>(positions);
-    LogReports const grown = measure_log<GrowLog>(positions);
     print_log<SegmentLog, RawSegmentLog>(segments, raw_segments);
-    print_log<GrowLog, RawVectorLog>(grown, raw_vector);
-    print_log<SegmentLog, GrowLog>(segments, grown);
+    print_log<SegmentLog, RawVectorLog>(segments, raw_vector);
     return 0;
 }

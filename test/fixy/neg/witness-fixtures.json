@@ -642,11 +642,6 @@
       "constructor": "(?<!~)\\bForeignTextDoor\\("
     },
     {
-      "name": "neg_witness_core_growlist_direct_construction",
-      "reason": "no matching function for call",
-      "constructor": "(?<!~)\\bGrowList\\("
-    },
-    {
       "name": "neg_witness_core_growtext_direct_construction",
       "reason": "no matching function for call",
       "constructor": "(?<!~)\\bGrowText\\("
@@ -2518,10 +2513,6 @@
     {
       "type": "foundation::core::FixedHeapArray<int, 4>",
       "header": "foundation/core/FixedHeapArray.h"
-    },
-    {
-      "type": "foundation::core::GrowList<int>",
-      "header": "foundation/core/Grow.h"
     },
     {
       "type": "foundation::core::GrowText",

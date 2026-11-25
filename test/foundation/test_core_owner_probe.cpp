@@ -83,7 +83,6 @@ namespace {
 using ::foundation::AlignedBytes;
 using ::foundation::SwissTableBuffer;
 using ::foundation::core::Box;
-using ::foundation::core::GrowList;
 using ::foundation::core::GrowText;
 using ::foundation::core::HeapArray;
 using ::foundation::core::HeapText;
@@ -154,7 +153,7 @@ struct HolderOfABox final {
     Box<int> held;
 };
 static_assert(::foundation::core::BareOwner<Box<int>> && ::foundation::core::BareOwner<HeapArray<int>>);
-static_assert(::foundation::core::BareOwner<MaskedArray<int>> && ::foundation::core::BareOwner<GrowList<int>>);
+static_assert(::foundation::core::BareOwner<MaskedArray<int>> && ::foundation::core::BareOwner<SegmentList<int>>);
 static_assert(::foundation::core::BareOwner<GrowText> && ::foundation::core::BareOwner<HeapText>);
 static_assert(::foundation::core::BareOwner<AlignedBytes>);
 static_assert(!::foundation::core::BareOwner<HolderOfABox> && !::foundation::core::BareOwner<Option<Box<int>>>);
@@ -170,7 +169,7 @@ struct HolderWithEnd final {
 };
 static_assert(!::foundation::core::EndRunsCode<Box<int>> && !::foundation::core::EndRunsCode<HeapArray<int>>);
 static_assert(!::foundation::core::EndRunsCode<GrowText> && !::foundation::core::EndRunsCode<AlignedBytes>);
-static_assert(!::foundation::core::EndRunsCode<Box<Box<int>>> && !::foundation::core::EndRunsCode<GrowList<Box<int>>>);
+static_assert(!::foundation::core::EndRunsCode<Box<Box<int>>> && !::foundation::core::EndRunsCode<HeapArray<Box<int>>>);
 static_assert(!::foundation::core::EndRunsCode<HolderOfABox> && !::foundation::core::EndRunsCode<Box<HolderOfABox>>);
 static_assert(::foundation::core::EndRunsCode<HolderWithEnd> && ::foundation::core::EndRunsCode<Box<HolderWithEnd>>);
 static_assert(!::foundation::core::MoveRunsCode<Box<Box<int>>> && !::foundation::core::MoveRunsCode<HolderOfABox>);
@@ -279,7 +278,6 @@ struct BoxProbe {
 
 struct HeapArrayTag {};
 struct MaskedArrayTag {};
-struct GrowListTag {};
 struct SegmentListTag {};
 struct SlotMapTag {};
 
@@ -332,12 +330,6 @@ struct Inner<MaskedArrayTag> {
 };
 
 template <>
-struct Inner<GrowListTag> {
-    using brand_type = InnerBrand<GrowListTag>;
-    GrowList<Elem<GrowListTag>> child = ::foundation::core::mint_grow_list<Elem<GrowListTag>>(8);
-};
-
-template <>
 struct Inner<SegmentListTag> {
     using brand_type = InnerBrand<SegmentListTag>;
     SegmentList<Elem<SegmentListTag>> child{};
@@ -381,8 +373,7 @@ struct ElementArms {
     // of the Inner lend them only to their bodies, and the store check of the
     // doors refuses a body that keeps a Ref of either
     // (neg_core_heap_array_element_ref_kept_past_its_frame,
-    // neg_core_masked_array_element_ref_kept_past_its_frame,
-    // neg_core_grow_list_element_ref_kept_past_its_frame and
+    // neg_core_masked_array_element_ref_kept_past_its_frame and
     // neg_core_option_frame_ref_kept_past_its_frame).  So parent = move(child)
     // cannot name a source that parent owns.
     static void child_move() {}
@@ -482,38 +473,6 @@ struct MaskedArrayProbe : ElementArms<MaskedArrayProbe> {
                 ::foundation::core::TextView{
                     "foundation: fatal: an element of a MaskedArray that holds no storage: the array is default or "
                     "moved from"});
-        }
-        CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
-    }
-};
-
-struct GrowListProbe : ElementArms<GrowListProbe> {
-    using Tag = GrowListTag;
-    using Owner = GrowList<Elem<Tag>>;
-
-    static Owner make(unsigned count) {
-        Owner list = ::foundation::core::mint_grow_list<Elem<Tag>>(8);
-        for (unsigned appended = 0; appended < count; ++appended) {
-            list.append(kAlloc, Elem<Tag>{}).expect("the list of the probe has room below its maximum");
-        }
-        return list;
-    }
-
-    static void linear() { CRUCIBLE_FATAL_INVARIANT(keeps_its_linear_element<GrowList<LinearElement>>()); }
-
-    // Empty: a moved-from GrowList gives no element, and an append takes new
-    // storage below the maximum that the list keeps.
-    static void empty() {
-        {
-            Owner source = make(2);
-            Owner const target{static_cast<Owner&&>(through(source))};
-            CRUCIBLE_FATAL_INVARIANT(target.size() == 2);
-            CRUCIBLE_FATAL_INVARIANT(
-                through(source).with_view([](View<Elem<Tag> const> view) noexcept { return view.size(); }) == 0);
-            CRUCIBLE_FATAL_INVARIANT(through(source).with_element(
-                0, [](Elem<Tag>&) noexcept { return false; }, [] noexcept { return true; }));
-            through(source).append(kAlloc, Elem<Tag>{}).expect("a moved-from list keeps its maximum");
-            CRUCIBLE_FATAL_INVARIANT(through(source).size() == 1);
         }
         CRUCIBLE_FATAL_INVARIANT(live_nodes == 0);
     }
@@ -1193,9 +1152,9 @@ struct ProbeList {
     static void run() { (run_probe<Probes>(), ...); }
 };
 
-using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowListProbe, GrowTextProbe,
-                            HeapTextProbe, SegmentListProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe,
-                            SlotMapProbe, SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe, OwnedRegionProbe>;
+using AllProbes = ProbeList<BoxProbe, HoleProbe, HeapArrayProbe, MaskedArrayProbe, GrowTextProbe, HeapTextProbe,
+                            SegmentListProbe, SmallListProbe, AlignedBytesProbe, HeapBitSetProbe, SlotMapProbe,
+                            SwissTableBufferProbe, OwnedMmapProbe, OwnedThreadProbe, OwnedRegionProbe>;
 
 static_assert(AllProbes::gaps == 0,
               "an owner state of the core has no probe in this file, or a probe names an owner off the core, an owner "

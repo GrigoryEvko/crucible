@@ -42,7 +42,7 @@
 //   the least power of two of slots whose bytes are at least 256.  An append
 //   into a full list allocates the next segment, writes one word of the
 //   directory, and moves no element.  So the most expensive append is one
-//   allocation, where the growth of a GrowList also moves each element.
+//   allocation, where the growth of a contiguous list also moves each element.
 //   The unused slots are at most the count of the elements and the slots of
 //   segment 0, as for a list that doubles.
 //

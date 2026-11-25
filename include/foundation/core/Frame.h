@@ -8,11 +8,11 @@
 // has three forms.
 //
 //   with_mut(std::move(owner), body)
-//                       of HeapArray, MaskedArray and GrowList, the owners on
-//                       the heap, and of FixedList: the owner moves into the
-//                       frame of the door, body gets the ViewMut<T, Brand> of
-//                       the elements (foundation/core/Region.h), and the door
-//                       gives the owner back.  While the body runs, the caller
+//                       of HeapArray and MaskedArray, the owners on the heap,
+//                       and of FixedList: the owner moves into the frame of the
+//                       door, body gets the ViewMut<T, Brand> of the elements
+//                       (foundation/core/Region.h), and the door gives the
+//                       owner back.  While the body runs, the caller
 //                       holds no name for the owner: the name that the caller
 //                       moved from holds no storage, or no element of a
 //                       FixedList
@@ -31,8 +31,7 @@
 //   Each door of the family stands beside its owner.  Each door that lends a
 //   ViewMut or a RefMut builds it with the key of this header:
 //     with_mut(std::move(owner), body)   HeapArray and MaskedArray
-//                       (foundation/core/Array.h), FixedList (List.h) and
-//                       GrowList (Grow.h)
+//                       (foundation/core/Array.h) and FixedList (List.h)
 //     with_mut(std::move(box), body)   the object of a Box
 //                       (foundation/core/Ref.h): the Box moves into the frame
 //                       and comes back, with no key
@@ -52,9 +51,9 @@
 //                       FixedArray or of a FixedHeapArray with no key, given
 //                       to the body in place (Array.h).  The body writes it
 //                       only when two threads can write it at the same time
-//     list.with_element(position, on_some, on_none)   the element at a
-//                       position of a GrowList (Grow.h) or of a HeapArray
-//                       (Array.h), given to an arm in place, with no key
+//     array.with_element(position, on_some, on_none)   the element at a
+//                       position of a HeapArray (Array.h), given to an arm in
+//                       place, with no key
 //     with_mut_windows<T>(std::move(block), windows, body)   one ViewMut<T> for
 //                       each of some disjoint windows of an AlignedBytes
 //                       (foundation/AlignedBytes.h), as slice::get_disjoint_mut
@@ -262,7 +261,6 @@ namespace foundation::core {
 class RegionFrameKeyDoor;
 class ArrayFrameKeyDoor;
 class ListFrameKeyDoor;
-class GrowFrameKeyDoor;
 class SmallListFrameKeyDoor;
 class FixedHeapArrayFrameKeyDoor;
 class BoxFrameKeyDoor;
@@ -310,7 +308,6 @@ class FrameDoor final : ::foundation::NoObject<FrameDoor> {
     friend class ::foundation::core::RegionFrameKeyDoor;
     friend class ::foundation::core::ArrayFrameKeyDoor;
     friend class ::foundation::core::ListFrameKeyDoor;
-    friend class ::foundation::core::GrowFrameKeyDoor;
     friend class ::foundation::core::SmallListFrameKeyDoor;
     friend class ::foundation::core::FixedHeapArrayFrameKeyDoor;
     friend class ::foundation::core::BoxFrameKeyDoor;

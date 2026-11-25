@@ -1,29 +1,23 @@
-// Tests of the growable owners of the Region family: append across many
-// growths, the refusal at the maximum, the Full of a linear element, the
-// moves of elements that are not bytewise, the end of each element, an
-// append of a part of the same text, the frame doors, copy_at on one thread and
-// on two threads, the freeze into a HeapText, the foreign doors of Region.h, and
-// the CText of a text that keeps a zero after its characters.
+// Tests of the growable text of the Region family: append across many growths,
+// the refusal at the maximum, an append of a part of the same text, the frame
+// door, the freeze into a HeapText, the foreign doors of Region.h, and the CText
+// of a text that keeps a zero after its characters.
 // test/fixy/test_core_grow_lend.cpp holds the deaths of the lend count.
 
 #include <foundation/core/Grow.h>
 
-#include <foundation/ByteSeal.h>
 #include <foundation/core/Array.h>
-#include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
-#include <fixy/os/ThreadTasks.h>
 
 #include "philox_stream.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <type_traits>
 #include <utility>
 
 namespace {
@@ -37,45 +31,10 @@ namespace {
 
 using ::foundation::core::CText;
 using ::foundation::core::FixedArray;
-using ::foundation::core::GrowList;
 using ::foundation::core::GrowText;
-using ::foundation::core::mint_grow_list;
 using ::foundation::core::mint_grow_text;
 using ::foundation::core::TextView;
 using ::foundation::core::View;
-
-// An element that counts its ends through a Ref to a counter.  A moved-from
-// element is not live, so only a live element counts.
-template <class CounterRef>
-struct Counted final {
-    CounterRef ends;
-    int label = 0;
-    bool is_live = true;
-    Counted(CounterRef counter, int from) noexcept : ends{counter}, label{from} {}
-    Counted(Counted&& other) noexcept : ends{other.ends}, label{other.label} { other.is_live = false; }
-    Counted(Counted const&) = delete;
-    Counted& operator=(Counted&&) = delete;
-    Counted& operator=(Counted const&) = delete;
-    ~Counted() {
-        if (is_live) {
-            ++*ends;
-        }
-    }
-};
-
-// A linear element.  The seal makes its assignment user-provided, so it is
-// not trivially copyable, and it refuses a lifetime start over bytes.
-struct[[= ::foundation::linear::linear{}]] Token final {
-    int id = 0;
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-    explicit Token(int from) noexcept : id{from} {}
-    Token(Token&& other) noexcept : id{other.id} {}
-    Token& operator=(Token&& other) noexcept {
-        id = other.id;
-        return *this;
-    }
-    Token(Token const&) = delete;
-};
 
 // The owner that a call gives back by reference.  The rule use-after-move
 // does not read through it, so a test reads a frozen text again.
@@ -84,196 +43,10 @@ template <class Owner>
     return owner;
 }
 
-// The element at position of a list, or no value at or past its size,
-// through the frame door with_element.
-template <class T>
-[[nodiscard]] ::foundation::core::Option<T> element_at(GrowList<T> const& list, std::size_t position) noexcept {
-    return list.with_element(
-        position, [](T const& element) noexcept { return ::foundation::core::Option<T>::some(element); },
-        [] noexcept { return ::foundation::core::Option<T>{::foundation::core::none}; });
-}
-
-// The count of the elements of a list, through the frame door with_view.
-template <class T>
-[[nodiscard]] std::size_t count_of(GrowList<T> const& list) noexcept {
-    return list.with_view([](View<T const> view) noexcept { return view.size(); });
-}
-
 // True when a text holds the characters of expected, through the frame door
 // with_view.
 [[nodiscard]] bool holds(GrowText const& text, TextView expected) noexcept {
     return text.with_view([expected](TextView characters) noexcept { return characters == expected; });
-}
-
-// A list of integers grows from empty through many doublings, and each read
-// sees each appended value in order.
-void test_append_across_growths() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(100000);
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && count_of(list) == 0 && element_at(list, 0).is_none());
-    for (std::uint32_t value = 0; value < 5000; ++value) {
-        list.append(alloc, value * 3).expect("the list is below its maximum");
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 5000 && count_of(list) == 5000);
-    std::uint32_t const in_order = list.with_view([](View<std::uint32_t const> view) noexcept {
-        std::uint32_t expected = 0;
-        for (std::uint32_t const element : view) {
-            if (element != expected * 3) break;
-            ++expected;
-        }
-        return expected;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, in_order == 5000);
-    CRUCIBLE_TEST_ASSERT(kTest, element_at(list, 4999).expect("4999 is below the count") == 4999 * 3);
-    CRUCIBLE_TEST_ASSERT(kTest, element_at(list, 5000).is_none());
-    bool const is_written = list.with_element(
-        7,
-        [](std::uint32_t& element) noexcept {
-            element = 1;
-            return true;
-        },
-        [] noexcept { return false; });
-    CRUCIBLE_TEST_ASSERT(kTest, is_written && element_at(list, 7).expect("7 is below the count") == 1);
-
-    // clear() keeps the storage, and the next appends reuse it.
-    list.clear();
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && element_at(list, 0).is_none());
-    list.append(alloc, 9).expect("a cleared list is below its maximum");
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 1 && element_at(list, 0).expect("0 is below the count") == 9);
-}
-
-// An append at the maximum gives Full and changes nothing.
-void test_refusal_at_the_maximum() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<int> list = mint_grow_list<int>(3);
-    for (int value = 1; value <= 3; ++value) {
-        list.append(alloc, value).expect("the list is below its maximum");
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, list.append(alloc, 4).is_err());
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 3 && element_at(list, 2).expect("2 is below the count") == 3);
-
-    GrowList<int> none_fit = mint_grow_list<int>(0);
-    CRUCIBLE_TEST_ASSERT(kTest, none_fit.append(alloc, 1).is_err() && none_fit.size() == 0);
-}
-
-// take_last moves the last element out and keeps the storage, so an append
-// after a take writes the freed slot again.  expect_empty ends an empty list,
-// and a list that still holds an element ends the process with the reason.
-void test_take_last_and_expect_empty() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<int> list = mint_grow_list<int>(8);
-    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().is_none());
-    for (int value = 1; value <= 5; ++value) {
-        list.append(alloc, value).expect("the list is below its maximum");
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds five elements") == 5);
-    list.append(alloc, 6).expect("the list is below its maximum");
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 5 && element_at(list, 4).expect("4 is below the count") == 6);
-    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds five elements") == 6);
-    for (int expected = 4; expected >= 1; --expected) {
-        CRUCIBLE_TEST_ASSERT(kTest, list.take_last().expect("the list holds each element up to expected") == expected);
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 0 && list.take_last().is_none());
-    std::move(list).expect_empty("the test took each element out of the list");
-    ::fixy::check::expect_dies(
-        kTest,
-        [] noexcept {
-            ::foundation::effects::Alloc const child_alloc = ::foundation::effects::testing::test().alloc;
-            GrowList<int> held = mint_grow_list<int>(2);
-            held.append(child_alloc, 7).expect("the list is below its maximum");
-            std::move(held).expect_empty("the list still holds one element");
-        },
-        ::fixy::TextView{"foundation: fatal: the list still holds one element"});
-}
-
-// The Full of a linear element gives the value back, a growth moves each
-// token into the new storage, and take_last gives each token back from the
-// last one.
-void test_full_gives_a_linear_value_back() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<Token> list = mint_grow_list<Token>(40);
-    for (int id = 0; id < 40; ++id) {
-        list.append(alloc, Token{id}).expect("the list is below its maximum");
-    }
-    auto refused = list.append(alloc, Token{99});
-    CRUCIBLE_TEST_ASSERT(kTest, refused.is_err());
-    Token back = std::move(refused).err().expect("the list is full").take();
-    CRUCIBLE_TEST_ASSERT(kTest, back.id == 99);
-    ::foundation::linear::drop(std::move(back));
-    int const in_order = list.with_view([](View<Token const> view) noexcept {
-        int expected = 0;
-        for (Token const& token : view) {
-            if (token.id != expected) break;
-            ++expected;
-        }
-        return expected;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, in_order == 40);
-    for (int id = 39; id >= 0; --id) {
-        Token last = list.take_last().expect("the list holds each token up to id");
-        CRUCIBLE_TEST_ASSERT(kTest, last.id == id);
-        ::foundation::linear::drop(std::move(last));
-    }
-    list.take_last().expect_none("an empty list gives no token");
-    std::move(list).expect_empty("the test took each token out of the list");
-}
-
-// Each element that is not bytewise moves at each growth and ends exactly one
-// time: at a clear or at the end of the list.
-void test_each_element_ends_once() {
-    int ends = 0;
-    auto const counter = ::foundation::core::to(ends);
-    using CounterRef = std::remove_const_t<decltype(counter)>;
-    using Element = Counted<CounterRef>;
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    {
-        GrowList<Element> list = mint_grow_list<Element>(1000);
-        for (int label = 0; label < 300; ++label) {
-            list.append(alloc, Element{counter, label}).expect("the list is below its maximum");
-        }
-        CRUCIBLE_TEST_ASSERT(kTest, ends == 0 && list.size() == 300);
-        int const in_order = list.with_view([](View<Element const> view) noexcept {
-            int expected = 0;
-            for (Element const& element : view) {
-                if (!element.is_live || element.label != expected) break;
-                ++expected;
-            }
-            return expected;
-        });
-        CRUCIBLE_TEST_ASSERT(kTest, in_order == 300);
-        GrowList<Element> moved{std::move(list)};
-        CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 300 && ends == 0);
-        moved.clear();
-        CRUCIBLE_TEST_ASSERT(kTest, ends == 300);
-        for (int label = 0; label < 5; ++label) {
-            moved.append(alloc, Element{counter, label}).expect("the list is below its maximum");
-        }
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, ends == 305);
-}
-
-// A list of lists grows, and each inner list keeps its elements.
-void test_nested_lists() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<GrowList<int>> pools = mint_grow_list<GrowList<int>>(64);
-    for (int pool = 0; pool < 20; ++pool) {
-        GrowList<int> members = mint_grow_list<int>(64);
-        for (int member = 0; member <= pool; ++member) {
-            members.append(alloc, pool * 100 + member).expect("the pool is below its maximum");
-        }
-        pools.append(alloc, std::move(members)).expect("the pools are below their maximum");
-    }
-    int const in_order = pools.with_view([](View<GrowList<int> const> view) noexcept {
-        int pool = 0;
-        for (GrowList<int> const& members : view) {
-            bool const holds_pool = members.size() == static_cast<std::size_t>(pool) + 1
-                                 && element_at(members, 0).expect("each pool holds a member") == pool * 100;
-            if (!holds_pool) break;
-            ++pool;
-        }
-        return pool;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, in_order == 20);
 }
 
 // A text grows through many appends of each kind, and refuses an append that
@@ -349,42 +122,10 @@ void test_text_appends_itself() {
     CRUCIBLE_TEST_ASSERT(kTest, other.size() == std::size_t{2} << 12);
 }
 
-// A frame door gives its body the elements or the characters, and gives the
-// result of the body.  with_element writes through its arm, and gives on_none
-// at and past size().  A const owner lends const elements.  After a frame,
-// the owner appends again.
-void test_frame_doors() {
+// The frame door gives its body the characters, and gives the result of the
+// body.  After a frame, the text appends again.
+void test_frame_door() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<std::uint32_t> list = mint_grow_list<std::uint32_t>(1000);
-    for (std::uint32_t value = 0; value < 300; ++value) {
-        list.append(alloc, value).expect("the list is below its maximum");
-    }
-    std::uint64_t const sum = list.with_view([](View<std::uint32_t const> view) noexcept {
-        std::uint64_t total = 0;
-        for (std::uint32_t const element : view) {
-            total += element;
-        }
-        return total;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, sum == std::uint64_t{299} * 300 / 2);
-    bool const is_written = list.with_element(
-        7,
-        [](std::uint32_t& element) noexcept {
-            element = 70;
-            return true;
-        },
-        [] noexcept { return false; });
-    bool const is_past_end =
-        list.with_element(300, [](std::uint32_t&) noexcept { return false; }, [] noexcept { return true; });
-    CRUCIBLE_TEST_ASSERT(kTest, is_written && is_past_end);
-    GrowList<std::uint32_t> const& fixed = list;
-    std::uint32_t const seventh = fixed.with_element(
-        7, [](std::uint32_t const& element) noexcept { return element; }, [] noexcept { return std::uint32_t{0}; });
-    std::size_t const count = fixed.with_view([](View<std::uint32_t const> view) noexcept { return view.size(); });
-    CRUCIBLE_TEST_ASSERT(kTest, seventh == 70 && count == 300);
-    list.append(alloc, 300).expect("the list is below its maximum");
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 301);
-
     GrowText text = mint_grow_text(64);
     text.append(alloc, "aten::mm").expect("the text is below its maximum");
     std::size_t const colons = text.with_view([](TextView characters) noexcept {
@@ -397,73 +138,6 @@ void test_frame_doors() {
     CRUCIBLE_TEST_ASSERT(kTest, colons == 2);
     text.append(alloc, '\0').expect("the text is below its maximum");
     CRUCIBLE_TEST_ASSERT(kTest, text.size() == 9);
-}
-
-// An element whose copy is trivial and whose assignment is not, as the seal
-// makes it.  So no code of the element runs in copy_at, and the element is not
-// trivially copyable.
-struct Sealed final {
-    std::uint64_t value = 0;
-    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
-    explicit Sealed(std::uint64_t from) noexcept : value{from} {}
-};
-static_assert(::foundation::core::CopiedElement<Sealed> && !std::is_trivially_copyable_v<Sealed>);
-
-// copy_at gives a copy of each element below the count, across growths and
-// takes, and no value at or past the count.  A copy outlives a growth, and a
-// body of a frame of the list can call copy_at.
-void test_copy_at() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    GrowList<Sealed> list = mint_grow_list<Sealed>(1000);
-    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(0).is_none());
-    list.append(alloc, Sealed{0}).expect("the list is below its maximum");
-    Sealed const early = list.copy_at(0).expect("0 is below the count");
-    for (std::uint64_t position = 1; position < 300; ++position) {
-        list.append(alloc, Sealed{position * 5}).expect("the list is below its maximum");
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, early.value == 0);
-    GrowList<Sealed> const& fixed = list;
-    for (std::size_t position = 0; position < 300; ++position) {
-        CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(position).expect("below the count").value == position * 5);
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(300).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, fixed.copy_at(::fixy::max_of<std::size_t>).is_none());
-    bool const is_same = fixed.with_view([&fixed](View<Sealed const> view) noexcept {
-        return fixed.copy_at(7).expect("7 is below the count").value
-            == view.get(7).expect("7 is below the count")->value;
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, is_same);
-    CRUCIBLE_TEST_ASSERT(kTest, list.take_last().is_some() && list.copy_at(299).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(298).expect("298 is below the count").value == 298 * 5);
-    list.clear();
-    CRUCIBLE_TEST_ASSERT(kTest, list.copy_at(0).is_none());
-}
-
-// Two threads copy each element of one finished list at the same time.  The
-// list is no Shareable type, so the probe door starts the threads.  Each thread
-// starts after the last append, and the join comes before the end of the list.
-// copy_at and size() write nothing, so ThreadSanitizer sees no race.
-void test_two_threads_copy_a_finished_list() {
-    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    constexpr std::uint64_t kCount = 5000;
-    GrowList<std::uint64_t> list = mint_grow_list<std::uint64_t>(kCount);
-    for (std::uint64_t value = 0; value < kCount; ++value) {
-        list.append(alloc, value).expect("the list is below its maximum");
-    }
-    auto add_each = [&fixed = std::as_const(list)] noexcept {
-        std::uint64_t total = 0;
-        for (std::size_t position = 0; position < fixed.size(); ++position) {
-            total += fixed.copy_at(position).expect("the position is below the count");
-        }
-        return total;
-    };
-    auto const sums =
-        ::fixy::thread::run_joined_raw_probe(::fixy::BgLoadCtx{::foundation::effects::testing::bg()}, kTest,
-                                             "two readers of one finished list, which no type states as shared",
-                                             ::fixy::thread::ThreadOptions{}, auto{add_each}, std::move(add_each))
-            .expect("the probe starts two threads");
-    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<0>()) == kCount * (kCount - 1) / 2);
-    CRUCIBLE_TEST_ASSERT(kTest, sums.at(::fixy::index<1>()) == kCount * (kCount - 1) / 2);
 }
 
 // A freeze gives the characters to a HeapText with no copy, and leaves the
@@ -489,36 +163,31 @@ void test_freeze() {
     CRUCIBLE_TEST_ASSERT(kTest, moved.size() == 0);
 }
 
-// The property: random appends to a list and a text agree with a model of a
-// count and a sum, and a refusal comes exactly at the maximum.
+// The property: random appends to a text agree with a model of its count, and a
+// refusal comes exactly at the maximum.
 void test_agrees_with_a_model() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     ::crucible::test::PhiloxStream stream{0x5EEDA77A00000002u};
     for (int trial = 0; trial < 64; ++trial) {
         std::size_t const maximum = stream.below(500);
-        GrowList<std::uint64_t> list = mint_grow_list<std::uint64_t>(maximum);
         GrowText text = mint_grow_text(maximum);
         std::size_t const appends = stream.below(600);
-        std::uint64_t model_sum = 0;
         std::size_t model_count = 0;
         for (std::size_t turn = 0; turn < appends; ++turn) {
-            std::uint64_t const value = stream.next_wide();
-            bool const is_refused = list.append(alloc, value).is_err();
-            bool const is_text_refused = text.append(alloc, 'x').is_err();
-            CRUCIBLE_TEST_ASSERT(kTest, is_refused == (model_count == maximum) && is_text_refused == is_refused);
+            bool const is_refused = text.append(alloc, 'x').is_err();
+            CRUCIBLE_TEST_ASSERT(kTest, is_refused == (model_count == maximum));
             if (!is_refused) {
-                model_sum += value;
                 ++model_count;
             }
         }
-        std::uint64_t const sum = list.with_view([](View<std::uint64_t const> view) noexcept {
-            std::uint64_t total = 0;
-            for (std::uint64_t const element : view) {
-                total += element;
+        std::size_t const written = text.with_view([](TextView characters) noexcept {
+            std::size_t found = 0;
+            for (char const character : characters) {
+                found += character == 'x' ? 1 : 0;
             }
-            return total;
+            return found;
         });
-        CRUCIBLE_TEST_ASSERT(kTest, sum == model_sum && list.size() == model_count && text.size() == model_count);
+        CRUCIBLE_TEST_ASSERT(kTest, text.size() == model_count && written == model_count);
     }
 }
 
@@ -605,17 +274,9 @@ void test_c_text_doors() {
 }  // namespace
 
 int main() {
-    test_append_across_growths();
-    test_refusal_at_the_maximum();
-    test_full_gives_a_linear_value_back();
-    test_take_last_and_expect_empty();
-    test_each_element_ends_once();
-    test_nested_lists();
     test_text_appends();
     test_text_appends_itself();
-    test_frame_doors();
-    test_copy_at();
-    test_two_threads_copy_a_finished_list();
+    test_frame_door();
     test_freeze();
     test_agrees_with_a_model();
     test_foreign_doors();

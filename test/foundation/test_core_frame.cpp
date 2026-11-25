@@ -13,7 +13,6 @@
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/List.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Ref.h>
@@ -35,7 +34,6 @@ namespace {
 
 using ::foundation::core::FixedArray;
 using ::foundation::core::FixedList;
-using ::foundation::core::GrowList;
 using ::foundation::core::HeapArray;
 using ::foundation::core::LengthMismatch;
 using ::foundation::core::MaskedArray;
@@ -227,26 +225,6 @@ void test_fixed_list() {
         CRUCIBLE_TEST_ASSERT(kTest, labels == 12);
     }
     CRUCIBLE_TEST_ASSERT(kTest, ends == 3);
-}
-
-// A GrowList gives its storage to the frame and lends it for the time of the
-// body.  After the frame, the list grows again.
-void test_grow_list() {
-    GrowList<int> list = ::foundation::core::mint_grow_list<int>(10000);
-    for (int value = 0; value < 100; ++value) {
-        list.append(allocation(), value).expect("the list is below its maximum");
-    }
-    list = with_mut(std::move(through(list)), [&list](auto out) noexcept {
-        CRUCIBLE_TEST_ASSERT(kTest, through(list).size() == 0 && out.size() == 100);
-        for (int& element : out) {
-            element = -element;
-        }
-    });
-    for (int value = 0; value < 900; ++value) {
-        list.append(allocation(), 1).expect("the list is below its maximum");
-    }
-    int const total = list.with_view([](View<int const> elements) noexcept { return sum_of(elements); });
-    CRUCIBLE_TEST_ASSERT(kTest, list.size() == 1000 && total == 900 - 99 * 100 / 2);
 }
 
 // The frame door of an Option runs the arm of its state in place.  A full
@@ -986,7 +964,6 @@ int main() {
     test_heap_array();
     test_masked_array();
     test_fixed_list();
-    test_grow_list();
     test_option();
     test_result();
     test_one_of();
