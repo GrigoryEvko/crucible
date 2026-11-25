@@ -427,7 +427,7 @@ Kill for memory
     one JSON line to KILL_LOG of the work directory, with the configuration,
     the memory of a job of its lease and the first problem.  A count of the
     lines of one kind tells if the reservation of that kind is too small
-    (KIND_GB_PER_JOB).
+    (KIND_GB_PER_JOB of assay.loop.heavy).
 
 Reduce
     A ledger fails only on a growth (the policies of assay.core.ledger).  A
@@ -751,7 +751,6 @@ import enum
 import fcntl
 import functools
 import json
-import math
 import os
 import re
 import resource
@@ -866,30 +865,6 @@ VESSEL_COUNTED_RULES = ("process-wide-state", "proof-routes", "quarantine")
 VESSEL_LABEL = "vessel"
 VESSEL_PREFIX = "vessel/"
 TORCH_VENV = ".venv-torch"
-# The memory of one job of each kind of each configuration, in GB (the budget of assay.loop.heavy): the 99th
-# percentile of the peaks of the compiles and of the tests, and the largest peak of the links.  The records of the build
-# launcher of the seven lanes gave them on 2026-11-15, from 926 to 2461 compiles, 3081 to 3817 links and about 23000
-# tests for each configuration.  A link is about as heavy as each other link, so its peak counts.  The vessel compiles
-# 96 shards of the same size, so its compile counts at a peak too: 1.65 GB, the peak of a shard on 2026-11-14 with the
-# full debug information, above the 1.56 GB with -g1.  release-v3 takes the row of release.  On 2026-11-16, the same
-# method gave 0.578, 0.316 and 0.372 GB for one build of release-v3, and 0.572, 0.318 and 0.368 GB for the release
-# build of the first lane.
-KIND_GB_PER_JOB = {
-    "default": {"compile": 0.56, "link": 0.50, "test": 0.35},
-    "release": {"compile": 0.52, "link": 0.32, "test": 0.31},
-    "release-v3": {"compile": 0.52, "link": 0.32, "test": 0.31},
-    "tsan": {"compile": 0.49, "link": 0.36, "test": 0.40},
-    "ubsan-strict": {"compile": 0.51, "link": 0.38, "test": 0.31},
-    "bench-fuzz": {"compile": 0.81, "link": 0.50, "test": 0.30},
-    "vessel": {"compile": 1.65, "link": 0.96, "test": 1.13},
-}
-# The kinds of jobs of each step of a lease.  A token of the jobserver names no kind, so a lease reserves the largest
-# kind of the step that holds it.  `loop test` builds and tests in one command, and the vessel builds and tests in two.
-BUILD_KINDS = ("compile", "link")
-EACH_KIND = ("compile", "link", "test")
-TEST_KINDS = ("test",)
-# The share of a GB that the memory of a job of KIND_GB_PER_JOB rounds up to.
-GB_STEP = 0.1
 # The file of the work directory with one JSON line for each kill for lack of memory (the kill for memory).
 KILL_LOG = "oom-kills.jsonl"
 # The file whose first line gives the CPU times of all CPUs of the host, in jiffies, the count of its fields that hold
@@ -1643,20 +1618,6 @@ def move_tree(root: Path, tree: Path, commit: str) -> None:
         repair_index(tree)
         git.run(tree, "read-tree", "--reset", "-u", commit, timeout_s=proc.TOOL_S)
     git.run(tree, "update-ref", "--no-deref", "HEAD", commit)
-
-
-def gb_per_job_of(name: str, kinds: Sequence[str] = EACH_KIND) -> float:
-    """Return the memory of one job of a lease of a configuration that runs jobs of `kinds`, in GB (the budget of
-    assay.loop.heavy).
-
-    The memory is the largest of the kinds in KIND_GB_PER_JOB, rounded up to GB_STEP.  A configuration with no row,
-    such as a parse configuration, has GB_PER_JOB of assay.loop.heavy.
-    """
-    row = KIND_GB_PER_JOB.get(name)
-    if row is None:
-        return heavy.GB_PER_JOB
-    largest = max(row[kind] for kind in kinds)
-    return round(math.ceil(round(largest / GB_STEP, 6)) * GB_STEP, 6)
 
 
 def repair_head(tree: Path) -> None:
@@ -2558,7 +2519,7 @@ class Step:
         self.say(f"loop land: {ALWAYS}: build and write {' '.join(self.candidate.built)}")
         began = time.monotonic()
         try:
-            with self.leased(gb_per_job_of(ALWAYS)) as share:
+            with self.leased(heavy.gb_per_job_of(ALWAYS)) as share:
                 problems = self.written_built(BY_NAME[ALWAYS], share)
         finally:
             self.built_ready.set()
@@ -3209,7 +3170,7 @@ class Step:
             return checked, (), ()
         if is_read_by_vessel(self.candidate.built):
             self.wait_built(configuration)
-        share.lease.set_gb_per_job(gb_per_job_of(VESSEL, TEST_KINDS))
+        share.lease.set_gb_per_job(heavy.gb_per_job_of(VESSEL, heavy.TEST_KINDS))
         report = logs / log_name(configuration, "test.junit.xml", is_again)
         report.unlink(missing_ok=True)
         words = ["--label-regex", f"^{VESSEL_LABEL}$"]
@@ -3281,7 +3242,7 @@ class Step:
         wait_s = 0.0
         lease: heavy.Lease | None = None
         is_vessel = run.mode is Mode.VESSEL
-        gb_per_job = gb_per_job_of(VESSEL, BUILD_KINDS) if is_vessel else gb_per_job_of(name)
+        gb_per_job = heavy.gb_per_job_of(VESSEL, heavy.BUILD_KINDS) if is_vessel else heavy.gb_per_job_of(name)
         try:
             weight = VESSEL_WEIGHT if is_vessel else 1
             with self.leased(gb_per_job, is_capped=is_vessel, weight=weight) as share:

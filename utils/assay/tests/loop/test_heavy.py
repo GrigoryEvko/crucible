@@ -155,6 +155,42 @@ def large_job_cases(expect: testing.Expect) -> None:
         )
 
 
+def command_cases(expect: testing.Expect) -> None:
+    """Hold the memory of one job of a command: the largest row of the presets of the build directories it names."""
+    with tempfile.TemporaryDirectory(prefix="heavy-command-") as work_text:
+        root = Path(work_text) / "tree"
+        root.mkdir()
+        (root / heavy.PRESETS_FILE).write_text(
+            '{"version": 6, "configurePresets": ['
+            '{"name": "default", "binaryDir": "${sourceDir}/build"}, '
+            '{"name": "vessel", "binaryDir": "${sourceDir}/build-vessel"}, '
+            '{"name": "other", "binaryDir": "${sourceDir}/build-other"}]}\n',
+            encoding="utf-8",
+        )
+        for name in ("build", "build-vessel", "build-other"):
+            (root / name).mkdir()
+            (root / name / heavy.CACHE_FILE).write_text("", encoding="utf-8")
+        (root / "build-bare").mkdir()
+        loose = Path(work_text) / "loose"
+        loose.mkdir()
+        (loose / heavy.CACHE_FILE).write_text("", encoding="utf-8")
+        vessel = heavy.gb_per_job_of("vessel")
+        cases = (
+            ("a relative vessel build", ["cmake", "--build", "build-vessel"], vessel),
+            ("an absolute vessel build", ["cmake", "--build", str(root / "build-vessel")], vessel),
+            ("a test directory after =", ["ctest", "--test-dir=build"], heavy.gb_per_job_of("default")),
+            ("two build directories", ["make", "-C", "build", "build-vessel"], vessel),
+            ("a preset with no row", ["cmake", "--build", "build-other"], heavy.GB_PER_JOB),
+            ("a directory with no cache", ["cmake", "--build", "build-bare"], heavy.GB_PER_JOB),
+            ("a build with no presets file above it", ["cmake", "--build", str(loose)], heavy.GB_PER_JOB),
+            ("a command with no build directory", ["true"], heavy.GB_PER_JOB),
+        )
+        for title, command, wanted in cases:
+            value = heavy.command_gb_per_job(root, command)
+            expect(f"the memory of one job of {title} is {wanted} GB: {value}", value == wanted)
+    expect(f"a vessel job reserves more than a plain job: {vessel} GB", vessel > heavy.GB_PER_JOB)
+
+
 def step_cases(expect: testing.Expect) -> None:
     """Hold the job count of a heavy step: one read of the memory, no wait, and one line of the memory."""
     with tempfile.TemporaryDirectory(prefix="heavy-step-") as root_text:
@@ -1055,6 +1091,7 @@ def main(argv: list[str]) -> int:
         (
             memory_cases,
             large_job_cases,
+            command_cases,
             step_cases,
             lock_cases,
             gate_cases,

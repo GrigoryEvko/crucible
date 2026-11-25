@@ -475,7 +475,7 @@ PLANTED = {
 }
 # The available memory of the heavy step of a run.  With much memory, the step gets the jobs of the gate.  With a small
 # memory, the step of default gets (9.5 - RESERVE_GB) / 0.6 = 2 jobs (the memory of assay.loop.heavy, and
-# KIND_GB_PER_JOB of assay.loop.gate).
+# KIND_GB_PER_JOB of assay.loop.heavy).
 MUCH_MEMORY_GB = 1e6
 SMALL_MEMORY_GB = 9.5
 SMALL_MEMORY_JOBS = 2
@@ -2281,15 +2281,15 @@ def oom_cases(expect: testing.Expect) -> None:
 def kind_cases(expect: testing.Expect) -> None:
     """Hold the memory of a job of each lease of the gate: the largest kind of its step, rounded up to GB_STEP."""
     values = {
-        "default": gate.gb_per_job_of("default"),
-        "release": gate.gb_per_job_of("release"),
-        "release-v3": gate.gb_per_job_of("release-v3"),
-        "tsan": gate.gb_per_job_of("tsan"),
-        "ubsan-strict": gate.gb_per_job_of("ubsan-strict"),
-        "bench-fuzz": gate.gb_per_job_of("bench-fuzz"),
-        "vessel build": gate.gb_per_job_of(gate.VESSEL, gate.BUILD_KINDS),
-        "vessel tests": gate.gb_per_job_of(gate.VESSEL, gate.TEST_KINDS),
-        "parse": gate.gb_per_job_of("syntax-x86-64"),
+        "default": heavy.gb_per_job_of("default"),
+        "release": heavy.gb_per_job_of("release"),
+        "release-v3": heavy.gb_per_job_of("release-v3"),
+        "tsan": heavy.gb_per_job_of("tsan"),
+        "ubsan-strict": heavy.gb_per_job_of("ubsan-strict"),
+        "bench-fuzz": heavy.gb_per_job_of("bench-fuzz"),
+        "vessel build": heavy.gb_per_job_of(gate.VESSEL, heavy.BUILD_KINDS),
+        "vessel tests": heavy.gb_per_job_of(gate.VESSEL, heavy.TEST_KINDS),
+        "parse": heavy.gb_per_job_of("syntax-x86-64"),
     }
     expect(
         f"a lease of `loop test` reserves the largest kind of its configuration, the vessel reserves a shard to build "

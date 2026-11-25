@@ -346,7 +346,7 @@ def main(argv: list[str]) -> int:
     share = share_of(os.environ)
     jobs = options.jobs
     if share is Share.STEP:
-        jobs = heavy.jobs_for_memory(proc.DEFAULT_JOBS, gb_per_job=gate.gb_per_job_of(gate.VESSEL))
+        jobs = heavy.jobs_for_memory(proc.DEFAULT_JOBS, gb_per_job=heavy.gb_per_job_of(gate.VESSEL))
     try:
         outcomes = run_levels(root, levels, jobs, share)
     except x86level.LevelError as problem:

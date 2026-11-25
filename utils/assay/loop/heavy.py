@@ -285,11 +285,38 @@ GATE_FILE = Path(".worktrees/.grun/gate.lock")
 TURN_FILE = Path(".worktrees/.grun/turn.lock")
 # The memory of one job, in GB (the memory).  On 2026-11-15 the compiles of the Debug build with ASan in the lanes of
 # the gate had a 99th percentile of 0.56 GB, its links a peak of 0.50 GB, and its tests a 99th percentile of 0.35 GB.
-# The row default of KIND_GB_PER_JOB of assay.loop.gate holds the same values.
+# The row default of KIND_GB_PER_JOB holds the same values.
 GB_PER_JOB = 0.6
 # The memory of one job of a lease whose marker gives no memory, in GB (the budget): the largest memory of one job of
 # the gate, a compile of a shard of the vessel.
 UNKNOWN_GB_PER_JOB = 1.7
+# The memory of one job of each kind of each configuration, in GB (the budget, the memory of a command): the 99th
+# percentile of the peaks of the compiles and of the tests, and the largest peak of the links.  The records of the build
+# launcher of the seven lanes gave them on 2026-11-15, from 926 to 2461 compiles, 3081 to 3817 links and about 23000
+# tests for each configuration.  A link is about as heavy as each other link, so its peak counts.  The vessel compiles
+# 96 shards of the same size, so its compile counts at a peak too: 1.65 GB, the peak of a shard on 2026-11-14 with the
+# full debug information, above the 1.56 GB with -g1.  release-v3 takes the row of release.  On 2026-11-16, the same
+# method gave 0.578, 0.316 and 0.372 GB for one build of release-v3, and 0.572, 0.318 and 0.368 GB for the release
+# build of the first lane.
+KIND_GB_PER_JOB = {
+    "default": {"compile": 0.56, "link": 0.50, "test": 0.35},
+    "release": {"compile": 0.52, "link": 0.32, "test": 0.31},
+    "release-v3": {"compile": 0.52, "link": 0.32, "test": 0.31},
+    "tsan": {"compile": 0.49, "link": 0.36, "test": 0.40},
+    "ubsan-strict": {"compile": 0.51, "link": 0.38, "test": 0.31},
+    "bench-fuzz": {"compile": 0.81, "link": 0.50, "test": 0.30},
+    "vessel": {"compile": 1.65, "link": 0.96, "test": 1.13},
+}
+# The kinds of jobs of each step of a lease.  A token of the jobserver names no kind, so a lease reserves the largest
+# kind of the step that holds it.  `loop test` builds and tests in one command, and the vessel builds and tests in two.
+BUILD_KINDS = ("compile", "link")
+EACH_KIND = ("compile", "link", "test")
+TEST_KINDS = ("test",)
+# The share of a GB that the memory of a job of KIND_GB_PER_JOB rounds up to.
+GB_STEP = 0.1
+# The file of a configured build directory, and the presets file of a tree (the memory of a command).
+CACHE_FILE = "CMakeCache.txt"
+PRESETS_FILE = "CMakePresets.json"
 # The memory that the pool keeps for the processes that hold no lease, in GB (the memory, the budget).
 RESERVE_GB = 8.0
 MEMORY_FILE = Path("/proc/meminfo")
@@ -561,6 +588,68 @@ def wait_for_gate(handle: IO[str]) -> None:
         check_report.write_line("heavy: a session of the gate runs, and the step waits for it")
         fcntl.flock(handle, fcntl.LOCK_EX)
         fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def gb_per_job_of(name: str, kinds: Sequence[str] = EACH_KIND) -> float:
+    """Return the memory of one job of a lease of a configuration that runs jobs of `kinds`, in GB (the budget).
+
+    The memory is the largest of the kinds in KIND_GB_PER_JOB, rounded up to GB_STEP.  A configuration with no row,
+    such as a parse configuration, has GB_PER_JOB.
+    """
+    row = KIND_GB_PER_JOB.get(name)
+    if row is None:
+        return GB_PER_JOB
+    largest = max(row[kind] for kind in kinds)
+    return round(math.ceil(round(largest / GB_STEP, 6)) * GB_STEP, 6)
+
+
+def presets_root(build_dir: Path) -> Path | None:
+    """Return the nearest directory above a build directory that holds PRESETS_FILE, or None (the memory of a command).
+
+    Complexity: linear in the depth of the directory.
+    """
+    for directory in build_dir.parents:
+        if (directory / PRESETS_FILE).is_file():
+            return directory
+    return None
+
+
+def command_gb_per_job(directory: Path, command: Sequence[str]) -> float:
+    """Return the memory of one job of a command, from the presets of the build directories that it names.
+
+    A word of the command, or the part after its last "=", names a build directory when that path, absolute or
+    relative to `directory`, holds CACHE_FILE.  The configuration of such a directory is each configure preset of
+    KIND_GB_PER_JOB whose binaryDir is that directory, in the tree of the nearest PRESETS_FILE above it.  The memory is
+    the largest gb_per_job_of() of those configurations, and GB_PER_JOB for a command that names no build directory
+    of a row.  A tree whose presets file cannot be read gives nothing.  Complexity: linear in the words times the rows.
+    """
+    from assay.readers import cmake
+
+    found: list[float] = [GB_PER_JOB]
+    known: dict[Path, dict[Path, str]] = {}
+    for word in command:
+        candidate = Path(word.rsplit("=", 1)[-1])
+        build_dir = (candidate if candidate.is_absolute() else directory / candidate).resolve()
+        if not (build_dir / CACHE_FILE).is_file():
+            continue
+        root = presets_root(build_dir)
+        if root is None:
+            continue
+        if root not in known:
+            try:
+                configure = [preset for presets_file in cmake.presets(root) for preset in presets_file.configure]
+                names = {preset.name for preset in configure}
+                known[root] = {
+                    cmake.build_directory(root, name, configure).resolve(): name
+                    for name in KIND_GB_PER_JOB
+                    if name in names
+                }
+            except cmake.CmakeError, OSError:
+                known[root] = {}
+        name = known[root].get(build_dir)
+        if name is not None:
+            found.append(gb_per_job_of(name))
+    return max(found)
 
 
 def jobs_for_memory(requested: int, read: Reader = available_gb, gb_per_job: float = GB_PER_JOB) -> int:
@@ -1252,8 +1341,9 @@ def main(argv: list[str]) -> int:
     if options.jobs < 1:
         check_report.write_line(f"loop heavy: -j takes a number above 0, not {options.jobs}", is_error=True)
         return ExitCode.USAGE
+    directory = options.directory.resolve()
     try:
-        with leased(options.directory.resolve(), options.jobs) as share:
+        with leased(directory, options.jobs, gb_per_job=command_gb_per_job(directory, command)) as share:
             if share is None:
                 return ExitCode.TOOL_FAILED
             environment = proc.environment({STEP_VARIABLE: STEP_VALUE, **share.environment})
