@@ -39,8 +39,12 @@ constexpr VigilFgCtx kVigilForeground = ::foundation::effects::testing::foregrou
 // adapter filling an Entry from a foreign runtime runs the checks in
 // vessel_api_typed.h and crosses the retag edge; this is file-local so
 // there is nothing shorter for an adapter to reach for.
-[[nodiscard]] TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
-                                                                   CRUCIBLE_LIFETIMEBOUND) noexcept {
+//
+// The three helpers of an op are inline in each timed body.  A body with a
+// call to a helper times the call too, and the choice of the inliner changes
+// from one build of this file to the next.
+[[nodiscard]] CRUCIBLE_INLINE TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry& entry
+                                                                                   CRUCIBLE_LIFETIMEBOUND) noexcept {
     return mint_ffi_entry(entry).retag<::fixy::tags::vessel_trust::Validated>();
 }
 TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
@@ -49,8 +53,8 @@ TraceRing::ValidatedEntryPtr certify_synthetic_entry(const TraceRing::Entry&&) =
 // Certifies an Entry this file built, and pairs it with its records, so it
 // can reach record_op and dispatch_op.  The process ends when the count of
 // the records disagrees with the entry.
-[[nodiscard]] ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
-                                               ::fixy::View<const TensorMeta> metas) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE ValidatedOp certify_synthetic_op(const TraceRing::Entry& entry CRUCIBLE_LIFETIMEBOUND,
+                                                               ::fixy::View<const TensorMeta> metas) noexcept {
     return crucible::mint_validated_op(certify_synthetic_entry(entry), metas)
         .expect("the count of the records agrees with the entry");
 }
@@ -129,7 +133,8 @@ struct OpData {
 };
 
 // The records of the op: the first n_metas records of its array.
-[[nodiscard]] ::fixy::View<const TensorMeta> records_of(const OpData& op CRUCIBLE_LIFETIMEBOUND) noexcept {
+[[nodiscard]] CRUCIBLE_INLINE ::fixy::View<const TensorMeta> records_of(const OpData& op
+                                                                        CRUCIBLE_LIFETIMEBOUND) noexcept {
     return ::fixy::View<const TensorMeta>{op.metas.view()}
         .window(0, op.n_metas)
         .expect("the count fits the records of the op");
