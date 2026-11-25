@@ -636,7 +636,7 @@ struct EventLogDecodeFailure {
 // The events take one allocation for the count of records.  Complexity:
 // linear in the number of records.
 [[nodiscard]] inline ::foundation::core::Result<::foundation::core::HeapArray<SessionEvent>, EventLogDecodeFailure>
-decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::View<std::byte const> bytes) {
+decode_session_log(::foundation::core::Alloc allocation, ::foundation::core::View<std::byte const> bytes) noexcept {
     if (bytes.size() % session_event_size != 0) {
         return ::foundation::core::err(
             EventLogDecodeFailure{bytes.size() / session_event_size, EventDecodeError::Truncated});

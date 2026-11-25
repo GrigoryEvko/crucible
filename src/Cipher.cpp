@@ -83,9 +83,11 @@ using EntryPath = ::foundation::os::PathText<64>;
 }
 
 // Gives the result of call for the context of the caller.  The context is
-// one of three types, so the call compiles one time for each capability.
+// one of three types, so the call compiles one time for each capability.  It
+// does not throw when no form of call throws.
 template <class Call>
-[[nodiscard]] auto with_file_ctx_(Cipher::FileCtx const& file_ctx, Call const& call) {
+[[nodiscard]] auto with_file_ctx_(Cipher::FileCtx const& file_ctx,
+                                  Call const& call) noexcept(noexcept(file_ctx.match(call, call, call))) {
     return file_ctx.match(call, call, call);
 }
 
@@ -1030,7 +1032,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     // from bytes to an event and refuses a record with a byte outside its
     // field.  Complexity: one read of the batch file and linear in its size.
     using CheckedBatch = ::fixy::Result<::fixy::HeapArray<SessionEvent>, LoadError>;
-    const auto read_checked_batch = [&](IndexLine const& index_line) -> CheckedBatch {
+    const auto read_checked_batch = [&](IndexLine const& index_line) noexcept -> CheckedBatch {
         const uint64_t first = index_line.first;
         const uint64_t last = index_line.last;
         const uint64_t count = index_line.count;
@@ -1040,7 +1042,7 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
 
         const ContentHash hash{index_line.hash};
         const EntryPath batch = batch_entry_(index_line.hash);
-        CRUCIBLE_TRY(bytes, with_file_ctx_(file_ctx, [&](auto const& ctx) {
+        CRUCIBLE_TRY(bytes, with_file_ctx_(file_ctx, [&](auto const& ctx) noexcept {
                          return read_batch_at_(ctx, allocation, session_dir, batch.c_text(),
                                                cipher::federation::FEDERATION_HEADER_BYTES
                                                    + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES);
@@ -1087,9 +1089,8 @@ Cipher::SessionEventLoad Cipher::load_session_events_(FileCtx const& file_ctx, O
     };
 
     // Loads the events of the batch of one index line, or reports the reason
-    // that the load skips the batch.  The read of the batch is not noexcept,
-    // so the lambda is not noexcept either.
-    const auto load_line = [&](IndexLine const& index_line) {
+    // that the load skips the batch.
+    const auto load_line = [&](IndexLine const& index_line) noexcept {
         if (index_line.last < from_step.raw()) return;
         // A writer that stores a batch again appends its line again, and the
         // load holds the events of that batch.  Each other line whose first
