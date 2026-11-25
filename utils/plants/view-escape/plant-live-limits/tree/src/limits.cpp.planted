@@ -2,11 +2,18 @@
 // the place analysis.  A join takes each end of its branches.  A door of a class
 // gives a loan of its whole object.  Each element of an array is one place.  A swap
 // in a callee reads as the end of its two owners.  A call that gives the old owner
-// back to a local ends the borrow of its source.
+// back to a local ends the borrow of its source, and so does a call that takes an
+// owner out of the block of a Box.  A call that consumes a sum ends the borrows that
+// its arm reads.  Two owners of one class in one object are one owner.  A construct
+// at a pointer reads as the end of the owner that it moves into the new object, also
+// through an aggregate.
 #include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
 #include <foundation/core/List.h>
+#include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 
+#include <memory>
 #include <utility>
 
 namespace planted {
@@ -22,6 +29,7 @@ class Two {
 public:
     View first() const& noexcept { return first_.view(); }
     void replace_second() noexcept { second_ = Items{}; }
+    Items take_second() && noexcept { return std::move(second_); }
 
 private:
     Items first_{};
@@ -74,6 +82,45 @@ unsigned long removed_owner_in_a_local(List list) noexcept {
     auto const view = list.get(0).expect("the list holds an element")->view();
     auto const held = list.remove(fc::index<0>());
     return view.size() + (held.is_some() ? 1 : 0);
+}
+
+unsigned long owner_out_of_a_box(fc::Box<Items> box) noexcept {
+    auto const view = box->view();
+    Items const items = std::move(box).consume();
+    return view.size() + items.size();
+}
+
+unsigned long use_in_an_arm() noexcept {
+    Items items{};
+    auto const view = items.view();
+    fc::Option<Items> option = fc::Option<Items>::some(std::move(items));
+    return std::move(option).match([&view](Items taken) noexcept { return view.size() + taken.size(); },
+                                   []() noexcept { return 0UL; });
+}
+
+unsigned long owner_of_the_same_class(Two two) noexcept {
+    auto const view = two.first();
+    { Items const items = std::move(two).take_second(); }
+    return view.size();
+}
+
+struct Header {
+    unsigned long generation = 0;
+    Items inner;
+};
+
+unsigned long construct_of_a_named_owner(Items& place) noexcept {
+    Items items{};
+    auto const view = items.view();
+    std::construct_at(&place, std::move(items));
+    return view.size();
+}
+
+unsigned long construct_of_an_aggregate(Header& place) noexcept {
+    Items items{};
+    auto const view = items.view();
+    std::construct_at(&place, Header{.generation = 1, .inner = std::move(items)});
+    return view.size();
 }
 
 }  // namespace planted

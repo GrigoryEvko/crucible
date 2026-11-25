@@ -1,20 +1,33 @@
 # Each limit of the place analysis is an error with no read of dead storage: a
-# change on a path that excludes the use (43), a change of a different element (50)
-# and of a different member (56) through a door, a swap in a callee (64), and the
-# old owner that an exchange (70) or a remove (76) gives to a local.
+# change on a path that excludes the use (51), a change of a different element (58)
+# and of a different member (64) through a door, a swap in a callee (72), the old owner
+# that an exchange (78), a remove (84) or a consume of a Box (90) gives to a local, a
+# borrow in an arm of a match that takes the owner (97), a second owner of the same
+# class that leaves the object (104), and a construct at a pointer of a named owner
+# (116) and of an aggregate that holds the owner (123).
 
 compile limits src/limits.cpp
 flag limits -freflection
 exit limits fail
-finding limits view-escape stale-borrow src/limits.cpp:43:30 | borrow of items in view after an assignment of items
-finding limits view-escape stale-borrow src/limits.cpp:50:12 | borrow of pair in view after a call of foundation::core::FixedArray::set with pair
-finding limits view-escape stale-borrow src/limits.cpp:56:12 | borrow of two in view after a call of planted::Two::replace_second with two
-finding limits view-escape stale-borrow src/limits.cpp:64:12 | borrow of first in view after a call of planted::swap_owners with first
-finding limits view-escape stale-borrow src/limits.cpp:70:12 | borrow of list in view after a call of foundation::core::FixedList::exchange with list
-finding limits view-escape stale-borrow src/limits.cpp:76:12 | borrow of list in view after a call of foundation::core::FixedList::remove with list
-error limits src/limits.cpp:43 | this use reads a borrow of items in view after an assignment of items
-error limits src/limits.cpp:50 | this use reads a borrow of pair in view after a call of foundation::core::FixedArray::set with pair
-error limits src/limits.cpp:56 | this use reads a borrow of two in view after a call of planted::Two::replace_second with two
-error limits src/limits.cpp:64 | this use reads a borrow of first in view after a call of planted::swap_owners with first
-error limits src/limits.cpp:70 | this use reads a borrow of list in view after a call of foundation::core::FixedList::exchange with list
-error limits src/limits.cpp:76 | this use reads a borrow of list in view after a call of foundation::core::FixedList::remove with list
+finding limits view-escape stale-borrow src/limits.cpp:51:30 | borrow of items in view after an assignment of items
+finding limits view-escape stale-borrow src/limits.cpp:58:12 | borrow of pair in view after a call of foundation::core::FixedArray::set with pair
+finding limits view-escape stale-borrow src/limits.cpp:64:12 | borrow of two in view after a call of planted::Two::replace_second with two
+finding limits view-escape stale-borrow src/limits.cpp:72:12 | borrow of first in view after a call of planted::swap_owners with first
+finding limits view-escape stale-borrow src/limits.cpp:78:12 | borrow of list in view after a call of foundation::core::FixedList::exchange with list
+finding limits view-escape stale-borrow src/limits.cpp:84:12 | borrow of list in view after a call of foundation::core::FixedList::remove with list
+finding limits view-escape stale-borrow src/limits.cpp:90:12 | borrow of box in view after a call of foundation::core::Box::consume with box
+finding limits view-escape stale-borrow src/limits.cpp:97:35 | borrow of items in a closure of foundation::core::Option::match after a move of option
+finding limits view-escape stale-borrow src/limits.cpp:104:12 | borrow of two in view after the end of the scope of items
+finding limits view-escape stale-borrow src/limits.cpp:116:12 | borrow of items in view after a call of std::construct_at with items
+finding limits view-escape stale-borrow src/limits.cpp:123:12 | borrow of items in view after a call of std::construct_at with a temporary
+error limits src/limits.cpp:51 | this use reads a borrow of items in view after an assignment of items
+error limits src/limits.cpp:58 | this use reads a borrow of pair in view after a call of foundation::core::FixedArray::set with pair
+error limits src/limits.cpp:64 | this use reads a borrow of two in view after a call of planted::Two::replace_second with two
+error limits src/limits.cpp:72 | this use reads a borrow of first in view after a call of planted::swap_owners with first
+error limits src/limits.cpp:78 | this use reads a borrow of list in view after a call of foundation::core::FixedList::exchange with list
+error limits src/limits.cpp:84 | this use reads a borrow of list in view after a call of foundation::core::FixedList::remove with list
+error limits src/limits.cpp:90 | this use reads a borrow of box in view after a call of foundation::core::Box::consume with box
+error limits src/limits.cpp:97 | this use reads a borrow of items in a closure of foundation::core::Option::match after a move of option
+error limits src/limits.cpp:104 | this use reads a borrow of two in view after the end of the scope of items
+error limits src/limits.cpp:116 | this use reads a borrow of items in view after a call of std::construct_at with items
+error limits src/limits.cpp:123 | this use reads a borrow of items in view after a call of std::construct_at with a temporary

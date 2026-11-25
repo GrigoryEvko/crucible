@@ -4,5 +4,6 @@
 
 admit foundation::core | the owners and the View whose borrows the planted code reads
 admit std::move | a cast to an rvalue reference
+admit std::construct_at | a construct at a pointer, whose move the kind stale-borrow reads as an end
 
 quarantine src/

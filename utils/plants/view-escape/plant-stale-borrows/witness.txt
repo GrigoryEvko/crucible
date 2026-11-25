@@ -24,6 +24,14 @@
 # class that the unit completes after the body that reads it (27), and a class that the
 # unit never completes (39).  The second compile of the unit stale shows that a parse
 # with no object gives the same errors.
+#
+# In the unit inner_owners an owner leaves its wrapper and then ends: with a local (68),
+# with a temporary (75), out of two wrappers (82), in an Option (90), out of an Option
+# (98), in a member (108), an aggregate (115), a closure (125) and a new wrapper (132),
+# in a call (139), with a wrapper in a temporary (146), and through a callee (153).  A
+# callee keeps the wrapper and gives a different owner (160), also on one path (167).  A
+# callee takes the owner on one path, and then it replaces the wrapper (192) or drops it
+# (199) on each path.
 
 compile stale src/stale.cpp
 flag stale -freflection
@@ -150,6 +158,42 @@ exit pointer_arrays fail
 finding pointer_arrays view-escape stale-borrow src/pointer_arrays.cpp:24:12 | borrow of segments in element after a call of planted::change with segments, which reaches a function with no body in this unit
 finding pointer_arrays quarantine c-array-object src/pointer_arrays.cpp:16:10 | segments_
 error pointer_arrays src/pointer_arrays.cpp:24 | this use reads a borrow of segments in element after a call of planted::change with segments, which reaches a function with no body in this unit
+
+compile inner_owners src/inner_owners.cpp
+flag inner_owners -freflection
+exit inner_owners fail
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:68:12 | borrow of wrapper in view after the end of the scope of items
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:75:12 | borrow of wrapper in view after the end of the scope of a temporary
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:82:12 | borrow of outer in view after the end of the scope of items
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:90:12 | borrow of wrapper in view after an assignment of items
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:98:12 | borrow of items in view after the end of the scope of taken
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:108:12 | borrow of wrapper in view after the end of the scope of holder
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:115:12 | borrow of wrapper in view after the end of the scope of holder
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:125:12 | borrow of wrapper in view after the end of the scope of closure
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:132:12 | borrow of wrapper in view after the end of the scope of other
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:139:12 | borrow of wrapper in view after a call of planted::consume with a temporary
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:146:12 | borrow of wrapper in view after the end of the scope of a temporary
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:153:12 | borrow of wrapper in view after the end of the scope of items
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:160:12 | borrow of wrapper in view after a call of planted::give_a_different_owner with wrapper
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:167:12 | borrow of wrapper in view after a call of planted::drain_at_times with wrapper
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:192:12 | borrow of wrapper in view after a call of planted::drain_or_replace with wrapper
+finding inner_owners view-escape stale-borrow src/inner_owners.cpp:199:12 | borrow of wrapper in view after a call of planted::drain_or_drop with wrapper
+error inner_owners src/inner_owners.cpp:68 | this use reads a borrow of wrapper in view after the end of the scope of items
+error inner_owners src/inner_owners.cpp:75 | this use reads a borrow of wrapper in view after the end of the scope of a temporary
+error inner_owners src/inner_owners.cpp:82 | this use reads a borrow of outer in view after the end of the scope of items
+error inner_owners src/inner_owners.cpp:90 | this use reads a borrow of wrapper in view after an assignment of items
+error inner_owners src/inner_owners.cpp:98 | this use reads a borrow of items in view after the end of the scope of taken
+error inner_owners src/inner_owners.cpp:108 | this use reads a borrow of wrapper in view after the end of the scope of holder
+error inner_owners src/inner_owners.cpp:115 | this use reads a borrow of wrapper in view after the end of the scope of holder
+error inner_owners src/inner_owners.cpp:125 | this use reads a borrow of wrapper in view after the end of the scope of closure
+error inner_owners src/inner_owners.cpp:132 | this use reads a borrow of wrapper in view after the end of the scope of other
+error inner_owners src/inner_owners.cpp:139 | this use reads a borrow of wrapper in view after a call of planted::consume with a temporary
+error inner_owners src/inner_owners.cpp:146 | this use reads a borrow of wrapper in view after the end of the scope of a temporary
+error inner_owners src/inner_owners.cpp:153 | this use reads a borrow of wrapper in view after the end of the scope of items
+error inner_owners src/inner_owners.cpp:160 | this use reads a borrow of wrapper in view after a call of planted::give_a_different_owner with wrapper
+error inner_owners src/inner_owners.cpp:167 | this use reads a borrow of wrapper in view after a call of planted::drain_at_times with wrapper
+error inner_owners src/inner_owners.cpp:192 | this use reads a borrow of wrapper in view after a call of planted::drain_or_replace with wrapper
+error inner_owners src/inner_owners.cpp:199 | this use reads a borrow of wrapper in view after a call of planted::drain_or_drop with wrapper
 
 compile early src/early.cpp
 flag early -freflection

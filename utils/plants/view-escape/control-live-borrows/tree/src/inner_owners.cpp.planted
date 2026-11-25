@@ -1,0 +1,213 @@
+// An owner leaves its wrapper through a call that consumes the wrapper, and it lives
+// while a borrow of it is in use.  Each function is the twin of a function of the unit
+// inner_owners of plant-stale-borrows, or a form that keeps the owner.
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+class Wrapper final {
+public:
+    explicit Wrapper(Items items) noexcept : items_{std::move(items)} {}
+    View view() const& noexcept { return items_.view(); }
+    Items take() && noexcept { return std::move(items_); }
+    fc::Option<Items> try_take() && noexcept { return fc::Option<Items>::some(std::move(items_)); }
+
+private:
+    Items items_;
+};
+
+class Outer final {
+public:
+    explicit Outer(Wrapper wrapper) noexcept : wrapper_{std::move(wrapper)} {}
+    View view() const& noexcept { return wrapper_.view(); }
+    Wrapper take() && noexcept { return std::move(wrapper_); }
+
+private:
+    Wrapper wrapper_;
+};
+
+struct Holder {
+    Items items{};
+};
+
+Wrapper make() noexcept;
+
+void keep(Items&& items, Holder& holder) noexcept { holder.items = std::move(items); }
+
+Items drain_through_a_local(Wrapper&& wrapper) noexcept {
+    Wrapper taken = std::move(wrapper);
+    return std::move(taken).take();
+}
+
+Items drain_to_a_name(Wrapper&& wrapper) noexcept {
+    Items items = std::move(wrapper).take();
+    return items;
+}
+
+Items drain_two_ways(Wrapper&& wrapper, bool is_first) noexcept {
+    Wrapper taken = std::move(wrapper);
+    if (is_first) return std::move(taken).take();
+    Items items = std::move(taken).take();
+    return items;
+}
+
+Items drain_by_value(Wrapper wrapper) noexcept { return std::move(wrapper).take(); }
+
+unsigned long owner_in_a_local() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = std::move(wrapper).take();
+    return view.size() + items.size();
+}
+
+unsigned long owner_in_an_arm(bool is_taken) noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = is_taken ? std::move(wrapper).take() : Items{};
+    return view.size() + items.size();
+}
+
+unsigned long owner_of_two_levels() noexcept {
+    Outer outer{make()};
+    auto const view = outer.view();
+    Wrapper wrapper = std::move(outer).take();
+    Items const items = std::move(wrapper).take();
+    return view.size() + items.size();
+}
+
+unsigned long owner_in_an_option() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    fc::Option<Items> const items = std::move(wrapper).try_take();
+    return view.size() + (items.is_some() ? 1 : 0);
+}
+
+unsigned long owner_out_of_an_option() noexcept {
+    Items items{};
+    auto const view = items.view();
+    fc::Option<Items> option = fc::Option<Items>::some(std::move(items));
+    Items const taken = std::move(option).expect("the Option holds the items");
+    return view.size() + taken.size();
+}
+
+unsigned long owner_or_a_value(Items other) noexcept {
+    Items items{};
+    auto const view = items.view();
+    fc::Option<Items> option = fc::Option<Items>::some(std::move(items));
+    Items const taken = std::move(option).value_or(std::move(other));
+    return view.size() + taken.size();
+}
+
+unsigned long owner_of_an_early_return() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    CRUCIBLE_LET_ELSE(items, std::move(wrapper).try_take(), 0);
+    return view.size() + items.size();
+}
+
+fc::Option<unsigned long> owner_of_a_try() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    CRUCIBLE_TRY(items, std::move(wrapper).try_take());
+    return fc::Option<unsigned long>::some(view.size() + items.size());
+}
+
+unsigned long owner_in_a_member() noexcept {
+    Wrapper wrapper = make();
+    Holder holder{};
+    auto const view = wrapper.view();
+    holder.items = std::move(wrapper).take();
+    return view.size() + holder.items.size();
+}
+
+unsigned long owner_that_a_callee_keeps() noexcept {
+    Wrapper wrapper = make();
+    Holder holder{};
+    auto const view = wrapper.view();
+    keep(std::move(wrapper).take(), holder);
+    return view.size() + holder.items.size();
+}
+
+unsigned long owner_in_an_aggregate() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Holder const holder{std::move(wrapper).take()};
+    return view.size() + holder.items.size();
+}
+
+unsigned long owner_in_a_closure() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    auto const closure = [items = std::move(wrapper).take()]() noexcept { return items.size(); };
+    return view.size() + closure();
+}
+
+unsigned long owner_in_a_new_wrapper() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Wrapper const other{std::move(wrapper).take()};
+    return view.size() + other.view().size();
+}
+
+unsigned long use_in_the_full_expression() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    return std::move(wrapper).take().size() + view.size();
+}
+
+unsigned long owner_of_a_range_loop() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    unsigned long total = 0;
+    for (int const element : std::move(wrapper).take()) {
+        total += static_cast<unsigned long>(element) + view.size();
+    }
+    return total;
+}
+
+unsigned long owner_that_a_reference_extends() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const& items = std::move(wrapper).take();
+    return view.size() + items.size();
+}
+
+unsigned long owner_through_a_callee() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_through_a_local(std::move(wrapper));
+    return view.size() + items.size();
+}
+
+unsigned long owner_through_a_name() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_to_a_name(std::move(wrapper));
+    return view.size() + items.size();
+}
+
+unsigned long owner_two_ways(bool is_first) noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_two_ways(std::move(wrapper), is_first);
+    return view.size() + items.size();
+}
+
+unsigned long owner_by_value() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_by_value(std::move(wrapper));
+    return view.size() + items.size();
+}
+
+}  // namespace planted

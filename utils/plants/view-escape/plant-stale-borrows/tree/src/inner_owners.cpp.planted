@@ -1,0 +1,202 @@
+// An owner leaves its wrapper through a call that consumes the wrapper, and then the
+// owner ends.  So a later use of a borrow of it reads dead storage.  The owner ends
+// with a local, with a temporary, with an assignment, with a wrapper that it goes into,
+// and in a callee that keeps the wrapper and gives a different owner.
+#include <foundation/core/Array.h>
+#include <foundation/core/Choice.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+class Wrapper final {
+public:
+    explicit Wrapper(Items items) noexcept : items_{std::move(items)} {}
+    View view() const& noexcept { return items_.view(); }
+    Items take() && noexcept { return std::move(items_); }
+    fc::Option<Items> try_take() && noexcept { return fc::Option<Items>::some(std::move(items_)); }
+
+private:
+    Items items_;
+};
+
+class Outer final {
+public:
+    explicit Outer(Wrapper wrapper) noexcept : wrapper_{std::move(wrapper)} {}
+    View view() const& noexcept { return wrapper_.view(); }
+    Wrapper take() && noexcept { return std::move(wrapper_); }
+
+private:
+    Wrapper wrapper_;
+};
+
+struct Holder {
+    Items items{};
+};
+
+Wrapper make() noexcept;
+
+void consume(Items items) noexcept { static_cast<void>(items.size()); }
+
+Items drain_through_a_local(Wrapper&& wrapper) noexcept {
+    Wrapper taken = std::move(wrapper);
+    return std::move(taken).take();
+}
+
+Items give_a_different_owner(Wrapper&& wrapper) noexcept {
+    Wrapper const taken = std::move(wrapper);
+    return Items{};
+}
+
+Items drain_at_times(Wrapper&& wrapper, bool is_drained) noexcept {
+    Wrapper taken = std::move(wrapper);
+    if (is_drained) return std::move(taken).take();
+    return Items{};
+}
+
+unsigned long owner_in_a_scope() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    { Items const items = std::move(wrapper).take(); }
+    return view.size();
+}
+
+unsigned long owner_in_a_temporary() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    static_cast<void>(std::move(wrapper).take());
+    return view.size();
+}
+
+unsigned long owner_of_two_levels() noexcept {
+    Outer outer{make()};
+    auto const view = outer.view();
+    { Items const items = std::move(outer).take().take(); }
+    return view.size();
+}
+
+unsigned long owner_in_an_option() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    fc::Option<Items> items = std::move(wrapper).try_take();
+    items = fc::none;
+    return view.size();
+}
+
+unsigned long owner_out_of_an_option() noexcept {
+    Items items{};
+    auto const view = items.view();
+    fc::Option<Items> option = fc::Option<Items>::some(std::move(items));
+    { Items const taken = std::move(option).expect("the Option holds the items"); }
+    return view.size();
+}
+
+unsigned long owner_in_a_member() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    {
+        Holder holder{};
+        holder.items = std::move(wrapper).take();
+    }
+    return view.size();
+}
+
+unsigned long owner_in_an_aggregate() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    { Holder const holder{std::move(wrapper).take()}; }
+    return view.size();
+}
+
+unsigned long owner_in_a_closure() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    {
+        auto const closure = [items = std::move(wrapper).take()]() noexcept { return items.size(); };
+        static_cast<void>(closure());
+    }
+    return view.size();
+}
+
+unsigned long owner_in_a_new_wrapper() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    { Wrapper const other{std::move(wrapper).take()}; }
+    return view.size();
+}
+
+unsigned long owner_in_a_call() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    consume(std::move(wrapper).take());
+    return view.size();
+}
+
+unsigned long wrapper_in_a_temporary() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    static_cast<void>(Wrapper{std::move(wrapper)});
+    return view.size();
+}
+
+unsigned long owner_through_a_callee() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    { Items const items = drain_through_a_local(std::move(wrapper)); }
+    return view.size();
+}
+
+unsigned long different_owner() noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = give_a_different_owner(std::move(wrapper));
+    return view.size() + items.size();
+}
+
+unsigned long different_owner_on_one_path(bool is_drained) noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_at_times(std::move(wrapper), is_drained);
+    return view.size() + items.size();
+}
+
+Items drain_or_replace(Wrapper&& wrapper, bool is_drained) noexcept {
+    Items items{};
+    if (is_drained) {
+        items = std::move(wrapper).take();
+    }
+    wrapper = Wrapper{Items{}};
+    return items;
+}
+
+Items drain_or_drop(Wrapper&& wrapper, bool is_drained) noexcept {
+    Wrapper taken = std::move(wrapper);
+    Items items{};
+    if (is_drained) {
+        items = std::move(taken).take();
+    }
+    return items;
+}
+
+unsigned long wrapper_that_a_path_replaces(bool is_drained) noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_or_replace(std::move(wrapper), is_drained);
+    return view.size() + items.size();
+}
+
+unsigned long wrapper_that_a_path_drops(bool is_drained) noexcept {
+    Wrapper wrapper = make();
+    auto const view = wrapper.view();
+    Items const items = drain_or_drop(std::move(wrapper), is_drained);
+    return view.size() + items.size();
+}
+
+}  // namespace planted

@@ -112,6 +112,7 @@ RouteAnswers<TypeSet> target_answers;
 RouteAnswers<TypeSet> owned_content_answers;
 RouteAnswers<TypeSet> content_answers;
 RouteAnswers<TypeSet> behind_answers;
+RouteAnswers<TypeSet> own_behind_answers;
 RouteAnswers<TypeSet> part_answers;
 RouteAnswers<TypeSet> cell_answers;
 RouteAnswers<TypeSet> held_answers;
@@ -332,8 +333,9 @@ const TypeSet& contents_of(tree type) {
 }
 
 // Adds each type that is behind a pointer of the owner TYPE or of a part of it to
-// SET.  IS_IN_OWNER tells that an owner holds the object.
-void add_behind(tree type, TypeSet& set, Visits& visits, bool is_in_owner) {
+// SET.  IS_IN_OWNER tells that an owner holds the object.  With IS_OWN, the walk reads
+// no part by value that is an owner itself.
+void add_behind(tree type, TypeSet& set, Visits& visits, bool is_in_owner, bool is_own) {
     type = readable_class(element_class(type), &set);
     if (type == NULL_TREE || is_borrow_class(type)) {
         return;
@@ -345,7 +347,9 @@ void add_behind(tree type, TypeSet& set, Visits& visits, bool is_in_owner) {
     visit_fields(type, [&](tree field) {
         tree held = without_array(TREE_TYPE(field));
         if (!is_indirect_type(held)) {
-            add_behind(held, set, visits, is_owner);
+            if (!is_own || !is_owner_class(element_class(held))) {
+                add_behind(held, set, visits, is_owner, is_own);
+            }
             return;
         }
         if (is_owner) {
@@ -364,12 +368,26 @@ const TypeSet& types_behind(tree type) {
     return behind_answers.get(TYPE_UID(type), [type] {
         TypeSet set;
         Visits visits;
-        add_behind(type, set, visits, false);
+        add_behind(type, set, visits, false, false);
         if (has_id(set, kVoidStorage)) {
             visit_owner_arguments(type, [&](tree argument) {
                 Visits behind;
                 add_contents(argument, set, behind, true, true);
             });
+        }
+        return set;
+    });
+}
+
+// The types behind the pointers of the owner TYPE that no owner inside it has.  An
+// owner of the base with storage behind a pointer to void keeps its elements itself.
+const TypeSet& types_behind_itself(tree type) {
+    return own_behind_answers.get(TYPE_UID(type), [type] {
+        TypeSet set;
+        Visits visits;
+        add_behind(type, set, visits, false, true);
+        if (has_id(set, kVoidStorage)) {
+            add_types(set, types_behind(type));
         }
         return set;
     });
@@ -512,7 +530,7 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
     // In a wide reading an incomplete class is an owner of each object.
     if (type == NULL_TREE && is_wide_reading && object != NULL_TREE && RECORD_OR_UNION_TYPE_P(object)) {
         static const TypeSet each_object{kRawBytes, kErasedType};
-        owners.push_back(OwnerClass{TYPE_UID(object), &each_object, nullptr, false, false});
+        owners.push_back(OwnerClass{TYPE_UID(object), &each_object, &each_object, nullptr, false, false});
     }
     if (type == NULL_TREE || is_borrow_class(type)) {
         return;
@@ -529,8 +547,9 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
         auto const known =
             std::find_if(owners.begin(), owners.end(), [id](const OwnerClass& owner) { return owner.id == id; });
         if (known == owners.end()) {
-            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks ? &state_of(type) : nullptr,
-                                        keeps_blocks && has_raw_blocks(type), is_fixed});
+            owners.push_back(OwnerClass{id, &types_behind(type), &types_behind_itself(type),
+                                        keeps_blocks ? &state_of(type) : nullptr, keeps_blocks && has_raw_blocks(type),
+                                        is_fixed});
         } else {
             known->is_fixed = known->is_fixed && is_fixed;
         }
@@ -676,16 +695,23 @@ BorrowRoute make_route(tree result, tree held) {
         return answer;
     }
     answer.reach = Reach::into;
+    answer.is_erased = is_erased;
     const TypeSet& contents = contents_of(held);
     bool can_be_raw = true;
     for (unsigned target : targets) {
         can_be_raw = can_be_raw && (target == kErasedType || !has_id(contents, target));
     }
-    for (const OwnerClass& owner : owners_of(held)) {
-        if (owner.has_raw_blocks || have_common_type(targets, *owner.behind)
+    auto const is_behind = [&](const OwnerClass& owner, const TypeSet& behind) {
+        return owner.has_raw_blocks || have_common_type(targets, behind)
             || (owner.state != nullptr && have_common_type(targets, *owner.state))
-            || (can_be_raw && has_id(*owner.behind, kRawBytes))) {
+            || (can_be_raw && has_id(behind, kRawBytes));
+    };
+    for (const OwnerClass& owner : owners_of(held)) {
+        if (is_behind(owner, *owner.behind)) {
             add_id(answer.route, owner.id);
+        }
+        if (is_behind(owner, *owner.own_behind)) {
+            add_id(answer.direct, owner.id);
         }
     }
     Visits visits;
@@ -701,6 +727,7 @@ void begin_route_reading(bool is_wide) {
     owned_content_answers.clear_open();
     content_answers.clear_open();
     behind_answers.clear_open();
+    own_behind_answers.clear_open();
     part_answers.clear_open();
     cell_answers.clear_open();
     held_answers.clear_open();
@@ -788,24 +815,34 @@ const TypeSet& ended_cells(tree type) {
     });
 }
 
-bool can_hold_object(tree type, tree held) {
-    type = element_class(type);
-    held = element_class(held);
-    if (type == NULL_TREE || held == NULL_TREE) {
-        return false;
-    }
-    if (type == held) {
-        return true;
-    }
-    if (!CLASS_TYPE_P(type)) {
-        return false;
-    }
-    const TypeSet& types = held_answers.get(TYPE_UID(type), [type] {
-        TypeSet set;
+// Each class that a value of the class TYPE is or can hold.
+static const TypeSet& held_types(tree type) {
+    return held_answers.get(TYPE_UID(type), [type] {
+        TypeSet set{static_cast<unsigned>(TYPE_UID(type))};
         add_held(type, set);
         return set;
     });
-    return has_id(types, TYPE_UID(held));
+}
+
+bool can_hold_object(tree type, tree held) {
+    type = element_class(type);
+    held = element_class(held);
+    return type != NULL_TREE && held != NULL_TREE
+        && (type == held || (CLASS_TYPE_P(type) && has_id(held_types(type), TYPE_UID(held))));
+}
+
+bool can_hold_owner(tree type, const TypeSet& owners) {
+    type = element_class(type);
+    return type != NULL_TREE && CLASS_TYPE_P(type) && have_common_type(owners, held_types(type));
+}
+
+bool can_hold_each_owner(tree type, const TypeSet& owners) {
+    type = element_class(type);
+    if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
+        return owners.empty();
+    }
+    const TypeSet& held = held_types(type);
+    return std::all_of(owners.begin(), owners.end(), [&](unsigned id) { return has_id(held, id); });
 }
 
 const std::vector<OwnerClass>& owner_classes(tree type) {

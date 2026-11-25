@@ -26,6 +26,7 @@
 // Ends
 //     These events end a loan:
 //       the end of the scope of its root
+//       the end of the full expression of a temporary that a move gave the owner
 //       an assignment of an object that has an owner of the route in its bytes, or
 //           a target in a member of a union
 //       a move of an object that has a target in its bytes
@@ -43,23 +44,31 @@
 //     whose result can hold the owner gives the loan to the object of the result.
 //     When a different argument can keep the owner too, such as the array of an
 //     exchange, the loan goes to no place, and only the body of the call ends it.
+//     An owner can also leave its wrapper, as the array leaves in take() of a class
+//     that holds it.  Then the result cannot hold the wrapper, but it can hold each
+//     owner of the route whose own pointers name a target.  The loan goes to the
+//     result, unless the body of the call ends such an owner.
 //
 // Effects
 //     The effect of a body on a parameter is the set of the classes with an end
 //     that the body assigns, destroys, moves away or replaces by a store to a
 //     pointer of their state, and the calls that take an object of the parameter.
 //     A capture of a closure has an effect too.  A body that moves an owner of its
-//     caller to a local, and then back, ends nothing.  The walk of each body gives
-//     its effects, and the end of the unit joins them along the calls.  A function
-//     with no body in the unit can end each owner that the type of its parameter
-//     owns, apart from a class that keeps its blocks and that no code can move or
-//     assign (route.cpp, the owners and ends).
+//     caller to a local, and then back, ends nothing.  The effect on an owner inside
+//     the object has the ends of a path that come before the owner leaves the object,
+//     and the end of a local that still holds it.  So expect() of an Option moves the
+//     payload out, clears the Option, and ends no owner inside it.  The walk of each
+//     body gives its effects, and the end of the unit joins them along the calls.  A
+//     function with no body in the unit can end each owner that the type of its
+//     parameter owns, apart from a class that keeps its blocks and that no code can
+//     move or assign (route.cpp, the owners and ends).
 //
 // Order
 //     The walk reads the statements in their order.  A condition joins the state
 //     of its branches, and a loop gets two passes, with the states of each break
 //     and each continue.  A loan ends when it ends on one path.  A local reads as
-//     moved, and an owner as given back, when that is so on each path.
+//     moved, an owner as given back, and an owner as taken out of its object, when
+//     that is so on each path.
 //
 // Use
 //     A use is each evaluation of the name, apart from a store to it and a cast to
@@ -80,8 +89,11 @@
 //     place.  A door of a class gives a loan of its whole object, so a change of a
 //     different member of the same type is a finding.  A swap in a callee reads as
 //     the end of the two owners, and an exchange as the end of the old owner, also
-//     when a local keeps it.  The plant plant-live-limits of
-//     utils/plants/view-escape/ pins these findings.
+//     when a local keeps it.  An owner that leaves the block of a Box reads as ended,
+//     and so does an owner that a match gives to an arm with a borrow of it.  Two owners
+//     of one class in one object are one owner, so the one that leaves takes the loans
+//     of the other one along.  The plant plant-live-limits of utils/plants/view-escape/
+//     pins these findings.
 //     A call that keeps a borrow in a different argument or in a member gives no
 //     loan, and neither does a container of borrows.  A closure with a declared
 //     result that holds a borrow gives its result the loans of its captures, and a
@@ -274,17 +286,31 @@ std::uint64_t capture_key(unsigned closure, unsigned field) {
     return (std::uint64_t{1} << 63) | (static_cast<std::uint64_t>(closure) << 32) | field;
 }
 
-// The effect of a body on a parameter or on a capture (the effects).
-struct Effect {
+// The classes with an end that a body ends, and the calls that take an object.
+struct Ends {
     TypeSet ended;
     std::set<Taking> takings;
 
-    bool operator==(const Effect& other) const {
+    void add(const Ends& other) {
+        add_types(ended, other.ended);
+        takings.insert(other.takings.begin(), other.takings.end());
+    }
+
+    bool operator==(const Ends& other) const {
         return ended == other.ended
             && !std::lexicographical_compare(takings.begin(), takings.end(), other.takings.begin(), other.takings.end())
             && !std::lexicographical_compare(other.takings.begin(), other.takings.end(), takings.begin(),
                                              takings.end());
     }
+};
+
+// The effect of a body on a parameter or on a capture (the effects).  INNER has the
+// ends of an owner inside the object that the body does not give to its result.
+struct Effect {
+    Ends all;
+    Ends inner;
+
+    bool operator==(const Effect& other) const { return all == other.all && inner == other.inner; }
 };
 
 enum class EndKind : std::uint8_t {
@@ -366,14 +392,17 @@ struct Loan {
     int named = kNoPlace;  // the place at the start, for the text
     LoanSource source = LoanSource::address;
     bool is_unique = false;  // the borrow can write its object
+    bool is_erased = false;  // the borrow can name each object
+    bool is_moved = false;  // a move took the owner to the place
     unsigned closure = 0;  // the closure and the field of a capture
     unsigned field = 0;
     TypeSet route;
+    TypeSet direct;  // the owners of the route whose own pointers name a target
     TypeSet targets;
 
     auto key(location_t location) const {
-        return std::make_tuple(place, named, static_cast<int>(source), is_unique, closure, field, route, targets,
-                               static_cast<unsigned>(location));
+        return std::make_tuple(place, named, static_cast<int>(source), is_unique, is_erased, is_moved, closure, field,
+                               route, direct, targets, static_cast<unsigned>(location));
     }
 };
 
@@ -401,6 +430,7 @@ struct FlowState {
     std::map<int, std::vector<int>> ended;  // the ends of each loan
     std::map<int, std::vector<HeldOwner>> held;  // the owners of the caller in each local
     std::set<int> moved;  // the parameters by value that each path moved away
+    std::set<int> taken_out;  // the places whose owner each path moved to a local
     bool is_reachable = true;
 };
 
@@ -968,7 +998,9 @@ private:
             loan.named = place;
             loan.source = LoanSource::call;
             loan.is_unique = !is_const_target(parameter);
+            loan.is_erased = copy.is_erased;
             loan.route = copy.route;
+            loan.direct = copy.direct;
             loan.targets = copy.targets;
             found.push_back(add_loan(std::move(loan)));
         }
@@ -976,6 +1008,8 @@ private:
             Loan derived = loans_[source];
             if (is_into) {
                 add_types(derived.route, copy.route);
+                derived.is_erased = copy.is_erased;
+                derived.direct = copy.direct;
                 derived.targets = copy.targets;
             }
             add_index(found, add_derived_loan(std::move(derived), source));
@@ -1054,15 +1088,49 @@ private:
         visit(reading_.effects[parameter_key(function_, index)]);
     }
 
-    void note_ended(int place, tree type) {
-        const TypeSet& parts = ended_parts(type);
-        if (!parts.empty()) {
-            visit_effects(place, [&](Effect& effect) { add_types(effect.ended, parts); });
+    // True when an owner came out of PLACE on each path.
+    bool is_taken_out(int place) const {
+        return std::any_of(state_.taken_out.begin(), state_.taken_out.end(),
+                           [&](int taken) { return places_.overlaps(taken, place); });
+    }
+
+    // The body ends the classes OWNERS at PLACE.  An owner that came out of the place
+    // does not end there.
+    void note_ended(int place, const TypeSet& owners) {
+        if (!owners.empty()) {
+            bool const is_inner = !is_taken_out(place);
+            visit_effects(place, [&](Effect& effect) {
+                add_types(effect.all.ended, owners);
+                if (is_inner) {
+                    add_types(effect.inner.ended, owners);
+                }
+            });
         }
     }
 
-    void note_taking(int place, const Taking& taking) {
-        visit_effects(place, [&](Effect& effect) { effect.takings.insert(taking); });
+    void note_ended(int place, tree type) { note_ended(place, ended_parts(type)); }
+
+    // The owner at PLACE ends with a local that holds it.
+    void note_dropped(int place, tree type) {
+        const TypeSet& parts = ended_parts(type);
+        visit_effects(place, [&](Effect& effect) {
+            add_types(effect.all.ended, parts);
+            add_types(effect.inner.ended, parts);
+        });
+    }
+
+    // The call of TAKING takes the object at PLACE.  With GIVES_INNER, its result can
+    // get an owner inside the object.
+    void note_taking(int place, const Taking& taking, bool gives_inner = false) {
+        bool const is_inner = !is_taken_out(place);
+        Taking inner = taking;
+        inner.is_inner = gives_inner;
+        visit_effects(place, [&](Effect& effect) {
+            effect.all.takings.insert(taking);
+            if (is_inner) {
+                effect.inner.takings.insert(inner);
+            }
+        });
     }
 
     // True for a parameter that the caller gives by a move.
@@ -1081,6 +1149,7 @@ private:
         if (parameter_index(root) >= 0) {
             return;
         }
+        state_.taken_out.insert(place);
         std::vector<HeldOwner>& held = state_.held[root_id(root)];
         for (const HeldOwner& known : held) {
             if (known.place == place) {
@@ -1131,7 +1200,15 @@ private:
             return false;
         }
         held.erase(back);
+        state_.taken_out.erase(place);
         return true;
+    }
+
+    // True when LOCAL is the result, and it holds an owner that came out of OWNER.
+    bool is_given_back(int local, const HeldOwner& owner) const {
+        tree result = DECL_RESULT(function_);
+        return result != NULL_TREE && local == static_cast<int>(DECL_UID(result))
+            && can_hold_owner(TREE_TYPE(result), ended_parts(owner.type));
     }
 
     // The body ends here: each owner of the caller that a local still holds, and
@@ -1140,8 +1217,8 @@ private:
         tree result = TREE_TYPE(TREE_TYPE(function_));
         for (const auto& [local, held] : state_.held) {
             for (const HeldOwner& owner : held) {
-                if (!can_hold_object(result, owner.type)) {
-                    note_ended(owner.place, owner.type);
+                if (!can_hold_object(result, owner.type) && !is_given_back(local, owner)) {
+                    note_dropped(owner.place, owner.type);
                 }
             }
         }
@@ -1180,8 +1257,9 @@ private:
 
     // Ends each loan that END of the object at PLACE ends (the ends).  TYPE is the
     // type of that object.  The loans of the local THROUGH stay, because the event
-    // writes through them.
-    void end_loans(int place, const End& end, tree type, tree through) {
+    // writes through them.  RESULT is the type of the result that can get an owner
+    // inside the object, or null.
+    void end_loans(int place, const End& end, tree type, tree through, tree result = NULL_TREE) {
         if (!state_.is_reachable || place == kNoPlace) {
             return;
         }
@@ -1199,6 +1277,7 @@ private:
                 continue;
             }
             End made = end;
+            made.taking.is_inner = is_inner_loan(loans_[index], result);
             if (ends_loan(loans_[index], place, made, type)) {
                 end_loan(loan, made);
             }
@@ -1241,9 +1320,17 @@ private:
         return false;
     }
 
+    // True when an owner inside the object of LOAN has its targets, and a value of
+    // RESULT can hold that owner.  A null RESULT holds none.
+    static bool is_inner_loan(const Loan& loan, tree result) {
+        return result != NULL_TREE && !loan.is_erased && can_hold_owner(result, loan.route)
+            && can_hold_each_owner(result, loan.direct);
+    }
+
     // The loans of FROM go to TO with the owner that the route names (the
-    // transfer).  A move ends a loan of a part of the moved object.
-    void transfer_loans(int from, int to, tree type) {
+    // transfer).  A move ends a loan of a part of the moved object.  With RESULT, only
+    // an owner inside the object goes into the value of RESULT at TO.
+    void transfer_loans(int from, int to, tree type, tree result = NULL_TREE) {
         if (!state_.is_reachable || from == kNoPlace) {
             return;
         }
@@ -1269,7 +1356,12 @@ private:
                 continue;
             }
             Loan made = loans_[index];
-            made.place = to == kNoPlace ? kNoPlace : places_.rebase(made.place, from, to);
+            if (result != NULL_TREE) {
+                made.place = is_inner_loan(made, result) ? to : kNoPlace;
+            } else {
+                made.place = to == kNoPlace ? kNoPlace : places_.rebase(made.place, from, to);
+            }
+            made.is_moved = true;
             moved.emplace(loan, add_derived_loan(std::move(made), loan));
         }
         if (moved.empty()) {
@@ -1285,10 +1377,20 @@ private:
         }
     }
 
-    // The temporary that initializes the object at TO is that object.
+    // The temporary that initializes the object at TO is that object, so it does not
+    // end with its full expression.
     void transfer_temporary(tree value, int to) {
         value = strip_value(value);
-        if (value == NULL_TREE || to == kNoPlace) {
+        if (value == NULL_TREE) {
+            return;
+        }
+        if (TREE_CODE(value) == COND_EXPR) {
+            transfer_temporary(TREE_OPERAND(value, 1), to);
+            transfer_temporary(TREE_OPERAND(value, 2), to);
+            return;
+        }
+        if (TREE_CODE(value) == COMPOUND_EXPR) {
+            transfer_temporary(TREE_OPERAND(value, 1), to);
             return;
         }
         tree slot = TREE_CODE(value) == TARGET_EXPR    ? TARGET_EXPR_SLOT(value)
@@ -1297,9 +1399,26 @@ private:
         if (slot == NULL_TREE || !DECL_P(slot)) {
             return;
         }
+        temporaries_.erase(std::remove(temporaries_.begin(), temporaries_.end(), slot), temporaries_.end());
         int const from = places_.root(slot);
+        if (to == kNoPlace || from == to) {
+            return;
+        }
         transfer_loans(from, to, TREE_TYPE(slot));
         move_held(from, to);
+    }
+
+    // The temporaries of a full expression end with it.  Only a loan of an owner that
+    // a move took into a temporary ends here.
+    void end_temporaries() {
+        for (tree temporary : temporaries_) {
+            int const place = places_.root(temporary);
+            for (std::size_t index = 0; state_.is_reachable && index < loans_.size(); ++index) {
+                if (loans_[index].is_moved && places_.holds(place, loans_[index].place)) {
+                    end_loan(static_cast<int>(index), make_end(EndKind::scope, place));
+                }
+            }
+        }
     }
 
     // ── The uses ──
@@ -1405,8 +1524,13 @@ private:
                 }
             }
         }
-        for (auto moved = into.moved.begin(); moved != into.moved.end();) {
-            moved = other.moved.count(*moved) != 0 ? std::next(moved) : into.moved.erase(moved);
+        keep_common(into.moved, other.moved);
+        keep_common(into.taken_out, other.taken_out);
+    }
+
+    static void keep_common(std::set<int>& into, const std::set<int>& other) {
+        for (auto one = into.begin(); one != into.end();) {
+            one = other.count(*one) != 0 ? std::next(one) : into.erase(one);
         }
     }
 
@@ -1642,7 +1766,20 @@ private:
                 result_slot_ = TARGET_EXPR_SLOT(node);
                 walk_expression(TARGET_EXPR_INITIAL(node));
                 result_slot_ = NULL_TREE;
+                if (TARGET_EXPR_SLOT(node) != NULL_TREE && DECL_P(TARGET_EXPR_SLOT(node))) {
+                    transfer_temporary(TARGET_EXPR_INITIAL(node), places_.root(TARGET_EXPR_SLOT(node)));
+                    if (has_end(TREE_TYPE(TARGET_EXPR_SLOT(node)))) {
+                        temporaries_.push_back(TARGET_EXPR_SLOT(node));
+                    }
+                }
                 return;
+            case CLEANUP_POINT_EXPR: {
+                std::vector<tree> outer = std::exchange(temporaries_, {});
+                walk_expression(TREE_OPERAND(node, 0));
+                end_temporaries();
+                temporaries_ = std::move(outer);
+                return;
+            }
             case COND_EXPR:
                 walk_branches(TREE_OPERAND(node, 0), TREE_OPERAND(node, 1), TREE_OPERAND(node, 2));
                 return;
@@ -1687,8 +1824,14 @@ private:
                 return;
             case CONSTRUCTOR: {
                 unsigned position = 0;
+                tree field = NULL_TREE;
                 tree value = NULL_TREE;
-                FOR_EACH_CONSTRUCTOR_VALUE(CONSTRUCTOR_ELTS(node), position, value) { walk_expression(value); }
+                FOR_EACH_CONSTRUCTOR_ELT(CONSTRUCTOR_ELTS(node), position, field, value) {
+                    walk_expression(value);
+                    bool const is_member =
+                        slot != NULL_TREE && DECL_P(slot) && field != NULL_TREE && TREE_CODE(field) == FIELD_DECL;
+                    transfer_temporary(value, is_member ? places_.field(places_.root(slot), field) : kNoPlace);
+                }
                 return;
             }
             case TREE_LIST:
@@ -1798,9 +1941,7 @@ private:
                 break;
             }
         }
-        if (!owners.empty()) {
-            visit_effects(place, [&](Effect& effect) { add_types(effect.ended, owners); });
-        }
+        note_ended(place, owners);
     }
 
     // Adds the innermost owner that holds the object at PLACE to OWNERS.
@@ -2003,14 +2144,18 @@ private:
         bool is_assignment = false;
     };
 
-    void end_by_call(const CallFacts& facts, const Argument& argument, std::size_t index, int place) {
+    // The body of the call can end the object at PLACE that ARGUMENT gives.  With
+    // RESULT, the result of the call is a value of RESULT that can get an owner inside
+    // the object.
+    void end_by_call(const CallFacts& facts, const Argument& argument, std::size_t index, int place,
+                     tree result = NULL_TREE) {
         End end = make_end(EndKind::call, place);
         end.callee = facts.callee;
         end.taking = taking_of_parameter(facts.callee, index, argument.held);
         is_rvalue_end_ = argument.is_rvalue;
-        end_loans(place, end, argument.held, argument.through);
+        end_loans(place, end, argument.held, argument.through, result);
         is_rvalue_end_ = false;
-        note_taking(place, end.taking);
+        note_taking(place, end.taking, result != NULL_TREE);
     }
 
     // What the call does to the object of one argument (the ends, the transfer and
@@ -2120,8 +2265,16 @@ private:
             return;
         }
         if (!can_hold_object(facts.result, argument.held)) {
-            end_by_call(facts, argument, index, place);
-            transfer_loans(place, kNoPlace, argument.held);
+            // An owner inside the object can go on in the result.
+            int const holder = facts.is_constructor ? facts.built : facts.result_place;
+            bool const gives_inner = holder != kNoPlace && places_.root_decl(holder) != places_.root_decl(place)
+                                  && can_hold_owner(facts.result, ended_parts(argument.held));
+            tree const result = gives_inner ? facts.result : NULL_TREE;
+            end_by_call(facts, argument, index, place, result);
+            transfer_loans(place, gives_inner ? holder : kNoPlace, argument.held, result);
+            if (gives_inner) {
+                hold_owner(holder, place, argument.held);
+            }
             return;
         }
         // The owner goes on in the result, unless the body of the callee ends it.
@@ -2244,6 +2397,8 @@ private:
     location_t location_ = UNKNOWN_LOCATION;
     // The object that the call in hand initializes.
     tree result_slot_ = NULL_TREE;
+    // The temporaries with an end of the full expression in hand.
+    std::vector<tree> temporaries_;
     // True where the hidden cursor of a range loop is a use.
     bool reads_cursors_ = false;
     // True while the event in hand takes an object by a move.
@@ -2317,8 +2472,8 @@ void commit(tree function, Reading&& reading) {
     read_functions.insert(DECL_UID(function));
     for (auto& [key, effect] : reading.effects) {
         Effect& known = unit_effects[key];
-        add_types(known.ended, effect.ended);
-        known.takings.insert(effect.takings.begin(), effect.takings.end());
+        known.all.add(effect.all);
+        known.inner.add(effect.inner);
     }
     for (StaleUse& use : reading.uses) {
         stale_uses.push_back(std::move(use));
@@ -2389,7 +2544,7 @@ struct TakingEnds {
     TypeSet unseen;
 };
 
-void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::uint64_t>& seen) {
+void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::pair<std::uint64_t, bool>>& seen) {
     if (!taking.is_capture && read_functions.count(taking.callee) == 0) {
         auto owners = taken_owners.find(taking.owners);
         if (owners != taken_owners.end()) {
@@ -2397,15 +2552,16 @@ void collect_ends(const Taking& taking, TakingEnds& ends, std::set<std::uint64_t
         }
         return;
     }
-    if (!seen.insert(taking.key).second) {
+    if (!seen.emplace(taking.key, taking.is_inner).second) {
         return;
     }
     auto effect = unit_effects.find(taking.key);
     if (effect == unit_effects.end()) {
         return;
     }
-    add_types(ends.ended, effect->second.ended);
-    for (const Taking& next : effect->second.takings) {
+    const Ends& of_call = taking.is_inner ? effect->second.inner : effect->second.all;
+    add_types(ends.ended, of_call.ended);
+    for (const Taking& next : of_call.takings) {
         collect_ends(next, ends, seen);
     }
 }
@@ -2417,7 +2573,7 @@ const TakingEnds& ends_of(const Taking& taking) {
     auto found = taking_ends.find(taking);
     if (found == taking_ends.end()) {
         TakingEnds ends;
-        std::set<std::uint64_t> seen;
+        std::set<std::pair<std::uint64_t, bool>> seen;
         collect_ends(taking, ends, seen);
         found = taking_ends.emplace(taking, std::move(ends)).first;
     }

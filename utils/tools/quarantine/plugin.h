@@ -3515,21 +3515,25 @@ enum class Reach : std::uint8_t {
 };
 
 // The reach of a result into an argument, the owners of the argument that have a
-// target behind them, and the targets with an end.
+// target behind them, the owners of those whose own pointers name a target, and the
+// targets with an end.
 struct BorrowRoute {
     Reach reach = Reach::none;
+    bool is_erased = false;  // the result can name each object
     TypeSet route;
+    TypeSet direct;
     TypeSet targets;
 };
 
-// An owner and the types behind its pointers.  For an owner that keeps each block
-// until its own end: the parts that hold its pointers, whether a block can hold an
-// object of each type, and whether no call can end the owner, because no code can move
-// or assign it and no pointer names it.  BEHIND and STATE live until the next
-// begin_route_reading().
+// An owner, the types behind its pointers, and the types behind the pointers that no
+// owner inside it has.  For an owner that keeps each block until its own end: the parts
+// that hold its pointers, whether a block can hold an object of each type, and whether
+// no call can end the owner, because no code can move or assign it and no pointer names
+// it.  Each set lives until the next begin_route_reading().
 struct OwnerClass {
     unsigned id = 0;
     const TypeSet* behind = nullptr;
+    const TypeSet* own_behind = nullptr;
     const TypeSet* state = nullptr;
     bool has_raw_blocks = false;
     bool is_fixed = false;
@@ -3552,6 +3556,10 @@ const TypeSet& ended_cells(tree type);
 // True when a value of TYPE can hold an object of HELD: TYPE itself, a part by
 // value or a type argument, at each depth.
 bool can_hold_object(tree type, tree held);
+// True when a value of TYPE is or can hold an object of one class of OWNERS, and of
+// each class of OWNERS.
+bool can_hold_owner(tree type, const TypeSet& owners);
+bool can_hold_each_owner(tree type, const TypeSet& owners);
 // True for a class that states owns_its_storage{}: each member that is not const
 // keeps the objects of its blocks.
 bool keeps_its_blocks(tree type);
@@ -3577,11 +3585,12 @@ struct Taking {
     std::uint64_t key = 0;
     unsigned callee = 0;  // the DECL_UID of the function, or 0 for a closure or an unknown function
     bool is_capture = false;
+    bool is_inner = false;  // the result of the call gets an owner inside the object
     unsigned owners = kOwnsNothing;
 
     bool operator<(const Taking& other) const {
-        return std::tie(key, callee, is_capture, owners)
-             < std::tie(other.key, other.callee, other.is_capture, other.owners);
+        return std::tie(key, callee, is_capture, is_inner, owners)
+             < std::tie(other.key, other.callee, other.is_capture, other.is_inner, other.owners);
     }
 };
 
