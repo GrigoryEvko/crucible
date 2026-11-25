@@ -50,6 +50,12 @@
 // second time in the mirrored order of the logs, and each row gives the pass
 // with the lower median.
 //
+// The ratio of the rows appends and growth follows the place of the memory of
+// each log too.  Each log has the same loads and stores for each append, and the
+// time of an append is far above the cycles of its stores.  The reserved run, a
+// floor with the same stores, can take more time than a SegmentList, and the raw
+// segments can take less.
+//
 // Live rows
 //   append, appends     the rows of a log, with the publish of each append
 //   runs                4096 events in runs of 8, with one publish for a run, to
