@@ -333,6 +333,13 @@ def judgement_cases(expect: testing.Expect) -> None:
         "an outcome with the exit and the lines of its rows holds",
         witness.judge(report, manifest.expected["report"], good, manifest) == [],
     )
+    swapped = witness.Outcome(0, reports=(Path("r.quarantine"),), report=findings[::-1])
+    expect(
+        "two finding lines that are not in the sequence of their places fail, and no line is missing",
+        len(findings) > 1
+        and witness.judge(report, manifest.expected["report"], swapped, manifest)
+        == ["report: the lines of the report are not in the sequence of their places"],
+    )
     extra = witness.Outcome(0, reports=(Path("r.quarantine"),), report=(*findings, finding(9)))
     expect(
         "an extra finding line fails",

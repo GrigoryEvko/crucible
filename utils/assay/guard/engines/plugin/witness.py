@@ -78,6 +78,8 @@ Judgement
     * A compile with a report has one report file, unless its row
       `missing NAME report` says that it writes none.  The lines of the
       report are the finding rows, each line one row and each row one line.
+      The lines are in the sequence of their places, also when the rules
+      read them in a different one.
     * A compile with the stage c writes an object.  The section of the
       object holds the stamp of the compile, or an empty stamp, and the
       lines of the report.  A compile with no report gives its finding rows
@@ -781,6 +783,12 @@ def read_manifest(path: Path) -> Manifest:
 # ── The functions that compare ──────────────────────────────────────
 
 
+def is_in_sequence(findings: Sequence[plugin_sections.Finding]) -> bool:
+    """Return True when the lines are in the sequence that the plugin gives them (is_before of plugin.cpp)."""
+    keys = [(item.file, item.line, item.column, item.kind, item.entity, item.rule) for item in findings]
+    return keys == sorted(keys)
+
+
 def finding_difference(
     expected: Sequence[plugin_sections.Finding], given: Sequence[plugin_sections.Finding]
 ) -> tuple[list[plugin_sections.Finding], list[plugin_sections.Finding]]:
@@ -1193,6 +1201,8 @@ def judge(item: Compile, expected: Expected, outcome: Outcome, manifest: Manifes
     if "object" in expected.missing and outcome.has_object:
         failures.append(f"{name}: the compile wrote an object, and the row says that it writes none")
     if given is not None:
+        if not is_in_sequence(given):
+            failures.append(f"{name}: the lines of the report are not in the sequence of their places")
         lost, extra = finding_difference(expected.findings, given)
         failures += [f"{name}: no finding line {finding.text()}" for finding in lost]
         failures += [f"{name}: a finding line with no row: {finding.text()}" for finding in extra]

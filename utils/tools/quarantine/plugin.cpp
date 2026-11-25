@@ -178,8 +178,10 @@
 //     A unit that writes an object puts the report into the section
 //     .crucible.quarantine of the object, in each mode, with the head line
 //     "# crucible-guard 2 stamp=TEXT" and then one line "RULE KIND
-//     PATH:LINE:COLUMN ENTITY" for each finding and each region.  So a
-//     compiler cache stores the report with the object.  The flag "e"
+//     PATH:LINE:COLUMN ENTITY" for each finding and each region, in the
+//     sequence of their places (is_before).  So a compiler cache stores the
+//     report with the object, and the sequence in which the rules read changes
+//     no byte of it.  A report file holds the same lines.  The flag "e"
 //     (SHF_EXCLUDE) keeps the section out of each executable and each shared
 //     library that the linker writes.  utils/assay/readers/sections.py reads
 //     the section.  The plugin writes the directives at PLUGIN_FINISH_UNIT,
@@ -250,12 +252,35 @@ bool write_file_atomically(const std::string& path, const std::string& text) {
     return true;
 }
 
+// One line of the report (the section).
+struct ReportLine {
+    std::string rule;
+    std::string kind;
+    std::string path;
+    int line = 0;
+    int column = 0;
+    std::string entity;
+
+    std::string text() const {
+        return rule + " " + kind + " " + path + ":" + std::to_string(line) + ":" + std::to_string(column) + " "
+             + entity;
+    }
+};
+
+// The sequence of the lines of a report: the path, the line and the column as
+// numbers, the kind and the entity.  A kind is of one rule, and the rule comes
+// last, so two lines of one sequence are the same line.
+bool is_before(const ReportLine& left, const ReportLine& right) {
+    return std::tie(left.path, left.line, left.column, left.kind, left.entity, left.rule)
+         < std::tie(right.path, right.line, right.column, right.kind, right.entity, right.rule);
+}
+
 // The report replaces the last report of the same object.
-void write_report_file(const std::vector<std::string>& lines) {
+void write_report_file(const std::vector<ReportLine>& lines) {
     ::mkdir(state.out_dir.c_str(), 0775);
     std::string text = std::string("# unit ") + (main_input_filename != nullptr ? main_input_filename : "") + "\n";
-    for (const std::string& line : lines) {
-        text += line;
+    for (const ReportLine& line : lines) {
+        text += line.text();
         text += '\n';
     }
     write_file_atomically(report_path(), text);
@@ -267,7 +292,7 @@ bool writes_section() { return asm_out_file != nullptr && !flag_syntax_only; }
 
 // Writes the report into the section of the object (the section above).  An
 // .ascii string escapes '"', '\' and each byte that is not printable ASCII.
-void write_section(const std::vector<std::string>& lines) {
+void write_section(const std::vector<ReportLine>& lines) {
     std::string text = "\t.pushsection\t.crucible.quarantine,\"e\",%progbits\n";
     auto append_line = [&text](const std::string& line) {
         text += "\t.ascii\t\"";
@@ -286,8 +311,8 @@ void write_section(const std::vector<std::string>& lines) {
         text += "\\n\"\n";
     };
     append_line("# crucible-guard " + std::to_string(kReportFormat) + " stamp=" + state.stamp);
-    for (const std::string& line : lines) {
-        append_line(line);
+    for (const ReportLine& line : lines) {
+        append_line(line.text());
     }
     text += "\t.popsection\n";
     fwrite(text.data(), 1, text.size(), asm_out_file);
@@ -365,23 +390,16 @@ void report_unclassified() {
     }
 }
 
-// One line of the report: "RULE KIND PATH:LINE:COLUMN ENTITY".
-std::string report_line(const char* rule, const std::string& kind, const FileEntry& file, int line, int column,
-                        const std::string& entity) {
-    return std::string(rule) + " " + kind + " " + file.relative + ":" + std::to_string(line) + ":"
-         + std::to_string(column) + " " + entity;
-}
-
 // One line of a family rule (is_family_kind), of each family that a ledger
 // judges: a line of the report, an error in the mode error, and a note when
 // the unit writes no report.  A record, such as a mint record or an at-home
 // line, is a line and no finding (is_record_kind).  No opt-out region covers
 // such a finding, and no enforce mode makes it an error, because the ledger of
 // its rule judges it.
-void report_family(const Finding& finding, std::vector<std::string>& lines, bool has_section) {
+void report_family(const Finding& finding, std::vector<ReportLine>& lines, bool has_section) {
     std::string kind = kind_text(finding);
     const char* rule = rule_name(rule_of(finding.kind));
-    lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, finding.entity));
+    lines.push_back(ReportLine{rule, kind, finding.file->relative, finding.line, finding.column, finding.entity});
     if (is_record_kind(finding.kind)) {
         return;
     }
@@ -730,7 +748,7 @@ void report(bool can_add_dependencies) {
                   macro.c_str(), admit.is_header ? "<" : "", admit.entry.c_str(), admit.is_header ? ">" : "");
         }
     }
-    std::vector<std::string> lines;
+    std::vector<ReportLine> lines;
     for (const Finding& finding : state.findings) {
         if (is_family_kind(finding.kind)) {
             report_family(finding, lines, has_section);
@@ -741,7 +759,7 @@ void report(bool can_add_dependencies) {
         std::string kind = is_out ? std::string(kOptedOutKind) : inner_kind;
         std::string entity = is_out ? inner_kind + " " + finding.entity : finding.entity;
         const char* rule = is_out ? rule_name(Rule::quarantine) : rule_name(rule_of(finding.kind));
-        lines.push_back(report_line(rule, kind, *finding.file, finding.line, finding.column, entity));
+        lines.push_back(ReportLine{rule, kind, finding.file->relative, finding.line, finding.column, entity});
         // A use that a row with `until` and `in` admits in a file of the
         // language is a finding and no error, as it is in a quarantined file.
         // The rule of the language files is the quarantine rule.
@@ -824,12 +842,13 @@ void report(bool can_add_dependencies) {
     // finding.  A unit with no report gives a note for each region too, so
     // that a census of the notes gives each opted-out finding its reason.
     for (const Region& region : state.regions) {
-        lines.push_back(
-            report_line(rule_name(Rule::quarantine), kRegionKind, *region.file, region.begin_line, 1, region.reason));
+        lines.push_back(ReportLine{rule_name(Rule::quarantine), kRegionKind, region.file->relative, region.begin_line,
+                                   1, region.reason});
         if (state.out_dir.empty() && !has_section) {
             inform(region.use, "quarantine: %s %s", kRegionKind, region.reason.c_str());
         }
     }
+    std::sort(lines.begin(), lines.end(), is_before);
     if (has_section) {
         write_section(lines);
     }
