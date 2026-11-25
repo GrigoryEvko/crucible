@@ -899,11 +899,14 @@ def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]
     """Return the name and the measure of each registered test of the build, for a row of the kind test.
 
     step-memory reads the peak memory of the record of the test in GB, and step-cost reads its instruction count in G.
-    A record with no count, and a test of the directory bench, give no measure.  Complexity: linear in the tests and
-    the records.
+    A record with no count, and a test of the directory bench, give no measure.
+
+    A record that cannot be read, such as an empty file of a host that died, gives no measure.  The write removes the
+    file, so the test has no record until its next run, and one line names the count of such records.  The write keeps
+    the row of such a test, because the write removes no row of a test.  Complexity: linear in the tests and the records.
 
     Raises:
-        rule_ledger.LedgerError: If the test list or a record does not read
+        rule_ledger.LedgerError: If the test list does not read
     """
     from assay.loop import teststep
     from assay.readers import ctest as ctest_reader
@@ -911,11 +914,19 @@ def test_measures(context: BuildContext, rule_id: str) -> list[tuple[str, float]
     build = context.require_build()
     try:
         registered = {test.name for test in ctest_reader.tests(build)}
-        records = ctest_reader.costs(build)
     except ctest_reader.CtestError as problem:
-        raise rule_ledger.LedgerError(f"the records of the tests of the build do not read: {problem}") from None
+        raise rule_ledger.LedgerError(f"the tests of the build do not read: {problem}") from None
+    costs = ctest_reader.costs(build)
+    for record_file in costs.unread:
+        record_file.path.unlink(missing_ok=True)
+    if costs.unread:
+        check_report.write_line(
+            f"guard write: {len(costs.unread)} records of the tests cannot be read, such as {costs.unread[0].cause}.  "
+            f"The write removes them and keeps the row of each such test.  Run the tests, then the write, to write "
+            f"their rows"
+        )
     found: list[tuple[str, float]] = []
-    for name, record in sorted(records.items()):
+    for name, record in sorted(costs.records.items()):
         count = record.cost.test_instructions
         if rule_id == STEP_MEMORY:
             value: float | None = record.cost.peak_rss_kb / cost_meter.KB_PER_GB

@@ -72,10 +72,13 @@ What the reader gives
     reports of more than one run (the merge of reports).  mirror_tests() makes
     a test directory of a run (the test directory of a run).  costs() gives the
     last record of each test by its name, as a TestRecord of
-    assay.core.record.
+    assay.core.record, and each record that it cannot read (TestCosts).
 
     A file of the build directory that the reader cannot read gives a
-    CtestError, which names the file and the command that writes it.
+    CtestError, which names the file and the command that writes it.  A record
+    of a test is different: a host that dies can leave one record empty, and
+    that record then counts as no record of its test.  Its test writes it again
+    at its next run.
 
 Complexity: linear in the size of the JSON, of the report and of the records.
 """
@@ -106,7 +109,27 @@ RECORD_COMMAND = "`loop test-step` or `loop fixture`"
 
 
 class CtestError(RuntimeError):
-    """An input of ctest cannot be read: the test list, a JUnit report or a record of a test."""
+    """An input of ctest cannot be read: the test list or a JUnit report."""
+
+
+@dataclass(frozen=True, slots=True)
+class UnreadRecord:
+    """A record of a test that the reader cannot read: its file, and the cause with the command that writes it."""
+
+    path: Path
+    cause: str
+
+
+@dataclass(frozen=True, slots=True)
+class TestCosts:
+    """The records of the tests of a build directory.
+
+    `records` holds the record of the last run of each test by its name, and `unread` each record that cannot be read.
+    A test of a record of `unread` has no record.
+    """
+
+    records: Mapping[str, cost_record.TestRecord]
+    unread: tuple[UnreadRecord, ...] = ()
 
 
 class TestStatus(enum.StrEnum):
@@ -402,23 +425,22 @@ def mirror_tests(build_dir: Path, directory: Path) -> None:
         raise CtestError(f"the test directory {directory} cannot be written: {problem}") from None
 
 
-def costs(build_dir: Path) -> dict[str, cost_record.TestRecord]:
-    """Return the record of the last run of each test of a build directory, by the name of the test.
+def costs(build_dir: Path) -> TestCosts:
+    """Return the record of the last run of each test of a build directory, and each record that cannot be read.
 
     A test that did not run in the build directory has no record.  The record of a test that the build does not
     register at this time stays until a person removes it.
 
     Complexity: linear in the records of the build directory.
-
-    Raises:
-        CtestError: If a record cannot be read
     """
     directory = build_dir / cost_record.TEST_DIRECTORY
     records: dict[str, cost_record.TestRecord] = {}
+    unread: list[UnreadRecord] = []
     for path in paths.listing(directory, f"*{cost_record.TEST_SUFFIX}"):
         try:
             record = cost_record.read_test(path)
         except cost_record.RecordError as problem:
-            raise CtestError(f"{problem}.  {RECORD_COMMAND} writes it") from None
+            unread.append(UnreadRecord(path, f"{problem}.  {RECORD_COMMAND} writes it"))
+            continue
         records[record.name] = record
-    return records
+    return TestCosts(records, tuple(unread))

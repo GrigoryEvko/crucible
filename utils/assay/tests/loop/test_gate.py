@@ -299,7 +299,8 @@ sys.exit(1 if "fail" in statuses.values() or mode == "late" else 0)
 # of the planted ledger, as after the fold of the gate.  In a build with the mode reconfigure, `check` of the rule
 # reconfigure-noop gives findings.  `write` of door-unit lowers the count 2 of its ledger to 1, as the reduce of the
 # gate does.  `write --rule object-size --reason TEXT` raises the row of include/a.h from 3.1 to 3.3 with that reason,
-# as a raise of a budget does, also in each other row with that value.  `write --row ITEM... --reason TEXT` writes
+# as a raise of a budget does, also in each other row with that value.  In a build whose raise.txt holds fails, that
+# write exits 1, and with nothing it changes no row.  `write --row ITEM... --reason TEXT` writes
 # that reason into each row of the path ITEM.  `write --lower --row ITEM --reason TEXT` lowers the row of step-cost
 # from 123.912 to
 # 111.001 with that reason, as a lower of a budget does, and exits 1 for the item of a row that is not there.  `write --admit --reason TEXT` adds a row of door-unit, or two rows of owners, with that
@@ -366,6 +367,12 @@ if words[0] == "write":
             lines.append(" | ".join(cells))
         ledger.write_text("".join(f"{line}\\n" for line in lines))
     elif words[2] == "object-size":
+        raised = (builds[0] / "raise.txt").read_text().strip() if (builds[0] / "raise.txt").is_file() else ""
+        if raised == "fails":
+            print("guard write: a record cannot be read", file=sys.stderr)
+            sys.exit(1)
+        if raised == "nothing":
+            sys.exit(0)
         ledger = pathlib.Path("utils/ledgers/object-size.txt")
         raised = f"| 3.3 | - | {words[words.index('--reason') + 1]}"
         ledger.write_text(ledger.read_text().replace("| 3.1 | - | a kept header", raised))
@@ -1776,6 +1783,30 @@ def budget_cases(expect: testing.Expect) -> None:
             f"a count of a rule of correctness next to a crossed row refuses the commit with the reason too: {verdict}"
         )
         expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
+        (build / "mode.txt").write_text("budget\n", encoding="utf-8")
+        (build / "red.txt").write_text("guard_object_size\n", encoding="utf-8")
+        failures = {
+            "fails": ("a raise that exits with an error", "default: the raise of object-size exits 1, see "),
+            "nothing": ("a raise that changes no row", "the raise of object-size writes no row"),
+        }
+        for raise_text, (name, line) in failures.items():
+            (build / "raise.txt").write_text(f"{raise_text}\n", encoding="utf-8")
+            verdict, printed = testing.captured(functools.partial(planted.check, reasoned, False))
+            causes = [problem for problem in verdict.problems if problem.startswith(line)]
+            holds = (
+                not verdict.is_accepted
+                and any("red alone too: guard_object_size" in problem for problem in verdict.problems)
+                and len(causes) == 1
+                and (raise_text != "fails" or Path(causes[0].partition(", see ")[2]).is_file())
+                and verdict.flaky == ()
+                and verdict.raised == ()
+                and (tree / BUDGET_PATH).read_text(encoding="utf-8") == BUDGET_LEDGER
+            )
+            label = (
+                f"{name} refuses the commit with its cause as a problem of the verdict, no test is flaky, and the "
+                f"ledger keeps its bytes: {verdict.problems}"
+            )
+            expect(label if holds else f"{label}.  The output of the gate:\n{printed}", holds)
         outcome = gate.Outcome(
             "default", ("default: red alone too: guard_step_cost",), ("guard_step_cost",), 1.0, False
         )

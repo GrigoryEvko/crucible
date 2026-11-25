@@ -195,19 +195,19 @@ def test_lines(build_dir: Path) -> list[str]:
         build_dir: The build directory of the test run
 
     Returns:
-        The lines, or one line with the reason that the records cannot be read
+        The lines.  The last line names the count of the records that cannot be read, when there is one
     """
-    try:
-        records = ctest_reader.costs(build_dir)
-    except ctest_reader.CtestError as problem:
-        return [f"loop gauge --cold: the records of the tests cannot be read: {problem}"]
-    times = {name: record.cost.wall_s for name, record in records.items()}
+    costs = ctest_reader.costs(build_dir)
+    times = {name: record.cost.wall_s for name, record in costs.records.items()}
     fixtures = [seconds for name, seconds in times.items() if name.startswith(FIXTURE_PREFIX)]
     lines = [f"tests: {len(times)}, of them {len(fixtures)} negative fixtures; sum of the wall times "
              f"{sum(times.values()):.0f} s, of the fixtures {sum(fixtures):.0f} s",
              f"the {SLOWEST_TESTS} slowest tests (wall seconds, from the records of the tests):"]
     for name, seconds in sorted(times.items(), key=lambda item: (-item[1], item[0]))[:SLOWEST_TESTS]:
         lines.append(f"  {seconds:8.1f}  {name}")
+    if costs.unread:
+        lines.append(f"loop gauge --cold: {len(costs.unread)} records of the tests cannot be read, such as "
+                     f"{costs.unread[0].cause}")
     return lines
 
 

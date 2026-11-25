@@ -590,7 +590,9 @@ Raise of a budget
         item, and the raise writes nothing.  The verdict gives each such
         line as a problem, so each requester of the run reads it.
       * A write that fails, or writes that change no row, give the ledgers
-        their bytes back, and the problems of the round stay.
+        their bytes back, and the problems of the round stay.  The verdict
+        also gives a problem with the cause: the status and the log of a write
+        that fails, or that the writes changed no row.
       * Else the round has no problem.  The reduce runs when the round built
         each configuration, and the fold puts the raised ledgers and the
         falls into the commit.  Each configuration then runs again, as after
@@ -2307,8 +2309,9 @@ class Step:
     candidate with no built file.  `built` holds each written file that changed, and the run of ALWAYS or
     write_built() is its one writer.  `unchecked` names each configuration whose first round ended before its checks
     after the tests, and the round after a raise runs those checks (the raise of a budget).  The thread of the check
-    writes it before that round.  `raise_problems` holds each line of a crossed row with no text and of an item that
-    names no crossed row, and the verdict gives each one as a problem (written_row_texts()).
+    writes it before that round.  `raise_problems` holds each line of a crossed row with no text, of an item that
+    names no crossed row and of a raise that wrote nothing, and the verdict gives each one as a problem
+    (raise_budgets(), written_row_texts()).
     """
 
     __slots__ = (
@@ -2755,7 +2758,8 @@ class Step:
         the raise of a budget gives the rules.  Each rule gets one write on the build of each configuration whose test
         of the rule is red alone too.  The writes of one rule run one after the other, and the rules run at the same
         time.  A write that fails, or writes that change no row, give each ledger its bytes back and no line, so the
-        problems of the round stay.  Complexity: one write for each rule and each such configuration.
+        problems of the round stay, and the verdict also gives the cause (Step.raise_problems).  Complexity: one write
+        for each rule and each such configuration.
         """
         plan: dict[str, list[Configuration]] = {}
         for item in outcomes:
@@ -2773,8 +2777,8 @@ class Step:
         reason = self.candidate.budget_reason or self.candidate.budget_rows[0][1]
         with self.leased() as share:
 
-            def write_rule(rule: str) -> bool:
-                """Write the rows of one rule from the build of each of its configurations, and tell if each exits 0."""
+            def write_rule(rule: str) -> str:
+                """Write the rows of one rule from the build of each of its configurations, and give a failure, or ""."""
                 for configuration in plan[rule]:
                     build = build_directory(tree, configuration)
                     log = log_name(configuration, f"raise-{rule}.log")
@@ -2783,12 +2787,14 @@ class Step:
                     status = self.run_logged(command, log, share, proc.TOOL_S)
                     if status != ExitCode.OK:
                         shown = self.gate.logs / log
-                        self.say(f"loop land: {configuration.name}: the raise of {rule} exits {status}, see {shown}")
-                        return False
-                return True
+                        return f"{configuration.name}: the raise of {rule} exits {status}, see {shown}"
+                return ""
 
-            is_written = all(self.concurrently(sorted(plan), write_rule))
-            is_written = is_written and self.written_row_texts(paths, before, share)
+            failures = tuple(line for line in self.concurrently(sorted(plan), write_rule) if line)
+            for line in failures:
+                self.say(f"loop land: {line}")
+            self.raise_problems = failures
+            is_written = not failures and self.written_row_texts(paths, before, share)
         lines: list[str] = []
         for rule, path in sorted(paths.items()):
             after = (tree / path).read_bytes() if (tree / path).is_file() else None
@@ -2801,7 +2807,12 @@ class Step:
                 (tree / path).unlink(missing_ok=True)
             else:
                 (tree / path).write_bytes(kept)
-        self.say("loop land: the raise writes no row, so the crossed rows of the budgets stay problems")
+        nothing = (
+            f"the raise of {' '.join(sorted(plan))} writes no row, so the crossed rows of the budgets stay problems"
+        )
+        self.say(f"loop land: {nothing}")
+        if is_written:
+            self.raise_problems = (nothing,)
         return ()
 
     def written_row_texts(
@@ -2854,7 +2865,9 @@ class Step:
             log = f"raise-reason-{rule}-{index}.log"
             status = self.run_logged(command, log, share, proc.TOOL_S)
             if status != ExitCode.OK:
-                self.say(f"loop land: the text of the named rows of {rule} exits {status}, see {self.gate.logs / log}")
+                line = f"the text of the named rows of {rule} exits {status}, see {self.gate.logs / log}"
+                self.say(f"loop land: {line}")
+                self.raise_problems = (line,)
                 return False
         return True
 

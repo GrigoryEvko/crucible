@@ -18,6 +18,7 @@ from unittest import mock
 
 from assay.core import git, testing
 from assay.core import ledger as rule_ledger
+from assay.core import record as cost_record
 from assay.core import registry as rule_registry
 from assay.core.paths import REPO_ROOT
 from assay.guard import write as guard_write
@@ -265,6 +266,28 @@ def record_cases(expect: testing.Expect) -> None:
             "no function writes its ledger"
             in raised(lambda: held.written(held_rule, context, rule_ledger.empty(held_rule), None)),
         )
+
+
+def damaged_record_cases(expect: testing.Expect) -> None:
+    """Write the rows of the kind test from a build that holds one empty record, as a host that died leaves it."""
+    with tempfile.TemporaryDirectory(prefix="test-ledger-writes-") as scratch:
+        context = context_of(Path(scratch), RECORD_ROWS)
+        ledgers = rule_ledger.ledger_path("step-cost", context.root).parent
+        ledgers.mkdir(parents=True)
+        build = context.require_build()
+        empty = Path(cost_record.test_record_file(build, "counted_slow_test"))
+        empty.write_bytes(b"")
+        status, said = run_write(context, "step-cost", "a planted reason")
+        expect(
+            "guard write writes the crossed row of each other test, names the count of the records that cannot be "
+            "read, and removes them",
+            status == 0
+            and ledger_values(context, "step-cost") == {("test", "heavy_test"): (800.0, "a planted reason")}
+            and "1 records of the tests cannot be read, such as the record counted_slow_test.test.cost" in said
+            and not empty.exists(),
+        )
+        status, said = run_write(context, "step-cost", "a planted reason")
+        expect("the next write names no record", status == 0 and "cannot be read" not in said)
 
 
 def fixture_cases(expect: testing.Expect) -> None:
@@ -616,6 +639,7 @@ def main(argv: list[str]) -> int:
         argv,
         (
             record_cases,
+            damaged_record_cases,
             fixture_cases,
             object_prune_cases,
             lower_cases,

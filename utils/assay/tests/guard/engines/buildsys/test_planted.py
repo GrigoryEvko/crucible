@@ -113,7 +113,7 @@ def build_cases(expect: testing.Expect) -> None:
             "the fixture row writes the record that the census reads",
             build_census.fixtures_of(build) == [("neg_planted", str(context.root / "test/neg/planted.cpp"))],
         )
-        records = ctest.costs(build)
+        records = ctest.costs(build).records
         expect(
             "a test-record row writes the record of `loop test-step`, with its instruction count",
             records["exe_planted"].cost.wall_s == 4.5

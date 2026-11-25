@@ -218,16 +218,18 @@ def configuration_of(build_dir: Path) -> str:
 def audit_build(build_dir: Path) -> BuildAudit:
     """Compare the plan of the last call in one build directory with the tests that ran (the findings).
 
+    A test whose record cannot be read has a wall time of 0, as a test with no record.
+
     Raises:
-        AuditError: If the plan, the JUnit report or a record cannot be read
+        AuditError: If the plan or the JUnit report cannot be read
     """
     state_dir = build_dir / affected.STATE_DIRECTORY
     try:
         plan = affected.read_plan(state_dir / affected.PLAN_FILE)
         statuses = ctest_reader.results(state_dir / "junit.xml") if (state_dir / "junit.xml").is_file() else {}
-        records = ctest_reader.costs(build_dir)
     except (affected.RunnerError, ctest_reader.CtestError) as problem:
         raise AuditError(f"{build_dir}: {problem}") from None
+    records = ctest_reader.costs(build_dir).records
     configuration = configuration_of(build_dir)
     selected: list[str] = []
     missed: list[str] = []

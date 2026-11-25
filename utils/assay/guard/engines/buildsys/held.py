@@ -120,12 +120,11 @@ def test_step_findings(rule: rule_registry.Rule, context: BuildContext) -> list[
     build = context.require_build()
     budget = {row: context.budget(row, cost_budget.TEST_KIND).limit for row in teststep.ROWS}
     ledgers = str(rule_ledger.ledger_path(rule.id, context.root).parent)
-    try:
-        records = ctest_reader.costs(build)
-    except ctest_reader.CtestError as problem:
-        raise unreadable("the records of the tests", problem) from None
+    costs = ctest_reader.costs(build)
+    if costs.unread:
+        raise unreadable("the records of the tests", costs.unread[0].cause)
     found: list[check_report.Finding] = []
-    for name, record in sorted(records.items()):
+    for name, record in sorted(costs.records.items()):
         cost = record.cost
         run = cost_meter.Measurement(
             record.exit,

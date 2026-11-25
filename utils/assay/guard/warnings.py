@@ -104,15 +104,12 @@ def remove_stale_files(warnings_dir: Path, registry_path: Path = rule_registry.R
 def test_times(build_dir: Path) -> list[float | None]:
     """Return the CPU time of the record of each executable test of a build directory: a program in the directory.
 
-    Complexity: linear in the records of the build directory.
-
-    Raises:
-        CtestError: If a record cannot be read
+    A record that cannot be read has no part.  Complexity: linear in the records of the build directory.
     """
     build = build_dir.resolve()
     return [
         record.cost.cpu_s
-        for record in ctest_reader.costs(build_dir).values()
+        for record in ctest_reader.costs(build_dir).records.values()
         if os.path.isabs(record.program) and Path(record.program).resolve().is_relative_to(build)
     ]
 

@@ -303,27 +303,40 @@ def record_cases(expect: testing.Expect) -> None:
     """Check the read of the records of the tests that assay.core.meter writes."""
     with tempfile.TemporaryDirectory(prefix="assay-ctest-") as scratch:
         build = Path(scratch)
-        expect("a build directory with no record gives no record", ctest.costs(build) == {})
+        expect("a build directory with no record gives no record", ctest.costs(build) == ctest.TestCosts({}))
         run = cost_meter.Measurement(3, 1.5, 0.25, 2.0, 2048, 0.5, 100.0, None)
         record = Path(cost_record.test_record_file(build, "planted_test"))
         written = cost_record.TestRecord("planted_test", "failed", "/b/test/planted_test", 3, cost_record.measured(run))
         cost_record.write(record, written)
         expect(
             "costs gives the record of each test by its name, with its result, its status and its cost",
-            ctest.costs(build) == {"planted_test": written} and written.cost.cpu_s == 1.75,
+            ctest.costs(build) == ctest.TestCosts({"planted_test": written}) and written.cost.cpu_s == 1.75,
         )
-        record.write_text(record.read_text().replace('"test": "planted_test"', '"test": "another_test"'))
-        expect(
-            "costs refuses a record whose file has the name of another test",
-            "another name" in refused(lambda: ctest.costs(build)),
-        )
-        record.write_text('{"format": 1, "step": "compile", "cost": {}}')
-        expect(
-            "costs refuses a record that is not a record of a test, and names the command that writes it",
-            "loop test-step" in refused(lambda: ctest.costs(build)),
-        )
-        record.write_text("{")
-        expect("costs refuses a record that is not JSON", "cannot be read" in refused(lambda: ctest.costs(build)))
+        whole = Path(cost_record.test_record_file(build, "whole_test"))
+        kept = cost_record.TestRecord("whole_test", "passed", "/b/test/whole_test", 0, cost_record.measured(run))
+        cost_record.write(whole, kept)
+        damages = {
+            "whose file has the name of another test": (
+                record.read_text().replace('"test": "planted_test"', '"test": "another_test"'),
+                "another name",
+            ),
+            "that is not a record of a test": (
+                '{"format": 1, "step": "compile", "cost": {}}',
+                "loop test-step",
+            ),
+            "that is not JSON": ("{", "cannot be read"),
+            "of no byte, as a host that died left it": ("", "cannot be read"),
+        }
+        for name, (text, cause) in damages.items():
+            record.write_text(text)
+            found = ctest.costs(build)
+            expect(
+                f"costs gives each other record and names the one {name}, with its file and the cause: {found.unread}",
+                found.records == {"whole_test": kept}
+                and [item.path for item in found.unread] == [record]
+                and cause in found.unread[0].cause
+                and "loop test-step" in found.unread[0].cause,
+            )
 
 
 def mirror_cases(expect: testing.Expect) -> None:
@@ -448,7 +461,7 @@ def project_cases(expect: testing.Expect) -> None:
                 "planted_after": ctest.TestStatus.NOTRUN,
             },
         )
-        records = ctest.costs(build)
+        records = ctest.costs(build).records
         expect(
             "costs reads the record that the launcher writes for each script test that ran, and no other",
             {name: (record.result, record.exit) for name, record in records.items()}
