@@ -1596,12 +1596,13 @@ struct RecordKernel<Op, TableIndex, Ret(Args...)> {
 
     // The record of an operator with no exact bound, into the slots of a frame
     // or of the list of the cold path.  Each caller erases the brand of its
-    // window, so one body serves the two paths, and the kernel holds one copy
-    // of it.
+    // window, so the two paths take one instance.  The body is inline in each
+    // caller, because the ABI passes a ViewMut by value in memory.  The path of
+    // the frame then has no call, and the copy of the list is cold code.
     template <class Brand>
-    [[gnu::noinline]] static Ret
-    record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg, c10::DispatchKeySet dispatch_keys,
-                    crucible::OpDepth depth, ::fixy::ViewMut<crucible::TensorMeta, Brand, kSlots> metas, Args... args)
+    CRUCIBLE_INLINE static Ret record_in_slots(crucible::Vigil& vigil, crucible::VigilFgCtx const& fg,
+                                               c10::DispatchKeySet dispatch_keys, crucible::OpDepth depth,
+                                               ::fixy::ViewMut<crucible::TensorMeta, Brand, kSlots> metas, Args... args)
         requires kRecordsInFrame
     {
         Recording<kCapacity, kMayOverflow, SlotsLent<Brand>> recording{std::move(metas)};
