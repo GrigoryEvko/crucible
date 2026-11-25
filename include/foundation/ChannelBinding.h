@@ -45,8 +45,8 @@
 //
 // The check can go when a place-based borrow checker refuses a borrow of a
 // handle that lives across a move of that handle, and the move of a binding
-// holder through a borrow is an error.  Until then it is the run-time
-// backstop, and the oracle of the test builds.
+// holder through a borrow is an error.  Until then no rule stands for it, so
+// the check runs in each build, Release too.
 //
 // A handle that declares its own move operations defaulted gets this
 // behaviour with no further code.  A handle that turns into a handle of
