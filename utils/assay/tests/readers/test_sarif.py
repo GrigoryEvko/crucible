@@ -185,6 +185,21 @@ def parse_cases(expect: testing.Expect) -> None:
         and third.is_error_head,
     )
     expect("records() gives each result, then its related records", len(sarif.records(log)) == 8)
+    kept = (
+        "'decltype(auto) operator[](std::size_t) const'",
+        "a call of the closure [&alloc, n](std::size_t)",
+        "[](net::NetworkRecipeError)",
+    )
+    for text in kept:
+        expect(
+            f"a text in brackets with a parameter list of a qualified name is no hyperlink: {text}",
+            sarif.plain_text(text, "x") == text,
+        )
+    for scheme in ("https://gcc.gnu.org/x.html", "http://a.b/c", "file:///w/a.cpp", "sarif:/runs/0/results/0"):
+        expect(
+            f"the text of a hyperlink of the scheme {scheme.partition(':')[0]} stays, and its URL goes",
+            sarif.plain_text(f"see [the manual]({scheme})", "x") == "see the manual",
+        )
 
 
 def render_cases(expect: testing.Expect) -> None:

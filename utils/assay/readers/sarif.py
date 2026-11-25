@@ -97,8 +97,9 @@ from pathlib import Path
 SARIF_FLAG = "-fdiagnostics-add-output=sarif:file="
 # The version of SARIF that GCC writes by default.
 VERSION = "2.1.0"
-# A hyperlink of a message: [TEXT](URL), with a URL that has a scheme.
-_HYPERLINK = re.compile(r"\[([^\[\]]*)\]\(([A-Za-z][A-Za-z0-9+.-]*:[^()\s]*)\)")
+# A hyperlink of a message: [TEXT](URL), with a URL of the scheme http, https, file or sarif.  Each other text stays,
+# such as the parameters of operator[](std::size_t), where "std:" has the form of a scheme.
+_HYPERLINK = re.compile(r"\[([^\[\]]*)\]\(((?:https?|file|sarif):[^()\s]*)\)")
 # The bullet and the indent of one nest level in the text output.
 _BULLET = "•"
 _INDENT = "  "
