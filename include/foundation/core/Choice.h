@@ -2759,6 +2759,13 @@ public:
 // that the slot holds, so a sum with a linear alternative has none.  The tag
 // names one alternative, so the slot carries the mark closed_tag.  The slot
 // counts its lends (the lend count), and a moved slot starts with none.
+//
+// The end of a sum ends its alternative.  The tag names one alternative in each
+// state, so no state tells that it ended.  The end of the sum is the end of its
+// scope, and the kind stale-borrow of the rule view-escape refuses a later use by
+// name.  Only the code of the alternative can come in between (the code of an
+// element of foundation/core/Owner.h), and a read of the sum by it through a second
+// name reads an alternative that ends.  An Option of the sum is empty there.
 template <class... Ts>
 class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
     static constexpr bool tracks_end_ = tracks_alternative_ends_ && (!DroppablePayload<Ts> || ...);
@@ -2776,6 +2783,13 @@ class[[= ::foundation::core::closed_tag{}]] SumSlotOf<false, Ts...> {
     unsigned char tag_;
     mutable unsigned char lend_count_ = 0;
     [[no_unique_address]] EndMark<tracks_end_> end_mark_{};
+
+    // Ends the alternative, and moves the alternative of other into its place.
+    constexpr void replace_(SumSlotOf& other) noexcept {
+        storage_.destroy_(tag_);
+        storage_.move_in_(other.tag_, other.storage_);
+        tag_ = other.tag_;
+    }
 
 public:
     // The tag and the alternative at Index, with the key that only SumDoor
@@ -2820,16 +2834,33 @@ public:
     // would end the source.  A self assignment then moves the alternative
     // out and back, with no test of the address.  The cost is two moves and
     // two ends of an alternative.
+    //
+    // A sum has no state in which it names no alternative, so no code of a
+    // caller runs between the end of the old alternative and the start of the
+    // new one (the code of an element of foundation/core/Owner.h).  An
+    // alternative of an assigned sum moves with no such code (MoveRunsCode).
+    // The old alternative moves to a local too, and its end, which can run such
+    // code (EndRunsCode), comes after the last step of the assignment.
     constexpr SumSlotOf& operator=(SumSlotOf&& other) noexcept
-        requires(DroppablePayload<Ts> && ...)
+        requires(DroppablePayload<Ts> && ...) && (!MoveRunsCode<Ts> && ...)
     {
         SumSlotOf taken(static_cast<SumSlotOf&&>(other));
         detail::refuse_lent_write_(lend_count_);
-        storage_.destroy_(tag_);
-        storage_.move_in_(taken.tag_, taken.storage_);
-        tag_ = taken.tag_;
+        if constexpr ((EndRunsCode<Ts> || ...)) {
+            SumSlotOf const held(static_cast<SumSlotOf&&>(*this));
+            replace_(taken);
+        } else {
+            replace_(taken);
+        }
         return *this;
     }
+
+    SumSlotOf& operator=(SumSlotOf&&)
+        requires(DroppablePayload<Ts> && ...) && (MoveRunsCode<Ts> || ...)
+    = delete(
+        "an assignment of a sum ends the old alternative before the new one starts, and the move of an alternative "
+        "can run code that reads the sum between the two: build a new sum, or hold the sum in an Option, whose "
+        "assignment leaves it empty between the two");
 
     SumSlotOf& operator=(SumSlotOf&&)
         requires(!(DroppablePayload<Ts> && ...))

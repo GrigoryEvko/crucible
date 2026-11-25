@@ -3038,6 +3038,15 @@ foundation_neg_compile_test(neg_core_one_of_reference
 foundation_neg_compile_test(neg_core_one_of_non_member_value
   "no matching function for call to .foundation::core::OneOf<int, long int>::OneOf\\(<brace-enclosed initializer list>\\)."
   "the expression .\\(is_same_v<T, Ts> \\|\\| \\.\\.\\.\\) \\[with T = unsigned int. Ts = \\{int, long int\\}\\]. evaluated to .false.")
+# The assignment of a sum ends the old alternative before the new one starts, so a
+# sum whose alternative moves with code of its class has none.
+foundation_neg_compile_test(neg_core_one_of_assignment_of_code
+  "use of deleted function .foundation::core::OneOf<Handle, int>& foundation::core::OneOf<Handle, int>::operator=\\("
+  "an assignment of a sum ends the old alternative before the new one starts")
+foundation_neg_compile_test(neg_core_result_assignment_of_code
+  "use of deleted function .foundation::core::Result<Moved, Refusal>& foundation::core::Result<Moved, Refusal>::operator=\\("
+  "use of deleted function .foundation::core::detail::ResultSlot<Moved, Refusal>& foundation::core::detail::ResultSlot<Moved, Refusal>::operator=\\("
+  "an assignment of a sum ends the old alternative before the new one starts")
 foundation_neg_compile_test(neg_core_one_of_no_default
   "no matching function for call to .foundation::core::OneOf<int, long int>::OneOf\\(<brace-enclosed initializer list>\\)."
   "candidate expects 1 argument, 0 provided")

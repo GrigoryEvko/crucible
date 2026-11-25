@@ -49,6 +49,21 @@ struct Owner {
     constexpr ~Owner() {}
 };
 
+// An owner on the core: it only moves, and its move and its end run no code of a
+// caller.
+struct NumberState {
+    using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
+    int handle = 0;
+
+    [[nodiscard]] static constexpr NumberState emptied(NumberState const& /*state*/) noexcept { return {}; }
+    static constexpr void release(NumberState const& /*state*/) noexcept {}
+};
+struct NumberOwner final : public OwnerCore<NumberState, NumberOwner> {
+    constexpr explicit NumberOwner(int value) noexcept : OwnerCore{NumberState{.handle = value}} {}
+    [[nodiscard]] constexpr int handle() const noexcept { return state_.handle; }
+};
+
 // A slot number whose niche states that no door builds the empty value.  Its
 // one door builds a slot from a byte, so no slot holds the empty value, and
 // the two walks of the check pass.  This file is outside the base, so the
@@ -1297,8 +1312,14 @@ static_assert(read_refusal() == 7);
 // An owning sum drops what it holds in a move assignment, so a linear part
 // refuses the assignment.  A plain sum keeps its trivial assignment.
 static_assert(!std::is_move_assignable_v<Option<Token>> && !std::is_move_assignable_v<Option<HoldsToken>>);
-static_assert(std::is_nothrow_move_assignable_v<Result<Owner, Code>>);
-static_assert(!std::is_copy_assignable_v<Result<Owner, Code>>);
+static_assert(std::is_nothrow_move_assignable_v<Result<NumberOwner, Code>>);
+static_assert(!std::is_copy_assignable_v<Result<NumberOwner, Code>>);
+
+// A Result whose value moves with code of its class has no assignment, because that
+// code could read the sum between two alternatives.  An Option of the Result has one,
+// and it is empty between the two.
+static_assert(!std::is_move_assignable_v<Result<Owner, Code>>);
+static_assert(std::is_nothrow_move_assignable_v<Option<Result<Owner, Code>>>);
 static_assert(!std::is_move_assignable_v<Result<int, Token>> && !std::is_move_assignable_v<Result<Token, Code>>);
 static_assert(std::is_trivially_copy_assignable_v<Result<int, Code>>);
 static_assert(std::is_trivially_copy_assignable_v<Option<SlotNumber>>);
@@ -1340,12 +1361,13 @@ static_assert(cleared_owner());
 
 // The move assignment of an owning Result changes the active part.
 [[nodiscard]] consteval int assigned_result() noexcept {
-    Result<Owner, Code> target{Owner{5}};
-    Result<Owner, Code> source{err(Code::closed)};
-    target = static_cast<Result<Owner, Code>&&>(source);
+    Result<NumberOwner, Code> target{NumberOwner{5}};
+    Result<NumberOwner, Code> source{err(Code::closed)};
+    target = static_cast<Result<NumberOwner, Code>&&>(source);
     if (target.is_ok()) return -1;
-    target = Result<Owner, Code>{Owner{6}};
-    return target.match([](Owner const& owner) noexcept { return owner.handle; }, [](Code) noexcept { return 0; });
+    target = Result<NumberOwner, Code>{NumberOwner{6}};
+    return target.match([](NumberOwner const& owner) noexcept { return owner.handle(); },
+                        [](Code) noexcept { return 0; });
 }
 static_assert(assigned_result() == 6);
 
@@ -2148,7 +2170,7 @@ static_assert(doors_are_pinned<11, door_count<SumSlotOf<true, NoPayload, std::ui
               "a new door of the plain slot: test it below, then pin the count");
 static_assert(doors_are_pinned<10, door_count<SumSlotOf<true, NoPayload, SealedWord>>()>,
               "a new door of the plain slot of a sealed payload: test it below, then pin the count");
-static_assert(doors_are_pinned<10, door_count<SumSlotOf<false, Owner, int>>()>,
+static_assert(doors_are_pinned<11, door_count<SumSlotOf<false, NumberOwner, int>>()>,
               "a new door of the owning slot: test it below, then pin the count");
 static_assert(doors_are_pinned<13, door_count<OptionSlot<std::uint64_t>>()>,
               "a new door of the plain Option slot: test it below, then pin the count");
@@ -2164,7 +2186,7 @@ static_assert(doors_are_pinned<48, door_count<Result<std::uint64_t, Code>>()>,
               "a new door of Result: test it below, then pin the count");
 static_assert(doors_are_pinned<32, door_count<OneOf<std::uint32_t, Code>>()>,
               "a new door of OneOf: test it below, then pin the count");
-static_assert(doors_are_pinned<30, door_count<OneOf<Owner, int>>()>,
+static_assert(doors_are_pinned<30, door_count<OneOf<NumberOwner, int>>()>,
               "a new door of an owning OneOf: test it below, then pin the count");
 
 // The constructor of the cells and of each slot takes the index of an
@@ -2332,13 +2354,13 @@ using Reading = OneOf<std::uint32_t, Code, std::uint16_t>;
 static_assert(runs_one_of_doors());
 
 [[nodiscard]] consteval bool runs_owning_one_of_doors() {
-    using Held = OneOf<Owner, int>;
-    Held owner{Owner{3}};
+    using Held = OneOf<NumberOwner, int>;
+    Held owner{NumberOwner{3}};
     Held number{4};
     Held moved = static_cast<Held&&>(owner);
     number = static_cast<Held&&>(moved);
     return number.which().raw() == 0
-        && number.match([](Owner const& held) noexcept { return held.handle; },
+        && number.match([](NumberOwner const& held) noexcept { return held.handle(); },
                         [](int const& held) noexcept { return held; })
                == 3;
 }

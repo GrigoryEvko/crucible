@@ -573,9 +573,15 @@ struct Handle {
 
 void clear_handle(Option<Handle>& target) noexcept { target = none; }
 
-void replace_result(::foundation::core::Result<Handle, Refusal>& target) noexcept {
-    target = ::foundation::core::Result<Handle, Refusal>{::foundation::core::err(Refusal::closed)};
+// A Result of a Handle has no assignment, because the end of a Handle is code.  The
+// move of a Box runs none, so a Result of a Box of a Handle has one.
+using BoxedResult = ::foundation::core::Result<Box<Handle>, Refusal>;
+
+[[nodiscard]] BoxedResult box_handle(int value) noexcept {
+    return BoxedResult{::foundation::core::mint_box<Handle>(::foundation::effects::testing::test().alloc, value)};
 }
+
+void replace_result(BoxedResult& target) noexcept { target = BoxedResult{::foundation::core::err(Refusal::closed)}; }
 
 // A borrow match of one Option whose arm moves a second Option out.  A caller
 // that gives one Option for the two parameters ends the payload that the arm
@@ -627,13 +633,13 @@ void test_lent_write_aborts() {
     expect_dies(
         test_context(),
         [] noexcept {
-            ::foundation::core::Result<Handle, Refusal> held{Handle{75}};
+            BoxedResult held = box_handle(75);
             static_cast<void>(held.match(
-                [&held](Handle const& handle) noexcept {
+                [&held](Box<Handle> const& handle) noexcept {
                     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_result(held);
                     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                    return handle.value;
+                    return handle->value;
                 },
                 [](Refusal const&) noexcept { return 0; }));
         },
@@ -758,21 +764,71 @@ void test_result_owning_value() {
 
 // The move assignment of an owning Result drops the active part of the
 // target one time and takes the active part of the source.  The source
-// keeps its moved-from part, which its destructor ends.
+// keeps its moved-from part, which its destructor ends.  The parts are Boxes,
+// because the move of a Box runs no code of its object.
 void test_result_owning_assignment() {
+    using Owned = Result<Box<CountedOwner>, Refusal>;
+    auto const own = [](int handle) noexcept {
+        return Owned{::foundation::core::mint_box<CountedOwner>(::foundation::effects::testing::test().alloc, handle)};
+    };
     {
-        Result<CountedOwner, Refusal> target{CountedOwner{51}};
-        Result<CountedOwner, Refusal> source{CountedOwner{52}};
+        Owned target = own(51);
+        Owned source = own(52);
         CRUCIBLE_FATAL_INVARIANT(live_owners == 2);
-        target = static_cast<Result<CountedOwner, Refusal>&&>(source);
-        CRUCIBLE_FATAL_INVARIANT(live_owners == 2 && target.is_ok());
-        int const handle = target.match([](CountedOwner const& owner) noexcept { return owner.handle(); },
+        target = static_cast<Owned&&>(source);
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && target.is_ok());
+        int const handle = target.match([](Box<CountedOwner> const& owner) noexcept { return owner->handle(); },
                                         [](Refusal) noexcept { return 0; });
         CRUCIBLE_FATAL_INVARIANT(handle == 52);
-        target = Result<CountedOwner, Refusal>{err(Refusal::closed)};
-        CRUCIBLE_FATAL_INVARIANT(live_owners == 1 && target.is_err());
+        target = Owned{err(Refusal::closed)};
+        CRUCIBLE_FATAL_INVARIANT(live_owners == 0 && target.is_err());
     }
     CRUCIBLE_FATAL_INVARIANT(live_owners == 0);
+}
+
+// The object of a Box that reads the Result that holds the Box in its end.
+class ReadsItsResult;
+using ReachedResult = Result<Box<ReadsItsResult>, Refusal>;
+[[nodiscard]] ReachedResult& reached_result() noexcept;
+
+// What the end of the object found in the Result.
+int reads_of_the_result = 0;
+int handle_seen = 0;
+
+class ReadsItsResult {
+public:
+    explicit ReadsItsResult(int handle) noexcept : handle_{handle} {}
+    ReadsItsResult(ReadsItsResult const&) = delete;
+    ReadsItsResult& operator=(ReadsItsResult const&) = delete;
+    ~ReadsItsResult() {
+        handle_ = 0;
+        ++reads_of_the_result;
+        handle_seen = reached_result().match([](Box<ReadsItsResult> const& held) noexcept { return held->handle_; },
+                                             [](Refusal const&) noexcept { return -1; });
+    }
+
+private:
+    int handle_ = 0;
+};
+
+[[nodiscard]] ReachedResult own_reader(int handle) noexcept {
+    return ReachedResult{
+        ::foundation::core::mint_box<ReadsItsResult>(::foundation::effects::testing::test().alloc, handle)};
+}
+
+ReachedResult& reached_result() noexcept {
+    static ReachedResult held{err(Refusal::full)};
+    return held;
+}
+
+// The old part of an assignment ends after the sum holds the new part, so the end of
+// its object finds the new part.
+void test_the_end_of_an_old_part_finds_the_new_one() {
+    reached_result() = own_reader(71);
+    reached_result() = own_reader(72);
+    CRUCIBLE_FATAL_INVARIANT(reads_of_the_result == 1 && handle_seen == 72);
+    reached_result() = ReachedResult{err(Refusal::closed)};
+    CRUCIBLE_FATAL_INVARIANT(reads_of_the_result == 2 && handle_seen == -1);
 }
 
 // The error of a Result can be linear, so a failed operation gives its
@@ -1024,12 +1080,12 @@ void test_combinator_lend_aborts() {
     expect_dies(
         test_context(),
         [] noexcept {
-            Result<Handle, Refusal> held{Handle{77}};
-            static_cast<void>(held.is_ok_and([&held](Handle const& handle) noexcept {
+            BoxedResult held = box_handle(77);
+            static_cast<void>(held.is_ok_and([&held](Box<Handle> const& handle) noexcept {
                 CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                 replace_result(held);
                 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                return handle.value == 77;
+                return handle->value == 77;
             }));
         },
         ::foundation::core::TextView{
@@ -1520,6 +1576,7 @@ int main() {
     test_result_of_unit();
     test_result_owning_value();
     test_result_owning_assignment();
+    test_the_end_of_an_old_part_finds_the_new_one();
     test_result_linear_error();
     test_result_agrees_with_plain_model();
     test_ok_or();

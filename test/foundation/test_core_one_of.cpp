@@ -8,6 +8,7 @@
 #include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Quarantine.h>
+#include <foundation/core/Ref.h>
 
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
@@ -256,7 +257,15 @@ struct Handle {
     ~Handle() noexcept {}
 };
 
-void replace_reading(OneOf<Handle, Refusal>& target) noexcept { target = OneOf<Handle, Refusal>{Refusal::full}; }
+// A OneOf of a Handle has no assignment, because the end of a Handle is code.  The move
+// of a Box runs none, so a OneOf of a Box of a Handle has one.
+using BoxedReading = OneOf<::foundation::core::Box<Handle>, Refusal>;
+
+[[nodiscard]] BoxedReading box_handle(int value) noexcept {
+    return BoxedReading{::foundation::core::mint_box<Handle>(::foundation::effects::testing::test().alloc, value)};
+}
+
+void replace_reading(BoxedReading& target) noexcept { target = BoxedReading{Refusal::full}; }
 
 // The borrow match of an owning OneOf counts its lend, so a move assignment
 // in a callee of the arm ends the process.  That stop is the subject of the
@@ -267,13 +276,13 @@ void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
     expect_dies(
         test,
         [] noexcept {
-            OneOf<Handle, Refusal> held{Handle{81}};
+            BoxedReading held = box_handle(81);
             static_cast<void>(held.match(
-                [&held](Handle const& handle) noexcept {
+                [&held](::foundation::core::Box<Handle> const& handle) noexcept {
                     CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: the lend count of a sum stops a write in a callee of the arm")
                     replace_reading(held);
                     CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
-                    return handle.value;
+                    return handle->value;
                 },
                 [](Refusal const&) noexcept { return 0; }));
         },
@@ -281,8 +290,8 @@ void test_lent_alternative_write_aborts(TestRunnerCtx const& test) {
             "foundation: fatal: a write ends the payload of a sum while a borrow match lends that payload to "
             "an arm"});
 
-    OneOf<Handle, Refusal> held{Handle{82}};
-    int const seen = held.match([](Handle const& handle) noexcept { return handle.value; },
+    BoxedReading held = box_handle(82);
+    int const seen = held.match([](::foundation::core::Box<Handle> const& handle) noexcept { return handle->value; },
                                 [](Refusal const&) noexcept { return 0; });
     replace_reading(held);
     CRUCIBLE_FATAL_INVARIANT(seen == 82 && held.is<Refusal>());

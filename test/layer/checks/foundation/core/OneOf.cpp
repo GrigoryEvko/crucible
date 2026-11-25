@@ -36,6 +36,21 @@ struct Owner {
     constexpr ~Owner() {}
 };
 
+// An owner on the core: it only moves, and its move and its end run no code of a
+// caller.
+struct NumberState {
+    using owner_state_mark = OwnerStateMark;
+    static constexpr bool runs_element_code = false;
+    int handle = 0;
+
+    [[nodiscard]] static constexpr NumberState emptied(NumberState const& /*state*/) noexcept { return {}; }
+    static constexpr void release(NumberState const& /*state*/) noexcept {}
+};
+struct NumberOwner final : public OwnerCore<NumberState, NumberOwner> {
+    constexpr explicit NumberOwner(int value) noexcept : OwnerCore{NumberState{.handle = value}} {}
+    [[nodiscard]] constexpr int handle() const noexcept { return state_.handle; }
+};
+
 // A linear payload.
 struct[[= ::foundation::linear::linear{}]][[= ::foundation::lifetime::no_start_over_bytes{}]] Token {
     int handle = 0;
@@ -292,19 +307,20 @@ static_assert(HoldsNoBorrow<OneOf<Owner, Code8>> && !HoldsNoBorrow<OneOf<Owner, 
 
 // A OneOf of plain alternatives keeps its trivial assignment.  An owning
 // OneOf has a move assignment, which drops the active alternative, so a
-// linear alternative refuses it.
+// linear alternative refuses it.  An alternative that moves with code of its class
+// refuses it too, because that code could read the sum between two alternatives.
 static_assert(std::is_trivially_copy_assignable_v<OneOf<std::uint32_t, Code32>>);
-static_assert(std::is_nothrow_move_assignable_v<OneOf<Owner, int>>);
-static_assert(!std::is_copy_assignable_v<OneOf<Owner, int>>);
-static_assert(!std::is_move_assignable_v<OneOf<Token, int>>);
+static_assert(std::is_nothrow_move_assignable_v<OneOf<NumberOwner, int>>);
+static_assert(!std::is_copy_assignable_v<OneOf<NumberOwner, int>>);
+static_assert(!std::is_move_assignable_v<OneOf<Token, int>> && !std::is_move_assignable_v<OneOf<Owner, int>>);
 
 [[nodiscard]] consteval int assigned_one_of() noexcept {
-    OneOf<Owner, int> target{Owner{7}};
-    OneOf<Owner, int> source{8};
-    target = static_cast<OneOf<Owner, int>&&>(source);
+    OneOf<NumberOwner, int> target{NumberOwner{7}};
+    OneOf<NumberOwner, int> source{8};
+    target = static_cast<OneOf<NumberOwner, int>&&>(source);
     if (!target.is<int>()) return -1;
-    target = OneOf<Owner, int>{Owner{9}};
-    return target.match([](Owner const& owner) noexcept { return owner.handle; },
+    target = OneOf<NumberOwner, int>{NumberOwner{9}};
+    return target.match([](NumberOwner const& owner) noexcept { return owner.handle(); },
                         [](int const&) noexcept { return 0; });
 }
 static_assert(assigned_one_of() == 9);
