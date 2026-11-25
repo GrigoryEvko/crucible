@@ -19,6 +19,9 @@
 //                                   takes the exclusive, discards the pages,
 //                                   and gives the exclusive back.  A share or
 //                                   a lease that is out gives ReadersLive
+//   locked->end_lock(ctx)           takes the exclusive for good, and gives the
+//                                   mapping and the exclusive out.  A share or
+//                                   a lease that is out gives ReadersLive
 //
 // with_read and with_write are the doors of SharedLocked
 // (fixy/os/SharedLocked.h), with their gates: the result of a body holds no
@@ -33,15 +36,23 @@
 // older than the lock.  A body can store a View in an object outside through a
 // capture in a type that names no brand, as with each body of SharedLocked.
 //
-// The mapping stays in the object until its end.  So a door that takes the
-// mapping by move has no form here: the owner of a NUMA placement
-// (fixy/os/NumaPlacement.h) and the release of OwnedMmap.  The two mints map a
-// file of a Handle or no file, and not a descriptor of a C library.
+// The mapping leaves the object only at end_lock.  A lock that ended gives no
+// value for ever: with_read and with_write run no body, and a discard and a
+// second end give ReadersLive.  The object lives on until the owner of its Box
+// ends it, because another thread can hold a reference to it.  The mapping
+// that comes out is a plain OwnedMmap: no door discards its pages, and no door
+// puts it into a lock.  It can go to the owner of a NUMA placement
+// (fixy/os/NumaPlacement.h) or to the release of OwnedMmap.  The exclusive that
+// comes out can mint a new LockedMmap.
+//
+// The two mints map a file of a Handle or no file, and not a descriptor of a C
+// library.
 //
 // The object is pinned, and a map can fail, so a mint gives a Box of the
 // object, which is one allocation on a cold door.  A map that fails gives the
 // exclusive back (MapRefusal).
 
+#include <fixy/Qtt.h>
 #include <fixy/os/Fd.h>
 #include <fixy/os/Fs.h>
 #include <fixy/os/Handle.h>
@@ -56,6 +67,7 @@
 #include <foundation/core/Choice.h>
 #include <foundation/core/OneOf.h>
 #include <foundation/core/Quantity.h>
+#include <foundation/core/Record.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
 #include <foundation/effects/Ctx.h>
@@ -77,7 +89,7 @@ class LockedMmap;
 namespace fixy::mmap {
 
 // A share of the pool or the lease of its exclusive is out, so a thread can
-// read the pages.
+// read the pages.  The exclusive of a lock that ended is out for good.
 struct ReadersLive final {
     [[nodiscard]] friend constexpr bool operator==(ReadersLive, ReadersLive) noexcept = default;
 };
@@ -132,7 +144,7 @@ public:
 };
 
 // The mapping inside a LockedMmap.  It does not move and takes no assignment,
-// and it gives no reference to the mapping, so the mapping of a LockedMmap is
+// and it gives no reference to the mapping, so the mapping of a live lock is
 // the one that its mint made.  The views have the gates and the checks of the
 // views of OwnedMmap: a const region gives only a View of const elements, and a
 // mapping of share::Shared gives a SharedView.  Each View borrows the pages and
@@ -170,8 +182,9 @@ public:
     //
     // The call gives no proof of the policy, and it makes no claim false.  A
     // NumaPlacement and a NumaPolicyPlacement own the mapping of their claim,
-    // and no door puts an existing mapping into a LockedMmap.  So no placement
-    // states a claim about the pages of a live LockedMmap.
+    // and no door puts an existing mapping into a LockedMmap.  A mapping goes to
+    // a placement only after end_lock, and then no body gets its region.  So no
+    // placement states a claim about the pages that this call moves.
     template <NumaPolicy Policy, ::foundation::effects::IsExecCtx Ctx>
         requires CtxFitsRegionPolicy<Ctx, Share>
     [[nodiscard]] ::foundation::core::Result<::foundation::core::Unit, ::foundation::os::Errno>
@@ -220,6 +233,12 @@ public:
     view_at(::foundation::core::ByteCount offset) const& noexcept {
         return mapping_.template view_at<T, Count>(offset.raw());
     }
+
+    // Gives the mapping up at the end of its lock.  Only the lock of this
+    // region builds the key, so no body takes the mapping.
+    [[nodiscard]] Linear<Mapping> leave_lock(SharedLockEndKey<LockedRegion> const& /*key*/) noexcept {
+        return mint_linear<Mapping>(std::move(mapping_));
+    }
 };
 
 }  // namespace fixy::mmap
@@ -267,6 +286,21 @@ public:
                     [](::foundation::os::Errno error) noexcept { return mmap::ReleaseRefusal{error}; });
             },
             []() noexcept -> Discarded { return ::foundation::core::err(mmap::ReleaseRefusal{mmap::ReadersLive{}}); });
+    }
+
+    // What leaves the object when its lock ends: the mapping, and the
+    // exclusive of its pool.
+    using ended_type =
+        ::foundation::core::Record<Linear<mapping_type>, ::foundation::permissions::Permission<Tag, Brand>>;
+
+    // Ends the lock under the exclusive of its own pool, and gives the mapping
+    // and the exclusive out.  The lock gives no value for ever after that.
+    // ReadersLive for a share or a lease that is out, and then the lock goes
+    // on.  Complexity: one compare-exchange.
+    template <::foundation::effects::IsExecCtx Ctx>
+        requires ::foundation::permissions::PoolCtx<Tag, Ctx>
+    [[nodiscard]] ::foundation::core::Result<ended_type, mmap::ReadersLive> end_lock(Ctx const& ctx) noexcept {
+        return Lock::end_lock(ctx).ok_or(mmap::ReadersLive{});
     }
 };
 

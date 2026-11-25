@@ -715,6 +715,9 @@ witness <fixy/os/SpinBudget.h> private | fixy::time::SpinDeadline | fixy::time::
 # so only a Locked builds a guard that lends its data.
 witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuardKey | fixy::spin::LockedGuardKey{}
 witness <fixy/os/SpinLock.h> private | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock> | fixy::spin::LockedGuard<int, fixy::spin::UnwitnessedBlockingLock>{forge::lvalue<fixy::spin::LockedGuardKey>(), forge::lvalue<fixy::spin::UnwitnessedBlockingLock>(), forge::lvalue<int>()}
+# The key of the end of a lock comes only from end_lock of a SharedLocked, so
+# no write body takes what the data of a lock gives up at its end.
+witness <fixy/os/SharedLocked.h> private | fixy::SharedLockEndKey<forge::brand> | fixy::SharedLockEndKey<forge::brand>{}
 # A shared view comes only from view() and view_at() of a shared mapping,
 # which check the fit and the alignment and start the lifetime of the
 # elements.

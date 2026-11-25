@@ -6500,7 +6500,9 @@ fixy_neg_compile_test(neg_os_io_uring_ring_repeated_flag
 # with a token from outside, an object that no mint made, a View of the
 # pages out of a read body, a mapping that a write body puts into the lock,
 # an advice on the release-aware door that discards no page, a memory policy
-# that a read body sets, and a memory policy of a shared mapping.
+# that a read body sets, a memory policy of a shared mapping, an end of the
+# lock with no Nondet or of a const object, a write body that takes the mapping
+# out of its lock, and a discard of the mapping that left its lock.
 fixy_test(test_os_locked_mmap)
 fixy_neg_compile_test(neg_os_locked_mmap_discard_of_a_plain_mapping
   "neg_os_locked_mmap_discard_of_a_plain_mapping\\.cpp:37:[0-9]+: error:"
@@ -6523,6 +6525,18 @@ fixy_neg_compile_test(neg_os_locked_mmap_policy_in_a_read_body
 fixy_neg_compile_test(neg_os_locked_mmap_policy_of_a_shared_mapping
   "neg_os_locked_mmap_policy_of_a_shared_mapping\\.cpp:30:[0-9]+: error: no matching function for call to .fixy::mmap::LockedRegion<.*::set_memory_policy<fixy::NumaPolicy::bind>"
   "required for the satisfaction of .CtxFitsRegionPolicy<Ctx, Share>.*Share = fixy::mmap::share::Shared")
+fixy_neg_compile_test(neg_os_locked_mmap_end_ctx_lacks_nondet
+  "neg_os_locked_mmap_end_ctx_lacks_nondet\\.cpp:28:[0-9]+: error: no matching function for call to .fixy::LockedMmap<.*::end_lock\\(const \\{anonymous\\}::MapCtx&\\)."
+  "required for the satisfaction of .CtxOwnsCapability<Ctx, foundation::effects::Effect::Nondet>.")
+fixy_neg_compile_test(neg_os_locked_mmap_end_of_a_const_object
+  "neg_os_locked_mmap_end_of_a_const_object\\.cpp:29:[0-9]+: error: passing .const fixy::LockedMmap<.*. as .this. argument discards qualifiers"
+  "in call to .*fixy::LockedMmap<Tag, Prot, Share, Brand>::end_lock\\(const Ctx&\\)")
+fixy_neg_compile_test(neg_os_locked_mmap_write_body_takes_the_mapping
+  "neg_os_locked_mmap_write_body_takes_the_mapping\\.cpp:32:[0-9]+: error: .constexpr fixy::SharedLockEndKey<T>::SharedLockEndKey\\(\\)"
+  "T = fixy::mmap::LockedRegion<.* is private within this context")
+fixy_neg_compile_test(neg_os_locked_mmap_discard_after_the_end
+  "neg_os_locked_mmap_discard_after_the_end\\.cpp:34:[0-9]+: error: .class fixy::OwnedMmap<"
+  "has no member named .advise_release_aware.")
 # The two mints of a LockedMmap have the gates of the mints of a mapping.
 # Two fixtures for each mint: a context without Block, and the licence of a
 # shared file or the fresh brand of the exclusive.
@@ -7263,7 +7277,8 @@ fixy_test(test_os_spinlock)
 fixy_test(test_os_locked)
 
 # test_shared_locked lends the data of a shared lock to read bodies and write
-# bodies, and shows that a write does not start while a read body runs.
+# bodies, and shows that a write does not start while a read body runs.  It ends
+# a lock, and shows that no door of it runs a body after that.
 fixy_test(test_shared_locked)
 
 # test_concurrent_spawn runs both mints for real: that every child body
@@ -7716,6 +7731,9 @@ fixy_neg_compile_test(neg_locked_bare_lock_door_is_private
 fixy_neg_compile_test(neg_shared_locked_read_body_gives_the_data_out
   "use of deleted function"
   "the result of a body of a lock leaves the lock, so it holds no reference and no address")
+fixy_neg_compile_test(neg_shared_locked_end_of_data_that_stays
+  "neg_shared_locked_end_of_data_that_stays\\.cpp:27:[0-9]+: error: no matching function for call to .fixy::SharedLocked<int, .*::end_lock\\("
+  "required for the satisfaction of .LeavesLock<T>. .with T = int.")
 
 fixy_neg_compile_test(neg_blocking_guard_without_permission
   "no matching function for call to .fixy::spin::GateGuard<\\{anonymous\\}::GateTag, foundation::algebra::lattices::WaitStrategy::AcquireWait, \\{anonymous\\}::GateBrand>::GateGuard\\("

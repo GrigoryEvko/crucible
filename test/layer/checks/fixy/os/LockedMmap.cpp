@@ -79,6 +79,24 @@ static_assert(kViewDoors<Region const, int> == 0 && kViewDoors<Region const, int
 static_assert(kViewDoors<ReadOnlyRegion, int> == 0 && kViewDoors<ReadOnlyRegion, int const> == 3);
 static_assert(kViewDoors<ReadOnlyRegion const, int> == 0 && kViewDoors<ReadOnlyRegion const, int const> == 3);
 
+// The end of a lock gives the mapping and the exclusive, so its result is
+// linear.  It asks for the row of the pool alone, because it makes no system
+// call, and a const object has no end.
+template <typename Held, typename Ctx>
+concept Ends = requires(Held& held, Ctx const& ctx) { held.end_lock(ctx); };
+static_assert(Ends<Locked, AllRowsCtx> && Ends<Locked, NoBlockCtx>);
+static_assert(!Ends<Locked, NoPoolCtx> && !Ends<Locked const, AllRowsCtx>);
+static_assert(::foundation::linear::is_linear_type(^^Locked::ended_type));
+
+// The region gives its mapping up only under the key of the end of its own
+// lock.  No code outside SharedLocked builds the key, and the key of another T
+// is no key of the region.
+static_assert(LeavesLock<Region> && std::is_same_v<left_lock_t<Region>, Linear<Mapping>>);
+static_assert(!LeavesLock<int> && !LeavesLock<Mapping>);
+using EndKey = SharedLockEndKey<Region>;
+static_assert(!std::is_default_constructible_v<EndKey> && !std::is_copy_constructible_v<EndKey>);
+static_assert(!std::is_convertible_v<SharedLockEndKey<ReadOnlyRegion> const&, EndKey const&>);
+
 // The refusal of a map holds the exclusive, so it is linear: a caller that
 // drops it gets an error.
 static_assert(::foundation::linear::is_linear_type(^^MapRefusal<ProbeRegion, ProbeBrand>));

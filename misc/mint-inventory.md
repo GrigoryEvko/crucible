@@ -259,8 +259,8 @@ that the axis does not apply to the row.
 | `mint_file` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_io_uring_ring` | `include/fixy/os/Io.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_locked_mmap` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
-| `mint_locked_mmap_anon` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
+| `mint_locked_mmap` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
+| `mint_locked_mmap_anon` | `include/fixy/os/LockedMmap.h` | Y | - | Y | Y | ctx | Y | HS14: 10 |
 | `mint_mmap` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_mmap_anon` | `include/fixy/os/Mmap.h` | Y | - | Y | Y | ctx | Y | HS14: 5 |
 | `mint_numa_placement` | `include/fixy/os/NumaPlacement.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
@@ -271,7 +271,7 @@ that the axis does not apply to the row.
 | `mint_priority` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 4 |
 | `mint_ptp_clock_reader` | `include/fixy/os/Time.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_scheduler_policy` | `include/fixy/os/Sched.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
-| `mint_sealed_memory` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
+| `mint_sealed_memory` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 3 |
 | `mint_socket` | `include/fixy/os/Socket.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_directory` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
 | `mint_temporary_file_at` | `include/fixy/os/Fs.h` | Y | - | Y | Y | ctx | Y | HS14: 2 |
@@ -408,7 +408,7 @@ that the axis does not apply to the row.
 | `mint_permission_combine` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 9 |
 | `mint_permission_combine_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 7 |
 | `mint_permission_fork_inline` | `include/foundation/permissions/PermissionFork.h` | Y | Y | Y | Y | ctx | Y | HS14: 10 |
-| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 293 |
+| `mint_permission_root` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 300 |
 | `mint_permission_share` | `include/foundation/permissions/SharedPermission.h` | Y | Y | Y | Y | token | · | HS14: 4 |
 | `mint_permission_split` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 75 |
 | `mint_permission_split_n` | `include/foundation/permissions/Permission.h` | Y | Y | Y | Y | token | · | HS14: 12 |

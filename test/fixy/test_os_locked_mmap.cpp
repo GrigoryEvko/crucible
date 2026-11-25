@@ -11,6 +11,9 @@
 //     counted extent and of a fixed extent.  A range past the end gives none.
 //   - A write body sets the memory policy of the pages, and the policy stays
 //     over a discard.  It refuses the masks that the policy mint refuses.
+//   - The end of the lock gives the mapping, with its bytes, and the exclusive.
+//     A read body and a write body refuse the end, and the lock goes on.  A
+//     lock that ended gives no value.
 //   - A shared mapping of sealed memory keeps its bytes over a discard,
 //     because the kernel reads them again from the memory.
 
@@ -307,6 +310,86 @@ void a_write_body_sets_a_memory_policy() {
     }
 }
 
+// The first node that the cpuset of the process allows, or None.
+[[nodiscard]] ::fixy::NumaNodeId first_allowed_node() {
+    ::fixy::NumaNodeMask const allowed =
+        ::fixy::numa::read_allowed_numa_nodes(kCtx).expect("the status of the process holds its allowed nodes");
+    auto const slots = allowed.slots();
+    return slots.with_keys([](auto const& keys) noexcept {
+        for (::fixy::NumaNodeMask::Slot const slot : keys)
+            return ::fixy::numa_node_of_slot(slot);
+        return ::fixy::NumaNodeId::None;
+    });
+}
+
+// Asks for the end of the lock of the object.  True when a reader or a writer
+// refuses the end, or when the lock ended before.  An end that succeeds ends
+// the mapping and the exclusive, and gives false.
+template <class Locked>
+[[nodiscard]] bool is_end_refused(Locked& locked) {
+    return locked.end_lock(kCtx).match(
+        [](typename Locked::ended_type ended) noexcept {
+            auto [mapping, exclusive] = std::move(ended);
+            drop(std::move(mapping));
+            ::foundation::linear::drop(std::move(exclusive));
+            return false;
+        },
+        [](mmap::ReadersLive) noexcept { return true; });
+}
+
+// The mapping of a lock that ended has the bytes of the lock, and a placement
+// owns it.  The exclusive of the lock mints a new lock.
+void an_end_gives_the_mapping_and_the_exclusive() {
+    auto locked =
+        mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, perm::mint_permission_root<PageRegion>(), kPage)
+            .expect("an anonymous mapping of one page");
+    auto& object = *locked;
+    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(object, std::uint8_t{0x3C}));
+
+    ::fixy::Option<bool> const is_refused_by_a_reader =
+        object.with_read(kCtx, [&object](auto const& /*region*/) noexcept { return is_end_refused(object); });
+    ::fixy::Option<bool> const is_refused_by_a_writer =
+        object.with_write(kCtx, [&object](auto& /*region*/) noexcept { return is_end_refused(object); });
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_reader == ::fixy::some(true));
+    CRUCIBLE_TEST_ASSERT(kTest, is_refused_by_a_writer == ::fixy::some(true));
+    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}) == ::fixy::some(kPageBytes));
+
+    auto [mapping, exclusive] = object.end_lock(kCtx).expect("no reader and no writer is in the region");
+
+    // Each door of a lock that ended refuses its caller.
+    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(object, std::uint8_t{0x3C}).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, !fill_pages(object, std::uint8_t{0xA5}));
+    CRUCIBLE_TEST_ASSERT(kTest, is_readers_live(object.template advise_release_aware<DontNeed>(kCtx)));
+    CRUCIBLE_TEST_ASSERT(kTest, is_end_refused(object));
+
+    auto region = std::move(mapping).consume();
+    bool const is_kept = region.template view<std::uint8_t const>().is_some_and([](auto const& bytes) noexcept {
+        return bytes.size() == kPageBytes
+            && bytes.walk().all_of([](std::uint8_t const& byte) noexcept { return byte == 0x3C; });
+    });
+    CRUCIBLE_TEST_ASSERT(kTest, is_kept);
+
+    auto relocked = mmap::mint_locked_mmap_anon<WriteCopy, Anonymous>(kCtx, kAlloc, std::move(exclusive), kPage)
+                        .expect("an anonymous mapping of one page");
+    CRUCIBLE_TEST_ASSERT(kTest, fill_pages(*relocked, std::uint8_t{0x5A}));
+    CRUCIBLE_TEST_ASSERT(kTest, count_bytes(*relocked, std::uint8_t{0x5A}) == ::fixy::some(kPageBytes));
+
+    // A kernel that sets no memory policy refuses the placement.
+    ::fixy::NumaNodeId const node = first_allowed_node();
+    auto placed =
+        ::fixy::numa::mint_numa_placement(kCtx, ::fixy::mint_linear<decltype(region)>(std::move(region)), node);
+    bool const is_placed = std::move(placed).match(
+        [node](auto placement) noexcept {
+            bool const is_on_node = placement.node() == node && placement.size() == kPageBytes;
+            drop(std::move(placement).consume());
+            return is_on_node;
+        },
+        [](::foundation::os::Errno error) noexcept {
+            return error == ::foundation::os::Errno::enosys || error == ::foundation::os::Errno::eperm;
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, is_placed);
+}
+
 // The bytes of a shared mapping of sealed memory live in the memory.  A
 // discard drops the pages of the mapping alone, and the next read loads the
 // bytes again.
@@ -354,6 +437,7 @@ int main() {
     an_advice_that_discards_nothing_runs_in_a_body();
     a_body_gets_a_view_of_a_range();
     a_write_body_sets_a_memory_policy();
+    an_end_gives_the_mapping_and_the_exclusive();
     a_shared_mapping_keeps_its_bytes();
     ::fixy::check::pass(kTest, "test_os_locked_mmap: PASSED\n");
     return 0;

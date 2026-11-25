@@ -1929,6 +1929,7 @@ inline constexpr StatedZero kZeros[] = {
     {^^::fixy::spin::LockedGuardKey, kPasskey},
     {^^::fixy::SharedLocked, "a shared lock that owns its data: it lends the data only to a body, and it is never a "
                              "value in a signature"},
+    {^^::fixy::SharedLockEndKey, kPasskey},
     {^^::fixy::LockedMmap, "a shared lock that owns a mapping: it lends the mapping only to a body, and it is never a "
                            "value in a signature"},
     {^^::fixy::time::ClockReader, kFactory},

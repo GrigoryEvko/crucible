@@ -31,11 +31,22 @@
 //
 // The lock takes the exclusive permission of its tag with a fresh brand, so
 // a share of one lock is no share of another lock of another root.
+//
+// A T that gives up what it holds (LeavesLock) has an end of its lock:
+//   shared.end_lock(ctx)           takes the exclusive for good, and gives what
+//                                  the T holds and the exclusive out.  No value
+//                                  while a share or the lease is out, and then
+//                                  the lock goes on
+// The T gives it up only under the key of the end (SharedLockEndKey), which
+// only the lock of that T builds.  So no write body takes what the T holds.  A
+// lock that ended gives no value for ever: no door of it runs a body.  The lock
+// object lives on, because another thread can hold a reference to it.
 
 #include <fixy/os/SpinLock.h>
 #include <foundation/Brand.h>
 #include <foundation/Pinned.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Record.h>
 #include <foundation/permissions/Permission.h>
 #include <foundation/permissions/SharedPermission.h>
 
@@ -43,6 +54,43 @@
 #include <utility>
 
 namespace fixy {
+
+template <typename T, typename Tag, ::foundation::brand::IsFreshBrand Brand>
+class SharedLocked;
+
+// The key of the end of a lock over a T.  SharedLocked builds it only in
+// end_lock, while that call holds the exclusive that leaves its pool for good,
+// and lends it to the T of that lock for one call.  The key names the T, so
+// another T that stores its key has no key of this one.
+template <typename T>
+class [[nodiscard]] SharedLockEndKey final {
+    template <typename OtherT, typename Tag, ::foundation::brand::IsFreshBrand Brand>
+    friend class SharedLocked;
+
+    constexpr SharedLockEndKey() noexcept {}
+    constexpr SharedLockEndKey(SharedLockEndKey const&) noexcept {}
+
+public:
+    SharedLockEndKey& operator=(SharedLockEndKey const&) = delete("a key of the end of a lock lives for one call");
+};
+
+// A T that gives up what it holds at the end of its lock: leave_lock takes the
+// key and gives a value.
+//
+// leave_lock carries one promise of the T: the value that it gives holds no
+// borrow of the T and of what the T keeps.  No gate reads the promise.  The
+// value can own a resource and hold its address, as a mapping does, and
+// HoldsNoBorrow does not tell the address of an owner from a borrow.  A gate of
+// this concept becomes possible when HoldsNoBorrow reads the ownership that a
+// type states.
+template <typename T>
+concept LeavesLock = requires(T& data, SharedLockEndKey<T> const& key) {
+    { data.leave_lock(key) } noexcept -> ::foundation::core::RecordElement;
+};
+
+// What a T gives up at the end of its lock.
+template <LeavesLock T>
+using left_lock_t = decltype(std::declval<T&>().leave_lock(std::declval<SharedLockEndKey<T> const&>()));
 
 template <typename T, typename Tag, ::foundation::brand::IsFreshBrand Brand>
 class SharedLocked : public ::foundation::Pinned<SharedLocked<T, Tag, Brand>> {
@@ -114,6 +162,25 @@ public:
         requires spin::LockedBorrowGivingBody<Body, T>
     void with_write(Ctx const& ctx, Body&& body) = delete("the result of a body of a lock leaves the lock, so it holds "
                                                           "no reference and no address: give a plain value");
+
+    // Ends the lock.  The exclusive permission leaves the pool for good
+    // (leave_pool), and the T gives up what it holds under the key of the end.
+    // The pool keeps its exclusive-out state, so no door of the lock runs a
+    // body after this call, and a second end gives no value.  No value while a
+    // share or the lease is out, and then the lock goes on.  Complexity: one
+    // compare-exchange, O(1), and the cost of leave_lock.
+    //
+    // The return type is the Option of Ended, and the body deduces it.  The
+    // class instantiates each declared return type of a member, and left_lock_t
+    // of a T with no end does not exist.
+    template <typename Ctx>
+        requires ::foundation::permissions::PoolCtx<Tag, Ctx> && LeavesLock<T>
+    [[nodiscard]] auto end_lock(Ctx const& ctx) noexcept {
+        using Ended = ::foundation::core::Record<left_lock_t<T>, ::foundation::permissions::Permission<Tag, Brand>>;
+        using Given = ::foundation::core::Option<Ended>;
+        CRUCIBLE_LET_ELSE(lease, pool_.try_upgrade(ctx), Given{::foundation::core::none});
+        return Given::some(Ended{data_.leave_lock(SharedLockEndKey<T>{}), std::move(lease).leave_pool()});
+    }
 
 private:
     ::foundation::permissions::SharedPermissionPool<Tag, Brand> pool_;
