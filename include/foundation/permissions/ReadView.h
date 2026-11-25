@@ -40,7 +40,10 @@
 //   parked token of its own mint.  A loan of another mint ends the process
 //   in each build, also under the ignore semantic, because the token would
 //   come back beside a live reader of its region.  A loan and a parked token
-//   take 8 bytes each, for the Identity.
+//   take 8 bytes each, for the Identity.  Each holds it as a right of one
+//   holder (UniqueIdentity), so a move leaves none under the old name.  So
+//   the old name of a moved loan opens no view, and a pair of a loan and its
+//   parked token gives the token back only once.
 //
 //   A view holds no Identity.  It is a proof for the body of its door, and
 //   no door takes a view as the key of memory.  A door that takes a view as
@@ -246,6 +249,12 @@ struct read_view_door {
         if constexpr (std::is_same_v<Source, SharedPermissionGuard<Tag, Brand>>) {
             CRUCIBLE_PRE(source.holds_share());
         }
+        if constexpr (std::is_same_v<Source, ReadLoan<Tag, Brand>>) {
+            // A loan that a move emptied opens no view.  The fact is a fatal
+            // invariant, because a precondition is only an assumption under
+            // the ignore semantic, and the view would read beside a writer.
+            CRUCIBLE_FATAL_INVARIANT(source.identity_.is_held());
+        }
         Source held{std::move(source)};
         View const view{};
         if constexpr (std::is_void_v<Result>) {
@@ -371,24 +380,24 @@ public:
                                        "token does not wait for");
     ReadLoan& operator=(const ReadLoan&) = delete("a ReadLoan is one read right. A copy is a second right that "
                                                   "the parked token does not wait for");
-    // The shape of Permission, around the Identity of the mint.  The move
-    // constructor and the destructor are trivial, so the ABI passes a loan
-    // in a register.  The move assignment is user-provided, so std::bit_cast
-    // refuses the loan, and an assignment stays a call in the tree of GCC.
-    // It takes the Identity of the loan that moves in.  The annotation
-    // no_start_over_bytes refuses the checked lifetime start.
+    // A loan holds the Identity of its mint as a right of one holder, so a move
+    // empties the source, and the old name of a moved loan opens no view and
+    // ends no loan.  The rule use-after-move does not see each such name, as a
+    // second reference parameter that names one object.  The move is
+    // user-provided in the Identity, so std::bit_cast refuses the loan and the
+    // ABI passes it by value in memory.  The annotation no_start_over_bytes
+    // refuses the checked lifetime start.
     constexpr ReadLoan(ReadLoan&&) noexcept = default;
-    constexpr ReadLoan& operator=(ReadLoan&& other) noexcept {
-        identity_ = other.identity_;
-        return *this;
-    }
+    constexpr ReadLoan& operator=(ReadLoan&&) noexcept = default;
     ~ReadLoan() = default;
 
 private:
     constexpr explicit ReadLoan(::foundation::core::Identity identity) noexcept : identity_{identity} {}
 
     // The Identity of the mint, which no code builds from bytes (its seal).
-    ::foundation::core::Identity identity_;
+    ::foundation::core::UniqueIdentity identity_;
+
+    friend struct detail::read_view_door;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
@@ -417,8 +426,11 @@ public:
     LentPermission(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
     LentPermission&
     operator=(const LentPermission&) = delete("a LentPermission holds a linear token. A copy is a second owner");
+    // A move empties the source, so the old name of a moved parked token gives
+    // no token back.  The token that it holds is an empty class and keeps no
+    // record of a move, so the Identity is the one record.
     constexpr LentPermission(LentPermission&& other) noexcept
-        : parked_{std::move(other.parked_)}, identity_{other.identity_} {}
+        : parked_{std::move(other.parked_)}, identity_{std::move(other.identity_)} {}
     LentPermission&
     operator=(LentPermission&&) = delete("a LentPermission binds one loan. Assignment would drop the token it holds");
     ~LentPermission() = default;
@@ -429,7 +441,7 @@ private:
 
     [[no_unique_address]] Permission<Tag, Brand> parked_;
     // The Identity of the mint, which the loan of the mint holds too.
-    ::foundation::core::Identity identity_;
+    ::foundation::core::UniqueIdentity identity_;
 
     template <typename Tag_, typename Brand_>
         requires ReadViewNeedsNoCtx<Tag_>
@@ -454,10 +466,11 @@ template <typename Tag, typename Brand>
     requires ReadViewNeedsNoCtx<Tag>
 [[nodiscard]] Permission<Tag, Brand> mint_permission_after_loan(LentPermission<Tag, Brand>&& lent,
                                                                 ReadLoan<Tag, Brand>&& loan) noexcept {
-    CRUCIBLE_FATAL_INVARIANT(lent.identity_ == loan.identity_);
+    CRUCIBLE_FATAL_INVARIANT(lent.identity_.pairs_with(loan.identity_));
     ReadLoan<Tag, Brand> ended{std::move(loan)};
     (void)ended;
-    return std::move(lent.parked_);
+    LentPermission<Tag, Brand> held{std::move(lent)};
+    return std::move(held.parked_);
 }
 
 // The fixture tags of the checks of this header.  They stay here, beside

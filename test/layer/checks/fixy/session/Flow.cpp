@@ -92,18 +92,17 @@ static_assert(!std::is_trivially_copyable_v<FlowReturn>);
 static_assert(::foundation::linear::is_linear_v<FlowReturn>);
 
 // A marker that carries a read loan moves, and no assignment writes over the
-// loan of a live marker.  The move stays trivial, so the ABI passes the
-// marker in registers.  The move assignment of the loan is user-provided, so
-// GCC 16 counts the marker as not trivially copyable, and the marker keeps
-// the shape of a linear class.  A compiler that counts it as trivially
-// copyable fails the build here.
+// loan of a live marker.  A move empties the loan of the source, so the move
+// is not trivial, and the old name of a moved marker carries no loan.
 using FlowLend = Borrowed<int, FlowRegion, FlowBrand>;
 using FlowRelease = Released<int, FlowRegion, FlowBrand>;
-static_assert(std::is_trivially_move_constructible_v<FlowLend>);
+static_assert(std::is_nothrow_move_constructible_v<FlowLend>);
+static_assert(!std::is_trivially_move_constructible_v<FlowLend>);
 static_assert(!std::is_move_assignable_v<FlowLend>);
 static_assert(!std::is_trivially_copyable_v<FlowLend>);
 static_assert(::foundation::linear::is_linear_v<FlowLend>);
-static_assert(std::is_trivially_move_constructible_v<FlowRelease>);
+static_assert(std::is_nothrow_move_constructible_v<FlowRelease>);
+static_assert(!std::is_trivially_move_constructible_v<FlowRelease>);
 static_assert(!std::is_move_assignable_v<FlowRelease>);
 static_assert(!std::is_trivially_copyable_v<FlowRelease>);
 static_assert(::foundation::linear::is_linear_v<FlowRelease>);

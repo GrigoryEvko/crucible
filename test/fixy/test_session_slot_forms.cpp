@@ -408,7 +408,7 @@ template <ReleaseOrder order, class... First>
     if (close_two_loans<ReleaseOrder::own>() != 6) return fail("two sessions of one site did not close their loans");
     ::fixy::check::expect_dies(
         kTest, [] noexcept { static_cast<void>(close_two_loans<ReleaseOrder::crossed>()); },
-        ::fixy::TextView{"fatal invariant failed: lent.identity_ == loan.identity_"});
+        ::fixy::TextView{"fatal invariant failed: lent.identity_.pairs_with(loan.identity_)"});
     return 0;
 }
 

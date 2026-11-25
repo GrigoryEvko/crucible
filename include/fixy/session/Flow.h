@@ -197,10 +197,9 @@ struct [[nodiscard]][[= ::foundation::linear::linear{}]] Borrowed {
     Borrowed(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
     Borrowed&
     operator=(const Borrowed&) = delete("Borrowed is one read loan. A copy is a second loan that no set records");
-    // The move of the loan is trivial and its move assignment is
-    // user-provided.  So GCC 16 counts the marker as not trivially
-    // copyable, and the ABI passes it in registers.  The check file of this
-    // header asserts the two facts.
+    // A move empties the loan of the source (foundation/permissions/ReadView.h),
+    // so the marker is not trivially copyable, and the ABI passes it in memory.
+    // The check file of this header asserts that no move is trivial.
     constexpr Borrowed(Borrowed&&) noexcept = default;
     Borrowed& operator=(Borrowed&&) = delete("Borrowed holds one read loan for its whole life");
     ~Borrowed() = default;

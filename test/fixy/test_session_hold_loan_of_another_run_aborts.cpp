@@ -80,7 +80,7 @@ int main() {
     CRUCIBLE_TEST_ASSERT(test, close_two_loans<ReleaseOrder::own>() == 7);
     ::fixy::check::expect_dies(
         test, [] noexcept { static_cast<void>(close_two_loans<ReleaseOrder::crossed>()); },
-        ::fixy::TextView{"fatal invariant failed: lent.identity_ == loan.identity_"});
+        ::fixy::TextView{"fatal invariant failed: lent.identity_.pairs_with(loan.identity_)"});
     ::fixy::check::pass(test, "test_session_hold_loan_of_another_run_aborts: refused\n");
     return 0;
 }

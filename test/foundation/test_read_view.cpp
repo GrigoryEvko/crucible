@@ -342,8 +342,77 @@ void test_two_live_loans_end_their_own_tokens(::fixy::TestRunnerCtx const& test)
     CRUCIBLE_TEST_ASSERT(test, with_two_loans(body) == 7);
 }
 
-// The text of the fatal invariant that a loan of a second mint breaks.
-constexpr ::fixy::TextView kForeignLoan{"fatal invariant failed: lent.identity_ == loan.identity_"};
+// The text of the fatal invariant that a loan of a second mint and an emptied
+// loan break.
+constexpr ::fixy::TextView kForeignLoan{"fatal invariant failed: lent.identity_.pairs_with(loan.identity_)"};
+
+// The text of the fatal invariant that an emptied loan breaks at the view door.
+constexpr ::fixy::TextView kEmptiedLoan{"fatal invariant failed: source.identity_.is_held()"};
+
+// Two parameters name one object, so the rule use-after-move does not see that
+// the old name moved.  Each function below ends the process: at the door that
+// gets the old name, and else at its own end.
+//
+// The pair ends its loan under the first names, and then under the old names.
+// With a pair that a move leaves full, the second end gives a second token of
+// the region.
+template <class Loan, class Lent>
+[[noreturn]] void end_the_loan_twice(Loan& loan, Loan& old_loan, Lent& lent, Lent& old_lent) noexcept {
+    auto first = mint_permission_after_loan(std::move(lent), std::move(loan));
+    auto second = mint_permission_after_loan(std::move(old_lent), std::move(old_loan));
+    ::foundation::linear::drop(std::move(first));
+    ::foundation::linear::drop(std::move(second));
+    ::fixy::fatal("the loan ended two times");
+}
+
+// The parked token moves out under the first name, and the live loan ends the
+// parked token of the old name.
+template <class Loan, class Lent>
+[[noreturn]] void end_the_old_lent(Loan& loan, Lent& lent, Lent& old_lent) noexcept {
+    Lent moved{std::move(lent)};
+    auto token = mint_permission_after_loan(std::move(old_lent), std::move(loan));
+    ::foundation::linear::drop(std::move(token));
+    ::foundation::linear::drop(std::move(moved));
+    ::fixy::fatal("the old name of a parked token gave the token back");
+}
+
+// The loan moves out under the first name, and a view opens under the old one.
+template <class Loan>
+[[noreturn]] void open_a_view_of_the_old_loan(Loan& loan, Loan& old_loan) noexcept {
+    Loan moved{std::move(loan)};
+    auto back = with_read_view(std::move(old_loan), [](auto const&) noexcept {});
+    ::foundation::linear::drop(std::move(moved));
+    ::foundation::linear::drop(std::move(back));
+    ::fixy::fatal("the old name of a loan opened a view");
+}
+
+// A move empties a loan and a parked token, so their old names end no loan and
+// open no view.  Each violation runs in a child process, which ends by the
+// abort of the fatal invariant.
+void test_old_names_of_a_moved_loan_end_the_process(::fixy::TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+            end_the_loan_twice(loan, loan, lent, lent);
+        },
+        kForeignLoan);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+            end_the_old_lent(loan, lent, lent);
+        },
+        kForeignLoan);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+            static_cast<void>(lent);
+            open_a_view_of_the_old_loan(loan, loan);
+        },
+        kEmptiedLoan);
+}
 
 // Two loans of one site have one type, so the types do not tell the parked
 // token of one from the loan of the other.  With the loan of the second run,
@@ -447,6 +516,7 @@ int main() {
     test_loan_round_trip(test);
     test_two_live_loans_end_their_own_tokens(test);
     test_loan_of_a_second_mint_ends_the_process(test);
+    test_old_names_of_a_moved_loan_end_the_process(test);
     pass(test, "  test_loan_of_a_second_mint_ends_the_process: PASSED\n");
     test_handle_composition();
     pass(test, "  test_handle_composition: PASSED\n");

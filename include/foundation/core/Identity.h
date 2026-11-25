@@ -92,6 +92,16 @@ public:
     // True when the right holds the Identity.  False for a right that a move
     // emptied, because no Identity has its word.  Complexity: one compare.
     [[nodiscard]] constexpr bool names(Identity const& identity) const noexcept { return value_ == identity.value_; }
+
+    // True when the right holds an Identity.  False for one that a move
+    // emptied.  Complexity: one compare.
+    [[nodiscard]] constexpr bool is_held() const noexcept { return value_ != 0; }
+
+    // True when this right and the other one hold one Identity.  Two emptied
+    // rights hold none, so they are no pair.  Complexity: two compares.
+    [[nodiscard]] constexpr bool pairs_with(UniqueIdentity const& other) const noexcept {
+        return is_held() && value_ == other.value_;
+    }
 };
 
 }  // namespace foundation::core

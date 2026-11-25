@@ -17,9 +17,9 @@ static_assert(sizeof(LentPermission<detail::read_view_test_tag>) == sizeof(::fou
 
 // No route builds a view, a loan or a parked token without a
 // constructor.  std::bit_cast needs a trivially copyable type, and
-// std::start_lifetime_as needs an implicit-lifetime type.  A loan has the
-// shape of a token: its move constructor is trivial, so it is an
-// implicit-lifetime type, and the checked lifetime start refuses it.
+// std::start_lifetime_as needs an implicit-lifetime type.  A loan has no
+// trivial constructor, because the move of its Identity is user-provided, so
+// it is no implicit-lifetime type.
 static_assert(!std::is_trivially_copyable_v<ReadView<detail::read_view_test_tag>>);
 static_assert(!std::is_implicit_lifetime_v<ReadView<detail::read_view_test_tag>>);
 static_assert(!std::is_trivially_copyable_v<ReadLoan<detail::read_view_test_tag>>);
@@ -33,10 +33,12 @@ using Loan = ReadLoan<read_view_test_tag, read_view_brand_a>;
 using Lent = LentPermission<read_view_test_tag, read_view_brand_a>;
 using View = ReadView<read_view_test_tag, read_view_brand_a>;
 
-// The move constructor of a loan is trivial, so the ABI passes a loan in a
-// register.  Its move assignment is user-provided.
-static_assert(std::is_trivially_move_constructible_v<Loan>);
-static_assert(!std::is_trivially_move_assignable_v<Loan>);
+// A move of a loan and a move of a parked token empty the source, so neither
+// move is trivial, and no loan has an implicit lifetime.
+static_assert(!std::is_implicit_lifetime_v<Loan>);
+static_assert(!std::is_trivially_move_constructible_v<Loan> && !std::is_trivially_move_assignable_v<Loan>);
+static_assert(std::is_nothrow_move_constructible_v<Loan> && std::is_nothrow_move_assignable_v<Loan>);
+static_assert(!std::is_trivially_move_constructible_v<Lent> && std::is_nothrow_move_constructible_v<Lent>);
 
 // A loan and a parked token each carry the annotation linear.  A view
 // cannot move, so it is not linear.

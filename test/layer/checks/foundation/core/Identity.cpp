@@ -59,7 +59,7 @@ static_assert(detail::first_identity_word != 0);
 // members are language protocols.
 inline constexpr TextView identity_names{"Identity mint_identity"};
 CRUCIBLE_CLOSED_SURFACE(identity_names, Identity);
-inline constexpr TextView unique_identity_names{"UniqueIdentity names"};
+inline constexpr TextView unique_identity_names{"UniqueIdentity names is_held pairs_with"};
 CRUCIBLE_CLOSED_SURFACE(unique_identity_names, UniqueIdentity);
 
 }  // namespace detail::identity_checks

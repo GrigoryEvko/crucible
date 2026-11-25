@@ -64,6 +64,37 @@ void test_move_leaves_none() {
     CRUCIBLE_FATAL_INVARIANT(target.names(identity) && !target.names(other));
 }
 
+// Moves the right out under the first name, and gives true when the old name
+// holds an Identity.
+[[nodiscard]] bool is_held_under_the_old_name(UniqueIdentity& right, UniqueIdentity& old_name) noexcept {
+    UniqueIdentity const moved{std::move(right)};
+    CRUCIBLE_FATAL_INVARIANT(moved.is_held());
+    return old_name.is_held();
+}
+
+// Two rights of one mint are a pair.  Two rights of two mints are none, and two
+// emptied rights are none.
+[[nodiscard]] bool pair_under_the_old_names(UniqueIdentity& first, UniqueIdentity& old_first, UniqueIdentity& second,
+                                            UniqueIdentity& old_second) noexcept {
+    UniqueIdentity const moved_first{std::move(first)};
+    UniqueIdentity const moved_second{std::move(second)};
+    CRUCIBLE_FATAL_INVARIANT(moved_first.pairs_with(moved_second));
+    return old_first.pairs_with(old_second);
+}
+
+void test_pairs() {
+    Identity const identity = mint_identity();
+    UniqueIdentity first{identity};
+    UniqueIdentity second{identity};
+    UniqueIdentity const other{mint_identity()};
+    CRUCIBLE_FATAL_INVARIANT(first.is_held() && first.pairs_with(second) && second.pairs_with(first));
+    CRUCIBLE_FATAL_INVARIANT(!first.pairs_with(other) && !other.pairs_with(first));
+    CRUCIBLE_FATAL_INVARIANT(!pair_under_the_old_names(first, first, second, second));
+
+    UniqueIdentity third{identity};
+    CRUCIBLE_FATAL_INVARIANT(!is_held_under_the_old_name(third, third));
+}
+
 // The assignment takes the Identity out of the source before it writes the
 // target, so an assignment of a right to itself keeps it.
 void assign_under_two_names(UniqueIdentity& right, UniqueIdentity& other_name) noexcept {
@@ -101,6 +132,7 @@ int main() {
     test_copy_and_fresh();
     test_each_mint_is_fresh();
     test_move_leaves_none();
+    test_pairs();
     test_self_move_keeps();
     test_emptied_right_names_no_identity();
     return 0;
