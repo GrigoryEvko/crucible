@@ -82,10 +82,7 @@ public:
         } else {
             ::fixy::FixedArray<std::byte, sizeof(T)> image{};
             ::fixy::View<std::byte const> const part = take_bytes(sizeof(T));
-            image.with_mut([part](auto run) noexcept {
-                ::fixy::copy(::fixy::take_window(std::move(run), 0, part.size()).expect("a field holds its part"), part)
-                    .expect("the window holds the count of the part");
-            });
+            image.copy_window(0, part).expect("a field holds its part");
             return ::fixy::bit_cast<T>(image);
         }
     }

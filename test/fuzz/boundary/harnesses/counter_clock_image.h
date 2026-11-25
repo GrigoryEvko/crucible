@@ -41,8 +41,7 @@ using Seeds = ::fixy::FixedList<Seed, 6>;
 // The bytes of an image at the start of a seed, and zero bytes after them.
 template <class Image>
 [[nodiscard]] Seed seed_of(Image const& image) noexcept {
-    Seed seed{};
-    seed.with_mut([&image](auto run) noexcept {
+    Seed const seed = ::fixy::build_fixed_array<std::byte, Seed::size()>([&image](auto run) noexcept {
         std::size_t position = 0;
         for (std::byte const byte : image) {
             auto element = run.get_mut(position).expect("an image fits a seed");

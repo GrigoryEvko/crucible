@@ -226,18 +226,19 @@ int main() {
 
     // A model of four parameters, and one step of the optimizer.
     constexpr std::size_t N = 4;
-    ::fixy::FixedArray<float, N> params{1.0f, -0.5f, 2.0f, 0.0f};
-    ::fixy::FixedArray<float, N> m{};
-    ::fixy::FixedArray<float, N> v{};
+    auto [params, params_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>,
+                                                         ::fixy::FixedArray<float, N>{1.0f, -0.5f, 2.0f, 0.0f});
+    auto [m, m_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
+    auto [v, v_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<float, N>);
     const ::fixy::FixedArray<float, N> grad{0.1f, -0.2f, 0.05f, 0.0f};
 
     // The step writes the three state arrays through the runs that their frame doors lend.  The caller gives the
     // step the erased writer of each run by move, so the step is the one writer of each array for the call.
-    params.with_mut([&bound, &m, &v, &grad](auto params_run) noexcept {
+    params.with_mut(params_key, [&bound, &m, &m_key, &v, &v_key, &grad](auto params_run) noexcept {
         auto params_line = line_of(std::move(params_run));
-        m.with_mut([&bound, &v, &grad, &params_line](auto first_moment_run) noexcept {
+        m.with_mut(m_key, [&bound, &v, &v_key, &grad, &params_line](auto first_moment_run) noexcept {
             auto first_moment_line = line_of(std::move(first_moment_run));
-            v.with_mut([&bound, &grad, &params_line, &first_moment_line](auto second_moment_run) noexcept {
+            v.with_mut(v_key, [&bound, &grad, &params_line, &first_moment_line](auto second_moment_run) noexcept {
                 auto second_moment_line = line_of(std::move(second_moment_run));
                 bound.value()(
                     ::fixy::side_as<buffer_role::Parameters>(::fixy::erase_brand(std::move(params_line))),

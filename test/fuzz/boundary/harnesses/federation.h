@@ -26,21 +26,22 @@ inline constexpr auto kReceiverAtomCount = static_cast<std::uint16_t>(::foundati
     SeedList seeds = empty_seed_list();
     const ::fixy::FixedArray<::fixy::TextView, 2> payloads{::fixy::TextView{}, ::fixy::TextView{"payload bytes"}};
     for (const ::fixy::TextView payload : payloads) {
-        ::foundation::core::FixedArray<std::byte, 16> body{};
-        std::size_t count = 0;
-        body.with_mut([payload, &count](auto run) noexcept {
+        auto const [count, body] = ::foundation::core::build_fixed_array<std::byte, 16>([payload](auto run) noexcept {
+            std::size_t filled = 0;
             for (const char character : payload) {
-                auto element = run.get_mut(count).expect("a seed payload fits 16 bytes");
+                auto element = run.get_mut(filled).expect("a seed payload fits 16 bytes");
                 *element = static_cast<std::byte>(character);
-                ++count;
+                ++filled;
             }
+            return filled;
         });
-        ::foundation::core::FixedArray<std::byte, fed::FEDERATION_HEADER_BYTES + 16> entry{};
-        auto written = entry.with_mut([&body, count](auto run) noexcept {
-            return fed::serialize_federation_entry(
-                std::move(run), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
-                ::fixy::View<std::byte const>{body.view()}.window(0, count).expect("the payload is inside its buffer"));
-        });
+        auto [written, entry] = ::foundation::core::build_fixed_array<std::byte, fed::FEDERATION_HEADER_BYTES + 16>(
+            [&body, count](auto run) noexcept {
+                return fed::serialize_federation_entry(
+                    std::move(run), fed::FederationKey{::foundation::core::Hash256{0x1234, 0x5678, 0x9abc, 0xdef0}},
+                    ::fixy::View<std::byte const>{body.view()}.window(0, count).expect(
+                        "the payload is inside its buffer"));
+            });
         const std::size_t written_bytes = std::move(written).expect("the seed entry fits its buffer");
         SeedWriter seed{};
         seed.append_raw(kReceiverAtomCount);

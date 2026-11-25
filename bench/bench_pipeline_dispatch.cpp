@@ -107,11 +107,11 @@ static void large_stage(Consumer<10 * MiB>&&, Producer<10 * MiB>&&) noexcept {
     static_assert(Stage < kLargeStages);
     const ::fixy::HeapArray<std::uint64_t>& data = large_data;
     // Each stage writes only the sink cell of its own index, so no two threads write one cell.
-    large_sinks.with_element(::fixy::index<Stage>(), [&data](SinkCell& sink) noexcept {
-        sink.value ^= mix_words<8, 0x243F6A8885A308D3ULL, 0x9E3779B97F4A7C15ULL, 29, 0xD1B54A32D192ED03ULL>(
-            data.view().window(Stage * kLargeStageWords, kLargeStageWords).expect("a large stage reads its own slice"));
-        bench::mark_changed(sink.value);
-    });
+    SinkCell sink = large_sinks.at(::fixy::index<Stage>());
+    sink.value ^= mix_words<8, 0x243F6A8885A308D3ULL, 0x9E3779B97F4A7C15ULL, 29, 0xD1B54A32D192ED03ULL>(
+        data.view().window(Stage * kLargeStageWords, kLargeStageWords).expect("a large stage reads its own slice"));
+    bench::mark_changed(sink.value);
+    large_sinks.set(::fixy::index<Stage>(), sink);
 }
 
 using SmallStages = StageList<cc::Stage<&small_stage<1 * KiB, 0, 256>, fixy::HotFgCtx>,

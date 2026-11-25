@@ -323,19 +323,19 @@ int run_bench(::fixy::os::Args const& arguments) {
             const uint16_t total_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
             ::fixy::FixedArray<TensorMeta, 8> metas{};
             for (uint16_t j = 0; j < total_metas && j < 8; j++) {
-                metas.with_element(::fixy::Index<8>::check(j).expect("the position fits the array"),
-                                   [i, j](TensorMeta& meta) noexcept {
-                                       meta.ndim = 4;
-                                       meta.dtype = ScalarType::Float;
-                                       meta.device_type = DeviceType::CUDA;
-                                       meta.device_idx = 0;
-                                       for (uint8_t d = 0; d < 4; d++) {
-                                           meta.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
-                                           meta.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
-                                       }
-                                       meta.data_ptr = mint_synthetic_data_ptr(
-                                           SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
-                                   });
+                metas.update(::fixy::Index<8>::check(j).expect("the position fits the array"),
+                             [i, j](TensorMeta& meta) noexcept {
+                                 meta.ndim = 4;
+                                 meta.dtype = ScalarType::Float;
+                                 meta.device_type = DeviceType::CUDA;
+                                 meta.device_idx = 0;
+                                 for (uint8_t d = 0; d < 4; d++) {
+                                     meta.sizes[d] = tensor_dim(static_cast<int64_t>(32 + (bench_rand() % 256)));
+                                     meta.strides[d] = tensor_dim(static_cast<int64_t>(1 + (bench_rand() % 64)));
+                                 }
+                                 meta.data_ptr = mint_synthetic_data_ptr(
+                                     SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
+                             });
             }
             MetaIndex meta_start = meta_log.try_append(
                 ::fixy::View<const TensorMeta>{metas.view()}.window(0, total_metas).expect("the run fits the array"));
@@ -351,18 +351,23 @@ int run_bench(::fixy::os::Args const& arguments) {
 
         // The drain buffers have static storage; 4× 4096-element arrays on
         // the stack blow past our 512 kB stack-usage budget.
-        static ::fixy::FixedArray<TraceRing::Entry, 4096> batch{};
-        static ::fixy::FixedArray<MetaIndex, 4096> meta_batch{};
-        static ::fixy::FixedArray<ScopeHash, 4096> scope_batch{};
-        static ::fixy::FixedArray<CallsiteHash, 4096> callsite_batch{};
-        static ::fixy::FixedArray<OpDepth, 4096> depth_batch{};
+        auto [batch, batch_key] = ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<TraceRing::Entry, 4096>,
+                                                           test.alloc, TraceRing::Entry{});
+        auto [meta_batch, meta_key] =
+            ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<MetaIndex, 4096>, test.alloc, MetaIndex{});
+        auto [scope_batch, scope_key] =
+            ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<ScopeHash, 4096>, test.alloc, ScopeHash{});
+        auto [callsite_batch, callsite_key] =
+            ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<CallsiteHash, 4096>, test.alloc, CallsiteHash{});
+        auto [depth_batch, depth_key] =
+            ::fixy::mint_keyed_owner(::fixy::fixed_heap_array_owner<OpDepth, 4096>, test.alloc, OpDepth{});
         // The first n entries of the five batches are the drained trace.  No
         // later code writes the batches.
-        const uint32_t n = batch.with_mut([&](auto batch_run) noexcept {
-            return meta_batch.with_mut([&](auto meta_run) noexcept {
-                return scope_batch.with_mut([&](auto scope_run) noexcept {
-                    return callsite_batch.with_mut([&](auto callsite_run) noexcept {
-                        return depth_batch.with_mut([&](auto depth_run) noexcept {
+        const uint32_t n = batch.with_mut(batch_key, [&](auto batch_run) noexcept {
+            return meta_batch.with_mut(meta_key, [&](auto meta_run) noexcept {
+                return scope_batch.with_mut(scope_key, [&](auto scope_run) noexcept {
+                    return callsite_batch.with_mut(callsite_key, [&](auto callsite_run) noexcept {
+                        return depth_batch.with_mut(depth_key, [&](auto depth_run) noexcept {
                             return ring.drain(std::move(batch_run), std::move(meta_run), std::move(scope_run),
                                               std::move(callsite_run), std::move(depth_run));
                         });
@@ -380,14 +385,14 @@ int run_bench(::fixy::os::Args const& arguments) {
                 const uint16_t total_metas = static_cast<uint16_t>(entry.num_inputs + entry.num_outputs);
                 ::fixy::FixedArray<TensorMeta, 8> metas{};
                 for (uint16_t j = 0; j < total_metas && j < 8; j++) {
-                    metas.with_element(::fixy::Index<8>::check(j).expect("the position fits the array"),
-                                       [i, j](TensorMeta& meta) noexcept {
-                                           meta.ndim = 4;
-                                           meta.dtype = ScalarType::Float;
-                                           meta.device_type = DeviceType::CUDA;
-                                           meta.data_ptr = mint_synthetic_data_ptr(
-                                               SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
-                                       });
+                    metas.update(::fixy::Index<8>::check(j).expect("the position fits the array"),
+                                 [i, j](TensorMeta& meta) noexcept {
+                                     meta.ndim = 4;
+                                     meta.dtype = ScalarType::Float;
+                                     meta.device_type = DeviceType::CUDA;
+                                     meta.data_ptr = mint_synthetic_data_ptr(
+                                         SyntheticAddress{0x7f0000000000ULL + (i * 8 + j) * 0x1000});
+                                 });
                 }
                 // The build reads the metas at the indices in meta_batch, so this call does not
                 // use the returned index.

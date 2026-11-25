@@ -54,14 +54,15 @@ struct SaturationCase {
         // is never null, so the timed loop tests no empty Box.
         auto const ring = ::fixy::to(*ring_box);
         alignas(64) static ::fixy::FixedArray<Item, N> tx{};
-        alignas(64) static ::fixy::FixedArray<Item, N> rx{};
+        alignas(64) auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, N>);
+        auto& [rx, rx_key] = minted;
         for (::fixy::Index<N> const index : tx.indices())
             tx.set(index, index.raw());
 
         return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
             const std::size_t np = ring->try_push_batch(tx.view());
             const std::size_t nc =
-                rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
+                rx.with_mut(rx_key, [&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
             bench::do_not_optimize(np);
             bench::do_not_optimize(nc);
             // The sink reads and writes each byte of rx, so the copy of the

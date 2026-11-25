@@ -108,10 +108,8 @@ void fill_random_entry(crucible::fuzz::prop::Rng& rng, TraceRing::Entry& e) noex
                          .expect("five bits name only the inline slots"));
     e.scalar_types = static_cast<uint8_t>(rng.next32() & 0xFFu);
     e.op_flags = static_cast<uint8_t>(rng.next32() & 0xFFu);
-    e.scalar_values.with_mut([&rng](auto run) noexcept {
-        for (auto& v : run)
-            v = static_cast<int64_t>(rng.next64());
-    });
+    for (auto const position : e.scalar_values.indices())
+        e.scalar_values.set(position, static_cast<int64_t>(rng.next64()));
 }
 
 // Compare two Entries byte-by-byte.  Entry has no padding (8+8+2+2+1+1
@@ -182,8 +180,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const bool is_appended = ring->try_append(e);
             CRUCIBLE_FATAL_INVARIANT(is_appended);
         }
-        ::fixy::FixedArray<TraceRing::Entry, PREFILL> discard{};
-        const uint32_t discarded = discard.with_mut([&ring](auto run) noexcept { return ring->drain(std::move(run)); });
+        auto const [discarded, discard] = ::fixy::build_fixed_array<TraceRing::Entry, PREFILL>(
+            [&ring](auto run) noexcept { return ring->drain(std::move(run)); });
         CRUCIBLE_FATAL_INVARIANT(discarded == PREFILL);
 
         // Fill to exactly CAPACITY.
@@ -210,18 +208,18 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         // Drain everything; verify FIFO order + wrap-around memcpy.
         // Drain in two chunks so the first straddles the wrap.
         constexpr uint32_t CHUNK = 4096;
-        ::fixy::FixedArray<TraceRing::Entry, CHUNK> out_e{};
-        ::fixy::FixedArray<MetaIndex, CHUNK> out_m{};
-        ::fixy::FixedArray<ScopeHash, CHUNK> out_s{};
-        ::fixy::FixedArray<CallsiteHash, CHUNK> out_c{};
-        ::fixy::FixedArray<OpDepth, CHUNK> out_d{};
+        auto [out_e, out_e_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, CHUNK>);
+        auto [out_m, out_m_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, CHUNK>);
+        auto [out_s, out_s_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<ScopeHash, CHUNK>);
+        auto [out_c, out_c_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<CallsiteHash, CHUNK>);
+        auto [out_d, out_d_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<OpDepth, CHUNK>);
         uint32_t delivered = 0;
         while (delivered < CAP) {
-            const uint32_t got = out_e.with_mut([&](auto run_e) noexcept {
-                return out_m.with_mut([&](auto run_m) noexcept {
-                    return out_s.with_mut([&](auto run_s) noexcept {
-                        return out_c.with_mut([&](auto run_c) noexcept {
-                            return out_d.with_mut([&](auto run_d) noexcept {
+            const uint32_t got = out_e.with_mut(out_e_key, [&](auto run_e) noexcept {
+                return out_m.with_mut(out_m_key, [&](auto run_m) noexcept {
+                    return out_s.with_mut(out_s_key, [&](auto run_s) noexcept {
+                        return out_c.with_mut(out_c_key, [&](auto run_c) noexcept {
+                            return out_d.with_mut(out_d_key, [&](auto run_d) noexcept {
                                 return ring->drain(std::move(run_e), std::move(run_m), std::move(run_s),
                                                    std::move(run_c), std::move(run_d));
                             });
@@ -261,8 +259,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 s.is_append.set(p, (rng.next32() & 1u) != 0u);
                 s.count.set(p, static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1)));
             }
-            s.payload.with_mut([&rng](auto run) noexcept {
-                for (auto& slot : run) {
+            for (auto const position : s.payload.indices()) {
+                s.payload.update(position, [&rng](MirrorSlot& slot) noexcept {
                     fill_random_entry(rng, slot.entry);
                     // MetaIndex: occasionally use the none() sentinel,
                     // otherwise a random valid index.
@@ -270,8 +268,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     slot.scope_hash = ScopeHash{rng.next64()};
                     slot.callsite_hash = CallsiteHash{rng.next64()};
                     slot.depth = OpDepth{static_cast<uint16_t>(rng.next32() & 0xFFFFu)};
-                }
-            });
+                });
+            }
             return s;
         },
         [&ring](const Schedule& s) -> bool {
@@ -293,11 +291,13 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             uint64_t total_drained = 0;
 
             // Reusable drain output buffer.
-            ::fixy::FixedArray<TraceRing::Entry, MAX_OPS_PER_PHASE> out_e{};
-            ::fixy::FixedArray<MetaIndex, MAX_OPS_PER_PHASE> out_m{};
-            ::fixy::FixedArray<ScopeHash, MAX_OPS_PER_PHASE> out_s{};
-            ::fixy::FixedArray<CallsiteHash, MAX_OPS_PER_PHASE> out_c{};
-            ::fixy::FixedArray<OpDepth, MAX_OPS_PER_PHASE> out_d{};
+            auto [out_e, out_e_key] =
+                ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<TraceRing::Entry, MAX_OPS_PER_PHASE>);
+            auto [out_m, out_m_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<MetaIndex, MAX_OPS_PER_PHASE>);
+            auto [out_s, out_s_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<ScopeHash, MAX_OPS_PER_PHASE>);
+            auto [out_c, out_c_key] =
+                ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<CallsiteHash, MAX_OPS_PER_PHASE>);
+            auto [out_d, out_d_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<OpDepth, MAX_OPS_PER_PHASE>);
 
             for (const ::fixy::Index<K_PHASES> p : ::fixy::IndexRange<K_PHASES>{}) {
                 const uint16_t n = s.count.at(p);
@@ -329,11 +329,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                     }
                 } else {
                     const uint32_t want = static_cast<uint32_t>(n);
-                    const uint32_t got = out_e.with_mut([&](auto run_e) noexcept {
-                        return out_m.with_mut([&](auto run_m) noexcept {
-                            return out_s.with_mut([&](auto run_s) noexcept {
-                                return out_c.with_mut([&](auto run_c) noexcept {
-                                    return out_d.with_mut([&](auto run_d) noexcept {
+                    const uint32_t got = out_e.with_mut(out_e_key, [&](auto run_e) noexcept {
+                        return out_m.with_mut(out_m_key, [&](auto run_m) noexcept {
+                            return out_s.with_mut(out_s_key, [&](auto run_s) noexcept {
+                                return out_c.with_mut(out_c_key, [&](auto run_c) noexcept {
+                                    return out_d.with_mut(out_d_key, [&](auto run_d) noexcept {
                                         return ring->drain(::fixy::take_window(std::move(run_e), 0, want)
                                                                .expect("a phase fits the buffer"),
                                                            ::fixy::take_window(std::move(run_m), 0, want)

@@ -46,7 +46,8 @@ int main() {
     // 16 KB scratch for the streaming fill — alignas(64) so the store
     // path hits full cache-line writes.
     constexpr size_t BUF_WORDS = 4096;
-    alignas(64) static ::fixy::FixedArray<std::uint32_t, BUF_WORDS> scratch{};
+    alignas(64) auto minted_scratch = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint32_t, BUF_WORDS>);
+    auto& [scratch, scratch_key] = minted_scratch;
 
     bench::print("=== philox ===\n\n");
 
@@ -91,7 +92,7 @@ int main() {
                    [&] {
                        std::uint64_t word = 0;
                        // The capture by reference keeps the volatile read of the key in each call.
-                       scratch.with_mut([&word, &key](auto run) noexcept {
+                       scratch.with_mut(scratch_key, [&word, &key](auto run) noexcept {
                            // A write of each lane keeps the loop that GCC
                            // vectorizes, which a copy of the four lanes does not.
                            auto rest = ::fixy::for_each_chunk<4>(std::move(run), [&word, &key](auto four) noexcept {
@@ -156,7 +157,7 @@ int main() {
                 // base = (call_idx * 8 + i) on ctr0; ctr1..3 stay 0.
                 const u32x8 lane_offsets = foundation::simd::iota_v<u32x8>();
                 std::uint32_t call_idx = 0;
-                scratch.with_mut([&call_idx, &lane_offsets, &key0, &key1](auto run) noexcept {
+                scratch.with_mut(scratch_key, [&call_idx, &lane_offsets, &key0, &key1](auto run) noexcept {
                     auto rest = ::fixy::for_each_chunk<32>(
                         std::move(run), [&call_idx, &lane_offsets, &key0, &key1](auto call) noexcept {
                             const u32x8 base(call_idx * 8u);

@@ -1431,10 +1431,10 @@ template <std::size_t Capacity>
 read_proc_file_again(ProcFile const& file, ::fixy::FixedText<Capacity>& text) noexcept {
     const ::fixy::InitLoadCtx startup{::foundation::effects::testing::init()};
     text = ::fixy::FixedText<Capacity>{};
-    ::fixy::FixedArray<std::byte, Capacity> bytes{};
-    CRUCIBLE_TRY(count, bytes.with_mut([&startup, &file](auto run) noexcept {
+    auto [bytes_read, bytes] = ::fixy::build_fixed_array<std::byte, Capacity>([&startup, &file](auto run) noexcept {
         return ::fixy::fs::read_full_at(startup, file.ref(), std::move(run), ::fixy::fs::FileOffset{0});
-    }));
+    });
+    CRUCIBLE_TRY(count, std::move(bytes_read));
     for (std::byte const byte : bytes.view().window(0, count).expect("a read gives at most the size of its buffer")) {
         if (text.append(::fixy::bit_cast<char>(byte)).is_err()) return ::fixy::err(::foundation::os::Errno::efbig);
     }
@@ -1730,8 +1730,7 @@ struct OffCpuTop {
 
     // Writes the spike at a place below kOffCpuTopK.
     void put_(std::size_t place, OffCpuSpike spike) noexcept {
-        longest.set(::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"),
-                    spike);
+        longest.set(::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"), spike);
     }
 };
 

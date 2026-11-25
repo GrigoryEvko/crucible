@@ -44,11 +44,11 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
     return run(
         "RecipePool intern iff semantic equal", cfg,
         [](Rng& rng) {
-            Recipes recipes{};
-            recipes.with_mut([&rng](auto run) noexcept {
-                for (auto& r : run)
-                    r = random_recipe(rng);
-            });
+            Recipes const recipes =
+                ::fixy::build_fixed_array<crucible::NumericalRecipe, Recipes::size()>([&rng](auto run) noexcept {
+                    for (auto& r : run)
+                        r = random_recipe(rng);
+                });
             return recipes;
         },
         [](const Recipes& recipes) {

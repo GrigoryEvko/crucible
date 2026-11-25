@@ -127,8 +127,7 @@ uint64_t next_word(uint64_t& state) noexcept {
 }
 
 SmallBatch make_small_batch(uint64_t seed) noexcept {
-    SmallBatch batch{};
-    batch.with_mut([&seed](auto run) noexcept {
+    SmallBatch const batch = ::fixy::build_fixed_array<Small, SmallBatch::size()>([&seed](auto run) noexcept {
         for (Small& s : run) {
             s.id = static_cast<uint32_t>(next_word(seed));
             s.kind = static_cast<uint16_t>(next_word(seed));
@@ -140,8 +139,7 @@ SmallBatch make_small_batch(uint64_t seed) noexcept {
 }
 
 WideBatch make_wide_batch(uint64_t seed) noexcept {
-    WideBatch batch{};
-    batch.with_mut([&seed](auto run) noexcept {
+    WideBatch const batch = ::fixy::build_fixed_array<Wide, WideBatch::size()>([&seed](auto run) noexcept {
         for (Wide& w : run) {
             w.schema = next_word(seed);
             w.shape = next_word(seed);
@@ -150,11 +148,8 @@ WideBatch make_wide_batch(uint64_t seed) noexcept {
             w.num_inputs = static_cast<uint32_t>(next_word(seed) & 0xF);
             w.num_outputs = static_cast<uint32_t>(next_word(seed) & 0xF);
             w.op_flags = static_cast<uint8_t>(next_word(seed));
-            w.scalars.with_mut([&seed](auto scalars) noexcept {
-                for (int64_t& scalar : scalars) {
-                    scalar = static_cast<int64_t>(next_word(seed));
-                }
-            });
+            for (auto const position : w.scalars.indices())
+                w.scalars.set(position, static_cast<int64_t>(next_word(seed)));
         }
     });
     return batch;
@@ -475,16 +470,18 @@ int main() {
     bench::print("\n=== product folds and codec ===\n\n");
 
     volatile uint64_t vbytes = 4096;
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<crucible::TensorSlot>> image{};
+    auto [image, image_key] =
+        ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, ::fixy::encoded_size_v<crucible::TensorSlot>>);
     crucible::TensorSlot slot{};
     slot.nbytes = 64;
     slot.dtype = crucible::ScalarType::Float;
     slot.slot_id = crucible::SlotId{3};
-    image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
+    image.with_mut(image_key, [&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
 
     // Tiny FeedbackEdge (2 × u16 = 4 B); span of 8 edges per call.
-    ::foundation::core::FixedArray<crucible::FeedbackEdge, 8> edges_buf{{0, 1}, {1, 2}, {2, 3}, {3, 4},
-                                                                        {4, 5}, {5, 6}, {6, 7}, {7, 0}};
+    auto [edges_buf, edges_key] = ::fixy::mint_keyed_owner(
+        ::fixy::fixed_array_owner<crucible::FeedbackEdge, 8>,
+        ::fixy::FixedArray<crucible::FeedbackEdge, 8>{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}});
     volatile uint16_t bump = 0;  // prevents constant-fold
 
     // The loop node of the rows of loopterm_hash.  Only mint_dag_node builds
@@ -498,17 +495,18 @@ int main() {
     ::fixy::FixedArray<bench::Report, 9> refactor_reports{
         bench::run("feedback_signature  (family, 8 edges)",
                    [&] {
-                       edges_buf.with_element(::fixy::index<0>(), [&bump](crucible::FeedbackEdge& edge) noexcept {
-                           edge.output_idx = bump;
-                       });  // perturb each iter
+                       edges_buf.with_element(edges_key, ::fixy::index<0>(),
+                                              [&bump](crucible::FeedbackEdge& edge) noexcept {
+                                                  edge.output_idx = bump;
+                                              });  // perturb each iter
                        auto h = crucible::feedback_signature(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
         bench::run("feedback_signature  (packed, 8 edges)",
                    [&] {
-                       edges_buf.with_element(::fixy::index<0>(), [&bump](crucible::FeedbackEdge& edge) noexcept {
-                           edge.output_idx = bump;
-                       });
+                       edges_buf.with_element(
+                           edges_key, ::fixy::index<0>(),
+                           [&bump](crucible::FeedbackEdge& edge) noexcept { edge.output_idx = bump; });
                        auto h = feedback_signature_packed(edges_buf.view());
                        bench::do_not_optimize(h);
                    }),
@@ -546,13 +544,15 @@ int main() {
         bench::run("encode<TensorSlot>   (40 bytes)",
                    [&] {
                        slot.offset_bytes = vbytes;
-                       image.with_mut([&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
+                       image.with_mut(image_key, [&slot](auto run) noexcept { ::fixy::encode(slot, std::move(run)); });
                        bench::do_not_optimize(image);
                    }),
         bench::run("copy of 40 bytes     (reference)",
                    [&] {
                        slot.offset_bytes = vbytes;
-                       image = ::fixy::bit_cast<::fixy::FixedArray<std::byte, sizeof(crucible::TensorSlot)>>(slot);
+                       image.with_mut(image_key, [&slot](auto run) noexcept {
+                           ::fixy::copy(std::move(run), ::fixy::bytes(slot));
+                       });
                        bench::do_not_optimize(image);
                    }),
         bench::run("decode<TensorSlot>   (40 bytes)",
@@ -591,8 +591,9 @@ int main() {
     heap_record.words = ::fixy::mint_heap_array_with<std::uint32_t>(
         kAlloc, kHeapWords, [](std::size_t position) noexcept { return static_cast<std::uint32_t>(position * 5); });
     HeapBytes heap_bytes{};
-    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<HeapBytes>> heap_image{};
-    heap_image.with_mut([&heap_record](auto run) noexcept { ::fixy::encode(heap_record, std::move(run)); });
+    ::fixy::FixedArray<std::byte, ::fixy::encoded_size_v<HeapBytes>> const heap_image =
+        ::fixy::build_fixed_array<std::byte, ::fixy::encoded_size_v<HeapBytes>>(
+            [&heap_record](auto run) noexcept { ::fixy::encode(heap_record, std::move(run)); });
 
     ::fixy::FixedArray<bench::Report, 8> part_reports{
         bench::run("hash<SumRecord>      (3 sums, 23 bytes)",
@@ -663,25 +664,16 @@ int main() {
     // One JSON tail holds the rows of the three groups, because the reader
     // reads only the last tail of the output.
     ::fixy::FixedList<bench::Report, 27> all_reports{};
-    reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run)
-            bench::add_report(all_reports, std::move(report));
-    });
+    for (auto const row : reports.indices())
+        bench::add_report(all_reports, reports.exchange(row, bench::Report{}));
 #if defined(CRUCIBLE_BENCH_RAPIDHASH)
-    rapidhash_reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run)
-            bench::add_report(all_reports, std::move(report));
-    });
+    for (auto const row : rapidhash_reports.indices())
+        bench::add_report(all_reports, rapidhash_reports.exchange(row, bench::Report{}));
 #endif
-    refactor_reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run)
-            bench::add_report(all_reports, std::move(report));
-    });
-    part_reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run) {
-            bench::add_report(all_reports, static_cast<bench::Report&&>(report));
-        }
-    });
+    for (auto const row : refactor_reports.indices())
+        bench::add_report(all_reports, refactor_reports.exchange(row, bench::Report{}));
+    for (auto const row : part_reports.indices())
+        bench::add_report(all_reports, part_reports.exchange(row, bench::Report{}));
     bench::emit_reports_json(all_reports.view(), json);
     return 0;
 }

@@ -100,18 +100,8 @@ namespace {
         for (std::uint32_t threads = 4; threads <= 16 && threads <= spread.count(); threads *= 2)
             add(ThreadCount{threads});
     }
-    if (!has_allocator) {
-        result.selection.allocators.with_mut([](auto run) noexcept {
-            for (bool& allocator : run)
-                allocator = true;
-        });
-    }
-    if (!has_row) {
-        result.selection.rows.with_mut([](auto run) noexcept {
-            for (bool& row : run)
-                row = true;
-        });
-    }
+    if (!has_allocator) result.selection.allocators.fill(true);
+    if (!has_row) result.selection.rows.fill(true);
     return result;
 }
 

@@ -872,10 +872,9 @@ public:
             ::foundation::core::Philox4x32::Counter const words =
                 ::foundation::core::Philox4x32::generate(std::uint64_t{block}, key);
             for (::fixy::Index<4> const word : words.indices()) {
-                std::uint32_t const draw = words.at(word);
-                draws_.with_element(::fixy::Index<kDraws>::check(::fixy::strict_add(block * 4, word.raw()))
-                                        .expect("a draw lies below kDraws"),
-                                    [draw](std::uint32_t& element) noexcept { element = draw; });
+                draws_.set(::fixy::Index<kDraws>::check(::fixy::strict_add(block * 4, word.raw()))
+                               .expect("a draw lies below kDraws"),
+                           words.at(word));
             }
         }
     }
@@ -933,13 +932,12 @@ public:
     // full.
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_push(Item&& item) noexcept {
         // The producer writes only an empty cell, and the release store gives the cell to the consumer.
-        bool const is_pushed =
-            cells_.with_element(cell_index_of(head_), [&item] [[gnu::always_inline]] (Cell & cell) noexcept {
-                if (cell.is_full.load_acquire()) return false;
-                cell.item = ::fixy::Option<Item>::some(std::move(item));
-                cell.is_full.store_release(true);
-                return true;
-            });
+        bool const is_pushed = cells_.with_masked(head_, [&item] [[gnu::always_inline]] (Cell & cell) noexcept {
+            if (cell.is_full.load_acquire()) return false;
+            cell.item = ::fixy::Option<Item>::some(std::move(item));
+            cell.is_full.store_release(true);
+            return true;
+        });
         if (!is_pushed) return ::fixy::Option<Item>::some(std::move(item));
         ++head_;
         return ::fixy::none;
@@ -949,14 +947,12 @@ public:
     [[nodiscard, gnu::always_inline]] ::fixy::Option<Item> try_pop() noexcept {
         ::fixy::Option<Item> taken{};
         // The consumer writes only a full cell, and the release store gives the cell back to the producer.
-        bool const is_taken =
-            cells_.with_element(cell_index_of(tail_), [&taken] [[gnu::always_inline]] (Cell & cell) noexcept {
-                if (!cell.is_full.load_acquire()) return false;
-                taken =
-                    ::fixy::Option<Item>::some(std::move(cell.item).expect("a full cell of a Mailbox holds an item"));
-                cell.is_full.store_release(false);
-                return true;
-            });
+        bool const is_taken = cells_.with_masked(tail_, [&taken] [[gnu::always_inline]] (Cell & cell) noexcept {
+            if (!cell.is_full.load_acquire()) return false;
+            taken = ::fixy::Option<Item>::some(std::move(cell.item).expect("a full cell of a Mailbox holds an item"));
+            cell.is_full.store_release(false);
+            return true;
+        });
         if (is_taken) ++tail_;
         return taken;
     }
@@ -967,13 +963,7 @@ private:
         ::fixy::Option<Item> item{};
     };
 
-    [[nodiscard, gnu::always_inline]] static ::fixy::Index<kMailboxCells>
-    cell_index_of(std::uint64_t position) noexcept {
-        return ::fixy::Index<kMailboxCells>::check(position & (kMailboxCells - 1))
-            .expect("a masked position lies below the cells");
-    }
-
-    ::fixy::FixedArray<Cell, kMailboxCells> cells_{};
+    ::fixy::MaskedArray<Cell> cells_ = ::fixy::mint_masked_array<Cell>(bench_alloc(), kMailboxCells);
     alignas(64) std::uint64_t head_ = 0;
     alignas(64) std::uint64_t tail_ = 0;
 };
@@ -1109,10 +1099,12 @@ push_waiting(RowControl const& control, Mailbox<Item>& mailbox, Item&& item) noe
 //   kItemsPerOp            the items of one op of a producer
 //   kRow                   its RowKind
 
-// The slots of a thread that replaces random blocks, with its draws.
+// The slots of a thread that replaces random blocks, with its draws.  The
+// count of the slots is a power of two.
 template <class Block, std::size_t Slots>
 struct SlotState {
-    ::fixy::FixedArray<::fixy::Option<Block>, Slots> slots{};
+    ::fixy::MaskedArray<::fixy::Option<Block>> slots =
+        ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), Slots);
     Draws draws;
     Tally tally{};
     bench::ThreadSlot slot{0};
@@ -1129,9 +1121,8 @@ template <AllocatorAdapter A, std::size_t Slots, std::uint32_t HandOff, class By
                                                        Bytes const& bytes_of_draw) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
     std::uint32_t const draw = state.draws.next();
-    state.slots.with_element(
-        ::fixy::Index<Slots>::check(draw & (Slots - 1)).expect("a masked draw lies below the slots"),
-        [&inboxes, &state, &bytes_of_draw, draw] [[gnu::always_inline]] (::fixy::Option<Block> & slot) noexcept {
+    state.slots.with_masked(
+        draw, [&inboxes, &state, &bytes_of_draw, draw] [[gnu::always_inline]] (::fixy::Option<Block> & slot) noexcept {
             if (slot.is_some()) {
                 Block block = std::move(slot).expect("the test above found a block");
                 bool const is_handed =
@@ -1166,7 +1157,7 @@ template <AllocatorAdapter A, std::size_t Slots>
 void release_slots(Mailboxes<BlockOf<A, BlockAlignment::natural>>& inboxes,
                    SlotState<BlockOf<A, BlockAlignment::natural>, Slots>& state) noexcept {
     using Block = BlockOf<A, BlockAlignment::natural>;
-    state.slots.with_mut([&tally = state.tally](auto run) noexcept {
+    state.slots = ::fixy::with_mut(std::move(state.slots), [&tally = state.tally](auto run) noexcept {
         for (::fixy::Option<Block>& slot : run) {
             if (slot.is_none()) continue;
             give_block<A>(tally, std::move(slot).expect("the test above found a block"));
@@ -1267,7 +1258,8 @@ struct Sh6bench {
 
     struct Shared {};
     struct Local {
-        ::fixy::FixedArray<::fixy::Option<Block>, kBlocks> blocks{};
+        ::fixy::HeapArray<::fixy::Option<Block>> blocks = ::fixy::mint_heap_array_with<::fixy::Option<Block>>(
+            bench_alloc(), kBlocks, [](std::size_t /*position*/) noexcept { return ::fixy::Option<Block>{}; });
         Tally tally{};
     };
 
@@ -1281,27 +1273,31 @@ struct Sh6bench {
 
     // The sizes cycle over 16 to 2048 bytes: 16 times the position plus 16.
     [[gnu::always_inline]] static void fill(Local& local) noexcept {
-        for (::fixy::Index<kBlocks> const position : local.blocks.indices()) {
-            local.blocks.with_element(
-                position, [&local, position] [[gnu::always_inline]] (::fixy::Option<Block> & held) noexcept {
-                    held = ::fixy::Option<Block>::some(take_block<A>(local.tally, ByteCount{16 * position.raw() + 16}));
-                });
-        }
+        local.blocks = ::fixy::with_mut(
+            std::move(local.blocks), [&tally = local.tally] [[gnu::always_inline]] (auto run) noexcept {
+                std::size_t bytes = 0;
+                for (::fixy::Option<Block>& held : run) {
+                    bytes += 16;
+                    held = ::fixy::Option<Block>::some(take_block<A>(tally, ByteCount{bytes}));
+                }
+            });
     }
 
     [[gnu::always_inline]] static void op(Shared& /*shared*/, Local& local, RowControl const& /*control*/) noexcept {
         fill(local);
-        local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
-            for (std::size_t position = run.size(); position > 0; --position) {
-                auto held = run.get_mut(position - 1).expect("a position below the count of the blocks");
-                give_block<A>(local.tally, std::move(*held).expect("the fill above gave each position a block"));
-            }
-        });
+        local.blocks = ::fixy::with_mut(
+            std::move(local.blocks), [&tally = local.tally] [[gnu::always_inline]] (auto run) noexcept {
+                for (std::size_t position = run.size(); position > 0; --position) {
+                    auto held = run.get_mut(position - 1).expect("a position below the count of the blocks");
+                    give_block<A>(tally, std::move(*held).expect("the fill above gave each position a block"));
+                }
+            });
         fill(local);
-        local.blocks.with_mut([&local] [[gnu::always_inline]] (auto run) noexcept {
-            for (::fixy::Option<Block>& held : run)
-                give_block<A>(local.tally, std::move(held).expect("the fill above gave each position a block"));
-        });
+        local.blocks = ::fixy::with_mut(
+            std::move(local.blocks), [&tally = local.tally] [[gnu::always_inline]] (auto run) noexcept {
+                for (::fixy::Option<Block>& held : run)
+                    give_block<A>(tally, std::move(held).expect("the fill above gave each position a block"));
+            });
     }
 
     static void finish(Shared& /*shared*/, Local& /*local*/) noexcept {}
@@ -1702,9 +1698,8 @@ struct CpuSteal {
         for (std::uint32_t slot = 0; slot < threads.raw(); ++slot) {
             bench::CpuId const cpu = places.cpu_of(bench::ThreadSlot{slot});
             if (cpu.is_valid() && static_cast<std::uint64_t>(cpu.raw()) == found.cpu)
-                steal.with_element(
-                    ::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads"),
-                    [&found](::fixy::Option<std::uint64_t>& element) noexcept { element = ::fixy::some(found.ticks); });
+                steal.set(::fixy::Index<kMaxThreads>::check(slot).expect("a slot of a row is below kMaxThreads"),
+                          ::fixy::some(found.ticks));
         }
     }
     return steal;
@@ -1779,7 +1774,7 @@ void run_worker(RowControl& control, typename W::Shared& shared, bench::ThreadSl
         for (std::uint64_t count = 0; count < kWorkerOps<W>; ++count)
             W::op(shared, local, control);
         for (WindowIndex const index : window)
-            items.with_element(index, [counted](std::uint64_t& item) noexcept { item += counted; });
+            items.set(index, items.at(index) + counted);
     }
     std::uint64_t const live_bytes = local.tally.live_bytes;
     // Each worker writes only the line of its own slot, and each field of a line is an Atomic.
@@ -1830,14 +1825,10 @@ template <class W, class Op>
             end = now();
         }
         bench::WindowClock const window_end = bench::detail::read_window_clock();
-        std::uint64_t const items = ops * W::kItemsPerOp;
-        std::uint64_t const wall_ns = end - start;
-        std::uint64_t const lost_ns =
-            bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
-                                        ::fixy::side_as<bench::side::ReadingAfter>(window_end));
-        window.items.with_element(index, [items](std::uint64_t& element) noexcept { element = items; });
-        window.wall_ns.with_element(index, [wall_ns](std::uint64_t& element) noexcept { element = wall_ns; });
-        window.lost_ns.with_element(index, [lost_ns](std::uint64_t& element) noexcept { element = lost_ns; });
+        window.items.set(index, ops * W::kItemsPerOp);
+        window.wall_ns.set(index, end - start);
+        window.lost_ns.set(index, bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
+                                                              ::fixy::side_as<bench::side::ReadingAfter>(window_end)));
         window_clock = window_end;
         start = end;
     }
@@ -1933,8 +1924,7 @@ template <AllocatorAdapter A, class W>
         while (!line.is_published.load_acquire())
             op();
         for (WindowIndex const index : items.indices()) {
-            std::uint64_t const published = line.window_items.at(index).load_acquire();
-            items.with_element(index, [published](std::uint64_t& item) noexcept { item += published; });
+            items.set(index, items.at(index) + line.window_items.at(index).load_acquire());
         }
         live_bytes += line.window_live_bytes.load_acquire();
     }
@@ -1950,7 +1940,7 @@ template <AllocatorAdapter A, class W>
         all_wall_ns += wall_ns;
         double const mops =
             wall_ns == 0 ? 0.0 : static_cast<double>(items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
-        window_mops.with_element(index, [mops](double& element) noexcept { element = mops; });
+        window_mops.set(index, mops);
     }
     RowResult result{.threads = threads,
                      .placement = placement,
@@ -1980,8 +1970,7 @@ template <AllocatorAdapter A, class W>
                                      .warmup(kLatencyWarmup)
                                      .max_wall_ms(kLatencyMs)
                                      .measure([&op] { op(); });
-        result.latency.with_element(report,
-                                    [&measured](bench::Report& element) noexcept { element = std::move(measured); });
+        result.latency.set(report, std::move(measured));
     }
     control.phase.phase.store_release(Phase::Stop);
     {
@@ -2104,10 +2093,8 @@ void run_workload_rows(bench::Spread const& spread, ::fixy::View<ThreadCount con
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        row.latency.with_mut([&record](auto run) noexcept {
-            for (bench::Report& report : run)
-                bench::add_report(record.reports, std::move(report));
-        });
+        for (auto const index : row.latency.indices())
+            bench::add_report(record.reports, row.latency.exchange(index, bench::Report{}));
     }
 }
 
@@ -2124,7 +2111,7 @@ struct RoundWorkload {
     using Block = BlockOf<A, BlockAlignment::natural>;
     static constexpr std::size_t kSlots = 1024;
     static constexpr std::uint32_t kReplaces = 50000;
-    using Blocks = ::fixy::FixedArray<::fixy::Option<Block>, kSlots>;
+    using Blocks = ::fixy::MaskedArray<::fixy::Option<Block>>;
 
     struct Shared {
         // The two banks of the live blocks that one round gives to the next.
@@ -2136,10 +2123,25 @@ struct RoundWorkload {
 
     [[nodiscard]] static ::fixy::Box<Shared> mint_shared(ThreadCount threads) noexcept {
         ::fixy::Box<Shared> shared = ::fixy::mint_box<Shared>(bench_alloc());
-        shared->banks = ::fixy::mint_heap_array_with<Blocks>(
-            bench_alloc(), 2 * std::size_t{threads.raw()}, [](std::size_t /*position*/) noexcept { return Blocks{}; });
+        shared->banks =
+            ::fixy::mint_heap_array_with<Blocks>(bench_alloc(), 2 * std::size_t{threads.raw()},
+                                                 [](std::size_t /*position*/) noexcept { return make_blocks(); });
         shared->threads = threads;
         return shared;
+    }
+
+    // The array of kSlots empty slots.
+    [[nodiscard]] static Blocks make_blocks() noexcept {
+        return ::fixy::mint_masked_array<::fixy::Option<Block>>(bench_alloc(), kSlots);
+    }
+
+    // The release of each block of blocks.
+    static void give_each(Blocks& blocks, Tally& tally) noexcept {
+        blocks = ::fixy::with_mut(std::move(blocks), [&tally](auto run) noexcept {
+            for (::fixy::Option<Block>& held : run) {
+                if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
+            }
+        });
     }
 
     // Gives the array of slot in bank to body, in place, through the element
@@ -2157,75 +2159,48 @@ struct RoundWorkload {
     // The body of the thread of a slot in a round.  Each thread of a round
     // writes only the tally of its own slot.
     static void run_round_body(Shared& shared, bench::ThreadSlot slot) noexcept {
-        shared.tallies.with_element(
-            ::fixy::Index<kMaxThreads>::check(slot.raw()).expect("a slot of a round is below kMaxThreads"),
-            [&shared, slot](Tally& tally) noexcept { run_round_with(shared, slot, tally); });
+        auto const own = ::fixy::Index<kMaxThreads>::check(slot.raw()).expect("a slot of a round is below kMaxThreads");
+        Tally tally = shared.tallies.at(own);
+        run_round_with(shared, slot, tally);
+        shared.tallies.set(own, tally);
     }
 
     // The ops of the thread of a slot in a round, with the tally of the slot.
     static void run_round_with(Shared& shared, bench::ThreadSlot slot, Tally& tally) noexcept {
         Draws draws{Kind, bench::ThreadSlot{static_cast<std::uint32_t>(slot.raw() + shared.round * kMaxThreads)}};
-        Blocks local{};
+        Blocks local = make_blocks();
         if constexpr (Kind == RowKind::mstress) {
             std::uint32_t const from = static_cast<std::uint32_t>((slot.raw() + shared.round) % shared.threads.raw());
             const ::fixy::Index<2> taken_bank =
                 ::fixy::Index<2>::check((shared.round + 1) % 2).expect("a round modulo two is below two");
-            with_bank_of(shared, taken_bank, bench::ThreadSlot{from}, [&tally](Blocks& taken) noexcept {
-                taken.with_mut([&tally](auto run) noexcept {
-                    for (::fixy::Option<Block>& held : run) {
-                        if (held.is_some())
-                            give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                    }
-                });
-            });
+            with_bank_of(shared, taken_bank, bench::ThreadSlot{from},
+                         [&tally](Blocks& taken) noexcept { give_each(taken, tally); });
         }
         for (std::uint32_t replace = 0; replace < kReplaces; ++replace) {
             std::uint32_t const draw = draws.next();
-            local.with_element(
-                ::fixy::Index<kSlots>::check(draw & (kSlots - 1)).expect("a masked draw lies below the slots"),
-                [&tally, draw](::fixy::Option<Block>& held) noexcept {
-                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                    held = ::fixy::Option<Block>::some(take_block<A>(tally, uniform_bytes<16, 1008>(draw >> 8)));
-                });
+            local.with_masked(draw, [&tally, draw](::fixy::Option<Block>& held) noexcept {
+                if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
+                held = ::fixy::Option<Block>::some(take_block<A>(tally, uniform_bytes<16, 1008>(draw >> 8)));
+            });
         }
         if constexpr (Kind == RowKind::mstress) {
             const ::fixy::Index<2> given_bank =
                 ::fixy::Index<2>::check(shared.round % 2).expect("a round modulo two is below two");
-            with_bank_of(shared, given_bank, slot, [&local](Blocks& given) noexcept {
-                given.with_mut([&local](auto given_run) noexcept {
-                    local.with_mut([&given_run](auto local_run) noexcept {
-                        for (::fixy::Index<kSlots> const position : ::fixy::IndexRange<kSlots>{}) {
-                            auto given_slot = given_run.get_mut(position.raw()).expect("a position below kSlots");
-                            auto local_slot = local_run.get_mut(position.raw()).expect("a position below kSlots");
-                            *given_slot = std::move(*local_slot);
-                        }
-                    });
-                });
-            });
+            with_bank_of(shared, given_bank, slot, [&local](Blocks& given) noexcept { given = std::move(local); });
         } else {
-            local.with_mut([&tally](auto run) noexcept {
-                for (::fixy::Option<Block>& held : run) {
-                    if (held.is_some()) give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                }
-            });
+            give_each(local, tally);
         }
     }
 
     // The release of each block of the two banks.
     static void finish(Shared& shared) noexcept {
-        shared.banks = ::fixy::with_mut(std::move(shared.banks), [&tallies = shared.tallies](auto banks) noexcept {
-            tallies.with_element(
-                ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0"), [&banks](Tally& tally) noexcept {
-                    for (Blocks& blocks : banks) {
-                        blocks.with_mut([&tally](auto run) noexcept {
-                            for (::fixy::Option<Block>& held : run) {
-                                if (held.is_some())
-                                    give_block<A>(tally, std::move(held).expect("the test above found a block"));
-                            }
-                        });
-                    }
-                });
+        auto const first = ::fixy::Index<kMaxThreads>::check(0).expect("a round has slot 0");
+        Tally tally = shared.tallies.at(first);
+        shared.banks = ::fixy::with_mut(std::move(shared.banks), [&tally](auto banks) noexcept {
+            for (Blocks& blocks : banks)
+                give_each(blocks, tally);
         });
+        shared.tallies.set(first, tally);
     }
 };
 

@@ -54,8 +54,8 @@ using Image = ::fixy::FixedArray<std::byte, kImageBytes>;
 using ImageSeeds = ::fixy::FixedList<Image, 3>;
 
 [[nodiscard]] inline Image image_of(Record const& value) noexcept {
-    Image image{};
-    image.with_mut([&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
+    Image const image = ::fixy::build_fixed_array<std::byte, Image::size()>(
+        [&value](auto run) noexcept { ::fixy::encode(value, std::move(run)); });
     return image;
 }
 
@@ -95,11 +95,8 @@ inline void run_protocol_image(::fixy::View<std::byte const> input) noexcept {
     namespace detail = protocol_image_detail;
     detail::Image bytes{};
     std::size_t const taken = input.size() < detail::kImageBytes ? input.size() : detail::kImageBytes;
-    bytes.with_mut([input, taken](auto run) noexcept {
-        ::fixy::copy(::fixy::take_window(std::move(run), 0, taken).expect("the image holds the bytes it takes"),
-                     input.window(0, taken).expect("the input holds the bytes that the image takes"))
-            .expect("the two windows hold the same count");
-    });
+    bytes.copy_window(0, input.window(0, taken).expect("the input holds the bytes that the image takes"))
+        .expect("the image holds the bytes it takes");
     detail::Image const& read = bytes;
     ::fixy::decode<detail::Record>(read.view())
         .match(

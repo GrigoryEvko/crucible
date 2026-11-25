@@ -153,13 +153,14 @@ int main() {
             ::fixy::Box<HugeSpsc> ring_box = ::fixy::mint_box<HugeSpsc>(kAlloc);
             auto const ring = ::fixy::to(*ring_box);
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
-            alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
+            alignas(64) auto minted = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint64_t, 64>);
+            auto& [rx, rx_key] = minted;
             for (::fixy::Index<64> const index : tx.indices())
                 tx.set(index, index.raw());
             return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
                 const std::size_t np = ring->try_push_batch(tx.view());
                 const std::size_t nc =
-                    rx.with_mut([&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
+                    rx.with_mut(rx_key, [&ring](auto run) noexcept { return ring->try_pop_batch(std::move(run)); });
                 bench::do_not_optimize(np);
                 bench::do_not_optimize(nc);
             });

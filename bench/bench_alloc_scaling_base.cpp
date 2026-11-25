@@ -210,10 +210,8 @@ void run_box_channel_rows(bench::Spread const& spread, RunRecord& record) {
                                     .threads = row.threads,
                                     .placement = row.placement,
                                     .item_ns = item_ns});
-        row.latency.with_mut([&record](auto run) noexcept {
-            for (bench::Report& report : run)
-                bench::add_report(record.reports, std::move(report));
-        });
+        for (auto const index : row.latency.indices())
+            bench::add_report(record.reports, row.latency.exchange(index, bench::Report{}));
     }
 }
 

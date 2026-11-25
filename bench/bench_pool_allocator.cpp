@@ -116,13 +116,8 @@ template <uint64_t Seed>
 // stream of the key 42.
 template <std::size_t Count>
 void fill_random_indices(::fixy::FixedArray<uint32_t, Count>& indices, SlotCount num_slots) noexcept {
-    uint64_t draw = 0;
-    indices.with_mut([&draw, num_slots](auto run) noexcept {
-        for (uint32_t& index : run) {
-            index = random_slot<42>(DrawIndex{draw}, num_slots);
-            ++draw;
-        }
-    });
+    for (auto const position : indices.indices())
+        indices.set(position, random_slot<42>(DrawIndex{position.raw()}, num_slots));
 }
 
 }  // namespace
@@ -362,15 +357,12 @@ int main() {
         };
         // The three slots of each op, from the Philox stream of the key 123.
         ::fixy::FixedArray<OpSlots, NUM_OPS> op_slots{};
-        uint64_t draw = 0;
-        op_slots.with_mut([&draw](auto run) noexcept {
-            for (OpSlots& op : run) {
-                op.in0 = SlotId{random_slot<123>(DrawIndex{draw}, SlotCount{NUM_SLOTS})};
-                op.in1 = SlotId{random_slot<123>(DrawIndex{draw + 1}, SlotCount{NUM_SLOTS})};
-                op.out = SlotId{random_slot<123>(DrawIndex{draw + 2}, SlotCount{NUM_SLOTS})};
-                draw += 3;
-            }
-        });
+        for (auto const position : op_slots.indices()) {
+            uint64_t const draw = 3 * position.raw();
+            op_slots.set(position, OpSlots{.in0 = SlotId{random_slot<123>(DrawIndex{draw}, SlotCount{NUM_SLOTS})},
+                                           .in1 = SlotId{random_slot<123>(DrawIndex{draw + 1}, SlotCount{NUM_SLOTS})},
+                                           .out = SlotId{random_slot<123>(DrawIndex{draw + 2}, SlotCount{NUM_SLOTS})}});
+        }
 
         auto r = bench::run("replay(200 ops, 3 slots each)", [&] {
             for (OpSlots const& op : op_slots) {

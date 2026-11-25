@@ -149,8 +149,9 @@ int main() {
 
     // ── load() aligned vs unaligned ──────────────────────────────────
     bench::add_report(reports, [&] {
-        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
+        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> const ctrl =
+            ::fixy::build_fixed_array<int8_t, kGroupWidth * 4>(
+                [](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
         const CtrlGroup::GroupBytes aligned = ctrl.view().template window<kGroupWidth>(0).expect("the first group");
         return bench::run("load() aligned", [&] {
             auto g = CtrlGroup::load(aligned);
@@ -158,8 +159,9 @@ int main() {
         });
     }());
     bench::add_report(reports, [&] {
-        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
+        alignas(64)::fixy::FixedArray<int8_t, kGroupWidth * 4> const ctrl =
+            ::fixy::build_fixed_array<int8_t, kGroupWidth * 4>(
+                [](auto run) noexcept { fill_ctrl(std::move(run), 0.5, 99); });
         const CtrlGroup::GroupBytes unaligned = ctrl.view().template window<kGroupWidth>(3).expect("a group from 3");
         return bench::run("load() unaligned (+3)", [&] {
             auto g = CtrlGroup::load(unaligned);
@@ -169,8 +171,8 @@ int main() {
 
     // ── match(h2) ─────────────────────────────────────────────────────
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl = ::fixy::build_fixed_array<int8_t, kGroupWidth>(
+            [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
         ctrl.set(::fixy::index<5>(), target);
         auto group = CtrlGroup::load(ctrl.view());
@@ -181,10 +183,10 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
+        auto [ctrl, ctrl_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int8_t, kGroupWidth>);
+        ctrl.with_mut(ctrl_key, [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t miss = 0x7F;
-        ctrl.with_mut([miss](auto run) noexcept {
+        ctrl.with_mut(ctrl_key, [miss](auto run) noexcept {
             for (int8_t& byte : run)
                 if (byte == miss) byte = 0x01;
         });
@@ -196,10 +198,10 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
+        auto [ctrl, ctrl_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int8_t, kGroupWidth>);
+        ctrl.with_mut(ctrl_key, [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
-        ctrl.with_mut([target](auto cells) noexcept {
+        ctrl.with_mut(ctrl_key, [target](auto cells) noexcept {
             for (std::size_t first = 0; first + 4 <= cells.size(); first += 4) {
                 auto byte = cells.get_mut(first).expect("a chunk of four lies inside the group");
                 *byte = target;
@@ -214,8 +216,8 @@ int main() {
 
     // ── match_empty() ─────────────────────────────────────────────────
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 123); });
+        ::fixy::FixedArray<int8_t, kGroupWidth> const ctrl = ::fixy::build_fixed_array<int8_t, kGroupWidth>(
+            [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 123); });
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 75% load", [&] {
             auto m = group.match_empty();
@@ -224,7 +226,7 @@ int main() {
     }());
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), int8_t{0x42}); });  // all occupied
+        ctrl.fill(int8_t{0x42});  // all occupied
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 100% full", [&] {
             auto m = group.match_empty();
@@ -233,7 +235,7 @@ int main() {
     }());
     bench::add_report(reports, [&] {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { ::fixy::fill(std::move(run), kEmpty); });  // all empty
+        ctrl.fill(kEmpty);  // all empty
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match_empty() — 0% load (all empty)", [&] {
             auto m = group.match_empty();
@@ -270,8 +272,8 @@ int main() {
 
     // ── Combined probe step (match + empty check) ────────────────────
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
+        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl = ::fixy::build_fixed_array<int8_t, kGroupWidth>(
+            [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
         ctrl.set(::fixy::index<5>(), target);
         auto group = CtrlGroup::load(ctrl.view());
@@ -289,10 +291,10 @@ int main() {
     }());
 
     bench::add_report(reports, [&] {
-        ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
-        ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
+        auto [ctrl, ctrl_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<int8_t, kGroupWidth>);
+        ctrl.with_mut(ctrl_key, [](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t miss = 0x7E;
-        ctrl.with_mut([miss](auto run) noexcept {
+        ctrl.with_mut(ctrl_key, [miss](auto run) noexcept {
             for (int8_t& byte : run)
                 if (byte == miss) byte = 0x01;
         });
@@ -342,8 +344,7 @@ int main() {
         while (absent_count < 1024) {
             seed = fmix64(seed + absent_count + 1);
             if (!table->find(seed)) {
-                absent_hashes->set(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"),
-                                   seed);
+                absent_hashes->set(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"), seed);
                 ++absent_count;
             }
         }

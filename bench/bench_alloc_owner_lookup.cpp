@@ -523,21 +523,15 @@ void print_light(fixy::TextView name, bench::Report const& measured, double cycl
 // A random cycle over LINES positions (Sattolo): the order of the positions
 // that the cycle visits.  Complexity: linear in the lines.
 void build_cycle(core::FixedArray<std::uint32_t, kChainLines>& order, std::size_t lines) noexcept {
-    order.with_mut([lines](auto run) noexcept {
-        for (std::size_t position = 0; position < lines; ++position) {
-            auto slot = run.get_mut(position).expect("a position below kChainLines");
-            *slot = static_cast<std::uint32_t>(position);
-        }
-        for (std::size_t last = lines - 1; last > 0; --last) {
-            std::size_t const other = draw_of(last + kPicks) % last;
-            std::uint32_t const held = *run.get(last).expect("a position below kChainLines");
-            std::uint32_t const drawn = *run.get(other).expect("a position below kChainLines");
-            auto last_slot = run.get_mut(last).expect("a position below kChainLines");
-            *last_slot = drawn;
-            auto other_slot = run.get_mut(other).expect("a position below kChainLines");
-            *other_slot = held;
-        }
-    });
+    auto const at = [](std::size_t position) noexcept {
+        return core::Index<kChainLines>::check(position).expect("a position below kChainLines");
+    };
+    for (std::size_t position = 0; position < lines; ++position)
+        order.set(at(position), static_cast<std::uint32_t>(position));
+    for (std::size_t last = lines - 1; last > 0; --last) {
+        auto const other = at(draw_of(last + kPicks) % last);
+        order.set(at(last), order.exchange(other, order.at(at(last))));
+    }
 }
 
 // The rows of the speed of light (the speed of light): the clock, the floor

@@ -102,13 +102,10 @@ int main() {
     // tile [0, 800).  The pass of well-formedness and the quadratic pass of
     // the pairs both run.
     ::foundation::core::FixedArray<dc::Interval<std::uint64_t>, 8> intervals_disjoint{};
-    std::uint64_t next_lo = 0;
-    intervals_disjoint.with_mut([&next_lo](auto run) noexcept {
-        for (dc::Interval<std::uint64_t>& interval : run) {
-            interval = dc::Interval<std::uint64_t>{.lo = next_lo, .hi = next_lo + 100};
-            next_lo += 100;
-        }
-    });
+    for (auto const position : intervals_disjoint.indices()) {
+        std::uint64_t const low = 100 * position.raw();
+        intervals_disjoint.set(position, dc::Interval<std::uint64_t>{.lo = low, .hi = low + 100});
+    }
 
     bench::print("=== decide ===\n\n");
 

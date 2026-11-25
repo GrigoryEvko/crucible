@@ -180,12 +180,11 @@ int main() {
     constexpr std::size_t M = 2, N = 2, K = 2;
     const ::fixy::FixedArray<float, M * K> a{1.f, 2.f, 3.f, 4.f};
     const ::fixy::FixedArray<float, K * N> b{5.f, 6.f, 7.f, 8.f};
-    ::fixy::FixedArray<float, M * N> c{};
-
-    // The kernel writes C through the run that the frame door of c lends.  The
+    // The kernel writes C through the run that the build door of c lends.  The
     // caller gives the kernel the erased writer of the run by move, so the
     // kernel is the one writer of C for the call.
-    c.with_mut([&bound, &a, &b](auto run) noexcept {
+    ::fixy::FixedArray<float, M * N> const c = ::fixy::build_fixed_array<float, M * N>([&bound, &a,
+                                                                                        &b](auto run) noexcept {
         auto out = matrix_of(std::move(run), ::fixy::FixedArray<std::size_t, 2>{M, N});
         bound.value()(
             ::fixy::erase_brand(std::move(out)),

@@ -175,12 +175,10 @@ struct ListReports final {
         .remove_insert = bench::run("SlotMap remove and insert",
                                     [&] {
                                         for (fixy::Index<kOperations> const position : positions) {
-                                            keys.with_element(position, [&map](std::uint64_t& element) noexcept {
-                                                Key const key{element};
-                                                for (std::uint32_t const value : map.remove(key)) {
-                                                    element = map.insert(value).expect("the remove freed a slot").raw();
-                                                }
-                                            });
+                                            for (std::uint32_t const value : map.remove(Key{keys.at(position)})) {
+                                                keys.set(position,
+                                                         map.insert(value).expect("the remove freed a slot").raw());
+                                            }
                                         }
                                         bench::do_not_optimize(map);
                                     }),

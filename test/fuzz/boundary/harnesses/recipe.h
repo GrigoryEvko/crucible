@@ -56,11 +56,8 @@ struct RecipeWords {
 inline void run_recipe(::fixy::View<std::byte const> bytes) noexcept {
     ::fixy::FixedArray<std::byte, sizeof(NumericalRecipe)> image{};
     const std::size_t taken = bytes.size() < image.size() ? bytes.size() : image.size();
-    image.with_mut([bytes, taken](auto run) noexcept {
-        ::fixy::copy(::fixy::take_window(std::move(run), 0, taken).expect("the image holds the bytes it takes"),
-                     bytes.window(0, taken).expect("the input holds the bytes that the image takes"))
-            .expect("the two windows hold the same count");
-    });
+    image.copy_window(0, bytes.window(0, taken).expect("the input holds the bytes that the image takes"))
+        .expect("the image holds the bytes it takes");
     const ::fixy::FixedArray<std::byte, sizeof(NumericalRecipe)>& read = image;
     const RecipeWords words = ::fixy::decode<RecipeWords>(read).expect("each image of sixteen bytes is two words");
     const auto decoded = ::fixy::decode<NumericalRecipe>(words);

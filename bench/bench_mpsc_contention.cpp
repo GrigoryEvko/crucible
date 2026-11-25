@@ -128,12 +128,12 @@ struct BatchedPushWorker {
 
     void operator()() noexcept {
         gate.arrive_and_wait();
-        ::fixy::FixedArray<Item, BATCH> buf{};
+        auto [buf, buf_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, BATCH>);
         std::size_t pushed = 0;
         while (pushed < kPerProducer) {
             const std::size_t remaining = kPerProducer - pushed;
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
-            buf.with_mut([this, pushed, n](auto run) noexcept {
+            buf.with_mut(buf_key, [this, pushed, n](auto run) noexcept {
                 for (std::size_t i = 0; i < n; ++i) {
                     auto element = run.get_mut(i).expect("a position of a batch is below BATCH");
                     *element = base + (pushed + i);
@@ -162,12 +162,12 @@ struct DrainWorker {
 
     void operator()() noexcept {
         gate.arrive_and_wait();
-        ::fixy::FixedArray<Item, 64> buf{};
+        auto [buf, buf_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, 64>);
         std::size_t local = 0;
         // A pop of an MPSC ring is a merge, so it takes the tag of Nondet.
         const ::foundation::effects::cap::Nondet merge = ::foundation::effects::testing::test().nondet;
         while (local < total) {
-            const std::size_t n = buf.with_mut([this, merge](auto run) noexcept {
+            const std::size_t n = buf.with_mut(buf_key, [this, merge](auto run) noexcept {
                 return ring.try_pop_batch(RingOwner::consumer(), merge, std::move(run));
             });
             if (n == 0) {

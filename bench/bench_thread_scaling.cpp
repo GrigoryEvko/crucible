@@ -742,8 +742,8 @@ void run_consumer(RowHome& home, LineIndex line) noexcept {
                                        std::uint64_t& sum) noexcept { return pop_reference<Kind>(from, sum); },
             home.references, ::fixy::View<Item>{});
     } else {
-        ::fixy::FixedArray<Item, kPopBatch> out{};
-        item_sum = out.with_mut([&state](auto run) noexcept {
+        auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<Item, kPopBatch>);
+        item_sum = out.with_mut(out_key, [&state](auto run) noexcept {
             return run_consumer_loop(
                 state,
                 [] [[gnu::always_inline]] (RowState & from, auto& items, std::uint64_t& sum) noexcept {
@@ -1349,10 +1349,7 @@ enum class OpGroup : std::uint8_t {
         }
     }
     if (!is_named) {
-        groups.with_mut([](auto run) noexcept {
-            for (bool& group : run)
-                group = true;
-        });
+        groups.fill(true);
     }
     return groups;
 }

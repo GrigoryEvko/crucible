@@ -34,17 +34,13 @@ inline constexpr std::size_t kRows = 8;
 
 // The bytes i % 251 at i, as the official test vectors hold them.
 struct Input final {
-    fc::FixedArray<std::byte, kLongest> bytes{};
-
-    Input() noexcept {
+    fc::FixedArray<std::byte, kLongest> bytes = fc::build_fixed_array<std::byte, kLongest>([](auto run) noexcept {
         std::size_t at = 0;
-        bytes.with_mut([&at](auto run) noexcept {
-            for (std::byte& byte : run) {
-                byte = static_cast<std::byte>(at % 251);
-                ++at;
-            }
-        });
-    }
+        for (std::byte& byte : run) {
+            byte = static_cast<std::byte>(at % 251);
+            ++at;
+        }
+    });
 };
 
 // The one input of the rows, built at its first use.
@@ -56,8 +52,7 @@ struct Input final {
 // The key text of the official test vectors.
 [[nodiscard]] fc::FixedArray<std::byte, 32> key_bytes() noexcept {
     constexpr fc::TextView text{"whats the Elvish word for friend"};
-    fc::FixedArray<std::byte, 32> bytes{};
-    bytes.with_mut([text](auto run) noexcept {
+    fc::FixedArray<std::byte, 32> const bytes = fc::build_fixed_array<std::byte, 32>([text](auto run) noexcept {
         auto letter = text.begin();
         for (std::byte& byte : run) {
             byte = static_cast<std::byte>(*letter);
@@ -80,11 +75,11 @@ CRUCIBLE_I_KNOW_WHAT_IM_DOING("MEASURE: the bytes of a row go to the door of the
 // The output of the official keyed hash of the first size bytes of the input.
 [[nodiscard]] fc::FixedArray<std::byte, 32> official_keyed_hash(fc::FixedArray<std::byte, 32> const& key,
                                                                 Input const& input, std::size_t size) noexcept {
-    fc::FixedArray<std::byte, 32> out{};
-    out.with_mut([&key, &input, size](auto run) noexcept {
-        bench_keyed_hash_references::blake3_keyed(&key.at(fc::index<0>()), &input.bytes.at(fc::index<0>()), size,
-                                                  fc::foreign_first(run));
-    });
+    fc::FixedArray<std::byte, 32> const out =
+        fc::build_fixed_array<std::byte, 32>([&key, &input, size](auto run) noexcept {
+            bench_keyed_hash_references::blake3_keyed(&key.at(fc::index<0>()), &input.bytes.at(fc::index<0>()), size,
+                                                      fc::foreign_first(run));
+        });
     return out;
 }
 
@@ -188,15 +183,11 @@ int main() {
     // One JSON tail holds the rows of the two groups, because the reader
     // reads only the last tail of the output.
     ::fixy::FixedList<bench::Report, 2 * kRows> all_reports{};
-    base_reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run)
-            bench::add_report(all_reports, std::move(report));
-    });
+    for (auto const row : base_reports.indices())
+        bench::add_report(all_reports, base_reports.exchange(row, bench::Report{}));
 #if defined(CRUCIBLE_BENCH_BLAKE3)
-    official_reports.with_mut([&all_reports](auto run) noexcept {
-        for (bench::Report& report : run)
-            bench::add_report(all_reports, std::move(report));
-    });
+    for (auto const row : official_reports.indices())
+        bench::add_report(all_reports, official_reports.exchange(row, bench::Report{}));
 #endif
     bench::emit_reports_json(all_reports.view(), json);
     return 0;

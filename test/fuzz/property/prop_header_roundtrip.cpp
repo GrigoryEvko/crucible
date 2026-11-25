@@ -63,8 +63,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         [](const auto& t) {
             // 32-byte buffer is the documented header size
             // (magic 4 + version 4 + kind 1 + pad 7 + merkle 8 + content 8).
-            ::foundation::core::FixedArray<std::byte, 32> image{};
-            std::size_t const written = image.with_mut([&t](auto run) noexcept {
+            auto const [written, image] = ::foundation::core::build_fixed_array<std::byte, 32>([&t](auto run) noexcept {
                 using Run = decltype(run);
                 Writer<typename Run::brand_type, Run::extent> w{.image = std::move(run)};
                 write_header(w, t.kind, t.mh, t.ch);

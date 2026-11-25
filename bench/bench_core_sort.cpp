@@ -281,38 +281,46 @@ template <class T, std::size_t Count, class Less>
     return measure_row(static_cast<bench::Run&&>(run), StableSortBody<T, Count, Less>{pool, less});
 }
 
-// The body of a row of sort_by_network<N>: before each sample the array takes
-// the next window of the pool, and a call sorts it.
-template <std::size_t N>
+// The body of a row of sort_by_network<N>: before each sample the run of an
+// array takes the next window of the pool, and a call sorts it.  The frame of
+// the array is open for the whole row, so a call opens no frame.  The sink reads
+// the array.
+template <std::size_t N, class Brand, class Array>
 class NetworkBody final {
 public:
-    explicit NetworkBody(View<float const> pool) noexcept : windows_{pool} {}
+    NetworkBody(View<float const> pool, ::foundation::core::ViewMut<float, Brand, N> work, Array const& sorted) noexcept
+        : windows_{pool}, work_{std::move(work)}, sorted_{sorted} {}
 
     void before_sample() noexcept {
-        View<float const> const window = windows_.next();
-        std::size_t position = 0;
-        work_.with_mut([&window, &position](auto run) noexcept {
-            for (float& value : run) {
-                value = *window.get(position).expect("the element fits the window");
-                ++position;
-            }
+        work_ = ::foundation::core::reborrow(std::move(work_), [window = windows_.next()](auto run) noexcept {
+            static_cast<void>(::fixy::copy(std::move(run), window));
         });
     }
 
     void operator()() noexcept {
-        work_.with_mut(
-            [](auto out) noexcept { ::foundation::core::sort_by_network(std::move(out), FloatTotalOrder{}); });
-        bench::do_not_optimize(work_);
+        work_ = ::foundation::core::reborrow(std::move(work_), [](auto out) noexcept {
+            ::foundation::core::sort_by_network(std::move(out), FloatTotalOrder{});
+        });
+        bench::do_not_optimize(sorted_);
     }
 
 private:
     WindowCursor<float, N> windows_;
-    ::fixy::FixedArray<float, N> work_{};
+    ::foundation::core::ViewMut<float, Brand, N> work_;
+    Array const& sorted_;
 };
 
 template <std::size_t N>
 [[gnu::noinline]] bench::Report measure_network(bench::Run&& run, View<float const> pool) {
-    return measure_row(static_cast<bench::Run&&>(run), NetworkBody<N>{pool});
+    auto [work, work_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<float, N>);
+    bench::Report report{};
+    work.with_mut(work_key, [&run, &report, pool, &sorted = ::fixy::as_const(work)](auto out) noexcept {
+        using Out = decltype(out);
+        using Sorted = std::remove_cvref_t<decltype(sorted)>;
+        report =
+            measure_row(std::move(run), NetworkBody<N, typename Out::brand_type, Sorted>{pool, std::move(out), sorted});
+    });
+    return report;
 }
 
 // The body of the row of find_lower_bound: each call searches a sorted run of

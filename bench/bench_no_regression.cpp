@@ -197,17 +197,18 @@ void run_l2_rows(WorkloadInputs const& inputs, Range rows, Sink& sink, ProductRo
     std::size_t const n = inputs.matrix_n;
     double acc = 0.0;
     for (std::size_t i = rows.begin; i < rows.end; ++i) {
-        out[i - rows.begin].with_mut([matrix_a, matrix_b, n, i, &acc] [[gnu::always_inline]] (auto run) noexcept {
-            double* const row_out = ::foundation::core::foreign_first(run);
-            for (std::size_t j = 0; j < n; ++j) {
-                double sum = 0.0;
-                for (std::size_t k = 0; k < n; ++k) {
-                    sum += matrix_a[i * n + k] * matrix_b[k * n + j];
+        out[i - rows.begin] = ::fixy::build_fixed_array<double, ProductRow::size()>(
+            [matrix_a, matrix_b, n, i, &acc] [[gnu::always_inline]] (auto run) noexcept {
+                double* const row_out = ::foundation::core::foreign_first(run);
+                for (std::size_t j = 0; j < n; ++j) {
+                    double sum = 0.0;
+                    for (std::size_t k = 0; k < n; ++k) {
+                        sum += matrix_a[i * n + k] * matrix_b[k * n + j];
+                    }
+                    row_out[j] = sum;
+                    acc += sum;
                 }
-                row_out[j] = sum;
-                acc += sum;
-            }
-        });
+            });
     }
     bench::do_not_optimize(acc);
     static_cast<void>(sink.fetch_add_relaxed(static_cast<std::uint64_t>(acc)));
@@ -317,7 +318,9 @@ run_rule(WorkloadInputs const& inputs, fc::WorkBudget budget, ::fixy::ViewMut<Pr
                     options);
             });
     }
-    pieces.with_mut([&ctx, &test, budget, &options, &inputs, &sink, &tally](auto run) noexcept {
+    auto [table, table_key] =
+        ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::uint32_t, PieceTable::size()>, pieces);
+    table.with_mut(table_key, [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto run) noexcept {
         static_cast<void>(::fixy::with_region<PieceTableWhole>(
             std::move(run), [&ctx, &test, budget, &options, &inputs, &sink, &tally](auto region) noexcept {
                 return ::fixy::spawn::mint_parallel_for_with_thread_options<::fixy::spawn::BodyCoupling::Independent,
@@ -657,16 +660,16 @@ int main() {
     // rows inside it writes the three rows of the workload.
     for (::fixy::Index<kWorkloads> const workload : workloads.indices()) {
         const std::size_t i = workload.raw();
-        workloads.with_element(workload, [&reports, &pieces, samples, &cores, i](Workload& w) noexcept {
-            Trio trio = run_workload(w, pieces, samples, cores);
-            reports = ::fixy::with_mut(std::move(reports), [&trio, i](auto rows) noexcept {
-                auto sequential_row = rows.get_mut(i * 3 + 0).expect("the sequential row of a workload");
-                *sequential_row = std::move(trio.sequential);
-                auto rule_row = rows.get_mut(i * 3 + 1).expect("the rule row of a workload");
-                *rule_row = std::move(trio.rule);
-                auto forced_row = rows.get_mut(i * 3 + 2).expect("the forced row of a workload");
-                *forced_row = std::move(trio.forced);
-            });
+        Workload w = workloads.exchange(workload, Workload{});
+        Trio trio = run_workload(w, pieces, samples, cores);
+        workloads.set(workload, std::move(w));
+        reports = ::fixy::with_mut(std::move(reports), [&trio, i](auto rows) noexcept {
+            auto sequential_row = rows.get_mut(i * 3 + 0).expect("the sequential row of a workload");
+            *sequential_row = std::move(trio.sequential);
+            auto rule_row = rows.get_mut(i * 3 + 1).expect("the rule row of a workload");
+            *rule_row = std::move(trio.rule);
+            auto forced_row = rows.get_mut(i * 3 + 2).expect("the forced row of a workload");
+            *forced_row = std::move(trio.forced);
         });
     }
 

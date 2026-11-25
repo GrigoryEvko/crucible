@@ -90,11 +90,8 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
 [[nodiscard]] Guard random_guard(crucible::fuzz::prop::Rng& rng) noexcept {
     Guard g{};
     g.kind = rng.pick<Guard::Kind>();
-    g.pad.with_mut([&rng](auto run) noexcept {
-        for (uint8_t& byte : run) {
-            byte = static_cast<uint8_t>(rng.next32() & 0xFFu);
-        }
-    });
+    for (auto const index : g.pad.indices())
+        g.pad.set(index, static_cast<uint8_t>(rng.next32() & 0xFFu));
     // op_index: exercise both valid indices and the none() sentinel.
     // Bias toward typical op indices (0..4095) with a 10% escape
     // for none().

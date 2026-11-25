@@ -154,12 +154,7 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 // at most N elements.  Complexity: O(source.size()).
 template <class T, std::size_t N>
 void copy_prefix(::fixy::FixedArray<T, N>& copy, ::fixy::View<const T> source) noexcept {
-    copy.with_mut([source](auto run) noexcept {
-        ::fixy::copy(
-            ::fixy::take_window(std::move(run), 0, source.size()).expect("the copy holds each element of the source"),
-            source)
-            .expect("the window holds the count of the source");
-    });
+    copy.copy_window(0, source).expect("the copy holds each element of the source");
 }
 
 }  // namespace
@@ -183,14 +178,13 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             spec.num_ops = 1u + rng.next_below(kMaxOps);  // [1, kMaxOps]
             spec.num_edges = rng.next_below(kMaxEdges + 1u);  // [0, kMaxEdges]
             for (uint32_t e = 0; e < spec.num_edges; ++e) {
-                spec.edges.update(
-                    ::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"),
-                    [&rng, num_ops = spec.num_ops](EdgeSpec& edge_spec) noexcept {
-                        edge_spec.src = rng.next_below(num_ops);
-                        edge_spec.dst = rng.next_below(num_ops);
-                        edge_spec.src_port = static_cast<uint8_t>(rng.next_below(64));
-                        edge_spec.dst_port = static_cast<uint8_t>(rng.next_below(64));
-                    });
+                spec.edges.update(::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"),
+                                  [&rng, num_ops = spec.num_ops](EdgeSpec& edge_spec) noexcept {
+                                      edge_spec.src = rng.next_below(num_ops);
+                                      edge_spec.dst = rng.next_below(num_ops);
+                                      edge_spec.src_port = static_cast<uint8_t>(rng.next_below(64));
+                                      edge_spec.dst_port = static_cast<uint8_t>(rng.next_below(64));
+                                  });
             }
             return spec;
         },
@@ -199,8 +193,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             const uint32_t num_ops = spec.num_ops;
             const uint32_t num_edges = spec.num_edges;
 
-            ::fixy::FixedArray<Edge, kMaxEdges> in_edges{};
-            in_edges.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
+            ::fixy::FixedArray<Edge, kMaxEdges> const in_edges = ::fixy::build_fixed_array<Edge, kMaxEdges>(
+                [&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
             const ::fixy::View<const Edge> in_run =
                 in_edges.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
 
@@ -270,8 +264,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             if (!is_first_build_correct) return false;
 
             // (D) Determinism — rebuild in a fresh epoch, compare bytes.
-            ::fixy::FixedArray<Edge, kMaxEdges> in_edges2{};
-            in_edges2.with_mut([&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
+            ::fixy::FixedArray<Edge, kMaxEdges> const in_edges2 = ::fixy::build_fixed_array<Edge, kMaxEdges>(
+                [&spec](auto run) noexcept { static_cast<void>(materialize(spec, std::move(run))); });
             const ::fixy::View<const Edge> in_run2 =
                 in_edges2.view().window(0, num_edges).expect("a spec holds at most kMaxEdges edges");
             const ::fixy::FixedArray<uint32_t, kMaxOps + 1>& fwd = fwd_copy;
