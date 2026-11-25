@@ -743,6 +743,12 @@ concept MakesElementInPlace =
     std::is_nothrow_invocable_v<Fn&, Args&&...> && std::same_as<std::invoke_result_t<Fn&, Args&&...>, Element>
     && std::is_trivially_destructible_v<Element>;
 
+// The element of build_at that the function builds beside its slot: its move runs no
+// code, and it fits in the two registers of a result.  So the move into the slot
+// after the call costs no step more than a build in the slot.
+template <class T>
+concept BuiltBesideItsSlot = std::is_trivially_move_constructible_v<T> && sizeof(T) <= 16;
+
 // No argument of build_at reaches the element or the array
 // (reaches_array_part_), so the function reads no element while the new
 // element takes its storage.
@@ -1041,8 +1047,15 @@ public:
     // such as a tensor of PyTorch, passes.  The one route to the array that
     // the door does not see is an object of static storage, or an argument
     // that reaches the array through more than one step.  T has a trivial
-    // destructor.  An argument by value holds no linear value.  Complexity:
-    // O(1), and the cost of fn.
+    // destructor.  An argument by value holds no linear value.
+    //
+    // An element of at most 16 bytes with a trivial move (BuiltBesideItsSlot) goes
+    // into the slot after fn returned, so a fn that reads the array by that route
+    // reads the old element.  A larger element, and one whose move is not trivial,
+    // can take the slot while fn runs.  A fn that reads the same element of a
+    // static array then reads a value with old parts and new parts.  The read stays
+    // in the storage of the array, and no element ends there, so the harm is a value
+    // and not memory.  Complexity: O(1), and the cost of fn.
     template <class Fn, class... Args>
         requires(!is_keyed_)
              && MakesElementInPlace<Fn, T, Args...> && StatelessMake<Fn> && ::foundation::linear::HoldsNoLinearValue<Fn>
@@ -1052,7 +1065,13 @@ public:
         // of one byte, and its check of a placement new then refuses the
         // build.  The address through __builtin_launder is the same address,
         // and the check reads no array there.
-        ::new(static_cast<void*>(__builtin_launder(&elements_[index.raw()]))) T(fn(static_cast<Args&&>(args)...));
+        void* const slot = __builtin_launder(&elements_[index.raw()]);
+        if constexpr (BuiltBesideItsSlot<T>) {
+            T made = fn(static_cast<Args&&>(args)...);
+            ::new(slot) T(static_cast<T&&>(made));
+        } else {
+            ::new(slot) T(fn(static_cast<Args&&>(args)...));
+        }
     }
     template <class Fn, class... Args>
         requires(!is_keyed_) && MakesElementInPlace<Fn, T, Args...> && (!StatelessMake<Fn>)

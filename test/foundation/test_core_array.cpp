@@ -220,6 +220,30 @@ void test_fixed_array_value_door_builds_in_place() {
     CRUCIBLE_TEST_ASSERT(kTest, one.at(index<0>()).value == 4 && one.at(index<0>()).calls == 4);
 }
 
+// A static array whose function of the value door reads the element that the door
+// builds, by the name of the array.
+[[nodiscard]] FixedArray<Built, 2>& reached_built() noexcept {
+    static FixedArray<Built, 2> built{};
+    return built;
+}
+
+[[nodiscard]] Built build_after_a_read(int value) noexcept {
+    Built made{.value = value, .calls = 0};
+    made.calls = reached_built().at(index<0>()).value;
+    return made;
+}
+
+// An element that its function builds beside the slot takes the slot after the
+// function returned, so the function reads the old element.
+void test_fixed_array_value_door_keeps_the_old_element_while_it_builds() {
+    reached_built().build_at(index<0>(), build_after_a_read, 7);
+    CRUCIBLE_TEST_ASSERT(kTest, reached_built().at(index<0>()).value == 7);
+    CRUCIBLE_TEST_ASSERT(kTest, reached_built().at(index<0>()).calls == 0);
+    reached_built().build_at(index<0>(), build_after_a_read, 9);
+    CRUCIBLE_TEST_ASSERT(kTest, reached_built().at(index<0>()).value == 9);
+    CRUCIBLE_TEST_ASSERT(kTest, reached_built().at(index<0>()).calls == 7);
+}
+
 // set writes one element, and exchange writes one element and gives back the
 // value that it held.  Each other element keeps its value.  An element that
 // only moves, such as a HeapArray, takes the two doors.
@@ -669,6 +693,7 @@ int main() {
     test_fixed_array_element_door_writes_in_place();
     test_fixed_array_element_door_with_no_key();
     test_fixed_array_value_door_builds_in_place();
+    test_fixed_array_value_door_keeps_the_old_element_while_it_builds();
     test_fixed_array_value_doors_write_one_element();
     test_fixed_array_update_changes_one_element();
     test_fixed_array_update_loses_a_nested_step(test);

@@ -298,6 +298,21 @@ struct SlotBrand final {};
 [[nodiscard]] constexpr Slot make_slot(int value) noexcept { return Slot{.value = value, .twice = 2 * value}; }
 using MakesSlot = decltype([](int value) noexcept { return Slot{.value = value, .twice = 2 * value}; });
 using MakesSlotWithState = decltype([seed = 1](int value) noexcept { return Slot{.value = value + seed, .twice = 0}; });
+// The elements whose result goes into the slot after the function returned, and
+// the elements whose result takes the slot while the function runs.
+struct ThreeWords {
+    std::size_t first = 0;
+    std::size_t second = 0;
+    std::size_t third = 0;
+};
+struct CopiesByCode {
+    int value = 0;
+    CopiesByCode() noexcept = default;
+    CopiesByCode(CopiesByCode const& other) noexcept : value{other.value} {}
+    CopiesByCode& operator=(CopiesByCode const&) noexcept = default;
+};
+static_assert(BuiltBesideItsSlot<Slot> && BuiltBesideItsSlot<View<Slot const>> && BuiltBesideItsSlot<int>);
+static_assert(!BuiltBesideItsSlot<ThreeWords> && !BuiltBesideItsSlot<CopiesByCode>);
 using CopiesSlot =
     decltype([](auto const& from) noexcept { return Slot{.value = 1, .twice = sizeof(from) > 0 ? 1 : 0}; });
 using GivesInt = decltype([](int value) noexcept { return value; });
