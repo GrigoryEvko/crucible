@@ -277,14 +277,20 @@ namespace {
 
 // Pops at most BATCH_SIZE entries of the ring into the five arrays of a
 // batch, through the consumer end of the ring, and gives the count.  Each
-// array lends its run in place through its frame door, so the pop writes the
-// arrays with no copy.
-[[nodiscard]] uint32_t pop_trace_batch(TraceRing::Consumer& ring, BackgroundThread::BgTraceBatch& batch) noexcept {
-    return batch.entries.with_mut([&](auto entries) noexcept {
-        return batch.meta_starts.with_mut([&](auto meta_starts) noexcept {
-            return batch.scope_hashes.with_mut([&](auto scope_hashes) noexcept {
-                return batch.callsite_hashes.with_mut([&](auto callsite_hashes) noexcept {
-                    return batch.depths.with_mut([&](auto depths) noexcept {
+// array lends its run in place through its frame door, with the key of its
+// brand, so the pop writes the arrays with no copy.
+[[nodiscard]] uint32_t
+pop_trace_batch(TraceRing::Consumer& ring, BackgroundThread::BgTraceBatch& batch,
+                ::foundation::core::LoanKey<BackgroundThread::BatchEntriesBrand>& entries_key,
+                ::foundation::core::LoanKey<BackgroundThread::BatchMetasBrand>& metas_key,
+                ::foundation::core::LoanKey<BackgroundThread::BatchScopesBrand>& scopes_key,
+                ::foundation::core::LoanKey<BackgroundThread::BatchCallsitesBrand>& calls_key,
+                ::foundation::core::LoanKey<BackgroundThread::BatchDepthsBrand>& depths_key) noexcept {
+    return batch.entries.with_mut(entries_key, [&](auto entries) noexcept {
+        return batch.meta_starts.with_mut(metas_key, [&](auto meta_starts) noexcept {
+            return batch.scope_hashes.with_mut(scopes_key, [&](auto scope_hashes) noexcept {
+                return batch.callsite_hashes.with_mut(calls_key, [&](auto callsite_hashes) noexcept {
+                    return batch.depths.with_mut(depths_key, [&](auto depths) noexcept {
                         return TraceRing::try_pop_batch(ring, std::move(entries), std::move(meta_starts),
                                                         std::move(scope_hashes), std::move(callsite_hashes),
                                                         std::move(depths));
@@ -437,7 +443,12 @@ struct BackgroundThread::Pipeline {
     // Each later stage ends at the end of its input stream, and it closes
     // its own channel then.
     template <class Input, class Output>
-    static void DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx);
+    static void DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx,
+                                 ::foundation::core::LoanKey<BatchEntriesBrand>& entries_key,
+                                 ::foundation::core::LoanKey<BatchMetasBrand>& metas_key,
+                                 ::foundation::core::LoanKey<BatchScopesBrand>& scopes_key,
+                                 ::foundation::core::LoanKey<BatchCallsitesBrand>& calls_key,
+                                 ::foundation::core::LoanKey<BatchDepthsBrand>& depths_key);
 
     // The detect stage feeds each entry to the iteration detector, cuts a
     // work item at each boundary, and pushes a commit marker after each
@@ -813,7 +824,12 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 }
 
 template <class Input, class Output>
-void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx) {
+void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx,
+                                                  ::foundation::core::LoanKey<BatchEntriesBrand>& entries_key,
+                                                  ::foundation::core::LoanKey<BatchMetasBrand>& metas_key,
+                                                  ::foundation::core::LoanKey<BatchScopesBrand>& scopes_key,
+                                                  ::foundation::core::LoanKey<BatchCallsitesBrand>& calls_key,
+                                                  ::foundation::core::LoanKey<BatchDepthsBrand>& depths_key) {
     BackgroundThread& owner = in.owner();
     while (in.try_pop(ctx).is_none()) {
         CRUCIBLE_SPIN_PAUSE;
@@ -829,9 +845,10 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fi
     // proof, which lives for the loop on the thread of the stage.
     TraceRingSide& ring_side = *owner.ring_;
     DrainStage const stage{};
-    auto const pop = [&ring_side, &stage](BgTraceBatch& into) noexcept {
-        return ring_side.with_end(stage, [&into](TraceRing::Consumer& ring) noexcept {
-            return detail::bg_pipeline::pop_trace_batch(ring, into);
+    auto const pop = [&](BgTraceBatch& into) noexcept {
+        return ring_side.with_end(stage, [&](TraceRing::Consumer& ring) noexcept {
+            return detail::bg_pipeline::pop_trace_batch(ring, into, entries_key, metas_key, scopes_key, calls_key,
+                                                        depths_key);
         });
     };
 

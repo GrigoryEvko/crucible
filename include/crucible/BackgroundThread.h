@@ -812,10 +812,9 @@ public:
         // nothing.
         void hold(ConstRegionLink region) noexcept {
             if (region.is_none()) return;
-            held.with_element(
-                ::fixy::Index<CAP>::check(count).expect(
-                    "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
-                [region](ConstRegionLink& slot) noexcept { slot = region; });
+            held.set(::fixy::Index<CAP>::check(count).expect(
+                         "the region marks of the pipeline are full: raise BackgroundThread::RegionMarks::CAP"),
+                     region);
             ++count;
         }
     };
@@ -1293,13 +1292,22 @@ public:
     // serves through its input end (StageInput), so no payload points back
     // at the owner, and the effect row of each payload is read off data
     // alone.
+    struct BatchEntriesBrand final {};
+    struct BatchMetasBrand final {};
+    struct BatchScopesBrand final {};
+    struct BatchCallsitesBrand final {};
+    struct BatchDepthsBrand final {};
+
+    // Each array has the brand of a key that only the door of the drain stage
+    // gives to its body.  So only the drain stage opens a frame of an array,
+    // and the stages after it read the arrays.
     struct BgTraceBatch {
         uint32_t count = 0;
-        ::fixy::FixedArray<TraceRing::Entry, BATCH_SIZE> entries{};
-        ::fixy::FixedArray<MetaIndex, BATCH_SIZE> meta_starts{};
-        ::fixy::FixedArray<ScopeHash, BATCH_SIZE> scope_hashes{};
-        ::fixy::FixedArray<CallsiteHash, BATCH_SIZE> callsite_hashes{};
-        ::fixy::FixedArray<OpDepth, BATCH_SIZE> depths{};
+        ::fixy::FixedArray<TraceRing::Entry, BATCH_SIZE, BatchEntriesBrand> entries{};
+        ::fixy::FixedArray<MetaIndex, BATCH_SIZE, BatchMetasBrand> meta_starts{};
+        ::fixy::FixedArray<ScopeHash, BATCH_SIZE, BatchScopesBrand> scope_hashes{};
+        ::fixy::FixedArray<CallsiteHash, BATCH_SIZE, BatchCallsitesBrand> callsite_hashes{};
+        ::fixy::FixedArray<OpDepth, BATCH_SIZE, BatchDepthsBrand> depths{};
     };
 
     struct BgBuildWork {

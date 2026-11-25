@@ -2251,6 +2251,11 @@ crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
 crucible_neg_compile_test(neg_background_thread_start_takes_no_sides
   "cannot convert .crucible::BackgroundThread::TraceRingSide. \\{aka .fixy::concurrent::SpscHeldSide<crucible::TraceRing, fixy::concurrent::SpscSide::consumer, crucible::BackgroundThread::DrainStage>.\\} to .int32_t."
   "initializing argument 2 of .void crucible::BackgroundThread::start\\(const fixy::InitLoadCtx&, int32_t, int32_t, uint64_t\\).")
+# The arrays of a trace batch open a frame only with the keys of the drain
+# stage.
+crucible_neg_compile_test(neg_trace_batch_frame_without_key
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a keyed FixedArray opens a frame only with its LoanKey")
 # A job reaches the publish stage only through its view, so the door refuses a
 # capture that reaches the BackgroundThread, such as a Ref of it.
 crucible_neg_compile_test(neg_publish_job_captures_a_ref_of_the_background_thread
