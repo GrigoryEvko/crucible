@@ -23,7 +23,9 @@
 #              reference helpers of linear.cpp).  So the local is unconsumed,
 #              and the move (helpers.cpp:25 and 32) is the kind
 #              borrow-move-out, because the rule cannot tell which part of the
-#              local the reference of the call names.
+#              local the reference of the call names.  Each of these lines is
+#              false and no line is missing, and no unit of the tree has such a
+#              helper, so the rule does not wait for the end of the unit.
 
 compile gaps src/gaps.cpp must-consume=on
 flag gaps -freflection

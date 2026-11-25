@@ -7,7 +7,6 @@ reason include/foundation/permissions/ | the split and loan mints give tokens in
 reason test/ | the tests hold tokens and handles in std::optional, std::pair and std::tuple, and the attack tests and the checks make a holder that cannot move
 include/fixy/ | library-holder | 3 | - | -
 include/fixy/concurrent/ | library-holder | 3 | - | -
-include/foundation/core/ | pinned-holder | 1 | - | the Record of the mint of a keyed transaction log does not move, because the log does not move.  Its one linear part is the LoanKey, which ends at its own scope door.  task: the plugin derives scope_end_door for a pinned holder whose each linear part has one
 include/foundation/permissions/ | library-holder | 1 | - | -
 include/foundation/permissions/ | pinned-holder | 1 | - | -
 test/fixy/ | library-holder | 9 | - | test_owned_region returns and holds the parts of a split in a std::tuple.  The attacks on a session handle hold a live handle in a std::optional, a std::vector and a std::variant
