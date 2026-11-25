@@ -1,0 +1,66 @@
+// Bodies of early.cpp in a unit with no include, so that a compile with a garbage
+// collection at each opportunity is short.  The unit defines the mark that it
+// states.  Empty has a trivial move assignment and is empty, so the front end
+// folds its moves, and the copy of a body keeps the trees before the folds.
+namespace foundation::linear {
+
+struct linear final {};
+
+}  // namespace foundation::linear
+
+namespace planted {
+
+struct Token;
+void take(Token&& token) noexcept;
+
+struct [[= ::foundation::linear::linear{}]] Empty {
+    constexpr Empty() noexcept = default;
+    constexpr Empty(Empty&&) noexcept {}
+    Empty& operator=(Empty&&) noexcept = default;
+    Empty(const Empty&) = delete;
+};
+void take_empty(Empty&& empty) noexcept;
+
+void move_out_early(Token& token) noexcept { take(static_cast<Token&&>(token)); }
+
+// The moves of Empty are folded, and the body names Token.  The second move of
+// the second empty value is a second consume.
+void folded_early(Token& token) noexcept {
+    Empty first;
+    Empty second = static_cast<Empty&&>(first);
+    Empty third;
+    third = static_cast<Empty&&>(second);
+    take_empty(static_cast<Empty&&>(second));
+    take_empty(static_cast<Empty&&>(third));
+    take(static_cast<Token&&>(token));
+}
+
+// Definitions between the bodies and the class, where a collection runs.
+int first(int word) noexcept { return word + 1; }
+int second(int word) noexcept { return first(word) + 1; }
+int third(int word) noexcept { return second(word) + 1; }
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+int fourth(int word) noexcept { return third(word) + 1; }
+
+void folded_late(Token& token) noexcept {
+    Empty first;
+    Empty second = static_cast<Empty&&>(first);
+    Empty third;
+    third = static_cast<Empty&&>(second);
+    take_empty(static_cast<Empty&&>(second));
+    take_empty(static_cast<Empty&&>(third));
+    take(static_cast<Token&&>(token));
+}
+
+}  // namespace planted

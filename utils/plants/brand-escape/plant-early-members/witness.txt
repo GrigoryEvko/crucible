@@ -6,9 +6,9 @@
 # member is also a line of the kind raw-pointer-object, and the closure that the
 # plant names is a brand outside its scope.  The check of an open class reads an
 # instance that no other code names, and the line of that instance does not wait
-# (83).  The compile collected runs a garbage collection at each opportunity and
-# gives the same findings: no collection frees the subject of a check that
-# waits here.
+# (83).  A body that names a static object has the pair 94 and 99.  The compile
+# collected runs a garbage collection at each opportunity and gives the same
+# findings: no collection frees the subject of a check that waits here.
 
 compile early src/early.cpp linear-shapes=on errors=early
 flag early -freflection
@@ -35,6 +35,8 @@ finding early brand-escape scope-static src/early.cpp:71:25 | planted: late_mark
 finding early brand-escape arena-member src/early.cpp:72:23 | planted: late_arena, an object of the arena planted::Arena that is no member of the class of planted::ArenaTag
 finding early brand-escape epoch-static src/early.cpp:75:37 | planted::read_late: late_local, planted::Epoch
 finding early brand-escape epoch-member src/early.cpp:83:17 | planted::HoldsEpoch: kept, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:94:41 | planted::name_early: planted::named_object, planted::Epoch
+finding early brand-escape epoch-static src/early.cpp:99:40 | planted::name_late: planted::named_object, planted::Epoch
 finding early quarantine raw-pointer-object src/early.cpp:87:12 | open
 finding early quarantine raw-pointer-object src/early.cpp:11:8 | object
 finding early quarantine raw-pointer-object src/early.cpp:28:19 | kept

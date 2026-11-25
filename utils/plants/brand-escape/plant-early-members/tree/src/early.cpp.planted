@@ -88,4 +88,14 @@ struct NamesInstance {
     static constexpr HoldsEpoch<int> instance{};
 };
 
+// A body that names a static object.  The unit does not define the object.
+struct NamedCarrier;
+extern Slot<NamedCarrier> const named_object;
+unsigned name_early() noexcept { return named_object.object == nullptr ? 1U : 0U; }
+struct NamedCarrier {
+    using brand_type = Epoch;
+    int word = 0;
+};
+unsigned name_late() noexcept { return named_object.object == nullptr ? 1U : 0U; }
+
 }  // namespace planted

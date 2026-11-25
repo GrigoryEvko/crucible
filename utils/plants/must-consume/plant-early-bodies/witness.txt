@@ -1,0 +1,38 @@
+# Bodies that name a linear class which is incomplete there (the kept bodies of
+# plugin.cpp).  A move out of a lent parameter and of a lent result, a second
+# consume, a dropped parameter, a move out of a lent instance that the unit
+# completes later, and the end of a local whose argument holds a sum have a line
+# before the class is complete (20 to 55) and a line after it (73 to 82).  The
+# plugin that reads each body one time gives only the second line of each pair.
+# The compile collected runs a garbage collection at each opportunity, and the
+# copy of a body keeps the trees that the front end folded: the lines of the
+# folded moves are the same in the open body (32 and 33) and in its twin (60 and
+# 61).
+
+compile early src/early.cpp must-consume=on
+flag early -freflection
+exit early pass
+judge early
+finding early must-consume borrow-move-out src/early.cpp:20:50 | planted::move_out_early: token (planted::Token)
+finding early must-consume borrow-move-out src/early.cpp:21:41 | planted::move_result_early: lent() (planted::Token)
+finding early must-consume double-consume src/early.cpp:24:9 | planted::consume_twice_early: token (planted::Token)
+finding early must-consume unconsumed src/early.cpp:26:25 | planted::drop_early: token (planted::Token)
+finding early must-consume borrow-move-out src/early.cpp:41:64 | planted::move_sum_out_early: sum (foundation::core::Option<planted::Key>)
+finding early must-consume unconsumed src/early.cpp:55:19 | planted::end_early: lease (planted::Lease<planted::Holder>)
+finding early must-consume borrow-move-out src/early.cpp:73:49 | planted::move_out_late: token (planted::Token)
+finding early must-consume borrow-move-out src/early.cpp:74:40 | planted::move_result_late: lent() (planted::Token)
+finding early must-consume double-consume src/early.cpp:77:9 | planted::consume_twice_late: token (planted::Token)
+finding early must-consume unconsumed src/early.cpp:79:24 | planted::drop_late: token (planted::Token)
+finding early must-consume borrow-move-out src/early.cpp:80:63 | planted::move_sum_out_late: sum (foundation::core::Option<planted::Key>)
+finding early must-consume unconsumed src/early.cpp:82:19 | planted::end_late: lease (planted::Lease<planted::Holder>)
+compile collected src/collected.cpp must-consume=on
+flag collected -freflection --param=ggc-min-expand=0 --param=ggc-min-heapsize=0
+exit collected pass
+judge collected
+finding collected must-consume borrow-move-out src/collected.cpp:24:50 | planted::move_out_early: token (planted::Token)
+finding collected must-consume assign-over-live src/collected.cpp:32:40 | planted::folded_early: third (planted::Empty)
+finding collected must-consume double-consume src/collected.cpp:33:15 | planted::folded_early: second (planted::Empty)
+finding collected must-consume borrow-move-out src/collected.cpp:35:9 | planted::folded_early: token (planted::Token)
+finding collected must-consume assign-over-live src/collected.cpp:60:40 | planted::folded_late: third (planted::Empty)
+finding collected must-consume double-consume src/collected.cpp:61:15 | planted::folded_late: second (planted::Empty)
+finding collected must-consume borrow-move-out src/collected.cpp:63:9 | planted::folded_late: token (planted::Token)

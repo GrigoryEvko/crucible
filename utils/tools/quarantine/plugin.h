@@ -3010,17 +3010,37 @@ inline void add_finding(Kind kind, const AdmitRow* pending, const Place& place, 
 
 // ── The waiting checks ──────────────────────────────────────────────────
 
-// A check of a class or of an object reads the classes that a type reaches.  A
-// class behind a pointer or in a type argument can be incomplete at that time,
-// and the unit can complete it later.  Such a check is open, and it waits: it
-// holds its findings, and the end of the unit runs it again, where each class
-// that the unit completes is complete (plugin.cpp, run_waiting_checks).  Only
-// the last run gives the findings.
-//
-// Runs CHECK about SUBJECT, a class or a declaration, and runs it again at the
-// end of the unit when it is open.  NAME is the part of the entity that the
-// caller gives.  A check that runs inside another check waits by itself.
-void check_or_wait(tree subject, const std::string& name, void (*check)(tree subject, const std::string& name));
+// A check of a class, of an object or of a type of a body reads the classes that
+// a type reaches.  A class behind a pointer or in a type argument can be
+// incomplete at that time, and the unit can complete it later.  Such a check is
+// open, and it waits: it holds its findings, and the end of the unit runs it
+// again, where each class that the unit completes is complete (plugin.cpp,
+// run_waiting_checks).  Only the last run gives the findings.
+
+// The trees that a check reads: a class, a declaration or a type, and the
+// function that holds it, or null.  A check holds each other tree that it reads
+// through them.
+struct CheckSubject {
+    tree subject = NULL_TREE;
+    tree function = NULL_TREE;
+};
+
+// Runs CHECK about SUBJECT, and runs it again at the end of the unit when it is
+// open.  CHECK holds its facts by value.  A check that runs inside another check
+// waits by itself.
+void check_or_wait(CheckSubject subject, const std::function<void()>& check);
+
+// Calls ASK, and returns true when ASK reached a part that it cannot read.  The
+// check in progress does not wait for that part.
+template <typename Ask>
+bool is_open_question(Ask ask) {
+    unsigned const outer_parts = std::exchange(unread_parts, 0U);
+    ask();
+    return std::exchange(unread_parts, outer_parts) != 0;
+}
+
+// Runs CHECK about SUBJECT at the end of the unit.
+void check_at_end(CheckSubject subject, std::function<void()> check);
 
 // The copy of a body that waits, for a family whose tables hold trees of the
 // body (the kept bodies of plugin.cpp).

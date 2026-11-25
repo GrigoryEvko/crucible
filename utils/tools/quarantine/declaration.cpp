@@ -2806,7 +2806,8 @@ void check_static_reach_locals(tree block, const std::string& prefix, int depth)
     for (; block != NULL_TREE && depth < kBlockDepth; block = BLOCK_CHAIN(block)) {
         for (tree decl = BLOCK_VARS(block); decl != NULL_TREE; decl = DECL_CHAIN(decl)) {
             if (VAR_P(decl) && !DECL_THIS_EXTERN(decl) && decl_storage_duration(decl) != dk_auto) {
-                check_or_wait(decl, prefix + "::" + simple_name(decl), &check_static_reach);
+                check_or_wait({decl},
+                              [decl, entity = prefix + "::" + simple_name(decl)] { check_static_reach(decl, entity); });
             }
         }
         check_static_reach_locals(BLOCK_SUBBLOCKS(block), prefix, depth + 1);

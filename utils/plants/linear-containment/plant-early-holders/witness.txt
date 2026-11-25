@@ -2,10 +2,10 @@
 # while their argument is incomplete (46): library_holder_of of linear.cpp keeps
 # no answer of such a class, so a later local of it is a library holder.  The
 # walk that keeps the answer gives none of these two lines.  The unit completes
-# the class of the static member later, and the argument of a data member, so
-# the two members are library holders too (27 and 53, the waiting checks of
-# plugin.h).  The header is a base file, so the names of the library and the
-# member of the token are also lines of other rules.
+# the class of the static member later, and the argument of a local, of a data
+# member, of a result and of a parameter, so these are library holders too (27,
+# 37, 53, 62 and 63, the waiting checks).  The header is a base file, so the names
+# of the library and the member of the token are also lines of other rules.
 
 compile early src/early.cpp linear-shapes=on sentinel=include/fixy/EarlyHolders.h
 flag early -freflection
@@ -13,8 +13,11 @@ exit early pass
 judge early
 finding early linear-containment library-holder include/fixy/EarlyHolders.h:27:33 | planted::Registry: kept, std::optional
 finding early linear-containment library-holder include/fixy/EarlyHolders.h:31:26 | planted::local_after_a_static_member: held, std::optional
+finding early linear-containment library-holder include/fixy/EarlyHolders.h:37:24 | planted::local_of_an_incomplete_argument: held, std::vector
 finding early linear-containment library-holder include/fixy/EarlyHolders.h:46:24 | planted::local_after_the_argument: held, std::vector
 finding early linear-containment library-holder include/fixy/EarlyHolders.h:53:23 | planted::HoldsLast: kept, std::vector
+finding early linear-containment library-holder include/fixy/EarlyHolders.h:62:27 | planted::result_of_an_incomplete_argument: the return value, std::vector
+finding early linear-containment library-holder include/fixy/EarlyHolders.h:63:68 | planted::parameter_of_an_incomplete_argument: held, std::vector
 finding early escape-doors public-member include/fixy/EarlyHolders.h:16:9 | planted::Token::handle
 finding early quarantine base-std-object include/fixy/EarlyHolders.h:27:33 | std::optional
 finding early quarantine base-std-object include/fixy/EarlyHolders.h:31:26 | std::optional
@@ -24,3 +27,6 @@ finding early quarantine base-std-entity include/fixy/EarlyHolders.h:38:22 | std
 finding early quarantine base-std-object include/fixy/EarlyHolders.h:46:24 | std::vector
 finding early quarantine base-std-entity include/fixy/EarlyHolders.h:47:22 | std::vector::empty
 finding early quarantine base-std-object include/fixy/EarlyHolders.h:53:23 | std::vector
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:62:27 | std::vector
+finding early quarantine base-std-object include/fixy/EarlyHolders.h:63:68 | std::vector
+finding early quarantine base-std-entity include/fixy/EarlyHolders.h:63:93 | std::vector::empty

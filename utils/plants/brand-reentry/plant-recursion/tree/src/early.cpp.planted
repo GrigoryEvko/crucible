@@ -1,0 +1,35 @@
+// A function that gives a branded value to a callee that can call the function
+// again.  The type of the value reaches the carrier of the brand, which is
+// incomplete in the body of the function (the waiting checks of plugin.h).
+namespace planted {
+
+// A class that names its argument.
+template <class T>
+struct Slot {
+    int value = 0;
+};
+
+using Brand = decltype([] {});
+struct Carrier;
+
+void recurse(int depth);
+
+template <class Value>
+void visit(Value value, int depth) {
+    static_cast<void>(value);
+    if (depth > 0) {
+        recurse(depth - 1);
+    }
+}
+
+void recurse(int depth) {
+    Slot<Carrier> const slot{};
+    visit(slot, depth);
+}
+
+struct Carrier {
+    using brand_type = Brand;
+    int value = 0;
+};
+
+}  // namespace planted

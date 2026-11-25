@@ -56,4 +56,13 @@ struct Last {
     Token token{1};
 };
 
+// A result and a parameter of a class that a later line completes the argument
+// of.
+struct Final;
+inline std::vector<Final> result_of_an_incomplete_argument() { return {}; }
+inline bool parameter_of_an_incomplete_argument(std::vector<Final> held) { return held.empty(); }
+struct Final {
+    Token token{1};
+};
+
 }  // namespace planted

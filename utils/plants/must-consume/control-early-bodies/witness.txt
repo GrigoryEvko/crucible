@@ -1,0 +1,6 @@
+# Bodies that name a class which is incomplete there, and that have no line at
+# the end of the unit.
+
+compile early src/early.cpp must-consume=on
+flag early -freflection
+exit early pass

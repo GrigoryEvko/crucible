@@ -1,7 +1,16 @@
-# A branded value in a call whose callee calls the minting function again.
+# A branded value in a call whose callee calls the minting function again.  The
+# compile early has a value whose type reaches the carrier of the brand, and that
+# carrier is incomplete in the body of the call (27, the waiting checks of
+# plugin.h).  The plugin that asks one time for the brand of an argument gives
+# no such line.
 
 compile recursion src/recursion.cpp linear-shapes=on
 flag recursion -freflection
 exit recursion pass
 judge recursion
 finding recursion brand-reentry reentry src/recursion.cpp:31:10 | planted::recurse: planted::visit, the brand of src/recursion.cpp:12
+compile early src/early.cpp linear-shapes=on
+flag early -freflection
+exit early pass
+judge early
+finding early brand-reentry reentry src/early.cpp:27:10 | planted::recurse: planted::visit, the brand of src/early.cpp:12

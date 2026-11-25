@@ -1,0 +1,86 @@
+// Bodies that name a linear class which is incomplete there (the kept bodies of
+// plugin.cpp).  A body that names only a reference needs no complete class.  Each
+// function with the suffix _early comes before the class is complete, and its
+// twin comes after it.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct Token;
+struct Holder;
+
+void take(Token&& token) noexcept;
+Token& lent() noexcept;
+
+void move_out_early(Token& token) noexcept { take(std::move(token)); }
+void move_result_early() noexcept { take(std::move(lent())); }
+void consume_twice_early(Token&& token) noexcept {
+    take(std::move(token));
+    take(std::move(token));
+}
+void drop_early(Token&& token) noexcept { static_cast<void>(token); }
+
+// An instance that the unit completes later: a call in parentheses looks no
+// function up in the class of its argument, so no code before needs it.
+struct [[= ::foundation::linear::linear{}]] Key {
+    int handle = 0;
+    constexpr explicit Key(int value) noexcept : handle{value} {}
+    constexpr Key(Key&&) noexcept = default;
+    constexpr Key& operator=(Key&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Key(const Key&) = delete;
+};
+void take_sum(Option<Key>&& sum) noexcept;
+void move_sum_out_early(Option<Key>& sum) noexcept { (take_sum)(std::move(sum)); }
+
+// A class whose end of the scope is a door, unless its argument holds a sum.
+template <class T>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Lease {
+    int word = 0;
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+void end_early() {
+    Lease<Holder> lease{};
+    static_cast<void>(lease.word);
+}
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+struct Holder {
+    Option<Key> held{};
+};
+
+void move_out_late(Token& token) noexcept { take(std::move(token)); }
+void move_result_late() noexcept { take(std::move(lent())); }
+void consume_twice_late(Token&& token) noexcept {
+    take(std::move(token));
+    take(std::move(token));
+}
+void drop_late(Token&& token) noexcept { static_cast<void>(token); }
+void move_sum_out_late(Option<Key>& sum) noexcept { (take_sum)(std::move(sum)); }
+void end_late() {
+    Lease<Holder> lease{};
+    static_cast<void>(lease.word);
+}
+
+}  // namespace planted

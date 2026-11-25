@@ -87,7 +87,9 @@
 //     event whose location is in the statement: after the start of the
 //     statement and before the start of the next statement.  The front end
 //     collects no garbage between such an event and the PLUGIN_PRE_GENERICIZE
-//     of its function, and each collection clears the records of the events.
+//     of its function, and each collection clears the records of the events.  A
+//     body that waits for the end of the unit keeps its records with its copy
+//     (the bodies).
 //
 // Dropped elements
 //     The front end folds an element of a braced list that moves an empty
@@ -124,6 +126,11 @@
 //     error.  A parse and an object compile read the same trees.
 //     is_body_read_here of plugin.h gives these bodies, as it gives them to
 //     the rules binding-hook and borrow-match and to the closed tags.
+//     A body can name a class that is incomplete there, such as a parameter by
+//     a reference, or an instance that no code before needs.  The unit can
+//     complete the class later, and its facts come then.  So the rules of this
+//     family read such a body again at the end of the unit, on a copy (the kept
+//     bodies of plugin.cpp), and only the last reading gives findings.
 //
 // Kinds
 //     unconsumed          the object leaves its scope at an exit, and no
@@ -800,6 +807,12 @@ struct ElementFold {
 
 std::vector<ElementFold> element_folds;
 
+// The place where the code of LOCATION stands in the file, for the events and
+// the statements that the folds compare.
+location_t expansion_point(location_t location) {
+    return linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
+}
+
 // The accessors: the DECL_UID of the field of *this that the return statements
 // of each accessor give, by the DECL_UID of the accessor, or kWholeObject.  No
 // collection reuses a DECL_UID, so the facts stay for the unit.
@@ -893,13 +906,21 @@ bool can_move(tree type, int depth) {
 
 // The class whose facts a value of TYPE has: the main variant of TYPE, or of
 // the element of an array.  Null for each other type and for an incomplete
-// class.
+// class, whose facts come later, so the reading in progress is open (the waiting
+// checks of plugin.h).
 tree complete_class_of(tree type) {
     if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
         return NULL_TREE;
     }
     type = TYPE_MAIN_VARIANT(element_type_of(type));
-    return CLASS_TYPE_P(type) && COMPLETE_TYPE_P(type) ? type : NULL_TREE;
+    if (!CLASS_TYPE_P(type)) {
+        return NULL_TREE;
+    }
+    if (!COMPLETE_TYPE_P(type)) {
+        ++unread_parts;
+        return NULL_TREE;
+    }
+    return type;
 }
 
 // Calls VISIT for the type of each part that a value of the complete class
@@ -1098,7 +1119,10 @@ bool is_linear_sum(tree type) {
         return false;
     }
     type = TYPE_MAIN_VARIANT(type);
-    return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
+    if (!CLASS_TYPE_P(type) || complete_class_of(type) == NULL_TREE) {
+        return false;
+    }
+    return carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
 }
 
 // True when TYPE is or holds a linear sum, in the walk WALK of
@@ -1443,19 +1467,34 @@ bool is_move_assignment_call(tree call) {
         && CLASS_TYPE_P(TREE_TYPE(source_type));
 }
 
+// The type that a member function with an implicit object parameter and no
+// qualifier && gives by an lvalue reference, or null for each other function
+// (the accessors).
+tree accessed_type(tree function) {
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
+        || !DECL_IOBJ_MEMBER_FUNCTION_P(function) || DECL_CONSTRUCTOR_P(function) || DECL_DESTRUCTOR_P(function)
+        || DECL_ASSIGNMENT_OPERATOR_P(function) || FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function))) {
+        return NULL_TREE;
+    }
+    tree result = TREE_TYPE(TREE_TYPE(function));
+    return result != NULL_TREE && TYPE_REF_P(result) && !TYPE_REF_IS_RVALUE(result) ? TREE_TYPE(result) : NULL_TREE;
+}
+
 // True for an accessor: a member function with an implicit object parameter
 // and no qualifier &&, that gives an lvalue reference to a linear value, such
 // as operator* or value() of std::optional (the accessors).  A member function
 // with the qualifier && consumes its object by itself.
 bool is_accessor(tree function) {
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_LANG_SPECIFIC(function) == nullptr
-        || !DECL_IOBJ_MEMBER_FUNCTION_P(function) || DECL_CONSTRUCTOR_P(function) || DECL_DESTRUCTOR_P(function)
-        || DECL_ASSIGNMENT_OPERATOR_P(function) || FUNCTION_RVALUE_QUALIFIED(TREE_TYPE(function))) {
-        return false;
-    }
-    tree result = TREE_TYPE(TREE_TYPE(function));
-    return result != NULL_TREE && TYPE_REF_P(result) && !TYPE_REF_IS_RVALUE(result)
-        && is_linear_type(TREE_TYPE(result));
+    tree type = accessed_type(function);
+    return type != NULL_TREE && is_linear_type(type);
+}
+
+// True for an accessor, and for a function that is one when the unit completes
+// the class that it gives later.
+bool can_be_accessor(tree function) {
+    tree type = accessed_type(function);
+    tree value = type != NULL_TREE ? element_type_of(type) : NULL_TREE;
+    return is_accessor(function) || (value != NULL_TREE && CLASS_TYPE_P(value) && !COMPLETE_TYPE_P(value));
 }
 
 // The reference helpers: a function that gives back one of its parameters by
@@ -2111,9 +2150,8 @@ private:
 
     // The dropped elements: each fold of an element that moves a local or a
     // parameter of this function, whose folded tree the body and the originals
-    // of its folds do not hold, with the statement that owns the move.  The
-    // walk takes the folds of this function from the list.  Complexity: linear
-    // in the body, and in the folds times the statements.
+    // of its folds do not hold, with the statement that owns the move.
+    // Complexity: linear in the body, and in the folds times the statements.
     void collect_orphans() {
         auto is_of_function = [this](const ElementFold& fold) { return DECL_CONTEXT(fold.moved) == function_; };
         std::vector<ElementFold> folds;
@@ -2124,11 +2162,6 @@ private:
         }
         if (folds.empty()) {
             return;
-        }
-        // The walk of a summary leaves the folds to the walk of the findings.
-        if (purpose_ == WalkPurpose::findings) {
-            element_folds.erase(std::remove_if(element_folds.begin(), element_folds.end(), is_of_function),
-                                element_folds.end());
         }
         PresenceWalk walk;
         tree body = DECL_SAVED_TREE(function_);
@@ -3551,10 +3584,6 @@ private:
         }
     }
 
-    static location_t expansion_point(location_t location) {
-        return linemap_resolve_location(line_table, location, LRK_MACRO_EXPANSION_POINT, nullptr);
-    }
-
     static bool is_void_constant(tree node) {
         node = node != NULL_TREE ? tree_strip_any_location_wrapper(node) : node;
         return node != NULL_TREE && TREE_CODE(node) == VOID_CST;
@@ -3765,7 +3794,7 @@ private:
             return;
         }
         body_type = TYPE_MAIN_VARIANT(body_type);
-        if (!CLASS_TYPE_P(body_type) || LAMBDA_TYPE_P(body_type) || !COMPLETE_TYPE_P(body_type)
+        if (!CLASS_TYPE_P(body_type) || LAMBDA_TYPE_P(body_type) || complete_class_of(body_type) == NULL_TREE
             || TYPE_NAME(body_type) == NULL_TREE) {
             return;
         }
@@ -5699,7 +5728,7 @@ void check_static_object(tree decl, const std::string& owner) {
     if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
         return;
     }
-    check_or_wait(decl, owner, &judge_static_object);
+    check_or_wait({decl}, [decl, owner] { judge_static_object(decl, owner); });
     check_class(type);
 }
 
@@ -5790,7 +5819,7 @@ void check_class(tree type, int depth) {
         }
     }
     if (is_reported_for(type)) {
-        check_or_wait(type, qualified_name(decl), &judge_class);
+        check_or_wait({type}, [type, name = qualified_name(decl)] { judge_class(type, name); });
     }
 }
 
@@ -5822,31 +5851,49 @@ std::vector<tree> fresh_arguments_of(tree function) {
     return fresh;
 }
 
+// The findings of check_signature for the result RESULT.
+void judge_result(tree function, tree result) {
+    std::string name = function_text(function);
+    location_t location = DECL_SOURCE_LOCATION(function);
+    if (tree holder = library_holder_of(result)) {
+        record_shape(Kind::linear_library_holder, location,
+                     name + ": the return value, " + qualified_name(TYPE_MAIN_DECL(holder)));
+    }
+    if (tree brand = unbound_brand(result, function)) {
+        record_shape(Kind::brand_escaped_return, location, name + ": " + brand_text(brand));
+    }
+    std::vector<tree> held;
+    collect_brands(result, held);
+    for (tree fresh : fresh_arguments_of(function)) {
+        if (is_scope_brand(fresh) && std::find(held.begin(), held.end(), fresh) != held.end()) {
+            record_shape(Kind::brand_scope_return, location,
+                         name + ": the result " + type_text(result) + ", " + brand_text(fresh));
+        }
+    }
+}
+
+// The findings of check_signature for the parameter PARAMETER of the type TYPE.
+// The front end gives a parameter by an invisible reference the type of that
+// reference after PLUGIN_PRE_GENERICIZE.
+void judge_parameter(tree function, tree parameter, tree type) {
+    if (tree holder = library_holder_of(type)) {
+        record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(parameter),
+                     function_text(function) + ": " + simple_name(parameter) + ", "
+                         + qualified_name(TYPE_MAIN_DECL(holder)));
+    }
+}
+
 // The checks of the signature of a function whose body the unit reads: a
 // return value and a parameter of a class of the library with a linear
 // argument, a fresh brand that the function made and returns, and a scope
-// brand that the function mints and returns (the scope brands).
+// brand that the function mints and returns (the scope brands).  A type that
+// reaches an incomplete class waits for the end of the unit (the waiting
+// checks).
 void check_signature(tree function) {
-    std::string name = function_text(function);
-    location_t location = DECL_SOURCE_LOCATION(function);
     tree result = TREE_TYPE(TREE_TYPE(function));
     if (!DECL_CONSTRUCTOR_P(function) && !DECL_DESTRUCTOR_P(function) && result != NULL_TREE
         && !uses_template_parms(result)) {
-        if (tree holder = library_holder_of(result)) {
-            record_shape(Kind::linear_library_holder, location,
-                         name + ": the return value, " + qualified_name(TYPE_MAIN_DECL(holder)));
-        }
-        if (tree brand = unbound_brand(result, function)) {
-            record_shape(Kind::brand_escaped_return, location, name + ": " + brand_text(brand));
-        }
-        std::vector<tree> held;
-        collect_brands(result, held);
-        for (tree fresh : fresh_arguments_of(function)) {
-            if (is_scope_brand(fresh) && std::find(held.begin(), held.end(), fresh) != held.end()) {
-                record_shape(Kind::brand_scope_return, location,
-                             name + ": the result " + type_text(result) + ", " + brand_text(fresh));
-            }
-        }
+        check_or_wait({result, function}, [function, result] { judge_result(function, result); });
         check_class(result);
     }
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
@@ -5855,10 +5902,8 @@ void check_signature(tree function) {
             continue;
         }
         check_class(type);
-        if (tree holder = library_holder_of(type)) {
-            record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(parameter),
-                         name + ": " + simple_name(parameter) + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
-        }
+        check_or_wait({parameter, function},
+                      [function, parameter, type] { judge_parameter(function, parameter, type); });
     }
 }
 
@@ -6125,7 +6170,16 @@ void check_assignment_target(tree target, ObjectForm form, location_t location, 
                  walk.name + ": " + object + " (" + linear_type_text(type) + ")");
 }
 
-// The rules at a call: drop-door, and the call graph of brand-reentry.
+// Adds a call of CALLEE in FUNCTION with an argument that holds BRAND to the
+// branded calls (the rule brand-reentry).
+void note_branded_call(tree function, int callee, const std::string& entity, tree brand, location_t location) {
+    call_graph.branded_calls.push_back(
+        BrandedCall{DECL_UID(function), callee, location, entity + ", " + brand_text(brand)});
+}
+
+// The rules at a call: drop-door, and the call graph of brand-reentry.  A type
+// that reaches an incomplete class waits for the end of the unit (the waiting
+// checks).
 void check_call(tree call, ShapeWalk& walk) {
     tree callee = cp_get_callee_fndecl_nofold(call);
     if (callee == NULL_TREE || TREE_CODE(callee) != FUNCTION_DECL) {
@@ -6140,11 +6194,20 @@ void check_call(tree call, ShapeWalk& walk) {
         if (type == NULL_TREE || (index == 0 && DECL_IOBJ_MEMBER_FUNCTION_P(callee))) {
             continue;
         }
-        if (tree brand = unbound_brand(type, walk.function)) {
-            call_graph.branded_calls.push_back(
-                BrandedCall{DECL_UID(walk.function), DECL_UID(callee), location,
-                            walk.name + ": " + function_text(callee) + ", " + brand_text(brand)});
+        tree brand = NULL_TREE;
+        bool const is_open = is_open_question([&] { brand = unbound_brand(type, walk.function); });
+        if (brand != NULL_TREE) {
+            note_branded_call(walk.function, DECL_UID(callee), walk.name + ": " + function_text(callee), brand,
+                              location);
             break;
+        }
+        if (is_open) {
+            check_at_end({type, walk.function}, [type, function = walk.function, uid = DECL_UID(callee), location,
+                                                 entity = walk.name + ": " + function_text(callee)] {
+                if (tree late = unbound_brand(type, function)) {
+                    note_branded_call(function, uid, entity, late, location);
+                }
+            });
         }
     }
     if (walk.is_exempt_from_drops || count < 1) {
@@ -6170,25 +6233,17 @@ void check_call(tree call, ShapeWalk& walk) {
     }
 }
 
-// A local of the body: a class of the library with a linear argument, a
-// container that holds a fresh brand, and a function pointer whose type holds
-// one.  A local whose initializer is a call that gives the same type takes the
-// type of that callee, so the signature of the callee holds the finding.
-void check_local(tree decl, const ShapeWalk& walk) {
+// The findings of check_local for the local DECL of FUNCTION.
+void judge_local(tree function, tree decl, bool is_from_call) {
     tree type = TREE_TYPE(decl);
-    if (type == NULL_TREE || type == error_mark_node || DECL_ARTIFICIAL(decl) || uses_template_parms(type)) {
-        return;
-    }
-    check_class(type);
-    bool is_from_call = walk.from_call.count(decl) != 0 || is_call_of_type(DECL_INITIAL(decl), type);
-    std::string entity = walk.name + ": " + simple_name(decl);
+    std::string entity = function_text(function) + ": " + simple_name(decl);
     tree holder = library_holder_of(type);
     if (holder != NULL_TREE && !is_from_call) {
         record_shape(Kind::linear_library_holder, DECL_SOURCE_LOCATION(decl),
                      entity + ", " + qualified_name(TYPE_MAIN_DECL(holder)));
     }
     check_arena_object(decl, entity, DECL_SOURCE_LOCATION(decl), false);
-    tree brand = unbound_brand(type, walk.function);
+    tree brand = unbound_brand(type, function);
     if (brand == NULL_TREE) {
         return;
     }
@@ -6201,11 +6256,41 @@ void check_local(tree decl, const ShapeWalk& walk) {
     }
 }
 
+// A local of the body: a class of the library with a linear argument, a
+// container that holds a fresh brand, and a function pointer whose type holds
+// one.  A local whose initializer is a call that gives the same type takes the
+// type of that callee, so the signature of the callee holds the finding.  A
+// local whose type reaches an incomplete class waits for the end of the unit
+// (the waiting checks).
+void check_local(tree decl, const ShapeWalk& walk) {
+    tree type = TREE_TYPE(decl);
+    if (type == NULL_TREE || type == error_mark_node || DECL_ARTIFICIAL(decl) || uses_template_parms(type)) {
+        return;
+    }
+    check_class(type);
+    bool const is_from_call = walk.from_call.count(decl) != 0 || is_call_of_type(DECL_INITIAL(decl), type);
+    tree const function = walk.function;
+    check_or_wait({decl, function}, [function, decl, is_from_call] { judge_local(function, decl, is_from_call); });
+}
+
+// The findings of check_named_static for the variable DECL, which FUNCTION names
+// at LOCATION.
+void judge_named_static(tree function, tree decl, location_t location) {
+    std::string entity = function_text(function) + ": " + qualified_name(decl);
+    std::vector<tree> held;
+    collect_brands(TREE_TYPE(decl), held);
+    if (tree scope = first_scope_brand(held)) {
+        record_shape(Kind::brand_scope_static, location, entity + ", " + brand_text(scope));
+    }
+    check_arena_object(decl, entity, location, true);
+}
+
 // A variable outside each function that a body names, such as a static data
 // member or an instance of a variable template: each one has static or thread
 // storage duration.  A scope brand in its type is the kind scope-static (the
 // scope brands).  The walk of a body reads each local of static storage
-// duration in its BIND_EXPR.
+// duration in its BIND_EXPR.  A variable whose type reaches an incomplete class
+// waits for the end of the unit (the waiting checks).
 void check_named_static(tree decl, const ShapeWalk& walk) {
     if (!VAR_P(decl) || decl_function_context(decl) != NULL_TREE) {
         return;
@@ -6214,14 +6299,9 @@ void check_named_static(tree decl, const ShapeWalk& walk) {
     if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
         return;
     }
-    std::vector<tree> held;
-    collect_brands(type, held);
     location_t location = walk.last_location != UNKNOWN_LOCATION ? walk.last_location : DECL_SOURCE_LOCATION(decl);
-    if (tree scope = first_scope_brand(held)) {
-        record_shape(Kind::brand_scope_static, location,
-                     walk.name + ": " + qualified_name(decl) + ", " + brand_text(scope));
-    }
-    check_arena_object(decl, walk.name + ": " + qualified_name(decl), location, true);
+    tree const function = walk.function;
+    check_or_wait({decl, function}, [function, decl, location] { judge_named_static(function, decl, location); });
 }
 
 void note_linear_variable(tree variable, ShapeWalk& walk) {
@@ -6785,42 +6865,11 @@ void note_kept_references(tree function) {
     }
 }
 
-void on_pre_genericize_linear(void* gcc_data, void*) {
-    tree function = static_cast<tree>(gcc_data);
-    // A clone of a constructor or a destructor gets a second event on a copy
-    // of the body that cp_genericize lowered (cp/optimize.cc,
-    // maybe_clone_body).  The abstract function had its own event.
-    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
-        || DECL_CLONED_FUNCTION_P(function) || seen_error()) {
-        return;
-    }
-    if (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function)) {
-        return;
-    }
-    if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function)) {
-        return;
-    }
-    // The fact of an accessor serves each caller in this unit, also when the
-    // rule does not read the body of the accessor here (the accessors).
-    if (linear_mode.checks_must_consume && is_accessor(function)) {
-        note_accessor_field(function);
-    }
-    // The summaries of a closure and of a callee serve each caller in this
-    // unit (the summaries).
-    if (linear_mode.checks_must_consume) {
-        if (LAMBDA_FUNCTION_P(function)) {
-            note_closure_fills(function);
-            note_closure_summary(function);
-        } else {
-            note_named_body_summary(function);
-        }
-        note_kept_references(function);
-    }
-    // The rule reads the bodies that is_body_read_here of plugin.h gives (the
-    // bodies), and the place of the function is the place of its findings.
-    if (!is_body_read_here(function, UNKNOWN_LOCATION)) {
-        return;
-    }
+// True when the walk of must-consume read the last function of an event.
+bool is_analyzed = false;
+
+// The findings of the rules of the family in the body of FUNCTION.
+void read_body(tree function) {
     Place place = place_of(DECL_SOURCE_LOCATION(function), Scope::quarantine);
     tree body = DECL_SAVED_TREE(function);
     bool has_linear = has_linear_parameter(function);
@@ -6839,10 +6888,207 @@ void on_pre_genericize_linear(void* gcc_data, void*) {
     } else if (!has_linear) {
         has_linear = cp_walk_tree_without_duplicates(&body, find_linear, nullptr) != NULL_TREE;
     }
-    if (!linear_mode.checks_must_consume || !has_linear) {
+    if (linear_mode.checks_must_consume && has_linear) {
+        is_analyzed = true;
+        analyze_body(function, is_door(function, place));
+    }
+}
+
+// The folds of a body that waits for the end of the unit (the kept bodies of
+// plugin.cpp), by the DECL_UID of its function.  Each tree is a part of the copy
+// of the body, or the copy holds it.
+struct KeptFolds {
+    std::unordered_map<tree, std::vector<FoldEntry>> initializers;
+    std::vector<EmptyAssignment> assignments;
+    std::unordered_map<tree, std::size_t> assignment_of_source;
+    std::vector<ElementFold> elements;
+};
+
+std::unordered_map<unsigned, KeptFolds> kept_folds;
+
+// True when ORIGINAL, the tree before a fold, names a linear value, or a class
+// that is incomplete there and can be linear later.
+bool names_linear(tree original) {
+    unsigned const first_unread = unread_parts;
+    return cp_walk_tree_without_duplicates(&original, find_linear, nullptr) != NULL_TREE
+        || unread_parts != first_unread;
+}
+
+// The callback of cp_walk_tree that finds a folded tree whose original names a
+// linear value, or the source of an empty assignment.
+tree find_linear_fold(tree* node, int* walk_subtrees, void*) {
+    if (TYPE_P(*node)) {
+        *walk_subtrees = 0;
+        return NULL_TREE;
+    }
+    auto const folded = folded_initializers.find(*node);
+    if (folded != folded_initializers.end()) {
+        for (const FoldEntry& entry : folded->second) {
+            if (names_linear(entry.original)) {
+                return *node;
+            }
+        }
+    }
+    return empty_assignment_of_source.count(*node) != 0 ? *node : NULL_TREE;
+}
+
+// True when a walk of the body of FUNCTION can read a fold: an element fold of a
+// local, an empty assignment after the start of the function, or a fold whose
+// original names a linear value.  Complexity: linear in the body and in the
+// originals of its folds.
+bool has_linear_folds(tree function) {
+    for (const ElementFold& fold : element_folds) {
+        if (DECL_CONTEXT(fold.moved) == function) {
+            return true;
+        }
+    }
+    location_t const start = expansion_point(DECL_SOURCE_LOCATION(function));
+    for (const EmptyAssignment& assignment : empty_assignments) {
+        if (linemap_compare_locations(line_table, start, expansion_point(assignment.location)) >= 0) {
+            return true;
+        }
+    }
+    tree body = DECL_SAVED_TREE(function);
+    return cp_walk_tree_without_duplicates(&body, find_linear_fold, nullptr) != NULL_TREE;
+}
+
+// Keeps the folds of the body of FUNCTION with its copy: the folded trees by
+// their twins, and a copy of each tree that the body does not hold.  An original
+// can hold folded trees too, and copy_of adds its twins.  Complexity: linear in
+// the body and in the originals of its folds, and in the empty assignments.
+void keep_folds(tree function, BodyCopy& copy) {
+    if (!has_linear_folds(function)) {
         return;
     }
-    analyze_body(function, is_door(function, place));
+    copy.add_body();
+    KeptFolds folds;
+    std::unordered_map<tree, tree> copies;
+    auto const copy_of = [&](tree node) {
+        auto const made = copies.find(node);
+        return made != copies.end() ? made->second : copies.emplace(node, copy.copy_of(node)).first->second;
+    };
+    std::unordered_map<tree, tree> first_twins;
+    auto const twin_or_copy_of = [&](tree node) {
+        auto const twin = first_twins.find(node);
+        return twin != first_twins.end() ? twin->second : copy_of(node);
+    };
+    std::vector<std::pair<std::size_t, tree>> sources;
+    for (std::size_t index = 0; index < copy.twins.size(); ++index) {
+        auto const [node, twin] = copy.twins[index];
+        first_twins.emplace(node, twin);
+        auto const folded = folded_initializers.find(node);
+        if (folded != folded_initializers.end()) {
+            for (const FoldEntry& entry : folded->second) {
+                folds.initializers[twin].push_back(FoldEntry{entry.object, copy_of(entry.original)});
+            }
+        }
+        auto const source = empty_assignment_of_source.find(node);
+        if (source != empty_assignment_of_source.end()) {
+            sources.emplace_back(source->second, twin);
+        }
+    }
+    for (auto& [folded, entries] : folds.initializers) {
+        for (FoldEntry& entry : entries) {
+            entry.object = entry.object != NULL_TREE ? twin_or_copy_of(entry.object) : NULL_TREE;
+        }
+    }
+    location_t const start = expansion_point(DECL_SOURCE_LOCATION(function));
+    for (std::size_t index = 0; index < empty_assignments.size(); ++index) {
+        const EmptyAssignment& assignment = empty_assignments[index];
+        if (linemap_compare_locations(line_table, start, expansion_point(assignment.location)) < 0) {
+            continue;
+        }
+        for (auto const& [assigned, twin] : sources) {
+            if (assigned == index) {
+                folds.assignment_of_source[twin] = folds.assignments.size();
+            }
+        }
+        folds.assignments.push_back(EmptyAssignment{twin_or_copy_of(assignment.target),
+                                                    twin_or_copy_of(assignment.source), assignment.location});
+    }
+    for (const ElementFold& fold : element_folds) {
+        if (DECL_CONTEXT(fold.moved) == function) {
+            folds.elements.push_back(ElementFold{copy_of(fold.original), twin_or_copy_of(fold.folded),
+                                                 twin_or_copy_of(fold.moved), fold.location});
+        }
+    }
+    kept_folds[DECL_UID(function)] = std::move(folds);
+}
+
+// The folds of the events are of no kept body, so a reading of a kept body has
+// only the folds that the plugin kept with it.
+void take_kept_folds(tree function) {
+    KeptFolds folds = std::move(kept_folds[DECL_UID(function)]);
+    kept_folds.erase(DECL_UID(function));
+    folded_initializers = std::move(folds.initializers);
+    empty_assignments = std::move(folds.assignments);
+    empty_assignment_of_source = std::move(folds.assignment_of_source);
+    element_folds = std::move(folds.elements);
+}
+
+// The facts that the body of FUNCTION gives to its callers, and its findings.
+// The rule reads the findings of the bodies that is_body_read_here of plugin.h
+// gives (the bodies), and the place of the function is the place of its
+// findings.
+void read_function(tree function) {
+    if (state.is_unit_parsed) {
+        take_kept_folds(function);
+    }
+    // The summaries of a closure serve each caller in this unit (the summaries).
+    if (linear_mode.checks_must_consume) {
+        if (LAMBDA_FUNCTION_P(function)) {
+            note_closure_fills(function);
+            note_closure_summary(function);
+        } else {
+            note_named_body_summary(function);
+        }
+    }
+    if (is_body_read_here(function, UNKNOWN_LOCATION)) {
+        read_body(function);
+    }
+}
+
+void on_pre_genericize_linear(void* gcc_data, void*) {
+    tree function = static_cast<tree>(gcc_data);
+    // A clone of a constructor or a destructor gets a second event on a copy
+    // of the body that cp_genericize lowered (cp/optimize.cc,
+    // maybe_clone_body).  The abstract function had its own event.
+    if (function == NULL_TREE || TREE_CODE(function) != FUNCTION_DECL || DECL_SAVED_TREE(function) == NULL_TREE
+        || DECL_CLONED_FUNCTION_P(function) || seen_error()) {
+        return;
+    }
+    if (DECL_ARTIFICIAL(function) && !LAMBDA_FUNCTION_P(function)) {
+        return;
+    }
+    if (DECL_LANG_SPECIFIC(function) != nullptr && DECL_DEFAULTED_FN(function)) {
+        return;
+    }
+    // The fact of an accessor serves each caller in this unit, also when the
+    // rule does not read the body of the accessor here (the accessors).
+    if (linear_mode.checks_must_consume && can_be_accessor(function)) {
+        note_accessor_field(function);
+    }
+    is_analyzed = false;
+    std::size_t const deferred = deferred_findings.size();
+    std::size_t const waiting = waiting_owned_closures.size();
+    if (read_or_keep_body(function, BodyReader{&read_function, nullptr, &keep_folds})) {
+        deferred_findings.resize(deferred);
+        waiting_owned_closures.resize(waiting);
+    }
+    // The fact of a callee serves each caller in this unit (the summaries).  It
+    // takes an incomplete class as a class that can be a sum, so it needs no
+    // second reading.
+    if (linear_mode.checks_must_consume) {
+        note_kept_references(function);
+    }
+    // The walk of the findings takes the element folds of the function.
+    if (is_analyzed) {
+        auto const is_of_function = [function](const ElementFold& fold) {
+            return DECL_CONTEXT(fold.moved) == function;
+        };
+        element_folds.erase(std::remove_if(element_folds.begin(), element_folds.end(), is_of_function),
+                            element_folds.end());
+    }
 }
 
 // PLUGIN_FINISH_TYPE: the class rules for each class that the unit defines

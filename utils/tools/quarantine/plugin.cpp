@@ -502,9 +502,8 @@ void report_unit_fact(const Finding& finding) {
 
 // A check that waits for the end of the unit (the waiting checks of plugin.h).
 struct WaitingCheck {
-    tree subject = NULL_TREE;
-    std::string name;
-    void (*check)(tree subject, const std::string& name) = nullptr;
+    CheckSubject subject;
+    std::function<void()> check;
     std::vector<HeldFinding> findings;  // of the first run
 };
 
@@ -545,7 +544,7 @@ void run_waiting_checks() {
         if (seen_error()) {
             add_held_findings(waiting.findings);
         } else {
-            waiting.check(waiting.subject, waiting.name);
+            waiting.check();
         }
     }
 }
@@ -554,7 +553,10 @@ void run_waiting_checks() {
 // code of the unit names it, so the findings of its first run count.
 // Complexity: linear in the open checks.
 void on_marking(void*, void*) {
-    auto const is_freed = [](const WaitingCheck& waiting) { return !ggc_marked_p(waiting.subject); };
+    auto const is_freed = [](const WaitingCheck& waiting) {
+        tree const function = waiting.subject.function;
+        return !ggc_marked_p(waiting.subject.subject) || (function != NULL_TREE && !ggc_marked_p(function));
+    };
     for (const WaitingCheck& waiting : waiting_checks) {
         if (is_freed(waiting)) {
             add_held_findings(waiting.findings);
@@ -839,16 +841,24 @@ void on_collection(void*, void*) {
 
 }  // namespace
 
-void check_or_wait(tree subject, const std::string& name, void (*check)(tree subject, const std::string& name)) {
+void check_or_wait(CheckSubject subject, const std::function<void()>& check) {
     if (state.is_unit_parsed) {
-        check(subject, name);
+        check();
         return;
     }
     std::vector<HeldFinding> findings;
-    if (run_and_hold([&] { check(subject, name); }, findings)) {
-        waiting_checks.push_back(WaitingCheck{subject, name, check, std::move(findings)});
+    if (run_and_hold(check, findings)) {
+        waiting_checks.push_back(WaitingCheck{subject, check, std::move(findings)});
     } else {
         add_held_findings(findings);
+    }
+}
+
+void check_at_end(CheckSubject subject, std::function<void()> check) {
+    if (state.is_unit_parsed) {
+        check();
+    } else {
+        waiting_checks.push_back(WaitingCheck{subject, std::move(check), {}});
     }
 }
 

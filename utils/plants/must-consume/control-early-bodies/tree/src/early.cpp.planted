@@ -1,0 +1,83 @@
+// Bodies that name a class which is incomplete there, and that have no line at
+// the end of the unit (the kept bodies of plugin.cpp): the class is not linear,
+// the unit never completes it, its end of the scope is a door, or each path
+// consumes it.  The folded moves of an open body, and a move through a helper
+// whose body comes after the call, are moves there too.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+struct Plain;
+struct Never;
+struct Doored;
+struct Token;
+
+void take_plain(Plain&& plain) noexcept;
+void take_never(Never&& never) noexcept;
+void take_doored(Doored&& doored) noexcept;
+void take(Token&& token) noexcept;
+Token& through(Token& token) noexcept;
+
+void move_plain(Plain& plain) noexcept { take_plain(std::move(plain)); }
+void move_never(Never& never) noexcept { take_never(std::move(never)); }
+void drop_doored(Doored&& doored) noexcept { static_cast<void>(doored); }
+void consume(Token&& token, bool is_first) noexcept {
+    if (is_first) {
+        take(std::move(token));
+    } else {
+        take(std::move(through(token)));
+    }
+}
+
+// A linear class whose moves the front end folds.
+struct [[= ::foundation::linear::linear{}]] Empty {
+    constexpr Empty() noexcept = default;
+    constexpr Empty(Empty&&) noexcept {}
+    Empty& operator=(Empty&&) noexcept = default;
+    Empty(const Empty&) = delete;
+};
+void take_empty(Empty&& empty) noexcept;
+struct EmptyPair {
+    Empty first;
+    Empty second;
+};
+void take_pair(EmptyPair&& pair) noexcept;
+
+void folded(Token&& token) noexcept {
+    Empty first;
+    Empty second = std::move(first);
+    take_empty(std::move(second));
+    second = Empty{};
+    Empty third;
+    EmptyPair pair{std::move(second), std::move(third)};
+    take_pair(std::move(pair));
+    take(std::move(token));
+}
+
+Token& through(Token& token) noexcept { return token; }
+
+struct Plain {
+    int word = 0;
+};
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Doored {
+    int word = 0;
+    constexpr Doored() noexcept = default;
+    constexpr Doored(Doored&&) noexcept {}
+    constexpr Doored& operator=(Doored&&) noexcept { return *this; }
+    Doored(const Doored&) = delete;
+    ~Doored() {}
+};
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+}  // namespace planted
