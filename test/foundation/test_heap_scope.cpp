@@ -95,12 +95,136 @@ void two_scopes_name_one_heap(TestRunnerCtx const& test) {
     pass(test, "  two_scopes_name_one_heap: PASSED\n");
 }
 
+// The text of the fatal invariant that an emptied block breaks at the release.
+constexpr ::fixy::TextView kEmptiedBlock{"fatal invariant failed: held.address_ != ::foundation::alloc::AddressWord{}"};
+
+// Two parameters name one block, so the rule use-after-move does not see that
+// the old name moved.  Each function below ends the process: at the release of
+// the old name, and else at its own end.
+//
+// The block is released under the first name, and then under the old name.
+// With a block that a release leaves full, the bin gives one block to two
+// owners.
+template <class Scope, class Block>
+[[noreturn]] void release_twice(Scope& scope, Block& block, Block& old_name) noexcept {
+    scope.release(std::move(block));
+    scope.release(std::move(old_name));
+    ::fixy::fatal("the block was released two times");
+}
+
+// The block moves out under the first name, and the release of the old name
+// follows.
+template <class Scope, class Block>
+[[noreturn]] void release_the_old_name(Scope& scope, Block& block, Block& old_name) noexcept {
+    Block moved{std::move(block)};
+    scope.release(std::move(old_name));
+    scope.release(std::move(moved));
+    ::fixy::fatal("the old name of a moved block was released");
+}
+
+// The block moves out under the first name by an assignment over an empty name,
+// and the release of the old name follows.
+template <class Scope, class Block>
+[[noreturn]] void release_the_old_name_after_an_assignment(Scope& scope, Block& block, Block& old_name,
+                                                           Block& target) noexcept {
+    scope.release(std::move(target));
+    target = std::move(block);
+    scope.release(std::move(old_name));
+    scope.release(std::move(target));
+    ::fixy::fatal("the old name of an assigned block was released");
+}
+
+// A move and a release empty a block, so the release of the old name ends the
+// process.  Each violation runs in a child process, which ends by the abort of
+// the fatal invariant.
+void old_name_of_a_block_ends_the_process(TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            static_cast<void>(
+                heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
+                    auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    release_twice(scope, block, block);
+                    return 0;
+                }));
+        },
+        kEmptiedBlock);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            static_cast<void>(
+                heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
+                    auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    release_the_old_name(scope, block, block);
+                    return 0;
+                }));
+        },
+        kEmptiedBlock);
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            static_cast<void>(
+                heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
+                    auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    auto target = scope.template allocate<alloc::SizeClass{4}>();
+                    release_the_old_name_after_an_assignment(scope, block, block, target);
+                    return 0;
+                }));
+        },
+        kEmptiedBlock);
+    pass(test, "  old_name_of_a_block_ends_the_process: PASSED\n");
+}
+
+// The release of a HeapState takes each raw word, also the address 0, and only
+// a flush checks it.  So a scope can give a block at the address 0.  The
+// optimizer has no fact about a word of a bin, so the release of that block
+// ends the process in each build.
+void block_at_address_zero_ends_the_process(TestRunnerCtx const& test) {
+    ::fixy::check::expect_dies(
+        test,
+        [] noexcept {
+            static_cast<void>(
+                heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
+                    alloc::current_heap().release(alloc::SizeClass{4}, alloc::AddressWord{});
+                    auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    scope.release(std::move(block));
+                    return 0;
+                }));
+        },
+        kEmptiedBlock);
+    pass(test, "  block_at_address_zero_ends_the_process: PASSED\n");
+}
+
+// A block that moved releases as the block that it came from, and two blocks
+// that a scope holds at one time have two addresses.
+void moved_block_releases(TestRunnerCtx const& test) {
+    bool const is_sound = heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
+        auto first = scope.template allocate<alloc::SizeClass{4}>();
+        auto second = scope.template allocate<alloc::SizeClass{4}>();
+        bool const are_apart = first.address() != second.address();
+        alloc::AddressWord const address = first.address();
+        auto moved = std::move(first);
+        bool const is_kept = moved.address() == address;
+        scope.release(std::move(moved));
+        auto again = scope.template allocate<alloc::SizeClass{4}>();
+        bool const is_reused = again.address() == address;
+        scope.release(std::move(again));
+        scope.release(std::move(second));
+        return are_apart && is_kept && is_reused;
+    });
+    CRUCIBLE_TEST_ASSERT(test, is_sound);
+    pass(test, "  moved_block_releases: PASSED\n");
+}
+
 }  // namespace
 
 int main() {
     TestRunnerCtx const test{::foundation::effects::testing::test()};
     scope_gives_and_takes_blocks(test);
     two_scopes_name_one_heap(test);
+    moved_block_releases(test);
+    old_name_of_a_block_ends_the_process(test);
+    block_at_address_zero_ends_the_process(test);
     pass(test, "test_heap_scope: PASSED\n");
     return 0;
 }

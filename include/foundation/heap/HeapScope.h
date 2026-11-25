@@ -144,8 +144,22 @@ public:
 
     LocalBlock(LocalBlock const&) = delete("a block has one owner: two owners would release it two times");
     LocalBlock& operator=(LocalBlock const&) = delete("a block has one owner");
-    constexpr LocalBlock(LocalBlock&&) noexcept = default;
-    constexpr LocalBlock& operator=(LocalBlock&&) noexcept = default;
+
+    // A move gives the block to the target and leaves the source with none, so
+    // the old name of a moved block releases nothing: the release ends the
+    // process (the release of HeapScope).  The rule use-after-move does not see
+    // each such name, as a second reference parameter that names one object.
+    // A self move keeps the block.  The move is user-provided, so the ABI
+    // passes a block by value in memory.
+    constexpr LocalBlock(LocalBlock&& other) noexcept : address_{other.address_} {
+        other.address_ = ::foundation::alloc::AddressWord{};
+    }
+    constexpr LocalBlock& operator=(LocalBlock&& other) noexcept {
+        ::foundation::alloc::AddressWord const taken = other.address_;
+        other.address_ = ::foundation::alloc::AddressWord{};
+        address_ = taken;
+        return *this;
+    }
     ~LocalBlock() = default;
 
     // The first byte of the block, as a number that no path reads through.
@@ -184,12 +198,22 @@ public:
     }
 
     // The block back into the bin of its class, with no read of its owner
-    // entry.  Complexity: O(1), the six instructions of the fast path of the
-    // release.
+    // entry.  The block moves into the frame first, so the old name holds none
+    // after the call, and a block that a move emptied ends the process: the
+    // release of a second name would give one block to two owners.  The test
+    // is a fatal invariant, because a precondition is only an assumption under
+    // the ignore semantic.  It comes after the store into the bin, so a loop of
+    // pairs keeps head in a register, and no code reads the bin before it.  The
+    // test also stays after an inlined allocation.  The release of a HeapState
+    // takes each raw word, and only a flush checks it, so a word of a bin is no
+    // proof that its block is not 0.  Complexity: O(1), the six instructions of
+    // the fast path of the release, and one test with one branch.
     template <::foundation::alloc::SizeClass Class>
     [[gnu::always_inline]] void release(LocalBlock<Class, Brand>&& block) noexcept {
-        heap_->release(Class, block.address_);
-        ::foundation::linear::drop(std::move(block));
+        LocalBlock<Class, Brand> held{std::move(block)};
+        heap_->release(Class, held.address_);
+        CRUCIBLE_FATAL_INVARIANT(held.address_ != ::foundation::alloc::AddressWord{});
+        ::foundation::linear::drop(std::move(held));
     }
 
     // A named block stays with the caller, so a release of it would leave a

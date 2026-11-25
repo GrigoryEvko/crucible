@@ -909,8 +909,12 @@ PROBES: tuple[Probe, ...] = (
     Probe(
         "heap_scope_pairs",
         "a loop of pairs in the body of a heap scope is the loop of the fast paths of the heap state of the thread, "
-        "with no instruction of the scope, the brand or the block type: the scope reads the cell one time and calls "
-        "the cold claim only for the sentinel",
+        "with no instruction of the scope or the brand: the scope reads the cell one time and calls the cold claim "
+        "only for the sentinel.  The release of a block adds one test of its address and one branch to a call of the "
+        "fatal exit in each turn, after the store into the bin, because a moved block holds the address 0 and a word "
+        "of a bin proves nothing of its value.  The loop keeps head in a register, as the raw form does",
+        checks=("fatal",),
+        branches=True,
     ),
     Probe(
         "seat_step_send",

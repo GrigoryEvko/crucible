@@ -27,6 +27,10 @@ static_assert(linear::is_linear_v<heap_scope_check::Block>);
 static_assert(!std::is_copy_constructible_v<heap_scope_check::Block>);
 static_assert(std::is_nothrow_move_constructible_v<heap_scope_check::Block>);
 
+// A move empties the source, so it is not trivial.
+static_assert(!std::is_trivially_move_constructible_v<heap_scope_check::Block>
+              && !std::is_trivially_move_assignable_v<heap_scope_check::Block>);
+
 // A scope lives in the frame of its mint: it does not copy or move.
 static_assert(!std::is_copy_constructible_v<heap_scope_check::Scope>);
 static_assert(!std::is_move_constructible_v<heap_scope_check::Scope>);

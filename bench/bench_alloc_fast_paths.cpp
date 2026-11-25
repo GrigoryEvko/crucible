@@ -74,7 +74,8 @@
 //   with each compare and its branch as one macro-op:
 //     pair           13 instructions, 10 macro-ops, 4 loads, 3 stores: the
 //                    memory operations give the floor, 2.33 cycles
-//     pair, scope    the same loop in the body of the scope: 2.33 cycles
+//     pair, scope    16 instructions, 12 macro-ops, 4 loads, 3 stores, with the
+//                    test of the block at its release: 2.33 cycles
 //     warm allocate  10 instructions, 8 macro-ops, 3 loads, 2 stores: 1.67
 //                    cycles
 //     warm release   10 instructions, 8 macro-ops, 3 loads, 2 stores: 1.67
@@ -227,7 +228,7 @@ struct LoopShape {
 }
 
 constexpr LoopShape kPairShape{.macro_ops = 10.0, .loads = 4.0, .stores = 3.0};
-constexpr LoopShape kScopePairShape{.macro_ops = 10.0, .loads = 4.0, .stores = 3.0};
+constexpr LoopShape kScopePairShape{.macro_ops = 12.0, .loads = 4.0, .stores = 3.0};
 constexpr LoopShape kWarmAllocateShape{.macro_ops = 8.0, .loads = 3.0, .stores = 2.0};
 constexpr LoopShape kWarmReleaseShape{.macro_ops = 8.0, .loads = 3.0, .stores = 2.0};
 // The pair through two calls: four taken branches with a bubble for each call

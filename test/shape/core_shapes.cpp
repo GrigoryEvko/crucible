@@ -1041,7 +1041,8 @@ namespace {
 
 // A loop of pairs in the body of a scope of the heap of the thread: the read
 // of the cell, one compare with the sentinel and its branch to the cold
-// claim, then the two fast paths for each pair, with the heap in a register.
+// claim, then the two fast paths for each pair, with the heap in a register,
+// and one test of the block with a branch to the fatal exit.
 [[gnu::used]] std::uint64_t heap_scope_pairs(std::uint32_t pairs) noexcept {
     return foundation::heap::mint_heap_scope(foundation::effects::testing::test().alloc, [pairs](auto& scope) noexcept {
         std::uint64_t sum = 0;
