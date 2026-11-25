@@ -1,9 +1,15 @@
 // Sentinel TU for fixy/CyclicBuffer.h.  The ring keeps the last N elements,
 // reads the most recent first, and its fill count saturates at N while the
-// cursor keeps counting every claim.  A body borrows one element through a
-// door, and a keyed ring opens a door that writes only with its key.
+// cursor keeps counting every claim.  A ring of Unkeyed writes through its
+// value doors, and a keyed ring lends an element that a body writes only with
+// its key.
 
+#include <fixy/Core.h>
+#include <fixy/Ctx.h>
 #include <fixy/CyclicBuffer.h>
+#include <fixy/check/Check.h>
+#include <foundation/Platform.h>
+#include <foundation/effects/Effect.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -52,18 +58,60 @@ template <class RingType>
     return 0;
 }
 
-// A claim lends the slot to fill to a body, and the write lands in the ring.
-// A pass claims a slot and keeps its element.
-[[nodiscard]] int claim_lends_the_slot_to_fill() {
+// An update changes the element of its slot alone, gives the result of its
+// body, and claims no slot.  A pass claims a slot and keeps its element.
+[[nodiscard]] int update_changes_one_slot() {
     Ring ring{};
-    ring.with_claim([](std::uint64_t& slot) noexcept { slot = 99; });
-    ring.with_claim([](std::uint64_t& slot) noexcept { slot = 7; });
-    if (ring.size() != 2 || value_back(ring, ::fixy::index<0>()) != 7 || value_back(ring, ::fixy::index<1>()) != 99) {
-        return 1;
-    }
+    ring.push(std::uint64_t{99});
+    ring.push(std::uint64_t{7});
+    std::uint64_t const held =
+        ring.update(ring.slot_back(::fixy::index<1>()), [](std::uint64_t& slot) noexcept { return slot++; });
+    if (held != 99 || ring.size() != 2) return 1;
+    if (value_back(ring, ::fixy::index<0>()) != 7 || value_back(ring, ::fixy::index<1>()) != 100) return 2;
     ring.pass_slot();
-    if (ring.size() != 3 || value_back(ring, ::fixy::index<0>()) != 0) return 2;
+    if (ring.size() != 3 || value_back(ring, ::fixy::index<0>()) != 0) return 3;
     return 0;
+}
+
+// A helper that updates a slot of a ring with no key.
+void add_ten(Ring& ring, ::fixy::Index<4> slot) noexcept {
+    ring.update(slot, [](std::uint64_t& element) noexcept { element += 10; });
+}
+
+// A helper that claims a slot while a body of update runs finds whole elements.
+// An update of the same slot loses its step, and a build with the test oracles
+// ends the process there.
+[[nodiscard]] int update_loses_a_nested_step() {
+    Ring ring{};
+    ring.push(std::uint64_t{1});
+    ring.push(std::uint64_t{2});
+    ::fixy::Index<4> const newest = ring.slot_back(::fixy::index<0>());
+    ::fixy::Index<4> const older = ring.slot_back(::fixy::index<1>());
+    ring.update(newest, [&ring, older](std::uint64_t& element) noexcept {
+        add_ten(ring, older);
+        element += 5;
+    });
+    if (value_back(ring, ::fixy::index<0>()) != 7 || value_back(ring, ::fixy::index<1>()) != 11) return 1;
+
+    auto const lose_a_step = [] noexcept {
+        Ring lost{};
+        lost.push(std::uint64_t{1});
+        ::fixy::Index<4> const slot = lost.slot_back(::fixy::index<0>());
+        lost.update(slot, [&lost, slot](std::uint64_t& element) noexcept {
+            add_ten(lost, slot);
+            element += 5;
+        });
+        return value_back(lost, ::fixy::index<0>());
+    };
+    if constexpr (::foundation::has_test_oracles) {
+        ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
+        ::fixy::check::expect_dies(
+            test, [&lose_a_step] noexcept { static_cast<void>(lose_a_step()); },
+            ::fixy::TextView{"a body of update wrote the element that the door then puts back"});
+        return 0;
+    } else {
+        return lose_a_step() == 6 ? 0 : 2;
+    }
 }
 
 // A const ring reads the same slots.
@@ -74,12 +122,12 @@ template <class RingType>
     return value_back(view, ::fixy::index<0>()) == 5 ? 0 : 1;
 }
 
-// The count of the ends of each Step.  A test reads it around a fresh claim.
+// The count of the ends of each Step.  A test reads it around a claim.
 int g_step_ends = 0;
 
 // An element whose value only goes up.  The assignment is deleted, as the
-// assignment of a counter that refuses a write backward is, so only a fresh
-// claim gives its slot a new element.
+// assignment of a counter that refuses a write backward is, so only a claim
+// that ends the old element gives its slot a new element.
 struct Step {
     std::uint64_t value = 7;
 
@@ -89,23 +137,55 @@ struct Step {
     ~Step() { ++g_step_ends; }
 };
 
-// A fresh claim of a full ring ends the oldest element one time and starts a
-// value-initialized element in its slot, which the slot of the newest names.
-[[nodiscard]] int fresh_claim_starts_a_new_element_in_the_slot() {
+[[nodiscard]] Step step_of(std::uint64_t value) noexcept {
+    Step step{};
+    step.value = value;
+    return step;
+}
+
+[[nodiscard]] std::uint64_t value_of(Step const& step) noexcept { return step.value; }
+
+// A push_new of a full ring ends the oldest element one time and starts the
+// new element in its slot, which the slot of the newest names.  An update of
+// an element with no assignment ends it one time, and its copy starts in its
+// place.
+[[nodiscard]] int push_new_starts_a_new_element_in_the_slot() {
     ::fixy::CyclicBuffer<Step, 2> ring{};
-    ring.with_claim([](Step& step) noexcept { step.value = 11; });
-    ring.with_claim([](Step& step) noexcept { step.value = 12; });
+    Step first = step_of(11);
+    Step second = step_of(12);
+    Step third = step_of(13);
+    ring.push_new(std::move(first));
+    ring.push_new(std::move(second));
     const int ends_before = g_step_ends;
-    const std::uint64_t fresh = ring.with_fresh_claim([](Step& step) noexcept {
+    ring.push_new(std::move(third));
+    if (g_step_ends != ends_before + 1) return 1;
+    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), value_of) != 13) return 2;
+    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 3;
+    const int ends_before_update = g_step_ends;
+    ring.update(ring.slot_back(::fixy::index<1>()), [](Step& step) noexcept { step.value += 100; });
+    // The door ends the element of the slot and its own copy.
+    if (g_step_ends != ends_before_update + 2) return 4;
+    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 112) return 5;
+    return 0;
+}
+
+// A fresh claim of a keyed ring that is full ends the oldest element one time
+// and starts a value-initialized element in its slot.
+[[nodiscard]] int fresh_claim_starts_a_new_element_in_the_slot() {
+    auto [ring, key] = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<Step, 2>);
+    ring.with_claim(key, [](Step& step) noexcept { step.value = 11; });
+    ring.with_claim(key, [](Step& step) noexcept { step.value = 12; });
+    const int ends_before = g_step_ends;
+    const std::uint64_t fresh = ring.with_fresh_claim(key, [](Step& step) noexcept {
         std::uint64_t const started = step.value;
         step.value = 13;
         return started;
     });
     if (g_step_ends != ends_before + 1) return 1;
     if (fresh != 7) return 2;
-    auto const read = [](Step const& step) noexcept { return step.value; };
-    if (ring.with_slot(ring.slot_back(::fixy::index<0>()), read) != 13) return 3;
-    if (ring.with_slot(ring.slot_back(::fixy::index<1>()), read) != 12 || ring.size() != 2) return 4;
+    auto const& read = ring;
+    if (read.with_slot(ring.slot_back(::fixy::index<0>()), value_of) != 13) return 3;
+    if (read.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 4;
     return 0;
 }
 
@@ -142,9 +222,11 @@ int main() {
     if (const int failed = starts_empty(); failed != 0) return 10 + failed;
     if (const int failed = reads_most_recent_first(); failed != 0) return 20 + failed;
     if (const int failed = evicts_the_oldest_past_capacity(); failed != 0) return 30 + failed;
-    if (const int failed = claim_lends_the_slot_to_fill(); failed != 0) return 40 + failed;
+    if (const int failed = update_changes_one_slot(); failed != 0) return 40 + failed;
     if (const int failed = const_ring_reads_the_same_slots(); failed != 0) return 50 + failed;
     if (const int failed = fresh_claim_starts_a_new_element_in_the_slot(); failed != 0) return 60 + failed;
     if (const int failed = keyed_ring_writes_with_its_key(); failed != 0) return 70 + failed;
+    if (const int failed = push_new_starts_a_new_element_in_the_slot(); failed != 0) return 80 + failed;
+    if (const int failed = update_loses_a_nested_step(); failed != 0) return 90 + failed;
     return 0;
 }

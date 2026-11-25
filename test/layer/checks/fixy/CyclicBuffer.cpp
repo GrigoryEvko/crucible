@@ -44,12 +44,34 @@ template <std::size_t Back>
 }
 static_assert(push_grows_and_recent_tracks());
 
-[[nodiscard]] consteval bool claim_then_mutate() noexcept {
+// An update writes the slot of its element, and it claims none.
+[[nodiscard]] consteval bool push_then_update() noexcept {
     CB8 b{};
-    b.with_claim([](int& slot) noexcept { slot = 99; });
+    b.push(98);
+    b.update(b.slot_back(index<0>()), [](int& element) noexcept { ++element; });
     return b.size() == 1 && value_back<0>(b) == 99;
 }
-static_assert(claim_then_mutate());
+static_assert(push_then_update());
+
+// A push_new starts an element from its value.
+[[nodiscard]] consteval bool push_new_starts_an_element() noexcept {
+    CB8 b{};
+    b.push_new(98);
+    b.push_new(99);
+    return b.size() == 2 && value_back<0>(b) == 99 && value_back<1>(b) == 98;
+}
+static_assert(push_new_starts_an_element());
+
+// A ring with no key lends no slot that a body writes: not one of a claim, and
+// not one of a slot.
+template <typename Ring>
+concept LendsAClaim = requires(Ring& ring) { ring.with_claim([](typename Ring::value_type&) noexcept {}); };
+template <typename Ring>
+concept LendsAFreshClaim = requires(Ring& ring) { ring.with_fresh_claim([](typename Ring::value_type&) noexcept {}); };
+template <typename Ring>
+concept LendsAWrittenSlot =
+    requires(Ring& ring) { ring.with_slot(ring.next_slot(), [](typename Ring::value_type&) noexcept {}); };
+static_assert(!LendsAClaim<CB8> && !LendsAFreshClaim<CB8> && !LendsAWrittenSlot<CB8>);
 
 [[nodiscard]] consteval bool saturates_and_evicts() noexcept {
     CB8 b{};
@@ -84,10 +106,15 @@ static_assert(cursor_tracks_absolute_count());
 struct ThrowingDefault {
     ThrowingDefault() noexcept(false) {}
 };
+struct CheckBrand {};
+template <typename Element>
+using KeyedRing = CyclicBuffer<Element, 8, CheckBrand>;
 template <typename Ring>
-concept HasFreshClaim = requires(Ring& ring) { ring.with_fresh_claim([](typename Ring::value_type&) noexcept {}); };
-static_assert(HasFreshClaim<CB8>);
-static_assert(!HasFreshClaim<CyclicBuffer<ThrowingDefault, 8>>);
+concept HasFreshClaim = requires(Ring& ring, ::foundation::core::LoanKey<CheckBrand>& key) {
+    ring.with_fresh_claim(key, [](typename Ring::value_type&) noexcept {});
+};
+static_assert(HasFreshClaim<KeyedRing<int>>);
+static_assert(!HasFreshClaim<KeyedRing<ThrowingDefault>>);
 
 // The ring gives no reference to an element out: each door lends one element
 // to a body for the time of the call.

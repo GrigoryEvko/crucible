@@ -9,8 +9,10 @@
 #include <cstdint>
 
 int main() {
-    ::fixy::CyclicBuffer<std::uint64_t, 4> ring{};
-    auto const held = ring.with_claim([](std::uint64_t& slot) noexcept { return ::fixy::to(slot); });
+    auto minted = ::fixy::mint_keyed_owner(::fixy::cyclic_buffer_owner<std::uint64_t, 4>);
+    auto& ring = minted.at(::fixy::index<0>());
+    auto& key = minted.at(::fixy::index<1>());
+    auto const held = ring.with_claim(key, [](std::uint64_t& slot) noexcept { return ::fixy::to(slot); });
     static_cast<void>(held);
     return 0;
 }

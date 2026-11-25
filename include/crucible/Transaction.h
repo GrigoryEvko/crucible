@@ -560,16 +560,21 @@ private:
         return ring_.with_slot(slot, static_cast<Body&&>(body));
     }
 
-    // The write of the transaction of a slot, and the write of a fresh claim.
-    // Each takes the key of a keyed log, or the empty value of a log of
-    // Unkeyed, as the proof that the door that calls it holds the key.
+    // The write of the transaction of a slot, and the write of a fresh claim,
+    // through the value doors of the ring.  Body changes a copy of the
+    // transaction of the slot, or a new value-initialized transaction, whose
+    // padding bytes are zero.  Each takes the key of a keyed log, or the empty
+    // value of a log of Unkeyed, as the proof that the door that calls it holds
+    // the key.
     template <class Body>
     void write_slot_(write_key& /*key*/, Slot slot, Body&& body) noexcept {
-        ring_.with_slot(slot, static_cast<Body&&>(body));
+        ring_.update(slot, static_cast<Body&&>(body));
     }
     template <class Body>
     void write_fresh_claim_(write_key& /*key*/, Body&& body) noexcept {
-        ring_.with_fresh_claim(static_cast<Body&&>(body));
+        Transaction fresh{};
+        static_cast<Body&&>(body)(fresh);
+        ring_.push_new(std::move(fresh));
     }
 
     // The place of the claim of the transaction in a slot.

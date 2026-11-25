@@ -2278,11 +2278,36 @@ fixy_neg_compile_test(neg_cyclic_buffer_pass_without_key
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::pass_slot\\(\\)"
   "a keyed CyclicBuffer moves its claim cursor only with its LoanKey: call pass_slot\\(key\\)")
 fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
-  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(key_type&, Body&&\\) &"
   "a later claim reuses each slot of a CyclicBuffer, so the result of a door holds no reference and no address")
 fixy_neg_compile_test(neg_cyclic_buffer_body_keeps_its_slot
-  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")
+# A CyclicBuffer with no key lends no slot that a body writes: a helper, a Ref
+# and a push in the body ended the element that the body held.  Its value doors
+# refuse an element that does not copy or that can throw at a move, and a keyed
+# ring has none of them.
+fixy_neg_compile_test(neg_cyclic_buffer_unkeyed_claim_beside_a_helper
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_claim\\(Body&&\\) &"
+  "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the same slot")
+fixy_neg_compile_test(neg_cyclic_buffer_unkeyed_fresh_claim_beside_a_ref
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_fresh_claim\\(Body&&\\) &"
+  "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the same slot")
+fixy_neg_compile_test(neg_cyclic_buffer_unkeyed_slot_beside_a_push
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(foundation::core::Index<Count>, Body&&\\) &"
+  "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the same slot")
+fixy_neg_compile_test(neg_cyclic_buffer_keyed_update
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "a keyed CyclicBuffer has no update door, because another name of it could write a slot while a body holds it")
+fixy_neg_compile_test(neg_cyclic_buffer_keyed_push_new
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::push_new\\(T&&\\) &"
+  "a keyed CyclicBuffer starts a new element only with its LoanKey: call with_fresh_claim\\(key, body\\)")
+fixy_neg_compile_test(neg_cyclic_buffer_update_of_an_element_that_moves_only
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
+  "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no throw")
+fixy_neg_compile_test(neg_cyclic_buffer_push_new_of_a_throwing_move
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::push_new\\(T&&\\) &"
+  "push_new ends the old element of the slot before the new one starts, so the move of the element does not throw")
 fixy_neg_compile_test(neg_cyclic_buffer_owner_no_default
   "no matching function for call to .mint_keyed_owner\\(const fixy::CyclicBufferOwner<.anonymous.::ThrowingDefault, 4>&\\)."
   "the expression .is_nothrow_default_constructible_v<T> \\[with T = <unnamed>::ThrowingDefault\\]. evaluated to .false.")

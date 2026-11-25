@@ -19,14 +19,29 @@
 // Doors
 //   The ring gives no reference to an element out.  A body borrows one
 //   element for the time of a call, and its result holds no borrow:
-//     with_claim(body)        the slot of the next claim, with its old element
-//     with_fresh_claim(body)  the slot of the next claim, with a new
-//                             value-initialized element in it
-//     with_slot(slot, body)   the element of a slot, to write or to read
+//     with_slot(slot, body)        the element of a slot, to read
+//     with_claim(key, body)        the slot of the next claim, with its old
+//                                  element, to write
+//     with_fresh_claim(key, body)  the slot of the next claim, with a new
+//                                  value-initialized element in it
+//     with_slot(key, slot, body)   the element of a slot, to write
 //   A later claim reuses each slot, so a reference that left a door would name
-//   a later element.  pass_slot() claims a slot and keeps its element, and push
-//   writes the slot of the next claim.  Each of the two writes the claim
-//   cursor, so a keyed ring takes its key at each.
+//   a later element.
+//
+// Value doors
+//   A ring of Unkeyed, the default, is the form of a member owner.  It lends
+//   no element that a body writes, because another name of the ring, such as
+//   a capture, a helper or a Ref, could claim the same slot and end the
+//   element while the body holds it.  It writes through value doors:
+//     push(value)         the slot of the next claim becomes value
+//     push_new(value)     the old element of the slot of the next claim ends,
+//                         and a new one starts from value in its place, also
+//                         for an element with no assignment
+//     update(slot, body)  body changes a copy of the element of a slot, and
+//                         the door then puts the copy in its place (the update
+//                         door of a FixedArray, foundation/core/Array.h)
+//     pass_slot()         claims a slot and keeps its element
+//   No body of a caller runs while one of them writes the storage.
 //
 // Key
 //   A ring of a key brand, from mint_keyed_owner(cyclic_buffer_owner<T, N>)
@@ -34,9 +49,8 @@
 //   LoanKey (the loan key of foundation/core/Frame.h), by move or by a
 //   borrow, and it refuses a body that reaches that key.  So no code
 //   inside a body opens a second door of the ring that writes: not a nested
-//   door, not a helper, and not a Ref of the ring.  A ring of Unkeyed, the
-//   default, is the form of a member owner, and its doors take no key.  The
-//   rule borrow-match reads the body of each such door.
+//   door, not a helper, and not a Ref of the ring.  Its push and its pass
+//   write the claim cursor, so they take the key too.
 
 #include <fixy/Core.h>
 #include <fixy/Cyclic.h>
@@ -79,6 +93,11 @@ template <class Body, class Element>
 concept CyclicStoringBody = ::foundation::linear::HoldsNoLinearValue<Body> && std::is_invocable_v<Body&&, Element&>
                          && ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, Element&>>
                          && (!::foundation::core::StoresNoBorrowOutside<Body>);
+
+// A body that takes its element to write it, and no const element: the refused
+// twin of the slot door of a ring of Unkeyed binds to it.
+template <class Body, class Element>
+concept CyclicWritingBody = std::is_invocable_v<Body&&, Element&> && !std::is_invocable_v<Body&&, Element const&>;
 
 // A body of a door of a ring whose result holds a borrow: the refused twin of
 // the door binds to it.
@@ -231,31 +250,7 @@ public:
         return static_cast<Body&&>(body)(storage_.at(slot));
     }
 
-    // ── The doors of a ring of Unkeyed (the key) ───────────────────────────
-
-    // Body gets the slot of the next claim with its old element, which it
-    // writes.  Complexity: O(1), and the cost of body.
-    template <class Body>
-        requires(!is_keyed_) && CyclicBody<Body, T>
-    [[= ::foundation::linear::borrow_match{}]] constexpr auto with_claim(Body&& body) & noexcept {
-        return static_cast<Body&&>(body)(slot_at_(claim_slot_()));
-    }
-
-    // Body gets the slot of the next claim with a new value-initialized
-    // element in it.  Complexity: O(1), and the cost of body.
-    template <class Body>
-        requires(!is_keyed_) && std::is_nothrow_default_constructible_v<T> && CyclicBody<Body, T>
-    [[= ::foundation::linear::borrow_match{}]] auto with_fresh_claim(Body&& body) & noexcept {
-        return static_cast<Body&&>(body)(fresh_slot_());
-    }
-
-    // Body gets the element of a slot, which it writes.  Complexity: O(1),
-    // and the cost of body.
-    template <class Body>
-        requires(!is_keyed_) && CyclicBody<Body, T>
-    [[= ::foundation::linear::borrow_match{}]] constexpr auto with_slot(Index<N> slot, Body&& body) & noexcept {
-        return static_cast<Body&&>(body)(slot_at_(slot));
-    }
+    // ── The doors of a ring of Unkeyed (the value doors) ───────────────────
 
     constexpr void push(T const& value) noexcept(std::is_nothrow_copy_assignable_v<T>)
         requires(!is_keyed_) && std::is_copy_assignable_v<T>
@@ -267,6 +262,31 @@ public:
         requires(!is_keyed_) && std::is_move_assignable_v<T>
     {
         slot_at_(claim_slot_()) = std::move(value);
+    }
+
+    // Claims the slot of the next claim, ends its old element, and starts a
+    // new element from value in its place.  An element that refuses an
+    // assignment, such as one with a counter that only goes up, recycles its
+    // slots.  The move does not throw, so the slot holds an element after the
+    // door.  Between the end of the old element and the start of the new one,
+    // only the destructor and the move of T run, and no body of a caller, so
+    // no code of the thread reads the slot there.  Complexity: O(1).
+    constexpr void push_new(T&& value) & noexcept
+        requires(!is_keyed_) && std::is_nothrow_move_constructible_v<T>
+    {
+        T* const slot = __builtin_addressof(slot_at_(claim_slot_()));
+        slot->~T();
+        ::new(static_cast<void*>(slot)) T(std::move(value));
+    }
+
+    // Body changes a copy of the element of a slot, and the door then puts the
+    // copy in the place of the element and gives the result of body.  No
+    // reference of the door names the storage of the ring while body runs.
+    // Complexity: O(1), and the cost of body, of one copy and of one move.
+    template <class Body>
+        requires(!is_keyed_) && ::foundation::core::UpdatableElement<T> && CyclicBody<Body, T>
+    [[= ::foundation::linear::borrow_match{}]] constexpr auto update(Index<N> slot, Body&& body) & noexcept {
+        return storage_.update(slot, static_cast<Body&&>(body));
     }
 
     // Claims the slot of the next claim and keeps its element, which then
@@ -335,8 +355,52 @@ public:
         static_cast<void>(claim_slot_());
     }
 
+    // A door of a ring of Unkeyed that lends an element that a body writes
+    // binds to these overloads, so the refusal gives its reason (the value
+    // doors).
+    template <class Body>
+        requires(!is_keyed_) && std::is_invocable_v<Body&&, T&>
+    void with_claim(Body&& body) & = delete(
+        "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the "
+        "same slot: call push, push_new or update(slot, body), or make the ring with mint_keyed_owner and call "
+        "with_claim(key, body)");
+    template <class Body>
+        requires(!is_keyed_) && std::is_invocable_v<Body&&, T&>
+    void with_fresh_claim(Body&& body) & = delete(
+        "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the "
+        "same slot: call push, push_new or update(slot, body), or make the ring with mint_keyed_owner and call "
+        "with_fresh_claim(key, body)");
+    template <class Body>
+        requires(!is_keyed_) && CyclicWritingBody<Body, T>
+    void with_slot(Index<N> slot, Body&& body) & = delete(
+        "a CyclicBuffer with no key lends no slot that a body writes, because another name of the ring could claim the "
+        "same slot: call push, push_new or update(slot, body), or make the ring with mint_keyed_owner and call "
+        "with_slot(key, slot, body)");
+
+    // An update of an element that does not copy, or that can throw at a copy
+    // or a move, binds to this overload, and a push_new of an element that can
+    // throw at a move to the next one, so the refusal gives its reason.
+    template <class Body>
+        requires(!is_keyed_) && (!::foundation::core::UpdatableElement<T>) && std::is_invocable_v<Body&&, T&>
+    void update(Index<N> slot, Body&& body) & = delete(
+        "update gives the body a copy of the element and moves the copy back, so the element copies and moves with no "
+        "throw: start a new element with push_new, or make the ring with mint_keyed_owner and call with_slot(key, "
+        "slot, body)");
+    void push_new(T&& value) & noexcept
+        requires(!is_keyed_) && (!std::is_nothrow_move_constructible_v<T>)
+    = delete("push_new ends the old element of the slot before the new one starts, so the move of the element does not "
+             "throw: a throw between the two leaves the slot with no element");
+
     // A door with no key on a keyed ring binds to these overloads, so the
     // refusal gives its reason.
+    template <class Body>
+        requires is_keyed_
+    void update(Index<N> slot, Body&& body) & = delete(
+        "a keyed CyclicBuffer has no update door, because another name of it could write a slot while a body holds it: "
+        "call with_slot(key, slot, body)");
+    void push_new(T&& value) & noexcept
+        requires is_keyed_
+    = delete("a keyed CyclicBuffer starts a new element only with its LoanKey: call with_fresh_claim(key, body)");
     void pass_slot() noexcept
         requires is_keyed_
     = delete("a keyed CyclicBuffer moves its claim cursor only with its LoanKey: call pass_slot(key)");
@@ -387,13 +451,7 @@ public:
     void with_slot(Index<N> slot, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires(!is_keyed_) && CyclicLinearBody<Body, T>
-    void with_claim(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-    template <class Body>
-        requires(!is_keyed_) && CyclicLinearBody<Body, T>
-    void with_fresh_claim(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-    template <class Body>
-        requires(!is_keyed_) && CyclicLinearBody<Body, T>
-    void with_slot(Index<N> slot, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    void update(Index<N> slot, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
 
     // A body that stores a borrow of its element outside the door binds to
     // these overloads, so the refusal gives its reason (CyclicStoringBody).
@@ -402,13 +460,7 @@ public:
     void with_slot(Index<N> slot, Body&& body) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
         requires(!is_keyed_) && CyclicStoringBody<Body, T>
-    void with_claim(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
-    template <class Body>
-        requires(!is_keyed_) && CyclicStoringBody<Body, T>
-    void with_fresh_claim(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
-    template <class Body>
-        requires(!is_keyed_) && CyclicStoringBody<Body, T>
-    void with_slot(Index<N> slot, Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    void update(Index<N> slot, Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
         requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T, KeyBrand>
     void with_claim(key_type&& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
@@ -432,7 +484,7 @@ public:
     // refusal gives its reason.
     template <class Body>
         requires(!is_keyed_) && CyclicBorrowGivingBody<Body, T>
-    void with_claim(Body&& body) & =
+    void update(Index<N> slot, Body&& body) & =
         delete("a later claim reuses each slot of a CyclicBuffer, so the result of a door holds no reference and no "
                "address: give a plain value");
     template <class Body>
