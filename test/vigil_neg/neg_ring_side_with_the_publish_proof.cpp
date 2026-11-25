@@ -15,9 +15,10 @@ uint32_t drain_with_the_log_proof(crucible::BackgroundThread::TraceRingSide& sid
 uint32_t drain_with_the_log_proof(crucible::BackgroundThread::TraceRingSide& side,
                                   crucible::BackgroundThread::PublishStage const& stage) noexcept {
     return side.with_end(stage, [](crucible::TraceRing::Consumer& ring) noexcept {
-        auto [drained, drained_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 4>);
-        return drained.with_mut(drained_key,
-            [&ring](auto run) noexcept { return crucible::TraceRing::drain(ring, std::move(run)); });
+        auto [drained, drained_key] =
+            ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 4>);
+        return drained.with_mut(
+            drained_key, [&ring](auto run) noexcept { return crucible::TraceRing::drain(ring, std::move(run)); });
     });
 }
 

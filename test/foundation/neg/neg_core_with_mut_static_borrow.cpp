@@ -23,7 +23,7 @@ struct KeepsFirst final {
 }  // namespace
 
 int main() {
-    core::FixedArray<int, 2> array{1, 2};
-    array.with_mut(KeepsFirst{});
+    auto [array, key] = core::mint_keyed_owner(core::fixed_array_owner<int, 2>, core::FixedArray<int, 2>{1, 2});
+    array.with_mut(key, KeepsFirst{});
     return 0;
 }

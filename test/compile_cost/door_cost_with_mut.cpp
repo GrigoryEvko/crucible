@@ -1,5 +1,5 @@
-// The compile cost of the member frame door with_mut of a FixedArray, against
-// a raw loop on a C array of the same elements.  check_door_cost.py compiles
+// The compile cost of the keyed frame door with_mut of a FixedArray, against a
+// raw loop on a C array of the same elements.  check_door_cost.py compiles
 // this unit with the flags of the Scan check of foundation/core/Scan.h, and
 // gives DOOR_COST_FORM the name of one of the four writers below.  With
 // DOOR_COST_COUNT 32, the unit instantiates the writer for 32 seeds, so each
@@ -23,7 +23,10 @@
 
 namespace door_cost {
 
-using Words = ::foundation::core::FixedArray<std::uint64_t, 16>;
+// The brand of the keyed array of the doors.
+struct WordsBrand final {};
+using Words = ::foundation::core::FixedArray<std::uint64_t, 16, WordsBrand>;
+using WordsKey = ::foundation::core::LoanKey<WordsBrand>;
 
 // The result of a summer: a plain value that leaves the frame.
 struct Sum final {
@@ -63,8 +66,8 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 template <std::uint64_t Seed>
 struct DoorWriter final {
-    static void write(Words& words) noexcept {
-        words.with_mut([](auto run) noexcept {
+    static void write(Words& words, WordsKey& key) noexcept {
+        words.with_mut(key, [](auto run) noexcept {
             for (std::uint64_t& word : run) {
                 word = Seed;
             }
@@ -74,8 +77,8 @@ struct DoorWriter final {
 
 template <std::uint64_t Seed>
 struct DoorSummer final {
-    static Sum write(Words& words) noexcept {
-        return words.with_mut([](auto run) noexcept {
+    static Sum write(Words& words, WordsKey& key) noexcept {
+        return words.with_mut(key, [](auto run) noexcept {
             Sum sum{};
             for (std::uint64_t& word : run) {
                 word = Seed;

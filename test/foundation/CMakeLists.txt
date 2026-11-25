@@ -3554,7 +3554,7 @@ foundation_neg_compile_test(neg_core_heap_array_frame_view_kept_past_its_frame
   "no matching function for call to .with_mut\\(std::remove_reference<foundation::core::HeapArray<int>&>::type"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_fixed_array_frame_view_kept_past_its_frame
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")
 foundation_neg_compile_test(neg_core_heap_array_element_ref_kept_past_its_frame
   "no matching function for call to .foundation::core::HeapArray<.anonymous.::Node>::with_element"
@@ -4598,22 +4598,44 @@ foundation_neg_compile_test(neg_core_fixed_array_subscript
 foundation_neg_compile_test(neg_core_fixed_array_at_wider_index
   "no matching function for call to .foundation::core::FixedArray<int, 4>::at\\(foundation::core::Index<8>&\\) const."
   "In function .int read_past\\(const foundation::core::FixedArray<int, 4>&, foundation::core::Index<8>\\).")
-# The element door carries the annotation borrow_match, so the rule
-# borrow-match refuses a second door of the same array in its body.
+# The element door with no key carries the annotation borrow_match, so the
+# rule borrow-match refuses a second door of the same array in its body.
 foundation_neg_compile_test(neg_core_fixed_array_nested_element_door
   "this arm of a borrow match writes the sum that the match reads .mutating-call array."
   "the payload that the arm borrows can end while the arm holds its reference")
+# An array with no key opens no frame, also when the second frame comes
+# through a closure, a helper or a Ref that no rule reads.
 foundation_neg_compile_test(neg_core_fixed_array_nested_frame_door
-  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
-  "the payload that the arm borrows can end while the arm holds its reference")
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_array_frame_in_nested_closure
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_array_frame_in_closure_with_parameter
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_array_frame_through_helper
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_array_frame_through_ref
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_array_write_each_of_two_frames
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedArray with no key opens no frame, because another name of the array could open a second frame")
+# An array with no key lends no element that a body writes, unless two threads
+# can write the element at the same time.
+foundation_neg_compile_test(neg_core_fixed_array_element_in_nested_closure
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_element\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
+  "a FixedArray with no key lends no element that a body writes, because another name of the array could lend")
 # The result of a body of the member frame door leaves the frame, so it holds
 # no borrow and names no brand of the frame.  The refused twin of the door
 # gives the reason.
 foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_view_mut
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) & .with Refused = \\{\\}"
   "the result of a frame door leaves the frame, so it holds no reference and no address")
 foundation_neg_compile_test(neg_core_fixed_array_with_mut_gives_brand
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) & .with Refused = \\{\\}"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) & .with Refused = \\{\\}"
   "and it names no brand of the frame: give a plain value")
 # A keyed FixedArray (the loan key of foundation/core/Frame.h) opens a frame
 # only with its LoanKey, and the gate of each keyed door refuses a body that
@@ -4633,6 +4655,9 @@ foundation_neg_compile_test(neg_core_keyed_array_called_closure
 foundation_neg_compile_test(neg_core_keyed_array_ref_alias
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
   "a keyed FixedArray opens a frame only with its LoanKey")
+foundation_neg_compile_test(neg_core_keyed_array_body_can_throw
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) &"
+  "the body of a keyed frame takes the ViewMut and throws nothing")
 foundation_neg_compile_test(neg_core_loan_key_through_holder
   "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&&, Body&&\\) &"
   "a body of a keyed frame reaches a LoanKey of the brand of its owner")
@@ -5133,26 +5158,26 @@ foundation_neg_compile_test(neg_core_view_mut_get_mut_copied
   "neg_core_view_mut_get_mut_copied\\.cpp:16:[0-9]+: error: use of deleted function .foundation::core::RefMut<T, Brand>::RefMut\\(const foundation::core::RefMut<T, Brand>&\\)"
   "a RefMut is the one writer of its object: a copy would be a second writer")
 foundation_neg_compile_test(neg_core_view_mut_get_mut_of_const
-  "neg_core_view_mut_get_mut_of_const\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::ViewMut<T, Brand, Extent>::get_mut\\(std::size_t\\) const &"
+  "neg_core_view_mut_get_mut_of_const\\.cpp:13:[0-9]+: error: use of deleted function .void foundation::core::ViewMut<T, Brand, Extent>::get_mut\\(std::size_t\\) const &"
   "a const ViewMut writes nothing, so it gives no writer of an element")
 # A reborrow takes its ViewMut by move, and its result holds no borrow.  The
 # fill of a ViewMut takes it by value.
 foundation_neg_compile_test(neg_core_view_mut_reborrow_of_named
-  "neg_core_view_mut_reborrow_of_named\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&, Body&&\\)"
+  "neg_core_view_mut_reborrow_of_named\\.cpp:13:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&, Body&&\\)"
   "a reborrow takes the ViewMut by move: pass std::move\\(view\\)")
 foundation_neg_compile_test(neg_core_view_mut_reborrow_borrow_result
-  "neg_core_view_mut_reborrow_borrow_result\\.cpp:12:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&&, Body&&\\)"
+  "neg_core_view_mut_reborrow_borrow_result\\.cpp:13:[0-9]+: error: use of deleted function .void foundation::core::reborrow\\(ViewMut<T, Brand, Extent>&&, Body&&\\)"
   "the result of a reborrow leaves the frame")
 foundation_neg_compile_test(neg_core_view_mut_fill_of_named
-  "neg_core_view_mut_fill_of_named\\.cpp:9:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
+  "neg_core_view_mut_fill_of_named\\.cpp:10:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
   "a ViewMut is the one writer of its run: a copy would be a second writer")
 # A window takes its ViewMut by move, so the window is the one writer of its
 # elements.  A window of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_take_window_of_named
-  "neg_core_view_mut_take_window_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(ViewMut<T, Brand, Extent>&, std::size_t, std::size_t\\)"
+  "neg_core_view_mut_take_window_of_named\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(ViewMut<T, Brand, Extent>&, std::size_t, std::size_t\\)"
   "a window takes the ViewMut by move: pass std::move\\(view\\)")
 foundation_neg_compile_test(neg_core_view_mut_take_window_of_const
-  "neg_core_view_mut_take_window_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "neg_core_view_mut_take_window_of_const\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::take_window\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a window")
 # The parts of a fixed width of a ViewMut take it by move, so each part is
 # the one writer of its elements.  The parts of a named ViewMut and of a const
@@ -5167,10 +5192,10 @@ foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_of_const
 # writer of its part.  The prefix of a named ViewMut and of a const one do
 # not compile.
 foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_named
-  "neg_core_view_mut_take_prefix_up_to_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "neg_core_view_mut_take_prefix_up_to_of_named\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a prefix takes the ViewMut by move: pass std::move\\(view\\)")
 foundation_neg_compile_test(neg_core_view_mut_take_prefix_up_to_of_const
-  "neg_core_view_mut_take_prefix_up_to_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
+  "neg_core_view_mut_take_prefix_up_to_of_const\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::take_prefix_up_to\\(const ViewMut<T, Brand, Extent>&, std::size_t\\)"
   "a const ViewMut writes nothing, so it gives no writer of a prefix")
 # The parts of a ViewMut and of a View in lockstep take the ViewMut by move
 # too.  The parts of a named ViewMut and of a const one do not compile.
@@ -5184,7 +5209,7 @@ foundation_neg_compile_test(neg_core_view_mut_for_each_chunk_pair_of_const
 # A copy of it that writes, and two plain Views that write the run and leave
 # the body, do not compile.
 foundation_neg_compile_test(neg_core_view_mut_view_writes_through_copy
-  "neg_core_view_mut_view_writes_through_copy\\.cpp:12:[0-9]+: error: assignment of read-only location .second\\.foundation::core::View<const int, 4>::at<0>"
+  "neg_core_view_mut_view_writes_through_copy\\.cpp:13:[0-9]+: error: assignment of read-only location .second\\.foundation::core::View<const int, 4>::at<0>"
   "View<const int, 4>")
 foundation_neg_compile_test(neg_core_view_mut_two_view_writers
   "neg_core_view_mut_two_view_writers\\.cpp:19:[0-9]+: error: conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
@@ -5192,10 +5217,10 @@ foundation_neg_compile_test(neg_core_view_mut_two_view_writers
 # The bytes of a ViewMut take it by move, so the bytes are the one writer of
 # the run.  The bytes of a named ViewMut and of a const one do not compile.
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_named
-  "neg_core_view_mut_byte_view_of_named\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(ViewMut<T, Brand, Extent>&\\)"
+  "neg_core_view_mut_byte_view_of_named\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(ViewMut<T, Brand, Extent>&\\)"
   "the bytes take the ViewMut by move: pass std::move\\(view\\)")
 foundation_neg_compile_test(neg_core_view_mut_byte_view_of_const
-  "neg_core_view_mut_byte_view_of_const\\.cpp:10:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(const ViewMut<T, Brand, Extent>&\\)"
+  "neg_core_view_mut_byte_view_of_const\\.cpp:11:[0-9]+: error: use of deleted function .void foundation::core::byte_view\\(const ViewMut<T, Brand, Extent>&\\)"
   "a const ViewMut writes nothing, so it gives no writer of its bytes")
 # The copy of a View into a ViewMut of one fixed extent takes the ViewMut by
 # value, and only one fixed extent on the two sides gives the copy that
@@ -5204,7 +5229,7 @@ foundation_neg_compile_test(neg_core_view_mut_copy_fixed_of_named
   "neg_core_view_mut_copy_fixed_of_named\\.cpp:10:[0-9]+: error: use of deleted function .foundation::core::ViewMut<T, Brand, Extent>::ViewMut\\(const foundation::core::ViewMut<T, Brand, Extent>&\\)"
   "a ViewMut is the one writer of its run: a copy would be a second writer")
 foundation_neg_compile_test(neg_core_view_mut_copy_fixed_other_extent
-  "neg_core_view_mut_copy_fixed_other_extent\\.cpp:13:[0-9]+: error: ignoring return value of .foundation::core::Result<foundation::core::Unit, foundation::core::LengthMismatch> foundation::core::copy\\(ViewMut<T, Brand, Extent>, std::type_identity_t<View<const T> >\\)"
+  "neg_core_view_mut_copy_fixed_other_extent\\.cpp:14:[0-9]+: error: ignoring return value of .foundation::core::Result<foundation::core::Unit, foundation::core::LengthMismatch> foundation::core::copy\\(ViewMut<T, Brand, Extent>, std::type_identity_t<View<const T> >\\)"
   "declared with attribute .nodiscard.")
 foundation_neg_compile_test(neg_core_with_mut_named_owner
   "use of deleted function .void foundation::core::with_mut\\(Owner&&, Body&&\\) .with Owner = .*HeapArray<int>&"
@@ -5447,10 +5472,10 @@ foundation_neg_compile_test(neg_simd_vec_generator_linear_capture
 # run has one writer.  The runs of a named ViewMut and of a const one do not
 # compile.
 foundation_neg_compile_test(neg_simd_register_run_of_named
-  "neg_simd_register_run_of_named\\.cpp:16:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
+  "neg_simd_register_run_of_named\\.cpp:17:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
   "the runs take the ViewMut by move: pass std::move\\(view\\)")
 foundation_neg_compile_test(neg_simd_register_run_of_const
-  "neg_simd_register_run_of_const\\.cpp:15:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(const foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
+  "neg_simd_register_run_of_const\\.cpp:16:[0-9]+: error: use of deleted function .void foundation::simd::[a-z0-9_]+::for_each_register_run\\(const foundation::core::ViewMut<T, Brand, Extent>&, foundation::core::View<U>, Body\\)"
   "a const ViewMut writes nothing, so it gives no writer of a run")
 
 # The types of a strided view refuse each misuse that they can see: an axis
@@ -5503,7 +5528,7 @@ foundation_neg_compile_test(neg_core_strided_view_mut_copies
 # const, and the body of the scope gives no plain view that writes.
 foundation_neg_compile_test(neg_core_strided_view_mut_view_writes
   "conversion from .StridedView<const int,\\[\\.\\.\\.\\]>. to non-scalar type .StridedView<int,\\[\\.\\.\\.\\]>. requested"
-  "neg_core_strided_view_mut_view_writes\\.cpp:19:[0-9]+: error:")
+  "neg_core_strided_view_mut_view_writes\\.cpp:20:[0-9]+: error:")
 foundation_neg_compile_test(neg_core_strided_walk_const_unique
   "use of deleted function .void foundation::core::walk\\(Body&&, const StridedViewMut<First, Rank, Brand>&, StridedView<Rest, Rank>\\.\\.\\.\\)"
   "a const StridedViewMut writes nothing, so it gives no writer to the walk: walk its view\\(\\) to read")
@@ -5533,7 +5558,7 @@ foundation_neg_compile_test(neg_core_strided_erase_brand_const
 # so it enters no door that names the brand of another run.
 foundation_neg_compile_test(neg_core_view_mut_erased_takes_no_brand
   "conversion from .ViewMut<\\[\\.\\.\\.\\],foundation::brand::DefaultBrand,\\[\\.\\.\\.\\]>. to non-scalar type .ViewMut<\\[\\.\\.\\.\\],main\\(\\)::<lambda\\(\\)>,\\[\\.\\.\\.\\]>. requested"
-  "neg_core_view_mut_erased_takes_no_brand\\.cpp:17:[0-9]+: error: conversion from")
+  "neg_core_view_mut_erased_takes_no_brand\\.cpp:19:[0-9]+: error: conversion from")
 foundation_neg_compile_test(neg_core_view_mut_erase_brand_named
   "use of deleted function .void foundation::core::erase_brand\\(ViewMut<T, Brand, Extent>&\\)"
   "erase_brand consumes the one writer, and a named ViewMut stays with its holder: pass std::move\\(view\\)")
@@ -5636,8 +5661,11 @@ foundation_neg_compile_test(neg_core_fixed_heap_array_two_mutable_views
   "conversion from .View<const int,\\[\\.\\.\\.\\]>. to non-scalar type .View<int,\\[\\.\\.\\.\\]>. requested"
   "neg_core_fixed_heap_array_two_mutable_views\\.cpp:12:")
 foundation_neg_compile_test(neg_core_fixed_heap_array_nested_frame_door
-  "this arm of a borrow match writes the sum that the match reads .mutating-call array."
-  "the payload that the arm borrows can end while the arm holds its reference")
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_mut\\(Body&&\\) &"
+  "a FixedHeapArray with no key opens no frame, because another name of the array could open a second frame")
+foundation_neg_compile_test(neg_core_fixed_heap_array_element_written_with_no_key
+  "use of deleted function .void foundation::core::FixedHeapArray<T, N, Align, KeyBrand>::with_element\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
+  "a FixedHeapArray with no key lends no element that a body writes, because another name of the array could lend")
 # A keyed FixedHeapArray opens a frame only with the LoanKey of its brand, and
 # its gate refuses a body that reaches the key.  It has no value door, and its
 # maker takes the allocation capability.
@@ -5657,10 +5685,10 @@ foundation_neg_compile_test(neg_core_keyed_heap_array_reaches_key
 # a by-move capture of a linear end, and a by-value capture of a struct that
 # holds one, each bind to the linear twin of the door.
 foundation_neg_compile_test(neg_core_element_door_linear_capture
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_element\\(foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_element\\(foundation::core::LoanKey<KeyBrand>&, foundation::core::Index<[A-Za-z]+>, Body&&\\) &"
   "the body holds a linear value by value, and the door calls it with no consume")
 foundation_neg_compile_test(neg_core_frame_door_linear_holder_capture
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) &"
   "the body holds a linear value by value, and the door calls it with no consume")
 # Ref, Box, View, ViewMut and RefMut refuse a LoanKey of each brand as their
 # element, so no body keeps a borrow of a key past the frame that lent it.

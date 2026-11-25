@@ -50,7 +50,8 @@ Dynamic::try_zip<>(FixedWalk&& second) && noexcept {
 CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 
 int main() {
-    auto [values, values_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
+    auto [values, values_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
     return values.with_mut(values_key, [](auto run) noexcept -> int {
         ::foundation::core::View<int const> const dynamic = run.view();
         return dynamic.walk().try_zip(run.view().walk()).is_ok() ? 0 : 1;

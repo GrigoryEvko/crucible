@@ -106,11 +106,7 @@ static_assert(!FrameResult<Proof<CheckBrand>, CheckBrand> && !FrameResult<CheckB
 // ── The frame door of an owner ────────────────────────────────────────
 
 // The free door gives the owner back for a body that gives void, and a
-// Record of the result and the owner for a body that gives a value.  The
-// member door of a FixedArray lends its run in place and gives the result of
-// the body.
-static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().with_mut(WritesNothing{})), void>);
-static_assert(std::is_same_v<decltype(std::declval<FixedArray<int, 4>&>().with_mut(CountsElements{})), std::size_t>);
+// Record of the result and the owner for a body that gives a value.
 static_assert(std::is_same_v<decltype(with_mut(std::declval<HeapArray<int>>(), CountsElements{})),
                              Record<std::size_t, HeapArray<int>>>);
 static_assert(std::is_same_v<decltype(with_mut(std::declval<MaskedArray<int>>(), WritesNothing{})), MaskedArray<int>>);
@@ -193,7 +189,7 @@ static_assert(IsKeyBrand<CheckBrand> && !IsKeyBrand<Unkeyed> && !IsKeyBrand<::fo
 
 // The keyed doors of a FixedArray: the move form gives the key back alone or
 // after the result, and the borrow form gives the result.  A keyed array has
-// no door with no key, and an array of Unkeyed has no keyed door.
+// no door with no key, and an array of Unkeyed has no frame door.
 using KeyedArray = FixedArray<int, 4, CheckBrand>;
 static_assert(
     std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>>(), WritesNothing{})),
@@ -204,9 +200,19 @@ static_assert(std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::
 static_assert(std::is_same_v<decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>&>(),
                                                                            CountsElements{})),
                              std::size_t>);
+static_assert(
+    std::is_same_v<
+        decltype(std::declval<KeyedArray&>().with_mut(std::declval<LoanKey<CheckBrand>&>(), WritesNothing{})), void>);
+// An array of Unkeyed opens no frame at all.  The last line is the control of
+// the test.
+struct LendsWithNoKey final {
+    template <class Body>
+    void with_mut(Body&& body) & noexcept;
+};
 template <class Array>
 constexpr bool opens_with_no_key = requires(Array& array) { array.with_mut(WritesNothing{}); };
-static_assert(!opens_with_no_key<KeyedArray> && opens_with_no_key<FixedArray<int, 4>>);
+static_assert(!opens_with_no_key<KeyedArray> && !opens_with_no_key<FixedArray<int, 4>>);
+static_assert(opens_with_no_key<LendsWithNoKey>);
 template <class Array>
 constexpr bool opens_with_key =
     requires(Array& array, LoanKey<CheckBrand>& key) { array.with_mut(key, WritesNothing{}); };

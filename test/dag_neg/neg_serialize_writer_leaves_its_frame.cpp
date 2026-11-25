@@ -15,9 +15,9 @@
 #include <utility>
 
 int main() {
-    ::fixy::FixedArray<std::byte, 32> image{};
+    auto [image, image_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<std::byte, 32>);
     // Must fail: the Writer leaves the body of the frame.
-    auto escaped = image.with_mut([](auto run) noexcept {
+    auto escaped = image.with_mut(image_key, [](auto run) noexcept {
         using Run = decltype(run);
         crucible::detail_ser::Writer<typename Run::brand_type, Run::extent> writer{.image = std::move(run)};
         crucible::detail_ser::write_header(writer, crucible::TraceNodeKind::REGION, crucible::MerkleHash{},

@@ -6,7 +6,8 @@
 #include <foundation/core/Branded.h>
 
 int main() {
-    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<int, 4>, ::foundation::core::FixedArray<int, 4>{1, 2, 3, 4});
     return storage.with_mut(storage_key, [](auto values) noexcept -> int {
         return ::foundation::core::mint_branded_scope(values.view(), [&values](auto outer) noexcept -> int {
             auto const last = outer.index(3).expect("3 is below the count");

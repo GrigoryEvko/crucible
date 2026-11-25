@@ -351,11 +351,17 @@ view_window(fixy::View<std::uint32_t const> view, std::size_t offset, std::size_
     return array.at(position);
 }
 
-// The or of a bit into one word of a FixedArray through the element door, as
-// the insert of a CPU into a CpuSet does.
-[[gnu::used]] void fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128>& words,
-                                            fixy::Index<128> position, std::uint64_t bit) noexcept {
-    words.with_element(position, [bit](std::uint64_t& word) noexcept { word |= bit; });
+// The brand of the keyed array of the element probe.
+struct ShapeElementBrand final {};
+
+// The or of a bit into one word of a keyed FixedArray through the element
+// door.  A key is an empty class with a trivial move, so it takes no register
+// as an argument.
+[[gnu::used]] void
+fixed_array_with_element(::foundation::core::FixedArray<std::uint64_t, 128, ShapeElementBrand>& words,
+                         ::foundation::core::LoanKey<ShapeElementBrand> key, fixy::Index<128> position,
+                         std::uint64_t bit) noexcept {
+    words.with_element(key, position, [bit](std::uint64_t& word) noexcept { word |= bit; });
 }
 
 // The or of a bit into one element of a HeapArray through the element door.
@@ -382,16 +388,12 @@ struct ShapeBatch final {
     ::foundation::core::FixedArray<std::uint32_t, 64> halves{};
 };
 
-// The pop of a batch: a copy of a run into each array of the batch, each
-// through its member frame door in place, as the drain stage pops the ring.
-[[gnu::used]] void fixed_array_frame_pop(ShapeBatch& batch, fixy::View<std::uint64_t const, 64> words,
+// The fill of a batch: a copy of a run into each array of the batch, each
+// through its value door.
+[[gnu::used]] void fixed_array_copy_from(ShapeBatch& batch, fixy::View<std::uint64_t const, 64> words,
                                          fixy::View<std::uint32_t const, 64> halves) noexcept {
-    batch.words.with_mut([&batch, words, halves](auto word_run) noexcept {
-        batch.halves.with_mut([&word_run, words, halves](auto half_run) noexcept {
-            fixy::copy(std::move(word_run), words);
-            fixy::copy(std::move(half_run), halves);
-        });
-    });
+    batch.words.copy_from(words);
+    batch.halves.copy_from(halves);
 }
 
 // The brands of the keyed arrays of the probes, one for each array.
@@ -405,10 +407,10 @@ struct KeyedShapeBatch final {
     ::foundation::core::FixedArray<std::uint32_t, 64, ShapeHalvesBrand> halves{};
 };
 
-// The pop of a batch of keyed arrays: the pop of fixed_array_frame_pop, with
-// the two keyed frame doors in the borrow form.  A key is an empty class with
-// a trivial move, so it takes no register as an argument, and the code is the
-// code of the doors with no key.
+// The pop of a batch of keyed arrays, as the drain stage pops the ring: a copy
+// of a run into each array of the batch, each through its keyed frame door in
+// place, in the borrow form.  A key is an empty class with a trivial move, so
+// it takes no register as an argument, and the code is the two copies.
 [[gnu::used]] void keyed_array_frame_pop(KeyedShapeBatch& batch, ::foundation::core::LoanKey<ShapeWordsBrand> words_key,
                                          ::foundation::core::LoanKey<ShapeHalvesBrand> halves_key,
                                          fixy::View<std::uint64_t const, 64> words,
@@ -1572,9 +1574,14 @@ struct[[= fixy::derive_protocol{}]] ProtocolRecord final {
 // multiply.
 [[gnu::used]] std::uint64_t protocol_hash(ProtocolRecord const& value) noexcept { return fixy::hash(value).raw(); }
 
-// encode writes each part as its bytes into the run of the frame of out.
-[[gnu::used]] void protocol_encode(ProtocolRecord const& value, fixy::FixedArray<std::byte, 16>& out) noexcept {
-    out.with_mut([&value](auto run) noexcept { fixy::encode(value, std::move(run)); });
+// The brand of the image of the probe.
+struct ShapeImageBrand final {};
+
+// encode writes each part as its bytes into the run of the frame of out.  A
+// key is an empty class, so it takes no register as an argument.
+[[gnu::used]] void protocol_encode(ProtocolRecord const& value, fixy::FixedArray<std::byte, 16, ShapeImageBrand>& out,
+                                   ::foundation::core::LoanKey<ShapeImageBrand> key) noexcept {
+    out.with_mut(key, [&value](auto run) noexcept { fixy::encode(value, std::move(run)); });
 }
 
 // decode reads each part, and it refuses an enumeration value that names no
@@ -2029,13 +2036,13 @@ struct RawShapeBatch final {
     std::uint32_t halves[64];
 };
 
-[[gnu::used]] void fixed_array_frame_pop_raw(RawShapeBatch& batch, std::uint64_t const* words,
+[[gnu::used]] void fixed_array_copy_from_raw(RawShapeBatch& batch, std::uint64_t const* words,
                                              std::uint32_t const* halves) noexcept {
     std::memmove(batch.words, words, sizeof batch.words);
     std::memmove(batch.halves, halves, sizeof batch.halves);
 }
 
-// The pop of a batch of keyed arrays before the keys: the same two copies.
+// The pop of a batch of two arrays: the same two copies.
 [[gnu::used]] void keyed_array_frame_pop_raw(RawShapeBatch& batch, std::uint64_t const* words,
                                              std::uint32_t const* halves) noexcept {
     std::memmove(batch.words, words, sizeof batch.words);

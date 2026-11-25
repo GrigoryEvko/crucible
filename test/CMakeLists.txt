@@ -2372,7 +2372,7 @@ crucible_neg_compile_test(neg_deserialize_region_cross_tag
 # brand of the frame, and a body that returns it binds to the refused twin of
 # the frame door.
 crucible_neg_compile_test(neg_serialize_writer_leaves_its_frame
-  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(Body&&\\) &"
+  "use of deleted function .void foundation::core::FixedArray<T, N, KeyBrand>::with_mut\\(foundation::core::LoanKey<KeyBrand>&, Body&&\\) &"
   "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of the frame")
 
 # kSchemaNameLenRange is the typed gate of a .crtrace schema-name

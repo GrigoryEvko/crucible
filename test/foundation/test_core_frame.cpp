@@ -88,24 +88,25 @@ struct Counted final {
     }
 };
 
-// A FixedArray lends its run in place.  The body writes the elements of the
-// array itself, and a body that gives a value gives it alone.  The door
-// copies no element: the address of the first element in the body is the
-// address of the first element of the array.
+// A keyed FixedArray of initial values lends its run in place.  The body
+// writes the elements of the array itself, and a body that gives a value
+// gives it alone.  The door copies no element: the address of the first
+// element in the body is the address of the first element of the array.
 void test_fixed_array() {
-    FixedArray<int, 4> array{1, 2, 3, 4};
-    array.with_mut([](auto out) noexcept {
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>,
+                                                             FixedArray<int, 4>{1, 2, 3, 4});
+    array.with_mut(key, [](auto out) noexcept {
         CRUCIBLE_TEST_ASSERT(kTest, out.size() == 4);
         for (int& element : out) {
             element *= 10;
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, sum_of(array) == 100);
-    int const total = array.with_mut([](auto out) noexcept { return sum_of(out); });
+    int const total = array.with_mut(key, [](auto out) noexcept { return sum_of(out); });
     CRUCIBLE_TEST_ASSERT(kTest, total == 100 && sum_of(array) == 100);
     View<int const, 4> const elements = array.view();
     bool const is_in_place = array.with_mut(
-        [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
+        key, [elements](auto out) noexcept { return offset_of(elements, View<int const>{out.view()}).is_some(); });
     CRUCIBLE_TEST_ASSERT(kTest, is_in_place);
 }
 
@@ -309,9 +310,10 @@ template <class Run, class Expected>
 // registers and std::bit_cast builds none.  The ViewMut of a FixedArray has
 // the fixed extent of the array, and the ABI passes it in one register.
 void test_brands_and_shape() {
-    FixedArray<int, 2> outer{1, 2};
+    auto [outer, outer_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>, FixedArray<int, 2>{1, 2});
     HeapArray<int> inner = ::foundation::core::mint_heap_array(allocation(), 2, 3);
-    outer.with_mut([&inner](auto outer_view) noexcept {
+    outer.with_mut(outer_key, [&inner](auto outer_view) noexcept {
         inner = with_mut(std::move(inner), [&outer_view](auto inner_view) noexcept {
             using Outer = std::remove_cvref_t<decltype(outer_view)>;
             using Inner = std::remove_cvref_t<decltype(inner_view)>;
@@ -359,8 +361,7 @@ void test_splits() {
     });
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(run, [](std::size_t position) noexcept { return position < 4 ? 1 : 2; }));
 
-    FixedArray<int, 6> fixed{};
-    fixed.with_mut([](auto whole) noexcept {
+    FixedArray<int, 6> const fixed = ::foundation::core::build_fixed_array<int, 6>([](auto whole) noexcept {
         using Whole = std::remove_cvref_t<decltype(whole)>;
         auto [low, high] = split_at<2>(std::move(whole));
         static_assert(decltype(low)::extent == 2 && decltype(high)::extent == 4);
@@ -531,8 +532,8 @@ void test_fill_of_view_mut() {
         is_each_seven = is_each_seven && byte == 7;
     }
     CRUCIBLE_TEST_ASSERT(kTest, is_each_seven);
-    FixedArray<int, 3> fixed{};
-    fixed.with_mut([](auto whole) noexcept { ::foundation::core::fill(std::move(whole), 5); });
+    FixedArray<int, 3> const fixed = ::foundation::core::build_fixed_array<int, 3>(
+        [](auto whole) noexcept { ::foundation::core::fill(std::move(whole), 5); });
     CRUCIBLE_TEST_ASSERT(kTest, holds_each(fixed, [](std::size_t) noexcept { return 5; }));
 }
 
@@ -591,8 +592,7 @@ void test_for_each_chunk() {
 // the brand of the run, and the View of the part at the same position of a
 // second run.  It gives the two rests.
 void test_for_each_chunk_pair() {
-    FixedArray<int, 10> source{};
-    source.with_mut([](auto whole) noexcept {
+    FixedArray<int, 10> const source = ::foundation::core::build_fixed_array<int, 10>([](auto whole) noexcept {
         int value = 0;
         for (int& element : whole) {
             element = ++value;
@@ -622,15 +622,14 @@ void test_for_each_chunk_pair() {
 // Result, because the type gives the two the same count.  The copy has no
 // result to discard, so the call needs no cast to void.
 void test_copy_of_fixed_extent() {
-    FixedArray<int, 3> source{};
-    source.with_mut([](auto whole) noexcept {
+    FixedArray<int, 3> const source = ::foundation::core::build_fixed_array<int, 3>([](auto whole) noexcept {
         whole = ::foundation::core::reborrow(std::move(whole),
                                              [](auto lent) noexcept { ::foundation::core::fill(std::move(lent), 2); });
         auto last = std::move(whole.get_mut(2)).expect("three elements");
         *last = 9;
     });
-    FixedArray<int, 3> target{};
-    target.with_mut([&source](auto whole) noexcept { ::foundation::core::copy(std::move(whole), source.view()); });
+    FixedArray<int, 3> const target = ::foundation::core::build_fixed_array<int, 3>(
+        [&source](auto whole) noexcept { ::foundation::core::copy(std::move(whole), source.view()); });
     CRUCIBLE_TEST_ASSERT(kTest,
                          holds_each(target, [](std::size_t position) noexcept { return position == 2 ? 9 : 2; }));
 }
@@ -646,8 +645,9 @@ int main() {
     // base.
     int calls = 0;
     auto count_call = [&calls]() noexcept { ++calls; };
-    FixedArray<int, 2> pair{3, 4};
-    int const pair_total = pair.with_mut([&count_call](auto out) noexcept {
+    auto [pair, pair_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>, FixedArray<int, 2>{3, 4});
+    int const pair_total = pair.with_mut(pair_key, [&count_call](auto out) noexcept {
         count_call();
         return sum_of(out);
     });

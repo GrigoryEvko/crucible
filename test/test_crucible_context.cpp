@@ -477,10 +477,10 @@ static void test_external_reads_follow_the_region() {
         ::fixy::mint_run_address(owner.view(), 32).expect("the block holds 64 bytes");
     ::fixy::FixedArray<crucible::TensorMeta, 1> first_records{};
     ::fixy::FixedArray<crucible::TensorMeta, 1> second_records{};
-    first_records.with_element(::fixy::index<0>(), [first_data](crucible::TensorMeta& record) noexcept {
+    first_records.update(::fixy::index<0>(), [first_data](crucible::TensorMeta& record) noexcept {
         record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(first_data));
     });
-    second_records.with_element(::fixy::index<0>(), [second_data](crucible::TensorMeta& record) noexcept {
+    second_records.update(::fixy::index<0>(), [second_data](crucible::TensorMeta& record) noexcept {
         record.data_ptr = crucible::external_data_ptr(::foundation::core::foreign_pointer(second_data));
     });
     crucible::TraceRing::Entry entry{};

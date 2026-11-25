@@ -23,8 +23,9 @@ namespace {
 void drain_from_an_allocating_caller(::fixy::BgDrainCtx const&) {
     auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
     crucible::test::with_ring_consumer([&out, &out_key](crucible::TraceRing::Consumer& ring) noexcept {
-        out.with_mut(out_key,
-            [&ring](auto run) noexcept -> void { (void)crucible::TraceRing::drain_pure(ring, std::move(run)); });
+        out.with_mut(out_key, [&ring](auto run) noexcept -> void {
+            (void)crucible::TraceRing::drain_pure(ring, std::move(run));
+        });
     });
 }
 

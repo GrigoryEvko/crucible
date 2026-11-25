@@ -61,6 +61,11 @@ struct KeyReachingRun {
 
 template <class Array, class Body>
 concept OpensWithNoKey = requires(Array& array, Body const& body) { array.with_mut(body); };
+// The control of OpensWithNoKey: a class that lends a run with no key.
+struct LendsWithNoKey final {
+    template <class Body>
+    void with_mut(Body const& body) & noexcept;
+};
 template <class Array, class Key, class Body>
 concept OpensWithKey = requires(Array& array, Key& key, Body const& body) { array.with_mut(key, body); };
 
@@ -89,9 +94,9 @@ static_assert(sizeof(KeyedWords) == sizeof(FixedHeapArray<int, 8>));
 static_assert(::foundation::linear::carries_annotation(std::meta::dealias(^^KeyedWords), ^^loan_key_mark));
 static_assert(!::foundation::linear::carries_annotation(^^FixedHeapArray<int, 8>, ^^loan_key_mark));
 static_assert(OpensWithKey<KeyedWords, LoanKey<KeyedCheckBrand>, TouchRun>);
-static_assert(!OpensWithNoKey<KeyedWords, TouchRun>);
+static_assert(!OpensWithNoKey<KeyedWords, TouchRun> && !OpensWithNoKey<FixedHeapArray<int, 8>, TouchRun>);
+static_assert(OpensWithNoKey<LendsWithNoKey, TouchRun>);
 static_assert(!OpensWithKey<KeyedWords, LoanKey<KeyedCheckBrand>, KeyReachingRun>);
-static_assert(OpensWithNoKey<FixedHeapArray<int, 8>, TouchRun>);
 static_assert(!OpensWithKey<FixedHeapArray<int, 8>, LoanKey<KeyedCheckBrand>, TouchRun>);
 static_assert(std::is_same_v<decltype(std::declval<KeyedWords&>().with_mut(std::declval<LoanKey<KeyedCheckBrand>>(),
                                                                            std::declval<TouchRun const&>())),

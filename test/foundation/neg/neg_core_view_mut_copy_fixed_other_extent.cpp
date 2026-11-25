@@ -10,6 +10,7 @@
 int main() {
     ::foundation::core::FixedArray<int, 3> source{1, 2, 3};
     auto [target, target_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>);
-    target.with_mut(target_key, [&source](auto out) noexcept { ::foundation::core::copy(std::move(out), source.view()); });
+    target.with_mut(target_key,
+                    [&source](auto out) noexcept { ::foundation::core::copy(std::move(out), source.view()); });
     return 0;
 }

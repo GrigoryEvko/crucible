@@ -21,8 +21,9 @@ int main() {
     const ::fixy::BgLoadCtx load{eff::testing::bg()};
     auto [out, out_key] = ::fixy::mint_keyed_owner(::fixy::fixed_array_owner<crucible::TraceRing::Entry, 1>);
     crucible::test::with_ring_consumer([&](crucible::TraceRing::Consumer& ring) noexcept {
-        out.with_mut(out_key,
-            [&](auto run) noexcept -> void { (void)crucible::TraceRing::drain_pure(load, ring, std::move(run)); });
+        out.with_mut(out_key, [&](auto run) noexcept -> void {
+            (void)crucible::TraceRing::drain_pure(load, ring, std::move(run));
+        });
     });
     return 0;
 }

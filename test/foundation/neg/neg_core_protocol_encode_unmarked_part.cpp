@@ -18,7 +18,8 @@ struct[[= ::foundation::core::derive_protocol{}]] HoldsUnmarked {
 
 int main() {
     HoldsUnmarked const value{};
-    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::byte, 4>);
+    auto [storage, storage_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::byte, 4>);
     return storage.with_mut(storage_key, [&value](auto image) noexcept -> int {
         ::foundation::core::encode(value, std::move(image));
         return 0;

@@ -148,20 +148,37 @@ void test_fixed_array_reads_at_proven_indexes() {
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(small) == 9);
 }
 
-// The element door writes one element in place and gives the result of its
-// body.  The door of a const array reads, and each other element keeps its
-// value.
+// The element door of a keyed array writes one element in place and gives the
+// result of its body.  The door of a const array reads, and each other element
+// keeps its value.
 void test_fixed_array_element_door_writes_in_place() {
-    FixedArray<std::uint64_t, 4> words{1, 2, 4, 8};
-    words.with_element(index<2>(), [](std::uint64_t& word) noexcept { word |= 16; });
-    int const steps = words.with_element(index<0>(), [](std::uint64_t& word) noexcept {
+    auto [words, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint64_t, 4>,
+                                                             FixedArray<std::uint64_t, 4>{1, 2, 4, 8});
+    words.with_element(key, index<2>(), [](std::uint64_t& word) noexcept { word |= 16; });
+    int const steps = words.with_element(key, index<0>(), [](std::uint64_t& word) noexcept {
         ++word;
         return 1;
     });
-    FixedArray<std::uint64_t, 4> const& read = words;
+    auto const& read = words;
     std::uint64_t const third = read.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
     CRUCIBLE_TEST_ASSERT(kTest, steps == 1 && third == 20);
-    CRUCIBLE_TEST_ASSERT(kTest, (words == FixedArray<std::uint64_t, 4>{2, 2, 20, 8}));
+    FixedArray<std::uint64_t, 4> const expected{2, 2, 20, 8};
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(words.view(), expected.view()));
+}
+
+// The element door of an array with no key gives an element that a body reads,
+// and an element that two threads can write at the same time.
+void test_fixed_array_element_door_with_no_key() {
+    FixedArray<std::uint64_t, 4> words{1, 2, 4, 8};
+    std::uint64_t const third = words.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
+    FixedArray<::foundation::core::Atomic<std::uint64_t>, 2> counters;
+    std::uint64_t const before =
+        counters.with_element(index<1>(), [](::foundation::core::Atomic<std::uint64_t>& counter) noexcept {
+            return counter.fetch_add_acq_rel(3);
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, third == 4 && before == 0);
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         counters.at(index<1>()).load_acquire() == 3 && counters.at(index<0>()).load_acquire() == 0);
 }
 
 // One element of the value door: a value and the count of the calls that
@@ -396,10 +413,10 @@ void test_build_fixed_array_gives_a_new_array() {
 void test_doors_take_a_body_that_borrows_a_linear_value() {
     LinearEnd end{5};
     LinearEnd const& reader = end;
-    FixedArray<int, 2> counts{};
-    counts.with_element(index<0>(), [&reader](int& count) noexcept { count = reader.handle; });
+    auto [counts, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>);
+    counts.with_element(key, index<0>(), [&reader](int& count) noexcept { count = reader.handle; });
     int const size =
-        counts.with_mut([&reader](auto run) noexcept { return static_cast<int>(run.size()) + reader.handle; });
+        counts.with_mut(key, [&reader](auto run) noexcept { return static_cast<int>(run.size()) + reader.handle; });
     ::foundation::core::FixedList<LinearEnd, 1> ends;
     static_cast<void>(ends.append(LinearEnd{2}).expect("the list has room"));
     auto [first, back] = with_mut(std::move(ends), [](auto run) noexcept { return run.size() == 1 ? 1 : 0; });
@@ -412,14 +429,14 @@ void test_doors_take_a_body_that_borrows_a_linear_value() {
 }
 
 void test_fixed_array_view_fill_and_copy() {
-    FixedArray<std::uint32_t, 8> target;
-    FixedArray<std::uint32_t, 8> source{1, 2, 3, 4, 5, 6, 7, 8};
-    target.with_mut([](auto run) noexcept { ::foundation::core::fill(std::move(run), std::uint32_t{0xAB}); });
+    auto [target, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint32_t, 8>);
+    FixedArray<std::uint32_t, 8> const source{1, 2, 3, 4, 5, 6, 7, 8};
+    target.with_mut(key, [](auto run) noexcept { ::foundation::core::fill(std::move(run), std::uint32_t{0xAB}); });
     for (std::uint32_t const value : target) {
         CRUCIBLE_TEST_ASSERT(kTest, value == 0xAB);
     }
-    target.with_mut([&source](auto run) noexcept { ::foundation::core::copy(std::move(run), source.view()); });
-    CRUCIBLE_TEST_ASSERT(kTest, target == source);
+    target.with_mut(key, [&source](auto run) noexcept { ::foundation::core::copy(std::move(run), source.view()); });
+    CRUCIBLE_TEST_ASSERT(kTest, ::foundation::core::equal(target.view(), source.view()));
     View<std::uint32_t const, 8> const elements = target.view();
     CRUCIBLE_TEST_ASSERT(kTest, elements.at(index<7>()) == 8);
     std::uint32_t sum = 0;
@@ -428,13 +445,13 @@ void test_fixed_array_view_fill_and_copy() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, sum == 36);
     // A window of the run of a frame writes the elements of the array.
-    target.with_mut([](auto run) noexcept {
+    target.with_mut(key, [](auto run) noexcept {
         ::foundation::core::fill(::foundation::core::take_window(std::move(run), 2, 3).expect("three elements fit"),
                                  std::uint32_t{0});
     });
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<1>()) == 2 && target.at(index<2>()) == 0 && target.at(index<4>()) == 0);
     CRUCIBLE_TEST_ASSERT(kTest, target.at(index<5>()) == 6);
-    CRUCIBLE_TEST_ASSERT(kTest, !(target == source));
+    CRUCIBLE_TEST_ASSERT(kTest, !::foundation::core::equal(target.view(), source.view()));
 }
 
 // prefix_up_to gives the first count elements of a View, or each element for
@@ -442,14 +459,15 @@ void test_fixed_array_view_fill_and_copy() {
 // take_prefix_up_to gives the same part of the run of a frame as a ViewMut,
 // and a write through it writes the elements of the array.
 void test_prefix_up_to_is_total() {
-    FixedArray<std::uint32_t, 6> numbers{1, 2, 3, 4, 5, 6};
+    auto [numbers, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint32_t, 6>,
+                                                               FixedArray<std::uint32_t, 6>{1, 2, 3, 4, 5, 6});
     std::size_t volatile seed = 4;
     std::size_t const filled = seed;
     View<std::uint32_t const> const elements = numbers.view();
     CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(filled).size() == 4);
     CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(filled * 10).size() == 6);
     CRUCIBLE_TEST_ASSERT(kTest, elements.prefix_up_to(0).size() == 0);
-    std::size_t const taken = numbers.with_mut([filled](auto run) noexcept {
+    std::size_t const taken = numbers.with_mut(key, [filled](auto run) noexcept {
         auto prefix = ::foundation::core::take_prefix_up_to(std::move(run), filled);
         std::size_t const count = prefix.size();
         ::foundation::core::fill(std::move(prefix), std::uint32_t{0});
@@ -458,7 +476,7 @@ void test_prefix_up_to_is_total() {
     CRUCIBLE_TEST_ASSERT(kTest, taken == 4);
     CRUCIBLE_TEST_ASSERT(kTest, numbers.at(index<3>()) == 0 && numbers.at(index<4>()) == 5);
     std::size_t const whole = numbers.with_mut(
-        [](auto run) noexcept { return ::foundation::core::take_prefix_up_to(std::move(run), 1000).size(); });
+        key, [](auto run) noexcept { return ::foundation::core::take_prefix_up_to(std::move(run), 1000).size(); });
     CRUCIBLE_TEST_ASSERT(kTest, whole == 6);
 }
 
@@ -466,10 +484,12 @@ void test_prefix_up_to_is_total() {
 // identity, and a write through it writes the elements of the array.  The
 // runs of two frames of one element type and extent give one erased type.
 void test_erase_brand_keeps_the_run() {
-    FixedArray<std::uint32_t, 4> first{1, 2, 3, 4};
-    FixedArray<std::uint32_t, 4> second{5, 6, 7, 8};
-    first.with_mut([&second](auto first_run) noexcept {
-        second.with_mut([&first_run](auto second_run) noexcept {
+    auto [first, first_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<std::uint32_t, 4>, FixedArray<std::uint32_t, 4>{1, 2, 3, 4});
+    auto [second, second_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<std::uint32_t, 4>, FixedArray<std::uint32_t, 4>{5, 6, 7, 8});
+    first.with_mut(first_key, [&second, &second_key](auto first_run) noexcept {
+        second.with_mut(second_key, [&first_run](auto second_run) noexcept {
             auto erased_first = ::foundation::core::erase_brand(std::move(first_run));
             auto erased_second = ::foundation::core::erase_brand(std::move(second_run));
             static_assert(std::is_same_v<decltype(erased_first), decltype(erased_second)>);
@@ -486,9 +506,10 @@ void test_erase_brand_keeps_the_run() {
 // get gives a Ref of the element below the count, and no value at or past
 // the count, for a View of each extent and for a FixedArray.
 void test_get_reads_below_the_count() {
-    FixedArray<int, 4> numbers{4, 8, 15, 16};
-    FixedArray<int, 4> const& fixed = numbers;
-    numbers.with_mut([](auto run) noexcept {
+    auto [numbers, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 4>,
+                                                               FixedArray<int, 4>{4, 8, 15, 16});
+    auto const& fixed = numbers;
+    numbers.with_mut(key, [](auto run) noexcept {
         View<int const> const elements = run.view();
         CRUCIBLE_TEST_ASSERT(kTest, *elements.get(2).expect("the position is below the count") == 15);
         CRUCIBLE_TEST_ASSERT(kTest, elements.get(4).is_none());
@@ -502,7 +523,7 @@ void test_get_reads_below_the_count() {
     CRUCIBLE_TEST_ASSERT(kTest, *fixed_view.get(3).expect("the position is below the count") == 16);
     CRUCIBLE_TEST_ASSERT(kTest, fixed_view.get(4).is_none());
 
-    numbers.with_mut([](auto run) noexcept {
+    numbers.with_mut(key, [](auto run) noexcept {
         auto second = run.get_mut(1).expect("the position is below the count");
         *second = 9;
     });
@@ -553,18 +574,18 @@ void test_fixed_array_view_of_a_static_is_constant() {
     CRUCIBLE_TEST_ASSERT(kTest, sum_of(values) == 10);
 }
 
-// The property: random writes at checked indexes give the elements of the
-// same writes into a std::array.
+// The property: random writes at checked indexes through the keyed element door
+// give the elements of the same writes into a std::array.
 void test_fixed_array_agrees_with_std_array() {
     ::crucible::test::PhiloxStream stream{0xA77A1E5E0000B002u};
-    FixedArray<std::uint64_t, 64> array;
+    auto [array, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::uint64_t, 64>);
     CRUCIBLE_I_KNOW_WHAT_IM_DOING("ORACLE: std::array is the model of the writes of a FixedArray")
     std::array<std::uint64_t, 64> model{};
     for (int trial = 0; trial < 8192; ++trial) {
         std::size_t const raw = stream.below(80);
         std::uint64_t const value = stream.next_wide();
         for (Index<64> const position : Index<64>::check(raw)) {
-            array.with_element(position, [value](std::uint64_t& element) noexcept { element = value; });
+            array.with_element(key, position, [value](std::uint64_t& element) noexcept { element = value; });
         }
         if (raw < model.size()) model[raw] = value;
     }
@@ -587,6 +608,7 @@ int main() {
     test_large_fixed_array_value_initializes();
     test_fixed_array_reads_at_proven_indexes();
     test_fixed_array_element_door_writes_in_place();
+    test_fixed_array_element_door_with_no_key();
     test_fixed_array_value_door_builds_in_place();
     test_fixed_array_value_doors_write_one_element();
     test_fixed_array_update_changes_one_element();

@@ -31,10 +31,11 @@
 // elements, so no read takes an index that no check proved.  An index from
 // data goes through Index<N>::check(raw), which gives an Option.  Each read
 // gives a const element.  The value doors write the elements with no body,
-// with_element writes one element in a body (the element door), and fill and
-// copy of the Region family write the elements through the ViewMut of
-// with_mut (the frame door) or of build_fixed_array (the build door).
-// So no two Views of one array write the same elements.
+// with_element of a keyed array writes one element in a body (the element
+// door), and fill and copy of the Region family write the elements through
+// the ViewMut of with_mut of a keyed array (the frame door) or of
+// build_fixed_array (the build door).  So no two Views of one array write the
+// same elements.
 //
 // A FixedArray copies and moves its elements, and it is trivially copyable
 // when its element is, so the ABI passes a small array in registers.
@@ -146,24 +147,34 @@
 // with_masked, and a write of the run takes the frame door with_mut.
 //
 // Frame door
-//   array.with_mut(body)   of a FixedArray: body gets the ViewMut of the
-//                       elements in place, with the brand of the frame, and
-//                       the door gives the result of body.  The door writes
-//                       no byte of the array and copies no element
+//   array.with_mut(key, body)   of a keyed FixedArray: body gets the ViewMut
+//                       of the elements in place, with the brand of the
+//                       frame, and the door gives the result of body.  The
+//                       door writes no byte of the array and copies no
+//                       element.  The key comes by a borrow or by move
 //   with_mut(std::move(array), body)   of a HeapArray and of a MaskedArray:
 //                       the array moves into the frame, body gets the ViewMut
 //                       of the elements, and the door gives the array back.
 //                       The move takes a pointer and a count
-// foundation/core/Frame.h gives the rules of the two forms.  The member door
-// carries the annotation borrow_match, as the element door does.
+// foundation/core/Frame.h gives the rules of the two forms.
 //   mint_keyed_owner(fixed_array_owner<T, N>)   a keyed FixedArray and its
 //                       LoanKey of the fresh brand of the call
 //                       (foundation/core/KeyedMint.h)
+// A FixedArray with no key opens no frame.  Another name of it, such as a
+// capture of the body or a Ref, would open a second frame with a second brand,
+// and the two frames would write one run.
 //
 // Element door
-//   with_element(index, body)   of a FixedArray, with an Index<N>: body gets
-//                       the element in place, as T&, for the time of the
-//                       call, and the door gives the result of body
+//   array.with_element(key, index, body)   of a keyed FixedArray, with an
+//                       Index<N>: body gets the element in place, as T&, for
+//                       the time of the call, and the door gives the result
+//                       of body
+//   array.with_element(index, body)   of a FixedArray with no key: body gets
+//                       the element in place, as T&, when two threads can
+//                       write one element at the same time (Synchronized of
+//                       foundation/Transfer.h), and as T const& in each other
+//                       case.  A body that writes an element of each other
+//                       type takes update, which gives it a copy
 //   with_element(position, on_some, on_none)   of a HeapArray, with a
 //                       position that no type proves: on_some gets the
 //                       element in place below size(), and on_none runs at or
@@ -173,10 +184,11 @@
 //                       below the count, so the door has no none arm
 // The result holds no borrow (HoldsNoBorrow of foundation/core/Choice.h), so
 // no reference to the element leaves the door, and the door gives no View.  A
-// const array gives T const&.  The door carries the annotation borrow_match,
-// so the rule borrow-match refuses a call of a member of the same array that
-// is not const in the body, such as a second door that would give a second
-// reference to the element.  A body that writes the whole run takes with_mut.
+// const array gives T const&.  The door with no key carries the annotation
+// borrow_match, so the rule borrow-match refuses a call of a member of the
+// same array that is not const in the body, such as a second door that would
+// give a second reference to the element.  A body that writes the whole run
+// takes with_mut.
 //
 // The door writes no state of the array.  So two threads can call it on one
 // shared array at the same time, and only an element that is safe for
@@ -293,8 +305,8 @@ class MaskedArray;
 // The arrays that the free frame door takes (foundation/core/Frame.h).  Each
 // owns its elements on the heap alone, and a move gives the storage to the
 // target with no copy of an element.  A FixedArray holds its elements inline,
-// so a move would copy them: its frame door is the member with_mut, which
-// lends the elements in place.
+// so a move would copy them: its frame door is the member with_mut with the key
+// of the array, which lends the elements in place.
 template <class Owner>
 concept ArrayFrameOwner = ::foundation::reflect::IsInstanceOfAny<Owner, ^^HeapArray, ^^MaskedArray>;
 
@@ -524,24 +536,45 @@ using array_storage_t = std::conditional_t<IsKeyBrand<KeyBrand>, KeyedArrayStora
 
 }  // namespace detail
 
+// The gates of a body of a keyed frame door that read the captures of the body
+// and no call of it: the body reaches no key of the brand of the owner (the
+// gate of foundation/core/Frame.h), it holds no linear value by value, and it
+// stores no borrow outside the frame.  The elements T hold no key of the brand.
+template <class Body, class T, class Brand>
+concept KeyedFrameGates = ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>
+                       && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
+
 // The body of a keyed frame door of an owner whose elements are T and whose
-// brand is Brand: a body of FrameBody that reaches no key of the brand, over
-// elements that hold no key of the brand (the gate of foundation/core/Frame.h).
+// brand is Brand: a body of FrameBody that passes the gates.
+//
+// The refused twin of a keyed door states KeyedFrameGates alone, and it gives
+// the reason for each body that passes the gates and is no frame callable.  For
+// a correct body the two doors bind, and the compiler takes the keyed door,
+// because its constraints contain those of the twin.  So the twin reads no call
+// of the body.  Each call of a generic body instantiates it, and the brand of
+// each door is its own, so a twin that reads the call would instantiate the
+// innermost body of a nest of d frames 2^d times.
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
-concept KeyedFrameBody =
-    FrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand> && ReachesNoLoanKey<T, Brand>;
+concept KeyedFrameBody = KeyedFrameGates<Body, T, Brand> && FrameCallable<Body, T, Fresh, Extent>;
 
 // A body of a keyed frame door that reaches a key of the brand of its owner:
 // the refused twin of each keyed door binds to it, also when the body holds
-// the key by value.
+// the key by value.  The test of the key comes first, so the twin reads no
+// call of an admitted body.
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
-concept KeyReachingFrameBody = FrameCallable<Body, T, Fresh, Extent> && !ReachesNoLoanKey<Body, Brand>;
+concept KeyReachingFrameBody = (!ReachesNoLoanKey<Body, Brand>) && FrameCallable<Body, T, Fresh, Extent>;
 
 // A body of a keyed frame door that reaches no key of the brand of its owner
 // and holds a linear value by value: the linear twin of each keyed door binds
 // to it.
 template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
 concept KeyedLinearFrameBody = LinearFrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand>;
+
+// A body of a keyed frame door that reaches no key of the brand of its owner
+// and stores a borrow outside the frame: the store twin of each keyed door
+// binds to it.
+template <class Body, class T, class Brand, class Fresh, std::size_t Extent>
+concept KeyedStoringFrameBody = StoringFrameBody<Body, T, Fresh, Extent> && ReachesNoLoanKey<Body, Brand>;
 
 // A body of an element door that takes the element as Element& and holds a
 // linear value by value: the linear twin of each element door binds to it.
@@ -748,7 +781,7 @@ class[[= loan_key_mark_when<IsKeyBrand<KeyBrand>>]][[= equal_parts{}]] FixedArra
 
     // An array of a key brand opens its frames only with its LoanKey (the
     // loan key of foundation/core/Frame.h).  An array of Unkeyed, the default,
-    // has the doors with no key.
+    // has the value doors and opens no frame.
     static constexpr bool is_keyed_ = IsKeyBrand<KeyBrand>;
 
 public:
@@ -767,9 +800,9 @@ public:
     // The View of the const elements.  It borrows this array.  The array
     // holds its N elements in a C array, so the View comes through the typed
     // door of a C array, with no check and no test of a null pointer.  A write
-    // takes with_element for one element, or with_mut for the run, so no two
-    // Views of one array write the same elements.  Each call names N: GCC 16
-    // deduces the bound of an array of 2^34 - 1 bytes as the largest size_t.
+    // takes a value door, or a door with the key of the array, so no two Views
+    // of one array write the same elements.  Each call names N: GCC 16 deduces
+    // the bound of an array of 2^34 - 1 bytes as the largest size_t.
     [[nodiscard]] constexpr View<T const, N> view() const& noexcept {
         return detail::view_of_array_<T const, N>(elements_);
     }
@@ -807,18 +840,29 @@ public:
     // door gives the result of body.  The result holds no borrow, so no
     // reference to the element leaves the door.  The door gives that result
     // by value: a deduced auto type is never a reference, and it reads the
-    // call of body with no trait.  A const array gives a const element.
+    // call of body with no trait.  A const array gives a const element.  An
+    // array with no key gives an element that body writes only when two
+    // threads can write it at the same time, such as an Atomic: a second
+    // reference to it, through another name of the array, is then correct.
     // Complexity: O(1), and the cost of body.
     template <class Body>
-        requires(!is_keyed_) && std::is_invocable_v<Body, T&> && HoldsNoBorrow<detail::body_result_t<Body, T&>>
-             && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>
+        requires(!is_keyed_) && ::foundation::transfer::Synchronized<T> && std::is_invocable_v<Body, T&>
+             && HoldsNoBorrow<detail::body_result_t<Body, T&>> && ::foundation::linear::HoldsNoLinearValue<Body>
+             && StoresNoBorrowOutside<Body>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto
         with_element(Index<N> index, Body&& body) & noexcept(std::is_nothrow_invocable_v<Body, T&>) {
         return static_cast<Body&&>(body)(elements_[index.raw()]);
     }
     template <class Body>
-        requires(!is_keyed_) && LinearElementBody<Body, T>
+        requires(!is_keyed_) && ::foundation::transfer::Synchronized<T> && LinearElementBody<Body, T>
     void with_element(Index<N> index, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && (!::foundation::transfer::Synchronized<T>)
+                 && std::is_invocable_v<Body, T&> && (!std::is_invocable_v<Body, T const&>)
+    void with_element(Index<N> index, Body&& body) & = delete(
+        "a FixedArray with no key lends no element that a body writes, because another name of the array could lend "
+        "the same element: call set, exchange or update(index, body), or make the array with mint_keyed_owner and "
+        "call with_element(key, index, body)");
     template <class Body>
         requires is_keyed_ && std::is_invocable_v<Body, T&>
     void with_element(Index<N> index, Body&& body) & = delete(
@@ -1014,56 +1058,36 @@ public:
     void build_at(Index<N> index, Fn&& fn, Args&&... args) && =
         delete("a temporary FixedArray ends at the end of the full expression, so a write of it has no reader");
 
-    // The frame door of the run in place (the frame door): body gets the
-    // ViewMut<T, Fresh, N> of the elements, with the scope brand of the
-    // frame, and the door gives the result of body.  The array stays in
-    // place, and the door writes no byte of it, so it copies no element.  The
-    // result of body leaves the frame (FrameResult of Choice.h), by value, as
-    // the result of the element door does.  The pack refuses each explicit
-    // argument, so no caller names the brand.  Complexity: O(1), and the cost
-    // of body.
-    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && (!is_keyed_) && FrameBody<Body, T, Fresh, N>
-    [[= ::foundation::linear::borrow_match{}]] constexpr auto with_mut(Body&& body) & noexcept {
-        return static_cast<Body&&>(body)(
-            ViewMut<T, Fresh, N>{ArrayFrameKeyDoor::key_(), detail::view_of_array_<T, N>(elements_)});
-    }
-
-    // A body whose result holds a borrow or names the brand of the frame
-    // binds to this overload, so the refusal gives its reason.
-    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && (!is_keyed_) && RefusedFrameBody<Body, T, Fresh, N>
+    // An array with no key opens no frame, and a keyed array opens a frame
+    // only with its key, so each body with no key binds to one of these two
+    // overloads, and the refusal gives its reason.  The two read no call of
+    // the body, so a body with an error of its own binds to them too.
+    template <class Body>
+        requires(!is_keyed_)
     void with_mut(Body&& body) & = delete(
-        "the result of a frame door leaves the frame, so it holds no reference and no address, and it names no brand of "
-        "the frame: give a plain value");
-    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && (!is_keyed_) && LinearFrameBody<Body, T, Fresh, N>
-    void with_mut(Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
-    // A body that stores a borrow outside the frame binds to this overload,
-    // and not to the const twin, so the refusal gives its own reason.
-    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && (!is_keyed_) && StoringFrameBody<Body, T, Fresh, N>
-    void with_mut(Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
-
-    // A keyed array opens a frame only with its key, so a body with no key
-    // binds to this overload, and the refusal gives its reason.
-    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && is_keyed_ && std::is_invocable_v<Body&&, ViewMut<T, Fresh, N>>
+        "a FixedArray with no key opens no frame, because another name of the array could open a second frame of the "
+        "same run: call fill, copy_from, copy_window or build_fixed_array, or make the array with mint_keyed_owner and "
+        "call with_mut(key, body)");
+    template <class Body>
+        requires is_keyed_
     void with_mut(Body&& body) & =
         delete("a keyed FixedArray opens a frame only with its LoanKey: call with_mut(std::move(key), body) or "
                "with_mut(key, body)");
 
     // Keyed frame door (the loan key of foundation/core/Frame.h): body
-    // gets the ViewMut<T, Fresh, N> of the elements in place, as the door with
-    // no key gives it.  The key moves into the door, and the door gives it
-    // back: alone for a body that gives void, and after the result in a
-    // Record for each other body.  The body reaches no key of the brand of the
-    // array (the gate), so no code inside the frame opens a second frame of
-    // the array.  The frame brand is the scope brand of the call, so copy()
-    // takes its memcpy and write_each its restrict loop as for the door with
-    // no key.  Complexity: O(1), and the cost of body.
+    // gets the ViewMut<T, Fresh, N> of the elements in place, with the scope
+    // brand of the frame.  The array stays in place, and the door writes no
+    // byte of it, so it copies no element.  The result of body leaves the
+    // frame (FrameResult of Choice.h), by value.  The key moves into the door,
+    // and the door gives it back: alone for a body that gives void, and after
+    // the result in a Record for each other body.  The body reaches no key of
+    // the brand of the array (the gate), so no code inside the frame opens a
+    // second frame of the array.  The frame brand is the scope brand of the
+    // call, so copy() takes its memcpy and write_each its restrict loop.  The
+    // pack refuses each explicit argument, so no caller names the brand.
+    // Complexity: O(1), and the cost of body.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
+        requires NamesNoArgument<Refused...> && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     [[nodiscard]] constexpr detail::frame_return_t<detail::body_result_t<Body&&, ViewMut<T, Fresh, N>>,
                                                    LoanKey<KeyBrand>>
     with_mut(LoanKey<KeyBrand>&& key, Body&& body) & noexcept {
@@ -1075,7 +1099,7 @@ public:
     // ViewMut, the key stays with the caller, and the door gives the result
     // of body.  A root door lends the key of a named brand in this form.
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
-        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
+        requires NamesNoArgument<Refused...> && KeyedFrameBody<Body, T, KeyBrand, Fresh, N>
     constexpr auto with_mut(LoanKey<KeyBrand>& /*key*/, Body&& body) & noexcept {
         return static_cast<Body&&>(body)(
             ViewMut<T, Fresh, N>{ArrayFrameKeyDoor::key_(), detail::view_of_array_<T, N>(elements_)});
@@ -1099,6 +1123,23 @@ public:
     template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
         requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedLinearFrameBody<Body, T, KeyBrand, Fresh, N>
     void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    // A body whose result holds a borrow or names the brand of the frame, and
+    // a body that stores a borrow outside the frame, bind to these overloads,
+    // so each refusal gives its own reason.  The first two are the twins of
+    // KeyedFrameBody, so they bind also to a body that does not take the
+    // ViewMut or that can throw.
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires NamesNoArgument<Refused...> && KeyedFrameGates<Body, T, KeyBrand>
+    void with_mut(LoanKey<KeyBrand>&& key, Body&& body) & = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires NamesNoArgument<Refused...> && KeyedFrameGates<Body, T, KeyBrand>
+    void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_FRAME_BODY_REFUSAL);
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedStoringFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>&& key, Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Fresh = CRUCIBLE_SCOPE_BRAND>
+        requires(sizeof...(Refused) == 0) && is_keyed_ && KeyedStoringFrameBody<Body, T, KeyBrand, Fresh, N>
+    void with_mut(LoanKey<KeyBrand>& key, Body&& body) & = delete(CRUCIBLE_STORING_BODY_REFUSAL);
 
     // Keyed element door: body gets the element at a proven index in
     // place, as T&, and the key comes back as with the keyed frame door: alone

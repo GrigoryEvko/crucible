@@ -539,8 +539,8 @@ PROBES: tuple[Probe, ...] = (
     Probe("fixed_array_at", "at of a FixedArray with an Index is the load of the raw subscript, with no bounds test"),
     Probe(
         "fixed_array_with_element",
-        "with_element of a FixedArray with an Index is the or of the raw subscript into its element, with no bounds "
-        "test and no call of the body",
+        "with_element of a keyed FixedArray with an Index is the or of the raw subscript into its element, with no "
+        "bounds test and no call of the body: a key is empty",
     ),
     Probe(
         "heap_array_with_element",
@@ -555,17 +555,15 @@ PROBES: tuple[Probe, ...] = (
         checks=("fatal",),
     ),
     Probe(
-        "fixed_array_frame_pop",
-        "a copy into two FixedArrays through their member frame doors is the two copies of the raw form, with no copy "
-        "of an element into a frame: the doors lend the runs in place.  At -O2 and -O3 the family side moves its "
-        "three arguments into the registers of the call in two more movs",
+        "fixed_array_copy_from",
+        "copy_from of two FixedArrays is the two copies of the raw form",
         calls=("memmove",),
-        longer=2,
     ),
     Probe(
         "keyed_array_frame_pop",
-        "the pop of fixed_array_frame_pop through the keyed frame doors with a borrow of each key: a key is empty, so "
-        "the code is the code of the doors with no key, and the same two movs at -O2 and -O3",
+        "a copy into two FixedArrays through their keyed frame doors, with a borrow of each key, is the two copies of "
+        "the raw form, with no copy of an element into a frame: a key is empty, and the doors lend the runs in place.  "
+        "At -O2 and -O3 the family side moves its three arguments into the registers of the call in two more movs",
         calls=("memmove",),
         longer=2,
     ),

@@ -32,7 +32,8 @@ struct StageOf<::foundation::core::Walk<S>> {
 
 int main() {
     namespace core = ::foundation::core;
-    auto [values, values_key] = core::mint_keyed_owner(core::fixed_array_owner<int, 4>, core::FixedArray<int, 4>{1, 2, 3, 4});
+    auto [values, values_key] =
+        core::mint_keyed_owner(core::fixed_array_owner<int, 4>, core::FixedArray<int, 4>{1, 2, 3, 4});
     using Dynamic = ResultOf<decltype(&core::View<int const>::walk)>::type;
     using Fixed = ResultOf<decltype(&core::View<int const, 4>::walk)>::type;
     using Pairs = core::Result<core::Walk<core::detail::ZipStage<StageOf<Dynamic>::type, StageOf<Fixed>::type, Held>>,

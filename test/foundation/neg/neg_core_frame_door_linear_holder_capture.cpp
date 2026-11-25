@@ -1,5 +1,5 @@
-// The body of the frame door of a FixedArray captures by value a struct that
-// holds a linear end.  The struct is linear by its member, so the body holds
+// The body of the frame door of a keyed FixedArray captures by value a struct
+// that holds a linear end.  The struct is linear by its member, so the body holds
 // a linear value, and the door refuses it.
 #include <foundation/Linear.h>
 #include <foundation/core/Array.h>
@@ -26,9 +26,9 @@ struct Holder {
 }  // namespace
 
 int main() {
-    ::foundation::core::FixedArray<int, 2> counts{};
+    auto [counts, key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 2>);
     Holder holder{End{3}, 1};
-    counts.with_mut([held = std::move(holder)](auto run) noexcept {
+    counts.with_mut(key, [held = std::move(holder)](auto run) noexcept {
         static_cast<void>(run.size());
         static_cast<void>(held.count);
     });

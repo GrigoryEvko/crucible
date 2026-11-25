@@ -51,22 +51,23 @@ void test_fill_and_reads() {
     CRUCIBLE_FATAL_INVARIANT(numbers.view().size() == 1000);
 }
 
-// The element door writes one element in place, and the frame door writes
-// the run in place: the run of the body lies at the elements of the array.
-// The door of a const array reads.
+// The element door of a keyed array writes one element in place, and the frame
+// door writes the run in place: the run of the body lies at the elements of
+// the array.  The door of a const array reads.
 void test_doors_write_in_place() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
-    FixedHeapArray<std::uint64_t, 4> words = mint_fixed_heap_array<std::uint64_t, 4>(alloc, std::uint64_t{1});
-    int const steps = words.with_element(index<2>(), [](std::uint64_t& word) noexcept {
+    auto [words, key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_heap_array_owner<std::uint64_t, 4>, alloc, std::uint64_t{1});
+    int const steps = words.with_element(key, index<2>(), [](std::uint64_t& word) noexcept {
         word |= 16;
         return 1;
     });
-    FixedHeapArray<std::uint64_t, 4> const& read = words;
+    auto const& read = words;
     std::uint64_t const third = read.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
     CRUCIBLE_FATAL_INVARIANT(steps == 1 && third == 17);
 
     ::foundation::core::View<std::uint64_t const, 4> const elements = words.view();
-    bool const is_in_place = words.with_mut([elements](auto run) noexcept {
+    bool const is_in_place = words.with_mut(key, [elements](auto run) noexcept {
         static_assert(decltype(run)::extent == 4);
         std::uint64_t next = 10;
         for (std::uint64_t& word : run) {
@@ -77,6 +78,15 @@ void test_doors_write_in_place() {
     });
     CRUCIBLE_FATAL_INVARIANT(is_in_place);
     CRUCIBLE_FATAL_INVARIANT(words.at(index<0>()) == 10 && words.at(index<3>()) == 13);
+}
+
+// The element door of an array with no key gives an element that a body reads,
+// and an element that two threads can write at the same time.
+void test_element_door_with_no_key() {
+    ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
+    FixedHeapArray<std::uint64_t, 4> words = mint_fixed_heap_array<std::uint64_t, 4>(alloc, std::uint64_t{7});
+    std::uint64_t const third = words.with_element(index<2>(), [](std::uint64_t const& word) noexcept { return word; });
+    CRUCIBLE_FATAL_INVARIANT(third == 7);
 }
 
 // The value doors write one element and the run in place.  A copy from a View
@@ -175,9 +185,10 @@ void test_destruction_counts() {
 void test_large_ring() {
     ::foundation::effects::Alloc const alloc = ::foundation::effects::testing::test().alloc;
     constexpr std::size_t kCount = std::size_t{1} << 20;
-    FixedHeapArray<std::uint64_t, kCount> ring = mint_fixed_heap_array<std::uint64_t, kCount>(alloc, std::uint64_t{0});
+    auto [ring, key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_heap_array_owner<std::uint64_t, kCount>, alloc, std::uint64_t{0});
     std::uint64_t const slot = (kCount + 5) & (kCount - 1);
-    ring.with_mut([slot](auto run) noexcept {
+    ring.with_mut(key, [slot](auto run) noexcept {
         take_window(std::move(run), slot, 1)
             .match(
                 [](auto one) noexcept {
@@ -195,6 +206,7 @@ void test_large_ring() {
 int main() {
     test_fill_and_reads();
     test_doors_write_in_place();
+    test_element_door_with_no_key();
     test_value_doors();
     test_keyed_maker();
     test_keyed_doors();

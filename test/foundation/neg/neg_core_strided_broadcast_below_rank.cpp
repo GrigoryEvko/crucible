@@ -7,7 +7,8 @@
 #include <cstddef>
 
 int main() {
-    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<int, 6>, ::foundation::core::FixedArray<int, 6>{1, 2, 3, 4, 5, 6});
+    auto [storage, storage_key] = ::foundation::core::mint_keyed_owner(
+        ::foundation::core::fixed_array_owner<int, 6>, ::foundation::core::FixedArray<int, 6>{1, 2, 3, 4, 5, 6});
     ::foundation::core::FixedArray<std::size_t, 2> const sizes{2, 3};
     ::foundation::core::FixedArray<std::size_t, 2> const strides{3, 1};
     ::foundation::core::FixedArray<std::size_t, 1> const narrow{6};

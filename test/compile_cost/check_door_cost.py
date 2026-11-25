@@ -1,10 +1,10 @@
-"""Compile the probe of the member frame door in each form, and fail when one call of the door costs too much.
+"""Compile the probe of the keyed frame door in each form, and fail when one call of the door costs too much.
 
 usage: check_door_cost.py BUILD_DIR SOURCE_ROOT [--measure]
 
 Probe
     door_cost_with_mut.cpp of this directory gives four writers: a raw loop
-    on a C array of 16 words, the member frame door with_mut of a
+    on a C array of 16 words, the keyed frame door with_mut of a keyed
     FixedArray<uint64_t, 16> with the same loop in its body, and the same two
     forms with a body that gives a small class (DOORS).  Each call of a door
     instantiates a body of its own and a ViewMut class of a fresh brand, so a
@@ -76,8 +76,8 @@ DOORS = {"DoorWriter": "RawWriter", "DoorSummer": "RawSummer"}
 # The most that one call of a door costs, as a multiple of one call of the loop on the array (the ceilings).
 CEILING_RATIO = 1.10
 # The loop on the FixedArray against the raw loop, in the asan kind, on main df8fb4e97: 0.0972 G against
-# 0.0074 G for the writer, and 0.1132 G against 0.0230 G for the summer.  The doors measured 0.1014 G and
-# 0.1215 G there.
+# 0.0074 G for the writer, and 0.1132 G against 0.0230 G for the summer.  The doors of an array with no key
+# measured 0.1014 G and 0.1215 G there.  The keyed doors measure 0.1035 G and 0.1230 G.
 ARRAY_LOOP_RATIO = {"DoorWriter": 13.14, "DoorSummer": 4.92}
 # The margin of an absolute ceiling over its measure.
 MARGIN = 1.10

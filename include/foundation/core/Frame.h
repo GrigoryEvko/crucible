@@ -16,11 +16,12 @@
 //                       holds no name for the owner: the name that the caller
 //                       moved from holds no storage, or no element of a
 //                       FixedList
-//   owner.with_mut(body)
-//                       of FixedArray, an inline owner: body gets the
+//   owner.with_mut(key, body)
+//                       of a keyed FixedArray, an inline owner: body gets the
 //                       ViewMut<T, Brand> of the elements in place, and the
 //                       door gives the result of body.  The door writes no
-//                       byte of the owner
+//                       byte of the owner.  The LoanKey of the owner keeps a
+//                       second frame of it out (the loan key)
 //   sum.with_mut(arms...)
 //                       of Option, Result and OneOf: the arm of the active
 //                       alternative gets the RefMut<T, Brand> of its payload
@@ -35,11 +36,10 @@
 //     with_mut(std::move(box), body)   the object of a Box
 //                       (foundation/core/Ref.h): the Box moves into the frame
 //                       and comes back, with no key
-//     array.with_mut(body)   a FixedArray, in place (Array.h), and a
-//                       FixedHeapArray, in place (FixedHeapArray.h)
-//     array.with_mut(key, body)   a keyed FixedArray or a keyed
-//                       FixedHeapArray, in place, with its LoanKey (the loan key),
-//                       by move or by a borrow of the key
+//     array.with_mut(key, body)   a keyed FixedArray (Array.h) or a keyed
+//                       FixedHeapArray (FixedHeapArray.h), in place, with its
+//                       LoanKey (the loan key), by move or by a borrow of the
+//                       key
 //     array.with_element(key, index, body)   one element of a keyed
 //                       FixedArray or of a keyed FixedHeapArray, with its LoanKey
 //     array.with_masked(key, body)   the element at key & (count - 1) of a
@@ -49,8 +49,9 @@
 //                       KeyedBytes block, with its LoanKey (foundation/AlignedBytes.h)
 //     sum.with_mut(arms...)   Option and Result (Choice.h) and OneOf (OneOf.h)
 //     array.with_element(index, body)   the element at an Index<N> of a
-//                       FixedArray, given to the body in place (Array.h),
-//                       with no key
+//                       FixedArray or of a FixedHeapArray with no key, given
+//                       to the body in place (Array.h).  The body writes it
+//                       only when two threads can write it at the same time
 //     list.with_element(position, on_some, on_none)   the element at a
 //                       position of a GrowList (Grow.h) or of a HeapArray
 //                       (Array.h), given to an arm in place, with no key
@@ -83,11 +84,10 @@
 //   A move of an inline owner copies each of its elements into the frame and
 //   back, and the old name keeps a stale copy.  For a large array that is a
 //   copy of the whole run for each frame.  So an inline owner lends its run
-//   in place, as a sum does.  Its door carries the annotation borrow_match,
-//   so the rule borrow-match refuses a call of a member of the same owner
-//   that is not const in the body, such as a second door.  A function that
-//   the body calls can still reach the owner, as for a sum, and the alias
-//   proof then holds only for the body that the rule reads.
+//   in place, as a sum does.  Its name stays reachable in the body, through a
+//   capture, a Ref or a function that the body calls.  So it opens a frame
+//   only with the LoanKey of its brand, which the body cannot reach (the loan
+//   key), and an inline owner with no key opens none.
 //
 // Two forms
 //   A sum is a small value that its holder keeps, often as a member that
@@ -102,8 +102,8 @@
 //   An owner gives a run, and a door of a kernel reads the brands of runs to
 //   prove that they do not overlap (the alias proof).  That proof needs a
 //   frame that holds its owner, so the door of a heap owner takes the owner
-//   by move, and the door of an inline owner lends in place under the rule
-//   borrow-match (the two forms of an owner).
+//   by move, and the door of an inline owner lends in place with the key of
+//   the owner (the two forms of an owner).
 //
 // Brand of a frame
 //   Each frame door takes a scope brand (CRUCIBLE_SCOPE_BRAND of
@@ -121,11 +121,11 @@
 //   object of static or thread storage duration.
 //
 // Alias proof
-//   A frame of a heap owner holds its owner by value, and the rule
-//   borrow-match refuses a second door of an inline owner in the body of its
-//   frame, so no two live frames hold one object.  An owner owns its storage
-//   alone, so the runs of two frames do not overlap.  Thus two ViewMuts of two different brands name storage
-//   that does not overlap.  A call site that runs two times, in a loop or in
+//   A frame of a heap owner holds its owner by value, and a frame of an inline
+//   owner holds the one key of its brand, so no two live frames hold one
+//   object.  An owner owns its storage alone, so the runs of two frames do not
+//   overlap.  Thus two ViewMuts of two different brands name storage that does
+//   not overlap.  A call site that runs two times, in a loop or in
 //   a recursion, gives its two frames one brand.  One brand proves no
 //   difference, so a reader of the brands takes the slow and safe path for
 //   it.  The proof needs a brand for each frame, and not a brand for each
@@ -165,7 +165,8 @@
 //   one, with the key of the frame doors that the door class of its header
 //   gives (the doors of the owners above this header), so no body makes a
 //   key.  A spelling with no key brand, such as FixedArray<T, N>, has the
-//   brand Unkeyed and the doors with no key.
+//   brand Unkeyed and the doors with no key.  A FixedArray and a
+//   FixedHeapArray of Unkeyed have the value doors and no frame door.
 //
 // Gate
 //   A keyed door refuses a body that reaches a key of the brand of its owner

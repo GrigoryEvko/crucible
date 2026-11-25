@@ -2,6 +2,8 @@
 
 #include <foundation/core/Array.h>
 
+#include <foundation/core/Atomic.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -120,18 +122,35 @@ concept ReadsTemporary = requires { std::declval<Array>().at(std::declval<Index<
 static_assert(!ViewsTemporary<FixedArray<int, 4>> && !ViewsTemporary<FixedArray<int, 4> const>);
 static_assert(!LoopsOverTemporary<FixedArray<int, 4>> && !ReadsTemporary<FixedArray<int, 4>>);
 
-// A FixedArray lends its run in place through the member with_mut, and one
-// element through with_element.  The free frame door takes no FixedArray, a
-// const array lends no writer of its run, and a temporary lends nothing.
+// A keyed FixedArray lends its run in place through the member with_mut with
+// its key, and it lends no run with no key.  An array of Unkeyed lends no run.
+// The free frame door takes no FixedArray.
+struct RunDoorBrand final {};
 template <class Array>
 concept LendsRun = requires(Array&& array) { static_cast<Array&&>(array).with_mut([](auto) noexcept {}); };
 template <class Array>
-concept LendsElement =
-    requires(Array&& array) { static_cast<Array&&>(array).with_element(index<0>(), [](auto&) noexcept {}); };
-static_assert(LendsRun<FixedArray<int, 4>&> && !LendsRun<FixedArray<int, 4> const&> && !LendsRun<FixedArray<int, 4>>);
+concept LendsRunWithKey = requires(Array&& array, LoanKey<RunDoorBrand>& key) {
+    static_cast<Array&&>(array).with_mut(key, [](auto) noexcept {});
+};
+using RunDoorInts = FixedArray<int, 4, RunDoorBrand>;
+static_assert(LendsRunWithKey<RunDoorInts&> && !LendsRunWithKey<RunDoorInts const&> && !LendsRunWithKey<RunDoorInts>);
+static_assert(!LendsRun<RunDoorInts&> && !LendsRun<FixedArray<int, 4>&> && !LendsRunWithKey<FixedArray<int, 4>&>);
+static_assert(!LendsRun<FixedArray<int, 4> const&> && !LendsRun<FixedArray<int, 4>>);
 static_assert(!ArrayFrameOwner<FixedArray<int, 4>> && ArrayFrameOwner<HeapArray<int>>);
-static_assert(LendsElement<FixedArray<int, 4>&> && LendsElement<FixedArray<int, 4> const&>
-              && !LendsElement<FixedArray<int, 4>>);
+// The element door with no key lends an element that a body reads, and an
+// element that two threads can write at the same time.  A temporary lends
+// nothing.
+template <class Array>
+concept ReadsElement =
+    requires(Array&& array) { static_cast<Array&&>(array).with_element(index<0>(), [](int const&) noexcept {}); };
+template <class Array, class Element>
+concept WritesElement = requires(Array&& array, void (&body)(Element&) noexcept) {
+    static_cast<Array&&>(array).with_element(index<0>(), body);
+};
+static_assert(ReadsElement<FixedArray<int, 4>&> && ReadsElement<FixedArray<int, 4> const&>
+              && !ReadsElement<FixedArray<int, 4>>);
+static_assert(!WritesElement<FixedArray<int, 4>&, int>);
+static_assert(WritesElement<FixedArray<Atomic<int>, 4>&, Atomic<int>>);
 
 // The value doors: an array of Unkeyed has them as an lvalue that is not
 // const, and a keyed array has none.  set and exchange take the element, and
@@ -305,10 +324,11 @@ static_assert(FixedArray<NoDefault, 2>{NoDefault{1}, NoDefault{2}}
               == FixedArray<NoDefault, 2>{NoDefault{1}, NoDefault{2}});
 
 [[nodiscard]] consteval int write_and_read() noexcept {
-    FixedArray<int, 3> array{};
-    array.with_element(index<0>(), [](int& element) noexcept { element = 10; });
-    array.with_element(Index<3>::check(2).expect("2 is below 3"), [](int& element) noexcept { element = 30; });
-    array.with_mut([](auto run) noexcept { fill(take_window(std::move(run), 1, 1).expect("one element fits"), 20); });
+    auto [array, key] = mint_keyed_owner(fixed_array_owner<int, 3>);
+    array.with_element(key, index<0>(), [](int& element) noexcept { element = 10; });
+    array.with_element(key, Index<3>::check(2).expect("2 is below 3"), [](int& element) noexcept { element = 30; });
+    array.with_mut(key,
+                   [](auto run) noexcept { fill(take_window(std::move(run), 1, 1).expect("one element fits"), 20); });
     int total = 0;
     for (Index<3> const position : array.indices()) {
         total += array.at(position) * static_cast<int>(position.raw() + 1);
@@ -332,9 +352,9 @@ static_assert(view_reads() == 7 + 8 + 9 + 10 + 10);
 // get reads below the count and gives no value at the count, in a constant
 // evaluation too.
 [[nodiscard]] consteval int get_reads() noexcept {
-    FixedArray<int, 3> array{5, 6, 7};
+    auto [array, key] = mint_keyed_owner(fixed_array_owner<int, 3>, FixedArray<int, 3>{5, 6, 7});
     int total = *array.get(2).expect("2 is below 3");
-    array.with_mut([](auto run) noexcept {
+    array.with_mut(key, [](auto run) noexcept {
         auto element = run.get_mut(0).expect("0 is below 3");
         *element = 1;
     });
@@ -389,8 +409,7 @@ static_assert(pairs_hold_an_index_and_refs());
 // enumerate and zip in a constant evaluation.
 [[nodiscard]] consteval int enumerate_and_zip() noexcept {
     FixedArray<int, 4> const weights{1, 2, 3, 4};
-    FixedArray<int, 4> values{};
-    values.with_mut([](auto run) noexcept {
+    FixedArray<int, 4> const values = build_fixed_array<int, 4>([](auto run) noexcept {
         for (auto const [position, element] : run.view().enumerate()) {
             auto writer = run.get_mut(position.raw()).expect("the position is below the count");
             *writer = *element + static_cast<int>(position.raw()) + 10;

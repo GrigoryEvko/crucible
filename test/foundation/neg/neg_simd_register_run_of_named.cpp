@@ -10,7 +10,8 @@
 
 int main() {
     using Bytes = ::foundation::simd::vec<unsigned char, 16>;
-    auto [target, target_key] = ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::byte, 32>);
+    auto [target, target_key] =
+        ::foundation::core::mint_keyed_owner(::foundation::core::fixed_array_owner<std::byte, 32>);
     ::foundation::core::FixedArray<std::byte, 32> const source{};
     target.with_mut(target_key, [&source](auto run) noexcept {
         auto rests = ::foundation::simd::for_each_register_run<Bytes>(

@@ -428,6 +428,19 @@ concept RefusedFrameBody = std::is_nothrow_invocable_v<Body&&, ViewMut<T, Brand,
                         && (!FrameResult<detail::body_result_t<Body&&, ViewMut<T, Brand, Extent>>, Brand>)
                         && ::foundation::linear::HoldsNoLinearValue<Body> && StoresNoBorrowOutside<Body>;
 
+// True when a caller names no template argument of a door.  Each frame door
+// has a pack that takes such an argument, and the door then does not bind.  A
+// door and its refused twin state this concept, and not the bare comparison,
+// so the compiler orders the two by their constraints.
+template <class... Named>
+concept NamesNoArgument = sizeof...(Named) == 0;
+
+// The reason of the refused twin of a keyed frame door: the body does not take
+// the ViewMut, it can throw, or its result does not leave the frame.
+#define CRUCIBLE_FRAME_BODY_REFUSAL                                                                                     \
+    "the body of a keyed frame takes the ViewMut and throws nothing, and the result of a frame door leaves the frame, " \
+    "so it holds no reference and no address, and it names no brand of the frame: give a plain value"
+
 // A body of a frame door that stores a borrow outside the frame: the store
 // twin of a door that has a const twin binds to it, so the refusal gives its
 // own reason.  The store test comes first, so the twin reads no call of an
