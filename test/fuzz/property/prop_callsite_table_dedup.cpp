@@ -175,16 +175,13 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 }
                 if (duplicate) continue;
 
-                b.recs.with_element(
-                    ::fixy::Index<kRecords>::check(b.count).expect("a position of a batch is below kRecords"),
-                    [&rng, h](Record& record) noexcept {
-                        record = Record{
-                            .hash_raw = h,
-                            .filename = random_ident(rng, 4, 24),
-                            .funcname = random_ident(rng, 4, 16),
-                            .lineno = static_cast<int32_t>(rng.next_below(100000)),
-                        };
-                    });
+                b.recs.set(::fixy::Index<kRecords>::check(b.count).expect("a position of a batch is below kRecords"),
+                           Record{
+                               .hash_raw = h,
+                               .filename = random_ident(rng, 4, 24),
+                               .funcname = random_ident(rng, 4, 16),
+                               .lineno = static_cast<int32_t>(rng.next_below(100000)),
+                           });
                 ++b.count;
             }
             return b;

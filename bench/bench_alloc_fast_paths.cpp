@@ -298,7 +298,7 @@ template <class Calls>
                                                    core::ElementCount count) noexcept {
     for (std::size_t position = 0; position < count.raw(); ++position) {
         alloc::AddressWord const block = calls.allocate();
-        blocks.words.with_element(batch_at(position), [block](alloc::AddressWord& word) noexcept { word = block; });
+        blocks.words.set(batch_at(position), block);
     }
 }
 

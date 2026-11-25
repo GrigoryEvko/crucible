@@ -168,8 +168,7 @@ using PieceTable = ::fixy::FixedArray<std::uint32_t, kPieces>;
 [[nodiscard]] PieceTable make_piece_table() noexcept {
     PieceTable table{};
     for (::fixy::Index<kPieces> const piece : table.indices()) {
-        table.with_element(
-            piece, [piece](std::uint32_t& element) noexcept { element = static_cast<std::uint32_t>(piece.raw()); });
+        table.set(piece, static_cast<std::uint32_t>(piece.raw()));
     }
     return table;
 }

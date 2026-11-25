@@ -96,8 +96,7 @@ int main() {
     // The buffer of valid_span, built once outside the lambda.
     ::fixy::FixedArray<std::int32_t, kSeqLen> inc_seq{};
     for (::fixy::Index<kSeqLen> const i : inc_seq.indices())
-        inc_seq.with_element(i,
-                             [i](std::int32_t& element) noexcept { element = static_cast<std::int32_t>(i.raw() * 7); });
+        inc_seq.set(i, static_cast<std::int32_t>(i.raw() * 7));
 
     // The input of intervals_pairwise_disjoint: 8 disjoint intervals that
     // tile [0, 800).  The pass of well-formedness and the quadratic pass of

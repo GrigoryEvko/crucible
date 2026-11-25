@@ -611,7 +611,7 @@ void run_producer_loop(RowControl& control, Op const& op, LineIndex line) noexce
         for (std::uint64_t count = 0; count < kOpsPerCheck; ++count)
             op();
         for (WindowIndex const index : window)
-            ops.with_element(index, [](std::uint64_t& count) noexcept { count += kOpsPerCheck * kItemsPerOp<Kind>; });
+            ops.set(index, ops.at(index) + kOpsPerCheck * kItemsPerOp<Kind>);
     }
     // Each thread writes only the line of its own slot, and each field of a line is an Atomic.
     control.lines.with_element(line, [&ops](ThreadLine& own) noexcept {
@@ -798,9 +798,9 @@ template <OpKind Kind, class Op>
         std::uint64_t const lost_ns =
             bench::detail::lost_between(::fixy::side_as<bench::side::ReadingBefore>(window_clock),
                                         ::fixy::side_as<bench::side::ReadingAfter>(window_end));
-        window.ops.with_element(index, [ops](std::uint64_t& value) noexcept { value = ops; });
-        window.wall_ns.with_element(index, [wall_ns](std::uint64_t& value) noexcept { value = wall_ns; });
-        window.lost_ns.with_element(index, [lost_ns](std::uint64_t& value) noexcept { value = lost_ns; });
+        window.ops.set(index, ops);
+        window.wall_ns.set(index, wall_ns);
+        window.lost_ns.set(index, lost_ns);
         window_clock = window_end;
         start = end;
     }
@@ -956,7 +956,7 @@ template <OpKind Kind, class Op>
             op();
         for (WindowIndex const index : ops.indices()) {
             std::uint64_t const added = line.window_ops.at(index).load_acquire();
-            ops.with_element(index, [added](std::uint64_t& count) noexcept { count += added; });
+            ops.set(index, ops.at(index) + added);
         }
     }
 
@@ -969,7 +969,7 @@ template <OpKind Kind, class Op>
         all_wall_ns += wall_ns;
         double const mops =
             wall_ns == 0 ? 0.0 : static_cast<double>(ops.at(index)) * 1000.0 / static_cast<double>(wall_ns);
-        window_mops.with_element(index, [mops](double& value) noexcept { value = mops; });
+        window_mops.set(index, mops);
     }
 
     RowResult result{.threads = threads,
@@ -1013,7 +1013,7 @@ template <OpKind Kind>
     RowHome& home = *boxed;
     RowState& state = home.state;
     for (::fixy::Index<kBatch> const index : state.batch.indices())
-        state.batch.with_element(index, [index](Item& item) noexcept { item = Item{index.raw() + 1}; });
+        state.batch.set(index, Item{index.raw() + 1});
     end_lanes_past_the_producers<Kind>(state, threads);
     RawWorkers workers{};
     workers.start<Kind>(home, spread, threads, place);
@@ -1344,9 +1344,7 @@ enum class OpGroup : std::uint8_t {
     bool is_named = false;
     for (::fixy::CText const argument : arguments) {
         for (OpGroup const group : group_of(argument.view())) {
-            groups.with_element(
-                ::fixy::Index<3>::check(static_cast<std::size_t>(group)).expect("a group is below three"),
-                [](bool& is_set) noexcept { is_set = true; });
+            groups.set(::fixy::Index<3>::check(static_cast<std::size_t>(group)).expect("a group is below three"), true);
             is_named = true;
         }
     }

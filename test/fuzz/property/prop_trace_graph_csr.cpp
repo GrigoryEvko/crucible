@@ -79,8 +79,8 @@ void edge_spec_at(const GraphSpec&&, Rest&&...) =
 // Adds one to the count at op v of a per-op count array.  Each op is below
 // kMaxOps.
 void increment_count_at(::fixy::FixedArray<uint32_t, kMaxOps>& counts, uint32_t v) noexcept {
-    counts.with_element(::fixy::Index<kMaxOps>::check(v).expect("an op of a spec is below kMaxOps"),
-                        [](uint32_t& count) noexcept { ++count; });
+    auto const slot = ::fixy::Index<kMaxOps>::check(v).expect("an op of a spec is below kMaxOps");
+    counts.set(slot, counts.at(slot) + 1);
 }
 
 using EdgeOrder = ::fixy::FixedArray<uint32_t, kMaxEdges>;
@@ -98,8 +98,7 @@ template <class KeyOf>
     for (uint32_t key = 0; key < spec.num_ops; ++key) {
         for (uint32_t e = 0; e < spec.num_edges; ++e) {
             if (key_of(edge_spec_at(spec, e)) != key) continue;
-            order.with_element(::fixy::Index<kMaxEdges>::check(filled).expect("the order holds each edge one time"),
-                               [e](uint32_t& position) noexcept { position = e; });
+            order.set(::fixy::Index<kMaxEdges>::check(filled).expect("the order holds each edge one time"), e);
             ++filled;
         }
     }
@@ -184,7 +183,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             spec.num_ops = 1u + rng.next_below(kMaxOps);  // [1, kMaxOps]
             spec.num_edges = rng.next_below(kMaxEdges + 1u);  // [0, kMaxEdges]
             for (uint32_t e = 0; e < spec.num_edges; ++e) {
-                spec.edges.with_element(
+                spec.edges.update(
                     ::fixy::Index<kMaxEdges>::check(e).expect("a position of a spec is below kMaxEdges"),
                     [&rng, num_ops = spec.num_ops](EdgeSpec& edge_spec) noexcept {
                         edge_spec.src = rng.next_below(num_ops);

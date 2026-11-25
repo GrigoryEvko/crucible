@@ -133,8 +133,8 @@ inline constexpr uint8_t kGuardPerturbSites = 7;
     // process for another index.  XOR with 1 guarantees the byte changes
     // without overflowing uint8_t.
     const uint8_t before = *base.pad.view().get(byte_idx).expect("the index of a pad byte is below 3");
-    out.pad.with_element(::fixy::Index<3>::check(byte_idx).expect("the index of a pad byte is below 3"),
-                         [before](uint8_t& byte) noexcept { byte = static_cast<uint8_t>(before ^ 1u); });
+    out.pad.set(::fixy::Index<3>::check(byte_idx).expect("the index of a pad byte is below 3"),
+                static_cast<uint8_t>(before ^ 1u));
     return out;
 }
 

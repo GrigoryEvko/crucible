@@ -155,7 +155,7 @@ int main() {
     ::fixy::FixedArray<SchemaHash, N> hashes{};
     for (::fixy::Index<N> const i : hashes.indices()) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i.raw() + 1);
-        hashes.with_element(i, [h](SchemaHash& hash) noexcept { hash = SchemaHash{h}; });
+        hashes.set(i, SchemaHash{h});
         // The names are texts of the run time, so they come through the
         // validator of a name from outside.
         ::fixy::FixedText<16> name{};

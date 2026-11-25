@@ -265,8 +265,7 @@ CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
 [[gnu::noinline, gnu::hot]] void add_indexed(SmallMatrix& out, SmallMatrix const& left,
                                              SmallMatrix const& right) noexcept {
     for (::fixy::Index<kSmallCount> const index : out.indices()) {
-        out.with_element(
-            index, [&left, &right, index](float& element) noexcept { element = left.at(index) + right.at(index); });
+        out.set(index, left.at(index) + right.at(index));
     }
 }
 
@@ -656,8 +655,8 @@ void run_small_index_loop(Level const& level, double roof) noexcept {
     SmallMatrix right{};
     SmallMatrix out{};
     for (::fixy::Index<kSmallCount> const index : left.indices()) {
-        left.with_element(index, [index](float& element) noexcept { element = value_at(index.raw()); });
-        right.with_element(index, [index](float& element) noexcept { element = value_at(index.raw() + 7); });
+        left.set(index, value_at(index.raw()));
+        right.set(index, value_at(index.raw() + 7));
     }
     print_row(level, "FixedArray Index loop",
               measure(bench::Run{"FixedArray Index loop"}, level.wall_ms,

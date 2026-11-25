@@ -129,9 +129,7 @@ int run_bench(::fixy::os::Args const& arguments) {
         ::foundation::core::FixedArray<TraceEntry, N> ops{};
         bench_rng_state = 0xDEADBEEFCAFEBABEULL;
         for (::fixy::Index<N> const index : ops.indices())
-            ops.with_element(index, [&test, &arena](TraceEntry& op) noexcept {
-                op = make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4);
-            });
+            ops.set(index, make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4));
         return bench::run("content_hash (8 ops, 2in/1out, 4d)", [&] {
             auto h = compute_content_hash(ops.view());
             bench::do_not_optimize(h);

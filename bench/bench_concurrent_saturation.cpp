@@ -56,7 +56,7 @@ struct SaturationCase {
         alignas(64) static ::fixy::FixedArray<Item, N> tx{};
         alignas(64) static ::fixy::FixedArray<Item, N> rx{};
         for (::fixy::Index<N> const index : tx.indices())
-            tx.with_element(index, [index](Item& element) noexcept { element = index.raw(); });
+            tx.set(index, index.raw());
 
         return bench::run(bench::format_name("spsc_ring batch<{}> round-trip (push+pop)", N), [&] {
             const std::size_t np = ring->try_push_batch(tx.view());

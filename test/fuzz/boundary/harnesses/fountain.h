@@ -57,9 +57,7 @@ inline void run_fountain(::fixy::View<std::byte const> bytes) noexcept {
         const ::fixy::View<std::byte const> payload = cursor.take_bytes(packet.payload.size());
         for (auto index : packet.payload.indices()) {
             if (index.raw() >= payload.size()) break;
-            packet.payload.with_element(index, [payload, index](std::byte& element) noexcept {
-                element = *payload.get(index.raw()).expect("the index is below the count of the payload");
-            });
+            packet.payload.set(index, *payload.get(index.raw()).expect("the index is below the count of the payload"));
         }
 
         auto state = decoder.add_packet(packet);

@@ -41,7 +41,7 @@ inline void run_fec(::fixy::View<std::byte const> bytes) noexcept {
     ::foundation::core::FixedArray<bool, Codec::total_shards> mask{};
     const auto bit_is_set = [mask_bits](std::size_t i) noexcept { return ((unsigned{mask_bits} >> i) & 1U) != 0; };
     for (auto shard : mask.indices())
-        mask.with_element(shard, [bit_is_set, shard](bool& element) noexcept { element = bit_is_set(shard.raw()); });
+        mask.set(shard, bit_is_set(shard.raw()));
     auto output = ::fixy::mint_heap_array(test_alloc(), output_size, std::byte{0});
     output = ::fixy::with_mut(std::move(output), [&codec, &received, &mask](auto run) noexcept {
         (void)codec.decode(received.view(), mask.view(), std::move(run));
@@ -61,7 +61,7 @@ inline void run_fec(::fixy::View<std::byte const> bytes) noexcept {
         for (auto index : erased.indices()) {
             if (erased_count >= Codec::parity_shards) break;
             if (!bit_is_set(index.raw())) continue;
-            erased.with_element(index, [](bool& element) noexcept { element = true; });
+            erased.set(index, true);
             ++erased_count;
             run = ::fixy::reborrow(std::move(run), [index, shard](auto lent) noexcept {
                 ::fixy::fill(::fixy::take_window(std::move(lent), index.raw() * shard, shard)

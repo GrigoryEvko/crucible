@@ -68,21 +68,21 @@ namespace {
         }
         ::fixy::Option<AllocatorKind> const allocator = allocator_of(argument.view());
         if (allocator.is_some()) {
-            result.selection.allocators.with_element(
+            result.selection.allocators.set(
                 ::fixy::Index<kAllocatorKinds>::check(
                     static_cast<std::size_t>(::fixy::Option<AllocatorKind>{allocator}.value_or(AllocatorKind::base)))
                     .expect("an allocator kind is below kAllocatorKinds"),
-                [](bool& element) noexcept { element = true; });
+                true);
             has_allocator = true;
             continue;
         }
         ::fixy::Option<RowKind> const row = row_of(argument.view());
         if (row.is_some()) {
-            result.selection.rows.with_element(
+            result.selection.rows.set(
                 ::fixy::Index<kRowKinds>::check(
                     static_cast<std::size_t>(::fixy::Option<RowKind>{row}.value_or(RowKind::larson)))
                     .expect("a row kind is below kRowKinds"),
-                [](bool& element) noexcept { element = true; });
+                true);
             has_row = true;
             continue;
         }

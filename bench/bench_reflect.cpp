@@ -370,8 +370,8 @@ int main() {
         w.num_inputs = 2;
         w.num_outputs = 1;
         w.op_flags = 0x1;
-        w.scalars.with_element(::fixy::index<0>(), [](int64_t& scalar) noexcept { scalar = 1; });
-        w.scalars.with_element(::fixy::index<1>(), [](int64_t& scalar) noexcept { scalar = 2; });
+        w.scalars.set(::fixy::index<0>(), 1);
+        w.scalars.set(::fixy::index<1>(), 2);
         return w;
     };
 
@@ -603,9 +603,7 @@ int main() {
                    }),
         bench::run("hash<SumBytes>       (23 plain bytes)",
                    [&] {
-                       sum_bytes.image.with_element(::fixy::index<1>(), [&vword](std::byte& element) noexcept {
-                           element = static_cast<std::byte>(vword);
-                       });
+                       sum_bytes.image.set(::fixy::index<1>(), static_cast<std::byte>(vword));
                        auto h = ::fixy::hash(sum_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
@@ -618,9 +616,7 @@ int main() {
                    }),
         bench::run("hash<ListBytes>      (65 plain bytes)",
                    [&] {
-                       list_bytes.image.with_element(::fixy::index<1>(), [&vword](std::byte& element) noexcept {
-                           element = static_cast<std::byte>(vword);
-                       });
+                       list_bytes.image.set(::fixy::index<1>(), static_cast<std::byte>(vword));
                        auto h = ::fixy::hash(list_bytes).raw();
                        bench::do_not_optimize(h);
                    }),
@@ -635,9 +631,7 @@ int main() {
                    }),
         bench::run("hash<HeapBytes>      (the same 264 bytes)",
                    [&] {
-                       heap_bytes.words.with_element(::fixy::index<0>(), [&vword](std::uint32_t& element) noexcept {
-                           element = static_cast<std::uint32_t>(vword);
-                       });
+                       heap_bytes.words.set(::fixy::index<0>(), static_cast<std::uint32_t>(vword));
                        auto h = ::fixy::hash(heap_bytes).raw();
                        bench::do_not_optimize(h);
                    }),

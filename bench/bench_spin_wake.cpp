@@ -411,8 +411,8 @@ template <class Form, class Notify>
         HeapArray<std::uint64_t> const ascending = sorted(measure_wake(ctx, cores, form, after_store, window));
         std::uint64_t const median = sample_at(ascending, Permille{500});
         std::uint64_t const trimmed_mean = trimmed_mean_picoseconds(ascending);
-        row.medians.with_element(repeat, [median](std::uint64_t& value) noexcept { value = median; });
-        row.trimmed_means.with_element(repeat, [trimmed_mean](std::uint64_t& value) noexcept { value = trimmed_mean; });
+        row.medians.set(repeat, median);
+        row.trimmed_means.set(repeat, trimmed_mean);
         bench::print("{}  wake p50={} ns  p99={} ns  max={} ns  mean p1-p99={} ps\n", name,
                      nanoseconds_of(spin::CounterTicks{median}),
                      nanoseconds_of(spin::CounterTicks{sample_at(ascending, Permille{990})}),

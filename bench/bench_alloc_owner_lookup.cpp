@@ -300,8 +300,7 @@ struct BaseRows {
         if (alloc::is_guard_chunk(chunk)) continue;
         window.set_owner(chunk, alloc::owner_entry_of(alloc::HeapId{static_cast<std::uint16_t>(taken % 64 + 1)}));
         alloc::AddressWord const address = record.address_of(chunk);
-        chunks.with_element(BlockIndex::check(taken).expect("a block lies below kBlocks"),
-                            [address](alloc::AddressWord& element) noexcept { element = address; });
+        chunks.set(BlockIndex::check(taken).expect("a block lies below kBlocks"), address);
         ++taken;
     }
     core::Box<Picks> picks = core::mint_box<Picks>(foundation::effects::testing::test().alloc);
@@ -310,9 +309,7 @@ struct BaseRows {
         std::uint64_t const base =
             static_cast<std::uint64_t>(chunks.at(BlockIndex::check(word & (kBlocks - 1)).expect("a masked block")));
         std::uint64_t const offset = ((word >> 12) & (alloc::kChunkBytes / 16 - 1)) * 16;
-        picks->addresses.with_element(pick, [base, offset](alloc::AddressWord& element) noexcept {
-            element = alloc::AddressWord{base + offset};
-        });
+        picks->addresses.set(pick, alloc::AddressWord{base + offset});
     }
     return BaseRows{std::move(window), std::move(picks)};
 }
@@ -326,14 +323,13 @@ template <class Calls>
     for (std::size_t block = 0; block < kBlocks; ++block) {
         alloc::AddressWord const first = Calls::allocate(kReferenceBlockBytes);
         if (first == alloc::AddressWord{}) fixy::fatal("{} gave no block of {} bytes", name, kReferenceBlockBytes);
-        blocks->addresses.with_element(PickIndex::check(block).expect("a block lies below kPicks"),
-                                       [first](alloc::AddressWord& element) noexcept { element = first; });
+        blocks->addresses.set(PickIndex::check(block).expect("a block lies below kPicks"), first);
     }
     core::Box<Picks> picks = core::mint_box<Picks>(foundation::effects::testing::test().alloc);
     for (PickIndex const pick : core::IndexRange<kPicks>{}) {
         alloc::AddressWord const first = blocks->addresses.at(
             PickIndex::check(draw_of(pick.raw()) & (kBlocks - 1)).expect("a masked block lies below kPicks"));
-        picks->addresses.with_element(pick, [first](alloc::AddressWord& element) noexcept { element = first; });
+        picks->addresses.set(pick, first);
     }
     bench::Report report = measure_reads(name, Calls{}, *picks);
     print_row(label, report, resident_mebibytes());
@@ -592,9 +588,8 @@ void run_light_rows(bench::Report const& inline_read, bench::Report const& call_
                 order->at(core::Index<kChainLines>::check((step + 1) % lines).expect("a step below the lines"));
             window.set_owner(alloc::ChunkIndex{static_cast<std::uint32_t>(here * kChainStride)},
                              alloc::owner_entry_of(alloc::HeapId{static_cast<std::uint16_t>(next + 1)}));
-            chase->next.with_element(
-                core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase"),
-                [next](std::uint32_t& element) noexcept { element = next * 16; });
+            chase->next.set(core::Index<kChaseWords>::check(std::size_t{here} * 16).expect("a word of the chase"),
+                            next * 16);
         }
         OwnerChain owner_chain{record.chunk_map(), static_cast<std::uint64_t>(record.base())};
         bench::Report const owner_read =

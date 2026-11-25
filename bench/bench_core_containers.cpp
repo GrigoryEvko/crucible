@@ -159,7 +159,7 @@ struct ListReports final {
     for (fixy::Index<kOperations> const index : keys.indices()) {
         std::uint64_t const key =
             map.insert(static_cast<std::uint32_t>(index.raw())).expect("the map has a free slot").raw();
-        keys.with_element(index, [key](std::uint64_t& element) noexcept { element = key; });
+        keys.set(index, key);
     }
     return SlotReports{
         .get = bench::run("SlotMap get",

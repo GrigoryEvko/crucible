@@ -172,7 +172,7 @@ int main() {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
-        ctrl.with_element(::fixy::index<5>(), [target](int8_t& byte) noexcept { byte = target; });
+        ctrl.set(::fixy::index<5>(), target);
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("match(h2) — 1 match", [&] {
             auto m = group.match(target);
@@ -273,7 +273,7 @@ int main() {
         ::fixy::FixedArray<int8_t, kGroupWidth> ctrl{};
         ctrl.with_mut([](auto run) noexcept { fill_ctrl(std::move(run), 0.75, 42); });
         const int8_t target = 0x37;
-        ctrl.with_element(::fixy::index<5>(), [target](int8_t& byte) noexcept { byte = target; });
+        ctrl.set(::fixy::index<5>(), target);
         auto group = CtrlGroup::load(ctrl.view());
         return bench::run("probe step (match+empty, hit)", [&] {
             auto matches = group.match(target);
@@ -330,9 +330,8 @@ int main() {
             seed = fmix64(seed + i);
             table->insert(seed);
             if (inserted_count < 1024) {
-                inserted_hashes->with_element(
-                    ::fixy::Index<1024>::check(inserted_count).expect("the count is below 1024"),
-                    [seed](uint64_t& hash) noexcept { hash = seed; });
+                inserted_hashes->set(::fixy::Index<1024>::check(inserted_count).expect("the count is below 1024"),
+                                     seed);
                 ++inserted_count;
             }
         }
@@ -343,8 +342,8 @@ int main() {
         while (absent_count < 1024) {
             seed = fmix64(seed + absent_count + 1);
             if (!table->find(seed)) {
-                absent_hashes->with_element(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"),
-                                            [seed](uint64_t& hash) noexcept { hash = seed; });
+                absent_hashes->set(::fixy::Index<1024>::check(absent_count).expect("the count is below 1024"),
+                                   seed);
                 ++absent_count;
             }
         }

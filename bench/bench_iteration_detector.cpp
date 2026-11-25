@@ -73,12 +73,11 @@ void warmup_detector(IterationDetector& d) {
     d.reset();
     ::foundation::core::FixedArray<SchemaHash, WARMUP_LEN> iteration{};
     for (::foundation::core::Index<WARMUP_LEN> const index : iteration.indices()) {
-        iteration.with_element(index, [index](SchemaHash& element) noexcept {
-            element = index.raw() < IterationDetector::K
-                        ? SIG.at(::fixy::Index<IterationDetector::K>::check(index.raw())
-                                     .expect("the test above keeps the index below K"))
-                        : SchemaHash{splitmix64()};
-        });
+        iteration.set(index,
+                      index.raw() < IterationDetector::K
+                          ? SIG.at(::fixy::Index<IterationDetector::K>::check(index.raw())
+                                       .expect("the test above keeps the index below K"))
+                          : SchemaHash{splitmix64()});
     }
     for (uint32_t turn = 0; turn < WARMUP_MAX_TURNS; turn++) {
         for (SchemaHash const hash : iteration) {
@@ -129,12 +128,11 @@ int main() {
             // The 95 random ops in order, then the K ops of SIG.
             ::fixy::FixedArray<SchemaHash, ITER_LEN> pattern{};
             for (::fixy::Index<ITER_LEN> const i : pattern.indices()) {
-                pattern.with_element(i, [i](SchemaHash& element) noexcept {
-                    element = i.raw() < kRandomOps
+                pattern.set(i,
+                            i.raw() < kRandomOps
                                 ? SchemaHash{splitmix64()}
                                 : SIG.at(::fixy::Index<IterationDetector::K>::check(i.raw() - kRandomOps)
-                                             .expect("the last K positions take the ops of SIG"));
-                });
+                                             .expect("the last K positions take the ops of SIG")));
             }
             // The next position is below ITER_LEN on each arm, so the
             // compiler folds the check of the index.

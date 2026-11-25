@@ -258,11 +258,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
         [](Rng& rng) {
             Schedule s{};
             for (const ::fixy::Index<K_PHASES> p : ::fixy::IndexRange<K_PHASES>{}) {
-                s.is_append.with_element(p,
-                                         [&rng](bool& is_append) noexcept { is_append = (rng.next32() & 1u) != 0u; });
-                s.count.with_element(p, [&rng](uint16_t& count) noexcept {
-                    count = static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1));
-                });
+                s.is_append.set(p, (rng.next32() & 1u) != 0u);
+                s.count.set(p, static_cast<uint16_t>(rng.next_below(MAX_OPS_PER_PHASE + 1)));
             }
             s.payload.with_mut([&rng](auto run) noexcept {
                 for (auto& slot : run) {
@@ -320,9 +317,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                         if (ring->size().peek() != size_before + 1u) return false;
 
                         // Record on the mirror for later FIFO comparison.
-                        mirror.with_element(::fixy::Index<MIRROR_CAPACITY>::check(mirror_head & (MIRROR_CAPACITY - 1u))
-                                                .expect("a slot position is below the capacity"),
-                                            [&src](MirrorSlot& slot) noexcept { slot = src; });
+                        mirror.set(::fixy::Index<MIRROR_CAPACITY>::check(mirror_head & (MIRROR_CAPACITY - 1u))
+                                       .expect("a slot position is below the capacity"),
+                                   src);
                         ++mirror_head;
 
                         // (C) producer cursor strictly advanced by 1.

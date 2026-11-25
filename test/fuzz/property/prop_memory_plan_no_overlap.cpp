@@ -150,7 +150,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             for (uint32_t i = 0; i < set.count; ++i) {
                 const uint32_t a = rng.next_below(kMaxOp);
                 const uint32_t b = rng.next_below(kMaxOp);
-                set.specs.with_element(
+                set.specs.update(
                     ::fixy::Index<kMaxSlots>::check(i).expect("a position of a set is below kMaxSlots"),
                     [&rng, a, b](SlotSpec& spec) noexcept {
                         spec.birth = a < b ? a : b;

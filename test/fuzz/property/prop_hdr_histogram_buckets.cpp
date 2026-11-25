@@ -153,9 +153,8 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             BatchSpec spec{};
             spec.count = 1u + rng.next_below(static_cast<std::uint32_t>(kMaxBatch - 1));
             for (std::uint32_t i = 0; i < spec.count; ++i) {
-                spec.values.with_element(
-                    ::fixy::Index<kMaxBatch>::check(i).expect("a position of a batch is below kMaxBatch"),
-                    [&rng](std::uint64_t& value) noexcept { value = log_uniform_below_or_eq(rng, kMax); });
+                spec.values.set(::fixy::Index<kMaxBatch>::check(i).expect("a position of a batch is below kMaxBatch"),
+                                log_uniform_below_or_eq(rng, kMax));
             }
             return spec;
         },

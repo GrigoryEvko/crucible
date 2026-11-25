@@ -72,8 +72,7 @@ void at_position(Whole const&&, Rest&&...) =
 // is below the length of the stream, which is at most kMaxLen.
 template <class T>
 void write_at_position(Stream<T>& stream, uint32_t position, T const value) noexcept {
-    stream.with_element(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"),
-                        [value](T& element) noexcept { element = value; });
+    stream.set(::fixy::Index<kMaxLen>::check(position).expect("a position of a stream is below kMaxLen"), value);
 }
 
 struct StreamSpec {

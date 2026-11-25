@@ -147,14 +147,10 @@ OpData make_op(uint32_t iter, uint32_t op_idx) noexcept {
 
     uint16_t idx = 0;
     if (op_idx > 0)
-        d.metas.with_element(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
-                             [iter, op_idx](TensorMeta& element) noexcept {
-                                 element = make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1}));
-                             });
-    d.metas.with_element(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
-                         [iter, op_idx](TensorMeta& element) noexcept {
-                             element = make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx}));
-                         });
+        d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
+                    make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx - 1})));
+    d.metas.set(::fixy::Index<2>::check(idx++).expect("the position fits the array"),
+                make_meta(fake_address(IterationNumber{iter}, OpPosition{op_idx})));
     d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
@@ -167,8 +163,7 @@ using Ops = ::fixy::FixedArray<OpData, NUM_OPS>;
 [[nodiscard]] Ops make_compiled_ops() noexcept {
     Ops ops{};
     for (OpSlot const slot : ::fixy::IndexRange<NUM_OPS>{})
-        ops.with_element(
-            slot, [slot](OpData& element) noexcept { element = make_op(10, static_cast<uint32_t>(slot.raw())); });
+        ops.set(slot, make_op(10, static_cast<uint32_t>(slot.raw())));
     return ops;
 }
 
@@ -471,8 +466,8 @@ int main() {
         ::fixy::FixedArray<SchemaHash, BIG> big_sch{};
         ::fixy::FixedArray<ShapeHash, BIG> big_shp{};
         for (BigSlot const i : ::fixy::IndexRange<BIG>{}) {
-            big_sch.with_element(i, [i](SchemaHash& element) noexcept { element = SchemaHash{0x1000 + i.raw()}; });
-            big_shp.with_element(i, [i](ShapeHash& element) noexcept { element = ShapeHash{0x2000 + i.raw()}; });
+            big_sch.set(i, SchemaHash{0x1000 + i.raw()});
+            big_shp.set(i, ShapeHash{0x2000 + i.raw()});
         }
         BenchRegion br{big_sch.view(), big_shp.view()};
         CrucibleContext ctx{::foundation::effects::testing::test().alloc};

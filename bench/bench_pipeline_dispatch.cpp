@@ -182,7 +182,7 @@ static void run_through_router(StageList<Stages...> /*stages*/) noexcept {
 
 static void fill_inputs() {
     for (::fixy::Index<1024> const i : small_data.indices()) {
-        small_data.with_element(i, [i](std::uint64_t& element) noexcept { element = i.raw() * 1315423911ULL; });
+        small_data.set(i, i.raw() * 1315423911ULL);
     }
     large_data = ::fixy::mint_heap_array_with<std::uint64_t>(
         kAlloc, kLargeStageWords * kLargeStages,

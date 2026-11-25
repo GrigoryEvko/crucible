@@ -71,11 +71,9 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             p.a_count = static_cast<uint8_t>(rng.next_below(16) + 1);
             p.b_count = static_cast<uint8_t>(rng.next_below(16) + 1);
             for (uint8_t i = 0; i < p.a_count; ++i)
-                p.a_edges.with_element(::fixy::Index<16>::check(i).expect("the count is at most 16"),
-                                       [&rng](FeedbackEdge& edge) noexcept { edge = random_feedback_edge(rng); });
+                p.a_edges.set(::fixy::Index<16>::check(i).expect("the count is at most 16"), random_feedback_edge(rng));
             for (uint8_t i = 0; i < p.b_count; ++i)
-                p.b_edges.with_element(::fixy::Index<16>::check(i).expect("the count is at most 16"),
-                                       [&rng](FeedbackEdge& edge) noexcept { edge = random_feedback_edge(rng); });
+                p.b_edges.set(::fixy::Index<16>::check(i).expect("the count is at most 16"), random_feedback_edge(rng));
             return p;
         },
         [](const auto& p) {

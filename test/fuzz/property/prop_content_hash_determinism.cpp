@@ -42,7 +42,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
             OpsBatch b{};
             b.count = static_cast<uint8_t>(rng.next_below(MAX) + 1);
             for (uint8_t i = 0; i < b.count; ++i) {
-                b.ops.with_element(::fixy::Index<MAX>::check(i).expect("the count is at most MAX"),
+                b.ops.update(::fixy::Index<MAX>::check(i).expect("the count is at most MAX"),
                                    [&rng](TraceEntry& op) noexcept {
                                        op = TraceEntry{};
                                        op.schema_hash = SchemaHash{rng.next64()};

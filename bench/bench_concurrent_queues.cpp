@@ -155,7 +155,7 @@ int main() {
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> tx{};
             alignas(64) static ::fixy::FixedArray<std::uint64_t, 64> rx{};
             for (::fixy::Index<64> const index : tx.indices())
-                tx.with_element(index, [index](std::uint64_t& element) noexcept { element = index.raw(); });
+                tx.set(index, index.raw());
             return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&] {
                 const std::size_t np = ring->try_push_batch(tx.view());
                 const std::size_t nc =

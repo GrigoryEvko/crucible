@@ -1730,9 +1730,8 @@ struct OffCpuTop {
 
     // Writes the spike at a place below kOffCpuTopK.
     void put_(std::size_t place, OffCpuSpike spike) noexcept {
-        longest.with_element(
-            ::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"),
-            [spike](OffCpuSpike& held) noexcept { held = spike; });
+        longest.set(::fixy::Index<kOffCpuTopK>::check(place).expect("a place of the top set is below its size"),
+                    spike);
     }
 };
 

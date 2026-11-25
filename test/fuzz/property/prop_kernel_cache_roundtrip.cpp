@@ -44,8 +44,7 @@ int crucible::fuzz::prop::run_property(::fixy::os::Args const arguments) {
                 // Avoid the zero hash (KernelCache may reserve it
                 // as a slot-empty sentinel).  Add 1 to guarantee
                 // non-zero.
-                b.hashes.with_element(i,
-                                      [&rng](ContentHash& hash) noexcept { hash = ContentHash{rng.next64() | 1ULL}; });
+                b.hashes.set(i, ContentHash{rng.next64() | 1ULL});
             }
             return b;
         },

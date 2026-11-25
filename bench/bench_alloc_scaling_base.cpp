@@ -78,7 +78,7 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
             double const mops = wall_ns == 0
                                   ? 0.0
                                   : static_cast<double>(window.items.at(index)) * 1000.0 / static_cast<double>(wall_ns);
-            window_mops.with_element(index, [mops](double& element) noexcept { element = mops; });
+            window_mops.set(index, mops);
         }
         RowResult result{.threads = ThreadCount{2},
                          .placement = placement,
@@ -103,8 +103,7 @@ constexpr std::uint64_t kMessageStamp = 0x5354414d50424f58;
                                          .warmup(kLatencyWarmup)
                                          .max_wall_ms(kLatencyMs)
                                          .measure([&push] { push(); });
-            result.latency.with_element(
-                report, [&measured](bench::Report& element) noexcept { element = std::move(measured); });
+            result.latency.set(report, std::move(measured));
         }
         control.phase.phase.store_release(Phase::Stop);
         return result;

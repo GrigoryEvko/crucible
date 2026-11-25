@@ -153,11 +153,9 @@ int main() {
     std::uint32_t pattern = 0x9E3779B9u;
     for (fixy::Index<kElements> index : left.indices()) {
         pattern = pattern * 1664525u + 1013904223u;
-        words.with_element(index, [pattern](std::uint32_t& element) noexcept { element = pattern; });
-        left.with_element(index,
-                          [pattern](float& element) noexcept { element = static_cast<float>(pattern >> 24) / 256.0f; });
-        right.with_element(
-            index, [pattern](float& element) noexcept { element = static_cast<float>(pattern & 0xFFu) / 256.0f; });
+        words.set(index, pattern);
+        left.set(index, static_cast<float>(pattern >> 24) / 256.0f);
+        right.set(index, static_cast<float>(pattern & 0xFFu) / 256.0f);
     }
     fixy::View<float const> const run = left.view();
     fixy::View<std::uint32_t const> const word_run = words.view();
