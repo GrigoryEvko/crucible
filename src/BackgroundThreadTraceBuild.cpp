@@ -63,15 +63,19 @@ BackgroundThread::build_trace_(TraceBuildState& state, MetaLog const& meta_log, 
     CRUCIBLE_PRE(!numerics.is_sentinel());
 
     // The five arrays take the brand of one scope over the ops.  The scope
-    // ends the process for more than 0xFFFFFFFF ops.
-    return ::fixy::mint_branded_scope(trace, [&](auto trace_data) noexcept -> TraceBuild {
-        return build_trace_columns_(
-            state, meta_log, a, scratch, trace_data,
-            trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
-            trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
-            trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"),
-            trace_data.parallel(depths).expect("the depths are parallel to the ops"), numerics);
-    });
+    // ends the process for more than 0xFFFFFFFF ops.  The body takes the Views
+    // by value, so it writes no borrow into a View of this frame.
+    return ::fixy::mint_branded_scope(
+        trace,
+        [&state, &meta_log, a, &scratch, meta_starts, scope_hashes, callsite_hashes, depths,
+         numerics](auto trace_data) noexcept -> TraceBuild {
+            return build_trace_columns_(
+                state, meta_log, a, scratch, trace_data,
+                trace_data.parallel(meta_starts).expect("the metadata starts are parallel to the ops"),
+                trace_data.parallel(scope_hashes).expect("the scope hashes are parallel to the ops"),
+                trace_data.parallel(callsite_hashes).expect("the callsite hashes are parallel to the ops"),
+                trace_data.parallel(depths).expect("the depths are parallel to the ops"), numerics);
+        });
 }
 
 template <class TraceColumn, class MetaColumn, class ScopeColumn, class CallsiteColumn, class DepthColumn>
