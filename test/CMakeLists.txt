@@ -4601,6 +4601,50 @@ crucible_neg_compile_test(neg_crucible_context_unchecked_register_of_a_slot_id
 crucible_neg_compile_test(neg_crucible_context_register_external_unread_refusal
   "ignoring return value of .*crucible::CrucibleContext::register_external\\(crucible::SlotId, crucible::TensorData"
   "neg_crucible_context_register_external_unread_refusal\\.cpp:16:")
+
+# The bytes of an external slot are in the pool only for the time of a body, and
+# the scope owns their blocks for that time, so no read reads ended memory.
+#   * neg_crucible_context_external_blocks_named: the door takes the blocks by
+#     move, so no name of one is in the body.
+#   * neg_crucible_context_external_blocks_of_temporary: the door lends a context
+#     that has a name.
+#   * neg_crucible_context_external_blocks_body_holds_the_context: the body holds
+#     no reference to a class that can store a View.
+#   * neg_crucible_context_external_blocks_body_gives_a_view: the result of the
+#     body holds no View.
+#   * neg_crucible_context_foreign_views_without_licence and
+#     neg_crucible_context_foreign_views_other_licence: the bytes of an owner
+#     outside the program need the licence of the caller.
+#   * neg_crucible_context_foreign_views_named: the door takes the list of the
+#     Views by move, so no other name of it changes an entry in the body.
+#   * neg_pool_allocator_external_bytes_are_private: only the context gives bytes
+#     to its pool.
+crucible_neg_compile_test(neg_crucible_context_external_blocks_named
+  "use of deleted function .void crucible::CrucibleContext::with_external_blocks\\("
+  "with_external_blocks takes the blocks into its frame and gives them back")
+crucible_neg_compile_test(neg_crucible_context_external_blocks_of_temporary
+  "use of deleted function .void crucible::CrucibleContext::with_external_blocks\\("
+  "a temporary context releases its pool at the end of the statement")
+crucible_neg_compile_test(neg_crucible_context_external_blocks_body_holds_the_context
+  "no matching function for call to .crucible::CrucibleContext::with_external_blocks\\("
+  "ExternalScopeBody"
+  "StoresNoBorrowOutside")
+crucible_neg_compile_test(neg_crucible_context_external_blocks_body_gives_a_view
+  "no matching function for call to .crucible::CrucibleContext::with_external_blocks\\("
+  "ExternalScopeBody"
+  "no operand of the disjunction is satisfied")
+crucible_neg_compile_test(neg_crucible_context_foreign_views_without_licence
+  "use of deleted function .void crucible::CrucibleContext::with_foreign_views\\("
+  "name the licence foreign_block_stays")
+crucible_neg_compile_test(neg_crucible_context_foreign_views_other_licence
+  "no matching function for call to .crucible::CrucibleContext::with_foreign_views<"
+  "ForeignViewLicence")
+crucible_neg_compile_test(neg_crucible_context_foreign_views_named
+  "use of deleted function .void crucible::CrucibleContext::with_foreign_views\\("
+  "with_foreign_views takes the list of the Views into its frame and gives it back")
+crucible_neg_compile_test(neg_pool_allocator_external_bytes_are_private
+  "void crucible::PoolAllocator::register_external_bytes_\\(.*is private within this context"
+  "neg_pool_allocator_external_bytes_are_private\\.cpp:11:")
 crucible_neg_compile_test(neg_replay_engine_active_view_unbranded_ctx
   "cannot convert .foundation::effects::ExecCtx<foundation::effects::ctx_cap::Fg, foundation::effects::Row<> >. to .const crucible::VigilFgCtx&."
   "neg_replay_engine_active_view_unbranded_ctx.cpp:11")

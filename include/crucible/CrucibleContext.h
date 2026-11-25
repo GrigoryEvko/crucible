@@ -96,12 +96,75 @@ enum class OutputRefusal : uint8_t {
     Overlap,  // two outputs share a byte
 };
 
-// Why register_external_view refused a View.
+// Why a scope of external slots refused the bytes of a slot.
 enum class ViewRefusal : uint8_t {
     PooledSlot,  // the plan puts the slot in the pool, which owns its bytes
-    TooSmall,  // the View holds fewer bytes than the slot of the plan
-    Misaligned,  // the first byte of the View is not aligned for an element of the slot
+    TooSmall,  // the bytes from the offset are fewer than the bytes of the slot of the plan
+    Misaligned,  // the first byte is not aligned for an element of the slot
+    AlreadyRegistered,  // an outer scope or an earlier entry of the list registered the slot
+    NoBlock,  // the list of blocks has no block at the position
 };
+
+// The position of a block in the list of an ExternalBlocks.
+using BlockPosition = ::fixy::Id<struct BlockPositionTag, uint32_t>;
+
+// The bytes of one external slot: the block that holds them, and the offset of
+// their first byte in it.  The plan of the active region gives their count.
+struct ExternalWindow {
+    ::fixy::ByteCount offset{size_t{0}};
+    SlotId slot{};
+    BlockPosition block{0};
+};
+
+// The blocks of some external slots and the window of each slot, for
+// with_external_blocks.  One block can hold many slots.
+struct ExternalBlocks {
+    ::fixy::HeapArray<::foundation::AlignedBytes> blocks{};
+    ::fixy::HeapArray<ExternalWindow> windows{};
+};
+
+// The bytes of one external slot whose owner is outside the program, for
+// with_foreign_views.  The View borrows that owner.
+struct ForeignView {
+    constexpr ForeignView(SlotId external_slot, ::fixy::View<uint8_t> slot_bytes) noexcept
+        : bytes{slot_bytes}, slot{external_slot} {}
+
+    ::fixy::View<uint8_t> bytes{};
+    SlotId slot{};
+    [[maybe_unused]] ::fixy::FixedArray<uint8_t, 4> pad{};
+};
+
+// The licence of with_foreign_views.  With it the caller states that the owner
+// of each View, such as a tensor of a front end, keeps its bytes until the door
+// returns, because the caller holds a share of that owner for the call.  No check
+// of the program proves the statement.  A body that ends a block behind this
+// licence compiles, and its next read of the slot reads ended memory.  So a call
+// stands only at the edge of a front end.  Bytes that the program owns take
+// with_external_blocks, which has no licence.  The concept admits this type alone,
+// so no other type states the licence.
+struct foreign_block_stays final {};
+
+template <class Licence>
+concept ForeignViewLicence = std::is_same_v<Licence, foreign_block_stays>;
+
+struct CrucibleContext;
+
+// The body of a scope of external slots: it takes the context with no throw, its
+// result holds no borrow, and it keeps no linear value and no borrow outside.
+template <class Body>
+concept ExternalScopeBody =
+    std::is_nothrow_invocable_v<Body&&, CrucibleContext&>
+    && (std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>
+        || ::foundation::core::HoldsNoBorrow<std::invoke_result_t<Body&&, CrucibleContext&>>)
+    && ::foundation::linear::HoldsNoLinearValue<Body> && ::foundation::core::StoresNoBorrowOutside<Body>;
+
+// The answer of a scope of external slots: the refusal of the list, or the result
+// of body, which is Unit for a body that gives void.
+template <class Body>
+using ExternalAnswer =
+    ::fixy::Result<std::conditional_t<std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>, ::fixy::Unit,
+                                      std::remove_cv_t<std::invoke_result_t<Body&&, CrucibleContext&>>>,
+                   ViewRefusal>;
 
 // Why register_external refused an address.
 enum class ExternalRefusal : uint8_t {
@@ -386,36 +449,79 @@ struct CrucibleContext {
         if (has_read) bind_reads_up_to_(matched, live);
     }
 
-    // The bytes of an external slot as a View of the host
-    // (PoolAllocator::register_external_view).  The View borrows its owner,
-    // and the owner outlives the activation of the region.  The plan of the
-    // active region is the one source of the windows, so the door checks
-    // the View against the slot of the plan once, here.  The slot must be
-    // external, the View must hold at least the nbytes of the slot, and its
-    // first byte must be aligned for an element of the slot.  The View comes
-    // from its owner, outside the program, so a refusal gives its
-    // ViewRefusal, and the pool keeps the slot as it was.  The pool keeps the
-    // first nbytes of a larger View, so a read of the slot gives the count of
-    // elements of the plan.  A slot id outside the plan ends the process.
-    // Complexity: O(1).
-    [[nodiscard]] ::fixy::Result<::fixy::Unit, ViewRefusal>
-    register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes, CompiledView const&) {
-        using Registered = ::fixy::Result<::fixy::Unit, ViewRefusal>;
-        const TensorSlot& slot =
-            *active_plan_().slots.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
-        if (!slot.is_external) [[unlikely]]
-            return ::fixy::err(ViewRefusal::PooledSlot);
-        return bytes.window(0, slot.nbytes)
-            .match(
-                [this, sid, &slot](::fixy::View<uint8_t> planned) noexcept -> Registered {
-                    if (!is_aligned_for_(slot.dtype, planned)) [[unlikely]]
-                        return ::fixy::err(ViewRefusal::Misaligned);
-                    auto pv = pool_.initialized_view_();
-                    pool_.register_external_view(sid, planned, pv);
-                    return ::fixy::Unit{};
-                },
-                []() noexcept -> Registered { return ::fixy::err(ViewRefusal::TooSmall); });
+    // Scope of external slots
+    //   with_external_blocks registers the bytes of some external slots for the
+    //   time of body, gives body this context, and drops them before the door
+    //   returns.  The blocks move into the frame of the door, so no name that
+    //   body reaches ends a block or changes a window of the scope, and they come
+    //   back in a Record after the answer.  A block keeps its bytes where they
+    //   are in a move.  So each read of a registered slot in body reads a block
+    //   that lives.
+    //
+    //   The plan of the active region gives the count of bytes of a slot, so the
+    //   door checks each window against the slot of the plan one time, here.  The
+    //   slot must be external and not registered, the block must hold the nbytes
+    //   of the slot from the offset, and the first byte must be aligned for an
+    //   element of the slot.  A window comes from data outside the code, such as
+    //   a checkpoint, so a refusal gives its ViewRefusal: the door drops the
+    //   earlier entries, and body does not run.  A slot id outside the plan ends
+    //   the process.
+    //
+    //   At the end each slot of the list goes back to its state after the
+    //   activation: no address, the host and no bytes, also when body registered
+    //   an address for it.  A scope in body can register other slots, such as a
+    //   batch beside the parameters of an outer scope.  The pool is lent for the
+    //   time of body, so a deactivation, an activation or a switch of region in
+    //   it ends the process (PoolAllocator, the lent pool).  A body that meets a
+    //   divergence gives it back as its result.
+    //
+    //   with_foreign_views is the same scope for bytes whose owner is outside the
+    //   program.  The frame of the door cannot hold that owner, so the caller
+    //   names the licence foreign_block_stays, with which it states that the
+    //   bytes live until the door returns.
+    // Complexity: O(entries of the list), and the cost of body.
+    template <class Body>
+        requires ExternalScopeBody<Body>
+    [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ExternalBlocks>
+    with_external_blocks(ExternalBlocks&& given, CompiledView const&, Body&& body) & noexcept {
+        ExternalBlocks held{std::move(given)};
+        [[maybe_unused]] auto const lend = pool_.lends_.lend();
+        ExternalAnswer<Body> answer =
+            answer_scope_(register_windows_(held), ::fixy::as_const(held.windows).view(), static_cast<Body&&>(body));
+        return {std::move(answer), std::move(held)};
     }
+    template <class Licence, class Body>
+        requires ForeignViewLicence<Licence> && ExternalScopeBody<Body>
+    [[nodiscard]] ::fixy::Record<ExternalAnswer<Body>, ::fixy::HeapArray<ForeignView>>
+    with_foreign_views(::fixy::HeapArray<ForeignView>&& given, CompiledView const&, Body&& body) & noexcept {
+        ::fixy::HeapArray<ForeignView> held{std::move(given)};
+        [[maybe_unused]] auto const lend = pool_.lends_.lend();
+        ExternalAnswer<Body> answer =
+            answer_scope_(register_foreign_(held.view()), held.view(), static_cast<Body&&>(body));
+        return {std::move(answer), std::move(held)};
+    }
+
+    // A list that stays with the caller, a foreign list with no licence, and a
+    // temporary context each bind to an overload of these, so the refusal gives
+    // its reason.
+    template <class Body>
+    void with_external_blocks(ExternalBlocks& given, CompiledView const&, Body&&) & = delete(
+        "with_external_blocks takes the blocks into its frame and gives them back: pass std::move(blocks), and keep "
+        "the blocks that the call returns");
+    template <class Licence, class Body>
+    void with_foreign_views(::fixy::HeapArray<ForeignView>& given, CompiledView const&, Body&&) & = delete(
+        "with_foreign_views takes the list of the Views into its frame and gives it back: pass std::move(views), and "
+        "keep the list that the call returns");
+    template <class Body>
+    void with_foreign_views(::fixy::HeapArray<ForeignView>&& given, CompiledView const&, Body&&) & = delete(
+        "no check proves that a block outside the program lives: name the licence foreign_block_stays, or give bytes "
+        "that the program owns to with_external_blocks");
+    template <class Body>
+    void with_external_blocks(ExternalBlocks&&, CompiledView const&, Body&&) && =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
+    template <class Licence, class Body>
+    void with_foreign_views(::fixy::HeapArray<ForeignView>&&, CompiledView const&, Body&&) && =
+        delete("a temporary context releases its pool at the end of the statement. Use a context that has a name");
 
     // The bytes of an input of the matched op as a read-only View of T, for a
     // kernel that reads them (PoolAllocator::slot_view).  No value for an
@@ -558,6 +664,105 @@ private:
         pool_.register_external(external.slot(), data, pv);
     }
 
+    // Registers the bytes from offset as the external slot sid of the active plan,
+    // or gives the refusal, and the pool then keeps the slot as it was (the scope
+    // of external slots).  A slot id outside the plan ends the process.
+    // Complexity: O(1).
+    [[nodiscard]] ::fixy::Result<::fixy::Unit, ViewRefusal> register_bytes_(SlotId sid, ::fixy::View<uint8_t> bytes,
+                                                                            ::fixy::ByteCount offset) noexcept {
+        using Registered = ::fixy::Result<::fixy::Unit, ViewRefusal>;
+        const TensorSlot& slot =
+            *active_plan_().slots.view().get(sid.raw()).expect("a slot id of the plan is below the count of its slots");
+        if (!slot.is_external) [[unlikely]]
+            return ::fixy::err(ViewRefusal::PooledSlot);
+        if (pool_.holds_bytes_(sid)) [[unlikely]]
+            return ::fixy::err(ViewRefusal::AlreadyRegistered);
+        return bytes.window(offset.raw(), slot.nbytes)
+            .match(
+                [this, sid, &slot](::fixy::View<uint8_t> planned) noexcept -> Registered {
+                    if (!is_aligned_for_(slot.dtype, planned)) [[unlikely]]
+                        return ::fixy::err(ViewRefusal::Misaligned);
+                    pool_.register_external_bytes_(sid, planned);
+                    return ::fixy::Unit{};
+                },
+                []() noexcept -> Registered { return ::fixy::err(ViewRefusal::TooSmall); });
+    }
+
+    // Registers each entry in order through register_one, which gives a Result.
+    // At the first refusal it drops the earlier entries and gives the refusal.
+    // Complexity: O(entries.size()).
+    template <class Entry, class RegisterOne>
+    [[nodiscard]] ::fixy::Option<ViewRefusal> register_each_(::fixy::View<const Entry> entries,
+                                                             RegisterOne const& register_one) noexcept {
+        size_t registered = 0;
+        for (const Entry& entry : entries) {
+            const ::fixy::Option<ViewRefusal> refusal = register_one(entry).err();
+            if (refusal.is_some()) [[unlikely]] {
+                drop_slots_(entries.window(0, registered).expect("the loop registered the entries before this one"));
+                return refusal;
+            }
+            ++registered;
+        }
+        return ::fixy::none;
+    }
+
+    // Registers each window of the blocks that the frame of with_external_blocks
+    // holds.  A block goes out of the list for the lend of its bytes and back into
+    // it, and its bytes stay where they are.  Complexity: O(windows).
+    [[nodiscard, gnu::noinline]] ::fixy::Option<ViewRefusal> register_windows_(ExternalBlocks& held) noexcept {
+        return register_each_(
+            ::fixy::as_const(held.windows).view(),
+            [this, &held](const ExternalWindow& window) noexcept -> ::fixy::Result<::fixy::Unit, ViewRefusal> {
+                if (window.block.raw() >= held.blocks.size()) [[unlikely]]
+                    return ::fixy::err(ViewRefusal::NoBlock);
+                ::foundation::AlignedBytes block =
+                    held.blocks.exchange(window.block.raw(), ::foundation::AlignedBytes{});
+                const ::fixy::Result<::fixy::Unit, ViewRefusal> registered =
+                    register_bytes_(window.slot, block.view(), window.offset);
+                static_cast<void>(held.blocks.exchange(window.block.raw(), std::move(block)));
+                return registered;
+            });
+    }
+
+    // Registers each View of with_foreign_views.  Complexity: O(views.size()).
+    [[nodiscard, gnu::noinline]] ::fixy::Option<ViewRefusal>
+    register_foreign_(::fixy::View<const ForeignView> views) noexcept {
+        return register_each_(views, [this](const ForeignView& given) noexcept {
+            return register_bytes_(given.slot, given.bytes, ::fixy::ByteCount{size_t{0}});
+        });
+    }
+
+    // Takes the slot of each entry back to its state after the activation.  Each
+    // entry is an external slot of the active plan, because register_each_
+    // registered it, and the lend of the scope keeps the plan.  Complexity:
+    // O(entries.size()).
+    template <class Entry>
+    [[gnu::noinline]] void drop_slots_(::fixy::View<const Entry> entries) noexcept {
+        for (const Entry& registered : entries)
+            pool_.drop_external_(registered.slot);
+    }
+
+    // The answer of a scope whose list gave refusal: the refusal, or the result of
+    // body, after which each entry drops.  Complexity: O(entries.size()), and the
+    // cost of body.
+    template <class Entry, class Body>
+    [[nodiscard]] ExternalAnswer<Body> answer_scope_(::fixy::Option<ViewRefusal> refusal,
+                                                     ::fixy::View<const Entry> entries, Body&& body) noexcept {
+        using Answer = ExternalAnswer<Body>;
+        return refusal.match([](ViewRefusal reason) noexcept -> Answer { return ::fixy::err(reason); },
+                             [this, entries, &body]() noexcept -> Answer {
+                                 if constexpr (std::is_void_v<std::invoke_result_t<Body&&, CrucibleContext&>>) {
+                                     static_cast<Body&&>(body)(*this);
+                                     drop_slots_(entries);
+                                     return ::fixy::Unit{};
+                                 } else {
+                                     Answer given{static_cast<Body&&>(body)(*this)};
+                                     drop_slots_(entries);
+                                     return given;
+                                 }
+                             });
+    }
+
     // Binds the listed reads of the op at matched to the live op, and passes
     // the reads of the earlier ops.  The cursor stops at the first read of a
     // later op.
@@ -628,8 +833,8 @@ private:
     // plan of the active region: the offset of its first byte and its count
     // of bytes.  An external slot holds bytes of its owner, and no window of
     // the pool, so it gives ExternalOutput.  The column of bytes of the pool
-    // holds the same window for each pooled slot, because register_external,
-    // register_external_view and the list of the external reads refuse a
+    // holds the same window for each pooled slot, because register_external, the
+    // scopes of external slots and the list of the external reads refuse a
     // pooled slot of the active plan.  The check of each output stays in each
     // build: a pooled slot with another address or View ends the process, and
     // an input never reads other bytes than the output wrote.  Complexity:

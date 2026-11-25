@@ -733,9 +733,33 @@ static void test_divergence_counter() {
     ::fixy::check::pass(kTest, "  test_divergence_counter: PASSED\n");
 }
 
-// The doors of the views of an op.  register_external_view checks a View
-// against the slot of the plan, and refuses a pooled slot, a View smaller
-// than the slot and a View off the alignment of the element.  input_view
+// The external slot of a scope of the tests, and the first byte of it in its
+// block.
+static crucible::ExternalWindow make_window(SlotId slot, ::fixy::ByteCount offset,
+                                            crucible::BlockPosition block = crucible::BlockPosition{0}) noexcept {
+    return crucible::ExternalWindow{.offset = offset, .slot = slot, .block = block};
+}
+
+// Runs body in a scope that registers one window of the block, and gives the
+// answer of the scope.  The block goes into the scope, so its name is empty in
+// body, and it comes back to its name.
+template <class Body>
+[[nodiscard]] static auto in_block_scope(CrucibleContext& ctx, CrucibleContext::CompiledView const& cv,
+                                         crucible::ExternalWindow const& window, ::foundation::AlignedBytes& block,
+                                         Body&& body) noexcept {
+    auto [answer, externals] = ctx.with_external_blocks(
+        crucible::ExternalBlocks{.blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(
+                                     g_test.alloc, 1, [&block](std::size_t) noexcept { return std::move(block); }),
+                                 .windows = ::fixy::mint_heap_array(g_test.alloc, 1, window)},
+        cv, static_cast<Body&&>(body));
+    CRUCIBLE_TEST_ASSERT(kTest, externals.blocks.size() == 1 && externals.windows.size() == 1);
+    block = externals.blocks.exchange(0, ::foundation::AlignedBytes{});
+    return std::move(answer);
+}
+
+// The doors of the views of an op.  with_external_blocks checks a window
+// against the slot of the plan, and refuses a pooled slot, a window smaller
+// than the slot and a window off the alignment of the element.  input_view
 // lends the bytes of an input as a read-only View, and with_output_views
 // lends one ViewMut for each output.  An input that is also an output of the
 // op, an input of an external slot with no View, and an input of the wrong
@@ -794,7 +818,9 @@ static void test_slot_views() {
 
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
+    // The view is const, so a body that captures it by reference writes no part
+    // of it.
+    const auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     // Each byte of the external input holds 0x3f, so each float of it has
     // the bits 0x3f3f3f3f.  Slot 4 gets an address alone.
@@ -811,41 +837,45 @@ static void test_slot_views() {
 
     CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{700}, ShapeHash{800}, cv).status() == ReplayStatus::MATCH);
 
-    // The door checks a View against the slot of the plan.  A pooled slot,
-    // a View of fewer bytes than the slot, and a View off the alignment of a
-    // float are refused, and the slot keeps no View.
-    const ::fixy::View<std::uint8_t> bytes = input.view();
-    const auto view_refusal_of = [&ctx, &cv](SlotId sid, ::fixy::View<std::uint8_t> given) noexcept {
-        return ctx.register_external_view(sid, given, cv).err().expect("the door refuses the View");
+    // The door checks a window against the slot of the plan.  A pooled slot, a
+    // block with fewer bytes from the offset than the slot, an offset past the
+    // block, and a first byte off the alignment of a float are refused, and the
+    // slot keeps no bytes.
+    const auto window_refusal_of = [&ctx, &cv, &input](SlotId sid, std::size_t offset) noexcept {
+        return in_block_scope(ctx, cv, make_window(sid, ::fixy::ByteCount{offset}), input,
+                              [](CrucibleContext const&) noexcept {})
+            .err()
+            .expect("the door refuses the window");
     };
-    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{0}, bytes.window(0, 36).expect("the block holds 64 bytes"))
-                                    == ViewRefusal::PooledSlot);
-    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{2}, bytes.window(0, 32).expect("the block holds 64 bytes"))
-                                    == ViewRefusal::TooSmall);
-    CRUCIBLE_TEST_ASSERT(kTest, view_refusal_of(SlotId{2}, bytes.window(2, 36).expect("the block holds 64 bytes"))
-                                    == ViewRefusal::Misaligned);
+    CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{0}, 0) == ViewRefusal::PooledSlot);
+    CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, 32) == ViewRefusal::TooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, 65) == ViewRefusal::TooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, ~std::size_t{0}) == ViewRefusal::TooSmall);
+    CRUCIBLE_TEST_ASSERT(kTest, window_refusal_of(SlotId{2}, 2) == ViewRefusal::Misaligned);
     CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<std::uint8_t>(InputPosition{0}, cv).is_none());
+    CRUCIBLE_TEST_ASSERT(kTest, input.size() == 64);
 
-    // The View of nine floats at an offset of 4 bytes is off the alignment
+    // The window of nine floats at an offset of 4 bytes is off the alignment
     // of a double, and nine floats hold no whole count of doubles.  So a read
-    // of doubles gives no View for each, and a read of floats gives one.  A
-    // View of 64 bytes holds more bytes than the slot, and the pool keeps
-    // its first 36, so a read gives the nine floats of the plan.
+    // of doubles gives no View for each, and a read of floats gives one.  The
+    // block holds more bytes than the slot, and the pool keeps the bytes of the
+    // slot alone, so a read gives the nine floats of the plan.
     const auto is_input_value = [](::fixy::View<float const> const& values) noexcept {
         return values.size() == 9 && values.walk().all_of([](float const& value) noexcept {
             return ::fixy::bit_cast<std::uint32_t>(value) == 0x3f3f3f3fu;
         });
     };
-    ctx.register_external_view(SlotId{2}, bytes.window(4, 36).expect("the block holds 64 bytes"), cv)
-        .expect("the View holds the 36 bytes of slot 2");
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<double>(InputPosition{0}, cv).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
-    ctx.register_external_view(SlotId{2}, bytes.window(0, 36).expect("the block holds 64 bytes"), cv)
-        .expect("the View holds the 36 bytes of slot 2");
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<double>(InputPosition{0}, cv).is_none());
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
-    ctx.register_external_view(SlotId{2}, bytes, cv).expect("the View holds more than the 36 bytes of slot 2");
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value));
+    const auto reads_floats_alone = [&cv, &is_input_value](CrucibleContext const& scoped) noexcept {
+        return scoped.input_view<double>(InputPosition{0}, cv).is_none()
+            && scoped.input_view<float>(InputPosition{0}, cv).is_some_and(is_input_value);
+    };
+    const auto is_true = [](bool const& answer) noexcept { return answer; };
+    for (const std::size_t offset : ::fixy::FixedArray<std::size_t, 3>{0, 4, 28}) {
+        CRUCIBLE_TEST_ASSERT(
+            kTest, in_block_scope(ctx, cv, make_window(SlotId{2}, ::fixy::ByteCount{offset}), input, reads_floats_alone)
+                       .is_ok_and(is_true));
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.input_view<float>(InputPosition{0}, cv).is_none());
 
     // The two outputs of op 0 get one ViewMut each, in their order.
     const auto written = ctx.with_output_views<float>(cv, [](auto& views) noexcept {
@@ -917,6 +947,232 @@ static void test_slot_views() {
     CRUCIBLE_TEST_ASSERT(kTest, runs == 0);
 
     ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");
+}
+
+// A region of one op with one output.  It writes slot 0 of the pool and reads
+// the external slots 1 and 2, of 64 bytes each.
+static crucible::DagRef<RegionNode> make_region_of_two_externals(::fixy::BumpArena<DagArena>& arena) {
+    auto ops_run = arena.array(g_test.alloc, 1, TraceEntry{});
+    // A plain View of an arena run: the View carries no brand of its arena.
+    ::fixy::View<TraceEntry, 1> const ops = ops_run.view().window<1>(0).expect("the run holds one op");
+    TraceEntry& op = ops.at(::foundation::core::index<0>());
+    op.schema_hash = SchemaHash{50};
+    op.shape_hash = ShapeHash{60};
+    set_input_slots(op, ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{1}, SlotId{2}));
+    set_output_slots(op, ::fixy::check::run_of(kTest, g_test.alloc, arena, SlotId{0}));
+
+    auto slots_run = arena.array(g_test.alloc, 3, TensorSlot{});
+    const crucible::DagRef<MemoryPlan> plan = make_simple_plan(g_test.alloc, arena, slots_run);
+    for (TensorSlot& slot : slots_run.view()) {
+        if (slot.slot_id == SlotId{0}) continue;
+        slot.is_external = true;
+        slot.nbytes = 64;
+    }
+    plan->num_external = 2;
+    return build_region(g_test.alloc, arena, ops_run, crucible::make_plan_link(plan));
+}
+
+// True when the context gives the input at the position as sixteen floats.
+[[nodiscard]] static bool reads_input(CrucibleContext const& ctx, CrucibleContext::CompiledView const& cv,
+                                      crucible::InputPosition position) noexcept {
+    return ctx.input_view<float>(position, cv).is_some_and([](::fixy::View<float const> const& values) noexcept {
+        return values.size() == 16;
+    });
+}
+
+// A block of 64 bytes, which is one external slot of the region.
+[[nodiscard]] static ::foundation::AlignedBytes make_external_block() noexcept {
+    return ::foundation::mint_aligned_bytes_zeroed(g_test.alloc, make_external_layout());
+}
+
+// A scope of external slots holds the bytes of each slot for the time of its
+// body alone.  After the scope the slot has no bytes and no address, so its block
+// can end.
+static void test_external_blocks_live_for_their_scope() {
+    using crucible::BlockPosition;
+    using crucible::ExternalBlocks;
+    using crucible::ExternalWindow;
+    using crucible::InputPosition;
+    using crucible::ViewRefusal;
+    constexpr ::fixy::ByteCount no_bytes{std::size_t{0}};
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> region = make_region_of_two_externals(arena);
+    CrucibleContext ctx{g_test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const auto cv = ctx.mint_compiled_view(kVigilForeground);
+    const auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.advance(SchemaHash{50}, ShapeHash{60}, cv).status() == ReplayStatus::COMPLETE);
+    const auto is_true = [](bool const& answer) noexcept { return answer; };
+    const auto has_no_external = [&ctx, &cv, &pv]() noexcept {
+        return !reads_input(ctx, cv, InputPosition{0}) && !reads_input(ctx, cv, InputPosition{1})
+            && ctx.pool().slot_ptr(SlotId{1}, pv).is_none() && ctx.pool().slot_ptr(SlotId{2}, pv).is_none();
+    };
+
+    const ExternalWindow slot_one = make_window(SlotId{1}, no_bytes);
+    const ExternalWindow slot_two = make_window(SlotId{2}, no_bytes);
+
+    // The block ends after the scope, and no read finds its bytes.
+    const auto reads_slot_one = [&cv](CrucibleContext const& scoped) noexcept {
+        return reads_input(scoped, cv, InputPosition{0});
+    };
+    {
+        ::foundation::AlignedBytes block = make_external_block();
+        CRUCIBLE_TEST_ASSERT(kTest, in_block_scope(ctx, cv, slot_one, block, reads_slot_one).is_ok_and(is_true));
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+
+    // The scope owns the block, so the name of the block is empty in the body, and
+    // an end of that name ends no byte of the scope.
+    ::foundation::AlignedBytes first = make_external_block();
+    ::foundation::AlignedBytes second = make_external_block();
+    const auto ends_the_name = [&cv, &first](CrucibleContext const& scoped) noexcept {
+        const bool is_empty = first.size() == 0;
+        first.reset();
+        return is_empty && reads_input(scoped, cv, InputPosition{0});
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, in_block_scope(ctx, cv, slot_one, first, ends_the_name).is_ok_and(is_true));
+    CRUCIBLE_TEST_ASSERT(kTest, first.size() == 64 && has_no_external());
+
+    // A refusal in the middle of a list drops the entries before it, the body
+    // does not run, and the blocks and the windows come back.
+    int runs = 0;
+    const auto refusal_of = [&ctx, &cv, &runs](::fixy::View<const ExternalWindow> windows) noexcept {
+        auto [answer, externals] = ctx.with_external_blocks(
+            ExternalBlocks{.blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(
+                               g_test.alloc, 2, [](std::size_t) noexcept { return make_external_block(); }),
+                           .windows = ::fixy::mint_heap_array_copy<ExternalWindow>(g_test.alloc, windows)},
+            cv, [&runs](CrucibleContext const&) noexcept { ++runs; });
+        CRUCIBLE_TEST_ASSERT(kTest, externals.windows.size() == windows.size());
+        CRUCIBLE_TEST_ASSERT(kTest, externals.blocks.size() == 2);
+        for (::foundation::AlignedBytes const& block : externals.blocks) {
+            CRUCIBLE_TEST_ASSERT(kTest, block.size() == 64);
+        }
+        return std::move(answer).err().expect("the door refuses a window");
+    };
+    const ::fixy::FixedArray<ExternalWindow, 3> pooled_in_the_middle{slot_one, make_window(SlotId{0}, no_bytes),
+                                                                     slot_two};
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(pooled_in_the_middle.view()) == ViewRefusal::PooledSlot);
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+    const ::fixy::FixedArray<ExternalWindow, 2> past_the_blocks{make_window(SlotId{1}, no_bytes, BlockPosition{1}),
+                                                                make_window(SlotId{2}, no_bytes, BlockPosition{2})};
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(past_the_blocks.view()) == ViewRefusal::NoBlock);
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+
+    // A slot has one registration at a time: an entry that names the slot of an
+    // earlier entry is refused, and so is the slot of an outer scope.
+    const ::fixy::FixedArray<ExternalWindow, 2> one_slot_two_times{slot_one,
+                                                                   make_window(SlotId{1}, no_bytes, BlockPosition{1})};
+    CRUCIBLE_TEST_ASSERT(kTest, refusal_of(one_slot_two_times.view()) == ViewRefusal::AlreadyRegistered);
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external() && runs == 0);
+
+    // Two slots can share one block.
+    const ::fixy::FixedArray<ExternalWindow, 2> one_block{slot_one, slot_two};
+    const auto make_block = [](std::size_t) noexcept { return make_external_block(); };
+    ExternalBlocks one_block_of_two{
+        .blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(g_test.alloc, 1, make_block),
+        .windows = ::fixy::mint_heap_array_copy<ExternalWindow>(g_test.alloc, one_block.view())};
+    const auto reads_both = [&cv](CrucibleContext const& scoped) noexcept {
+        return reads_input(scoped, cv, InputPosition{0}) && reads_input(scoped, cv, InputPosition{1});
+    };
+    auto [read_both, shared] = ctx.with_external_blocks(std::move(one_block_of_two), cv, reads_both);
+    CRUCIBLE_TEST_ASSERT(kTest, read_both.is_ok_and(is_true) && shared.blocks.size() == 1 && has_no_external());
+
+    // A scope in a body registers the other slot, and its end drops that slot
+    // alone.
+    const auto nests_a_scope = [&cv, &second, &slot_one, &slot_two, &reads_both,
+                                &is_true](CrucibleContext& scoped) noexcept {
+        const auto no_body = [](CrucibleContext const&) noexcept {};
+        const bool is_refused =
+            in_block_scope(scoped, cv, slot_one, second, no_body).err() == ::fixy::some(ViewRefusal::AlreadyRegistered);
+        const bool is_nested = in_block_scope(scoped, cv, slot_two, second, reads_both).is_ok_and(is_true);
+        return is_refused && is_nested && reads_input(scoped, cv, InputPosition{0})
+            && !reads_input(scoped, cv, InputPosition{1});
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, in_block_scope(ctx, cv, slot_one, first, nests_a_scope).is_ok_and(is_true));
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+
+    // A body that meets a divergence ends early and gives it back.  The bytes are
+    // gone, and the caller can deactivate.
+    const auto diverges = [&cv](CrucibleContext& scoped) noexcept -> ::fixy::Option<ReplayStatus> {
+        const ReplayStatus status = scoped.advance(SchemaHash{999}, ShapeHash{60}, cv).status();
+        if (status == ReplayStatus::DIVERGED) return ::fixy::some(status);
+        return ::fixy::none;
+    };
+    CRUCIBLE_TEST_ASSERT(
+        kTest, in_block_scope(ctx, cv, slot_one, first, diverges)
+                   .is_ok_and([](::fixy::Option<ReplayStatus> const& status) noexcept { return status.is_some(); }));
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+
+    // An address that the body registers for the slot gives the slot no bytes,
+    // and the end of the scope drops it.
+    const ::fixy::RunAddress address = ::fixy::mint_run_address(second.view(), 0).expect("the block holds 64 bytes");
+    const auto registers_an_address = [&cv, &pv, address](CrucibleContext& scoped) noexcept {
+        const crucible::TensorData data{address, crucible::kHostDevice};
+        return scoped.register_external(SlotId{1}, data, cv).is_ok() && !reads_input(scoped, cv, InputPosition{0})
+            && scoped.pool().slot_ptr(SlotId{1}, pv) == ::fixy::some(address);
+    };
+    CRUCIBLE_TEST_ASSERT(kTest, in_block_scope(ctx, cv, slot_one, first, registers_an_address).is_ok_and(is_true));
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external());
+
+    // The bytes of an owner outside the program stay for the scope, with the
+    // licence of the caller.
+    using crucible::foreign_block_stays;
+    using crucible::ForeignView;
+    const ::fixy::FixedArray<ForeignView, 2> foreign{ForeignView{SlotId{1}, first.view()},
+                                                     ForeignView{SlotId{2}, second.view()}};
+    auto [read_foreign, views] = ctx.with_foreign_views<foreign_block_stays>(
+        ::fixy::mint_heap_array_copy<ForeignView>(g_test.alloc, foreign.view()), cv,
+        [&cv, &pv, address](CrucibleContext const& scoped) noexcept {
+            return reads_input(scoped, cv, InputPosition{0}) && reads_input(scoped, cv, InputPosition{1})
+                && scoped.pool().slot_ptr(SlotId{2}, pv) == ::fixy::some(address);
+        });
+    CRUCIBLE_TEST_ASSERT(kTest, read_foreign.is_ok_and(is_true) && views.size() == 2 && has_no_external());
+    const ::fixy::FixedArray<ForeignView, 2> pooled_last{ForeignView{SlotId{1}, first.view()},
+                                                         ForeignView{SlotId{0}, second.view()}};
+    auto [refused, refused_views] = ctx.with_foreign_views<foreign_block_stays>(
+        ::fixy::mint_heap_array_copy<ForeignView>(g_test.alloc, pooled_last.view()), cv,
+        [&runs](CrucibleContext const&) noexcept { ++runs; });
+    CRUCIBLE_TEST_ASSERT(kTest, refused.err() == ::fixy::some(ViewRefusal::PooledSlot) && refused_views.size() == 2);
+    CRUCIBLE_TEST_ASSERT(kTest, has_no_external() && runs == 0);
+
+    ctx.deactivate();
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
+    ::fixy::check::pass(kTest, "  test_external_blocks_live_for_their_scope: PASSED\n");
+}
+
+// Runs change in a scope of a context that registers one external slot.
+template <class Change>
+static void change_in_a_block_scope(Change const& change) noexcept {
+    ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+    const crucible::DagRef<RegionNode> region = make_region_of_two_externals(arena);
+    CrucibleContext ctx{g_test.alloc};
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
+    const auto cv = ctx.mint_compiled_view(kVigilForeground);
+    ::foundation::AlignedBytes block = make_external_block();
+    const crucible::ExternalWindow slot_one = make_window(SlotId{1}, ::fixy::ByteCount{std::size_t{0}});
+    CRUCIBLE_TEST_ASSERT(kTest, in_block_scope(ctx, cv, slot_one, block, change).is_ok());
+}
+
+// The plan of a context stays for the time of a scope of external slots: a
+// change of it in the body ends the process.
+static void test_external_blocks_keep_the_plan() {
+    constexpr ::fixy::TextView refusal{
+        "foundation: fatal: an init, a detach or the end of a PoolAllocator while a body door lends it"};
+    ::fixy::check::expect_dies(
+        kTest, [] noexcept { change_in_a_block_scope([](CrucibleContext& scoped) noexcept { scoped.deactivate(); }); },
+        refusal);
+    ::fixy::check::expect_dies(
+        kTest,
+        [] noexcept {
+            change_in_a_block_scope([](CrucibleContext& scoped) noexcept {
+                ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
+                static_cast<void>(scoped.activate(*make_region_of_two_externals(arena)));
+            });
+        },
+        refusal);
+    change_in_a_block_scope([](CrucibleContext&) noexcept {});
+
+    ::fixy::check::pass(kTest, "  test_external_blocks_keep_the_plan: PASSED\n");
 }
 
 // Matches the first op of a region, deactivates the context, and then reads
@@ -1039,6 +1295,8 @@ int main() {
     test_integration_sweep_line();
     test_divergence_counter();
     test_slot_views();
+    test_external_blocks_live_for_their_scope();
+    test_external_blocks_keep_the_plan();
     test_a_stale_proof_of_the_compiled_mode_ends_the_process();
     test_lent_outputs_refuse_a_change_of_the_plan();
     ::fixy::check::pass(kTest, "test_crucible_context: all tests passed\n");

@@ -604,10 +604,11 @@ static void test_slot_bounds_guard_is_armed(::fixy::TestRunnerCtx const& test) {
     ::fixy::check::pass(test, "  test_slot_bounds_guard_is_armed: PASSED\n");
 }
 
-// The column of bytes.  A pooled slot reads its window of the pool, and an
-// external slot reads the View that its owner registered.  An external slot
-// with an address alone, a slot of no byte and the id with no slot read no
-// View.  The address of each slot is the first byte of its View.
+// The column of bytes.  A pooled slot reads its window of the pool.  An external
+// slot with no registration, an external slot with an address alone, a slot of no
+// byte and the id with no slot read no View.  The address of a pooled slot is the
+// first byte of its View.  Only a scope of a context registers the View of an
+// external slot (test_crucible_context).
 static void test_slot_views() {
     ::fixy::BumpArena<DagArena> arena = ::fixy::mint_bump_arena<DagArena>(Bytes{4096});
     auto slots_run = arena.array(::foundation::effects::testing::test().alloc, 3, TensorSlot{});
@@ -678,9 +679,6 @@ static void test_slot_views() {
             .expect("64 bytes at an alignment of 64 is a layout");
     ::foundation::AlignedBytes owner =
         ::foundation::mint_aligned_bytes_zeroed(::foundation::effects::testing::test().alloc, layout);
-    pool.register_external_view(SlotId{1}, owner.view(), pv);
-    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{1}, pv).is_some_and(is_count));
-    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{1}, pv) == ::fixy::mint_run_address(owner.view(), 0));
 
     // A registration by address alone gives the slot no bytes.
     pool.register_external(
@@ -688,6 +686,7 @@ static void test_slot_views() {
         crucible::TensorData{::fixy::mint_run_address(owner.view(), 0).expect("the block holds 64 bytes"),
                              crucible::kHostDevice},
         pv);
+    CRUCIBLE_TEST_ASSERT(kTest, pool.slot_ptr(SlotId{1}, pv) == ::fixy::mint_run_address(owner.view(), 0));
     CRUCIBLE_TEST_ASSERT(kTest, pool.slot_view<float>(SlotId{1}, pv).is_none());
 
     ::fixy::check::pass(kTest, "  test_slot_views: PASSED\n");

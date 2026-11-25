@@ -193,34 +193,45 @@ int main() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_compiled());
 
-    auto cv = ctx.mint_compiled_view(kVigilForeground);
-    const auto bind = [&](SlotId slot, ::foundation::AlignedBytes& block) noexcept {
-        ctx.register_external_view(slot, block.view(), cv).expect("each block holds the bytes of its external slot");
-    };
-
-    bind(SlotId{SL_X}, weights.X);
-    bind(SlotId{SL_G1}, weights.gamma1);
-    bind(SlotId{SL_B1}, weights.beta1);
-    bind(SlotId{SL_WQ}, weights.W_q);
-    bind(SlotId{SL_WK}, weights.W_k);
-    bind(SlotId{SL_WV}, weights.W_v);
-    bind(SlotId{SL_WOUT}, weights.W_out);
-    bind(SlotId{SL_G2}, weights.gamma2);
-    bind(SlotId{SL_B2}, weights.beta2);
-    bind(SlotId{SL_WFF1}, weights.W_ff1);
-    bind(SlotId{SL_WFF2}, weights.W_ff2);
-    bind(SlotId{SL_WHEAD}, weights.W_head);
-
-    for (int iter = 0; iter < 50; iter++) {
-        run_attention_ops(ctx, cv);
-        run_ffn_and_head_ops(ctx, cv);
-    }
-
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 50);
-    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
+    // The view is const, so a body that captures it by reference writes no part
+    // of it.
+    const auto cv = ctx.mint_compiled_view(kVigilForeground);
 
     Reference reference;
     compute_reference(weights, reference);
+
+    // The blocks of the weights are in the scope for the time of the loop, so no
+    // View of them stays in the pool after it.  The window of each slot starts at
+    // the first byte of the block at the position of the slot in the list.
+    const ::fixy::FixedArray<SlotId, 12> slot_ids{SlotId{SL_X},  SlotId{SL_G1},   SlotId{SL_B1},   SlotId{SL_WQ},
+                                                  SlotId{SL_WK}, SlotId{SL_WV},   SlotId{SL_WOUT}, SlotId{SL_G2},
+                                                  SlotId{SL_B2}, SlotId{SL_WFF1}, SlotId{SL_WFF2}, SlotId{SL_WHEAD}};
+    ::fixy::FixedArray<::foundation::AlignedBytes, 12> blocks{
+        std::move(weights.X),     std::move(weights.gamma1), std::move(weights.beta1), std::move(weights.W_q),
+        std::move(weights.W_k),   std::move(weights.W_v),    std::move(weights.W_out), std::move(weights.gamma2),
+        std::move(weights.beta2), std::move(weights.W_ff1),  std::move(weights.W_ff2), std::move(weights.W_head)};
+    const auto take_block = [&blocks](std::size_t position) noexcept {
+        return blocks.exchange(::fixy::Index<12>::check(position).expect("the list holds twelve blocks"),
+                               ::foundation::AlignedBytes{});
+    };
+    const auto make_window = [&slot_ids](std::size_t position) noexcept {
+        return ExternalWindow{.slot = *slot_ids.get(position).expect("the list holds twelve slots"),
+                              .block = BlockPosition{::fixy::narrow<uint32_t>(position).expect("below twelve")}};
+    };
+    ExternalBlocks weight_blocks{
+        .blocks = ::fixy::mint_heap_array_with<::foundation::AlignedBytes>(test.alloc, 12, take_block),
+        .windows = ::fixy::mint_heap_array_with<ExternalWindow>(test.alloc, 12, make_window)};
+    const auto replay_iterations = [&cv](CrucibleContext& scoped) noexcept {
+        for (int iter = 0; iter < 50; iter++) {
+            run_attention_ops(scoped, cv);
+            run_ffn_and_head_ops(scoped, cv);
+        }
+    };
+    auto [replayed, externals] = ctx.with_external_blocks(std::move(weight_blocks), cv, replay_iterations);
+    CRUCIBLE_TEST_ASSERT(kTest, replayed.is_ok() && externals.blocks.size() == 12);
+
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 50);
+    CRUCIBLE_TEST_ASSERT(kTest, ctx.diverged_count() == 0);
 
     auto pv = ctx.pool().mint_initialized_view(kVigilForeground);
     const ::fixy::View<float const> pool_probs =

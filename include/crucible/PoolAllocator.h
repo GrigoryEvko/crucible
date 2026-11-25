@@ -16,14 +16,14 @@
 //
 // Column of bytes
 //   The bytes of each slot as a View: the window of the pool for a pooled
-//   slot, the View that its owner registered for an external slot, or the
-//   empty View for an external slot with no registered View.  The address of
-//   a slot is the first byte of its View, or the View is empty: init builds
-//   the address from the View, and each registration checks it.  A reader of
-//   an input takes the bytes through
-//   slot_view, which gives a read-only View of T.  No door of the pool gives
-//   a mutable View of a slot: the context lends the outputs of an op through
-//   the frame door with_mut_windows of the pool bytes.
+//   slot, the bytes of an external slot that a scope of external slots of the
+//   context registered, or the empty View for an external slot outside such a
+//   scope.  The address of a slot is the first byte of its View, or the View is
+//   empty: init builds the address from the View, and each registration checks
+//   it.  A reader of an input takes the bytes through slot_view, which gives a
+//   read-only View of T.  No door of the pool gives a mutable View of a slot:
+//   the context lends the outputs of an op through the frame door
+//   with_mut_windows of the pool bytes.
 //
 // The block is memory of the host, so each pooled slot is on the host
 // device, also when the plan records a different device for the slot. A
@@ -34,9 +34,10 @@
 //
 // Lent pool
 //   A body door lends a part of the pool to a body for the time of the call:
-//   with_addresses lends the column of addresses, and with_output_views of the
-//   context lends the bytes of the outputs.  A change through a second name of
-//   the pool, such as a static pointer, would end what the body holds, and no
+//   with_addresses lends the column of addresses, with_output_views of the
+//   context lends the bytes of the outputs, and a scope of external slots of the
+//   context keeps Views in the column of bytes.  A change through a second name
+//   of the pool, such as a static pointer, would end what the body holds, and no
 //   type gate sees such a name.  So each body door opens a lend of the pool
 //   (foundation/core/LendCount.h), and an init, a destroy, a detach and the end
 //   of a lent pool end the process in each build.  The owner thread alone lends
@@ -296,25 +297,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
                              == ::fixy::some(data.address()));
     }
 
-    // The bytes of an external slot as a View of the host.  The View borrows
-    // its owner, and the owner outlives the activation of the region: the
-    // pool keeps the View until the next init or destroy, and gives it to
-    // each read of the slot.  The address of the slot is the first byte of
-    // the View, or no address for a View of no byte.
-    CRUCIBLE_INLINE void register_external_view(SlotId sid, ::fixy::View<uint8_t> bytes,
-                                                InitializedView const&) noexcept {
-        const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_run_address(bytes, 0);
-        write_slot_(sid, address, kHostDevice, bytes);
-        CRUCIBLE_POST(0, is_address_of_bytes_(address, bytes));
-    }
-
     // The bytes of a slot as a read-only View of T, for a reader of an input:
-    // the window of the pool for a pooled slot, or the View that its owner
-    // registered.  No value for the id with no slot, for an external slot
-    // with no registered View, for a slot of no byte, and for bytes that hold
-    // no whole count of T or whose first byte is not aligned for T.  The read
-    // starts the lifetime of the elements of T over the bytes, with their
-    // values.  Complexity: O(1).
+    // the window of the pool for a pooled slot, or the View of the open scope
+    // that registered the slot.  No value for the id with no slot, for an
+    // external slot with no registered View, for a slot of no byte, and for
+    // bytes that hold no whole count of T or whose first byte is not aligned for
+    // T.  The read starts the lifetime of the elements of T over the bytes, with
+    // their values.  Complexity: O(1).
     template <class T>
         requires ::foundation::lifetime::ImplicitLifetimeThroughout<T>
     [[nodiscard]] ::fixy::Option<::fixy::View<T const>> slot_view(SlotId sid, InitializedView const&) const& noexcept {
@@ -552,6 +541,28 @@ private:
             [] noexcept { ::fixy::fatal("the three columns hold one entry for each slot"); });
     }
 
+    // Registers the bytes of an external slot of the plan, for the scope of
+    // external slots of the context that drops them.  The address of the slot is
+    // the first byte, or no address for a run of no byte.  An id at or past the
+    // count of slots ends the process.  Complexity: O(1).
+    void register_external_bytes_(SlotId sid, ::fixy::View<uint8_t> bytes) noexcept {
+        const ::fixy::Option<::fixy::RunAddress> address = ::fixy::mint_run_address(bytes, 0);
+        write_slot_(sid, address, kHostDevice, bytes);
+        CRUCIBLE_POST(0, is_address_of_bytes_(address, bytes));
+    }
+
+    // Takes an external slot back to its state after init: no address, the host
+    // and no View.  An id at or past the count of slots ends the process.
+    // Complexity: O(1).
+    void drop_external_(SlotId sid) noexcept { write_slot_(sid, ::fixy::none, kHostDevice, ::fixy::View<uint8_t>{}); }
+
+    // True when the column of bytes holds a View of at least one byte for the
+    // slot sid.  An id at or past the count of slots ends the process.
+    // Complexity: O(1).
+    [[nodiscard]] bool holds_bytes_(SlotId sid) const noexcept {
+        return views_.get(sid.raw()).expect("the three columns hold one entry for each slot")->size() != 0;
+    }
+
     // True when the address is the first byte of the bytes, or the bytes are
     // empty.  A View of no byte has no first byte, so a pooled slot of no
     // byte and an external slot that its owner registered by its address
@@ -563,8 +574,8 @@ private:
 
     // True when the column holds the window of the pool of the pooled slot
     // sid of the plan: its address is the byte at the offset of the slot, and
-    // its View holds the bytes of the slot.  A View that an owner registered
-    // for a pooled slot fails it.  Complexity: O(1).
+    // its View holds the bytes of the slot.  Another View of a pooled slot fails
+    // it.  Complexity: O(1).
     [[nodiscard]] bool is_pool_window_(SlotId sid, TensorSlot const& slot) const noexcept {
         const ::fixy::View<uint8_t> held =
             *views_.get(sid.raw()).expect("the three columns hold one entry for each slot");
