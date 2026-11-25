@@ -7,7 +7,7 @@
 
 namespace {
 
-using Queued = crucible::BackgroundThread::QueuedRegion;
+using Queued = crucible::QueuedRegion;
 
 // The push is a parameter, so the fixture builds no queue.
 [[maybe_unused]] Queued take_a_second_one(Queued const& queued) { return Queued{queued}; }

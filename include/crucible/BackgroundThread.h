@@ -25,11 +25,16 @@
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
 #include <fixy/concurrent/EventCount.h>
+#include <fixy/concurrent/HandleTraits.h>
 #include <fixy/handle/OneShotFlag.h>
 #include <fixy/handle/Published.h>
 #include <fixy/handle/PublishCommit.h>
 #include <fixy/os/OwnedThread.h>
+#include <fixy/os/ThreadTasks.h>
+#include <foundation/Brand.h>
+#include <foundation/ByteSeal.h>
 #include <foundation/Closure.h>
+#include <foundation/Linear.h>
 #include <foundation/Platform.h>
 #include <foundation/Transfer.h>
 #include <foundation/contracts/Pre.h>
@@ -101,6 +106,461 @@ using FlushResult = ::fixy::Result<::fixy::Unit, FlushRefusal>;
 inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundation::closure::Crossing::SoleThread,
                                                                       ::foundation::closure::QttGrade::One, false};
 
+// The classes below hold the state and the messages of the pipeline.  Each one
+// owns its storage, and none borrows a part of a BackgroundThread.  They stand
+// outside that class, so the check of its doors reads only the nested classes
+// that can write it (the nested classes of foundation/Transfer.h).
+
+// A point of the recorded op stream, and the kind of the reset at it.  The
+// point is the count of ops that the producer put into the trace ring before
+// it.  A reset applies at its point, so each op belongs to one side of it.
+//
+// A restart follows a divergence: at the point, the detect stage drops the ops
+// that it holds and restarts the iteration detector.  A mark follows a
+// rollback or a load: each region cut before the point is stale, and the
+// detector keeps its ops and its history.
+//
+// One word holds the two: twice the count, plus one for a restart.  So the
+// points order by the count, and at one count a restart comes after a mark.
+// The count stays below 2^63, which a stream of one op in each nanosecond
+// reaches after 292 years.
+class StreamPoint {
+public:
+    constexpr StreamPoint() noexcept = default;
+
+    [[nodiscard]] static constexpr StreamPoint restart_at(uint64_t ops_before) noexcept {
+        return StreamPoint{(ops_before << 1) | uint64_t{1}};
+    }
+    [[nodiscard]] static constexpr StreamPoint mark_at(uint64_t ops_before) noexcept {
+        return StreamPoint{ops_before << 1};
+    }
+
+    [[nodiscard]] constexpr uint64_t ops_before() const noexcept { return word_ >> 1; }
+    [[nodiscard]] constexpr bool restarts_detector() const noexcept { return (word_ & uint64_t{1}) != 0; }
+
+    auto operator<=>(const StreamPoint&) const = default;
+
+private:
+    explicit constexpr StreamPoint(uint64_t word) noexcept : word_{word} {}
+
+    uint64_t word_ = 0;
+};
+
+// A region that the publish stage gives to its owner, and the point of the
+// last reset that the detect stage applied before the first op of the region.
+// The region store holds the record with its region, so the address of the
+// record lives as long as the region.  No code writes a published region, so
+// the record names a const region, and a reader of the record on another
+// thread reads it only.
+struct PublishedRegion {
+    ConstRegionLink region{};
+    StreamPoint reset_point{};
+};
+
+// The ops that the detect stage holds, from the oldest op that a future
+// iteration can hold to the newest op.  It is a ring of six parallel arrays
+// that grows by doubling.  The detect stage drops each op that
+// IterationDetector::oldest_claimable() passes, so the ring holds at most half
+// of the history of the detector and K ops more, and it never grows past
+// IterationDetector::HISTORY_MAX_CAPACITY ops.  At that capacity it takes
+// 49 MiB.
+class PendingOps {
+public:
+    // Adds the newest op.  record_start is the position of the op in the
+    // stream of records of the metadata log.  The ring grows with the
+    // allocation capability of the detect stage.  Complexity: O(1), and O(n)
+    // when the ring grows.
+    void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
+              uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth);
+
+    // Drops the count oldest ops.  A count past size() drops each op.
+    void drop_oldest(uint64_t count) noexcept {
+        const uint64_t dropped = count < count_ ? count : count_;
+        head_ += dropped;
+        count_ -= dropped;
+    }
+
+    void clear() noexcept { drop_oldest(count_); }
+
+    [[nodiscard]] uint64_t size() const noexcept { return count_; }
+
+    // The op at index, counted from the oldest held op.  The capacity of each
+    // array is a power of two, so its mask wraps the slot of the ring with no
+    // check.  The ring holds count_ ops, so each index below size() names a
+    // held op.
+    [[nodiscard]] TraceRing::Entry const& entry(uint64_t index) const noexcept {
+        return entries_.at_masked(head_ + index);
+    }
+    [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept { return meta_starts_.at_masked(head_ + index); }
+    [[nodiscard]] uint64_t record_start(uint64_t index) const noexcept {
+        return record_starts_.at_masked(head_ + index);
+    }
+    [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept { return scope_hashes_.at_masked(head_ + index); }
+    [[nodiscard]] CallsiteHash callsite_hash(uint64_t index) const noexcept {
+        return callsite_hashes_.at_masked(head_ + index);
+    }
+    [[nodiscard]] OpDepth depth(uint64_t index) const noexcept { return depths_.at_masked(head_ + index); }
+
+private:
+    static constexpr uint64_t MIN_CAPACITY = uint64_t{1} << 12;
+
+    void grow_(::foundation::effects::Alloc alloc);
+
+    ::fixy::MaskedArray<TraceRing::Entry> entries_;
+    ::fixy::MaskedArray<MetaIndex> meta_starts_;
+    ::fixy::MaskedArray<uint64_t> record_starts_;
+    ::fixy::MaskedArray<ScopeHash> scope_hashes_;
+    ::fixy::MaskedArray<CallsiteHash> callsite_hashes_;
+    ::fixy::MaskedArray<OpDepth> depths_;
+    // The capacity minus one, zero before the first push.
+    uint64_t mask_ = 0;
+    // The slot of the oldest held op, before the mask.
+    uint64_t head_ = 0;
+    uint64_t count_ = 0;
+};
+
+// The parts of one built region, each a run of the exact count in the arena of
+// the region.  The build stage makes them, a message moves them to the publish
+// stage, and the publish stage gives them to the region store, or frees them
+// when it discards the region.  The payload walk of the pipeline channels
+// reads each member (fixy/concurrent/PayloadRow.h).
+//
+// A region moves between threads (foundation/Transfer.h).  Each op points into
+// the runs of its own region, which move with it, and no object outside the
+// region points into them, so the region states the property that the pointers
+// of its ops hide.
+//
+// The arena owns each run, and each run came out of the arena one time.  The
+// arena is on the heap, so a move of the region moves no run.  The runs are
+// private, because an assignment to one run would lose the storage that the
+// ops still name.  The region gives Views of const of its runs, and it moves
+// only as a whole.  Only BackgroundThread builds a region with parts, and only
+// the publish stage writes the ops and the slots of a region.  The default
+// region holds no arena and no run, as in a commit message, and so does a
+// region that a move took the parts of.
+class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
+public:
+    BuiltRegion() noexcept = default;
+
+    // A move takes the arena and the runs, and leaves the source with no arena
+    // and no run, so each View of a moved-from region is empty.
+    BuiltRegion(BuiltRegion&& other) noexcept
+        : arena_{std::move(other.arena_)},
+          runs_{other.runs_},
+          content_hash_{other.content_hash_},
+          numerics_{other.numerics_} {
+        other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
+        other.runs_ = Runs{};
+    }
+    BuiltRegion& operator=(BuiltRegion&& other) noexcept {
+        arena_ = std::move(other.arena_);
+        runs_ = other.runs_;
+        content_hash_ = other.content_hash_;
+        numerics_ = other.numerics_;
+        other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
+        other.runs_ = Runs{};
+        return *this;
+    }
+    BuiltRegion(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
+    BuiltRegion&
+    operator=(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
+    ~BuiltRegion() = default;
+
+    [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.ops.view(); }
+    [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.metas.view(); }
+    [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.scalars.view(); }
+    [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.producers.view(); }
+    [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.slot_ids.view(); }
+    [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.slots.view(); }
+    [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
+    [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
+
+    // The bytes of each block of the arena of the region, or zero bytes for a
+    // region with no arena.
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> arena_bytes() const noexcept {
+        return arena_.match(
+            [](::fixy::Box<::fixy::BumpArena<DagArena>> const& arena) noexcept {
+                return ::fixy::Quantity<::fixy::unit::Byte, size_t>{arena->retained_bytes()};
+            },
+            []() noexcept { return ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{0}}; });
+    }
+
+private:
+    friend struct BackgroundThread;
+
+    // The runs of one region, each a run of the arena of the region.  The ops
+    // point into the other runs: the tensor metadata, the scalars, the
+    // producer of each input, and the slot ids of the inputs and the outputs.
+    // The slots are the slots of the memory plan.  The node of the region and
+    // its plan take the runs of the ops and of the slots.
+    struct Runs {
+        ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
+        ::fixy::ArenaRun<TensorMeta, DagArena> metas{};
+        ::fixy::ArenaRun<int64_t, DagArena> scalars{};
+        ::fixy::ArenaRun<OpIndex, DagArena> producers{};
+        ::fixy::ArenaRun<SlotId, DagArena> slot_ids{};
+        ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
+    };
+
+    // The parts of one build: the arena of the region, and the runs that the
+    // arena gave.
+    struct Parts {
+        ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena{};
+        Runs runs{};
+        ContentHash content_hash{};
+        NumericsHash numerics{};
+    };
+
+    explicit BuiltRegion(Parts&& parts) noexcept
+        : arena_{std::move(parts.arena)},
+          runs_{parts.runs},
+          content_hash_{parts.content_hash},
+          numerics_{parts.numerics} {}
+
+    // The arena that owns each run below: a Box in the region of a build, and
+    // none in the default region.
+    ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena_{};
+    Runs runs_{};
+    ContentHash content_hash_{};
+    // The numerics hash that the content hash folds.
+    NumericsHash numerics_{};
+};
+
+// A build: the trace graph, in the epoch of the scratch arena that the caller
+// gave, and the parts of its region.  The graph dies with the epoch.  The
+// build states the brand of the epoch, so it is a carrier of the brand, as the
+// graph is.  The region does not depend on the graph.
+struct BuiltTrace {
+    using brand_type = TraceGraph::brand_type;
+    TraceGraphRef graph;
+    BuiltRegion region;
+};
+
+// One push into the uncompiled queue, or none: the node of the region, and the
+// count of the pushes before it.  Only UncompiledRegionQueue::push builds one
+// with a node, no code copies it, and a move leaves the source with none.  So
+// one push gives one QueuedRegion.  The memory of a published region holds the
+// QueuedRegion of that region in place of a link to its node.  So each region
+// of the store came from one push, and its count is the count that the push
+// gave.
+class QueuedRegion {
+public:
+    QueuedRegion() noexcept = default;
+    QueuedRegion(QueuedRegion&& other) noexcept : node_{other.node_}, pushes_before_{other.pushes_before_} {
+        other.node_ = RegionLink{};
+    }
+    QueuedRegion& operator=(QueuedRegion&& other) noexcept {
+        const RegionLink node = other.node_;
+        const uint64_t pushes_before = other.pushes_before_;
+        other.node_ = RegionLink{};
+        node_ = node;
+        pushes_before_ = pushes_before;
+        return *this;
+    }
+    QueuedRegion(QueuedRegion const&) = delete("one push gives one QueuedRegion");
+    QueuedRegion& operator=(QueuedRegion const&) = delete("one push gives one QueuedRegion");
+    ~QueuedRegion() = default;
+
+    // The node of the region, in the arena of the region, or none.
+    [[nodiscard]] RegionLink node() const noexcept { return node_; }
+
+private:
+    template <class Stage>
+    friend class UncompiledRegionQueue;
+    explicit QueuedRegion(DagRef<RegionNode> node, uint64_t pushes_before) noexcept
+        : node_{RegionLink::some(node)}, pushes_before_{pushes_before} {}
+
+    RegionLink node_{};
+    uint64_t pushes_before_ = 0;
+};
+
+// The memory of one published region: its parts, and its push into the
+// uncompiled queue, which holds the link of its RegionNode.  The publish stage
+// makes the node in the arena of the parts, and the MemoryPlan there too when
+// the region has slots.  A slot of the store with no push is free.
+//
+// The node and the plan live in the arena of the parts and point into its
+// runs.  The region store is private, and the publish stage is its one owner.
+// It fills a slot only when the slot is free, and the sweep empties a slot as a
+// whole, so the link of the node ends with the arena.  The parts are one
+// BuiltRegion, so no code assigns one buffer of them.
+struct RegionMemory {
+    // The left generation of a region that is the last published region or the
+    // handed region.
+    static constexpr uint64_t NOT_LEFT = UINT64_MAX;
+
+    BuiltRegion parts;
+    // The push of the region.  No push marks a free slot of the store.
+    QueuedRegion queued{};
+    // The record that the region callback gets, and that the owner can publish
+    // to its foreground.
+    PublishedRegion published{};
+    // The foreground generation at the first sweep that found the region
+    // neither the last published region nor the handed region.
+    uint64_t left_generation = NOT_LEFT;
+};
+
+// Regions that have been published but not compiled.  This is the hand-off
+// point a compiler backend attaches to, and until one exists nothing reads it.
+//
+// It is a bounded ring rather than a growing list for that reason: an unread
+// list gains one pointer per published region and is never reclaimed, so it
+// grows for the whole life of the process.  Bounding it keeps the hand-off
+// point while making the retention constant.
+//
+// A backend that keeps pace with the publish stage never has more than one
+// graph-publish channel's worth of regions outstanding, so the default bound
+// is that channel's depth (PipelineLimits).  A backend further behind than
+// that is not catching up, and the regions it missed describe shapes the model
+// has already moved past.
+//
+// The publish stage is the sole writer, and push takes its proof, the Stage.
+// Each thread can read total(), size() and capacity().  at() and holds() read
+// what the publish stage writes, so they take the proof of the publish stage.
+// The region store keeps each region that the queue holds, so the queue keeps
+// at most capacity() regions alive.
+//
+// No door takes a region out.  The queue holds the region of a push until
+// capacity() more pushes came after it, and the count of the pushes goes on
+// after a stop and a start.  So the count that a push gives tells when its
+// region left the queue (holds), with no walk of the slots.
+template <class Stage>
+class UncompiledRegionQueue {
+public:
+    // A queue that keeps the capacity newest regions, in slots that the
+    // allocation capability allocates.  A capacity of zero keeps no region, and
+    // push then only counts.
+    UncompiledRegionQueue(::foundation::effects::Alloc allocation,
+                          ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
+        : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), RegionLink{})} {}
+
+    // Adds the region and gives its push.  The sweep after the push releases
+    // the region that the slot held before.
+    [[nodiscard]] QueuedRegion push(Stage const& /*stage*/, DagRef<RegionNode> region) noexcept {
+        const uint64_t pushes_before = total_.peek_relaxed();
+        const uint64_t capacity = slots_.size();
+        if (capacity != 0) {
+            // The exchange takes the link by value and calls no body.
+            static_cast<void>(slots_.exchange(pushes_before % capacity, RegionLink::some(region)));
+        }
+        (void)total_.bump();
+        return QueuedRegion{region, pushes_before};
+    }
+
+    // True while the queue holds the region of the push: fewer than capacity()
+    // pushes came after it.  No queue holds the region of no push.
+    // Complexity: O(1).
+    [[nodiscard]] bool holds(Stage const& /*stage*/, QueuedRegion const& queued) const noexcept {
+        if (queued.node_.is_none()) return false;
+        const uint64_t pushes_after = total_.peek_relaxed() - queued.pushes_before_ - 1u;
+        return pushes_after < slots_.size();
+    }
+
+    // Every region ever published, including the ones the bound dropped.
+    // total() - size() is how many were dropped.
+    [[nodiscard]] uint64_t total() const noexcept { return total_.get(); }
+
+    // The count of regions that the queue keeps at most.
+    [[nodiscard]] uint32_t capacity() const noexcept {
+        return ::fixy::narrow<uint32_t>(slots_.size()).expect("the capacity came from a uint32_t");
+    }
+
+    [[nodiscard]] uint32_t size() const noexcept {
+        const uint64_t seen = total_.get();
+        return (seen < capacity()) ? static_cast<uint32_t>(seen) : capacity();
+    }
+
+    // age 0 is the most recently published region.  The bound is size() rather
+    // than the capacity so that a fresh queue cannot hand back the empty
+    // reference a never-written slot still holds.  The clause is the in-body
+    // macro because its predicate reaches a member through `this`, which a
+    // plain pre() skips when the compiler folds this body.  The publish stage
+    // writes the slots with no order, so the read takes the proof of the
+    // publish stage: a job of run_on_publish_stage holds it, and so does its
+    // caller while no publish stage runs.
+    [[nodiscard]] RegionLink at(Stage const& /*stage*/, uint32_t age) const noexcept {
+        CRUCIBLE_PRE(age < size());
+        const uint64_t seen = total_.get();
+        const uint64_t capacity = slots_.size();
+        return *slots_.get((seen + capacity - 1u - age) % capacity).expect("a count modulo the capacity is below it");
+    }
+
+private:
+    ::fixy::HeapArray<RegionLink> slots_;
+    // The publish stage is the one writer of the count (the writer of a COUNTER
+    // of fixy/Mutation.h), so push and holds read it with relaxed order.
+    struct TotalWriter final {};
+    ::fixy::AtomicMonotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>> total_ =
+        ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>>(0);
+};
+
+// The work of one iteration, from the detect stage to the build stage.
+struct BgBuildWork {
+    bool commit_only = false;
+    uint32_t commit_count = 0;
+    // The point of the last reset before the cut of this work.  Meaningless on
+    // a commit-only marker, which is never dropped.
+    StreamPoint reset_point{};
+    // The numerics of the stream at the cut, which the build folds into the
+    // region.  Meaningless on a commit-only marker.
+    NumericsHash numerics{};
+    // On a commit-only marker, the oldest record that a later work can hold
+    // (meta_floor_() when the detect stage made the marker).
+    uint64_t meta_floor = 0;
+    // The ops of the iteration, one element of each buffer for each op, each
+    // built from the held op.  An iteration has at most
+    // IterationDetector::MAX_PERIOD ops, so the five buffers take at most 90
+    // bytes for each op, 22.5 MiB together.  A commit-only marker holds none.
+    ::fixy::HeapArray<TraceRing::Entry> trace;
+    ::fixy::HeapArray<MetaIndex> meta_starts;
+    ::fixy::HeapArray<ScopeHash> scope_hashes;
+    ::fixy::HeapArray<CallsiteHash> callsite_hashes;
+    ::fixy::HeapArray<OpDepth> depths;
+};
+
+// Lifetime: a Box owns each message.  The producing stage owns the Box until
+// its push, the channel holds the object after it, and the Box of the pop of
+// the consuming stage ends the object once it is handled.  A region message
+// owns the parts of its region, so the region memory moves with it.
+//
+// Two shapes flow through the channel, and kind names each one:
+//   Region   region holds a value: an iteration region to publish.
+//   Commit   region is empty: a marker that carries the entry count and the
+//            release floor of the metadata log.
+//
+// The marker has to travel through the publish stage so that total_processed
+// advances only after every region ahead of it has been published.  Bumping
+// the counter at the build stage instead races the publish stage: a flush can
+// return while a region is still queued, and the caller then observes a
+// compiled mode with no pending region, or an active region whose plan is not
+// finished.
+//
+// The floor travels with the marker for the same reason.  The publish stage is
+// the one writer of the tail of the metadata log.  Each work that holds a
+// record before the floor went into the channels before the marker, and the
+// build stage copied its records before it sent the marker on, because each
+// channel is FIFO.
+struct BgGraphPublish {
+    enum class Kind : uint8_t {
+        Region,
+        Commit
+    };
+    Kind kind = Kind::Commit;
+    // The parts of the region.  Only a region message holds them.
+    BuiltRegion region{};
+    uint32_t commit_count = 0;
+    // The release floor of the metadata log.  Only a commit marker sets it.
+    uint64_t meta_floor = 0;
+    // Carried through from the BgBuildWork this came from, so a reset that
+    // lands while the build stage is mid-graph is still caught here, one stage
+    // later.
+    StreamPoint reset_point{};
+};
+
+// The key that a BackgroundThread takes at its construction (the definition
+// below).
+class BackgroundThreadKey;
+
 // Drains the ring buffer, detects iteration boundaries and builds a trace
 // graph per iteration.
 //
@@ -112,26 +572,48 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 // Each data member that is not private is a cell or a counter that two
 // threads can write, and the walk checks it.  Each private member is an
 // atomic, a ring of one producer and one consumer, a field of one stage
-// alone, a Ref to a side that the constructor writes, or a field that start()
+// alone, a Ref to a side that the constructor writes, or a field that a start
 // writes before the pipeline thread starts, as the comment of the member
 // tells.  A job of the publish stage gets the PublishStageView, not the
 // class.  So the class states that two threads can write it at the same
 // time.
 //
-// Each public door that writes or reads the state of a stage from outside
-// the pipeline takes a proof.  run_in_row, with_trace_build_state,
-// pending_op_count, detector_history_count and build_scratch_retained_bytes
-// take the proof that no pipeline runs (prove_quiescence), and each claims the
-// run state until it returns (hold_run_state_).  The doors of the state that
-// a job can write, such as at() of the uncompiled queue, take the
-// publish-stage proof.  The mailbox of the publish stage and its two sentinels
-// are private.  The requests, the flush and rearm_stop write only atomic
-// cells, so they are const.  These doors take no proof that the check of the
-// statement reads: set_numerics, start, stop, run_on_publish_stage, run_in_row
-// and with_trace_build_state.  compute_memory_plan is static and takes no
-// BackgroundThread, so it is no door.  The check exempts this one class until
-// the keyed doors of the owner-key member series replace those doors (the
-// exemption of foundation/Transfer.h).
+// Owner of a thread
+//   A BackgroundThread stands in a frame (with_background_thread) or in a
+//   holder (StartedBackgroundThread).  The frame gives its body a Stopped
+//   handle, and the two handles are a typestate: start() of a Stopped handle
+//   gives a Running handle, and stop() of a Running handle gives a Stopped
+//   handle.  Each door that writes or reads plain state from outside the
+//   pipeline is a door of a handle or of the holder:
+//     - Stopped: start, set_numerics, rearm_stop, run_in_row,
+//       run_in_row_beside, with_trace_build_state, and the reads numerics,
+//       plan_target, detector_history_count, pending_op_count and
+//       build_scratch_retained_bytes.  No pipeline runs while a Stopped handle
+//       lives, apart from the run of its own door run_in_row, so a door of it
+//       needs no check of the run state.
+//     - Running: stop.
+//     - Stopped, Running and the holder: run_on_publish_stage.
+//   A handle is a token of this class that does not copy, and it names the
+//   thread of its frame.  Its type holds the scope brand of the frame, so no
+//   handle outlives its thread.  It stays on its own thread, so no two threads
+//   call a door of it.  A body, a job and a continuation of a handle reach no
+//   BackgroundThread through a capture, so no door of a handle opens inside
+//   another one.
+//
+// Shared reference
+//   Each other thread has a reference to const alone.  These are its doors,
+//   and each one reads and writes atomic cells and words that only the
+//   constructor writes:
+//     active_region, works_built, uncompiled_regions (total, size and
+//     capacity), flush, count_processed_ring_ops, request_restart,
+//     request_mark, request_numerics, requested_reset, applied_reset and
+//     scratch_retained_limit
+//   The public cells are iterations_completed, detector_snapshot,
+//   total_processed and stop_requested.  A reference to const reads the first
+//   three, and it can signal stop_requested.  The doors of the publish stage
+//   take its proof, such as at() of the uncompiled queue, publish_region and
+//   release_meta_log.  compute_memory_plan is static and takes no
+//   BackgroundThread, so it is no door.
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -141,6 +623,14 @@ struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // definitions below).
     class DrainStage;
     class PublishStage;
+
+    // The handles of the owner of the thread, and the device of its plans (the
+    // definitions below).
+    template <::foundation::brand::IsBrand Scope>
+    class Stopped;
+    template <::foundation::brand::IsBrand Scope>
+    class Running;
+    struct PlanTarget;
 
     // The consumer side of the trace ring, which the drain stage opens with
     // its proof, and the consumer side of the metadata log, which the publish
@@ -171,7 +661,7 @@ private:
     ::fixy::Ref<TraceRingSide> const ring_;
     ::fixy::Ref<MetaLogSide> const meta_log_;
 
-    // start() writes the three before it starts the pipeline thread.
+    // A start writes the three before it starts the pipeline thread.
     int32_t rank_ = -1;
     int32_t world_size_ = 0;
     DeviceCapability device_capability_{};
@@ -179,11 +669,11 @@ private:
     // The tail of the ring at the construction: the count of the ops that
     // the ring gave to an earlier consumer, such as an earlier
     // BackgroundThread.  total_processed counts only the ops of this object,
-    // so a flush adds this base (count_processed_ring_ops).  The constructor
-    // writes it, while no consumer of the ring runs, and the thread that
-    // holds this object reads it.  It lies in the bytes before the line of
-    // active_region_, so it moves no other member.
-    uint64_t ring_base_ = 0;
+    // so a flush adds this base (count_processed_ring_ops).  Only the
+    // constructor writes it, while no consumer of the ring runs, so each thread
+    // reads it.  It lies in the bytes before the line of active_region_, so it
+    // moves no other member.
+    uint64_t const ring_base_ = 0;
 
     // The last published region.  The publish stage writes it, and a reader
     // on another thread loads it.  The store(release) publishes the region
@@ -198,53 +688,6 @@ private:
     alignas(64)::fixy::Atomic<RegionLink> active_region_{};
 
 public:
-    // A point of the recorded op stream, and the kind of the reset at it.
-    // The point is the count of ops that the producer put into the trace ring
-    // before it.  A reset applies at its point, so each op belongs to one
-    // side of it.
-    //
-    // A restart follows a divergence: at the point, the detect stage drops
-    // the ops that it holds and restarts the iteration detector.  A mark
-    // follows a rollback or a load: each region cut before the point is
-    // stale, and the detector keeps its ops and its history.
-    //
-    // One word holds the two: twice the count, plus one for a restart.  So
-    // the points order by the count, and at one count a restart comes after
-    // a mark.  The count stays below 2^63, which a stream of one op in each
-    // nanosecond reaches after 292 years.
-    class StreamPoint {
-    public:
-        constexpr StreamPoint() noexcept = default;
-
-        [[nodiscard]] static constexpr StreamPoint restart_at(uint64_t ops_before) noexcept {
-            return StreamPoint{(ops_before << 1) | uint64_t{1}};
-        }
-        [[nodiscard]] static constexpr StreamPoint mark_at(uint64_t ops_before) noexcept {
-            return StreamPoint{ops_before << 1};
-        }
-
-        [[nodiscard]] constexpr uint64_t ops_before() const noexcept { return word_ >> 1; }
-        [[nodiscard]] constexpr bool restarts_detector() const noexcept { return (word_ & uint64_t{1}) != 0; }
-
-        auto operator<=>(const StreamPoint&) const = default;
-
-    private:
-        explicit constexpr StreamPoint(uint64_t word) noexcept : word_{word} {}
-
-        uint64_t word_ = 0;
-    };
-
-    // A region that the publish stage gives to its owner, and the point of
-    // the last reset that the detect stage applied before the first op of
-    // the region.  The region store holds the record with its region, so
-    // the address of the record lives as long as the region.  No code writes
-    // a published region, so the record names a const region, and a reader
-    // of the record on another thread reads it only.
-    struct PublishedRegion {
-        ConstRegionLink region{};
-        StreamPoint reset_point{};
-    };
-
     // Proof that the caller owns the state that the region callback writes.
     //
     // Only this class builds one, and it builds a fresh one for each call
@@ -347,6 +790,14 @@ public:
     static void ignore_region_(::foundation::effects::Bg const&, PublishStage const&, PublishedRegion const&) noexcept {
     }
 
+    // The parts of a BackgroundThread that its owner chooses: the callback of
+    // each published region, or none, and the limits.  The callback outlives the
+    // BackgroundThread (region_ready_).
+    struct Setup {
+        ::fixy::Option<::fixy::Ref<RegionReadyCall const>> on_region_ready{};
+        PipelineLimits limits{};
+    };
+
 private:
     // The call of ignore_region_.  It has no object, so it cannot dangle.
     // region_ready_ refers to it when the holder gives no callback.
@@ -360,8 +811,8 @@ private:
     // Vigil declares region_ready_ before bg_, and bg_ is its last member.
     // So bg_ ends first, and its destructor joins the pipeline thread before
     // region_ready_ and the rest of the Vigil end.  A test declares its
-    // CallRef and the object of the CallRef before its BackgroundThread, for
-    // the same reason.
+    // CallRef and the object of the CallRef before the frame of its
+    // BackgroundThread, for the same reason.
     //
     // Own cache line: background-only state.  Sharing a line with
     // active_region would drag the callback into the foreground's cache on
@@ -387,9 +838,34 @@ public:
         ::fixy::Atomic<bool> done{};
     };
 
-    // Runs job on the thread that owns the publish-stage state, and gives
-    // back the value of the job when it has run.  While the publish stage
-    // runs, that thread is the publish stage, which runs the job between two
+    class PublishStageView;
+
+    // A job of run_on_publish_stage.  A job that gives a value gives one that
+    // the door can build empty and then assign, such as an Option.
+    template <typename Job>
+    static constexpr bool is_publish_stage_job_v =
+        std::is_nothrow_invocable_v<Job&, PublishStageView&, PublishStage const&>
+        && (std::is_void_v<std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>
+            || std::is_nothrow_default_constructible_v<
+                std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>);
+
+private:
+    // True when an object of the type reaches a BackgroundThread: through a
+    // Ref, a reference, a pointer or a part of a class, such as a reference to a
+    // handle of the thread or to a holder of it.  A class that the walk cannot
+    // read counts as a reach, so the doors of it fail closed.
+    [[nodiscard]] static consteval bool reaches_background_thread_(std::meta::info type) {
+        namespace refl = ::foundation::reflect;
+        return refl::any_component_satisfies<[](refl::TypeNode node) consteval {
+            return refl::bare_type(node.type) == ^^BackgroundThread || refl::holds_unreadable_state(node);
+        },
+                                             refl::SpecializationRead::Instantiating>(type);
+    }
+
+    // The door run_on_publish_stage of the handles and of the holder.  It runs
+    // job on the thread that owns the publish-stage state, and gives back the
+    // value of the job when it has run.  While the publish stage runs, that
+    // thread is the publish stage, which runs the job between two
     // publications.  While no publish stage runs, the state has no other
     // writer, and the caller runs the job itself.  Either way, the job and
     // the region callback never overlap.
@@ -399,9 +875,9 @@ public:
     // fields of the publish stage.  The view gives only the doors of the
     // publish stage, and the door builds it on the thread that owns those
     // fields.  A job captures no `this` and no BackgroundThread: the door
-    // refuses each capture that reaches a BackgroundThread, through a Ref, a
-    // reference, a pointer or a part of a class.  So through the view a job
-    // reaches no state of another stage.
+    // refuses each capture that reaches a BackgroundThread, so a job captures
+    // no handle either.  So through the view a job reaches no state of another
+    // stage, and it opens no door of a handle.
     //
     // Closure of a job.  The door checks the closure of the job under
     // publish_job_policy (foundation/Closure.h).  The caller waits while the
@@ -433,16 +909,9 @@ public:
     // that holds the stage already, in a region callback or in a job, must
     // not call this: it would wait on itself, so the check ends the process in
     // each build.
-    //
-    // A job that gives a value gives one that the door can build empty and
-    // then assign, such as an Option.
-    class PublishStageView;
     template <typename Job>
-        requires std::is_nothrow_invocable_v<Job&, PublishStageView&, PublishStage const&>
-              && (std::is_void_v<std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>
-                  || std::is_nothrow_default_constructible_v<
-                      std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>>)
-    std::invoke_result_t<Job&, PublishStageView&, PublishStage const&> run_on_publish_stage(Job&& job) noexcept {
+        requires is_publish_stage_job_v<Job>
+    std::invoke_result_t<Job&, PublishStageView&, PublishStage const&> run_on_publish_stage_(Job&& job) noexcept {
         using Value = std::invoke_result_t<Job&, PublishStageView&, PublishStage const&>;
         constexpr ::foundation::closure::ClosureVerdict verdict = ::foundation::closure::check_closure(
             ^^std::remove_cvref_t<Job>, publish_job_policy, "run_on_publish_stage");
@@ -451,14 +920,10 @@ public:
                       "run_on_publish_stage: the value of the job crosses from the thread of the publish stage to the "
                       "caller, so it is Sendable");
         // A job that the closure check refuses gives that one error.
-        static_assert(
-            !verdict.is_admitted()
-                || !::foundation::reflect::any_component_satisfies<[](::foundation::reflect::TypeNode node) consteval {
-                       return ::foundation::reflect::bare_type(node.type) == ^^BackgroundThread;
-                   }>(^^std::remove_cvref_t<Job>),
-            "run_on_publish_stage: a capture of the job reaches a BackgroundThread, such as a Ref, a "
-            "reference or a pointer of it.  The job then reaches the state of each stage.  Capture no "
-            "BackgroundThread: the PublishStageView of the job gives the doors of the publish stage");
+        static_assert(!verdict.is_admitted() || !reaches_background_thread_(^^std::remove_cvref_t<Job>),
+                      "run_on_publish_stage: a capture of the job reaches a BackgroundThread, such as a Ref, a "
+                      "reference or a pointer of it.  The job then reaches the state of each stage.  Capture no "
+                      "BackgroundThread: the PublishStageView of the job gives the doors of the publish stage");
         if constexpr (std::is_void_v<Value>) {
             auto with_owner = [&job, this](PublishStage const& stage) noexcept {
                 PublishStageView view{*this};
@@ -476,9 +941,15 @@ public:
         }
     }
 
-private:
     // Posts the call to the mailbox of the publish stage and waits for it, or
-    // runs it on the caller while no publish stage runs (run_on_publish_stage).
+    // runs it on the caller while no publish stage runs.
+    //
+    // A thread that holds the stage would wait on itself here, so the check
+    // ends the process.  Only the private region callback of the Vigil
+    // (Vigil::on_region_ready) can reach this door on the stage, through bg_.
+    // A job captures no handle.  A region callback of a frame reaches no
+    // handle: the type of the handle holds the scope brand of the frame, and a
+    // CallRef refuses a callable that holds such a brand.
     template <typename Call>
     void post_owner_job_(Call& call) noexcept {
         CRUCIBLE_FATAL_INVARIANT(!holds_stage_on_this_thread_());
@@ -515,93 +986,15 @@ private:
     // writes the detector with no order.
     IterationDetector detector_;
 
-public:
-    // The count of ops in the history of the detector.  The detect stage
-    // writes the detector with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence).  It writes the run state to claim it
-    // (hold_run_state_), so it is not const, and two reads on two threads end
-    // the process.  It gives a copy of the count, which no later start changes.
-    [[nodiscard]] uint64_t
-    detector_history_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
-        hold_run_state_(proof);
-        const uint64_t count = detector_.pos_ - detector_.base_;
-        release_run_state_();
-        return count;
-    }
+    // The count of ops in the history of the detector (Stopped).
+    [[nodiscard]] uint64_t detector_history_count_() const noexcept { return detector_.pos_ - detector_.base_; }
 
-    // The ops that the detect stage holds, from the oldest op that a future
-    // iteration can hold to the newest op.  It is a ring of six parallel
-    // arrays that grows by doubling.  The detect stage drops each op that
-    // IterationDetector::oldest_claimable() passes, so the ring holds at
-    // most half of the history of the detector and K ops more, and it never
-    // grows past IterationDetector::HISTORY_MAX_CAPACITY ops.  At that
-    // capacity it takes 49 MiB.
-    class PendingOps {
-    public:
-        // Adds the newest op.  record_start is the position of the op in the
-        // stream of records of the metadata log.  The ring grows with the
-        // allocation capability of the detect stage.  Complexity: O(1), and
-        // O(n) when the ring grows.
-        void push(::foundation::effects::Alloc alloc, TraceRing::Entry const& entry, MetaIndex meta_start,
-                  uint64_t record_start, ScopeHash scope_hash, CallsiteHash callsite_hash, OpDepth depth);
-
-        // Drops the count oldest ops.  A count past size() drops each op.
-        void drop_oldest(uint64_t count) noexcept {
-            const uint64_t dropped = count < count_ ? count : count_;
-            head_ += dropped;
-            count_ -= dropped;
-        }
-
-        void clear() noexcept { drop_oldest(count_); }
-
-        [[nodiscard]] uint64_t size() const noexcept { return count_; }
-
-        // The op at index, counted from the oldest held op.  The capacity
-        // of each array is a power of two, so its mask wraps the slot of
-        // the ring with no check.  The ring holds count_ ops, so each index
-        // below size() names a held op.
-        [[nodiscard]] TraceRing::Entry const& entry(uint64_t index) const noexcept {
-            return entries_.at_masked(head_ + index);
-        }
-        [[nodiscard]] MetaIndex meta_start(uint64_t index) const noexcept {
-            return meta_starts_.at_masked(head_ + index);
-        }
-        [[nodiscard]] uint64_t record_start(uint64_t index) const noexcept {
-            return record_starts_.at_masked(head_ + index);
-        }
-        [[nodiscard]] ScopeHash scope_hash(uint64_t index) const noexcept {
-            return scope_hashes_.at_masked(head_ + index);
-        }
-        [[nodiscard]] CallsiteHash callsite_hash(uint64_t index) const noexcept {
-            return callsite_hashes_.at_masked(head_ + index);
-        }
-        [[nodiscard]] OpDepth depth(uint64_t index) const noexcept { return depths_.at_masked(head_ + index); }
-
-    private:
-        static constexpr uint64_t MIN_CAPACITY = uint64_t{1} << 12;
-
-        void grow_(::foundation::effects::Alloc alloc);
-
-        ::fixy::MaskedArray<TraceRing::Entry> entries_;
-        ::fixy::MaskedArray<MetaIndex> meta_starts_;
-        ::fixy::MaskedArray<uint64_t> record_starts_;
-        ::fixy::MaskedArray<ScopeHash> scope_hashes_;
-        ::fixy::MaskedArray<CallsiteHash> callsite_hashes_;
-        ::fixy::MaskedArray<OpDepth> depths_;
-        // The capacity minus one, zero before the first push.
-        uint64_t mask_ = 0;
-        // The slot of the oldest held op, before the mask.
-        uint64_t head_ = 0;
-        uint64_t count_ = 0;
-    };
-
-private:
     // The ops that the detect stage holds.  The detect stage owns it.
     PendingOps pending_ops_;
 
     // The position in the stream of records after the records of the last
     // op that the detect stage read with a metadata index.  The detect stage
-    // owns it.  The first start() sets it to the tail of the metadata log.
+    // owns it.  The first start sets it to the tail of the metadata log.
     uint64_t meta_cursor_ = 0;
 
     // The numerics hash of the run at its start: the hash of the default
@@ -628,19 +1021,6 @@ private:
     }
 
 public:
-    // The count of the ops that the detect stage holds.  The detect stage
-    // writes the count with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence).  It writes the run state to claim it
-    // (hold_run_state_), so it is not const, and two reads on two threads end
-    // the process.  It gives a copy of the count, which no later start changes.
-    // The ops stay after stop(), and a later start reads them.
-    [[nodiscard]] uint64_t pending_op_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
-        hold_run_state_(proof);
-        const uint64_t count = pending_ops_.size();
-        release_run_state_();
-        return count;
-    }
-
     // Own cache line: the background writes it, the foreground reads it for
     // diagnostics.  Sharing a line with the held ops above would invalidate
     // the foreground's copy on each push.  The foreground reads it while the
@@ -679,124 +1059,6 @@ private:
     ::fixy::AtomicMonotonic<uint64_t> works_built_ = ::fixy::mint_atomic_monotonic<uint64_t>(0);
 
 public:
-    // The parts of one built region, each a run of the exact count in the
-    // arena of the region.  The build stage makes them, a message moves them
-    // to the publish stage, and the publish stage gives them to the region
-    // store, or frees them when it discards the region.  The payload walk of
-    // the pipeline channels reads each member (fixy/concurrent/PayloadRow.h).
-    //
-    // A region moves between threads (foundation/Transfer.h).  Each op points
-    // into the runs of its own region, which move with it, and no object
-    // outside the region points into them, so the region states the property
-    // that the pointers of its ops hide.
-    //
-    // The arena owns each run, and each run came out of the arena one time.
-    // The arena is on the heap, so a move of the region moves no run.  The
-    // runs are private, because an assignment to one run would lose the
-    // storage that the ops still name.  The region gives Views of const of
-    // its runs, and it moves only as a whole.  Only BackgroundThread builds a
-    // region with parts, and only the publish stage writes the ops and the
-    // slots of a region.  The default region holds no arena and no run, as
-    // in a commit message, and so does a region that a move took the parts
-    // of.
-    class[[= ::foundation::transfer::sendable{}]] BuiltRegion {
-    public:
-        BuiltRegion() noexcept = default;
-
-        // A move takes the arena and the runs, and leaves the source with no
-        // arena and no run, so each View of a moved-from region is empty.
-        BuiltRegion(BuiltRegion&& other) noexcept
-            : arena_{std::move(other.arena_)},
-              runs_{other.runs_},
-              content_hash_{other.content_hash_},
-              numerics_{other.numerics_} {
-            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
-            other.runs_ = Runs{};
-        }
-        BuiltRegion& operator=(BuiltRegion&& other) noexcept {
-            arena_ = std::move(other.arena_);
-            runs_ = other.runs_;
-            content_hash_ = other.content_hash_;
-            numerics_ = other.numerics_;
-            other.arena_ = ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>>{::fixy::none};
-            other.runs_ = Runs{};
-            return *this;
-        }
-        BuiltRegion(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
-        BuiltRegion&
-        operator=(BuiltRegion const&) = delete("a region owns its arena alone: a copy would free the runs two times");
-        ~BuiltRegion() = default;
-
-        [[nodiscard]] ::fixy::View<TraceEntry const> ops() const noexcept { return runs_.ops.view(); }
-        [[nodiscard]] ::fixy::View<TensorMeta const> metas() const noexcept { return runs_.metas.view(); }
-        [[nodiscard]] ::fixy::View<int64_t const> scalars() const noexcept { return runs_.scalars.view(); }
-        [[nodiscard]] ::fixy::View<OpIndex const> producers() const noexcept { return runs_.producers.view(); }
-        [[nodiscard]] ::fixy::View<SlotId const> slot_ids() const noexcept { return runs_.slot_ids.view(); }
-        [[nodiscard]] ::fixy::View<TensorSlot const> slots() const noexcept { return runs_.slots.view(); }
-        [[nodiscard]] ContentHash content_hash() const noexcept { return content_hash_; }
-        [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
-
-        // The bytes of each block of the arena of the region, or zero bytes
-        // for a region with no arena.
-        [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> arena_bytes() const noexcept {
-            return arena_.match(
-                [](::fixy::Box<::fixy::BumpArena<DagArena>> const& arena) noexcept {
-                    return ::fixy::Quantity<::fixy::unit::Byte, size_t>{arena->retained_bytes()};
-                },
-                []() noexcept { return ::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{0}}; });
-        }
-
-    private:
-        friend struct BackgroundThread;
-
-        // The runs of one region, each a run of the arena of the region.  The
-        // ops point into the other runs: the tensor metadata, the scalars,
-        // the producer of each input, and the slot ids of the inputs and the
-        // outputs.  The slots are the slots of the memory plan.  The node of
-        // the region and its plan take the runs of the ops and of the slots.
-        struct Runs {
-            ::fixy::ArenaRun<TraceEntry, DagArena> ops{};
-            ::fixy::ArenaRun<TensorMeta, DagArena> metas{};
-            ::fixy::ArenaRun<int64_t, DagArena> scalars{};
-            ::fixy::ArenaRun<OpIndex, DagArena> producers{};
-            ::fixy::ArenaRun<SlotId, DagArena> slot_ids{};
-            ::fixy::ArenaRun<TensorSlot, DagArena> slots{};
-        };
-
-        // The parts of one build: the arena of the region, and the runs that
-        // the arena gave.
-        struct Parts {
-            ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena{};
-            Runs runs{};
-            ContentHash content_hash{};
-            NumericsHash numerics{};
-        };
-
-        explicit BuiltRegion(Parts&& parts) noexcept
-            : arena_{std::move(parts.arena)},
-              runs_{parts.runs},
-              content_hash_{parts.content_hash},
-              numerics_{parts.numerics} {}
-
-        // The arena that owns each run below: a Box in the region of a build,
-        // and none in the default region.
-        ::fixy::Option<::fixy::Box<::fixy::BumpArena<DagArena>>> arena_{};
-        Runs runs_{};
-        ContentHash content_hash_{};
-        // The numerics hash that the content hash folds.
-        NumericsHash numerics_{};
-    };
-
-    // A build: the trace graph, in the epoch of the scratch arena that the
-    // caller gave, and the parts of its region.  The graph dies with the
-    // epoch.  The build states the brand of the epoch, so it is a carrier of
-    // the brand, as the graph is.  The region does not depend on the graph.
-    struct BuiltTrace {
-        using brand_type = TraceGraph::brand_type;
-        TraceGraphRef graph;
-        BuiltRegion region;
-    };
-
     // The regions that the owner of the pipeline holds, and the generation
     // of the holders of its foreground.  The region callback gives them to
     // set_region_marks on the publish stage, and the sweep of the region
@@ -829,74 +1091,7 @@ public:
         }
     };
 
-    class UncompiledRegionQueue;
-
-    // One push into the uncompiled queue, or none: the node of the region, and
-    // the count of the pushes before it.  Only UncompiledRegionQueue::push
-    // builds one with a node, no code copies it, and a move leaves the source
-    // with none.  So one push gives one QueuedRegion.  The memory of a
-    // published region holds the QueuedRegion of that region in place of a
-    // link to its node.  So each region of the store came from one push, and
-    // its count is the count that the push gave.
-    class QueuedRegion {
-    public:
-        QueuedRegion() noexcept = default;
-        QueuedRegion(QueuedRegion&& other) noexcept : node_{other.node_}, pushes_before_{other.pushes_before_} {
-            other.node_ = RegionLink{};
-        }
-        QueuedRegion& operator=(QueuedRegion&& other) noexcept {
-            const RegionLink node = other.node_;
-            const uint64_t pushes_before = other.pushes_before_;
-            other.node_ = RegionLink{};
-            node_ = node;
-            pushes_before_ = pushes_before;
-            return *this;
-        }
-        QueuedRegion(QueuedRegion const&) = delete("one push gives one QueuedRegion");
-        QueuedRegion& operator=(QueuedRegion const&) = delete("one push gives one QueuedRegion");
-        ~QueuedRegion() = default;
-
-        // The node of the region, in the arena of the region, or none.
-        [[nodiscard]] RegionLink node() const noexcept { return node_; }
-
-    private:
-        friend class UncompiledRegionQueue;
-        explicit QueuedRegion(DagRef<RegionNode> node, uint64_t pushes_before) noexcept
-            : node_{RegionLink::some(node)}, pushes_before_{pushes_before} {}
-
-        RegionLink node_{};
-        uint64_t pushes_before_ = 0;
-    };
-
 private:
-    // The left generation of a region that is the last published region or
-    // the handed region.
-    static constexpr uint64_t NOT_LEFT = UINT64_MAX;
-
-    // The memory of one published region: its parts, and its push into the
-    // uncompiled queue, which holds the link of its RegionNode.  The publish
-    // stage makes the node in the arena of the parts, and the MemoryPlan there
-    // too when the region has slots.  A slot of the store with no push is
-    // free.
-    //
-    // The node and the plan live in the arena of the parts and point into
-    // its runs.  The type is private, and the publish stage is its one
-    // owner.  It fills a slot only when the slot is free, and the sweep
-    // empties a slot as a whole, so the link of the node ends with the
-    // arena.  The parts are one BuiltRegion, so no code assigns one buffer
-    // of them.
-    struct RegionMemory {
-        BuiltRegion parts;
-        // The push of the region.  No push marks a free slot of the store.
-        QueuedRegion queued{};
-        // The record that the region callback gets, and that the owner can
-        // publish to its foreground.
-        PublishedRegion published{};
-        // The foreground generation at the first sweep that found the region
-        // neither the last published region nor the handed region.
-        uint64_t left_generation = NOT_LEFT;
-    };
-
     // The arena of the trace graph and its CSR arrays.  Only the build stage
     // uses it, and an epoch covers one work item: the build stage ends it
     // after it moves the parts of the region into the message.  The
@@ -907,6 +1102,10 @@ private:
     // uses it, and an epoch covers one publish.  The constructor sets its
     // retained limit.
     PlanScratch publish_scratch_{::fixy::Quantity<::fixy::unit::Byte, size_t>{size_t{1} << 20}};
+
+    // The retained limit of each of the two arenas.  Only the constructor
+    // writes it, so each thread reads it.
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> const scratch_retained_limit_;
 
     // The memory of each live region, in the slots of a table of
     // PipelineLimits::region_store slots, which the constructor allocates.
@@ -929,131 +1128,34 @@ private:
     [[nodiscard]] bool is_held_(PublishStage const& stage, QueuedRegion const& queued) const noexcept;
 
 public:
-    // Regions that have been published but not compiled.  This is the
-    // hand-off point a compiler backend attaches to, and until one exists
-    // nothing reads it.
-    //
-    // It is a bounded ring rather than a growing list for that reason: an
-    // unread list gains one pointer per published region and is never
-    // reclaimed, so it grows for the whole life of the process.  Bounding it
-    // keeps the hand-off point while making the retention constant.
-    //
-    // A backend that keeps pace with the publish stage never has more than
-    // one graph-publish channel's worth of regions outstanding, so the
-    // default bound is that channel's depth (PipelineLimits).  A backend
-    // further behind than that is not catching up, and the regions it missed
-    // describe shapes the model has already moved past.
-    //
-    // The publish stage is the sole writer, and push takes its proof.  Each
-    // thread can read total(), size() and capacity().  at() and holds() read
-    // what the publish stage writes, so they take the publish-stage proof.  The
-    // region store keeps each region that the queue holds, so the queue keeps
-    // at most capacity() regions alive.
-    //
-    // No door takes a region out.  The queue holds the region of a push until
-    // capacity() more pushes came after it, and the count of the pushes goes
-    // on after a stop and a start.  So the count that a push gives tells when
-    // its region left the queue (holds), with no walk of the slots.
-    class UncompiledRegionQueue {
-    public:
-        // A queue that keeps the capacity newest regions, in slots that the
-        // allocation capability allocates.  A capacity of zero keeps no
-        // region, and push then only counts.
-        UncompiledRegionQueue(::foundation::effects::Alloc allocation,
-                              ::fixy::Quantity<::fixy::unit::Element, uint32_t> capacity) noexcept
-            : slots_{::fixy::mint_heap_array(allocation, capacity.raw(), RegionLink{})} {}
-
-        // Adds the region and gives its push.  The sweep after the push
-        // releases the region that the slot held before.
-        [[nodiscard]] QueuedRegion push(PublishStage const& /*stage*/, DagRef<RegionNode> region) noexcept {
-            const uint64_t pushes_before = total_.peek_relaxed();
-            const uint64_t capacity = slots_.size();
-            if (capacity != 0) {
-                // The exchange takes the link by value and calls no body.
-                static_cast<void>(slots_.exchange(pushes_before % capacity, RegionLink::some(region)));
-            }
-            (void)total_.bump();
-            return QueuedRegion{region, pushes_before};
-        }
-
-        // True while the queue holds the region of the push: fewer than
-        // capacity() pushes came after it.  No queue holds the region of no
-        // push.  Complexity: O(1).
-        [[nodiscard]] bool holds(PublishStage const& /*stage*/, QueuedRegion const& queued) const noexcept {
-            if (queued.node_.is_none()) return false;
-            const uint64_t pushes_after = total_.peek_relaxed() - queued.pushes_before_ - 1u;
-            return pushes_after < slots_.size();
-        }
-
-        // Every region ever published, including the ones the bound
-        // dropped.  total() - size() is how many were dropped.
-        [[nodiscard]] uint64_t total() const noexcept { return total_.get(); }
-
-        // The count of regions that the queue keeps at most.
-        [[nodiscard]] uint32_t capacity() const noexcept {
-            return ::fixy::narrow<uint32_t>(slots_.size()).expect("the capacity came from a uint32_t");
-        }
-
-        [[nodiscard]] uint32_t size() const noexcept {
-            const uint64_t seen = total_.get();
-            return (seen < capacity()) ? static_cast<uint32_t>(seen) : capacity();
-        }
-
-        // age 0 is the most recently published region.  The bound is size()
-        // rather than the capacity so that a fresh queue cannot hand back the
-        // empty reference a never-written slot still holds.  The clause is the
-        // in-body macro because its predicate reaches a member through
-        // `this`, which a plain pre() skips when the compiler folds this body.
-        // The publish stage writes the slots with no order, so the read takes
-        // the publish-stage proof: a job of run_on_publish_stage holds it,
-        // and so does its caller while no publish stage runs.
-        [[nodiscard]] RegionLink at(PublishStage const& /*stage*/, uint32_t age) const noexcept {
-            CRUCIBLE_PRE(age < size());
-            const uint64_t seen = total_.get();
-            const uint64_t capacity = slots_.size();
-            return *slots_.get((seen + capacity - 1u - age) % capacity)
-                        .expect("a count modulo the capacity is below it");
-        }
-
-    private:
-        ::fixy::HeapArray<RegionLink> slots_;
-        // The publish stage is the one writer of the count (the writer of a
-        // COUNTER of fixy/Mutation.h), so push and holds read it with relaxed
-        // order.
-        struct TotalWriter final {};
-        ::fixy::AtomicMonotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>> total_ =
-            ::fixy::mint_atomic_monotonic<uint64_t, ::fixy::SoleWriterProof<UncompiledRegionQueue, TotalWriter>>(0);
-    };
-
-    // The queue, for a read.  Only the publish stage pushes.
-    [[nodiscard]] UncompiledRegionQueue const& uncompiled_regions() const noexcept { return uncompiled_regions_; }
+    // The queue of the published regions, for a read.  Only the publish stage
+    // pushes.
+    using UncompiledRegions = UncompiledRegionQueue<PublishStage>;
+    [[nodiscard]] UncompiledRegions const& uncompiled_regions() const noexcept { return uncompiled_regions_; }
 
 private:
-    UncompiledRegionQueue uncompiled_regions_;
+    UncompiledRegions uncompiled_regions_;
 
 public:
-    // A one-way signal for a single run() invocation.  start() re-arms it
-    // under quiescence before launching the next pipeline.
-    // It is mutable, because the const door rearm_stop writes it, and two
-    // threads can write the flag (the doors of a synchronized class of
+    // A one-way signal for a single run of the pipeline.  A start re-arms it
+    // before it starts the next run.
+    // It is mutable, because a shared reference can signal it, and two threads
+    // can write the flag (the doors of a synchronized class of
     // foundation/Transfer.h).
     alignas(64) mutable ::fixy::handle::OneShotFlag stop_requested;
 
-    // Takes the stop signal down for the next run.  The proof of quiescence
-    // comes from the thread of the pipeline, so a call while that thread runs
-    // ends the process (the quiescence of an owner of
-    // fixy/os/OwnedThread.h).  A test that runs run_in_row on its own
-    // thread calls it between two runs.  The door writes only the flag, a
-    // cell that two threads can write, so it is const.
-    void rearm_stop() const noexcept { stop_requested.reset_in_quiescent_context(thread_.quiescence(*this)); }
-
 private:
+    // Takes the stop signal down for the next run (Stopped).  It reads the
+    // owner of the pipeline thread, which a start and a stop write.  So no
+    // shared reference calls it.
+    void rearm_stop_() noexcept { stop_requested.reset_in_quiescent_context(thread_.quiescence(*this)); }
+
     // The pipeline: its thread, the types of its four channels, the input
     // end of each stage and the four stage functions.  src/BackgroundThread.cpp
     // defines it, so no other translation unit compiles a channel type.  The
     // class is nested, so its stage functions reach the private state of the
     // thread that they serve.  The constructor makes the one object that
-    // holds the thread, start() starts the thread, and the destructor of this
+    // holds the thread, a start starts the thread, and the destructor of this
     // class joins it.
     struct Pipeline;
     ::fixy::Box<Pipeline> pipeline_;
@@ -1369,75 +1471,10 @@ public:
         ::fixy::FixedArray<OpDepth, BATCH_SIZE, BatchDepthsBrand> depths{};
     };
 
-    struct BgBuildWork {
-        bool commit_only = false;
-        uint32_t commit_count = 0;
-        // The point of the last reset before the cut of this work.
-        // Meaningless on a commit-only marker, which is never dropped.
-        StreamPoint reset_point{};
-        // The numerics of the stream at the cut, which the build folds into
-        // the region.  Meaningless on a commit-only marker.
-        NumericsHash numerics{};
-        // On a commit-only marker, the oldest record that a later work can
-        // hold (meta_floor_() when the detect stage made the marker).
-        uint64_t meta_floor = 0;
-        // The ops of the iteration, one element of each buffer for each op,
-        // each built from the held op.  An iteration has at most
-        // IterationDetector::MAX_PERIOD ops, so the five buffers take at most
-        // 90 bytes for each op, 22.5 MiB together.  A commit-only marker
-        // holds none.
-        ::fixy::HeapArray<TraceRing::Entry> trace;
-        ::fixy::HeapArray<MetaIndex> meta_starts;
-        ::fixy::HeapArray<ScopeHash> scope_hashes;
-        ::fixy::HeapArray<CallsiteHash> callsite_hashes;
-        ::fixy::HeapArray<OpDepth> depths;
-    };
-
     struct BgPipelineDone {};
     // The go signal of the drain stage.  run() pushes it once, before the
     // stages start.
     struct BgPipelineStart {};
-
-    // Lifetime: a Box owns each message.  The producing stage owns the Box
-    // until its push, the channel holds the object after it, and the Box of
-    // the pop of the consuming stage ends the object once it is handled.  A
-    // region message owns the parts of its region, so the region memory
-    // moves with it.
-    //
-    // Two shapes flow through the channel, and kind names each one:
-    //   Region   region holds a value: an iteration region to publish.
-    //   Commit   region is empty: a marker that carries the entry count and
-    //            the release floor of the metadata log.
-    //
-    // The marker has to travel through the publish stage so that
-    // total_processed advances only after every region ahead of it has been
-    // published.  Bumping the counter at the build stage instead races the
-    // publish stage: a flush can return while a region is still queued, and
-    // the caller then observes a compiled mode with no pending region, or an
-    // active region whose plan is not finished.
-    //
-    // The floor travels with the marker for the same reason.  The publish
-    // stage is the one writer of the tail of the metadata log.  Each work
-    // that holds a record before the floor went into the channels before the
-    // marker, and the build stage copied its records before it sent the
-    // marker on, because each channel is FIFO.
-    struct BgGraphPublish {
-        enum class Kind : uint8_t {
-            Region,
-            Commit
-        };
-        Kind kind = Kind::Commit;
-        // The parts of the region.  Only a region message holds them.
-        BuiltRegion region{};
-        uint32_t commit_count = 0;
-        // The release floor of the metadata log.  Only a commit marker sets
-        // it.
-        uint64_t meta_floor = 0;
-        // Carried through from the BgBuildWork this came from, so a reset
-        // that lands while the build stage is mid-graph is still caught
-        // here, one stage later.
-        StreamPoint reset_point{};
-    };
 
 private:
     // Makes a commit marker: a work item that carries only the count of
@@ -1477,22 +1514,20 @@ public:
     void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
                         StreamPoint reset_point) CRUCIBLE_NO_THREAD_SAFETY;
 
-    // Seals the global schema and kernel tables, and starts the pipeline
-    // thread on the ring and the metadata log of the constructor.  The thread
-    // runs the pipeline under the background context, which it takes from
-    // the door.
+private:
+    // The start of a Stopped handle or of a holder.  It seals the global schema
+    // and kernel tables, and starts the pipeline thread on the ring and the
+    // metadata log of the constructor.  The thread runs the pipeline under the
+    // background context, which it takes from the door.
     //
     // Sealing the global registration tables here turns "all registrations
     // complete before the background thread starts" into a load-bearing
     // rule: a late registration is rejected by the table contract instead of
     // racing the lookups this thread performs.
-    // The init context is the authority to start the thread.  A start while a
-    // pipeline thread runs breaks the contract: call stop() first.  The start
-    // claims the run state before it writes the state of a stage, so a start
-    // while a run of run_in_row is active, or while a door holds the run state
-    // (hold_run_state_), ends the process.
+    // The init context is the authority to start the thread.  The caller holds
+    // the one Stopped handle of this object, so no pipeline runs.
     //
-    // A start after stop() continues the stream of the last pipeline.  The
+    // A start after a stop continues the stream of the last pipeline.  The
     // ring keeps the ops that the last pipeline did not read, and the detect
     // stage keeps its held ops, its detector and its cursor of the log.  Each
     // start reads the two sides of the constructor, so no start can name a
@@ -1503,50 +1538,42 @@ public:
     // end that a reset of the ring or of the log takes.  Such a reset would
     // also break this object, because ring_base_, total_processed, the cursor
     // of the log and the held ops count from the first op of the stream.
-    void start(::fixy::InitLoadCtx const& startup, int32_t rank = -1, int32_t world_size = 0, uint64_t device_cap = 0)
-        CRUCIBLE_NO_THREAD_SAFETY;
+    void start_(::fixy::InitLoadCtx const& startup, PlanTarget const& target) CRUCIBLE_NO_THREAD_SAFETY;
 
     // Sets the numerics hash of the start of the run, which the build folds
-    // into each region until a request_numerics.  The owner calls it before
-    // start, and the start of the pipeline thread orders the write before
-    // each read of the pipeline.  A call while the pipeline runs breaks the
-    // contract.
-    void set_numerics(NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
+    // into each region until a request_numerics (Stopped).  The start of the
+    // pipeline thread orders the write before each read of the pipeline.
+    void set_numerics_(NumericsHash numerics) noexcept CRUCIBLE_NO_THREAD_SAFETY;
 
-    [[nodiscard]] NumericsHash numerics() const noexcept { return numerics_; }
-
-    // Signals the drain stage to stop and joins the pipeline thread, through
-    // request_stop_ and the join of thread_.  The end of this object does the
-    // same when the thread still runs.  The pipeline joins its stage threads
-    // before the thread ends.  The signal
-    // does not wake a sleeping drain stage, so the stage reads it at the end
-    // of its sleep, within RING_MAX_SLEEP_NANOS (0.2 ms).  That bound comes
+    // The stop of a Running handle.  It signals the drain stage to stop and
+    // joins the pipeline thread, through request_stop_ and the join of
+    // thread_.  The end of this object does the same when the thread still
+    // runs.  The pipeline joins its stage threads before the thread ends.  The
+    // signal does not wake a sleeping drain stage, so the stage reads it at the
+    // end of its sleep, within RING_MAX_SLEEP_NANOS (0.2 ms).  That bound comes
     // from the margin of the trace ring, which a sleep must not fill.
-    void stop() CRUCIBLE_NO_THREAD_SAFETY;
+    void stop_() CRUCIBLE_NO_THREAD_SAFETY;
 
+public:
     ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY;
 
-    // src/BackgroundThread.cpp defines the two, where the pipeline is a
-    // complete type.  The caller gives the allocation capability of its
-    // context, and the pipeline takes its storage through it.  The object
-    // keeps a Ref to the consumer side of the trace ring and a Ref to the
-    // consumer side of the metadata log, and each run of the pipeline reads
-    // the two.  No consumer of the ring runs at the construction.  The first
-    // has no region callback.  The second borrows the callback of the
-    // caller, which outlives this BackgroundThread (region_ready_).  The
-    // limits size the region store and the uncompiled queue, and set the
-    // retained limit of the two scratch arenas.
+    // src/BackgroundThread.cpp defines it, where the pipeline is a complete
+    // type.  Only a frame door and a holder have the key of the first parameter
+    // (BackgroundThreadKey).  The caller gives the allocation capability of its
+    // context, and the pipeline takes its storage through it.  The object keeps
+    // a Ref to the consumer side of the trace ring and a Ref to the consumer
+    // side of the metadata log, and each run of the pipeline reads the two.  No
+    // consumer of the ring runs at the construction.  The limits of the setup
+    // size the region store and the uncompiled queue, and set the retained
+    // limit of the two scratch arenas.
     //
-    // The order rule: the two sides and the callback outlive this object,
-    // because the holder declares them before this object, and this object
-    // is the last member of its holder.  The end of this object joins the
-    // pipeline thread, so no stage reads a side after the end of its split.
-    // The Vigil holds ring_, meta_log_ and region_ready_ before bg_, and each
-    // test declares its ring and its log before its BackgroundThread.
-    BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
-                     PipelineLimits const& limits = PipelineLimits{});
-    BackgroundThread(::foundation::effects::Alloc allocation, TraceRingSide& ring_side, MetaLogSide& meta_log_side,
-                     RegionReadyCall const& on_region_ready, PipelineLimits const& limits = PipelineLimits{});
+    // The order rule: the two sides and the callback outlive this object.  A
+    // frame door takes them as arguments, so they outlive the frame.  A holder
+    // is the last member of its owner.  The end of this object joins the
+    // pipeline thread, so no stage reads a side after the end of its split.  The
+    // Vigil holds ring_, meta_log_ and region_ready_ before bg_.
+    BackgroundThread(BackgroundThreadKey const& key, ::foundation::effects::Alloc allocation, TraceRingSide& ring_side,
+                     MetaLogSide& meta_log_side, Setup const& setup);
     BackgroundThread(const BackgroundThread&) =
         delete("BackgroundThread owns the pipeline thread, and its Refs name the one consumer of each side");
     BackgroundThread& operator=(const BackgroundThread&) =
@@ -1556,24 +1583,9 @@ public:
     BackgroundThread& operator=(BackgroundThread&&) =
         delete("the pipeline thread reaches this object and its Refs to the two sides at one address");
 
-    // The bytes of blocks that the scratch arena of the build stage holds.
-    // Only a run of the pipeline writes the arena, with no order, so the read
-    // takes the proof that no pipeline runs (prove_quiescence).  It writes the
-    // run state to claim it (hold_run_state_), so it is not const, and two
-    // reads on two threads end the process.  It gives a copy of the count,
-    // which no later start changes.
-    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
-    build_scratch_retained_bytes(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
-        hold_run_state_(proof);
-        const ::fixy::Quantity<::fixy::unit::Byte, size_t> bytes{build_scratch_.arena.retained_bytes()};
-        release_run_state_();
-        return bytes;
-    }
-
     // The bytes of blocks that the scratch arena of the publish stage holds.
-    // A job of run_on_publish_stage writes the arena too, also while no
-    // pipeline runs.  So the read takes the publish-stage proof and not the
-    // proof that no pipeline runs.
+    // A job of run_on_publish_stage writes the arena too, so the read takes the
+    // publish-stage proof.
     [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
     publish_scratch_retained_bytes(PublishStage const&) const noexcept {
         return ::fixy::Quantity<::fixy::unit::Byte, size_t>{publish_scratch_.arena.retained_bytes()};
@@ -1582,7 +1594,7 @@ public:
     // The retained limit of each of the two scratch arenas
     // (PipelineLimits::scratch_retained).
     [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_retained_limit() const noexcept {
-        return build_scratch_.arena.retained_limit();
+        return scratch_retained_limit_;
     }
 
     // Gives the regions that the owner holds to the sweep of this publish.
@@ -1610,8 +1622,8 @@ public:
     // gets in place of the BackgroundThread.  Only that door builds a view,
     // on the thread that owns the state of the publish stage, and the view
     // lives for the call of the job.  A job then reaches no state of another
-    // stage.
-    class PublishStageView {
+    // stage.  The view stays on that thread, so it is a proof of the stage.
+    class[[= ::foundation::transfer::thread_bound{}]][[= ::foundation::transfer::not_shareable{}]] PublishStageView {
     public:
         PublishStageView(const PublishStageView&) = delete("a view lives for the call of one job");
         PublishStageView& operator=(const PublishStageView&) = delete("a view lives for the call of one job");
@@ -1649,7 +1661,7 @@ public:
             owner_.release_meta_log(stage, meta_floor);
         }
 
-        [[nodiscard]] UncompiledRegionQueue const& uncompiled_regions() const noexcept {
+        [[nodiscard]] UncompiledRegions const& uncompiled_regions() const noexcept {
             return owner_.uncompiled_regions();
         }
 
@@ -1727,10 +1739,10 @@ public:
 
     // The state of the trace build that outlives one build: the pointer map
     // of the build stage, its generation and its capacity, and the cap of the
-    // slots of one build.  The build stage is its one writer, or a caller
-    // that holds the run state (with_trace_build_state).  It holds no arena,
-    // so the body of an epoch of the build scratch can capture it by a
-    // reference that is not const.
+    // slots of one build.  The build stage is its one writer, or the body of a
+    // frame of with_trace_build_state.  It holds no arena, so the body of an
+    // epoch of the build scratch can capture it by a reference that is not
+    // const.
     class TraceBuildState {
     public:
         TraceBuildState(TraceBuildState const&) = delete("the state of the trace build has one owner");
@@ -1882,95 +1894,21 @@ public:
                   "row of fixy::BgLoadCtx.  Adding or removing an atom changes the context every site that runs "
                   "this thread must hand in.");
 
-    // The proof that no pipeline thread of this object runs (the quiescence
-    // of an owner of fixy/os/OwnedThread.h).  A run of the pipeline on a
-    // thread of the caller, a build of a trace with no pipeline and a read of
-    // the state of a stage take it.  A call while the pipeline thread of
-    // start() runs ends the process.
-    [[nodiscard]] ::fixy::thread::QuiescenceProof<BackgroundThread> prove_quiescence() const noexcept {
-        return thread_.quiescence(*this);
-    }
-
-    // The context is the evidence for the row.  It comes from the door of
-    // the background context, or from the test witness, and nothing else
-    // builds one.
-    //
-    // Runs the four pipeline stages on the thread of the caller, and returns
-    // when the publish stage gets the stop sentinel.  The drain stage sends
-    // that sentinel after a signal on stop_requested.  A test runs it on a
-    // thread of its own.  The proof shows that no pipeline thread of start()
-    // runs, and the run claims the run state, so a second run while this one
-    // runs ends the process.  The pipeline thread of start() runs the body
-    // itself.
-    //
-    // CtxAdmits holds only for a context over the background capability
-    // whose row names all four atoms.  fixy::BgLoadCtx is that context, so
-    // the body hands it to run_pipeline_, which takes that one type.
-    // Another spelling of the same row passes the constraint and does not
-    // convert.
-    template <class Ctx>
-        requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
-    void run_in_row(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, Ctx const& ctx) noexcept
-        CRUCIBLE_NO_THREAD_SAFETY {
-        expect_own_proof_(proof);
-        claim_pipeline_run_();
+private:
+    // The run of run_in_row of a Stopped handle, on the thread of the caller.
+    // It returns when the publish stage gets the stop sentinel.  The drain stage
+    // sends that sentinel after a signal on stop_requested.  The handle shows
+    // that no other run is active.
+    void run_in_row_(::fixy::BgLoadCtx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        pipeline_run_.store_release(PipelineRun::running);
         run_pipeline_(ctx);
         end_pipeline_run_(ctx);
     }
 
-private:
     // The body of a run of the pipeline, in src/BackgroundThread.cpp.  Only
     // that translation unit instantiates the stages, the channels and the
     // pipeline.
     void run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept CRUCIBLE_NO_THREAD_SAFETY;
-
-    // Stores running in the run state, which holds stopped.  In each other run
-    // state a pipeline runs already, or a door holds the run state
-    // (hold_run_state_), and the claim then ends the process.
-    void claim_pipeline_run_() noexcept {
-        if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::running).is_err()) [[unlikely]] {
-            ::fixy::fatal("BackgroundThread: a run of the pipeline while another run of it is active, or while a door "
-                          "holds the state of a stage.  Stop the first run, or end the door, before the run starts");
-        }
-    }
-
-    // Ends the process unless the proof names this object and no pipeline
-    // thread of start() runs.  The proof of another object has the same type,
-    // so the check runs in each build, under each contract semantic.
-    void expect_own_proof_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
-        CRUCIBLE_FATAL_INVARIANT(proof.holds_part(thread_) && proof.is_quiescent());
-    }
-
-    // Claims the run state for a door that writes or reads the state of a
-    // stage with no pipeline, until release_run_state_.  The proof is right
-    // (expect_own_proof_), and the run state holds stopped.  Else the door
-    // ends the process.  Until the release, a start, a run of run_in_row and a
-    // second such door end the process, and a flush finds no pipeline.  The
-    // claim is a write, so each door of it is not const.  A job of
-    // run_on_publish_stage reads no run state, so no door of the claim reads
-    // what a job can write.
-    //
-    // The proof shows the state only at the call, so the claim is the run-time
-    // half of the rule.  The owner key of this class, which start takes too,
-    // gives the rule at compile time.  It replaces PipelineRun::held and the
-    // proof of with_trace_build_state, run_in_row and the counts with the
-    // keyed doors of the owner-key member series (the exemption of
-    // foundation/Transfer.h).  It also gives two rules that no claim gives:
-    //   - start writes rank_, world_size_ and device_capability_ while a job
-    //     on a second thread reads them through plan_target.
-    //   - plan_target and numerics read what start and set_numerics write, and
-    //     they take no proof.
-    void hold_run_state_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
-        expect_own_proof_(proof);
-        if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::held).is_err()) [[unlikely]] {
-            ::fixy::fatal("BackgroundThread: a door of the state of a stage while a run of the pipeline is active, or "
-                          "while another such door holds the state.  Stop the run, or end the first door");
-        }
-    }
-
-    // Ends the claim of hold_run_state_.  A later start or run reads each
-    // write of the door.
-    void release_run_state_() noexcept { pipeline_run_.store_release(PipelineRun::stopped); }
 
     // True when an object of the type reaches the state of the trace build or
     // a BackgroundThread, or a class that the walk cannot read.
@@ -2002,39 +1940,36 @@ public:
     // made none.
     using TraceBuild = ::fixy::Result<BuiltTrace, BuildRefusal>;
 
-    // Calls the body with the state of the trace build, for a test or a bench
-    // that builds a trace with no pipeline (build_trace_from), and gives the
-    // value of the body.  The proof shows that no stage writes the state
-    // (prove_quiescence), and the frame holds the run state until the body
-    // returns (hold_run_state_).
+    // A body of with_trace_build_state.
+    template <class Body>
+    static constexpr bool is_trace_build_body_v =
+        std::is_nothrow_invocable_v<Body&, TraceBuildState&> && ::foundation::linear::HoldsNoLinearValue<Body>;
+
+private:
+    // The door with_trace_build_state of a Stopped handle.  It calls the body
+    // with the state of the trace build, for a test or a bench that builds a
+    // trace with no pipeline (build_trace_from), and gives the value of the
+    // body.  The handle shows that no stage writes the state.
     //
     // No reference to the state leaves the frame.  Neither a capture nor the
     // value of the body reaches the state, and neither reaches a
-    // BackgroundThread.  So a body names no door of this thread, and it can
-    // give the region of a build, which holds none of the state.
+    // BackgroundThread.  So a body names no door of this thread and no handle,
+    // and it can give the region of a build, which holds none of the state.
     template <class Body>
-        requires std::is_nothrow_invocable_v<Body&, TraceBuildState&> && ::foundation::linear::HoldsNoLinearValue<Body>
-    std::invoke_result_t<Body&, TraceBuildState&>
-    with_trace_build_state(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof, Body&& body) noexcept
+        requires is_trace_build_body_v<Body>
+    std::invoke_result_t<Body&, TraceBuildState&> with_trace_build_state_(Body&& body) noexcept
         CRUCIBLE_NO_THREAD_SAFETY {
         using Value = std::invoke_result_t<Body&, TraceBuildState&>;
         static_assert(!reaches_build_state_(^^std::remove_cvref_t<Body>),
                       "with_trace_build_state: a capture of the body reaches the state of the trace build, a "
                       "BackgroundThread or a class that the walk cannot read.  Capture the parts that the body uses");
-        hold_run_state_(proof);
-        if constexpr (std::is_void_v<Value>) {
-            body(build_state_);
-            release_run_state_();
-        } else {
-            static_assert(!reaches_build_state_(^^Value),
-                          "with_trace_build_state: the value of the body reaches the state of the trace build, a "
-                          "BackgroundThread or a class that the walk cannot read.  Give the region or a plain value");
-            Value value = body(build_state_);
-            release_run_state_();
-            return value;
-        }
+        static_assert(!reaches_build_state_(^^Value),
+                      "with_trace_build_state: the value of the body reaches the state of the trace build, a "
+                      "BackgroundThread or a class that the walk cannot read.  Give the region or a plain value");
+        return body(build_state_);
     }
 
+public:
     // Turns the ring entries of trace and their tensor metadata into a CSR
     // property graph in scratch, and the parts of its region, with the state
     // of the trace build.  A test or a bench takes the state in
@@ -2099,7 +2034,7 @@ public:
     };
 
     // The device that a memory plan is for: the rank, the size of the world
-    // and the capability of the device.  start() writes the three of this
+    // and the capability of the device.  A start writes the three of this
     // background thread before it starts the pipeline thread.  A plan body
     // captures this value, and not the background thread.  The value of
     // PlanTarget{} is the plan target of a background thread that never
@@ -2111,11 +2046,14 @@ public:
         DeviceCapability device_capability{};
     };
 
-    // The device of the plans of this background thread.
-    [[nodiscard]] PlanTarget plan_target() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
+private:
+    // The device of the plans of this background thread (Stopped, and the
+    // publish stage).
+    [[nodiscard]] PlanTarget plan_target_() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
         return PlanTarget{.rank = rank_, .world_size = world_size_, .device_capability = device_capability_};
     }
 
+public:
     // Orders birth and death events with an O(n + k) counting sort, then
     // assigns offsets with a sweep line.  The alignment is what the GPU
     // needs for coalesced access.  The birth_op of each internal slot is at
@@ -2137,15 +2075,14 @@ private:
     // not join.  The stage reads the signal at the end of its sleep.
     void request_stop_() noexcept { stop_requested.signal(); }
 
-    // Whether a run of the pipeline is active: start() stores running before
-    // it starts the thread, and run_in_row claims running on the thread of its
-    // caller.  Each run stores stopped after the pipeline returns.  A door that
-    // writes or reads the state of a stage with no pipeline stores held for
-    // the time of the door (hold_run_state_).
+    // Whether a run of the pipeline is active, for a flush on each thread: a
+    // start stores running before it starts the thread, and run_in_row stores
+    // running on the thread of its caller.  Each run stores stopped after the
+    // pipeline returns.  The handles of the owner show the state in their types,
+    // and no door of a handle reads this cell.
     enum class PipelineRun : uint8_t {
         stopped,
         running,
-        held,
     };
 
     // The end of a run of the pipeline.  The pipeline joined each stage, so
@@ -2156,8 +2093,8 @@ private:
         processed_events_.notify_all(ctx);
     }
 
-    // start(), a run of run_in_row and each door that holds the run state
-    // write the run state, and each flush reads it.  It has a line of its own.
+    // A start, a run of run_in_row and the end of a run write the run state, and
+    // each flush reads it.  It has a line of its own.
     alignas(64)::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
 
     // The event count of each flush that waits.  The publish stage notifies
@@ -2167,11 +2104,302 @@ private:
     // write it.
     mutable ::fixy::concurrent::EventCount processed_events_{};
 
-    // The thread that runs the pipeline, while one runs.  start() gives it a
-    // thread, and stop() and the end of this object call request_stop_ and
+    // The thread that runs the pipeline, while one runs.  A start gives it a
+    // thread, and a stop and the end of this object call request_stop_ and
     // join it.  It is the last data member, so it ends first, and each other
     // member is alive while the thread ends.
     ::fixy::thread::OwnerThread<BackgroundThread> thread_{};
+};
+
+// The handle of the owner of a BackgroundThread while no pipeline runs (the
+// owner of a thread).  The frame door gives the first one, and stop() of a
+// Running handle gives the next one.  So one handle of a thread lives at a time.
+//
+// A move empties the source, and each door of an empty handle ends the process
+// in each build.  The rule use-after-move refuses such a call before that.
+template <::foundation::brand::IsBrand Scope>
+class [[nodiscard]][[= ::foundation::linear::authority{}]][[= ::foundation::transfer::thread_bound{}]]
+                   [[= ::foundation::transfer::not_shareable{}]] BackgroundThread::Stopped final {
+    // The thread of the handle, or none after a move.
+    ::fixy::Option<::fixy::Ref<BackgroundThread>> thread_;
+
+    explicit Stopped(BackgroundThread& thread) noexcept
+        : thread_{::fixy::some(::fixy::erase_brand(::fixy::to(thread)))} {}
+    friend class BackgroundThread::Running<Scope>;
+
+    [[nodiscard]] BackgroundThread& held_() const noexcept {
+        return *::fixy::Option<::fixy::Ref<BackgroundThread>>{thread_}.expect(
+            "a Stopped handle that a move took opens no door");
+    }
+
+public:
+    // The scope brand of the frame of the handle.
+    using scope_type = Scope;
+
+    Stopped(BackgroundThreadKey const& /*key*/, BackgroundThread& thread) noexcept : Stopped{thread} {}
+    Stopped(Stopped&& other) noexcept : thread_{other.thread_.take()} {}
+    Stopped(Stopped const&) = delete("a BackgroundThread has one handle, and a copy would be a second one");
+    Stopped& operator=(Stopped const&) = delete("a BackgroundThread has one handle, and an assignment would lose it");
+    Stopped& operator=(Stopped&&) = delete("a BackgroundThread has one handle, and an assignment would lose it");
+    ~Stopped() = default;
+
+    // Starts the pipeline thread for the device of the target (start_), and
+    // gives the handle of the run.
+    [[nodiscard]] Running<Scope> start(::fixy::InitLoadCtx const& startup, PlanTarget const& target = PlanTarget{}) && {
+        BackgroundThread& thread = *thread_.take().expect("a Stopped handle that a move took starts no pipeline");
+        thread.start_(startup, target);
+        return Running<Scope>{thread};
+    }
+
+    // Sets the numerics hash of the start of the run (set_numerics_).
+    void set_numerics(NumericsHash numerics) & noexcept { held_().set_numerics_(numerics); }
+    [[nodiscard]] NumericsHash numerics() const noexcept { return held_().numerics_; }
+
+    // The device of the plans of the thread.
+    [[nodiscard]] PlanTarget plan_target() const noexcept { return held_().plan_target_(); }
+
+    // Takes the stop signal down for the next run (rearm_stop_).
+    void rearm_stop() & noexcept { held_().rearm_stop_(); }
+
+    // The count of ops in the history of the detector, and the count of the ops
+    // that the detect stage holds.  The ops stay after a stop, and a later start
+    // reads them.
+    [[nodiscard]] uint64_t detector_history_count() const noexcept { return held_().detector_history_count_(); }
+    [[nodiscard]] uint64_t pending_op_count() const noexcept { return held_().pending_ops_.size(); }
+
+    // The bytes of blocks that the scratch arena of the build stage holds.
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t> build_scratch_retained_bytes() const noexcept {
+        return ::fixy::Quantity<::fixy::unit::Byte, size_t>{held_().build_scratch_.arena.retained_bytes()};
+    }
+
+    // Runs a job on the thread that owns the publish-stage state, which is the
+    // caller while no pipeline runs (run_on_publish_stage_).
+    template <typename Job>
+        requires is_publish_stage_job_v<Job>
+    std::invoke_result_t<Job&, PublishStageView&, PublishStage const&> run_on_publish_stage(Job&& job) & noexcept {
+        return held_().run_on_publish_stage_(static_cast<Job&&>(job));
+    }
+
+    // Calls the body with the state of the trace build, and gives its value
+    // (with_trace_build_state_).
+    template <class Body>
+        requires is_trace_build_body_v<Body>
+    std::invoke_result_t<Body&, TraceBuildState&> with_trace_build_state(Body&& body) & noexcept {
+        return held_().with_trace_build_state_(static_cast<Body&&>(body));
+    }
+
+    // Runs the pipeline on the thread of the caller (run_in_row_).  The context
+    // is the evidence for the row.  It comes from the door of the background
+    // context, or from the test witness, and nothing else builds one.
+    //
+    // CtxAdmits holds only for a context over the background capability
+    // whose row names all four atoms.  fixy::BgLoadCtx is that context, so
+    // the body hands it to run_in_row_, which takes that one type.
+    // Another spelling of the same row passes the constraint and does not
+    // convert.
+    template <class Ctx>
+        requires ::foundation::effects::CtxAdmits<Ctx, run_required_row>
+    void run_in_row(Ctx const& ctx) & noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        held_().run_in_row_(ctx);
+    }
+
+    // Runs the pipeline on one thread of run_beside with the options, and calls
+    // the continuation on the caller with the thread that both share.  After the
+    // continuation, the door signals the stop of the run and joins its thread.
+    // So the handle is there after the call, and no other thread has it.  The
+    // continuation captures no BackgroundThread and no handle, so no door of the
+    // handle opens inside.  A start that the host refuses is the error.
+    template <class Ctx, class Continuation>
+        requires ::foundation::effects::CtxAdmits<Ctx, run_required_row> && ::fixy::thread::CtxStartsThreads<Ctx>
+              && std::is_nothrow_invocable_v<Continuation&&, BackgroundThread const&>
+    [[nodiscard]] auto run_in_row_beside(Ctx const& ctx, ::fixy::thread::ThreadOptions const& options,
+                                         Continuation continuation) & noexcept CRUCIBLE_NO_THREAD_SAFETY {
+        static_assert(!reaches_background_thread_(^^Continuation),
+                      "run_in_row_beside: a capture of the continuation reaches a BackgroundThread, such as a handle "
+                      "of it.  The continuation gets the thread that it shares with the run");
+        BackgroundThread& thread = held_();
+        auto run = [&thread](::fixy::BgLoadCtx const& bg) noexcept { thread.run_in_row_(bg); };
+        auto beside = [&thread, owned = std::move(continuation)]() mutable noexcept {
+            std::move(owned)(static_cast<BackgroundThread const&>(thread));
+            thread.stop_requested.signal();
+        };
+        return ::fixy::thread::run_beside(ctx, options, std::move(run), std::move(beside));
+    }
+};
+
+// The handle of the owner of a BackgroundThread while the pipeline thread runs
+// (the owner of a thread).  A dropped Running handle lets the pipeline run, and
+// the end of the frame joins it.  The moves are those of Stopped.
+template <::foundation::brand::IsBrand Scope>
+class [[nodiscard]][[= ::foundation::linear::authority{}]][[= ::foundation::transfer::thread_bound{}]]
+                   [[= ::foundation::transfer::not_shareable{}]] BackgroundThread::Running final {
+    ::fixy::Option<::fixy::Ref<BackgroundThread>> thread_;
+
+    explicit Running(BackgroundThread& thread) noexcept
+        : thread_{::fixy::some(::fixy::erase_brand(::fixy::to(thread)))} {}
+    friend class BackgroundThread::Stopped<Scope>;
+
+public:
+    using scope_type = Scope;
+
+    Running(Running&& other) noexcept : thread_{other.thread_.take()} {}
+    Running(Running const&) = delete("a BackgroundThread has one handle, and a copy would be a second one");
+    Running& operator=(Running const&) = delete("a BackgroundThread has one handle, and an assignment would lose it");
+    Running& operator=(Running&&) = delete("a BackgroundThread has one handle, and an assignment would lose it");
+    ~Running() = default;
+
+    // Stops and joins the pipeline thread (stop_), and gives the handle of the
+    // stopped thread.
+    [[nodiscard]] Stopped<Scope> stop() && {
+        BackgroundThread& thread = *thread_.take().expect("a Running handle that a move took stops no pipeline");
+        thread.stop_();
+        return Stopped<Scope>{thread};
+    }
+
+    // Runs a job on the thread that owns the publish-stage state, which is the
+    // publish stage while it runs (run_on_publish_stage_).
+    template <typename Job>
+        requires is_publish_stage_job_v<Job>
+    std::invoke_result_t<Job&, PublishStageView&, PublishStage const&> run_on_publish_stage(Job&& job) & noexcept {
+        return ::fixy::Option<::fixy::Ref<BackgroundThread>>{thread_}
+            .expect("a Running handle that a move took opens no door")
+            ->run_on_publish_stage_(static_cast<Job&&>(job));
+    }
+};
+
+// A body of the frame door of a BackgroundThread: a closure that the caller
+// gives up, which takes the thread by a reference to const and its Stopped
+// handle by value, with no throw, and whose result names no brand of the frame
+// and holds no borrow (HandleFrameLeaves of fixy/concurrent/HandleTraits.h).
+template <class Body, class Scope>
+concept BackgroundThreadFrameBody =
+    ::fixy::concurrent::HandleFrameLeaves<Body, Scope, BackgroundThread const&, BackgroundThread::Stopped<Scope>>;
+
+// The frame door of a BackgroundThread (the owner of a thread).  The door makes
+// the thread in its frame, with the sides, the callback and the limits of the
+// setup, and gives the body the thread and its Stopped handle.  The end of the
+// frame joins a pipeline that still runs, and then ends the thread.  The handle
+// has the scope brand of the call, so no code outside the body spells its type,
+// and the rule brand-escape refuses a result and an object of static or thread
+// storage duration that holds it.  So no handle outlives its thread.  The pack
+// refuses each explicit argument.
+template <class... Refused, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0) && BackgroundThreadFrameBody<Body, Scope>
+auto with_background_thread(::foundation::effects::Alloc allocation, BackgroundThread::TraceRingSide& ring_side,
+                            BackgroundThread::MetaLogSide& meta_log_side, BackgroundThread::Setup const& setup,
+                            Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, BackgroundThread const&, BackgroundThread::Stopped<Scope>>;
+
+// A body that the caller names keeps a second name that can call it again.
+template <class... Refused, class Body, ::foundation::brand::IsBrand Scope = CRUCIBLE_SCOPE_BRAND>
+    requires(sizeof...(Refused) == 0)
+             && ::fixy::concurrent::HandleNamedFrameBody<Body, BackgroundThread const&,
+                                                         BackgroundThread::Stopped<Scope>>
+void with_background_thread(::foundation::effects::Alloc allocation, BackgroundThread::TraceRingSide& ring_side,
+                            BackgroundThread::MetaLogSide& meta_log_side, BackgroundThread::Setup const& setup,
+                            Body&& body) =
+    delete("with_background_thread owns its body and calls it one time: pass the body with std::move, or write it at "
+           "the call");
+
+// The key of the frame of a BackgroundThread.  Its constructor is private, and
+// its only friends are the frame door and the holder.  So only they construct a
+// BackgroundThread and make the first handle of it.  It is a token: it carries an
+// authority and does not copy.  Its constructor is user-provided, and its seal
+// makes its assignment user-provided, so no byte route, such as std::bit_cast,
+// builds a key.
+class[[= ::foundation::linear::authority{}]] BackgroundThreadKey final {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+
+    constexpr BackgroundThreadKey() noexcept {}
+
+    friend class StartedBackgroundThread;
+
+    template <class... Refused, class Body, ::foundation::brand::IsBrand Scope>
+        requires(sizeof...(Refused) == 0) && BackgroundThreadFrameBody<Body, Scope>
+    friend auto with_background_thread(::foundation::effects::Alloc allocation,
+                                       BackgroundThread::TraceRingSide& ring_side,
+                                       BackgroundThread::MetaLogSide& meta_log_side,
+                                       BackgroundThread::Setup const& setup, Body&& body) noexcept
+        -> std::invoke_result_t<Body&&, BackgroundThread const&, BackgroundThread::Stopped<Scope>>;
+
+public:
+    BackgroundThreadKey(BackgroundThreadKey const&) = delete("the key of a BackgroundThread stays in its frame door");
+    BackgroundThreadKey&
+    operator=(BackgroundThreadKey const&) = delete("the key of a BackgroundThread stays in its frame door");
+    ~BackgroundThreadKey() = default;
+};
+
+template <class... Refused, class Body, ::foundation::brand::IsBrand Scope>
+    requires(sizeof...(Refused) == 0) && BackgroundThreadFrameBody<Body, Scope>
+auto with_background_thread(::foundation::effects::Alloc allocation, BackgroundThread::TraceRingSide& ring_side,
+                            BackgroundThread::MetaLogSide& meta_log_side, BackgroundThread::Setup const& setup,
+                            Body&& body) noexcept
+    -> std::invoke_result_t<Body&&, BackgroundThread const&, BackgroundThread::Stopped<Scope>> {
+    BackgroundThreadKey const key{};
+    BackgroundThread thread{key, allocation, ring_side, meta_log_side, setup};
+    return ::foundation::linear::call_once(static_cast<Body&&>(body), static_cast<BackgroundThread const&>(thread),
+                                           BackgroundThread::Stopped<Scope>{key, thread});
+}
+
+// The holder of a BackgroundThread whose pipeline runs for the whole life of the
+// holder.  The Vigil is its one user, and only the Vigil makes one.  The holder
+// keeps the one handle of its thread as its own member, and gives none, so no
+// handle of it leaves the holder.  It does not move, and no two threads share
+// it (not_shareable).  Its end joins the pipeline, so it is the last member of
+// its owner.
+class[[= ::foundation::transfer::not_shareable{}]] StartedBackgroundThread final {
+    // The brand of the handle of the holder, which no code outside names.
+    struct HolderScope final {};
+
+    BackgroundThread thread_;
+    BackgroundThread::Running<HolderScope> running_;
+
+    friend class Vigil;
+
+    // Makes the thread and starts its pipeline with the numerics and the device
+    // of the target.  Each other member of the owner is complete, because the
+    // holder is the last one.
+    StartedBackgroundThread(::fixy::InitLoadCtx const& startup, ::foundation::effects::Alloc allocation,
+                            BackgroundThread::TraceRingSide& ring_side, BackgroundThread::MetaLogSide& meta_log_side,
+                            BackgroundThread::Setup const& setup, NumericsHash numerics,
+                            BackgroundThread::PlanTarget const& target);
+
+    // The start of the constructor.
+    [[nodiscard]] static BackgroundThread::Running<HolderScope> start_(BackgroundThread& thread,
+                                                                       ::fixy::InitLoadCtx const& startup,
+                                                                       NumericsHash numerics,
+                                                                       BackgroundThread::PlanTarget const& target);
+
+public:
+    StartedBackgroundThread(StartedBackgroundThread const&) =
+        delete("the pipeline thread reaches the thread of this holder at one address");
+    StartedBackgroundThread& operator=(StartedBackgroundThread const&) =
+        delete("the pipeline thread reaches the thread of this holder at one address");
+    StartedBackgroundThread(StartedBackgroundThread&&) =
+        delete("the pipeline thread reaches the thread of this holder at one address");
+    StartedBackgroundThread& operator=(StartedBackgroundThread&&) =
+        delete("the pipeline thread reaches the thread of this holder at one address");
+    ~StartedBackgroundThread() = default;
+
+    // The thread, as each other thread shares it.
+    [[nodiscard]] BackgroundThread const& shared() const& noexcept { return thread_; }
+    void shared() const&& = delete("the thread of a temporary holder ends with the full expression");
+
+    // Gives the regions that the owner holds to the sweep of this publish.  The
+    // region callback of the owner calls it with its proof, on the publish
+    // stage.
+    void set_region_marks(BackgroundThread::PublishStage const& stage,
+                          BackgroundThread::RegionMarks const& marks) noexcept {
+        thread_.set_region_marks(stage, marks);
+    }
+
+    // Runs a job on the publish stage, or on the caller before the stage opens
+    // (run_on_publish_stage of a Running handle).
+    template <typename Job>
+        requires BackgroundThread::is_publish_stage_job_v<Job>
+    auto run_on_publish_stage(Job&& job) & noexcept {
+        return running_.run_on_publish_stage(static_cast<Job&&>(job));
+    }
 };
 
 }  // namespace crucible

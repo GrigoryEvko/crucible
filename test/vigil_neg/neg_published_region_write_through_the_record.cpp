@@ -13,7 +13,7 @@
 
 namespace {
 
-void write_through_the_record(crucible::BackgroundThread::PublishedRegion const& published) noexcept {
+void write_through_the_record(crucible::PublishedRegion const& published) noexcept {
     auto link = published.region;
     std::move(link).expect("the publish stage gives a record of a region")->content_hash = crucible::ContentHash{};
 }
@@ -21,7 +21,7 @@ void write_through_the_record(crucible::BackgroundThread::PublishedRegion const&
 }  // namespace
 
 int main() {
-    crucible::BackgroundThread::PublishedRegion const published{};
+    crucible::PublishedRegion const published{};
     write_through_the_record(published);
     return 0;
 }

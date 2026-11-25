@@ -163,15 +163,13 @@ void test_log_that_fills_is_released_again() {
                          vigil.meta_log_size().peek() < MetaLog::CAPACITY / 2 && "the log stayed full after the loop");
 }
 
-void test_detect_stage_holds_a_bounded_trace() {
-    // Ops that never occur again give no period.  The detect stage holds
-    // only the ops that a future iteration can claim: at most half of the
-    // history of the detector and K ops more.  The stream fills the largest
-    // history, and then it moves through a second full history.  The ring and
-    // the log come before the BackgroundThread, so the thread ends first.
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+// Ops that never occur again give no period.  The detect stage holds only the
+// ops that a future iteration can claim: at most half of the history of the
+// detector and K ops more.  The stream fills the largest history, and then it
+// moves through a second full history.
+template <class Stopped>
+void check_bounded_trace(crucible::test::TraceRig& rig, BackgroundThread const& bt, Stopped stopped) noexcept {
+    auto running = std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
     constexpr uint64_t kOps = uint64_t{2} * IterationDetector::HISTORY_MAX_CAPACITY;
@@ -186,12 +184,19 @@ void test_detect_stage_holds_a_bounded_trace() {
     while (bt.total_processed.load_acquire() < target)
         (void)pause.sleep_for(kPollNanos);
     // The detect stage keeps its ops and its detector after the stop, and
-    // the stop gives the proof that no stage writes them.
-    bt.stop();
-    ::fixy::thread::QuiescenceProof<BackgroundThread> const quiescent = bt.prove_quiescence();
-    CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(quiescent)
+    // the stop gives the handle that reads them.
+    auto const quiescent = std::move(running).stop();
+    CRUCIBLE_TEST_ASSERT(kTest, quiescent.pending_op_count()
                                     <= IterationDetector::HISTORY_MAX_CAPACITY / 2 + IterationDetector::K);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.detector_history_count(quiescent) <= IterationDetector::HISTORY_MAX_CAPACITY);
+    CRUCIBLE_TEST_ASSERT(kTest, quiescent.detector_history_count() <= IterationDetector::HISTORY_MAX_CAPACITY);
+}
+
+void test_detect_stage_holds_a_bounded_trace() {
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+                                     [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+                                         check_bounded_trace(rig, bt, std::move(stopped));
+                                     });
 }
 
 }  // namespace

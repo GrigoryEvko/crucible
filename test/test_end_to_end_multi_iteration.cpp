@@ -23,24 +23,15 @@ using namespace crucible;
 
 namespace test_end_to_end {
 
+namespace {
+
 // The second boundary costs less than the first.  Once the signature is
 // confirmed the next match fires immediately, and the background thread
 // keeps the K trigger ops as the opening of the next trace rather than
 // discarding them.  So the feed here completes that partial iteration
 // before starting a fresh one.
-void test_pipeline_multi_iteration() {
-    crucible::test::TraceRig rig{};
-
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    feed_iteration(rig, Iteration{0});
-    feed_iteration(rig, Iteration{1});
-    feed_trigger(rig, Iteration{2});
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    wait_processed(bt, rig);
-    const DagRef<const RegionNode> region1 = bt.active_region().expect("BackgroundThread did not produce a region");
+void check_second_region(crucible::test::TraceRig& rig, BackgroundThread const& bt,
+                         DagRef<const RegionNode> region1) noexcept {
     CRUCIBLE_TEST_ASSERT(kTest, region1->num_ops() == NUM_OPS);
 
     // The loop starts at K because the background thread already holds
@@ -83,8 +74,12 @@ void test_pipeline_multi_iteration() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     ctx.deactivate();
-    bt.stop();
+}
 
+}  // namespace
+
+void test_pipeline_multi_iteration() {
+    run_on_first_region(RegionCheck::of<&check_second_region>());
     ::fixy::check::pass(kTest, "  test_pipeline_multi_iteration: PASSED\n");
 }
 

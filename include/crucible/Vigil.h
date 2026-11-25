@@ -524,10 +524,12 @@ public:
     template <class Ctx>
         requires ::fixy::concurrent::CtxFitsWaitPolicy<Ctx, BackgroundThread::FlushPolicy>
     [[nodiscard]] FlushResult flush(Ctx const& ctx) noexcept {
-        return bg_.flush(ctx);
+        return bg_.shared().flush(ctx);
     }
 
-    [[nodiscard]] bool flush_complete() const { return bg_.count_processed_ring_ops() >= ring_total_produced(); }
+    [[nodiscard]] bool flush_complete() const {
+        return bg_.shared().count_processed_ring_ops() >= ring_total_produced();
+    }
 
     // Makes the previously superseded transaction active again, restoring
     // the replay state to match.
@@ -631,7 +633,7 @@ public:
             arena->at(std::move(head_position).expect("the test above found the position of the head"))
                 .expect("a position of the arena of the load names its head region");
         // Each region cut before the load holds ops that ran before it.
-        bg_.request_mark(ring_total_produced());
+        bg_.shared().request_mark(ring_total_produced());
         adopt_region_(fg, *region);
         keep_load_(std::move(arena), ConstRegionLink::some(region));
         return true;
@@ -773,17 +775,17 @@ public:
         return meta_log_.with_owner([](MetaLog const& log) noexcept { return log.total_produced(); });
     }
 
-    [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
+    [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.shared().iterations_completed.get(); }
     // The count of iteration boundaries that the detector reported, and true
     // while the detector holds an accepted period.  Each value comes from the
     // snapshot that the detect stage published after its last batch, so any
     // thread can read it while the pipeline runs.  After flush(), it covers
     // each op that the ring held at the call of flush.
     [[nodiscard]] uint32_t bg_detector_boundaries() const noexcept {
-        return bg_.detector_snapshot.load_acquire().boundaries;
+        return bg_.shared().detector_snapshot.load_acquire().boundaries;
     }
     [[nodiscard]] bool bg_detector_confirmed() const noexcept {
-        return bg_.detector_snapshot.load_acquire().period == BackgroundThread::DetectorPeriod::Confirmed;
+        return bg_.shared().detector_snapshot.load_acquire().period == BackgroundThread::DetectorPeriod::Confirmed;
     }
 
     // The count of regions in the region store of the pipeline, and the
@@ -871,7 +873,7 @@ private:
         const PendingRegion pending = pending_region_.load_acquire();
         for (const auto& published : pending) {
             // The foreground reads a region of the pipeline only as const.
-            if (published->reset_point == bg_.requested_reset())
+            if (published->reset_point == bg_.shared().requested_reset())
                 return ConstRegionLink::some(
                     ConstRegionLink{published->region}.expect("the publish stage gives a record of a region"));
         }
@@ -900,6 +902,12 @@ private:
             });
     }
 
+    // Opens the store and the watchdog of the configuration, and gives the
+    // numerics of the start of the pipeline.  The initializer of bg_ calls it
+    // before the start, while each other member is complete.  The body is in
+    // src/Vigil.cpp.
+    [[nodiscard, gnu::cold]] NumericsHash prepare_start_(::fixy::InitLoadCtx const& startup);
+
     // Runs on the background thread when a new region is ready.  It must
     // not touch the persistence store: that owns mutable resident-cache and
     // log state and belongs to the foreground.  The background thread hands
@@ -910,7 +918,7 @@ private:
     // region to the foreground, and observes the watchdog when it is
     // loaded.  The body is in src/Vigil.cpp.
     [[gnu::cold]] void on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                                       BackgroundThread::PublishedRegion const& published) noexcept;
+                                       PublishedRegion const& published) noexcept;
 
     // Makes a region from outside the pipeline active: the region of a
     // rollback or of a load.  The caller first requests a mark at the
@@ -1132,9 +1140,9 @@ private:
         // period.  So that reset is a mark, which makes each region cut before
         // the point stale and keeps the periods of the detector.
         if (schema_hash == kUnrecordedNestSchema) {
-            bg_.request_mark(ring_total_produced());
+            bg_.shared().request_mark(ring_total_produced());
         } else {
-            bg_.request_restart(ring_total_produced());
+            bg_.shared().request_restart(ring_total_produced());
         }
         publish_held_regions_();
         // The divergent op is deliberately not recorded: it would poison the
@@ -1202,7 +1210,7 @@ private:
         const ConstRegionLink replayed = replay_.context().active_region();
         if (replay_.change_numerics(numerics))
             region_cache_.insert(*ConstRegionLink{replayed}.expect("a replay that changes its numerics has a region"));
-        bg_.request_numerics(ring_total_produced(), numerics);
+        bg_.shared().request_numerics(ring_total_produced(), numerics);
         publish_held_regions_();
     }
 
@@ -1231,10 +1239,10 @@ private:
             take_published_region_(*published);
     }
 
-    [[gnu::cold]] void take_published_region_(BackgroundThread::PublishedRegion const& published) {
+    [[gnu::cold]] void take_published_region_(PublishedRegion const& published) {
         const RegionNode& region =
             *ConstRegionLink{published.region}.expect("the publish stage gives a record of a region");
-        if (published.reset_point != bg_.requested_reset()) {
+        if (published.reset_point != bg_.shared().requested_reset()) {
             region_cache_.insert(region);
             return;
         }
@@ -1550,7 +1558,7 @@ private:
     // region in the region store, which carries its reset point.  It has its
     // own cache line, because the publish stage writes it while the
     // foreground reads its neighbours.
-    using PendingRegion = ::fixy::Option<::fixy::Ref<const BackgroundThread::PublishedRegion>>;
+    using PendingRegion = ::fixy::Option<::fixy::Ref<const PublishedRegion>>;
     alignas(64)::fixy::Atomic<PendingRegion> pending_region_{};
     // The region that the producer thread took last (active_region).  Only
     // the producer thread writes it, and a reader on another thread loads it.
@@ -1741,7 +1749,9 @@ private:
     // this Vigil, so a Vigil has no copy and no move.
     BackgroundThread::RegionReadyCall const region_ready_;
 
-    BackgroundThread bg_;  // Must stay last.
+    // The thread of the pipeline, which the constructor starts after each other
+    // member is complete.
+    StartedBackgroundThread bg_;  // Must stay last.
 };
 
 // The nest of the record of one op that an adapter gives to a Vigil.  It

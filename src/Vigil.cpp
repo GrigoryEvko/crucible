@@ -30,7 +30,19 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
       replay_{startup.cap().alloc, compute_numerics_hash(cfg_.numerics, cfg_.eager)},
       allocation_{startup.cap().alloc},
       region_ready_{BackgroundThread::RegionReadyCall::bind<&Vigil::on_region_ready>(*this)},
-      bg_{startup.cap().alloc, ring_.consumer_side(), meta_log_.consumer_side(), region_ready_, cfg_.limits} {
+      bg_{startup,
+          startup.cap().alloc,
+          ring_.consumer_side(),
+          meta_log_.consumer_side(),
+          BackgroundThread::Setup{.on_region_ready = ::fixy::some(::fixy::erase_brand(::fixy::to(region_ready_))),
+                                  .limits = cfg_.limits},
+          prepare_start_(startup),
+          BackgroundThread::PlanTarget{
+              .rank = cfg_.rank,
+              .world_size = cfg_.world_size,
+              .device_capability = ::fixy::mint_tagged<::fixy::tags::source::Meridian>(cfg_.device_capability)}} {}
+
+NumericsHash Vigil::prepare_start_(::fixy::InitLoadCtx const& startup) {
     // An empty path gives no store.  The configured path is operator-supplied,
     // so it crosses the trust boundary here and is declared external until
     // the store's own sanitizer promotes it.  A root that does not open gives
@@ -52,7 +64,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
                     // commit of this run must come at or after them.  So
                     // the step starts after the last commit.  The
                     // background thread is the one writer of the step, and
-                    // it starts below, so this write comes first.
+                    // bg_ starts it after this call, so this write comes first.
                     for (const ::fixy::session::StepId last : opened.last_committed_step()) {
                         step_.advance(last.raw() + 1);
                     }
@@ -80,8 +92,7 @@ Vigil::Vigil(Config cfg, ::fixy::InitLoadCtx const& startup)
     }
 
     eager_ = cfg_.eager;
-    bg_.set_numerics(compute_numerics_hash(cfg_.numerics, cfg_.eager));
-    bg_.start(startup, cfg_.rank, cfg_.world_size, cfg_.device_capability);
+    return compute_numerics_hash(cfg_.numerics, cfg_.eager);
 }
 
 Vigil::~Vigil() = default;
@@ -146,7 +157,7 @@ void Vigil::adopt_region_(VigilFgCtx const& fg, RegionNode const& region) {
 }
 
 void Vigil::on_region_ready(::foundation::effects::Bg const& bg, BackgroundThread::PublishStage const& stage,
-                            BackgroundThread::PublishedRegion const& published) noexcept {
+                            PublishedRegion const& published) noexcept {
     RegionNode const& region =
         *ConstRegionLink{published.region}.expect("the publish stage gives a record of a region");
     // bump returns the previous value, which is the index this call

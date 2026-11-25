@@ -98,13 +98,28 @@ void feed_trigger(crucible::test::TraceRig& rig, Iteration iteration) {
     }
 }
 
-void wait_processed(BackgroundThread& bt, crucible::test::TraceRig const& rig) {
+void wait_processed(BackgroundThread const& bt, crucible::test::TraceRig const& rig) {
     const uint64_t target = rig.ring_total_produced();
     uint64_t spins = 0;
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_TEST_ASSERT(kTest, ++spins < 100000000 && "bg thread did not finish processing");
         CRUCIBLE_SPIN_PAUSE;
     }
+}
+
+void run_on_first_region(RegionCheck const& check) {
+    crucible::test::TraceRig rig{};
+    feed_iteration(rig, Iteration{0});
+    feed_iteration(rig, Iteration{1});
+    feed_trigger(rig, Iteration{2});
+    with_background_thread(::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+                           [&rig, &check](BackgroundThread const& bt, auto stopped) noexcept {
+                               auto running = std::move(stopped).start(
+                                   ::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+                               wait_processed(bt, rig);
+                               check(rig, bt, bt.active_region().expect("BackgroundThread did not produce a region"));
+                               static_cast<void>(std::move(running).stop());
+                           });
 }
 
 }  // namespace test_end_to_end

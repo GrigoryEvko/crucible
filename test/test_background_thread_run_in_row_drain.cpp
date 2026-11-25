@@ -13,9 +13,7 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
-#include <memory>
-#include <thread>
+#include <utility>
 
 namespace {
 
@@ -28,23 +26,48 @@ using crucible::BackgroundThread;
 
 namespace test_background_thread_run_in_row {
 
+namespace {
+
+constexpr auto kAlloc = ::foundation::effects::testing::test().alloc;
+
+// Appends one op with no record.  The push side has a fence of its own, which
+// is not what is under test here, so this goes through the untyped append.
+void append_op(crucible::test::TraceRig& rig, uint64_t schema, uint64_t shape) noexcept {
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = crucible::SchemaHash{schema};
+    entry.shape_hash = crucible::ShapeHash{shape};
+    while (!rig.append_entry(entry, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+}
+
+// Waits until the pipeline processed the count of ops.  The processed counter
+// is what says that the drain consumed every entry.  The deadline keeps a
+// stalled drain from hanging the suite.
+void wait_for_count(BackgroundThread const& bt, uint64_t count) noexcept {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (bt.total_processed.load_acquire() < count && std::chrono::steady_clock::now() < deadline) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= count);
+}
+
+}  // namespace
+
 // Stop is signalled before the loop starts, so the loop body never runs and
 // the call falls straight through to the trailing drain, which is empty.
-// What is under test is that the entry point forwards at all.
+// What is under test is that the entry point forwards at all, on a thread of
+// its own.
 void test_t04_runtime_smoke() {
     crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    bt.stop_requested.signal();
-
-    bool done = false;
-    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
-    std::jthread t([&]() {
-        bt.run_in_row(proof, bg_load_ctx());
-        done = true;
-    });
-    t.join();
-    CRUCIBLE_TEST_ASSERT(kTest, done);
+    crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [](BackgroundThread const& bt, auto stopped) noexcept {
+            bt.stop_requested.signal();
+            CRUCIBLE_TEST_ASSERT(kTest, stopped
+                                            .run_in_row_beside(bg_load_ctx(), ::fixy::thread::ThreadOptions{},
+                                                               [](BackgroundThread const& /*shared*/) noexcept {})
+                                            .is_ok());
+        });
 
     ::fixy::check::pass(kTest, "  T04 runtime_smoke:                         PASSED\n");
 }
@@ -58,37 +81,22 @@ void test_t04_runtime_smoke() {
 // iteration detector advances but never closes anything, which leaves plain
 // drain motion to observe.
 void test_concurrent_spsc_drain() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.rearm_stop();
-
-    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
-    std::jthread bg_thread([&]() { bt.run_in_row(proof, bg_load_ctx()); });
-
     // Each entry carries its own schema hash so the iteration detector never
     // matches a signature.
     constexpr uint32_t N = 8;
-    for (uint32_t i = 0; i < N; ++i) {
-        crucible::TraceRing::Entry e{};
-        e.schema_hash = crucible::SchemaHash{0x1000ULL + i};
-        e.shape_hash = crucible::ShapeHash{0x2000ULL + i};
-        // The push side has a fence of its own, which is not what is under
-        // test here, so this goes through the untyped append.
-        while (!rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-    }
-
-    // The processed counter reaching N is what says the drain consumed every
-    // entry.  The deadline keeps a stalled drain from hanging the suite.
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (bt.total_processed.load_acquire() < N && std::chrono::steady_clock::now() < deadline) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= N);
-
-    bt.stop_requested.signal();
-    bg_thread.join();
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [&rig](BackgroundThread const& /*bt*/, auto stopped) noexcept {
+            stopped.rearm_stop();
+            CRUCIBLE_TEST_ASSERT(kTest, stopped
+                                            .run_in_row_beside(bg_load_ctx(), ::fixy::thread::ThreadOptions{},
+                                                               [&rig](BackgroundThread const& shared) noexcept {
+                                                                   for (uint32_t i = 0; i < N; ++i)
+                                                                       append_op(rig, 0x1000ULL + i, 0x2000ULL + i);
+                                                                   wait_for_count(shared, N);
+                                                               })
+                                            .is_ok());
+        });
 
     ::fixy::check::pass(kTest, "  concurrent_spsc_drain:                     PASSED\n");
 }
@@ -101,36 +109,28 @@ void test_concurrent_spsc_drain() {
 // which the normal start sequence does and this test deliberately bypasses in
 // order to reach the entry point directly.
 void test_large_batch_drain() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.rearm_stop();
-
-    ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
-    std::jthread bg_thread([&]() { bt.run_in_row(proof, bg_load_ctx()); });
-
     constexpr uint32_t TOTAL = 32;
-    for (uint32_t i = 0; i < TOTAL; ++i) {
-        crucible::TraceRing::Entry e{};
-        e.schema_hash = crucible::SchemaHash{0xABCD0001ULL + i};
-        e.shape_hash = crucible::ShapeHash{0xDEAD0001ULL + i};
-        while (!rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-    }
+    crucible::test::TraceRig rig{};
+    const uint64_t processed_after_push = crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            stopped.rearm_stop();
+            uint64_t processed = 0;
+            CRUCIBLE_TEST_ASSERT(kTest,
+                                 stopped
+                                     .run_in_row_beside(bg_load_ctx(), ::fixy::thread::ThreadOptions{},
+                                                        [&rig, &processed](BackgroundThread const& shared) noexcept {
+                                                            for (uint32_t i = 0; i < TOTAL; ++i)
+                                                                append_op(rig, 0xABCD0001ULL + i, 0xDEAD0001ULL + i);
+                                                            wait_for_count(shared, TOTAL);
+                                                            processed = shared.total_processed.load_acquire();
+                                                        })
+                                     .is_ok());
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (bt.total_processed.load_acquire() < TOTAL && std::chrono::steady_clock::now() < deadline) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    const uint64_t processed_after_push = bt.total_processed.load_acquire();
-    CRUCIBLE_TEST_ASSERT(kTest, processed_after_push >= TOTAL);
-
-    bt.stop_requested.signal();
-    bg_thread.join();
-
-    // No signature ever matched twice, so the boundary path never ran and the
-    // completed count stays at zero.
-    CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == 0u);
+            // No signature ever matched twice, so the boundary path never ran
+            // and the completed count stays at zero.
+            CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == 0u);
+            return processed;
+        });
 
     ::fixy::check::pass(kTest,
                         "  large_batch_drain:                         "
@@ -142,74 +142,38 @@ void test_large_batch_drain() {
 // instantiation, or a destructor that failed to run would leave the second
 // invocation dead, and the second cycle would then drain nothing.
 void test_rearm_cycle() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
     constexpr uint32_t PER_CYCLE = 4;
-
-    uint64_t prev_processed = 0;
-
-    for (uint32_t cycle = 0; cycle < 2; ++cycle) {
-        bt.rearm_stop();
-
-        ::fixy::thread::QuiescenceProof<BackgroundThread> const proof = bt.prove_quiescence();
-        std::jthread bg([&]() { bt.run_in_row(proof, bg_load_ctx()); });
-
-        for (uint32_t i = 0; i < PER_CYCLE; ++i) {
-            crucible::TraceRing::Entry e{};
-            // The cycle index enters the hash so the detector cannot tie the
-            // two cycles together into one signature.
-            e.schema_hash = crucible::SchemaHash{0x10000ULL + (cycle << 16) + i};
-            e.shape_hash = crucible::ShapeHash{0x20000ULL + i};
-            while (
-                !rig.append_entry(e, crucible::MetaIndex::none(), crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
-                CRUCIBLE_SPIN_PAUSE;
+    crucible::test::TraceRig rig{};
+    const uint64_t total = crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            uint64_t prev_processed = 0;
+            for (uint32_t cycle = 0; cycle < 2; ++cycle) {
+                stopped.rearm_stop();
+                CRUCIBLE_TEST_ASSERT(
+                    kTest,
+                    stopped
+                        .run_in_row_beside(bg_load_ctx(), ::fixy::thread::ThreadOptions{},
+                                           [&rig, cycle, prev_processed](BackgroundThread const& shared) noexcept {
+                                               // The cycle index enters the hash so the detector cannot tie
+                                               // the two cycles together into one signature.
+                                               for (uint32_t i = 0; i < PER_CYCLE; ++i)
+                                                   append_op(rig, 0x10000ULL + (cycle << 16) + i, 0x20000ULL + i);
+                                               wait_for_count(shared, prev_processed + PER_CYCLE);
+                                           })
+                        .is_ok());
+                prev_processed = bt.total_processed.load_acquire();
             }
-        }
 
-        const uint64_t target = prev_processed + PER_CYCLE;
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (bt.total_processed.load_acquire() < target && std::chrono::steady_clock::now() < deadline) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-        CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= target);
-
-        bt.stop_requested.signal();
-        bg.join();
-
-        prev_processed = bt.total_processed.load_acquire();
-    }
-
-    // Both invocations consumed entries, so the total covers both cycles.
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
+            // Both invocations consumed entries, so the total covers both
+            // cycles.
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= 2 * PER_CYCLE);
+            return bt.total_processed.load_acquire();
+        });
 
     ::fixy::check::pass(kTest,
                         "  rearm_cycle:                               "
                         "PASSED (total={} over 2 cycles)\n",
-                        static_cast<unsigned long long>(bt.total_processed.load_acquire()));
-}
-
-// Two runs of one pipeline at the same time would write each stage from two
-// threads.  A run claims the run state, so the second claim ends the process,
-// whichever of the two threads claims second.  No stop comes, so the first
-// run does not end before the second claim.  The two runs start in a child
-// through expect_dies of the Check family, as two bodies of run_joined, and
-// each body takes its own proof of quiescence.
-void test_second_run_ends_the_process(::fixy::TestRunnerCtx const& test) {
-    ::fixy::check::expect_dies(
-        test,
-        [] {
-            crucible::test::TraceRig rig{};
-            BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-            bt.rearm_stop();
-            auto first = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
-            auto second = [&bt]() noexcept { bt.run_in_row(bt.prove_quiescence(), bg_load_ctx()); };
-            ::fixy::BgLoadCtx const bg{::foundation::effects::testing::bg()};
-            static_cast<void>(
-                ::fixy::thread::run_joined(bg, ::fixy::thread::ThreadOptions{}, std::move(first), std::move(second)));
-        },
-        ::fixy::TextView{"a run of the pipeline while another run of it is active"});
-    ::fixy::check::pass(test, "  second_run_ends_the_process:               PASSED\n");
+                        static_cast<unsigned long long>(total));
 }
 
 }  // namespace test_background_thread_run_in_row

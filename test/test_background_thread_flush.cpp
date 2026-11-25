@@ -19,6 +19,7 @@
 #include "trace_rig.h"
 
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -40,7 +41,7 @@ namespace {
 // A flush parks, so its context owns Block and Nondet.  The foreground
 // context of the hot path owns neither.
 template <class Ctx>
-concept Flushes = requires(BackgroundThread& bt, Ctx const& ctx) { bt.flush(ctx); };
+concept Flushes = requires(BackgroundThread const& bt, Ctx const& ctx) { bt.flush(ctx); };
 static_assert(Flushes<::fixy::TestRunnerCtx> && Flushes<::fixy::InitLoadCtx> && Flushes<::fixy::BgLoadCtx>);
 static_assert(!Flushes<::fixy::HotFgCtx>, "the hot path does not wait in the kernel");
 static_assert(!Flushes<::fixy::BgDrainCtx> && !Flushes<::fixy::ColdInitCtx>,
@@ -56,9 +57,8 @@ constexpr uint64_t kIterations = 8;
 
 // Each case has a ring of its own, so a case reads only its own ops.  The
 // ops take no record, so the cases share one metadata log, and the test holds
-// one log of the size of a Vigil, not one for each case.  Each case declares
-// its ring before its BackgroundThread, and main holds the log, so each
-// thread ends first.
+// one log of the size of a Vigil, not one for each case.  Main holds the log,
+// and each thread ends with its frame, so each thread ends first.
 
 // Records count ops of a loop of kPeriod ops, from the op at index first.
 // Returns the index after the last op.
@@ -73,15 +73,21 @@ uint64_t record_ops(RigRing& ring, uint64_t first, uint64_t count) {
     return index;
 }
 
+// The thread of each case stands in the frame of with_background_thread, after
+// the ring of the case.
+constexpr auto kAlloc = ::foundation::effects::testing::test().alloc;
+
 // A flush of a pipeline that runs waits for each op, and gives Unit.
 void test_flush_of_a_running_pipeline(RigLog& shared_log) {
     RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-    bt.start(startup());
-    static_cast<void>(record_ops(ring, 0, kIterations * kPeriod));
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
-    bt.stop();
+    crucible::with_background_thread(
+        kAlloc, ring.side(), shared_log.side(), {}, [&ring](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(startup());
+            static_cast<void>(record_ops(ring, 0, kIterations * kPeriod));
+            CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
+            static_cast<void>(std::move(running).stop());
+        });
 }
 
 // The ring takes an op after stop(), and no pipeline thread reads it.  The
@@ -89,34 +95,38 @@ void test_flush_of_a_running_pipeline(RigLog& shared_log) {
 // then gives Unit.
 void test_flush_of_a_stopped_pipeline(RigLog& shared_log) {
     RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-    bt.start(startup());
-    const uint64_t before_stop = record_ops(ring, 0, kIterations * kPeriod);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
-    bt.stop();
+    crucible::with_background_thread(
+        kAlloc, ring.side(), shared_log.side(), {}, [&ring](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(startup());
+            const uint64_t before_stop = record_ops(ring, 0, kIterations * kPeriod);
+            CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+            auto stopped_again = std::move(running).stop();
 
-    static_cast<void>(record_ops(ring, before_stop, 1));
-    const crucible::FlushResult refused = bt.flush(kTest);
-    CRUCIBLE_TEST_ASSERT(kTest, refused.is_err_and([](FlushRefusal why) noexcept {
-        return why == FlushRefusal::pipeline_stopped;
-    }) && "a flush of a stopped pipeline with an op in the ring gives pipeline_stopped");
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() < ring.total_produced());
+            static_cast<void>(record_ops(ring, before_stop, 1));
+            const crucible::FlushResult refused = bt.flush(kTest);
+            CRUCIBLE_TEST_ASSERT(kTest, refused.is_err_and([](FlushRefusal why) noexcept {
+                return why == FlushRefusal::pipeline_stopped;
+            }) && "a flush of a stopped pipeline with an op in the ring gives pipeline_stopped");
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() < ring.total_produced());
 
-    bt.start(startup());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
-    bt.stop();
+            auto running_again = std::move(stopped_again).start(startup());
+            CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
+            static_cast<void>(std::move(running_again).stop());
+        });
 }
 
 // After stop(), a flush with no op left in the ring gives Unit.
 void test_flush_with_no_op_left_after_stop(RigLog& shared_log) {
     RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-    bt.start(startup());
-    static_cast<void>(record_ops(ring, 0, kPeriod));
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
-    bt.stop();
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+    crucible::with_background_thread(kAlloc, ring.side(), shared_log.side(), {},
+                                     [&ring](BackgroundThread const& bt, auto stopped) noexcept {
+                                         auto running = std::move(stopped).start(startup());
+                                         static_cast<void>(record_ops(ring, 0, kPeriod));
+                                         CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+                                         static_cast<void>(std::move(running).stop());
+                                         CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+                                     });
 }
 
 // A BackgroundThread that never started gives Unit while its ring holds no
@@ -125,19 +135,21 @@ void test_flush_with_no_op_left_after_stop(RigLog& shared_log) {
 // then gives Unit.
 void test_flush_before_start(RigLog& shared_log) {
     RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+    crucible::with_background_thread(
+        kAlloc, ring.side(), shared_log.side(), {}, [&ring](BackgroundThread const& bt, auto stopped) noexcept {
+            CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
 
-    static_cast<void>(record_ops(ring, 0, 1));
-    const crucible::FlushResult refused = bt.flush(kTest);
-    CRUCIBLE_TEST_ASSERT(kTest, refused.is_err_and([](FlushRefusal why) noexcept {
-        return why == FlushRefusal::pipeline_stopped;
-    }) && "a flush of a thread that never started, with an op in its ring, gives pipeline_stopped");
+            static_cast<void>(record_ops(ring, 0, 1));
+            const crucible::FlushResult refused = bt.flush(kTest);
+            CRUCIBLE_TEST_ASSERT(kTest, refused.is_err_and([](FlushRefusal why) noexcept {
+                return why == FlushRefusal::pipeline_stopped;
+            }) && "a flush of a thread that never started, with an op in its ring, gives pipeline_stopped");
 
-    bt.start(startup());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
-    bt.stop();
+            auto running = std::move(stopped).start(startup());
+            CRUCIBLE_TEST_ASSERT(kTest, bt.flush(kTest).is_ok());
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == ring.total_produced());
+            static_cast<void>(std::move(running).stop());
+        });
 }
 
 // A second BackgroundThread on a ring that a first one used counts the ops
@@ -147,21 +159,24 @@ void test_flush_before_start(RigLog& shared_log) {
 // limit in the harness, so a flush that waits with no end fails it.
 void test_flush_of_a_second_thread_on_a_used_ring(RigLog& shared_log) {
     RigRing ring{};
-    uint64_t first_end = 0;
-    {
-        BackgroundThread first{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-        first.start(startup());
-        first_end = record_ops(ring, 0, kIterations * kPeriod);
-        CRUCIBLE_TEST_ASSERT(kTest, first.flush(kTest).is_ok());
-        first.stop();
-    }
-    BackgroundThread second{::foundation::effects::testing::test().alloc, ring.side(), shared_log.side()};
-    second.start(startup());
-    static_cast<void>(record_ops(ring, first_end, 1));
-    CRUCIBLE_TEST_ASSERT(kTest, second.flush(kTest).is_ok());
-    CRUCIBLE_TEST_ASSERT(kTest, second.total_processed.load_acquire() == 1);
-    CRUCIBLE_TEST_ASSERT(kTest, second.count_processed_ring_ops() == ring.total_produced());
-    second.stop();
+    const uint64_t first_end = crucible::with_background_thread(
+        kAlloc, ring.side(), shared_log.side(), {}, [&ring](BackgroundThread const& first, auto stopped) noexcept {
+            auto running = std::move(stopped).start(startup());
+            const uint64_t end = record_ops(ring, 0, kIterations * kPeriod);
+            CRUCIBLE_TEST_ASSERT(kTest, first.flush(kTest).is_ok());
+            static_cast<void>(std::move(running).stop());
+            return end;
+        });
+    crucible::with_background_thread(kAlloc, ring.side(), shared_log.side(), {},
+                                     [&ring, first_end](BackgroundThread const& second, auto stopped) noexcept {
+                                         auto running = std::move(stopped).start(startup());
+                                         static_cast<void>(record_ops(ring, first_end, 1));
+                                         CRUCIBLE_TEST_ASSERT(kTest, second.flush(kTest).is_ok());
+                                         CRUCIBLE_TEST_ASSERT(kTest, second.total_processed.load_acquire() == 1);
+                                         CRUCIBLE_TEST_ASSERT(kTest, second.count_processed_ring_ops()
+                                                                         == ring.total_produced());
+                                         static_cast<void>(std::move(running).stop());
+                                     });
 }
 
 }  // namespace

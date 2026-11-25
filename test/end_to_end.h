@@ -7,6 +7,8 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
+#include <crucible/MerkleDag.h>
+#include <fixy/Core.h>
 #include <foundation/effects/Effect.h>
 
 #include "trace_rig.h"
@@ -53,7 +55,21 @@ void feed_trigger(crucible::test::TraceRig& rig, Iteration iter);
 // so it spins on the processed counter until the drain has caught up
 // with everything produced so far.  The spin cap turns a stalled
 // background thread into a failed assertion instead of a hang.
-void wait_processed(crucible::BackgroundThread& bt, crucible::test::TraceRig const& rig);
+void wait_processed(crucible::BackgroundThread const& bt, crucible::test::TraceRig const& rig);
+
+// A check of a test: it gets the rig, the thread of the pipeline that runs, and
+// the first region.
+using RegionCheck = ::fixy::CallRef<void(crucible::test::TraceRig&, crucible::BackgroundThread const&,
+                                         crucible::DagRef<const crucible::RegionNode>) noexcept>;
+
+// Runs a pipeline on the ops of the first region, and calls the check while the
+// pipeline runs.  A boundary needs two matches to confirm, which is why three
+// feeds are required rather than two.  The first iteration builds the
+// signature, the second produces a candidate match, and the third's K-th
+// matching op confirms the boundary.  Everything is queued before the pipeline
+// starts, so the drain sees one complete stream and the outcome does not depend
+// on how the two threads interleave.
+void run_on_first_region(RegionCheck const& check);
 
 // A region, its replay and a divergence (test_end_to_end_replay.cpp).
 void test_pipeline_basic();

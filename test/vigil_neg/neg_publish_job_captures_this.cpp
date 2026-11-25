@@ -4,37 +4,34 @@
 // as parameters, and it checks the closure of the job with the closure model.
 // The job uses its captures on the thread of the publish stage, so the door
 // refuses a capture of `this` when the type of the owner is not Sendable.  The
-// owner of this fixture holds a BackgroundThread, so it is not Sendable.  The
-// door admits the same capture of an owner with only a count.
-
-#include "../trace_rig.h"
+// owner of this fixture holds a handle of its thread, so it is not Sendable.
+// The door admits the same capture of an owner with only a count.
 
 #include <crucible/BackgroundThread.h>
 
-#include <foundation/effects/Effect.h>
-
 namespace {
 
-// The owner holds the ring and the log of its thread before the thread, so
-// the thread ends first.
+struct Scope final {};
+
+// The handle is a parameter of the constructor, so the fixture builds no ring
+// and no log.
 struct Owner {
-    crucible::test::TraceRig rig{};
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
-                                          rig.log_side()};
+    crucible::BackgroundThread::Running<Scope>& running;
     unsigned count = 0;
 
     void count_regions() {
-        background.run_on_publish_stage([this](crucible::BackgroundThread::PublishStageView& owner,
-                                               crucible::BackgroundThread::PublishStage const& stage) noexcept {
+        running.run_on_publish_stage([this](crucible::BackgroundThread::PublishStageView& owner,
+                                            crucible::BackgroundThread::PublishStage const& stage) noexcept {
             count += owner.region_count(stage);
         });
     }
 };
 
+[[maybe_unused]] void count_with(crucible::BackgroundThread::Running<Scope>& running) {
+    Owner owner{.running = running};
+    owner.count_regions();
+}
+
 }  // namespace
 
-int main() {
-    Owner owner{};
-    owner.count_regions();
-    return static_cast<int>(owner.count);
-}
+int main() { return 0; }

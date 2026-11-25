@@ -10,7 +10,7 @@
 #include <crucible/BackgroundThread.h>
 
 int main() {
-    crucible::BackgroundThread::BuiltRegion region{};
+    crucible::BuiltRegion region{};
     region.arena_ = ::fixy::HeapArray<::fixy::Box<::fixy::BumpArena<crucible::DagArena>>>{};
     return 0;
 }

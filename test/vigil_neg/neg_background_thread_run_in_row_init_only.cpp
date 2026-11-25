@@ -14,10 +14,12 @@ namespace eff = ::foundation::effects;
 
 namespace {
 
-// The thread is a parameter, so the fixture builds no ring and no log for it.
-[[maybe_unused]] void run_in_row_with(::crucible::BackgroundThread& bt) {
+struct Scope final {};
+
+// The handle is a parameter, so the fixture builds no ring and no log.
+[[maybe_unused]] void run_in_row_with(::crucible::BackgroundThread::Stopped<Scope>& stopped) {
     const eff::ExecCtx<eff::Init, eff::Row<eff::Effect::Init>> ctx{eff::testing::init()};
-    bt.run_in_row(bt.prove_quiescence(), ctx);
+    stopped.run_in_row(ctx);
 }
 
 }  // namespace

@@ -321,11 +321,11 @@ crucible_test(test_vigil_idle_wait)
 crucible_test(test_vigil_detector_snapshot)
 crucible_test(test_background_thread_refused_ops)
 crucible_test(test_background_thread_start_stop)
-# The checks of a proof of quiescence hold under the ignore semantic, where a
-# CRUCIBLE_PRE is only an assumption.
-crucible_test(test_background_thread_quiescence)
-crucible_test(test_background_thread_quiescence_ignore test_background_thread_quiescence.cpp)
-crucible_contract_ignore_target(test_background_thread_quiescence_ignore)
+# The checks of the handles of a BackgroundThread hold under the ignore
+# semantic, where a CRUCIBLE_PRE is only an assumption.
+crucible_test(test_background_thread_handles)
+crucible_test(test_background_thread_handles_ignore test_background_thread_handles.cpp)
+crucible_contract_ignore_target(test_background_thread_handles_ignore)
 crucible_test(test_background_thread_flush)
 # A flush that waits with no end fails the test at the time limit.
 set_tests_properties(test_background_thread_flush PROPERTIES TIMEOUT 120)
@@ -2248,18 +2248,18 @@ crucible_neg_compile_test(neg_log_side_with_the_drain_proof
 # outside the background thread assigns the arena, which would free the runs
 # that the ops name.
 crucible_neg_compile_test(neg_built_region_buffer_assignment
-  "crucible::BackgroundThread::BuiltRegion::arena_. is private within this context"
+  "crucible::BuiltRegion::arena_. is private within this context"
   "neg_built_region_buffer_assignment\\.cpp:14:[0-9]+: error:")
 crucible_neg_compile_test(neg_publish_job_captures_this
   "static assertion failed: run_on_publish_stage: the body captures .this. \\(field __this, type \\{anonymous\\}::Owner\\*\\)"
   "Capture the parts that the body uses, not the whole object")
 # A build of a trace outside the pipeline writes the state of the trace build
-# of the build stage, so the frame of that state takes the proof that no
-# pipeline runs.  No reference to the state leaves the frame, and no body of
-# the frame reaches a BackgroundThread.
-crucible_neg_compile_test(neg_background_thread_build_trace_without_a_proof
-  "no matching function for call to .crucible::BackgroundThread::with_trace_build_state\\("
-  "candidate expects 2 arguments, 1 provided")
+# of the build stage, so only a Stopped handle lends that state in a frame.  No
+# reference to the state leaves the frame, and no body of the frame reaches a
+# BackgroundThread.
+crucible_neg_compile_test(neg_background_thread_trace_build_through_a_shared_reference
+  "const struct crucible::BackgroundThread. has no member named .with_trace_build_state."
+  "neg_background_thread_trace_build_through_a_shared_reference\\.cpp:14:[0-9]+: error:")
 crucible_neg_compile_test(neg_trace_build_state_leaves_as_the_value
   "static assertion failed: with_trace_build_state: the value of the body reaches the state of the trace build"
   "Give the region or a plain value")
@@ -2269,28 +2269,84 @@ crucible_neg_compile_test(neg_trace_build_state_leaves_through_a_capture
 crucible_neg_compile_test(neg_trace_build_frame_starts_the_pipeline
   "static assertion failed: with_trace_build_state: a capture of the body reaches the state of the trace build"
   "Capture the parts that the body uses")
-# The bytes of the build scratch belong to a run of the pipeline, so the read
-# of them takes the proof that no pipeline runs.  A job writes the publish
-# scratch with no pipeline too, so that read takes the publish-stage proof.
-crucible_neg_compile_test(neg_background_thread_build_scratch_without_a_proof
-  "no matching function for call to .crucible::BackgroundThread::build_scratch_retained_bytes\\(\\)"
-  "candidate expects 1 argument, 0 provided")
-crucible_neg_compile_test(neg_background_thread_publish_scratch_with_the_quiescence_proof
-  "cannot convert .fixy::thread::QuiescenceProof<crucible::BackgroundThread>. to .const crucible::BackgroundThread::PublishStage&."
+# The bytes of the build scratch belong to a run of the pipeline, so only a
+# Stopped handle reads them.  A job writes the publish scratch with no pipeline
+# too, so that read takes the publish-stage proof.
+crucible_neg_compile_test(neg_background_thread_build_scratch_of_a_running_pipeline
+  "const class crucible::BackgroundThread::Running<.anonymous.::Scope>. has no member named .build_scratch_retained_bytes."
+  "neg_background_thread_build_scratch_of_a_running_pipeline\\.cpp:15:[0-9]+: error:")
+crucible_neg_compile_test(neg_background_thread_publish_scratch_with_a_stopped_handle
+  "cannot convert .const crucible::BackgroundThread::Stopped<.anonymous.::Scope>. to .const crucible::BackgroundThread::PublishStage&."
   "initializing argument 1 of")
+# A BackgroundThread stands in a frame or in a holder, so its constructor takes
+# their key.  The handle of the frame does not leave it: the door refuses it as
+# the result, and no object of static storage holds it.  The door owns its body.
+crucible_neg_compile_test(neg_background_thread_without_a_frame
+  "no matching function for call to .crucible::BackgroundThread::BackgroundThread\\("
+  "candidate expects 5 arguments, 4 provided")
+crucible_neg_compile_test(neg_background_thread_key_built_outside_the_door
+  "crucible::BackgroundThreadKey::BackgroundThreadKey\\(\\). is private within this context"
+  "neg_background_thread_key_built_outside_the_door\\.cpp:10:[0-9]+: error:")
+crucible_neg_compile_test(neg_background_thread_handle_as_the_result
+  "no matching function for call to .with_background_thread\\("
+  "required for the satisfaction of .FrameResult<typename std::invoke_result<Body&&, Handles ...>::type, Scope>.")
+crucible_neg_compile_test(neg_background_thread_handle_in_static_storage
+  "an object of static or thread storage duration holds a value of a scope brand, so the value outlives the call of its mint: .anonymous namespace.::kept_handle: kept"
+  "neg_background_thread_handle_in_static_storage\\.cpp:19:[0-9]+: error:")
+crucible_neg_compile_test(neg_background_thread_frame_named_body
+  "use of deleted function .void crucible::with_background_thread\\("
+  "with_background_thread owns its body and calls it one time")
+# A start takes the Stopped handle and gives a Running handle, which has no
+# start.
+crucible_neg_compile_test(neg_background_thread_start_of_a_running_pipeline
+  "class crucible::BackgroundThread::Running<.anonymous.::Scope>.. has no member named .start."
+  "neg_background_thread_start_of_a_running_pipeline\\.cpp:21:[0-9]+: error:")
+# A handle stays on its thread, and no body, job or continuation of it captures
+# it.  The holder of the Vigil is not Shareable.  A rearm of the stop signal is
+# a door of the Stopped handle alone.
+crucible_neg_compile_test(neg_background_thread_two_bodies_set_numerics
+  "static assertion failed: run_joined: the body captures .stopped. \\(field __stopped, type crucible::BackgroundThread::Stopped<.anonymous.::Scope>&\\)"
+  "a write through this reference that is not const races")
+crucible_neg_compile_test(neg_background_thread_handle_read_in_a_second_body
+  "static assertion failed: run_joined: the body captures .stopped. \\(field __stopped, type const crucible::BackgroundThread::Stopped<.anonymous.::Scope>&\\)"
+  "Two threads read it at the same time, and its type is not Shareable")
+crucible_neg_compile_test(neg_background_thread_handle_moved_into_a_body
+  "static assertion failed: run_joined: the body captures .held. \\(field __held, type crucible::BackgroundThread::Stopped<.anonymous.::Scope>\\)"
+  "The value moves to another thread, and its type is not Sendable")
+crucible_neg_compile_test(neg_background_thread_handle_through_a_call_ref
+  "use of deleted function .foundation::core::CallRef<"
+  "a CallRef erases the type of its callable, so the rule brand-escape cannot read a scope brand behind it")
+crucible_neg_compile_test(neg_background_thread_handle_beside_its_run
+  "static assertion failed: run_in_row_beside: a capture of the continuation reaches a BackgroundThread"
+  "The continuation gets the thread that it shares with the run")
+crucible_neg_compile_test(neg_background_thread_job_in_a_job
+  "static assertion failed: run_on_publish_stage: the body captures .running. \\(field __running, type crucible::BackgroundThread::Running<.anonymous.::Scope>&\\)"
+  "its type is not Sendable")
+crucible_neg_compile_test(neg_background_thread_rearm_through_a_shared_reference
+  "const struct crucible::BackgroundThread. has no member named .rearm_stop."
+  "neg_background_thread_rearm_through_a_shared_reference\\.cpp:13:[0-9]+: error:")
+crucible_neg_compile_test(neg_started_background_thread_in_a_second_body
+  "static assertion failed: run_joined: the body captures .started. \\(field __started, type crucible::StartedBackgroundThread&\\)"
+  "a write through this reference that is not const races")
+crucible_neg_compile_test(neg_started_background_thread_read_in_a_second_body
+  "static assertion failed: run_joined: the body captures .started. \\(field __started, type const crucible::StartedBackgroundThread&\\)"
+  "Two threads read it at the same time, and its type is not Shareable")
+crucible_neg_compile_test(neg_started_background_thread_outside_the_vigil
+  "crucible::StartedBackgroundThread::StartedBackgroundThread\\(.* is private within this context"
+  "neg_started_background_thread_outside_the_vigil\\.cpp:22:[0-9]+: error:")
 # The sweep releases a region when the count of its push left the uncompiled
 # queue, so only a push gives the count, and no code copies it.
 crucible_neg_compile_test(neg_queued_region_built_outside_push
-  "crucible::BackgroundThread::QueuedRegion::QueuedRegion\\(crucible::DagRef<crucible::RegionNode>, uint64_t\\). is private within this context"
+  "crucible::QueuedRegion::QueuedRegion\\(crucible::DagRef<crucible::RegionNode>, uint64_t\\). is private within this context"
   "neg_queued_region_built_outside_push\\.cpp:18:[0-9]+: error:")
 crucible_neg_compile_test(neg_queued_region_copied
-  "use of deleted function .crucible::BackgroundThread::QueuedRegion::QueuedRegion\\(const crucible::BackgroundThread::QueuedRegion&\\)"
+  "use of deleted function .crucible::QueuedRegion::QueuedRegion\\(const crucible::QueuedRegion&\\)"
   "one push gives one QueuedRegion")
 # A BackgroundThread takes its two sides in its constructor, so start takes no
 # side, and no start after stop names another ring or log.
 crucible_neg_compile_test(neg_background_thread_start_takes_no_sides
-  "cannot convert .crucible::BackgroundThread::TraceRingSide. \\{aka .fixy::concurrent::SpscHeldSide<crucible::TraceRing, fixy::concurrent::SpscSide::consumer, crucible::BackgroundThread::DrainStage>.\\} to .int32_t."
-  "initializing argument 2 of .void crucible::BackgroundThread::start\\(const fixy::InitLoadCtx&, int32_t, int32_t, uint64_t\\).")
+  "no matching function for call to .crucible::BackgroundThread::Stopped<.anonymous.::Scope>::start\\("
+  "candidate expects 2 arguments, 3 provided")
 # The arrays of a trace batch open a frame only with the keys of the drain
 # stage.
 crucible_neg_compile_test(neg_trace_batch_frame_without_key
@@ -3583,7 +3639,7 @@ crucible_neg_compile_test(neg_costmodel_fusion_benefit_block_row
 # publication.  The first fixture shows that a function that is not
 # noexcept does not fit the CallRef.  The second shows that RegionReadyCall
 # is not the CallRef of the signature without noexcept.
-set(BG_CALLBACK_PARAMS "const foundation::effects::Bg&, const crucible::BackgroundThread::PublishStage&, const crucible::BackgroundThread::PublishedRegion&")
+set(BG_CALLBACK_PARAMS "const foundation::effects::Bg&, const crucible::BackgroundThread::PublishStage&, const crucible::PublishedRegion&")
 crucible_neg_compile_test(neg_background_thread_callback_throwing_fnptr_rejected
   "no matching function for call to .foundation::core::CallRef<void\\(${BG_CALLBACK_PARAMS}\\) noexcept>::of<.anonymous.::throwing_callback>\\(\\)."
   "..anonymous.::throwing_callback\\(.*\\). is not .noexcept.")
@@ -4236,12 +4292,12 @@ crucible_neg_compile_test(neg_validated_op_unchecked_entry
   "could not convert .crucible::mint_ffi_entry\\(entry\\). from .Tagged<"
   "fixy::tags::vessel_trust::FromPytorch>. to .Tagged<.....,fixy::tags::vessel_trust::Validated>")
 
-# BackgroundThread::run_in_row(proof, ctx) requires CtxAdmits<Ctx, Row<Bg,
-# Alloc, IO, Block>>.  Each fixture hands in a context whose row lacks
-# one required atom or more.  The first regex pins the refused context,
-# the second pins the gate and the row it demands.
+# The door run_in_row(ctx) of a Stopped handle of a BackgroundThread requires
+# CtxAdmits<Ctx, Row<Bg, Alloc, IO, Block>>.  Each fixture hands in a context
+# whose row lacks one required atom or more.  The first regex pins the refused
+# context, the second pins the gate and the row it demands.
 set(BG_RUN_GATE "required for the satisfaction of .CtxAdmits<Ctx, foundation::effects::Row<foundation::effects::Effect::Bg, foundation::effects::Effect::Alloc, foundation::effects::Effect::IO, foundation::effects::Effect::Block, foundation::effects::Effect::Nondet, foundation::effects::Effect::Div> >.")
-set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::run_in_row\\(fixy::thread::QuiescenceProof<crucible::BackgroundThread>, const foundation::effects::ExecCtx<")
+set(BG_RUN_CALL "no matching function for call to .crucible::BackgroundThread::Stopped<.anonymous.::Scope>::run_in_row\\(const foundation::effects::ExecCtx<")
 crucible_neg_compile_test(neg_background_thread_run_in_row_empty
   "${BG_RUN_CALL}foundation::effects::Bg, foundation::effects::Row<> >&\\)" "${BG_RUN_GATE}")
 crucible_neg_compile_test(neg_background_thread_run_in_row_bg_only

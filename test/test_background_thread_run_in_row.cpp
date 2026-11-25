@@ -106,16 +106,17 @@ void test_t02_context_matrix() {
     ::fixy::check::pass(kTest, "  T02 context_matrix:                        PASSED\n");
 }
 
-// The pointer is never dereferenced.  The call expression sits inside
-// decltype, where it is unevaluated, and only its type is taken.
+// The brand of a Stopped handle that no frame gives.
+struct ProbeScope final {};
+
+// The call expression sits inside decltype, where it is unevaluated, and only
+// its type is taken.
 void test_t03_api_surface_pinned() {
-    BackgroundThread* bt_ptr = nullptr;
-    using Proof = ::fixy::thread::QuiescenceProof<BackgroundThread>;
-    using ReturnT =
-        decltype(bt_ptr->run_in_row(std::declval<Proof const&>(), std::declval<::fixy::BgLoadCtx const&>()));
-    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(proof, ctx) returns void.");
-    static_assert(noexcept(bt_ptr->run_in_row(std::declval<Proof const&>(), std::declval<::fixy::BgLoadCtx const&>())),
-                  "run_in_row(proof, ctx) is noexcept, because a test runs it as the entry of a thread.");
+    using Stopped = BackgroundThread::Stopped<ProbeScope>;
+    using ReturnT = decltype(std::declval<Stopped&>().run_in_row(std::declval<::fixy::BgLoadCtx const&>()));
+    static_assert(std::is_same_v<ReturnT, void>, "run_in_row(ctx) returns void.");
+    static_assert(noexcept(std::declval<Stopped&>().run_in_row(std::declval<::fixy::BgLoadCtx const&>())),
+                  "run_in_row(ctx) is noexcept, because a thread body runs it.");
 
     ::fixy::check::pass(kTest, "  T03 api_surface_pinned:                    PASSED\n");
 }
@@ -143,23 +144,29 @@ void test_cross_fence_consistency() {
     ::fixy::check::pass(kTest, "  cross_fence_consistency:                   PASSED\n");
 }
 
+// Runs the job on the publish stage of a thread that runs no pipeline, so the
+// job runs on this thread with the proof.
+template <class Job>
+void run_publish_job(Job job) {
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(
+        eff::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [&job](BackgroundThread const& /*bt*/, auto stopped) noexcept { stopped.run_on_publish_stage(job); });
+}
+
 // The retained-region queue is bounded, so a process that publishes forever
 // holds a constant number of pointers rather than one per region.  Driving
 // past the bound directly is the only way to see the wrap.  A read of a slot
-// takes the publish-stage proof.  No pipeline of the owner runs, so its job
-// runs on this thread with the proof.
+// takes the publish-stage proof.
 void test_uncompiled_queue_is_bounded() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    owner.run_on_publish_stage([](BackgroundThread::PublishStageView&,
-                                  BackgroundThread::PublishStage const& stage) noexcept {
+    run_publish_job([](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
         constexpr uint32_t CAP = crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE;
         const auto alloc = ::foundation::effects::testing::test().alloc;
         // The queue keeps the address of each node that it takes, so the nodes
         // come from an arena that outlives the queue.
         ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
             ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
-        BackgroundThread::UncompiledRegionQueue queue{alloc, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
+        BackgroundThread::UncompiledRegions queue{alloc, ::fixy::Quantity<::fixy::unit::Element, uint32_t>{CAP}};
 
         CRUCIBLE_TEST_ASSERT(kTest, queue.size() == 0u);
         CRUCIBLE_TEST_ASSERT(kTest, queue.total() == 0u);
@@ -203,46 +210,43 @@ void test_uncompiled_queue_is_bounded() {
 // keeps the three newest regions and drops each older one.  A queue of zero
 // keeps no region and only counts.  The reads run in a job, as above.
 void test_uncompiled_queue_refuses_past_its_capacity() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    owner.run_on_publish_stage(
-        [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
-            using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
-            const auto alloc = ::foundation::effects::testing::test().alloc;
-            // The queues keep the address of each node, so the nodes come from
-            // an arena that outlives the queues.
-            ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
-                ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
-            auto links = arena.array(alloc, 8, crucible::RegionLink{});
-            const ::fixy::View<crucible::RegionLink> regions = links.view();
-            for (crucible::RegionLink& link : regions)
-                link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
-            BackgroundThread::UncompiledRegionQueue three{alloc, Count{3}};
-            BackgroundThread::UncompiledRegionQueue none{alloc, Count{0}};
-            CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);
-            for (uint64_t i = 0; i < 8; ++i) {
-                const crucible::DagRef<crucible::RegionNode> node =
-                    crucible::RegionLink{
-                        *regions.get(i).expect("a test reads an element at or past the count of its array")}
-                        .expect("each link holds a node");
-                static_cast<void>(three.push(stage, node));
-                static_cast<void>(none.push(stage, node));
-            }
-            CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
-            for (uint32_t age = 0; age < 3; ++age) {
-                CRUCIBLE_TEST_ASSERT(
-                    kTest, ::fixy::same_target(three.at(stage, age), *regions.get(uint64_t{7} - age)
-                                                                          .expect("a test reads an element at or past "
-                                                                                  "the count of its array")));
-            }
-            CRUCIBLE_TEST_ASSERT(kTest, none.total() == 8 && none.size() == 0);
-            ::fixy::check::pass(kTest, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
-        });
+    run_publish_job([](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
+        using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+        const auto alloc = ::foundation::effects::testing::test().alloc;
+        // The queues keep the address of each node, so the nodes come from
+        // an arena that outlives the queues.
+        ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
+            ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 12});
+        auto links = arena.array(alloc, 8, crucible::RegionLink{});
+        const ::fixy::View<crucible::RegionLink> regions = links.view();
+        for (crucible::RegionLink& link : regions)
+            link = ::fixy::some(crucible::mint_dag_node<crucible::RegionNode>(alloc, arena));
+        BackgroundThread::UncompiledRegions three{alloc, Count{3}};
+        BackgroundThread::UncompiledRegions none{alloc, Count{0}};
+        CRUCIBLE_TEST_ASSERT(kTest, three.capacity() == 3 && none.capacity() == 0);
+        for (uint64_t i = 0; i < 8; ++i) {
+            const crucible::DagRef<crucible::RegionNode> node =
+                crucible::RegionLink{
+                    *regions.get(i).expect("a test reads an element at or past the count of its array")}
+                    .expect("each link holds a node");
+            static_cast<void>(three.push(stage, node));
+            static_cast<void>(none.push(stage, node));
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, three.total() == 8 && three.size() == 3);
+        for (uint32_t age = 0; age < 3; ++age) {
+            CRUCIBLE_TEST_ASSERT(
+                kTest, ::fixy::same_target(three.at(stage, age), *regions.get(uint64_t{7} - age)
+                                                                      .expect("a test reads an element at or past "
+                                                                              "the count of its array")));
+        }
+        CRUCIBLE_TEST_ASSERT(kTest, none.total() == 8 && none.size() == 0);
+        ::fixy::check::pass(kTest, "  uncompiled_queue_refuses_past_its_capacity: PASSED\n");
+    });
 }
 
 // True when a walk of the slots of the queue finds the region.  It is the
 // oracle of UncompiledRegionQueue::holds.  Complexity: O(Q) for Q slots.
-bool walk_finds(BackgroundThread::UncompiledRegionQueue const& queue, BackgroundThread::PublishStage const& stage,
+bool walk_finds(BackgroundThread::UncompiledRegions const& queue, BackgroundThread::PublishStage const& stage,
                 crucible::RegionLink region) {
     for (uint32_t age = 0; age < queue.size(); ++age) {
         if (::fixy::same_target(queue.at(stage, age), region)) return true;
@@ -259,8 +263,8 @@ void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
     const auto alloc = ::foundation::effects::testing::test().alloc;
     ::fixy::BumpArena<crucible::DagArena> arena = ::fixy::mint_bump_arena<crucible::DagArena>(
         ::fixy::Quantity<::fixy::unit::Byte, std::size_t>{std::size_t{1} << 16});
-    BackgroundThread::UncompiledRegionQueue queue{alloc, capacity};
-    ::fixy::FixedArray<BackgroundThread::QueuedRegion, PUSHES> pushes{};
+    BackgroundThread::UncompiledRegions queue{alloc, capacity};
+    ::fixy::FixedArray<crucible::QueuedRegion, PUSHES> pushes{};
     for (const ::fixy::Index<PUSHES> position : pushes.indices()) {
         CRUCIBLE_TEST_ASSERT(kTest, !queue.holds(stage, pushes.at(position)) && "no queue holds the region of no push");
         static_cast<void>(
@@ -268,7 +272,7 @@ void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
         uint32_t held = 0;
         for (const ::fixy::Index<PUSHES> earlier : pushes.indices()) {
             if (earlier.raw() > position.raw()) break;
-            BackgroundThread::QueuedRegion const& queued = pushes.at(earlier);
+            crucible::QueuedRegion const& queued = pushes.at(earlier);
             const bool is_held = queue.holds(stage, queued);
             CRUCIBLE_TEST_ASSERT(kTest, is_held == walk_finds(queue, stage, queued.node()));
             CRUCIBLE_TEST_ASSERT(kTest, is_held == (position.raw() - earlier.raw() < capacity.raw()));
@@ -281,16 +285,13 @@ void check_queue_against_its_walk(BackgroundThread::PublishStage const& stage,
 // The count of a push answers what a walk of the slots answers, for each push
 // and past the capacity of the queue.  A queue of zero holds no region.
 void test_uncompiled_queue_answers_as_its_walk() {
-    crucible::test::TraceRig rig{};
-    BackgroundThread owner{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    owner.run_on_publish_stage(
-        [](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
-            using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
-            check_queue_against_its_walk(stage, Count{0});
-            check_queue_against_its_walk(stage, Count{1});
-            check_queue_against_its_walk(stage, Count{3});
-            check_queue_against_its_walk(stage, Count{crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE});
-        });
+    run_publish_job([](BackgroundThread::PublishStageView&, BackgroundThread::PublishStage const& stage) noexcept {
+        using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+        check_queue_against_its_walk(stage, Count{0});
+        check_queue_against_its_walk(stage, Count{1});
+        check_queue_against_its_walk(stage, Count{3});
+        check_queue_against_its_walk(stage, Count{crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE});
+    });
     ::fixy::check::pass(kTest, "  uncompiled_queue_answers_as_its_walk:      PASSED\n");
 }
 
@@ -310,7 +311,6 @@ int main() {
     test_concurrent_spsc_drain();
     test_large_batch_drain();
     test_rearm_cycle();
-    test_second_run_ends_the_process(::fixy::TestRunnerCtx{::foundation::effects::testing::test()});
     // These run last because they seal the global schema and kernel tables,
     // which every group above deliberately avoids.
     test_uncompiled_queue_is_bounded();
@@ -331,9 +331,9 @@ int main() {
     test_build_and_release_pass_two_to_the_32();
     test_scalars_of_an_op_with_no_tensors();
     test_publish_adds_no_block_to_the_region_arena();
-    test_scratch_bytes_beside_a_publish_job();
+    test_scratch_bytes_beside_a_publish();
     test_store_releases_what_left_the_queue();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 32 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 31 groups, all passed\n");
     return 0;
 }

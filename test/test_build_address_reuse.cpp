@@ -40,6 +40,7 @@ constexpr ::fixy::TestRunnerCtx kTest{::foundation::effects::testing::test()};
 namespace {
 
 using crucible::BackgroundThread;
+using crucible::BuiltRegion;
 using crucible::MetaIndex;
 using crucible::MetaLog;
 using crucible::TensorMeta;
@@ -148,19 +149,20 @@ struct Work {
 
     // The region of the work.  The bodies of the frame and of the epoch capture
     // the log by a const reference, and not the thread.
-    [[nodiscard]] BackgroundThread::BuiltRegion build(BackgroundThread& bt, MetaLog const& meta_log) const {
-        crucible::NumericsHash const numerics = bt.numerics();
-        return bt.with_trace_build_state(
-            bt.prove_quiescence(), [this, &meta_log, numerics](BackgroundThread::TraceBuildState& state) noexcept {
+    template <class Stopped>
+    [[nodiscard]] BuiltRegion build(Stopped& stopped, MetaLog const& meta_log) const {
+        crucible::NumericsHash const numerics = stopped.numerics();
+        return stopped.with_trace_build_state(
+            [this, &meta_log, numerics](BackgroundThread::TraceBuildState& state) noexcept {
                 crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-                ::fixy::Option<BackgroundThread::BuiltRegion> region{};
+                ::fixy::Option<BuiltRegion> region{};
                 scratch.arena.with_epoch(
                     [this, &state, &meta_log, numerics, &region](crucible::TraceScratch::Epoch& epoch) noexcept {
                         auto built = BackgroundThread::build_trace_from(
                             state, meta_log, ::foundation::effects::testing::test().alloc, epoch, first_ops(trace),
                             first_ops(meta_starts), first_ops(scope_hashes), first_ops(callsite_hashes),
                             first_ops(depths), numerics);
-                        region = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                        region = ::fixy::Option<BuiltRegion>::some(
                             std::move(built).expect("a work with the metadata of each op builds").region);
                     });
                 return std::move(region).expect("the epoch built the region");
@@ -173,22 +175,42 @@ constexpr uint32_t kX = 0;
 constexpr uint32_t kY = 1024;
 constexpr uint32_t kZ = 2048;
 
-// The thread, its ring and its log, and the work of one build.
+// The ring and the log of a thread, and the work of one build.
 struct Rig {
-    // The log and the ring come before the thread, so the thread ends first.
     crucible::test::RigLog log{};
     crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), log.side()};
     Work work;
 
     Rig() = default;
-    Rig(const Rig&) = delete("the thread holds Refs to the sides of the ring and of the log");
-    Rig& operator=(const Rig&) = delete("the thread holds Refs to the sides of the ring and of the log");
+    Rig(const Rig&) = delete("the thread of a build holds Refs to the sides of the ring and of the log");
+    Rig& operator=(const Rig&) = delete("the thread of a build holds Refs to the sides of the ring and of the log");
 
-    [[nodiscard]] BackgroundThread::BuiltRegion build() { return work.build(bt, *log.view()); }
+    // The region of the work, which a thread that runs no pipeline builds with
+    // the numerics of a thread that never started.
+    [[nodiscard]] BuiltRegion build() {
+        return build_after_([](auto& /*stopped*/) noexcept {});
+    }
+
+    // The region of the work under the numerics of the start of a run.
+    [[nodiscard]] BuiltRegion build_under(crucible::NumericsHash numerics) {
+        return build_after_([numerics](auto& stopped) noexcept { stopped.set_numerics(numerics); });
+    }
+
+private:
+    template <class Prepare>
+    [[nodiscard]] BuiltRegion build_after_(Prepare prepare) {
+        ::fixy::Option<BuiltRegion> region{};
+        crucible::with_background_thread(
+            ::foundation::effects::testing::test().alloc, ring.side(), log.side(), {},
+            [this, &prepare, &region](BackgroundThread const& /*bt*/, auto stopped) noexcept {
+                prepare(stopped);
+                region = ::fixy::Option<BuiltRegion>::some(work.build(stopped, *log.view()));
+            });
+        return std::move(region).expect("the frame built the region");
+    }
 };
 
-[[nodiscard]] crucible::SlotId input_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {
+[[nodiscard]] crucible::SlotId input_slot(const BuiltRegion& region, uint32_t op, uint32_t input) {
     return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
@@ -197,7 +219,7 @@ struct Rig {
                 .expect("the op holds the input");
 }
 
-[[nodiscard]] crucible::SlotId output_slot(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t output) {
+[[nodiscard]] crucible::SlotId output_slot(const BuiltRegion& region, uint32_t op, uint32_t output) {
     return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
@@ -206,7 +228,7 @@ struct Rig {
                 .expect("the op holds the output");
 }
 
-[[nodiscard]] crucible::OpIndex producer(const BackgroundThread::BuiltRegion& region, uint32_t op, uint32_t input) {
+[[nodiscard]] crucible::OpIndex producer(const BuiltRegion& region, uint32_t op, uint32_t input) {
     return *region.ops()
                 .get(op)
                 .expect("the region holds the op")
@@ -215,11 +237,11 @@ struct Rig {
                 .expect("the op holds the input");
 }
 
-[[nodiscard]] const crucible::TensorSlot& slot_of(const BackgroundThread::BuiltRegion& region, crucible::SlotId slot) {
+[[nodiscard]] const crucible::TensorSlot& slot_of(const BuiltRegion& region, crucible::SlotId slot) {
     return *region.slots().get(slot.raw()).expect("the region holds the slot");
 }
 
-[[nodiscard]] BackgroundThread::BuiltRegion build_three_ops(uint32_t last_output) {
+[[nodiscard]] BuiltRegion build_three_ops(uint32_t last_output) {
     Rig rig;
     rig.work.push_source(rig.log, 0, vector_at(kX));
     rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY));
@@ -229,7 +251,7 @@ struct Rig {
 
 // True when each run of a region is empty: the region holds no arena and no
 // run, as the default region does.
-[[nodiscard]] bool has_no_run(const BackgroundThread::BuiltRegion& region) {
+[[nodiscard]] bool has_no_run(const BuiltRegion& region) {
     return region.ops().size() == 0 && region.metas().size() == 0 && region.scalars().size() == 0
         && region.producers().size() == 0 && region.slot_ids().size() == 0 && region.slots().size() == 0;
 }
@@ -238,18 +260,18 @@ struct Rig {
 // does the same, so each View of the source is empty after it.  The target
 // holds the runs of the build, with the same hash.
 void test_moved_from_region_has_no_run() {
-    BackgroundThread::BuiltRegion region = build_three_ops(kZ);
+    BuiltRegion region = build_three_ops(kZ);
     const size_t ops = region.ops().size();
     const size_t slots = region.slots().size();
     const crucible::ContentHash hash = region.content_hash();
     CRUCIBLE_TEST_ASSERT(kTest, ops == 3 && slots > 0);
 
-    BackgroundThread::BuiltRegion moved{std::move(region)};
+    BuiltRegion moved{std::move(region)};
     CRUCIBLE_TEST_ASSERT(kTest, has_no_run(region));
     CRUCIBLE_TEST_ASSERT(kTest, moved.ops().size() == ops && moved.slots().size() == slots);
     CRUCIBLE_TEST_ASSERT(kTest, moved.content_hash() == hash);
 
-    BackgroundThread::BuiltRegion assigned{};
+    BuiltRegion assigned{};
     CRUCIBLE_TEST_ASSERT(kTest, has_no_run(assigned));
     assigned = std::move(moved);
     CRUCIBLE_TEST_ASSERT(kTest, has_no_run(moved));
@@ -260,8 +282,8 @@ void test_moved_from_region_has_no_run() {
 }
 
 void test_reused_address_keeps_the_hash() {
-    const BackgroundThread::BuiltRegion fresh = build_three_ops(kZ);
-    const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
+    const BuiltRegion fresh = build_three_ops(kZ);
+    const BuiltRegion reused = build_three_ops(kX);
     CRUCIBLE_TEST_ASSERT(
         kTest, fresh.content_hash() == reused.content_hash()
                    && "the content hash does not depend on the address that the allocator gives a new tensor");
@@ -274,7 +296,7 @@ void test_reused_address_keeps_the_hash() {
 // The output of op 2 at the address of the dead output of op 0 is a new
 // storage: it takes a slot of its own, and the slot of op 0 dies at op 1.
 void test_reused_address_gets_a_new_slot() {
-    const BackgroundThread::BuiltRegion reused = build_three_ops(kX);
+    const BuiltRegion reused = build_three_ops(kX);
     CRUCIBLE_TEST_ASSERT(kTest, reused.slots().size() == 3
                                     && "a new storage at the address of a dead one takes a slot of its own");
     const crucible::SlotId first = output_slot(reused, 0, 0);
@@ -295,7 +317,7 @@ void test_view_at_an_offset_reads_its_base() {
     rig.work.push_unary(rig.log, 1, vector_at(kX, 16, 48), vector_at(kY));
     rig.work.push_unary(rig.log, 2, vector_at(kX), vector_at(kX, 32, 32));
     rig.work.push_unary(rig.log, 3, vector_at(kX, 32, 32), vector_at(kZ));
-    const BackgroundThread::BuiltRegion region = rig.build();
+    const BuiltRegion region = rig.build();
 
     const crucible::SlotId base = output_slot(region, 0, 0);
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -321,7 +343,7 @@ void test_return_of_the_nest_keeps_the_slot() {
     rig.work.push_unary(rig.log, 0, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
     rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
     rig.work.push_unary(rig.log, 2, vector_at(kZ), vector_at(kY), crucible::OpDepth{0});
-    const BackgroundThread::BuiltRegion region = rig.build();
+    const BuiltRegion region = rig.build();
 
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(region, 1, 0) == output_slot(region, 0, 0)
                                     && "the tensor of the nest keeps its slot");
@@ -337,7 +359,7 @@ void test_return_of_the_nest_keeps_the_slot() {
     chain.work.push_op(chain.log, 0, copy_inputs.view(), result.view(), crucible::OpDepth{2});
     chain.work.push_unary(chain.log, 1, vector_at(kX), vector_at(kY), crucible::OpDepth{1});
     chain.work.push_unary(chain.log, 2, vector_at(kX), vector_at(kY), crucible::OpDepth{0});
-    const BackgroundThread::BuiltRegion nested = chain.build();
+    const BuiltRegion nested = chain.build();
     const crucible::SlotId copied = output_slot(nested, 0, 0);
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(nested, 1, 0) == copied && output_slot(nested, 2, 0) == copied);
     CRUCIBLE_TEST_ASSERT(kTest, input_slot(nested, 0, 0) == copied);
@@ -361,7 +383,7 @@ void test_result_of_a_nest_is_internal() {
     mlp.work.push_op(mlp.log, 1, addmm_inputs.view(), result.view(), crucible::OpDepth{1});
     mlp.work.push_op(mlp.log, 2, linear_inputs.view(), result.view(), crucible::OpDepth{0});
     mlp.work.push_unary(mlp.log, 3, vector_at(kY), vector_at(kW));
-    const BackgroundThread::BuiltRegion layer = mlp.build();
+    const BuiltRegion layer = mlp.build();
 
     const crucible::SlotId made = output_slot(layer, 2, 0);
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -377,7 +399,7 @@ void test_result_of_a_nest_is_internal() {
     Rig param;
     param.work.push_unary(param.log, 0, vector_at(kX), vector_at(kX), crucible::OpDepth{1});
     param.work.push_unary(param.log, 1, vector_at(kX), vector_at(kX), crucible::OpDepth{0});
-    const BackgroundThread::BuiltRegion returned = param.build();
+    const BuiltRegion returned = param.build();
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(returned, output_slot(returned, 1, 0)).is_external
                                     && "a storage that the parent reads lives before it");
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(returned, output_slot(returned, 1, 0)).birth_op == crucible::OpIndex{0});
@@ -389,7 +411,7 @@ void test_result_of_a_nest_is_internal() {
 // content hashes.  Each region keeps the numerics hash that its content hash
 // folds.
 void test_numerics_policy_moves_the_hash() {
-    const BackgroundThread::BuiltRegion ordered = build_three_ops(kZ);
+    const BuiltRegion ordered = build_three_ops(kZ);
     CRUCIBLE_TEST_ASSERT(kTest,
                          ordered.numerics()
                              == crucible::compute_numerics_hash(crucible::NumericsPolicy{}, crucible::EagerNumerics{}));
@@ -402,11 +424,10 @@ void test_numerics_policy_moves_the_hash() {
         crucible::compute_numerics_hash(crucible::NumericsPolicy{}, flushing)};
     for (const crucible::NumericsHash numerics : others) {
         Rig rig;
-        rig.bt.set_numerics(numerics);
         rig.work.push_source(rig.log, 0, vector_at(kX));
         rig.work.push_unary(rig.log, 1, vector_at(kX), vector_at(kY));
         rig.work.push_unary(rig.log, 2, vector_at(kY), vector_at(kZ));
-        const BackgroundThread::BuiltRegion region = rig.build();
+        const BuiltRegion region = rig.build_under(numerics);
         CRUCIBLE_TEST_ASSERT(kTest, region.numerics() == numerics);
         CRUCIBLE_TEST_ASSERT(kTest, region.content_hash() != ordered.content_hash()
                                         && "the numerics of the run separate two regions");
@@ -424,7 +445,7 @@ void test_reads_of_an_external_take_one_slot() {
     Rig rig;
     rig.work.push_unary(rig.log, 0, vector_at(kX), vector_at(kY));
     rig.work.push_unary(rig.log, 1, vector_at(kX, 8, 56), vector_at(kZ));
-    const BackgroundThread::BuiltRegion region = rig.build();
+    const BuiltRegion region = rig.build();
 
     const crucible::SlotId external = input_slot(region, 0, 0);
     CRUCIBLE_TEST_ASSERT(kTest,
@@ -447,7 +468,7 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
     known.work.push_source(known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
     known.work.push_unary(known.log, 1, vector_at(kX, 0, 64, kKnownFirst), vector_at(kY, 0, 64, kKnownSecond));
     known.work.push_unary(known.log, 2, vector_at(kX, 0, 64, kKnownThird), vector_at(kZ, 0, 64, kKnownFourth));
-    const BackgroundThread::BuiltRegion fresh = known.build();
+    const BuiltRegion fresh = known.build();
     const crucible::SlotId written = output_slot(fresh, 0, 0);
     const crucible::SlotId read = input_slot(fresh, 2, 0);
     CRUCIBLE_TEST_ASSERT(kTest, read != written && "a new storage at the address of a dead one is a new input");
@@ -461,7 +482,7 @@ void test_new_storage_at_a_dead_address_is_a_new_input() {
     unknown.work.push_source(unknown.log, 0, vector_at(kX));
     unknown.work.push_unary(unknown.log, 1, vector_at(kX), vector_at(kY));
     unknown.work.push_unary(unknown.log, 2, vector_at(kX), vector_at(kZ));
-    const BackgroundThread::BuiltRegion merged = unknown.build();
+    const BuiltRegion merged = unknown.build();
     CRUCIBLE_TEST_ASSERT(kTest, input_slot(merged, 2, 0) == output_slot(merged, 0, 0)
                                     && producer(merged, 2, 0) == crucible::OpIndex{0}
                                     && "with no generation, a read at the address reads the slot of the address");
@@ -478,14 +499,14 @@ void test_output_with_the_same_generation_keeps_the_slot() {
     Rig known;
     known.work.push_source(known.log, 0, vector_at(kX, 0, 64, kKnownFirst));
     known.work.push_unary(known.log, 1, vector_at(kY, 0, 64, kKnownSecond), vector_at(kX, 0, 64, kKnownFirst));
-    const BackgroundThread::BuiltRegion same = known.build();
+    const BuiltRegion same = known.build();
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(same, 1, 0) == output_slot(same, 0, 0) && "one generation is one storage");
     CRUCIBLE_TEST_ASSERT(kTest, slot_of(same, output_slot(same, 0, 0)).death_op == crucible::OpIndex{1});
 
     Rig unknown;
     unknown.work.push_source(unknown.log, 0, vector_at(kX));
     unknown.work.push_unary(unknown.log, 1, vector_at(kY), vector_at(kX));
-    const BackgroundThread::BuiltRegion split = unknown.build();
+    const BuiltRegion split = unknown.build();
     CRUCIBLE_TEST_ASSERT(kTest, output_slot(split, 1, 0) != output_slot(split, 0, 0)
                                     && "with no generation, an output that the op does not read is a new storage");
     ::fixy::check::pass(kTest, "  test_output_with_the_same_generation_keeps_the_slot: PASSED\n");
@@ -508,7 +529,7 @@ void test_unknown_storage_of_another_period_is_a_new_input() {
                             vector_at(kY, 0, 64, kKnownFirst));
     periods.work.push_unary(periods.log, 2, vector_at(kX, 0, 64, kUnknownInSecondPeriod),
                             vector_at(kZ, 0, 64, kKnownSecond));
-    const BackgroundThread::BuiltRegion region = periods.build();
+    const BuiltRegion region = periods.build();
 
     const crucible::SlotId first = input_slot(region, 0, 0);
     CRUCIBLE_TEST_ASSERT(kTest,

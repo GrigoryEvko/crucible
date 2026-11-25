@@ -111,7 +111,7 @@ void idle_for(uint64_t milliseconds) {
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
+void wait_for_pipeline(BackgroundThread const& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kMillisecond>(runner);
     while (bt.total_processed.load_acquire() < rig.ring_total_produced())
@@ -131,20 +131,23 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
 // of sleeps of the test thread.
 void check_idle_count(fixy::TestRunnerCtx const& runner,
                       fixy::perf::PerfEventRef<fixy::perf::perf_event_rights> counter) {
-    // The ring and the log come before the BackgroundThread, so the thread
-    // ends first.
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
-        CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
-    wait_for_pipeline(bt, rig);
-    idle_for(kSettleSleeps);
-    const uint64_t before = fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
-    idle_for(kCountedSleeps);
-    const uint64_t after = fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
-    bt.stop();
-    const uint64_t count = after - before;
+    const uint64_t count = crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [&rig, &runner, &counter](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+            for (uint64_t index = 0; index < kPeriod * kIterations; ++index)
+                CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
+            wait_for_pipeline(bt, rig);
+            idle_for(kSettleSleeps);
+            const uint64_t before =
+                fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
+            idle_for(kCountedSleeps);
+            const uint64_t after =
+                fixy::perf::read_count(runner, counter).expect("the counter of the process gives a count");
+            static_cast<void>(std::move(running).stop());
+            return after - before;
+        });
     if (count == 0) {
         ::fixy::report(::fixy::Sink::Out, "[skipped] the counter gave no instruction of the process\n");
         return;

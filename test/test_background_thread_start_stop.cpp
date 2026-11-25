@@ -1,11 +1,10 @@
-// The pipeline thread of a BackgroundThread starts with start() and joins
-// with stop(), and a stop with no thread joins nothing.  A start while a
-// pipeline thread runs breaks the contract of start(), and the end of a
-// BackgroundThread joins a pipeline that runs.  A start after stop() reads
-// the ring and the log of the constructor, so it continues the stream of
-// ops.  The fixture neg_background_thread_start_takes_no_sides shows that no
-// start names a side.  The broken contract runs in a child process through
-// expect_dies of the Check family, while the test process has one thread.
+// The pipeline thread of a BackgroundThread starts with start() of the Stopped
+// handle and joins with stop() of the Running handle, and the end of the frame
+// joins a pipeline that runs.  A start after stop() reads the ring and the log
+// of the frame door, so it continues the stream of ops.  The fixtures
+// neg_background_thread_start_takes_no_sides and
+// neg_background_thread_start_of_a_running_pipeline show that no start names a
+// side, and that no start runs while a pipeline runs.
 // The plan target of a thread that never started is PlanTarget{}.
 // The tsan preset runs the same binary, so each start and each join has a
 // check of ThreadSanitizer.
@@ -24,6 +23,7 @@
 #include "test_harness.h"
 #include "trace_rig.h"
 #include <cstdint>
+#include <utility>
 
 namespace {
 
@@ -62,7 +62,7 @@ uint64_t record_loop(TraceRig& rig, uint64_t first) {
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
+void wait_for_pipeline(BackgroundThread const& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
     while (bt.total_processed.load_acquire() < rig.ring_total_produced())
@@ -74,11 +74,12 @@ void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
 // runs in a job.
 using QueuedHashes = ::fixy::FixedArray<crucible::ContentHash, crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE>;
 
-QueuedHashes queued_hashes(BackgroundThread& bt) {
+template <class Stopped>
+QueuedHashes queued_hashes(Stopped& stopped) {
     QueuedHashes hashes{};
-    bt.run_on_publish_stage([&hashes](BackgroundThread::PublishStageView& view,
-                                      BackgroundThread::PublishStage const& stage) noexcept {
-        BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
+    stopped.run_on_publish_stage([&hashes](BackgroundThread::PublishStageView& view,
+                                           BackgroundThread::PublishStage const& stage) noexcept {
+        BackgroundThread::UncompiledRegions const& queue = view.uncompiled_regions();
         for (uint32_t age = 0; age < queue.size(); ++age) {
             crucible::ContentHash const hash =
                 queue.at(stage, age).expect("a queued slot holds a region")->content_hash;
@@ -90,42 +91,33 @@ QueuedHashes queued_hashes(BackgroundThread& bt) {
     return hashes;
 }
 
+constexpr auto kAlloc = ::foundation::effects::testing::test().alloc;
+
 void test_start_and_stop() {
-    // Each test holds its own ring and log, declared before its
-    // BackgroundThread, so the thread ends first.
+    // Each test holds its own ring and log, and the thread ends with its
+    // frame, so the thread ends first.
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
+    crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(startup());
+            static_cast<void>(record_loop(rig, 0));
+            wait_for_pipeline(bt, rig);
+            auto stopped_again = std::move(running).stop();
+            CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == rig.ring_total_produced());
 
-    bt.start(startup());
-    static_cast<void>(record_loop(rig, 0));
-    wait_for_pipeline(bt, rig);
-    bt.stop();
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == rig.ring_total_produced());
-
-    // A stop with no pipeline thread joins nothing.
-    bt.stop();
-}
-
-// The child starts the pipeline thread and then starts again, so the test
-// process has no second thread at the fork.
-void test_start_while_running_breaks_the_contract(::fixy::TestRunnerCtx const& test) {
-    ::fixy::check::expect_dies(
-        test,
-        [] noexcept {
-            TraceRig rig{};
-            BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-            bt.start(startup());
-            bt.start(startup());
-        },
-        ::fixy::TextView{"foundation: contract violation: !thread_.holds_thread(), \"a start while the pipeline "
-                         "thread runs: stop the pipeline first\""});
+            // A start after a stop starts a pipeline again.
+            auto running_again = std::move(stopped_again).start(startup());
+            static_cast<void>(std::move(running_again).stop());
+        });
 }
 
 void test_end_joins_a_running_pipeline() {
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.start(startup());
-    // The end of bt stops the pipeline and joins its thread.
+    crucible::with_background_thread(kAlloc, rig.ring_side(), rig.log_side(), {},
+                                     [](BackgroundThread const& /*bt*/, auto stopped) noexcept {
+                                         // The end of the frame stops the pipeline and joins its thread.
+                                         static_cast<void>(std::move(stopped).start(startup()));
+                                     });
 }
 
 // The stream of the restart test.  The first pipeline stops in the middle of
@@ -170,6 +162,26 @@ void record_stream(TraceRig& rig, uint64_t first, uint64_t end) {
     }
 }
 
+// What a pipeline did with a stream: its counts and the hashes of its regions.
+struct StreamCounts final {
+    uint64_t total_processed = 0;
+    uint32_t iterations = 0;
+    uint64_t works_built = 0;
+    uint64_t regions = 0;
+    uint32_t queued = 0;
+    QueuedHashes hashes{};
+};
+
+template <class Stopped>
+StreamCounts counts_of(BackgroundThread const& bt, Stopped& stopped) {
+    return StreamCounts{.total_processed = bt.total_processed.load_acquire(),
+                        .iterations = bt.iterations_completed.get(),
+                        .works_built = bt.works_built(),
+                        .regions = bt.uncompiled_regions().total(),
+                        .queued = bt.uncompiled_regions().size(),
+                        .hashes = queued_hashes(stopped)};
+}
+
 // A start after stop() with the same ring and log continues the stream.  The
 // detect stage keeps its held ops, its detector and its cursor of the log.
 // So the second pipeline reads each op one time, and it gives the regions and
@@ -178,43 +190,46 @@ void record_stream(TraceRig& rig, uint64_t first, uint64_t end) {
 // The last floor is then the head of the log.  A second start that set the
 // cursor to the tail of the log again would hold the floor at that tail.
 void test_start_again_continues_the_stream() {
-    const auto alloc = ::foundation::effects::testing::test().alloc;
     TraceRig rig{};
     TraceRig one_rig{};
-    BackgroundThread bt{alloc, rig.ring_side(), rig.log_side()};
-    bt.start(startup());
-    record_stream(rig, 0, kOpsBeforeStop);
-    wait_for_pipeline(bt, rig);
-    bt.stop();
-    CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() < rig.log_total_produced()
-                                    && "the first pipeline holds no op with a record of the log");
+    const StreamCounts with_stop = crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {}, [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(startup());
+            record_stream(rig, 0, kOpsBeforeStop);
+            wait_for_pipeline(bt, rig);
+            auto stopped_again = std::move(running).stop();
+            CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() < rig.log_total_produced()
+                                            && "the first pipeline holds no op with a record of the log");
 
-    record_stream(rig, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
-    bt.start(startup());
-    record_stream(rig, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
-    wait_for_pipeline(bt, rig);
-    bt.stop();
-
-    BackgroundThread control{alloc, one_rig.ring_side(), one_rig.log_side()};
-    control.start(startup());
-    record_stream(one_rig, 0, kStreamOps);
-    wait_for_pipeline(control, one_rig);
-    control.stop();
+            record_stream(rig, kOpsBeforeStop, kOpsBeforeStop + kOpsWhileStopped);
+            auto running_again = std::move(stopped_again).start(startup());
+            record_stream(rig, kOpsBeforeStop + kOpsWhileStopped, kStreamOps);
+            wait_for_pipeline(bt, rig);
+            auto stopped_at_the_end = std::move(running_again).stop();
+            return counts_of(bt, stopped_at_the_end);
+        });
+    const StreamCounts control =
+        crucible::with_background_thread(kAlloc, one_rig.ring_side(), one_rig.log_side(), {},
+                                         [&one_rig](BackgroundThread const& bt, auto stopped) noexcept {
+                                             auto running = std::move(stopped).start(startup());
+                                             record_stream(one_rig, 0, kStreamOps);
+                                             wait_for_pipeline(bt, one_rig);
+                                             auto stopped_at_the_end = std::move(running).stop();
+                                             return counts_of(bt, stopped_at_the_end);
+                                         });
 
     CRUCIBLE_TEST_ASSERT(kTest, rig.ring_total_produced() == kStreamOps && one_rig.ring_total_produced() == kStreamOps);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() == kStreamOps
-                                    && "the second pipeline read an op twice or lost one");
-    CRUCIBLE_TEST_ASSERT(kTest, control.total_processed.load_acquire() == kStreamOps);
-    CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() == control.iterations_completed.get());
-    CRUCIBLE_TEST_ASSERT(kTest, bt.works_built() == control.works_built());
-    CRUCIBLE_TEST_ASSERT(kTest, control.uncompiled_regions().total() > 0 && "the stream gave no region");
-    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() == control.uncompiled_regions().total());
-    const QueuedHashes hashes = queued_hashes(bt);
-    const QueuedHashes control_hashes = queued_hashes(control);
-    for (uint32_t age = 0; age < control.uncompiled_regions().size(); ++age) {
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         with_stop.total_processed == kStreamOps && "the second pipeline read an op twice or lost one");
+    CRUCIBLE_TEST_ASSERT(kTest, control.total_processed == kStreamOps);
+    CRUCIBLE_TEST_ASSERT(kTest, with_stop.iterations == control.iterations);
+    CRUCIBLE_TEST_ASSERT(kTest, with_stop.works_built == control.works_built);
+    CRUCIBLE_TEST_ASSERT(kTest, control.regions > 0 && "the stream gave no region");
+    CRUCIBLE_TEST_ASSERT(kTest, with_stop.regions == control.regions);
+    for (uint32_t age = 0; age < control.queued; ++age) {
         CRUCIBLE_TEST_ASSERT(kTest,
-                             *hashes.get(age).expect("the queue holds at most its default capacity")
-                                     == *control_hashes.get(age).expect("the queue holds at most its default capacity")
+                             *with_stop.hashes.get(age).expect("the queue holds at most its default capacity")
+                                     == *control.hashes.get(age).expect("the queue holds at most its default capacity")
                                  && "the second pipeline gave a region that a pipeline with no stop does not give");
     }
     CRUCIBLE_TEST_ASSERT(kTest, one_rig.log_total_released() == one_rig.log_total_produced());
@@ -227,8 +242,9 @@ void test_start_again_continues_the_stream() {
 // BackgroundThread.h).
 void test_plan_target_before_start_is_the_default() {
     TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    BackgroundThread::PlanTarget const unstarted = bt.plan_target();
+    BackgroundThread::PlanTarget const unstarted = crucible::with_background_thread(
+        kAlloc, rig.ring_side(), rig.log_side(), {},
+        [](BackgroundThread const& /*bt*/, auto stopped) noexcept { return stopped.plan_target(); });
     BackgroundThread::PlanTarget const preset{};
     CRUCIBLE_TEST_ASSERT(kTest, unstarted.rank == preset.rank && unstarted.world_size == preset.world_size
                                     && unstarted.device_capability.value() == preset.device_capability.value()
@@ -240,7 +256,6 @@ void test_plan_target_before_start_is_the_default() {
 int main() {
     ::fixy::TestRunnerCtx const test{::foundation::effects::testing::test()};
     test_start_and_stop();
-    test_start_while_running_breaks_the_contract(test);
     test_end_joins_a_running_pipeline();
     test_start_again_continues_the_stream();
     test_plan_target_before_start_is_the_default();

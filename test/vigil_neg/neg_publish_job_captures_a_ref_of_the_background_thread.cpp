@@ -9,14 +9,17 @@
 #include <crucible/BackgroundThread.h>
 
 #include <fixy/Core.h>
-#include <foundation/effects/Effect.h>
 
 namespace {
 
-// The thread is a parameter, so the fixture builds no ring and no log for it.
-[[maybe_unused]] void post_with(crucible::BackgroundThread& background) {
+struct Scope final {};
+
+// The thread and the handle are parameters, so the fixture builds no ring and
+// no log.
+[[maybe_unused]] void post_with(crucible::BackgroundThread& background,
+                                crucible::BackgroundThread::Stopped<Scope>& stopped) {
     const ::fixy::Ref<crucible::BackgroundThread> whole{::fixy::erase_brand(::fixy::to(background))};
-    background.run_on_publish_stage(
+    stopped.run_on_publish_stage(
         [whole](crucible::BackgroundThread::PublishStageView&,
                 crucible::BackgroundThread::PublishStage const&) noexcept { static_cast<void>(whole->works_built()); });
 }

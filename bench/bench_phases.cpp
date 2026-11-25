@@ -264,7 +264,7 @@ void bench_phases_toplevel(BackgroundThread::TraceBuildState& state, BackgroundT
         uint32_t num_ops = 0;
         uint32_t num_slots = 0;
         ::fixy::HeapArray<Edge> saved_edges{};
-        BackgroundThread::BuiltRegion ref_region{};
+        BuiltRegion ref_region{};
         ref_scratch.arena.with_epoch([&state, &log, &trace, numerics, &num_ops, &num_slots, &saved_edges,
                                       &ref_region](TraceScratch::Epoch& epoch) noexcept {
             auto [ref, region] = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds");
@@ -626,7 +626,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
-        BackgroundThread::BuiltRegion ref{};
+        BuiltRegion ref{};
         bench::refill_meta_log(meta_log, trace);
         build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
             ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
@@ -667,7 +667,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
-        BackgroundThread::BuiltRegion ref{};
+        BuiltRegion ref{};
         bench::refill_meta_log(meta_log, trace);
         build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
             ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
@@ -716,7 +716,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
     {
         // The region of the build owns the ops, so the ops outlive the epoch.
         // The graph dies at the end of the epoch, so only the region leaves it.
-        BackgroundThread::BuiltRegion ref{};
+        BuiltRegion ref{};
         bench::refill_meta_log(meta_log, trace);
         build_scratch.arena.with_epoch([&state, &log, &trace, numerics, &ref](TraceScratch::Epoch& epoch) noexcept {
             ref = build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
@@ -763,7 +763,7 @@ void bench_phase2_subparts(BackgroundThread::TraceBuildState& state, crucible::t
         bench::refill_meta_log(meta_log, trace);
         build_scratch.arena.with_epoch([&state, &log, &trace, numerics,
                                         &saved_slots](TraceScratch::Epoch& epoch) noexcept {
-            const BackgroundThread::BuiltRegion region =
+            const BuiltRegion region =
                 build_recorded(state, log, trace, numerics, epoch).expect("the recorded trace builds").region;
             const ::fixy::View<TensorSlot const> region_slots = region.slots();
             saved_slots = ::fixy::mint_heap_array_with<BackgroundThread::SlotInfo>(
@@ -909,30 +909,30 @@ int run_bench(::fixy::os::Args const& arguments) {
     crucible::test::OpenLog meta_log{};
     crucible::test::TraceRig sides{};
 
-    BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
+    // A frame holds the state of the build for a whole section.
+    crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side(), {},
+        [&meta_log, &trace, iters, json](BackgroundThread const& /*bg*/, auto stopped) noexcept {
+            NumericsHash const numerics = stopped.numerics();
+            BackgroundThread::PlanTarget const target = stopped.plan_target();
+            bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
+            ::fixy::FixedArray<bench::Report, 1> const reports{stopped.with_trace_build_state(
+                [&meta_log, &trace, numerics](BackgroundThread::TraceBuildState& state) noexcept {
+                    return run_fullpipeline(state, meta_log, trace, numerics);
+                })};
+            bench::emit_reports_text(reports.view());
 
-    // A frame holds the state of the build for a whole section, so no sample
-    // of a section takes the claim of the run state.
-    NumericsHash const numerics = bg.numerics();
-    BackgroundThread::PlanTarget const target = bg.plan_target();
-    bench::print("\n=== full pipeline (bench::run with BPF sensing) ===\n");
-    ::fixy::FixedArray<bench::Report, 1> const reports{bg.with_trace_build_state(
-        bg.prove_quiescence(), [&meta_log, &trace, numerics](BackgroundThread::TraceBuildState& state) noexcept {
-            return run_fullpipeline(state, meta_log, trace, numerics);
-        })};
-    bench::emit_reports_text(reports.view());
+            stopped.with_trace_build_state(
+                [target, &meta_log, &trace, numerics, iters](BackgroundThread::TraceBuildState& state) noexcept {
+                    bench_phases_toplevel(state, target, meta_log, trace, numerics, iters);
+                    bench_phase2_subparts(state, meta_log, trace, numerics, iters);
+                });
 
-    const auto run_phases = [target, &meta_log, &trace, numerics,
-                             iters](BackgroundThread::TraceBuildState& state) noexcept {
-        bench_phases_toplevel(state, target, meta_log, trace, numerics, iters);
-        bench_phase2_subparts(state, meta_log, trace, numerics, iters);
-    };
-    bg.with_trace_build_state(bg.prove_quiescence(), run_phases);
-
-    bench::print("\nDone.\n");
-    // The JSON tail comes last, because the reader reads each line after its
-    // marker.
-    bench::emit_reports_json(reports.view(), json);
+            bench::print("\nDone.\n");
+            // The JSON tail comes last, because the reader reads each line
+            // after its marker.
+            bench::emit_reports_json(reports.view(), json);
+        });
     return 0;
 }
 

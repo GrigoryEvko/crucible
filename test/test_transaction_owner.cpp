@@ -12,8 +12,8 @@
 // under the thread sanitizer preset it runs with no report.  In every build
 // it checks that a rollback still restores a region.  It also checks where
 // a job runs: on its caller while no publish stage runs, and on the stage
-// while one runs.  test_background_thread_quiescence checks that a job that
-// waits on its own stage ends the process.
+// while one runs.  test_background_thread_handles checks that a region
+// callback that waits on its own stage ends the process.
 
 #include <crucible/Vigil.h>
 #include <fixy/Core.h>
@@ -52,7 +52,7 @@ namespace {
 using Stage = crucible::BackgroundThread::PublishStage;
 static_assert(std::is_same_v<crucible::BackgroundThread::RegionReadyCall,
                              ::fixy::CallRef<void(::foundation::effects::Bg const&, Stage const&,
-                                                  crucible::BackgroundThread::PublishedRegion const&) noexcept>>);
+                                                  crucible::PublishedRegion const&) noexcept>>);
 static_assert(
     std::is_same_v<decltype(crucible::BackgroundThread::OwnerJob::call), ::fixy::CallRef<void(Stage const&) noexcept>>);
 static_assert(!std::is_copy_constructible_v<Stage> && !std::is_move_constructible_v<Stage>);
@@ -186,19 +186,24 @@ void rollback_on_a_fresh_vigil() {
 // a row show that the inline path gives the mailbox back.
 void job_runs_on_the_caller_without_a_stage() {
     crucible::test::TraceRig rig{};
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
-                                          rig.log_side()};
-    int runs = 0;
-    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStageView&,
-                                            crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
-    background.run_on_publish_stage([&runs](crucible::BackgroundThread::PublishStageView&,
-                                            crucible::BackgroundThread::PublishStage const&) noexcept { ++runs; });
+    const int runs = crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [](crucible::BackgroundThread const& /*background*/, auto stopped) noexcept {
+            int count = 0;
+            for (int round = 0; round < 2; ++round) {
+                stopped.run_on_publish_stage(
+                    [&count](crucible::BackgroundThread::PublishStageView&,
+                             crucible::BackgroundThread::PublishStage const&) noexcept { ++count; });
+            }
+            return count;
+        });
     if (runs != 2) fail("a job posted with no publish stage did not run on its caller");
 }
 
-std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
+template <class Handle>
+std::thread::id thread_of_one_job(Handle& handle) {
     std::thread::id ran_on{};
-    background.run_on_publish_stage(
+    handle.run_on_publish_stage(
         [&ran_on](crucible::BackgroundThread::PublishStageView&,
                   crucible::BackgroundThread::PublishStage const&) noexcept { ran_on = std::this_thread::get_id(); });
     return ran_on;
@@ -209,22 +214,28 @@ std::thread::id thread_of_one_job(crucible::BackgroundThread& background) {
 // runs on the caller, and the loop waits for the first job the stage runs.
 // After stop() the stage has closed the mailbox, and a job runs on its
 // caller again.
-void job_runs_on_the_stage_while_it_runs() {
-    crucible::test::TraceRig rig{};
-    crucible::BackgroundThread background{::foundation::effects::testing::test().alloc, rig.ring_side(),
-                                          rig.log_side()};
-    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+template <class Stopped>
+void check_thread_of_the_jobs(Stopped stopped) noexcept {
+    auto running = std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     const std::thread::id caller = std::this_thread::get_id();
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{30};
     bool ran_on_the_stage = false;
     while (!ran_on_the_stage && std::chrono::steady_clock::now() < deadline) {
-        ran_on_the_stage = thread_of_one_job(background) != caller;
+        ran_on_the_stage = thread_of_one_job(running) != caller;
     }
     if (!ran_on_the_stage) fail("no job ran on the publish stage while it ran");
 
-    background.stop();
-    if (thread_of_one_job(background) != caller) fail("a job after stop() did not run on its caller");
+    auto stopped_again = std::move(running).stop();
+    if (thread_of_one_job(stopped_again) != caller) fail("a job after stop() did not run on its caller");
+}
+
+void job_runs_on_the_stage_while_it_runs() {
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+                                     [](crucible::BackgroundThread const& /*background*/, auto stopped) noexcept {
+                                         check_thread_of_the_jobs(std::move(stopped));
+                                     });
 }
 
 }  // namespace

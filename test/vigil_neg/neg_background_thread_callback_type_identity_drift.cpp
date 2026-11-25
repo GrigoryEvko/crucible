@@ -18,13 +18,12 @@ namespace c = crucible;
 
 // The whole signature of RegionReadyCall, so the one difference the
 // assertion can see is the noexcept.
-using non_noexcept_call =
-    ::fixy::CallRef<void(::foundation::effects::Bg const&, c::BackgroundThread::PublishStage const&,
-                         c::BackgroundThread::PublishedRegion const&)>;
+using non_noexcept_call = ::fixy::CallRef<void(::foundation::effects::Bg const&,
+                                               c::BackgroundThread::PublishStage const&, c::PublishedRegion const&)>;
 static_assert(
     std::is_same_v<c::BackgroundThread::RegionReadyCall,
                    ::fixy::CallRef<void(::foundation::effects::Bg const&, c::BackgroundThread::PublishStage const&,
-                                        c::BackgroundThread::PublishedRegion const&) noexcept>>,
+                                        c::PublishedRegion const&) noexcept>>,
     "the signature above must track RegionReadyCall, or this fixture fails for the wrong reason");
 
 static_assert(std::is_same_v<c::BackgroundThread::RegionReadyCall, non_noexcept_call>,

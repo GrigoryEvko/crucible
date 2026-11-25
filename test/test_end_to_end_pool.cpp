@@ -22,6 +22,8 @@ using namespace crucible;
 
 namespace test_end_to_end {
 
+namespace {
+
 // The count of the bytes of each tensor of the workload: 1024 floats.
 constexpr std::size_t kTensorBytes = 4096;
 
@@ -29,20 +31,8 @@ constexpr std::size_t kTensorBytes = 4096;
 // expected pattern back through the next op's input is what proves the
 // two entries resolve to the same pool bytes.  The output of an op comes
 // through with_output_views, and its input through input_view.
-void test_pipeline_data_flow() {
-    crucible::test::TraceRig rig{};
-
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    feed_iteration(rig, Iteration{0});
-    feed_iteration(rig, Iteration{1});
-    feed_trigger(rig, Iteration{2});
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    wait_processed(bt, rig);
-    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
-
+void check_data_flow(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
+                     DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -92,29 +82,14 @@ void test_pipeline_data_flow() {
     CRUCIBLE_TEST_ASSERT(kTest, ctx.compiled_iterations() == 1);
 
     ctx.deactivate();
-    bt.stop();
-
-    ::fixy::check::pass(kTest, "  test_pipeline_data_flow: PASSED\n");
 }
 
 // The outputs and the inputs of each op are inside the pool.
 // with_output_views refuses an output whose window ends past the last byte
 // of the pool (OutsidePool), so each lent output of the tensor bytes is
 // inside it, and each input reads the window of the pool of its slot.
-void test_pipeline_pool_bounds() {
-    crucible::test::TraceRig rig{};
-
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    feed_iteration(rig, Iteration{0});
-    feed_iteration(rig, Iteration{1});
-    feed_trigger(rig, Iteration{2});
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    wait_processed(bt, rig);
-    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
-
+void check_pool_bounds(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
+                       DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     CRUCIBLE_TEST_ASSERT(kTest, ctx.pool().pool_base().is_some());
@@ -158,8 +133,17 @@ void test_pipeline_pool_bounds() {
     }
 
     ctx.deactivate();
-    bt.stop();
+}
 
+}  // namespace
+
+void test_pipeline_data_flow() {
+    run_on_first_region(RegionCheck::of<&check_data_flow>());
+    ::fixy::check::pass(kTest, "  test_pipeline_data_flow: PASSED\n");
+}
+
+void test_pipeline_pool_bounds() {
+    run_on_first_region(RegionCheck::of<&check_pool_bounds>());
     ::fixy::check::pass(kTest, "  test_pipeline_pool_bounds: PASSED\n");
 }
 

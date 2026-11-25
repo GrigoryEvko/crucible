@@ -347,7 +347,6 @@ int run_bench(::fixy::os::Args const& arguments) {
         // of the BackgroundThread reads the ring or the log.  The thread
         // holds the sides of a rig of its own, which no stage reads either.
         crucible::test::TraceRig sides{};
-        BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
 
         // The drain buffers have static storage; 4× 4096-element arrays on
         // the stack blow past our 512 kB stack-usage budget.
@@ -415,27 +414,33 @@ int run_bench(::fixy::os::Args const& arguments) {
             depth_batch.view().window(0, n).expect("the drain fills at most the batch");
 
         TraceScratch scratch{Bytes{size_t{1} << 20}};
-        // One frame holds the state of the build for each iteration, so no
-        // iteration takes the claim of the run state.  The bodies capture the
-        // metadata log by a const reference, and not the BackgroundThread.
+        // One frame holds the state of the build for each iteration.  The
+        // bodies capture the metadata log by a const reference, and not the
+        // BackgroundThread.
         MetaLog const& log = *meta_log.view();
-        NumericsHash const numerics = bg.numerics();
-        const auto measure = [&repopulate_meta_log, &scratch, &log, &test, drained, drained_metas, drained_scopes,
-                              drained_callsites, drained_depths,
-                              numerics](BackgroundThread::TraceBuildState& state) noexcept {
-            return bench::run("build_trace (481 ops, full pipeline)", [&] {
-                repopulate_meta_log();
-                scratch.arena.with_epoch([&state, &log, alloc = test.alloc, drained, drained_metas, drained_scopes,
-                                          drained_callsites, drained_depths,
-                                          numerics](TraceScratch::Epoch& epoch) noexcept {
-                    auto built =
-                        BackgroundThread::build_trace_from(state, log, alloc, epoch, drained, drained_metas,
-                                                           drained_scopes, drained_callsites, drained_depths, numerics);
-                    bench::do_not_optimize(built);
-                });
+        bench::Report report{};
+        crucible::with_background_thread(
+            test.alloc, sides.ring_side(), sides.log_side(), {},
+            [&](BackgroundThread const& /*bg*/, auto stopped) noexcept {
+                NumericsHash const numerics = stopped.numerics();
+                const auto measure = [&repopulate_meta_log, &scratch, &log, &test, drained, drained_metas,
+                                      drained_scopes, drained_callsites, drained_depths,
+                                      numerics](BackgroundThread::TraceBuildState& state) noexcept {
+                    return bench::run("build_trace (481 ops, full pipeline)", [&] {
+                        repopulate_meta_log();
+                        scratch.arena.with_epoch([&state, &log, alloc = test.alloc, drained, drained_metas,
+                                                  drained_scopes, drained_callsites, drained_depths,
+                                                  numerics](TraceScratch::Epoch& epoch) noexcept {
+                            auto built = BackgroundThread::build_trace_from(
+                                state, log, alloc, epoch, drained, drained_metas, drained_scopes, drained_callsites,
+                                drained_depths, numerics);
+                            bench::do_not_optimize(built);
+                        });
+                    });
+                };
+                report = stopped.with_trace_build_state(measure);
             });
-        };
-        return bg.with_trace_build_state(bg.prove_quiescence(), measure);
+        return report;
     }());
 
     // ── Optional: build_trace from real .crtrace argv paths ──────────
@@ -468,7 +473,6 @@ int run_bench(::fixy::os::Args const& arguments) {
             // The thread holds the sides of a rig of its own, which no stage
             // reads: the bench builds each trace from its own log.
             crucible::test::TraceRig sides{};
-            BackgroundThread bg{::foundation::effects::testing::test().alloc, sides.ring_side(), sides.log_side()};
             // The block takes 256 bytes for each op, and at least 1 MiB.  The
             // floor is a constant, and the bytes of the ops above the floor
             // are the part of run time.
@@ -479,23 +483,30 @@ int run_bench(::fixy::os::Args const& arguments) {
             // The bodies capture the metadata log by a const reference, and
             // not the BackgroundThread.
             MetaLog const& log = *meta_log.view();
-            NumericsHash const numerics = bg.numerics();
-
-            const auto measure = [&meta_log, &log, &scratch, &trace, &test, path_view,
-                                  numerics](BackgroundThread::TraceBuildState& state) noexcept {
-                return bench::run(bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view), [&] {
-                    const LoadedTrace& loaded = trace;
-                    bench::refill_meta_log(meta_log, loaded);
-                    scratch.arena.with_epoch([&state, &log, alloc = test.alloc, &loaded,
-                                              numerics](TraceScratch::Epoch& epoch) noexcept {
-                        auto built = BackgroundThread::build_trace_from(
-                            state, log, alloc, epoch, loaded.entries.view(), loaded.meta_starts.view(),
-                            loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(), numerics);
-                        bench::do_not_optimize(built);
-                    });
+            bench::Report report{};
+            crucible::with_background_thread(
+                test.alloc, sides.ring_side(), sides.log_side(), {},
+                [&](BackgroundThread const& /*bg*/, auto stopped) noexcept {
+                    NumericsHash const numerics = stopped.numerics();
+                    const auto measure = [&meta_log, &log, &scratch, &trace, &test, path_view,
+                                          numerics](BackgroundThread::TraceBuildState& state) noexcept {
+                        const auto name = bench::format_name("build_trace ({} ops, from {})", trace.num_ops, path_view);
+                        return bench::run(name, [&] {
+                            const LoadedTrace& loaded = trace;
+                            bench::refill_meta_log(meta_log, loaded);
+                            scratch.arena.with_epoch([&state, &log, alloc = test.alloc, &loaded,
+                                                      numerics](TraceScratch::Epoch& epoch) noexcept {
+                                auto built = BackgroundThread::build_trace_from(
+                                    state, log, alloc, epoch, loaded.entries.view(), loaded.meta_starts.view(),
+                                    loaded.scope_hashes.view(), loaded.callsite_hashes.view(), loaded.depths.view(),
+                                    numerics);
+                                bench::do_not_optimize(built);
+                            });
+                        });
+                    };
+                    report = stopped.with_trace_build_state(measure);
                 });
-            };
-            return bg.with_trace_build_state(bg.prove_quiescence(), measure);
+            return report;
         }());
     }
 

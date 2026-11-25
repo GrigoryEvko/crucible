@@ -17,7 +17,7 @@ namespace {
 
 // The parameter list of RegionReadyCall, without the noexcept.
 void throwing_callback(::foundation::effects::Bg const& /*bg*/, c::BackgroundThread::PublishStage const& /*stage*/,
-                       c::BackgroundThread::PublishedRegion const& /*published*/) {}
+                       c::PublishedRegion const& /*published*/) {}
 
 }  // namespace
 

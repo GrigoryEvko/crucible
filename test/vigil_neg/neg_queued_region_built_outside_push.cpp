@@ -12,7 +12,7 @@
 
 namespace {
 
-using Queued = crucible::BackgroundThread::QueuedRegion;
+using Queued = crucible::QueuedRegion;
 
 // The node is a parameter, so the fixture makes no node.
 [[maybe_unused]] Queued claim_a_push(crucible::DagRef<crucible::RegionNode> node) { return Queued{node, uint64_t{0}}; }

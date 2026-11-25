@@ -73,19 +73,15 @@ bool record(TraceRig& rig, uint64_t index) {
 }
 
 // Waits until the pipeline processed each op of the ring.
-void wait_for_pipeline(BackgroundThread& bt, TraceRig const& rig) {
+void wait_for_pipeline(BackgroundThread const& bt, TraceRig const& rig) {
     const fixy::TestRunnerCtx runner{foundation::effects::testing::test()};
     const auto pause = fixy::time::mint_bounded_sleep<kPollNanos>(runner);
     while (bt.total_processed.load_acquire() < rig.ring_total_produced())
         (void)pause.sleep_for(kPollNanos);
 }
 
-void test_refused_ops_give_no_wrong_region() {
-    // The ring and the log come before the BackgroundThread, so the thread
-    // ends first.
-    TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
+template <class Stopped>
+void check_refused_ops(TraceRig& rig, BackgroundThread const& bt, Stopped stopped) noexcept {
     // No pipeline runs, so the ring takes CAPACITY ops of the loop and
     // refuses the rest.  The program goes on, so the index counts each
     // refused op.
@@ -97,7 +93,7 @@ void test_refused_ops_give_no_wrong_region() {
     CRUCIBLE_TEST_ASSERT(kTest, refused == kRefused);
 
     // The pipeline publishes the regions of the iterations in the full ring.
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
+    auto running = std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
     wait_for_pipeline(bt, rig);
     const uint64_t regions_before_gap = bt.uncompiled_regions().total();
 
@@ -106,7 +102,7 @@ void test_refused_ops_give_no_wrong_region() {
     for (const uint64_t end = index + kIterationsAfterGap * kPeriod; index < end; ++index)
         CRUCIBLE_TEST_ASSERT(kTest, record(rig, index));
     wait_for_pipeline(bt, rig);
-    bt.stop();
+    auto stopped_again = std::move(running).stop();
 
     CRUCIBLE_TEST_ASSERT(kTest, regions_before_gap > 0 && "the loop before the gap published no region");
     CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() > regions_before_gap
@@ -114,9 +110,9 @@ void test_refused_ops_give_no_wrong_region() {
     // A slot of the queue is state of the publish stage, so the read runs in
     // a job.
     uint32_t foreign_regions = 0;
-    bt.run_on_publish_stage([&foreign_regions](BackgroundThread::PublishStageView& view,
-                                               BackgroundThread::PublishStage const& stage) noexcept {
-        BackgroundThread::UncompiledRegionQueue const& queue = view.uncompiled_regions();
+    stopped_again.run_on_publish_stage([&foreign_regions](BackgroundThread::PublishStageView& view,
+                                                          BackgroundThread::PublishStage const& stage) noexcept {
+        BackgroundThread::UncompiledRegions const& queue = view.uncompiled_regions();
         for (uint32_t age = 0; age < queue.size(); ++age) {
             if (!is_one_iteration(queue.at(stage, age).expect("a queued slot holds a region")->ops.view())) {
                 ++foreign_regions;
@@ -124,6 +120,13 @@ void test_refused_ops_give_no_wrong_region() {
         }
     });
     CRUCIBLE_TEST_ASSERT(kTest, foreign_regions == 0 && "a region holds ops that are not one iteration of the loop");
+}
+
+void test_refused_ops_give_no_wrong_region() {
+    TraceRig rig{};
+    crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [&rig](BackgroundThread const& bt, auto stopped) noexcept { check_refused_ops(rig, bt, std::move(stopped)); });
 }
 
 }  // namespace

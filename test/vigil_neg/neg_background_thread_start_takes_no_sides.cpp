@@ -9,14 +9,19 @@
 #include <fixy/Ctx.h>
 #include <foundation/effects/Effect.h>
 
+#include <utility>
+
 namespace {
 
-// The thread and the two sides are parameters, so the fixture builds no ring
+struct Scope final {};
+
+// The handle and the two sides are parameters, so the fixture builds no ring
 // and no log.
-[[maybe_unused]] void start_with(crucible::BackgroundThread& background,
+[[maybe_unused]] void start_with(crucible::BackgroundThread::Stopped<Scope> stopped,
                                  crucible::BackgroundThread::TraceRingSide& ring_side,
                                  crucible::BackgroundThread::MetaLogSide& log_side) {
-    background.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring_side, log_side);
+    static_cast<void>(
+        std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}, ring_side, log_side));
 }
 
 }  // namespace

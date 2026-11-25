@@ -23,27 +23,10 @@ using namespace crucible;
 
 namespace test_end_to_end {
 
-// A boundary needs two matches to confirm, which is why three feeds are
-// required rather than two.  The first iteration builds the signature,
-// the second produces a candidate match, and the third's K-th matching
-// op confirms the boundary.
-void test_pipeline_basic() {
-    crucible::test::TraceRig rig{};
+namespace {
 
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    // Everything is queued before the background thread starts, so the
-    // drain sees one complete stream and the outcome does not depend on
-    // how the two threads interleave.
-    feed_iteration(rig, Iteration{0});
-    feed_iteration(rig, Iteration{1});
-    feed_trigger(rig, Iteration{2});
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    wait_processed(bt, rig);
-    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
-
+void check_replay(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
+                  DagRef<const RegionNode> region) noexcept {
     CRUCIBLE_TEST_ASSERT(kTest, region->kind == TraceNodeKind::REGION);
     CRUCIBLE_TEST_ASSERT(kTest, region->num_ops() == NUM_OPS);
     CRUCIBLE_TEST_ASSERT(kTest, region->plan.is_some());
@@ -106,26 +89,10 @@ void test_pipeline_basic() {
 
     ctx.deactivate();
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
-
-    bt.stop();
-
-    ::fixy::check::pass(kTest, "  test_pipeline_basic: PASSED\n");
 }
 
-void test_pipeline_divergence() {
-    crucible::test::TraceRig rig{};
-
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-
-    feed_iteration(rig, Iteration{0});
-    feed_iteration(rig, Iteration{1});
-    feed_trigger(rig, Iteration{2});
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    wait_processed(bt, rig);
-    const DagRef<const RegionNode> region = bt.active_region().expect("BackgroundThread did not produce a region");
-
+void check_divergence(crucible::test::TraceRig& /*rig*/, BackgroundThread const& /*bt*/,
+                      DagRef<const RegionNode> region) noexcept {
     CrucibleContext ctx{::foundation::effects::testing::test().alloc};
     CRUCIBLE_TEST_ASSERT(kTest, ctx.activate(*region));
     auto cv = ctx.mint_compiled_view(kVigilForeground);
@@ -147,9 +114,17 @@ void test_pipeline_divergence() {
 
     ctx.deactivate();
     CRUCIBLE_TEST_ASSERT(kTest, ctx.is_recording());
+}
 
-    bt.stop();
+}  // namespace
 
+void test_pipeline_basic() {
+    run_on_first_region(RegionCheck::of<&check_replay>());
+    ::fixy::check::pass(kTest, "  test_pipeline_basic: PASSED\n");
+}
+
+void test_pipeline_divergence() {
+    run_on_first_region(RegionCheck::of<&check_divergence>());
     ::fixy::check::pass(kTest, "  test_pipeline_divergence: PASSED\n");
 }
 

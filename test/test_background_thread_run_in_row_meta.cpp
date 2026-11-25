@@ -39,8 +39,10 @@ using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
 }  // namespace
 
 using crucible::BackgroundThread;
+using crucible::BuiltRegion;
 using crucible::MetaIndex;
 using crucible::MetaLog;
+using crucible::StreamPoint;
 using crucible::TraceRing;
 
 namespace meta_rig {
@@ -85,22 +87,23 @@ struct Work {
                                                   first_ops(depths), numerics);
     }
 
-    // The region of the work, which a pipeline that runs no thread builds from
-    // the log.
-    [[nodiscard]] BackgroundThread::BuiltRegion build_region(BackgroundThread& bt, MetaLog const& log) const {
-        crucible::NumericsHash const numerics = bt.numerics();
+    // The region of the work, which the handle of a thread that runs no
+    // pipeline builds from the log.
+    template <class Stopped>
+    [[nodiscard]] BuiltRegion build_region(Stopped& stopped, MetaLog const& log) const {
+        crucible::NumericsHash const numerics = stopped.numerics();
         const auto build_in_frame = [this, &log, numerics](BuildState& state) noexcept {
             const auto test = ::foundation::effects::testing::test();
             crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-            ::fixy::Option<BackgroundThread::BuiltRegion> built{};
+            ::fixy::Option<BuiltRegion> built{};
             scratch.arena.with_epoch([this, &state, &log, numerics, alloc = test.alloc,
                                       &built](crucible::TraceScratch::Epoch& epoch) noexcept {
-                built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                built = ::fixy::Option<BuiltRegion>::some(
                     build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
             });
             return std::move(built).expect("the epoch built the region");
         };
-        return bt.with_trace_build_state(bt.prove_quiescence(), build_in_frame);
+        return stopped.with_trace_build_state(build_in_frame);
     }
 
     // The first count elements of one array of the work.
@@ -194,23 +197,35 @@ struct PublishedBytes {
     Bytes stored{size_t{0}};
 };
 
+// Makes a thread that runs no pipeline, with a ring of its own, the side of the
+// log and the limits, and gives the value of the check of its log, the thread
+// and its Stopped handle.
+template <class Check>
+auto with_idle_thread(crucible::test::RigLog& metalog, crucible::PipelineLimits const& limits, Check check) {
+    crucible::test::RigRing ring{};
+    return crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, ring.side(), metalog.side(), {.limits = limits},
+        [&metalog, &check](BackgroundThread const& bt, auto stopped) noexcept { return check(metalog, bt, stopped); });
+}
+
 // Builds the region of the work from the log, and publishes it into the store
 // of a new pipeline that runs no thread.  The store holds no other region, so
-// its bytes are the bytes of the arena of the region after the publish.  The
-// pipeline holds a ring of its own and the side of the log.
+// its bytes are the bytes of the arena of the region after the publish.
 [[nodiscard]] PublishedBytes publish_one_region(Work const& work, crucible::test::RigLog& metalog) {
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
-    const auto bg = ::foundation::effects::testing::bg();
-    BackgroundThread::BuiltRegion region = work.build_region(bt, *metalog.view());
-    PublishedBytes bytes{.built = region.arena_bytes()};
-    bt.run_on_publish_stage(
-        [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
-            CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == 1u && "the store holds the published region");
-            bytes.stored = owner.region_bytes(stage);
+    return with_idle_thread(
+        metalog, crucible::PipelineLimits{},
+        [&work](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+            const auto bg = ::foundation::effects::testing::bg();
+            BuiltRegion region = work.build_region(stopped, *log.view());
+            PublishedBytes bytes{.built = region.arena_bytes()};
+            stopped.run_on_publish_stage([&](BackgroundThread::PublishStageView& owner,
+                                             BackgroundThread::PublishStage const& stage) noexcept {
+                owner.publish_region(bg, stage, std::move(region), StreamPoint{});
+                CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == 1u && "the store holds the published region");
+                bytes.stored = owner.region_bytes(stage);
+            });
+            return bytes;
         });
-    return bytes;
 }
 
 }  // namespace
@@ -220,18 +235,14 @@ namespace test_background_thread_run_in_row {
 
 // A build that meets an op with tensors and no metadata index makes no graph.
 // It leaves the tail alone, because only the publish stage writes the tail.
-void test_overflow_build_leaves_tail() {
+template <class Stopped>
+static void check_overflow_build_leaves_tail(crucible::test::RigLog& metalog, Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    crucible::test::RigLog metalog{};
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     // The bodies of the frames and of the epochs capture the log by a const
     // reference, and not the thread.
     MetaLog const& log = *metalog.view();
-    crucible::NumericsHash const numerics = bt.numerics();
+    crucible::NumericsHash const numerics = stopped.numerics();
 
     Work overflowing;
     (void)overflowing.push_op_with_meta(metalog, 0);
@@ -247,20 +258,27 @@ void test_overflow_build_leaves_tail() {
                                                 == BackgroundThread::BuildRefusal::MetaLogOverflow);
             });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), [&expect_overflow, &overflowing](BuildState& state) noexcept {
-        expect_overflow(state, overflowing);
-    });
+    stopped.with_trace_build_state(
+        [&expect_overflow, &overflowing](BuildState& state) noexcept { expect_overflow(state, overflowing); });
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u && "the build stage moved the tail of the metadata log");
 
     // The overflow at the first op reads no metadata.
     Work overflowing_at_start;
     overflowing_at_start.push_op_without_meta(3);
     (void)overflowing_at_start.push_op_with_meta(metalog, 4);
-    bt.with_trace_build_state(bt.prove_quiescence(),
-                              [&expect_overflow, &overflowing_at_start](BuildState& state) noexcept {
-                                  expect_overflow(state, overflowing_at_start);
-                              });
+    stopped.with_trace_build_state([&expect_overflow, &overflowing_at_start](BuildState& state) noexcept {
+        expect_overflow(state, overflowing_at_start);
+    });
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == 0u);
+}
+
+void test_overflow_build_leaves_tail() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+                                   check_overflow_build_leaves_tail(log, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  overflow_build_leaves_tail:                PASSED\n");
 }
@@ -269,17 +287,14 @@ void test_overflow_build_leaves_tail() {
 // Vigil holds ops of a computation that the trace does not finish.  The build
 // refuses it, so the region stays eager.  The same work with no closing entry
 // builds.  The ops hold no tensor, so the build reads no metadata log.
-void test_unrecorded_nest_refuses_the_build() {
+template <class Stopped>
+static void check_unrecorded_nest_refuses_the_build(crucible::test::RigLog& metalog, Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     const auto test = ::foundation::effects::testing::test();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     // The build reads no record of this log.
-    MetaLog const& log = *rig.log_view();
-    crucible::NumericsHash const numerics = bt.numerics();
+    MetaLog const& log = *metalog.view();
+    crucible::NumericsHash const numerics = stopped.numerics();
 
     Work raised;
     raised.push_op_with_scalars(0, 1, 2);
@@ -305,7 +320,16 @@ void test_unrecorded_nest_refuses_the_build() {
                                                 && "the work with no closing entry builds");
             });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
+    stopped.with_trace_build_state(build);
+}
+
+void test_unrecorded_nest_refuses_the_build() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+                                   check_unrecorded_nest_refuses_the_build(log, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  unrecorded_nest_refuses_the_build:         PASSED\n");
 }
@@ -314,13 +338,9 @@ void test_unrecorded_nest_refuses_the_build() {
 // then meets an overflow in the next work, before the publish stage publishes
 // the graph.  The publish moves no tail.  Each release moves the tail to a
 // floor past it, and a floor at or before the tail changes nothing.
-void test_publish_stage_releases_in_order() {
+template <class Stopped>
+static void check_publish_stage_releases_in_order(crucible::test::RigLog& log, Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    crucible::test::RigLog log{};
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), log.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -340,16 +360,15 @@ void test_publish_stage_releases_in_order() {
     // the tail after each one.
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     MetaLog const& read_log = *log.view();
-    crucible::NumericsHash const numerics = bt.numerics();
-    ::fixy::Option<BackgroundThread::BuiltRegion> first_built{};
+    crucible::NumericsHash const numerics = stopped.numerics();
+    ::fixy::Option<BuiltRegion> first_built{};
     const auto build = [&first, &overflowing, &read_log, numerics, &test, &scratch,
                         &first_built](BuildState& state) noexcept {
         scratch.arena.with_epoch([&first, &state, &read_log, numerics, alloc = test.alloc,
                                   &first_built](crucible::TraceScratch::Epoch& epoch) noexcept {
             BackgroundThread::TraceBuild built = first.build(state, read_log, numerics, alloc, epoch);
             CRUCIBLE_TEST_ASSERT(kTest, built.is_ok());
-            first_built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-                std::move(built).expect("the first work builds").region);
+            first_built = ::fixy::Option<BuiltRegion>::some(std::move(built).expect("the first work builds").region);
         });
         scratch.arena.with_epoch([&overflowing, &state, &read_log, numerics,
                                   alloc = test.alloc](crucible::TraceScratch::Epoch& epoch) noexcept {
@@ -357,18 +376,18 @@ void test_publish_stage_releases_in_order() {
             CRUCIBLE_TEST_ASSERT(kTest, overflowed.is_err());
         });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
+    stopped.with_trace_build_state(build);
     CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u);
 
-    BackgroundThread::BuiltRegion first_region = std::move(first_built).expect("the first epoch built the region");
-    bt.run_on_publish_stage(
+    BuiltRegion first_region = std::move(first_built).expect("the first epoch built the region");
+    stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            owner.publish_region(bg, stage, std::move(first_region), BackgroundThread::StreamPoint{});
+            owner.publish_region(bg, stage, std::move(first_region), StreamPoint{});
         });
     CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == 0u && "the publish of a region moved the tail");
-    const auto release_to = [&bt](uint64_t meta_floor) {
-        bt.run_on_publish_stage([meta_floor](BackgroundThread::PublishStageView& owner,
-                                             BackgroundThread::PublishStage const& stage) noexcept {
+    const auto release_to = [&stopped](uint64_t meta_floor) {
+        stopped.run_on_publish_stage([meta_floor](BackgroundThread::PublishStageView& owner,
+                                                  BackgroundThread::PublishStage const& stage) noexcept {
             owner.release_meta_log(stage, meta_floor);
         });
     };
@@ -378,6 +397,15 @@ void test_publish_stage_releases_in_order() {
     CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == first_end && "a floor before the tail moved the tail");
     release_to(overflow_end);
     CRUCIBLE_TEST_ASSERT(kTest, log.total_released() == overflow_end);
+}
+
+void test_publish_stage_releases_in_order() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+                                   check_publish_stage_releases_in_order(log, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  publish_stage_releases_in_order:           PASSED\n");
 }
@@ -387,12 +415,10 @@ void test_publish_stage_releases_in_order() {
 // region.  The floor of the last commit marker is the position of the K ops
 // that the detect stage keeps, so the tail ends at the head: each record is
 // free.
-void test_pipeline_releases_after_overflow() {
+template <class Running>
+static void check_pipeline_releases_after_overflow(crucible::test::TraceRig& rig, BackgroundThread const& bt,
+                                                   Running running) noexcept {
     using namespace meta_rig;
-
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
 
     // The detector accepts the period of one iteration and then cuts each
     // iteration after it.  The last iteration below meets the overflow at
@@ -437,11 +463,21 @@ void test_pipeline_releases_after_overflow() {
     }
     CRUCIBLE_TEST_ASSERT(kTest,
                          bt.total_processed.load_acquire() >= target && "the pipeline did not process every entry");
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
 
     CRUCIBLE_TEST_ASSERT(kTest, overflow_end != 0u);
     CRUCIBLE_TEST_ASSERT(kTest, rig.log_total_released() == rig.log_total_produced()
                                     && "the floor of the last commit marker did not release each record");
+}
+
+void test_pipeline_releases_after_overflow() {
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            check_pipeline_releases_after_overflow(
+                rig, bt, std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}));
+        });
 
     ::fixy::check::pass(kTest, "  pipeline_releases_after_overflow:          PASSED (tail={})\n",
                         static_cast<unsigned long long>(rig.log_total_released()));
@@ -451,13 +487,10 @@ void test_pipeline_releases_after_overflow() {
 // the build read.  The floor of a later commit marker releases the run, and
 // the foreground then writes new records over it.  The region lives as long
 // as its memory, and no op points into the buffer of the log.
-void test_built_graph_owns_its_metadata() {
+template <class Stopped>
+static void check_built_graph_owns_its_metadata(crucible::test::RigLog& metalog, BackgroundThread const& bt,
+                                                Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    crucible::test::RigLog metalog{};
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -468,8 +501,8 @@ void test_built_graph_owns_its_metadata() {
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     MetaLog const& log = *metalog.view();
-    crucible::NumericsHash const numerics = bt.numerics();
-    ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
+    crucible::NumericsHash const numerics = stopped.numerics();
+    ::fixy::Option<BuiltRegion> built_parts{};
     const auto build = [&work, &log, numerics, &test, &scratch, &built_parts](BuildState& state) noexcept {
         scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
                                   &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
@@ -492,41 +525,47 @@ void test_built_graph_owns_its_metadata() {
             CRUCIBLE_TEST_ASSERT(kTest,
                                  ::fixy::address_of(::fixy::to(graph->op(crucible::OpIndex{0})))
                                      == ::fixy::address_of(region_parts.ops().get(0).expect("the region holds op 0")));
-            built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
+            built_parts = ::fixy::Option<BuiltRegion>::some(std::move(region_parts));
         });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
-    BackgroundThread::BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
+    stopped.with_trace_build_state(build);
+    BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
     ::fixy::Address const first_op_address =
         ::fixy::address_of(parts.ops().get(0).expect("the region of the build holds op 0"));
 
     // The region of the publish holds the same ops, and a release to the end
     // of the run moves the tail past it.
-    bt.run_on_publish_stage(
+    stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+            owner.publish_region(bg, stage, std::move(parts), StreamPoint{});
             owner.release_meta_log(stage, OPS);
         });
     const crucible::DagRef<const crucible::RegionNode> region =
         bt.active_region().expect("the publish gives the active region");
     CRUCIBLE_TEST_ASSERT(kTest, ::fixy::address_of(::fixy::to(region->op_at(0))) == first_op_address);
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == OPS);
+}
+
+void test_built_graph_owns_its_metadata() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& bt, auto& stopped) noexcept {
+                                   check_built_graph_owns_its_metadata(log, bt, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  built_graph_owns_its_metadata:             PASSED\n");
 }
 
+// The log starts two records before the wrap of 32 bits.
+static constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
+
 // The two counters of the metadata log count each record that the log held.
 // A run of ops whose metadata passes 2^32 records builds, the graph holds the
 // metadata of each op, and the release moves the tail past 2^32.
-void test_build_and_release_pass_two_to_the_32() {
+template <class Stopped>
+static void check_build_and_release_pass_two_to_the_32(crucible::test::RigLog& metalog, Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    // The log starts two records before the wrap of 32 bits.
-    constexpr uint32_t BELOW_WRAP = 0xFFFFFFFEu;
-    crucible::test::RigLog metalog{MetaIndex{BELOW_WRAP}};
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
     const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
 
@@ -539,8 +578,8 @@ void test_build_and_release_pass_two_to_the_32() {
 
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
     MetaLog const& log = *metalog.view();
-    crucible::NumericsHash const numerics = bt.numerics();
-    ::fixy::Option<BackgroundThread::BuiltRegion> built_parts{};
+    crucible::NumericsHash const numerics = stopped.numerics();
+    ::fixy::Option<BuiltRegion> built_parts{};
     const auto build = [&work, &log, numerics, &test, &scratch, &built_parts](BuildState& state) noexcept {
         scratch.arena.with_epoch([&work, &state, &log, numerics, alloc = test.alloc,
                                   &built_parts](crucible::TraceScratch::Epoch& epoch) noexcept {
@@ -554,18 +593,27 @@ void test_build_and_release_pass_two_to_the_32() {
                          .expect("a test reads an element at or past the count of its View");
                 CRUCIBLE_TEST_ASSERT(kTest, first_meta.data_ptr.value() == output_meta(op).data_ptr.value());
             }
-            built_parts = ::fixy::Option<BackgroundThread::BuiltRegion>::some(std::move(region_parts));
+            built_parts = ::fixy::Option<BuiltRegion>::some(std::move(region_parts));
         });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
-    BackgroundThread::BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
+    stopped.with_trace_build_state(build);
+    BuiltRegion parts = std::move(built_parts).expect("the epoch built the region");
 
-    bt.run_on_publish_stage(
+    stopped.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
-            owner.publish_region(bg, stage, std::move(parts), BackgroundThread::StreamPoint{});
+            owner.publish_region(bg, stage, std::move(parts), StreamPoint{});
             owner.release_meta_log(stage, run_end);
         });
     CRUCIBLE_TEST_ASSERT(kTest, metalog.total_released() == run_end && "the release did not move the tail past 2^32");
+}
+
+void test_build_and_release_pass_two_to_the_32() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{MetaIndex{BELOW_WRAP}};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+                                   check_build_and_release_pass_two_to_the_32(log, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  build_and_release_pass_two_to_the_32:      PASSED\n");
 }
@@ -574,37 +622,34 @@ void test_build_and_release_pass_two_to_the_32() {
 // into its entry, so they fold into the content hash.  Two such ops that
 // differ only in a scalar then give two content hashes.  Before, the entry
 // kept the count and no scalar, and the two hashes were one.
-void test_scalars_of_an_op_with_no_tensors() {
+template <class Stopped>
+static void check_scalars_of_an_op_with_no_tensors(crucible::test::RigLog& metalog, Stopped& stopped) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
     // The ops have no metadata index, so the build reads no record of the log.
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
     const auto test = ::foundation::effects::testing::test();
     crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    MetaLog const& log = *rig.log_view();
-    crucible::NumericsHash const numerics = bt.numerics();
+    MetaLog const& log = *metalog.view();
+    crucible::NumericsHash const numerics = stopped.numerics();
 
     Work five_six;
     five_six.push_op_with_scalars(0, 5, 6);
     Work five_seven;
     five_seven.push_op_with_scalars(0, 5, 7);
-    ::fixy::Option<BackgroundThread::BuiltRegion> built_a{};
-    ::fixy::Option<BackgroundThread::BuiltRegion> built_b{};
+    ::fixy::Option<BuiltRegion> built_a{};
+    ::fixy::Option<BuiltRegion> built_b{};
     const auto build = [&five_six, &five_seven, &log, numerics, &test, &scratch, &built_a,
                         &built_b](BuildState& state) noexcept {
         scratch.arena.with_epoch([&five_six, &five_seven, &state, &log, numerics, alloc = test.alloc, &built_a,
                                   &built_b](crucible::TraceScratch::Epoch& epoch) noexcept {
-            built_a = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+            built_a = ::fixy::Option<BuiltRegion>::some(
                 five_six.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
-            built_b = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+            built_b = ::fixy::Option<BuiltRegion>::some(
                 five_seven.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
         });
     };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
-    BackgroundThread::BuiltRegion const region_a = std::move(built_a).expect("the epoch built the first region");
-    BackgroundThread::BuiltRegion const region_b = std::move(built_b).expect("the epoch built the second region");
+    stopped.with_trace_build_state(build);
+    BuiltRegion const region_a = std::move(built_a).expect("the epoch built the first region");
+    BuiltRegion const region_b = std::move(built_b).expect("the epoch built the second region");
 
     const crucible::TraceEntry& op = *region_a.ops().get(0).expect("the region holds its one op");
     CRUCIBLE_TEST_ASSERT(kTest, op.num_inputs() == 0 && op.num_outputs() == 0);
@@ -615,6 +660,15 @@ void test_scalars_of_an_op_with_no_tensors() {
         kTest, *op.scalar_args().get(1).expect("a test reads an element at or past the count of its View") == 6);
     CRUCIBLE_TEST_ASSERT(kTest, region_a.content_hash() != region_b.content_hash()
                                     && "two ops that differ only in a scalar must give two content hashes");
+}
+
+void test_scalars_of_an_op_with_no_tensors() {
+    meta_rig::seal_global_tables();
+    crucible::test::RigLog metalog{};
+    meta_rig::with_idle_thread(metalog, crucible::PipelineLimits{},
+                               [](crucible::test::RigLog& log, BackgroundThread const& /*bt*/, auto& stopped) noexcept {
+                                   check_scalars_of_an_op_with_no_tensors(log, stopped);
+                               });
 
     ::fixy::check::pass(kTest, "  scalars_of_an_op_with_no_tensors:          PASSED\n");
 }
@@ -653,61 +707,69 @@ void test_publish_adds_no_block_to_the_region_arena() {
     ::fixy::check::pass(kTest, "  publish_adds_no_block_to_the_region_arena: PASSED\n");
 }
 
-// While no pipeline runs, a job runs on its caller, so a job of one thread
-// publishes a region and writes the publish scratch beside a second thread.
-// The second thread reads the bytes of that scratch in a job too, and the
-// mailbox of the jobs orders the two.  It reads the bytes of the build scratch
-// with the claim of the run state, which no job writes.  The thread sanitizer
-// reports no race.
-void test_scratch_bytes_beside_a_publish_job() {
+// The bytes of the publish scratch, which a job reads through either handle.
+template <class Handle>
+static Bytes publish_scratch_bytes(Handle& handle) noexcept {
+    Bytes bytes{size_t{0}};
+    handle.run_on_publish_stage(
+        [&bytes](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
+            bytes = owner.publish_scratch_retained_bytes(stage);
+        });
+    return bytes;
+}
+
+// While the pipeline runs, a job runs on the publish stage, between two
+// publications.  The publish stage writes the publish scratch at each publish,
+// and the thread of the Running handle reads the bytes of that scratch in a
+// job.  The mailbox of the jobs orders the two, so the thread sanitizer reports
+// no race.  Each region has a slot, so its publish computes a plan in the
+// scratch.  The bytes of the build scratch have no door of a Running handle.
+// The Stopped handle of the stop reads them.
+template <class Running>
+static void check_scratch_bytes_beside_a_publish(crucible::test::TraceRig& rig, BackgroundThread const& bt,
+                                                 Running running) noexcept {
     using namespace meta_rig;
-    seal_global_tables();
-
-    crucible::test::RigLog metalog{};
-    crucible::test::RigRing ring{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
-    // Each region has a slot, so its publish computes a plan in the scratch.
-    Work work;
-    (void)work.push_op_with_meta(metalog, 0);
-    constexpr size_t REGIONS = 32;
-    ::fixy::FixedArray<BackgroundThread::BuiltRegion, REGIONS> regions{};
-    for (::fixy::Index<REGIONS> const position : regions.indices())
-        static_cast<void>(regions.exchange(position, work.build_region(bt, *metalog.view())));
-
-    auto publish = [&bt, held = std::move(regions)]() mutable noexcept {
-        const auto bg = ::foundation::effects::testing::bg();
-        for (::fixy::Index<REGIONS> const position : held.indices()) {
-            BackgroundThread::BuiltRegion region = held.exchange(position, BackgroundThread::BuiltRegion{});
-            bt.run_on_publish_stage([&bg, &region](BackgroundThread::PublishStageView& owner,
-                                                   BackgroundThread::PublishStage const& stage) noexcept {
-                owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
-            });
+    constexpr uint32_t OPS_PER_ITER = 8;
+    constexpr uint32_t ITERS = 32;
+    Bytes last = publish_scratch_bytes(running);
+    for (uint32_t iter = 0; iter < ITERS; ++iter) {
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op) {
+            const ::fixy::FixedArray<crucible::TensorMeta, 1> record{output_meta(op)};
+            const MetaIndex index = rig.append_metas(record.view());
+            CRUCIBLE_TEST_ASSERT(kTest, index.is_valid());
+            TraceRing::Entry entry{};
+            entry.schema_hash = crucible::SchemaHash{0x9000ULL + op};
+            entry.shape_hash = crucible::ShapeHash{0xA000ULL + op};
+            entry.num_outputs = 1;
+            while (!rig.append_entry(entry, index, crucible::ScopeHash{0}, crucible::CallsiteHash{0})) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
         }
-    };
-    const auto read_publish_bytes = [](BackgroundThread& pipeline) noexcept {
-        Bytes bytes{size_t{0}};
-        pipeline.run_on_publish_stage(
-            [&bytes](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
-                bytes = owner.publish_scratch_retained_bytes(stage);
-            });
-        return bytes;
-    };
-    auto read = [&bt, read_publish_bytes]() noexcept {
-        constexpr uint32_t READS = 64;
-        Bytes last = read_publish_bytes(bt);
-        for (uint32_t round = 0; round < READS; ++round) {
-            const Bytes bytes = read_publish_bytes(bt);
-            CRUCIBLE_TEST_ASSERT(kTest, bytes >= last && "the publish scratch keeps its first block");
-            last = bytes;
-            static_cast<void>(bt.build_scratch_retained_bytes(bt.prove_quiescence()));
-        }
-    };
-    ::fixy::BgLoadCtx const ctx = bg_load_ctx();
-    static_cast<void>(
-        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(publish), std::move(read)));
-    CRUCIBLE_TEST_ASSERT(kTest, read_publish_bytes(bt) > Bytes{size_t{0}} && "no publish used the scratch");
+        const Bytes bytes = publish_scratch_bytes(running);
+        CRUCIBLE_TEST_ASSERT(kTest, bytes >= last && "the publish scratch keeps its first block");
+        last = bytes;
+    }
+    const uint64_t target = rig.ring_total_produced();
+    while (bt.total_processed.load_acquire() < target) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
+    CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() > 0u && "the pipeline published no region");
+    auto stopped = std::move(running).stop();
+    CRUCIBLE_TEST_ASSERT(kTest, publish_scratch_bytes(stopped) > Bytes{size_t{0}} && "no publish used the scratch");
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         stopped.build_scratch_retained_bytes() > Bytes{size_t{0}} && "no build used the scratch");
+}
 
-    ::fixy::check::pass(kTest, "  scratch_bytes_beside_a_publish_job:        PASSED\n");
+void test_scratch_bytes_beside_a_publish() {
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(
+        ::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), {},
+        [&rig](BackgroundThread const& bt, auto stopped) noexcept {
+            check_scratch_bytes_beside_a_publish(
+                rig, bt, std::move(stopped).start(::fixy::InitLoadCtx{::foundation::effects::testing::init()}));
+        });
+
+    ::fixy::check::pass(kTest, "  scratch_bytes_beside_a_publish:            PASSED\n");
 }
 
 // With no foreground, the store keeps the regions of the uncompiled queue and
@@ -716,48 +778,53 @@ void test_scratch_bytes_beside_a_publish_job() {
 // job, so the test counts the store after each one.  It also reads the content
 // hash of each region of the queue, so a region that the sweep released too
 // early is a use after free under the address sanitizer.
-void test_store_releases_what_left_the_queue() {
+template <class Stopped>
+static void check_store_releases_what_left_the_queue(crucible::test::RigLog& metalog, BackgroundThread const& bt,
+                                                     Stopped& stopped) noexcept {
     using namespace meta_rig;
-    using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
-    seal_global_tables();
-
     const auto bg = ::foundation::effects::testing::bg();
+    const uint32_t capacity = bt.uncompiled_regions().capacity();
+    constexpr uint32_t PUBLISHES = 20;
+    ::fixy::FixedArray<crucible::ContentHash, PUBLISHES> hashes{};
+    for (const ::fixy::Index<PUBLISHES> publish : hashes.indices()) {
+        Work work;
+        work.push_op_with_scalars(0, static_cast<int64_t>(publish.raw()), 7);
+        BuiltRegion region = work.build_region(stopped, *metalog.view());
+        hashes.set(publish, region.content_hash());
+        const auto publish_and_check = [&](BackgroundThread::PublishStageView& owner,
+                                           BackgroundThread::PublishStage const& stage) noexcept {
+            owner.publish_region(bg, stage, std::move(region), StreamPoint{});
+            const uint32_t published = static_cast<uint32_t>(publish.raw()) + 1u;
+            const uint32_t queued = ::fixy::min(published, capacity);
+            CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == ::fixy::max(queued, 1u)
+                                            && "the store keeps the queue and the last region only");
+            CRUCIBLE_TEST_ASSERT(kTest, owner.uncompiled_regions().size() == queued);
+            for (uint32_t age = 0; age < queued; ++age) {
+                const ::fixy::Index<PUBLISHES> pushed = ::fixy::Index<PUBLISHES>::check(publish.raw() - age)
+                                                            .expect("the queue holds at most the published regions");
+                const crucible::DagRef<crucible::RegionNode> node =
+                    owner.uncompiled_regions().at(stage, age).expect("a slot below the size holds a region");
+                CRUCIBLE_TEST_ASSERT(kTest, node->content_hash == hashes.at(pushed));
+            }
+            CRUCIBLE_TEST_ASSERT(kTest, owner.regions_dropped_full(stage) == 0u);
+        };
+        stopped.run_on_publish_stage(publish_and_check);
+    }
+}
+
+void test_store_releases_what_left_the_queue() {
+    using Count = ::fixy::Quantity<::fixy::unit::Element, uint32_t>;
+    meta_rig::seal_global_tables();
     const ::fixy::FixedArray<uint32_t, 3> capacities{0u, 1u, 3u};
     for (const uint32_t capacity : capacities) {
         crucible::test::RigLog metalog{};
-        crucible::test::RigRing ring{};
         crucible::PipelineLimits limits{};
         limits.region_store = Count{8};
         limits.uncompiled_queue = Count{capacity};
-        BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side(), limits};
-
-        constexpr uint32_t PUBLISHES = 20;
-        ::fixy::FixedArray<crucible::ContentHash, PUBLISHES> hashes{};
-        for (const ::fixy::Index<PUBLISHES> publish : hashes.indices()) {
-            Work work;
-            work.push_op_with_scalars(0, static_cast<int64_t>(publish.raw()), 7);
-            BackgroundThread::BuiltRegion region = work.build_region(bt, *metalog.view());
-            hashes.set(publish, region.content_hash());
-            const auto publish_and_check = [&](BackgroundThread::PublishStageView& owner,
-                                               BackgroundThread::PublishStage const& stage) noexcept {
-                owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
-                const uint32_t published = static_cast<uint32_t>(publish.raw()) + 1u;
-                const uint32_t queued = ::fixy::min(published, capacity);
-                CRUCIBLE_TEST_ASSERT(kTest, owner.region_count(stage) == ::fixy::max(queued, 1u)
-                                                && "the store keeps the queue and the last region only");
-                CRUCIBLE_TEST_ASSERT(kTest, owner.uncompiled_regions().size() == queued);
-                for (uint32_t age = 0; age < queued; ++age) {
-                    const ::fixy::Index<PUBLISHES> pushed =
-                        ::fixy::Index<PUBLISHES>::check(publish.raw() - age)
-                            .expect("the queue holds at most the published regions");
-                    const crucible::DagRef<crucible::RegionNode> node =
-                        owner.uncompiled_regions().at(stage, age).expect("a slot below the size holds a region");
-                    CRUCIBLE_TEST_ASSERT(kTest, node->content_hash == hashes.at(pushed));
-                }
-                CRUCIBLE_TEST_ASSERT(kTest, owner.regions_dropped_full(stage) == 0u);
-            };
-            bt.run_on_publish_stage(publish_and_check);
-        }
+        meta_rig::with_idle_thread(metalog, limits,
+                                   [](crucible::test::RigLog& log, BackgroundThread const& bt, auto& stopped) noexcept {
+                                       check_store_releases_what_left_the_queue(log, bt, stopped);
+                                   });
     }
 
     ::fixy::check::pass(kTest, "  store_releases_what_left_the_queue:        PASSED\n");

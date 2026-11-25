@@ -10,11 +10,9 @@
 #include <fixy/check/Check.h>
 #include <foundation/effects/Effect.h>
 
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <memory>
-#include <span>
+#include <utility>
 
 namespace {
 
@@ -63,15 +61,15 @@ struct Gate {
     static constexpr uint64_t FAMILY_B = 0x00B00000ULL;
     static constexpr uint64_t FAMILY_MASK = 0x00FF0000ULL;
 
-    // The region callback.  A test declares its Gate and the CallRef of this
-    // function before its BackgroundThread, so the two outlive the join of
+    // The region callback.  run_gated declares the Gate and the CallRef of this
+    // function before the frame of the thread, so the two outlive the join of
     // the pipeline thread.
     void on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
-                         BackgroundThread::PublishedRegion const& ready) noexcept;
+                         crucible::PublishedRegion const& ready) noexcept;
 };
 
 void Gate::on_region_ready(eff::Bg const&, BackgroundThread::PublishStage const&,
-                           BackgroundThread::PublishedRegion const& ready) noexcept {
+                           crucible::PublishedRegion const& ready) noexcept {
     const crucible::DagRef<crucible::RegionNode const> region =
         crucible::ConstRegionLink{ready.region}.expect("the publish stage gives a record of a region");
 
@@ -115,6 +113,38 @@ static void push(crucible::test::TraceRig& rig, uint64_t family, uint32_t op) {
 // start at the one after.
 static constexpr uint32_t OPS_PER_ITER = 8;
 static constexpr uint32_t A_ITERS = 6;
+// More regions than the two channels behind the publish stage hold.
+static constexpr uint32_t BACKLOG_ITERS = 400;
+
+// Pushes the ops of the iterations of family A.
+static void push_family_a(crucible::test::TraceRig& rig, uint32_t iters) {
+    for (uint32_t iter = 0; iter < iters; ++iter)
+        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
+            push(rig, Gate::FAMILY_A, op);
+}
+
+// What the callback of a gate does with the first region.
+enum class FirstRegion : uint8_t {
+    held,
+    published,
+};
+
+// Starts the pipeline of a thread whose region callback is the gate, and calls
+// the check with the gate, the rig, the thread and the Running handle.
+template <class Check>
+void run_gated(FirstRegion first, Check check) {
+    Gate gate;
+    gate.hold_next.store_release(first == FirstRegion::held);
+    const BackgroundThread::RegionReadyCall on_ready =
+        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
+    crucible::test::TraceRig rig{};
+    crucible::with_background_thread(eff::testing::test().alloc, rig.ring_side(), rig.log_side(),
+                                     {.on_region_ready = ::fixy::some(::fixy::erase_brand(::fixy::to(on_ready)))},
+                                     [&gate, &rig, &check](BackgroundThread const& bt, auto stopped) noexcept {
+                                         check(gate, rig, bt,
+                                               std::move(stopped).start(::fixy::InitLoadCtx{eff::testing::init()}));
+                                     });
+}
 
 }  // namespace publish_rig
 
@@ -135,20 +165,11 @@ namespace test_background_thread_run_in_row {
 //   3. the test waits for the detect stage to apply the reset at that point
 //   4. the callback is released, and the queued A regions drain
 // A family-A region published after step 3 is the defect.
-void test_reset_drops_inflight_regions() {
+template <class Running>
+static void check_reset_drops_inflight_regions(publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                               BackgroundThread const& bt, Running running) noexcept {
     using namespace publish_rig;
-
-    Gate gate;
-    const BackgroundThread::RegionReadyCall on_ready =
-        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    for (uint32_t iter = 0; iter < A_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
+    push_family_a(rig, A_ITERS);
 
     // Wait for the publish stage to be parked in the callback with at least
     // two boundaries behind it, so there is work in flight to drop.
@@ -166,8 +187,7 @@ void test_reset_drops_inflight_regions() {
 
     // The foreground's divergence handler does exactly this: each op in the
     // ring was recorded before the divergence.
-    const BackgroundThread::StreamPoint reset_point =
-        BackgroundThread::StreamPoint::restart_at(rig.ring_total_produced());
+    const crucible::StreamPoint reset_point = crucible::StreamPoint::restart_at(rig.ring_total_produced());
     bt.request_restart(rig.ring_total_produced());
     CRUCIBLE_TEST_ASSERT(kTest, bt.requested_reset() == reset_point);
 
@@ -198,7 +218,7 @@ void test_reset_drops_inflight_regions() {
     CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= target
                                     && "commit markers stalled behind a dropped region");
 
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
 
     CRUCIBLE_TEST_ASSERT(kTest,
                          gate.hash_mismatches.load_acquire() == 0
@@ -214,6 +234,13 @@ void test_reset_drops_inflight_regions() {
                    bt.iterations_completed.get());
 }
 
+void test_reset_drops_inflight_regions() {
+    publish_rig::run_gated(publish_rig::FirstRegion::held, [](publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                              BackgroundThread const& bt, auto running) noexcept {
+        check_reset_drops_inflight_regions(gate, rig, bt, std::move(running));
+    });
+}
+
 // A divergence reset applies at its point of the op stream, and not at the op
 // that the detect stage reads when it first sees the request.
 //
@@ -225,29 +252,17 @@ void test_reset_drops_inflight_regions() {
 // before the divergence too.  A reset that applies where the detect stage
 // waits puts them into the history after the reset, and their periods make
 // regions of the shape that diverged.
-void test_reset_applies_at_its_point() {
+template <class Running>
+static void check_reset_applies_at_its_point(publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                             BackgroundThread const& bt, Running running) noexcept {
     using namespace publish_rig;
-    // More regions than the two channels behind the publish stage hold.
-    constexpr uint32_t BACKLOG_ITERS = 400;
-
-    Gate gate;
-    const BackgroundThread::RegionReadyCall on_ready =
-        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
+    push_family_a(rig, BACKLOG_ITERS);
 
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    const BackgroundThread::StreamPoint reset_point =
-        BackgroundThread::StreamPoint::restart_at(rig.ring_total_produced());
+    const crucible::StreamPoint reset_point = crucible::StreamPoint::restart_at(rig.ring_total_produced());
     bt.request_restart(rig.ring_total_produced());
     gate.reset_observed.store_release(true);
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() != reset_point && "the detect stage waits inside the backlog");
@@ -265,7 +280,7 @@ void test_reset_applies_at_its_point() {
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
 
     CRUCIBLE_TEST_ASSERT(kTest,
                          bt.applied_reset() == reset_point && "the detect stage did not apply the reset at its point");
@@ -278,27 +293,24 @@ void test_reset_applies_at_its_point() {
                    gate.published.load_acquire(), bt.iterations_completed.get());
 }
 
+void test_reset_applies_at_its_point() {
+    publish_rig::run_gated(publish_rig::FirstRegion::held, [](publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                              BackgroundThread const& bt, auto running) noexcept {
+        check_reset_applies_at_its_point(gate, rig, bt, std::move(running));
+    });
+}
+
 // A mark that comes before the detect stage reaches an older restart is a
 // restart at the point of the mark.  A mark that replaced the restart would
 // leave the ops of the divergence in the detector.  A mark after an applied
 // reset stays a mark.  The held callback keeps the detect stage inside the
 // backlog, so it cannot apply the restart before the mark.
-void test_mark_keeps_an_unapplied_restart() {
+template <class Running>
+static void check_mark_keeps_an_unapplied_restart(publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                  BackgroundThread const& bt, Running running) noexcept {
     using namespace publish_rig;
-    constexpr uint32_t BACKLOG_ITERS = 400;
-    using StreamPoint = BackgroundThread::StreamPoint;
-
-    Gate gate;
-    const BackgroundThread::RegionReadyCall on_ready =
-        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
+    using crucible::StreamPoint;
+    push_family_a(rig, BACKLOG_ITERS);
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -331,11 +343,18 @@ void test_mark_keeps_an_unapplied_restart() {
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
     CRUCIBLE_TEST_ASSERT(kTest, bt.applied_reset() == StreamPoint::mark_at(later_mark_ops)
                                     && "the detect stage did not apply the mark");
 
     ::fixy::report(::fixy::Sink::Out, "  mark_keeps_an_unapplied_restart:           PASSED\n");
+}
+
+void test_mark_keeps_an_unapplied_restart() {
+    publish_rig::run_gated(publish_rig::FirstRegion::held, [](publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                              BackgroundThread const& bt, auto running) noexcept {
+        check_mark_keeps_an_unapplied_restart(gate, rig, bt, std::move(running));
+    });
 }
 
 // The build stage builds no work of a backlog that a reset made stale.
@@ -344,21 +363,11 @@ void test_mark_keeps_an_unapplied_restart() {
 // most the works that the channel to the publish stage holds and the one in
 // its hand.  The reset then comes at the point after the backlog.  Each
 // later work of the backlog was cut before that point.
-void test_reset_skips_the_stale_backlog() {
+template <class Running>
+static void check_reset_skips_the_stale_backlog(publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                BackgroundThread const& bt, Running running) noexcept {
     using namespace publish_rig;
-    constexpr uint32_t BACKLOG_ITERS = 400;
-
-    Gate gate;
-    const BackgroundThread::RegionReadyCall on_ready =
-        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    for (uint32_t iter = 0; iter < BACKLOG_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
+    push_family_a(rig, BACKLOG_ITERS);
     while (!gate.in_callback.load_acquire()) {
         CRUCIBLE_SPIN_PAUSE;
     }
@@ -369,7 +378,7 @@ void test_reset_skips_the_stale_backlog() {
     while (bt.total_processed.load_acquire() < target) {
         CRUCIBLE_SPIN_PAUSE;
     }
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
 
     CRUCIBLE_TEST_ASSERT(kTest, bt.iterations_completed.get() > BACKLOG_ITERS / 2
                                     && "the detect stage cut each work of the backlog");
@@ -380,25 +389,20 @@ void test_reset_skips_the_stale_backlog() {
                    bt.iterations_completed.get(), bt.works_built());
 }
 
+void test_reset_skips_the_stale_backlog() {
+    publish_rig::run_gated(publish_rig::FirstRegion::held, [](publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                              BackgroundThread const& bt, auto running) noexcept {
+        check_reset_skips_the_stale_backlog(gate, rig, bt, std::move(running));
+    });
+}
+
 // Each region that the pipeline publishes carries the content hash of the
 // canonical span fold, and the uncompiled queue keeps at most its bound.
-void test_published_regions_keep_their_hashes() {
+template <class Running>
+static void check_published_regions_keep_their_hashes(publish_rig::Gate& gate, crucible::test::TraceRig& rig,
+                                                      BackgroundThread const& bt, Running running) noexcept {
     using namespace publish_rig;
-
-    Gate gate;
-    // Nothing is parked here.  The test reads each callback, and holding one
-    // would only keep the pipeline waiting.
-    gate.hold_next.store_release(false);
-    const BackgroundThread::RegionReadyCall on_ready =
-        BackgroundThread::RegionReadyCall::bind<&Gate::on_region_ready>(gate);
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side(), on_ready};
-
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-
-    for (uint32_t iter = 0; iter < A_ITERS; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
+    push_family_a(rig, A_ITERS);
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
     const uint64_t target = rig.ring_total_produced();
@@ -407,7 +411,7 @@ void test_published_regions_keep_their_hashes() {
     }
     CRUCIBLE_TEST_ASSERT(kTest, bt.total_processed.load_acquire() >= target);
 
-    bt.stop();
+    static_cast<void>(std::move(running).stop());
 
     CRUCIBLE_TEST_ASSERT(kTest, bt.uncompiled_regions().total() > 0 && "no region published");
     CRUCIBLE_TEST_ASSERT(kTest, gate.hash_mismatches.load_acquire() == 0);
@@ -428,33 +432,55 @@ void test_published_regions_keep_their_hashes() {
                         static_cast<unsigned long long>(bt.uncompiled_regions().total()));
 }
 
-// Pushes iters iterations of family A through bt, waits until the pipeline
-// processed each op, and stops bt.  Gives the count of published regions.
-static uint64_t run_family_a(BackgroundThread& bt, crucible::test::TraceRig& rig, uint32_t iters) {
-    using namespace publish_rig;
-    bt.start(::fixy::InitLoadCtx{::foundation::effects::testing::init()});
-    for (uint32_t iter = 0; iter < iters; ++iter)
-        for (uint32_t op = 0; op < OPS_PER_ITER; ++op)
-            push(rig, Gate::FAMILY_A, op);
-
-    const uint64_t target = rig.ring_total_produced();
-    while (bt.total_processed.load_acquire() < target) {
-        CRUCIBLE_SPIN_PAUSE;
-    }
-    bt.stop();
-    return bt.uncompiled_regions().total();
+// Nothing is parked here.  The test reads each callback, and holding one would
+// only keep the pipeline waiting.
+void test_published_regions_keep_their_hashes() {
+    publish_rig::run_gated(
+        publish_rig::FirstRegion::published,
+        [](publish_rig::Gate& gate, crucible::test::TraceRig& rig, BackgroundThread const& bt, auto running) noexcept {
+            check_published_regions_keep_their_hashes(gate, rig, bt, std::move(running));
+        });
 }
 
-using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+// What a run of family A left: the count of published regions, the capacity of
+// the uncompiled queue, the retained limit, the bytes of blocks that the two
+// scratch arenas hold, and the counts of the region store.
+struct FamilyRun final {
+    uint64_t published = 0;
+    uint32_t queue_capacity = 0;
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch_limit{size_t{0}};
+    ::fixy::Quantity<::fixy::unit::Byte, size_t> scratch{size_t{0}};
+    uint32_t stored = 0;
+    uint64_t dropped = 0;
+};
 
-// The bytes of blocks that the two scratch arenas of a stopped pipeline hold.
-static Bytes scratch_retained_bytes(BackgroundThread& bt) {
-    Bytes publish_bytes{size_t{0}};
-    bt.run_on_publish_stage([&publish_bytes](BackgroundThread::PublishStageView& owner,
-                                             BackgroundThread::PublishStage const& stage) noexcept {
-        publish_bytes = owner.publish_scratch_retained_bytes(stage);
-    });
-    return ::fixy::saturating_add(bt.build_scratch_retained_bytes(bt.prove_quiescence()), publish_bytes);
+// Pushes iters iterations of family A through a pipeline with the limits, waits
+// until the pipeline processed each op, and stops it.
+static FamilyRun run_family_a(crucible::PipelineLimits const& limits, uint32_t iters) {
+    crucible::test::TraceRig rig{};
+    return crucible::with_background_thread(
+        eff::testing::test().alloc, rig.ring_side(), rig.log_side(), {.limits = limits},
+        [&rig, iters](BackgroundThread const& bt, auto stopped) noexcept {
+            auto running = std::move(stopped).start(::fixy::InitLoadCtx{eff::testing::init()});
+            publish_rig::push_family_a(rig, iters);
+            const uint64_t target = rig.ring_total_produced();
+            while (bt.total_processed.load_acquire() < target) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            auto stopped_again = std::move(running).stop();
+
+            FamilyRun run{.published = bt.uncompiled_regions().total(),
+                          .queue_capacity = bt.uncompiled_regions().capacity(),
+                          .scratch_limit = bt.scratch_retained_limit(),
+                          .scratch = stopped_again.build_scratch_retained_bytes()};
+            stopped_again.run_on_publish_stage([&run](BackgroundThread::PublishStageView& owner,
+                                                      BackgroundThread::PublishStage const& stage) noexcept {
+                run.scratch = ::fixy::saturating_add(run.scratch, owner.publish_scratch_retained_bytes(stage));
+                run.stored = owner.region_count(stage);
+                run.dropped = owner.regions_dropped_full(stage);
+            });
+            return run;
+        });
 }
 
 // A long run keeps the bytes of its scratch arenas.  The build stage ends an
@@ -465,42 +491,26 @@ static Bytes scratch_retained_bytes(BackgroundThread& bt) {
 // same bytes.  The run has no foreground, so the region store releases each
 // region that neither the uncompiled queue nor the last publish holds.
 void test_long_run_keeps_its_scratch() {
-    using namespace publish_rig;
     constexpr uint32_t LONG_RUN_ITERS = 10000;
 
-    crucible::test::TraceRig short_rig{};
-    BackgroundThread short_bt{::foundation::effects::testing::test().alloc, short_rig.ring_side(),
-                              short_rig.log_side()};
-    const uint64_t short_published = run_family_a(short_bt, short_rig, A_ITERS);
-    CRUCIBLE_TEST_ASSERT(kTest,
-                         short_published >= 1 && "the short run published no region, so its arenas witness nothing");
+    const FamilyRun short_run = run_family_a(crucible::PipelineLimits{}, publish_rig::A_ITERS);
+    CRUCIBLE_TEST_ASSERT(kTest, short_run.published >= 1
+                                    && "the short run published no region, so its arenas witness nothing");
 
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{::foundation::effects::testing::test().alloc, rig.ring_side(), rig.log_side()};
-    const uint64_t published = run_family_a(bt, rig, LONG_RUN_ITERS);
+    const FamilyRun run = run_family_a(crucible::PipelineLimits{}, LONG_RUN_ITERS);
+    CRUCIBLE_TEST_ASSERT(kTest, run.published >= LONG_RUN_ITERS / 2
+                                    && "the run published too few regions to witness the scratch");
     CRUCIBLE_TEST_ASSERT(kTest,
-                         published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
-    const Bytes scratch_bytes = scratch_retained_bytes(bt);
-    CRUCIBLE_TEST_ASSERT(kTest, scratch_bytes == scratch_retained_bytes(short_bt)
-                                    && "a scratch arena kept more blocks after its epochs");
-
-    uint32_t stored = 0;
-    uint64_t dropped = 0;
-    bt.run_on_publish_stage([&stored, &dropped](BackgroundThread::PublishStageView& owner,
-                                                BackgroundThread::PublishStage const& stage) noexcept {
-        stored = owner.region_count(stage);
-        dropped = owner.regions_dropped_full(stage);
-    });
-    CRUCIBLE_TEST_ASSERT(kTest, dropped == 0 && "a full region store discarded a published region");
-    CRUCIBLE_TEST_ASSERT(::fixy::TestRunnerCtx{::foundation::effects::testing::test()},
-                         stored == bt.uncompiled_regions().capacity()
-                             && "the store keeps the regions of the queue, the last one included");
+                         run.scratch == short_run.scratch && "a scratch arena kept more blocks after its epochs");
+    CRUCIBLE_TEST_ASSERT(kTest, run.dropped == 0 && "a full region store discarded a published region");
+    CRUCIBLE_TEST_ASSERT(kTest, run.stored == run.queue_capacity
+                                    && "the store keeps the regions of the queue, the last one included");
 
     ::fixy::check::pass(kTest,
                         "  long_run_keeps_its_scratch:                "
                         "PASSED (regions={}, stored={}, scratch={} bytes)\n",
-                        static_cast<unsigned long long>(published), stored,
-                        static_cast<unsigned long long>(scratch_bytes.raw()));
+                        static_cast<unsigned long long>(run.published), run.stored,
+                        static_cast<unsigned long long>(run.scratch.raw()));
 }
 
 // The limits of a pipeline refuse what passes them.  The uncompiled queue
@@ -509,33 +519,19 @@ void test_long_run_keeps_its_scratch() {
 // arena takes the retained limit of the limits, and keeps only its first
 // block after an epoch above it (test_core_bump_arena pins the refusal).
 void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
-    using namespace publish_rig;
     constexpr uint32_t ITERS = 64;
-    auto witness = ::foundation::effects::testing::test();
     crucible::PipelineLimits limits{};
     limits.region_store = ::fixy::Quantity<::fixy::unit::Element, uint32_t>{2};
     limits.scratch_retained = ::fixy::Quantity<::fixy::unit::Byte, size_t>{4096};
-    crucible::test::TraceRig rig{};
-    BackgroundThread bt{witness.alloc, rig.ring_side(), rig.log_side(), limits};
-    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_limit() == limits.scratch_retained);
-    CRUCIBLE_TEST_ASSERT(test,
-                         bt.uncompiled_regions().capacity() == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
-
-    const uint64_t queued = run_family_a(bt, rig, ITERS);
-
-    uint32_t stored = 0;
-    uint64_t dropped = 0;
-    bt.run_on_publish_stage([&stored, &dropped](BackgroundThread::PublishStageView& owner,
-                                                BackgroundThread::PublishStage const& stage) noexcept {
-        stored = owner.region_count(stage);
-        dropped = owner.regions_dropped_full(stage);
-    });
-    CRUCIBLE_TEST_ASSERT(test, stored == 2);
-    CRUCIBLE_TEST_ASSERT(test, queued == 2);
-    CRUCIBLE_TEST_ASSERT(test, dropped > 0);
-    CRUCIBLE_TEST_ASSERT(test, scratch_retained_bytes(bt).raw() <= size_t{2} << 20);
-    ::fixy::check::pass(test, "  limits_refuse_what_passes_them:            PASSED (stored={}, dropped={})\n", stored,
-                        static_cast<unsigned long long>(dropped));
+    const FamilyRun run = run_family_a(limits, ITERS);
+    CRUCIBLE_TEST_ASSERT(test, run.scratch_limit == limits.scratch_retained);
+    CRUCIBLE_TEST_ASSERT(test, run.queue_capacity == crucible::PipelineLimits::DEFAULT_UNCOMPILED_QUEUE);
+    CRUCIBLE_TEST_ASSERT(test, run.stored == 2);
+    CRUCIBLE_TEST_ASSERT(test, run.published == 2);
+    CRUCIBLE_TEST_ASSERT(test, run.dropped > 0);
+    CRUCIBLE_TEST_ASSERT(test, run.scratch.raw() <= size_t{2} << 20);
+    ::fixy::check::pass(test, "  limits_refuse_what_passes_them:            PASSED (stored={}, dropped={})\n",
+                        run.stored, static_cast<unsigned long long>(run.dropped));
 }
 
 }  // namespace test_background_thread_run_in_row
