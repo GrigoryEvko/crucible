@@ -1,0 +1,54 @@
+// Each call gives one object of a linear class or of a unique borrow class to two
+// parameters, and one of the two parameters can write or move the object.  The
+// callee can move the object under one name and then use it under the other.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token first{};
+    Token second{};
+};
+
+void write_two(Token& one, Token& other) noexcept;
+void write_whole_and_part(Pair& whole, Token& part) noexcept;
+void take_and_read(Token taken, Token const& old) noexcept;
+template <class View>
+void fill_two(View& one, View& other) noexcept;
+
+void same_object(Token& token) noexcept { write_two(token, token); }
+
+void through_a_reference(Token& token) noexcept {
+    Token& other = token;
+    write_two(token, other);
+}
+
+void same_member(Pair& pair) noexcept { write_two(pair.first, pair.first); }
+
+void whole_and_part(Pair& pair) noexcept { write_whole_and_part(pair, pair.first); }
+
+void moved_and_read() noexcept {
+    Token token{};
+    take_and_read(std::move(token), token);
+}
+
+void unique_view(fc::HeapArray<int>& items) noexcept {
+    items = fc::with_mut(std::move(items), [](auto view) noexcept { fill_two(view, view); });
+}
+
+}  // namespace planted

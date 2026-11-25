@@ -16,6 +16,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstdint>
@@ -100,7 +101,9 @@ constexpr ::fixy::TextView kEmptiedBlock{"fatal invariant failed: held.address_ 
 
 // Two parameters name one block, so the rule use-after-move does not see that
 // the old name moved.  Each function below ends the process: at the release of
-// the old name, and else at its own end.
+// the old name, and else at its own end.  The kind two-names of the rule
+// view-escape refuses each call that gives one block to two parameters, so
+// each such call of a test stands in a PROBE region.
 //
 // The block is released under the first name, and then under the old name.
 // With a block that a release leaves full, the bin gives one block to two
@@ -144,7 +147,9 @@ void old_name_of_a_block_ends_the_process(TestRunnerCtx const& test) {
             static_cast<void>(
                 heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
                     auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one block, so a release ends the process")
                     release_twice(scope, block, block);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return 0;
                 }));
         },
@@ -155,7 +160,9 @@ void old_name_of_a_block_ends_the_process(TestRunnerCtx const& test) {
             static_cast<void>(
                 heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
                     auto block = scope.template allocate<alloc::SizeClass{4}>();
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one block, so a release ends the process")
                     release_the_old_name(scope, block, block);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return 0;
                 }));
         },
@@ -167,7 +174,9 @@ void old_name_of_a_block_ends_the_process(TestRunnerCtx const& test) {
                 heap::mint_heap_scope(::foundation::effects::testing::test().alloc, [](auto& scope) noexcept {
                     auto block = scope.template allocate<alloc::SizeClass{4}>();
                     auto target = scope.template allocate<alloc::SizeClass{4}>();
+                    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one block, so a release ends the process")
                     release_the_old_name_after_an_assignment(scope, block, block, target);
+                    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
                     return 0;
                 }));
         },

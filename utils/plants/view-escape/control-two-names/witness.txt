@@ -1,0 +1,8 @@
+# No call gives one linear object to two parameters that can write or move it,
+# and no line names the rule view-escape: two objects, two references to const,
+# two members of one object, a plain class, two parts that a door lends, two
+# moved parts of one object, and two parts of a tuple that std::get lends.
+
+compile names src/names.cpp must-consume=on
+flag names -freflection
+exit names pass

@@ -14,8 +14,10 @@ Rule
     storage whose type holds a borrow with no brand of static storage.  The
     kind stale-borrow is a use of a name after an event that ends the object
     that the name borrows: a move, an assignment, a call or the end of a scope
-    (live.cpp, the ends).  The rule reads those finding lines in the sections
-    of the objects of the target all of one build
+    (live.cpp, the ends).  The kind two-names is a call whose two arguments
+    name one object of a linear class or of a unique borrow class, and one of
+    them can write or move it (live.cpp, the two names).  The rule reads those
+    finding lines in the sections of the objects of the target all of one build
     (assay.guard.engines.plugin.runner, the sections).  The same line from two
     objects counts one time.
 
@@ -58,6 +60,10 @@ MESSAGES = {
     "stale-borrow": (
         "a use reads a borrow of an object that ended ({entity}), so it reads dead storage.  Take the borrow again "
         "after the change, or change the owner after the last use of the borrow"
+    ),
+    "two-names": (
+        "a call gives one linear object or one unique borrow to two parameters ({entity}), so the callee can write "
+        "or move it under one name and then use it under the other name.  Give the object once"
     ),
 }
 

@@ -10,6 +10,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -242,17 +243,22 @@ static void test_for_each_register_run() {
         });
     CRUCIBLE_TEST_ASSERT(kTest, equal_runs == 2 && first_rest.size() == 5 && second_rest.size() == 5);
     // The door leaves no run under the old name of the run that it takes.  Two
-    // parameters name that run, so the rule use-after-move does not see it.
+    // parameters name that run, so the rule use-after-move does not see it.  The
+    // kind two-names of the rule view-escape refuses the call that gives one
+    // unique view to two parameters, so the call stands in a PROBE region.
     static_cast<void>(::foundation::core::build_fixed_array<std::byte, 37>([&source](auto run) noexcept {
         ::fixy::View<std::byte const> const bytes = run.view();
-        [&source, bytes](auto& view, auto& old_name) noexcept {
+        auto const store_and_read = [&source, bytes](auto& view, auto& old_name) noexcept {
             auto const [rest, source_rest] = simd::for_each_register_run<Bytes>(
                 std::move(view), ::fixy::View<std::byte const>{source.view()},
                 [](auto out, auto in) noexcept { simd::store(simd::load<Bytes>(in), std::move(out)); });
             CRUCIBLE_TEST_ASSERT(kTest, rest.size() == source_rest.size());
             CRUCIBLE_TEST_ASSERT(kTest,
                                  ::fixy::offset_of(bytes, ::fixy::View<std::byte const>{old_name.view()}).is_none());
-        }(run, run);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        store_and_read(run, run);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }));
     ::fixy::check::pass(kTest, "  test_for_each_register_run: PASSED\n");
 }

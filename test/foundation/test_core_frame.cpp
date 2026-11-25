@@ -10,6 +10,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
 #include <foundation/core/Frame.h>
@@ -651,11 +652,17 @@ void test_copy_of_fixed_extent() {
 
 // Gives Door one ViewMut of ten elements through two parameters, so the rule
 // use-after-move does not see that the second one moved.  Door consumes the
-// first one.
+// first one.  The kind two-names of the rule view-escape refuses each call that
+// gives one unique view to two parameters, so each such call of a test stands
+// in a PROBE region.
 template <auto Door>
 void check_old_name() {
     HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), 10, 1);
-    run = with_mut(std::move(run), [](auto whole) noexcept { Door(whole, whole); });
+    run = with_mut(std::move(run), [](auto whole) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        Door(whole, whole);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    });
 }
 
 // The same for a ViewMut of the fixed extent 6, with the View of the run of
@@ -666,7 +673,9 @@ void check_old_name_of_a_fixed_extent() {
     run = with_mut(std::move(run), [](auto whole) noexcept {
         View<int const> const elements = whole.view();
         auto part = ::foundation::core::take_window<6>(std::move(whole), 2).expect("six elements fit");
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
         Door(elements, part, part);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
@@ -695,10 +704,13 @@ void test_old_name_of_a_dynamic_extent() {
     check_old_name<[](auto& view, auto& old_name) noexcept {
         auto [low, high] = split_at(std::move(view), 4).expect("the offset is inside the run");
         CRUCIBLE_TEST_ASSERT(kTest, old_name.size() == 0);
-        [](auto& target, auto& source, auto& source_name) noexcept {
+        auto const move_into = [](auto& target, auto& source, auto& source_name) noexcept {
             target = std::move(source);
             CRUCIBLE_TEST_ASSERT(kTest, target.size() == 6 && source_name.size() == 0);
-        }(low, high, high);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        move_into(low, high, high);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }>();
     check_old_name<[](auto& view, auto& old_name) noexcept {
         bool const is_refused = split_at(std::move(view), 11).is_none();
@@ -774,10 +786,13 @@ void test_old_name_of_a_dynamic_extent() {
     HeapArray<unsigned char> bytes =
         ::foundation::core::mint_heap_array(allocation(), 5, static_cast<unsigned char>(1));
     bytes = with_mut(std::move(bytes), [](auto whole) noexcept {
-        [](auto& view, auto& old_name) noexcept {
+        auto const view_the_bytes = [](auto& view, auto& old_name) noexcept {
             auto const storage = ::foundation::core::byte_view(std::move(view));
             CRUCIBLE_TEST_ASSERT(kTest, storage.size() == 5 && old_name.size() == 0);
-        }(whole, whole);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        view_the_bytes(whole, whole);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 
@@ -839,7 +854,8 @@ constexpr ::fixy::TextView kLargeGivenUp{"foundation: fatal invariant failed: fi
 
 // Moves a ViewMut of the fixed extent Count out of its name, and gives the old
 // name to Door.  Two parameters name the view, so the rule use-after-move does
-// not see that the old name moved.  Door ends the process in a child.
+// not see that the old name moved.  Door ends the process in a child.  The call
+// that gives the view to the two parameters stands in a PROBE region.
 template <auto Door, std::size_t Count = 6>
 void expect_given_up() {
     constexpr bool is_large = Count * sizeof(int) > 4096;
@@ -849,11 +865,14 @@ void expect_given_up() {
             HeapArray<int> run = ::foundation::core::mint_heap_array(allocation(), Count + 4, 1);
             run = with_mut(std::move(run), [](auto whole) noexcept {
                 auto part = ::foundation::core::take_window<Count>(std::move(whole), 2).expect("the window fits");
-                [](auto& view, auto& old_name) noexcept {
+                auto const give_up_and_read = [](auto& view, auto& old_name) noexcept {
                     auto const moved = std::move(view);
                     static_cast<void>(moved);
                     Door(old_name);
-                }(part, part);
+                };
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+                give_up_and_read(part, part);
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         is_large ? kLargeGivenUp : kGivenUp);

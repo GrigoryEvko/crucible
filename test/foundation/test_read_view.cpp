@@ -3,6 +3,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/Brand.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Identity.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
@@ -351,7 +352,9 @@ constexpr ::fixy::TextView kEmptiedLoan{"fatal invariant failed: source.identity
 
 // Two parameters name one object, so the rule use-after-move does not see that
 // the old name moved.  Each function below ends the process: at the door that
-// gets the old name, and else at its own end.
+// gets the old name, and else at its own end.  The kind two-names of the rule
+// view-escape refuses each call that gives one loan or one parked token to two
+// parameters, so each such call of a test stands in a PROBE region.
 //
 // The pair ends its loan under the first names, and then under the old names.
 // With a pair that a move leaves full, the second end gives a second token of
@@ -394,14 +397,18 @@ void test_old_names_of_a_moved_loan_end_the_process(::fixy::TestRunnerCtx const&
         test,
         [] noexcept {
             auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+            CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one linear token, and the door ends the process")
             end_the_loan_twice(loan, loan, lent, lent);
+            CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         },
         kForeignLoan);
     ::fixy::check::expect_dies(
         test,
         [] noexcept {
             auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
+            CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one linear token, and the door ends the process")
             end_the_old_lent(loan, lent, lent);
+            CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         },
         kForeignLoan);
     ::fixy::check::expect_dies(
@@ -409,7 +416,9 @@ void test_old_names_of_a_moved_loan_end_the_process(::fixy::TestRunnerCtx const&
         [] noexcept {
             auto [loan, lent] = mint_read_loan(mint_permission_root<ConfigData>());
             static_cast<void>(lent);
+            CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one linear token, and the door ends the process")
             open_a_view_of_the_old_loan(loan, loan);
+            CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
         },
         kEmptiedLoan);
 }

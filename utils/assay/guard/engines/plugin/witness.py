@@ -284,8 +284,8 @@ BORROW_ERROR = "this arm of a borrow match writes the sum that the match reads (
 # of borrow.cpp).
 BORROW_LOOP_MARK = "loop "
 BORROW_LOOP_ERROR = "this body of a loop over a sum writes the sum that the loop reads ({entity})"
-# The rule view-escape, and the start of the error of each of its kinds: a return, a store, an object of static storage
-# and a use (the errors of utils/tools/quarantine/escape.cpp and live.cpp).
+# The rule view-escape, and the start of the error of each of its kinds: a return, a store, an object of static storage,
+# a use and a call (the errors of utils/tools/quarantine/escape.cpp and live.cpp).
 ESCAPE_RULE = "view-escape"
 ESCAPE_ERRORS = {
     "escaped-borrow": "this function gives back a {entity}, and that object ends with the frame of the function",
@@ -294,6 +294,7 @@ ESCAPE_ERRORS = {
         "an object of static or thread storage duration holds a borrow that names no object of static storage: {entity}"
     ),
     "stale-borrow": "this use reads a {entity}",
+    "two-names": "this call gives one object to two parameters: {entity}",
 }
 # The rules that give an error in each mode for each finding: the contract rule, the rules binding-hook,
 # borrow-match and view-escape and the rules of the family unit fact.

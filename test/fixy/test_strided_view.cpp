@@ -12,6 +12,7 @@
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
 #include <fixy/check/Property.h>
+#include <foundation/Quarantine.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -659,7 +660,9 @@ void erased_writer_writes(::fixy::TestRunnerCtx const& test) noexcept {
 // Gives door one unique view of a 3 x 4 matrix through two parameters, so the
 // rule use-after-move does not see that the second one moved.  The sizes and
 // the strides of a fixed extent give a view of rank 2, and the ones of a
-// dynamic extent give a view of a dynamic rank.
+// dynamic extent give a view of a dynamic rank.  The kind two-names of the rule
+// view-escape refuses each call that gives one unique view to two parameters,
+// so each such call of a test stands in a PROBE region.
 template <std::size_t Extent, class Door>
 void check_old_name(Door door) noexcept {
     ::fixy::FixedArray<std::size_t, 2> const sizes{3, 4};
@@ -668,7 +671,9 @@ void check_old_name(Door door) noexcept {
         ::fixy::View<std::size_t const, Extent> const shape{sizes.view()};
         ::fixy::View<std::size_t const, Extent> const steps{strides.view()};
         auto unique = ::fixy::mint_strided_view_mut(std::move(run), shape, steps, 0).expect("the matrix fits");
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
         door(unique, unique);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }));
 }
 
@@ -685,14 +690,18 @@ void old_name_of_a_unique_view(::fixy::TestRunnerCtx const& test) noexcept {
     check_old_name<::fixy::dynamic_extent>(move_out);
     auto const move_over = [&test](auto& view, auto& old_name) noexcept {
         auto moved = std::move(view);
-        [&test](auto& target, auto& source, auto& source_name) noexcept {
+        auto const move_into = [&test](auto& target, auto& source, auto& source_name) noexcept {
             target = std::move(source);
             CRUCIBLE_TEST_ASSERT(test, target.count() == 12 && source_name.count() == 0);
-        }(old_name, moved, moved);
-        [&test](auto& target, auto& same) noexcept {
+        };
+        auto const move_into_itself = [&test](auto& target, auto& same) noexcept {
             target = std::move(same);
             CRUCIBLE_TEST_ASSERT(test, target.count() == 12);
-        }(old_name, old_name);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        move_into(old_name, moved, moved);
+        move_into_itself(old_name, old_name);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     };
     check_old_name<2>(move_over);
     check_old_name<::fixy::dynamic_extent>(move_over);
@@ -709,14 +718,17 @@ void old_name_of_a_unique_view(::fixy::TestRunnerCtx const& test) noexcept {
 
     static_cast<void>(::fixy::build_fixed_array<int, 12>([&test](auto run) noexcept {
         ::fixy::View<int const> const elements = run.view();
-        [&test, elements](auto& view, auto& old_name) noexcept {
+        auto const mint_and_read = [&test, elements](auto& view, auto& old_name) noexcept {
             ::fixy::FixedArray<std::size_t, 1> const sizes{12};
             ::fixy::FixedArray<std::size_t, 1> const strides{1};
             auto const unique =
                 ::fixy::mint_strided_view_mut(std::move(view), sizes.view(), strides.view(), 0).expect("it fits");
             CRUCIBLE_TEST_ASSERT(test, unique.count() == 12);
             CRUCIBLE_TEST_ASSERT(test, ::fixy::offset_of(elements, ::fixy::View<int const>{old_name.view()}).is_none());
-        }(run, run);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        mint_and_read(run, run);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     }));
     pass(test, "  old_name_of_a_unique_view: PASSED\n");
 }

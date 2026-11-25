@@ -1,0 +1,58 @@
+// No call gives one object of a linear class or of a unique borrow class to two
+// parameters that can write or move it, and no line names the rule view-escape.
+// Two loans of one object, from a door or from a moved object, are no second
+// name.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+#include <tuple>
+#include <utility>
+
+namespace planted {
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal{};
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept = default;
+    Token(const Token&) = delete;
+};
+
+struct Pair {
+    Token first{};
+    Token second{};
+};
+
+struct Plain {
+    int value = 0;
+};
+
+class Holder {
+public:
+    Token& first() noexcept { return pair_.first; }
+    Token& second() noexcept { return pair_.second; }
+
+private:
+    Pair pair_{};
+};
+
+void write_two(Token& one, Token& other) noexcept;
+void read_two(Token const& one, Token const& other) noexcept;
+void write_plain(Plain& one, Plain& other) noexcept;
+void take_two(Token one, Token other) noexcept;
+
+void two_objects(Token& token, Token& other) noexcept { write_two(token, other); }
+
+void two_reads(Token& token) noexcept { read_two(token, token); }
+
+void two_members(Pair& pair) noexcept { write_two(pair.first, pair.second); }
+
+void plain_data(Plain& plain) noexcept { write_plain(plain, plain); }
+
+void parts_from_a_door(Holder& holder) noexcept { write_two(holder.first(), holder.second()); }
+
+void parts_of_a_moved_object(Pair pair) noexcept { take_two(std::move(pair.first), std::move(pair.second)); }
+
+void parts_of_a_tuple(std::tuple<Token, Token>& tuple) noexcept { write_two(std::get<0>(tuple), std::get<1>(tuple)); }
+
+}  // namespace planted

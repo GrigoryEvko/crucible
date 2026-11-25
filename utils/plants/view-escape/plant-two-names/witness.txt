@@ -1,0 +1,23 @@
+# Each call gives one object of a linear class or of a unique borrow class to two
+# parameters, and one of the two parameters can write or move it: the object
+# itself (34), the object and a reference local to it (38), one member (41), an
+# object and its member (43), a move into a parameter by value and a reference
+# (47), and a unique view (51).  The rule gives a line of the kind two-names for
+# each call.  The kind reads a linear class through the family linear, which
+# each build of the tree turns on with must-consume=on.
+
+compile names src/names.cpp must-consume=on
+flag names -freflection
+exit names fail
+finding names view-escape two-names src/names.cpp:34:52 | argument 0 and argument 1 of planted::write_two name token, a linear planted::Token
+error names src/names.cpp:34 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_two name token, a linear planted::Token
+finding names view-escape two-names src/names.cpp:38:14 | argument 0 and argument 1 of planted::write_two name token, a linear planted::Token
+error names src/names.cpp:38 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_two name token, a linear planted::Token
+finding names view-escape two-names src/names.cpp:41:50 | argument 0 and argument 1 of planted::write_two name pair.first, a linear planted::Token
+error names src/names.cpp:41 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_two name pair.first, a linear planted::Token
+finding names view-escape two-names src/names.cpp:43:64 | argument 0 and argument 1 of planted::write_whole_and_part name pair.first, a linear planted::Token
+error names src/names.cpp:43 | this call gives one object to two parameters: argument 0 and argument 1 of planted::write_whole_and_part name pair.first, a linear planted::Token
+finding names view-escape two-names src/names.cpp:47:18 | argument 0 and argument 1 of planted::take_and_read name token, a linear planted::Token
+error names src/names.cpp:47 | this call gives one object to two parameters: argument 0 and argument 1 of planted::take_and_read name token, a linear planted::Token
+finding names view-escape two-names src/names.cpp:51:77 | argument 0 and argument 1 of planted::fill_two name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>
+error names src/names.cpp:51 | this call gives one object to two parameters: argument 0 and argument 1 of planted::fill_two name view, a unique borrow foundation::core::ViewMut<int, foundation::core::<lambda()>, 18446744073709551615>

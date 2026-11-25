@@ -350,9 +350,16 @@ struct StaleUse {
 };
 
 // What one reading of a body gives.
+// A call whose two arguments name one object (the two names).
+struct TwoNames {
+    location_t location = UNKNOWN_LOCATION;
+    std::string entity;
+};
+
 struct Reading {
     std::unordered_map<std::uint64_t, Effect> effects;
     std::vector<StaleUse> uses;
+    std::vector<TwoNames> two_names;
 };
 
 // The effects of the unit, the functions with a body, the uses, and the owners of
@@ -2132,6 +2139,7 @@ private:
                                                       : place_of_pointee(argument_at(call, 0));
         }
         check_ends_beside(callee, arguments);
+        check_two_names(callee, arguments);
         CallFacts facts;
         facts.callee = callee;
         facts.result = is_constructor ? DECL_CONTEXT(callee) : TREE_TYPE(type);
@@ -2293,6 +2301,97 @@ private:
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // ── The two names ──
+
+    // The object that a trivial move into a parameter by value copies: the front
+    // end gives the object itself, with no constructor.  For an empty class it gives
+    // the source and then an empty value, in a COMPOUND_EXPR.  Null for a value
+    // that names no object.
+    static tree trivially_moved_object(tree node) {
+        node = strip_value(node);
+        if (node != NULL_TREE && TREE_CODE(node) == COMPOUND_EXPR) {
+            node = strip_value(TREE_OPERAND(node, 0));
+        }
+        if (node == NULL_TREE) {
+            return NULL_TREE;
+        }
+        switch (TREE_CODE(node)) {
+            case VAR_DECL:
+            case PARM_DECL:
+            case COMPONENT_REF:
+            case ARRAY_REF:
+            case INDIRECT_REF:
+                return node;
+            default:
+                return NULL_TREE;
+        }
+    }
+
+    // The object that ARGUMENT names itself, not through a loan: the object of a
+    // reference or of a pointer, or the source of a move into a parameter by value.
+    // A linear class and a unique borrow class have no copy, so a parameter by value
+    // gets a named object of such a class by a move.  kNoPlace for a closure and for
+    // an argument that names no such object.
+    int named_place(const Argument& argument) {
+        if (argument.parameter == NULL_TREE || argument.is_closure) {
+            return kNoPlace;
+        }
+        if (is_indirect_type(argument.parameter)) {
+            return place_of_pointee(argument.node);
+        }
+        int const source = moved_source(argument.node);
+        if (source != kNoPlace) {
+            return source;
+        }
+        tree const object = trivially_moved_object(argument.node);
+        return object != NULL_TREE ? place_of_lvalue(object) : kNoPlace;
+    }
+
+    // True when ARGUMENT can write or move its object.  A parameter by value with
+    // a named object gets it by a move.
+    static bool is_writing(const Argument& argument) {
+        return !is_indirect_type(argument.parameter) || argument.is_write;
+    }
+
+    // A call whose two arguments name one object of a linear class or of a unique
+    // borrow class, and one of them can write or move it (the two names).  Two loans
+    // of one object, from a door or from a moved object, are no second name.  An
+    // assignment whose two sides name one object is the kind self-move of the rule
+    // must-consume.  Complexity: the square of the arguments of the call.
+    void check_two_names(tree callee, const std::vector<Argument>& arguments) {
+        if (!reads_uses_ || !state_.is_reachable || arguments.size() < 2
+            || (callee != NULL_TREE && DECL_ASSIGNMENT_OPERATOR_P(callee))) {
+            return;
+        }
+        std::vector<int> places(arguments.size(), kNoPlace);
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            places[index] = named_place(arguments[index]);
+        }
+        for (std::size_t first = 0; first < arguments.size(); ++first) {
+            for (std::size_t second = first + 1; second < arguments.size(); ++second) {
+                if (places[first] == kNoPlace || places[second] == kNoPlace
+                    || !places_.overlaps(places[first], places[second])
+                    || !(is_writing(arguments[first]) || is_writing(arguments[second]))) {
+                    continue;
+                }
+                bool const is_first_outer = places_.holds(places[first], places[second]);
+                tree const object = element_class(places_.type(is_first_outer ? places[second] : places[first]));
+                bool const is_linear = object != NULL_TREE && CLASS_TYPE_P(object) && is_linear_class(object);
+                if (object == NULL_TREE || !(is_linear || is_unique_borrow_class(object))) {
+                    continue;
+                }
+                std::string const callee_text =
+                    callee != NULL_TREE ? qualified_name(callee) : std::string("a function pointer");
+                reading_.two_names.push_back(
+                    TwoNames{location_, "argument " + std::to_string(first) + " and argument " + std::to_string(second)
+                                            + " of " + callee_text + " name "
+                                            + places_.text(is_first_outer ? places[second] : places[first]) + ", "
+                                            + (is_linear ? "a linear " : "a unique borrow ") + type_text(object)});
+                return;
             }
         }
     }
@@ -2623,10 +2722,80 @@ bool has_effect(tree function) {
     return false;
 }
 
+// The local or the parameter that the argument NODE names, through its addresses,
+// members, elements, casts, std::move and the move into a parameter by value, or
+// null.  The front end gives a value of an empty class as the source and then an
+// empty value, in a COMPOUND_EXPR.
+tree root_of_argument(tree node) {
+    for (int depth = 0; node != NULL_TREE && depth < kTypeDepth; ++depth) {
+        node = strip_value(node);
+        if (node == NULL_TREE) {
+            break;
+        }
+        switch (TREE_CODE(node)) {
+            case COMPONENT_REF:
+            case ARRAY_REF:
+            case INDIRECT_REF:
+            case ADDR_EXPR:
+            case COMPOUND_EXPR:
+                node = TREE_OPERAND(node, 0);
+                continue;
+            case TARGET_EXPR:
+                node = TARGET_EXPR_INITIAL(node);
+                continue;
+            case CALL_EXPR:
+            case AGGR_INIT_EXPR: {
+                tree const constructor = cp_get_callee_fndecl_nofold(node);
+                if (identity_call(node) != NULL_TREE) {
+                    node = CALL_EXPR_ARG(node, 0);
+                    continue;
+                }
+                if (constructor != NULL_TREE && DECL_CONSTRUCTOR_P(constructor) && argument_count(node) == 2) {
+                    node = argument_at(node, 1);
+                    continue;
+                }
+                return NULL_TREE;
+            }
+            case VAR_DECL:
+            case PARM_DECL:
+                return node;
+            default:
+                return NULL_TREE;
+        }
+    }
+    return NULL_TREE;
+}
+
+// True for a call whose two arguments can name one object: one local names both,
+// or a reference local names one of them (the two names).
+bool can_name_twice(tree call) {
+    int const count = TREE_CODE(call) == AGGR_INIT_EXPR ? aggr_init_expr_nargs(call) : call_expr_nargs(call);
+    if (count < 2) {
+        return false;
+    }
+    std::vector<tree> roots;
+    for (int index = 0; index < count; ++index) {
+        tree const root = root_of_argument(TREE_CODE(call) == AGGR_INIT_EXPR ? AGGR_INIT_EXPR_ARG(call, index)
+                                                                             : CALL_EXPR_ARG(call, index));
+        if (root == NULL_TREE) {
+            continue;
+        }
+        bool const is_reference_local = VAR_P(root) && is_indirect_type(TREE_TYPE(root));
+        if (is_reference_local || std::find(roots.begin(), roots.end(), root) != roots.end()) {
+            return true;
+        }
+        roots.push_back(root);
+    }
+    return false;
+}
+
 tree find_borrow(tree* node, int* walk_subtrees, void*) {
     if (TYPE_P(*node)) {
         *walk_subtrees = 0;
         return NULL_TREE;
+    }
+    if ((TREE_CODE(*node) == CALL_EXPR || TREE_CODE(*node) == AGGR_INIT_EXPR) && can_name_twice(*node)) {
+        return *node;
     }
     if (TREE_CODE(*node) == DECL_EXPR && VAR_P(DECL_EXPR_DECL(*node))
         && holds_borrow(TREE_TYPE(DECL_EXPR_DECL(*node)))) {
@@ -2672,6 +2841,12 @@ void commit(tree function, Reading&& reading) {
     }
     for (StaleUse& use : reading.uses) {
         stale_uses.push_back(std::move(use));
+    }
+    for (const TwoNames& names : reading.two_names) {
+        Place place = place_of(names.location, Scope::quarantine);
+        if (place.file != nullptr) {
+            add_finding(Kind::two_names, nullptr, place, names.entity);
+        }
     }
 }
 
@@ -2867,6 +3042,16 @@ void report_stale_borrow(const Finding& finding) {
                              "borrow");
     inform(finding.spelling,
            "a test of the use itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
+           "%<foundation/Quarantine.h%>");
+}
+
+void report_two_names(const Finding& finding) {
+    error_at(finding.spelling, "this call gives one object to two parameters: %s", finding.entity.c_str());
+    inform(finding.spelling, "the object is linear or a unique borrow, so the callee can write or move it under one "
+                             "name and then use it under the other name");
+    inform(finding.spelling, "give the object once, or give the two parts that the callee needs");
+    inform(finding.spelling,
+           "a test of the call itself puts it in a %<CRUCIBLE_I_KNOW_WHAT_IM_DOING(\"PROBE: reason\")%> region of "
            "%<foundation/Quarantine.h%>");
 }
 

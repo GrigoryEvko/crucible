@@ -328,6 +328,9 @@
 //                           that can end the borrowed object: a move, an
 //                           assignment, a call or the end of a scope
 //                           (live.cpp)
+//     two-names             a call whose two arguments name one object of a
+//                           linear class or of a unique borrow class, and one
+//                           of them can write or move it (live.cpp)
 //     The rule proof-routes (expression.cpp, the proof routes):
 //     union                 a union definition
 //     pointer-cast          a cast to a pointer or a reference to a proof type
@@ -1325,6 +1328,7 @@ enum class Kind : std::uint8_t {
     stored_borrow,
     static_borrow,
     stale_borrow,
+    two_names,
     unrostered_witness,
     route_union,
     route_pointer_cast,
@@ -1681,6 +1685,8 @@ inline const char* kind_name(Kind kind) {
             return "static-borrow";
         case Kind::stale_borrow:
             return "stale-borrow";
+        case Kind::two_names:
+            return "two-names";
         case Kind::unrostered_witness:
             return "unrostered-witness";
         case Kind::route_union:
@@ -1944,6 +1950,7 @@ inline Rule rule_of(Kind kind) {
         case Kind::stored_borrow:
         case Kind::static_borrow:
         case Kind::stale_borrow:
+        case Kind::two_names:
             return Rule::view_escape;
         case Kind::unrostered_witness:
             return Rule::witness_roster;
@@ -2111,6 +2118,7 @@ inline bool is_each_mode_kind(Kind kind) {
         case Kind::stored_borrow:
         case Kind::static_borrow:
         case Kind::stale_borrow:
+        case Kind::two_names:
             return true;
         default:
             return false;
@@ -2273,6 +2281,7 @@ inline constexpr RuleKind kRuleKinds[] = {
     {"view-escape", "stored-borrow"},
     {"view-escape", "static-borrow"},
     {"view-escape", "stale-borrow"},
+    {"view-escape", "two-names"},
     {"witness-roster", "unrostered-witness"},
     {"proof-routes", "union"},
     {"proof-routes", "pointer-cast"},
@@ -3490,14 +3499,16 @@ void report_view_escape(const Finding& finding);
 // TYPE can hold a borrow.  held_owner_arguments() gives the count of the type
 // arguments that the values of an owner of the base hold, or -1 for a class that
 // is no such owner.  is_borrow_class() is true for a class that states refers{},
-// refers_unique{} or refers_deep{}, is_storage_owner() for a class of the base
-// that states owns_its_storage{}, is_block_keeper() for a class of the base that
-// states owns_its_storage{} or keeps_its_blocks{}, and is_outside_owner() for an
-// owner of the base that releases nothing at its end (the runs outside).  In a
-// wide reading an incomplete class can hold a borrow (set_wide_borrows).
+// refers_unique{} or refers_deep{}, is_unique_borrow_class() for a class that
+// states refers_unique{}, is_storage_owner() for a class of the base that states
+// owns_its_storage{}, is_block_keeper() for a class of the base that states
+// owns_its_storage{} or keeps_its_blocks{}, and is_outside_owner() for an owner
+// of the base that releases nothing at its end (the runs outside).  In a wide
+// reading an incomplete class can hold a borrow (set_wide_borrows).
 bool holds_borrow(tree type);
 int held_owner_arguments(tree type);
 bool is_borrow_class(tree type);
+bool is_unique_borrow_class(tree type);
 bool is_storage_owner(tree type);
 bool is_block_keeper(tree type);
 bool is_outside_owner(tree type);
@@ -3576,6 +3587,8 @@ const std::vector<OwnerClass>& owner_classes(tree type);
 void register_live_borrows(const char* plugin_name);
 void finish_live_borrows();
 void report_stale_borrow(const Finding& finding);
+// live.cpp: the error of one finding of the kind two-names of the rule view-escape.
+void report_two_names(const Finding& finding);
 
 // live.cpp: the effects of the calls, which the family borrow match reads too.
 
@@ -3710,6 +3723,9 @@ void finish_linear_rules();
 // parameter names, which the static walks of declaration.cpp give with its
 // name ENTITY (the sum holders).
 void check_static_linear_sum(tree decl, const std::string& entity);
+// linear.cpp: true for a linear class, which states linear{} or holds a linear
+// value.  The kind two-names of live.cpp reads it.
+bool is_linear_class(tree type);
 
 // An object of static or thread storage duration DECL that holds a borrow
 // type of the base: the kind static-borrow of the rule view-escape (the

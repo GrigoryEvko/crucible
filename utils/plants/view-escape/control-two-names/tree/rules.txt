@@ -1,0 +1,12 @@
+# The rule table of the control control-two-names of the rule view-escape.
+# The unit of src/ is quarantined.  The headers of the repository are outside
+# the root of the plant, so the table admits the names of the base that the
+# planted code uses.
+
+admit foundation::lifetime | the byte seal of the linear class
+admit foundation::linear | the mark of the linear class
+admit std::move | a cast to an rvalue reference
+admit std::tuple | the tuple whose parts a door of std lends
+admit std::get | the door of std that lends a part of a tuple
+
+quarantine src/

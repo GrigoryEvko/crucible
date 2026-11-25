@@ -7286,6 +7286,8 @@ void on_linear_collection(void*, void*) {
 
 }  // namespace
 
+bool is_linear_class(tree type) { return is_linear_type(type); }
+
 // An alias at namespace scope, from the walk of the declarations
 // (declaration.cpp), because the front end gives no event PLUGIN_FINISH_DECL
 // for an alias (the shapes).

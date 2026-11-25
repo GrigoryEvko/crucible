@@ -13,6 +13,7 @@
 #include <fixy/os/ThreadTasks.h>
 #include <foundation/ByteSeal.h>
 #include <foundation/Linear.h>
+#include <foundation/Quarantine.h>
 #include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/effects/Effect.h>
@@ -494,7 +495,9 @@ struct BorrowsConsumer {
 
 // Two parameters name one token, so the rule use-after-move does not see that
 // the old name moved.  Each function below ends the process: at the door that
-// gets the old name, and else at its own end.
+// gets the old name, and else at its own end.  The kind two-names of the rule
+// view-escape refuses each call that gives one token to two parameters, so
+// each such call of a test stands in a PROBE region.
 //
 // The token moves out under the first name, and the door opens the side under
 // the old one.
@@ -550,7 +553,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto& producer, auto&) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 move_under_the_old_name(split, producer, producer, OpensProducer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);
@@ -558,7 +563,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto&, auto& consumer) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 move_under_the_old_name(split, consumer, consumer, OpensConsumer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);
@@ -566,7 +573,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto& producer, auto&) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 open_under_the_old_name(split, producer, producer, BorrowsProducer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);
@@ -574,7 +583,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto&, auto& consumer) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 open_under_the_old_name(split, consumer, consumer, BorrowsConsumer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);
@@ -582,7 +593,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto& producer, auto&) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 open_on_two_threads(split, producer, producer, OpensProducer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);
@@ -590,7 +603,9 @@ void old_name_of_a_moved_token_ends_the_process(::fixy::TestRunnerCtx const& tes
         test,
         [] noexcept {
             with_split([](auto& split, auto&, auto& consumer) noexcept {
+                CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one token, and the door ends the process")
                 open_on_two_threads(split, consumer, consumer, OpensConsumer{});
+                CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
             });
         },
         kForeignToken);

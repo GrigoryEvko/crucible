@@ -26,6 +26,7 @@
 #include <fixy/check/Check.h>
 #include <fixy/concurrent/ParallelPointwise.h>
 #include <fixy/concurrent/ParallelTree.h>
+#include <foundation/Quarantine.h>
 #include <foundation/core/Pointwise.h>
 #include <foundation/core/Region.h>
 #include <foundation/core/Scan.h>
@@ -98,12 +99,17 @@ void run_under_two_names(Kernel kernel, Lent& lent, Lent& old_name) noexcept {
         }));
 }
 
-// Runs kernel under two names of one run.
+// Runs kernel under two names of one run.  The kind two-names of the rule
+// view-escape refuses each call that gives one unique view to two parameters,
+// so each such call of a test stands in a PROBE region.
 template <class Kernel>
 void run_kernel(Kernel kernel) noexcept {
     ::fixy::HeapArray<float> items = ones();
-    items =
-        ::fixy::with_mut(std::move(items), [kernel](auto lent) noexcept { run_under_two_names(kernel, lent, lent); });
+    items = ::fixy::with_mut(std::move(items), [kernel](auto lent) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        run_under_two_names(kernel, lent, lent);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    });
 }
 
 // The strided view of rank one over a run of kCount - 1 elements.
@@ -179,8 +185,11 @@ void adopt_under_two_names(::fixy::TestRunnerCtx const& test, Lent& lent, Lent& 
 
 void test_region_empties_its_run(::fixy::TestRunnerCtx const& test) {
     ::fixy::HeapArray<float> items = ones();
-    items =
-        ::fixy::with_mut(std::move(items), [&test](auto lent) noexcept { adopt_under_two_names(test, lent, lent); });
+    items = ::fixy::with_mut(std::move(items), [&test](auto lent) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        adopt_under_two_names(test, lent, lent);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    });
     CRUCIBLE_TEST_ASSERT(test, sum_of(items.view()) == kCount);
     pass(test, "  test_region_empties_its_run: PASSED\n");
 }
@@ -199,8 +208,11 @@ void sort_into_the_old_name(::fixy::TestRunnerCtx const& test, Lent& lent, Lent&
 void test_sort_gets_no_run_two_times(::fixy::TestRunnerCtx const& test) {
     auto const falling = [](std::size_t position) noexcept { return static_cast<float>(kCount - position); };
     ::fixy::HeapArray<float> items = ::fixy::mint_heap_array_with<float>(eff::testing::test().alloc, kCount, falling);
-    items =
-        ::fixy::with_mut(std::move(items), [&test](auto lent) noexcept { sort_into_the_old_name(test, lent, lent); });
+    items = ::fixy::with_mut(std::move(items), [&test](auto lent) noexcept {
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        sort_into_the_old_name(test, lent, lent);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
+    });
     bool is_each_kept = true;
     std::size_t position = 0;
     for (float const element : items) {
@@ -252,11 +264,14 @@ void give_the_old_name(Door door) noexcept {
     ::fixy::HeapArray<float> items = ones();
     items = ::fixy::with_mut(std::move(items), [door](auto lent) noexcept {
         auto part = core::take_window<kFixed>(std::move(lent), 0).expect("the part fits");
-        [door](auto& view, auto& old_name) noexcept {
+        auto const give_up_and_read = [door](auto& view, auto& old_name) noexcept {
             auto const moved = std::move(view);
             static_cast<void>(moved);
             door(old_name);
-        }(part, part);
+        };
+        CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: two parameters get one unique view to read its old name")
+        give_up_and_read(part, part);
+        CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     });
 }
 

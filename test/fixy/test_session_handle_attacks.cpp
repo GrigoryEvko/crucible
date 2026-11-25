@@ -465,13 +465,17 @@ struct Holder {
 // rule must-consume refuses a self-move that one function names, as the
 // fixture neg_sess_self_move_assign shows, and it reads one function at a
 // time.  So it does not see that the two reference parameters of move_into
-// name one handle.  The guard of the move assignment is the run-time backstop:
+// name one handle.  The kind two-names of the rule view-escape refuses the
+// call that gives one handle to the two parameters, so the call stands in a
+// PROBE region.  The guard of the move assignment is the run-time backstop:
 // the handle stays live and steps on.
 [[gnu::noinline]] void move_into(FreshHandle& target, FreshHandle& source) noexcept { target = std::move(source); }
 
 [[noreturn]] void self_move_through_two_names() {
     auto handle = fresh();
+    CRUCIBLE_I_KNOW_WHAT_IM_DOING("PROBE: a move assignment of a session handle into itself through two parameters")
     move_into(handle, handle);
+    CRUCIBLE_END_I_KNOW_WHAT_IM_DOING
     auto after = std::move(handle).send(Ping{3}, [](Wire&, Ping&) noexcept { return true; });
     std::move(after).detach(s::detach_reason::TestInstrumentation{});
     std::_Exit(kCorrectExit);

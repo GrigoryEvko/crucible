@@ -1545,6 +1545,11 @@ bool is_borrow_class(tree type) {
             || carries_mark(type, escape_names.refers_deep));
 }
 
+bool is_unique_borrow_class(tree type) {
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) && carries_mark(type, escape_names.refers_unique);
+}
+
 bool is_storage_owner(tree type) { return is_base_storage_owner(type); }
 
 bool is_block_keeper(tree type) { return is_base_storage_owner(type) || is_base_block_keeper(type); }
@@ -1566,6 +1571,10 @@ void check_static_borrow(tree decl, const std::string& entity) {
 void report_view_escape(const Finding& finding) {
     if (finding.kind == Kind::stale_borrow) {
         report_stale_borrow(finding);
+        return;
+    }
+    if (finding.kind == Kind::two_names) {
+        report_two_names(finding);
         return;
     }
     if (finding.kind == Kind::static_borrow) {
