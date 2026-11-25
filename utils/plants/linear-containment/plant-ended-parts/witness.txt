@@ -1,0 +1,14 @@
+# Holders that cannot move and whose linear parts do not each end at a door of
+# their own scope: one part with no door beside a part with one (41), a base
+# with no door (48), a part that is linear by its own parts, one of which has no
+# door (59), and a part with the annotation that holds a sum, whose end is no
+# door (65).  Each one is a pinned holder.
+
+compile holders src/holders.cpp linear-shapes=on
+flag holders -freflection
+exit holders pass
+judge holders
+finding holders linear-containment pinned-holder src/holders.cpp:41:8 | planted::OnePartWithNoDoor
+finding holders linear-containment pinned-holder src/holders.cpp:48:8 | planted::BaseWithNoDoor
+finding holders linear-containment pinned-holder src/holders.cpp:59:8 | planted::NestedWithNoDoor
+finding holders linear-containment pinned-holder src/holders.cpp:65:8 | planted::PartWithASum

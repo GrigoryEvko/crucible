@@ -1,0 +1,75 @@
+// Holders that cannot move and whose linear parts do not each end at a door of
+// their own scope: a part with no door beside a part with one, a base with no
+// door, a nested holder with such a part, and a part that holds a sum, which
+// the end of the part drops.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}, = ::foundation::lifetime::no_start_over_bytes{}]] Token {
+    constexpr Token() noexcept = default;
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&&) noexcept { return *this; }
+    Token(const Token&) = delete;
+};
+
+// A linear class whose end of the scope is a door.
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] Lease {
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+// The same, and the class holds a sum.
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] SumLease {
+    Option<Token> held{};
+    constexpr SumLease() noexcept = default;
+    constexpr SumLease(SumLease&& other) noexcept : held{static_cast<Option<Token>&&>(other.held)} {}
+    SumLease& operator=(SumLease&&) = delete;
+    SumLease(const SumLease&) = delete;
+    ~SumLease() {}
+};
+
+struct OnePartWithNoDoor {
+    OnePartWithNoDoor() = default;
+    OnePartWithNoDoor(OnePartWithNoDoor&&) = delete;
+    Lease lease;
+    Token token;
+};
+
+struct BaseWithNoDoor : Token {
+    BaseWithNoDoor() = default;
+    BaseWithNoDoor(BaseWithNoDoor&&) = delete;
+    Lease lease;
+};
+
+// A part that is linear by its own parts, one of which has no door.
+struct Pair {
+    Lease lease;
+    Token token;
+};
+struct NestedWithNoDoor {
+    NestedWithNoDoor() = default;
+    NestedWithNoDoor(NestedWithNoDoor&&) = delete;
+    Pair pair;
+};
+
+struct PartWithASum {
+    PartWithASum() = default;
+    PartWithASum(PartWithASum&&) = delete;
+    SumLease lease;
+};
+
+bool uses(OnePartWithNoDoor const&, BaseWithNoDoor const&, NestedWithNoDoor const&, PartWithASum const&) noexcept {
+    return true;
+}
+
+}  // namespace planted

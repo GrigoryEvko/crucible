@@ -1,0 +1,7 @@
+# A holder that cannot move, and whose each linear part ends at a door of its
+# own scope, is no pinned holder: the destructor of the holder ends each part
+# through that door.
+
+compile holders src/holders.cpp linear-shapes=on
+flag holders -freflection
+exit holders pass

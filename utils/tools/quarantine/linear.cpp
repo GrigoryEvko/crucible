@@ -568,8 +568,12 @@
 //     A class is read at PLUGIN_FINISH_TYPE, and an instance of a template
 //     where a declaration or a body names it.  The rules:
 //       linear-containment  a class that holds a linear part, cannot move and
-//                           has no door at the end of its scope (pinned-holder),
-//                           a class that holds a linear part and has a
+//                           has no door at the end of its scope
+//                           (pinned-holder).  The end of the scope of such a
+//                           class is a door too when the end of the scope of
+//                           each linear part is one, as for a class that is
+//                           linear by its parts.  Also a class that holds a
+//                           linear part and has a
 //                           user-provided copy (copyable-holder), and a
 //                           declaration whose type holds a class of the library
 //                           with a linear argument (library-holder).  Such a
@@ -5626,22 +5630,26 @@ bool has_user_copy(tree type) {
     return false;
 }
 
-// True when TYPE holds a linear base or a linear field by value.
-bool holds_linear_part(tree type) {
-    if (tree binfo = TYPE_BINFO(type)) {
-        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-            if (is_linear_type(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)))) {
-                return true;
-            }
+// The linear parts that a value of a class holds: a base or a data member by
+// value that is linear.
+struct LinearParts {
+    bool has_part = false;
+    // The end of the scope of each linear part is a door, and no class that is
+    // complete later changes that.  The destructor of a holder that cannot move
+    // then ends each part as the door of the part does.
+    bool each_part_ends = true;
+};
+
+LinearParts linear_parts_of(tree type) {
+    LinearParts result;
+    each_value_part(type, [&](tree part) {
+        if (is_linear_type(part)) {
+            ScopeEnd const part_end = scope_end_of(part);
+            result.has_part = true;
+            result.each_part_ends = result.each_part_ends && part_end.is_door && !part_end.is_open;
         }
-    }
-    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
-            && !TYPE_REF_P(TREE_TYPE(field)) && is_linear_type(TREE_TYPE(field))) {
-            return true;
-        }
-    }
-    return false;
+    });
+    return result;
 }
 
 void check_class(tree type, int depth = 0);
@@ -5716,8 +5724,9 @@ void check_class(tree type, int depth) {
     TypeFacts facts = facts_of(type);
     // A union ends no member at its end, and its owner chooses the active
     // member: the rule linear-forge reads it.
-    if (TREE_CODE(type) != UNION_TYPE && holds_linear_part(type)) {
-        if (facts.linearity == Linearity::none && !has_scope_door(type)) {
+    LinearParts const parts = TREE_CODE(type) != UNION_TYPE ? linear_parts_of(type) : LinearParts{};
+    if (parts.has_part) {
+        if (facts.linearity == Linearity::none && !has_scope_door(type) && !parts.each_part_ends) {
             record_shape(Kind::linear_pinned_holder, location, name);
         }
         if (has_user_copy(type)) {

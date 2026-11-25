@@ -492,7 +492,8 @@
 //     The other rules of the family linear (linear.cpp, the shapes):
 //     pinned-holder         linear-containment: a class that cannot move,
 //                           holds a linear part and has no door at the end of
-//                           its scope
+//                           its scope, where the end of the scope of a linear
+//                           part is no door either
 //     copyable-holder       linear-containment: a class that holds a linear
 //                           part and has a user-provided copy
 //     library-holder        linear-containment: a declaration whose type holds

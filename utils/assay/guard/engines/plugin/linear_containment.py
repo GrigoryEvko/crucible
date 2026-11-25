@@ -6,7 +6,10 @@ Rule
       pinned-holder     a class that holds a linear part by value, cannot move,
                         and has no door at the end of its scope: no annotation
                         scope_end_door and no destructor that is a door.  Its
-                        destructor drops the linear part
+                        destructor drops the linear part.  A class whose each
+                        linear part has a door at the end of its own scope is
+                        no pinned holder, because the destructor ends each part
+                        through that door
       copyable-holder   a class that holds a linear part and has a
                         user-provided copy constructor or copy assignment that
                         is not deleted, so a copy makes a second value
@@ -40,8 +43,8 @@ from assay.guard.engines.plugin import linear_family, runner
 RULE = "linear-containment"
 REFUSED_KINDS = linear_family.REFUSED_KINDS
 ACTIONS = {
-    "pinned-holder": "the class cannot move, and its destructor drops a linear value with no door.  Give the class the "
-    "annotation scope_end_door, or a door destructor",
+    "pinned-holder": "the class cannot move, and its destructor drops a linear value with no door.  Give the class, or "
+    "each linear part of it, the annotation scope_end_door, or give the class a door destructor",
     "copyable-holder": "a copy of the class makes a second linear value.  Remove the copy",
     "library-holder": "a class of the library holds a linear value, and its operations copy or drop it with no door.  "
     "Hold the value in Option, Result or OneOf of the Choice family",

@@ -1,0 +1,49 @@
+// Holders that cannot move and whose each linear part ends at a door of its own
+// scope: a member, a base, two parts, an array, a part that is linear by its
+// own parts, and a nested holder that cannot move.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+// A linear class whose end of the scope is a door.
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] Lease {
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+struct Pinned {
+    Pinned() = default;
+    Pinned(Pinned&&) = delete;
+    int word = 0;
+};
+
+struct Member {
+    Member() = default;
+    Member(Member&&) = delete;
+    Lease lease;
+};
+
+// The holder cannot move because a part of it cannot.
+struct TwoParts : Lease {
+    Pinned pinned;
+    Lease lease;
+};
+
+struct Pair {
+    Lease first;
+    Lease second;
+};
+struct Nested {
+    Pinned pinned;
+    Pair pair;
+    Member member;
+};
+
+bool uses(Member const&, TwoParts const&, Nested const&) noexcept { return true; }
+
+}  // namespace planted
