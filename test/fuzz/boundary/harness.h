@@ -111,8 +111,6 @@ inline constexpr std::size_t kMaxSeedBytes = std::size_t{1} << 20;
 // Writes the bytes of one seed, at most kMaxSeedBytes bytes.
 class SeedWriter {
 public:
-    SeedWriter() noexcept : bytes_{::foundation::core::mint_grow_list<std::byte>(kMaxSeedBytes)} {}
-
     // The object representation of value, the way the matching reader takes
     // it apart.
     template <class T>
@@ -123,33 +121,36 @@ public:
 
     void append_bytes(::fixy::View<std::byte const> part) noexcept {
         for (std::byte const byte : part) {
-            bytes_.append(test_alloc(), byte).expect("a seed holds at most kMaxSeedBytes bytes");
+            append_byte_(byte);
         }
     }
 
     void append_text(::fixy::TextView const text) noexcept {
         for (char const character : text) {
-            bytes_.append(test_alloc(), static_cast<std::byte>(character))
-                .expect("a seed holds at most kMaxSeedBytes bytes");
+            append_byte_(static_cast<std::byte>(character));
         }
     }
 
     // The count of the bytes so far.
     [[nodiscard]] std::size_t size() const noexcept { return bytes_.size(); }
 
-    // The bytes of the seed.  Complexity: one copy of each byte.
+    // The bytes of the seed, in one run.  Complexity: one copy of each byte.
     [[nodiscard]] SeedBytes finish() const noexcept {
-        SeedBytes seed = ::fixy::mint_heap_array_zeroed<std::byte>(test_alloc(), bytes_.size());
-        seed = ::fixy::with_mut(std::move(seed), [this](auto run) noexcept {
-            bytes_.with_view([&run](::fixy::View<std::byte const> all) noexcept {
-                ::fixy::copy(std::move(run), all).expect("the seed holds each byte of the writer");
+        return ::fixy::mint_heap_array_with<std::byte>(
+            test_alloc(), bytes_.size(), [this](std::size_t position) noexcept {
+                return *bytes_.get(position).expect("a position of the bytes of the writer");
             });
-        });
-        return seed;
     }
 
 private:
-    ::foundation::core::GrowList<std::byte> bytes_;
+    void append_byte_(std::byte byte) noexcept {
+        if (bytes_.size() == kMaxSeedBytes) [[unlikely]] {
+            ::fixy::fatal("a seed holds at most kMaxSeedBytes bytes");
+        }
+        bytes_.append(test_alloc(), byte);
+    }
+
+    ::fixy::SegmentList<std::byte> bytes_{};
 };
 
 // The seed of one text.

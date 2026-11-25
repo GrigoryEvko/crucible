@@ -3591,27 +3591,27 @@ foundation_neg_compile_test(neg_core_grow_text_view_kept_past_its_frame
 # closure, and a mutable member of a part of a const object.  A capture that
 # reaches a class with no visible definition stops the build with its name.
 foundation_neg_compile_test(neg_core_store_const_closure_keeps_the_view
-  "neg_core_store_const_closure_keeps_the_view\\.cpp:2[0-9]:[0-9]+: error: no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "neg_core_store_const_closure_keeps_the_view\\.cpp:2[0-9]:[0-9]+: error: no matching function for call to .foundation::core::SmallList<int, 2>::with_view"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_store_closure_body_keeps_the_view
-  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_store_pointer_member_of_a_const_object
-  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_store_mutable_member_of_a_const_part
-  "no matching function for call to .foundation::core::GrowList<int>::with_view"
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view"
   "StoresNoBorrowOutside")
 foundation_neg_compile_test(neg_core_store_capture_reaches_an_incomplete_class
   "a capture of the body reaches a class, and the definition of that class is not visible in this unit"
   "static assertion failed: .anonymous.::Hidden"
-  "no matching function for call to .foundation::core::GrowList<int>::with_view")
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view")
 # The store check of a frame body reads the element of an array, so a capture
 # of an array of a class that the unit only declares stops the build.
 foundation_neg_compile_test(neg_core_store_capture_reaches_an_array_of_an_incomplete_class
   "a capture of the body reaches a class, and the definition of that class is not visible in this unit"
   "static assertion failed: .anonymous.::Hidden"
-  "no matching function for call to .foundation::core::GrowList<int>::with_view")
+  "no matching function for call to .foundation::core::SmallList<int, 2>::with_view")
 # The value door build_at of a FixedArray builds an element in its place, so
 # its function holds no state and no argument reaches the array.
 foundation_neg_compile_test(neg_core_fixed_array_build_at_fn_with_state
@@ -5151,7 +5151,7 @@ foundation_neg_compile_test(neg_core_sealed_read_of_temporary
   "the object of a temporary Sealed dangles at the end of the full expression")
 foundation_neg_compile_test(neg_core_sealed_of_lent_list
   "template constraint failure for .template<class T>  requires  SealableObject<T> class foundation::core::Sealed."
-  "required for the satisfaction of .Shareable<T>. \\[with T = foundation::core::GrowList<int>\\]")
+  "required for the satisfaction of .Shareable<T>. \\[with T = foundation::core::SmallList<int, 2>\\]")
 foundation_neg_compile_test(neg_core_sealed_of_linear_list
   "template constraint failure for .template<class T>  requires  SealableObject<T> class foundation::core::Sealed."
   "required for the satisfaction of .DroppablePayload<T>. \\[with T = foundation::core::SegmentList<")

@@ -6,10 +6,11 @@
 #include <foundation/Platform.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Choice.h>
-#include <foundation/core/Grow.h>
 #include <foundation/core/Link.h>
+#include <foundation/core/Quantity.h>
 #include <foundation/core/Ref.h>
 #include <foundation/core/Region.h>
+#include <foundation/core/SmallList.h>
 #include <foundation/effects/Effect.h>
 
 #include <fixy/Ctx.h>
@@ -281,7 +282,8 @@ void test_object_of_a_frame_body_outlives_the_frame() {
     ::foundation::core::Option<::foundation::core::ArenaPosition<Copied, TestFamily>> position{
         ::foundation::core::none};
     {
-        auto list = ::foundation::core::mint_grow_list<std::uint32_t>(4);
+        auto list = ::foundation::core::mint_small_list<std::uint32_t, 2>(
+            ::foundation::core::Quantity<::foundation::core::unit::Element, std::size_t>{4});
         for (std::uint32_t value = 1; value <= 3; ++value)
             CRUCIBLE_FATAL_INVARIANT(list.append(alloc, value).is_ok());
         list.with_view([&arena, &position, alloc](View<std::uint32_t const> run) noexcept {

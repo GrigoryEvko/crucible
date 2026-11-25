@@ -11,7 +11,6 @@
 // harness as a SeedList.
 
 #include <fixy/Core.h>
-#include <foundation/core/Grow.h>
 #include <foundation/effects/Effect.h>
 
 #include <cstddef>
@@ -23,7 +22,7 @@ namespace crucible::fuzz::boundary {
 using SeedBytes = ::fixy::HeapArray<std::byte>;
 
 // The seeds of a harness, in the order of the harness.
-using SeedList = ::foundation::core::GrowList<SeedBytes>;
+using SeedList = ::fixy::SegmentList<SeedBytes>;
 
 // The largest count of the seeds of one list: the seeds of a harness and each
 // file of a corpus directory that the runner reads.
@@ -34,9 +33,7 @@ inline constexpr std::size_t kMaxSeeds = std::size_t{1} << 20;
 [[nodiscard]] constexpr auto test_alloc() noexcept { return ::foundation::effects::testing::test().alloc; }
 
 // An empty list of seeds.
-[[nodiscard]] inline SeedList empty_seed_list() noexcept {
-    return ::foundation::core::mint_grow_list<SeedBytes>(kMaxSeeds);
-}
+[[nodiscard]] inline SeedList empty_seed_list() noexcept { return SeedList{}; }
 
 // The bytes of bytes, in a seed of their own.  Complexity: one copy of each
 // byte.
@@ -48,9 +45,12 @@ inline constexpr std::size_t kMaxSeeds = std::size_t{1} << 20;
     return seed;
 }
 
-// Puts seed after the last seed of seeds.
+// Puts seed after the last seed of seeds.  A list holds at most kMaxSeeds seeds.
 inline void add_seed(SeedList& seeds, SeedBytes seed) noexcept {
-    seeds.append(test_alloc(), std::move(seed)).expect("a list holds at most kMaxSeeds seeds");
+    if (seeds.size() == kMaxSeeds) [[unlikely]] {
+        ::fixy::fatal("a list holds at most kMaxSeeds seeds");
+    }
+    seeds.append(test_alloc(), std::move(seed));
 }
 
 // The SeedList of the seeds of a harness.  A harness gives its seeds in a

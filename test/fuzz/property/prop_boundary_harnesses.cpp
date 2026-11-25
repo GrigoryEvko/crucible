@@ -82,14 +82,10 @@ struct Input {
 // harness with no seed.
 [[nodiscard]] boundary::EditBuffer picked_seed(HarnessIndex which, crucible::fuzz::prop::Rng& rng) noexcept {
     boundary::SeedList const seeds = seeds_of(which);
-    boundary::EditBuffer picked{::fixy::View<std::byte const>{}, kEditRoom};
-    if (seeds.size() == 0) return picked;
+    if (seeds.size() == 0) return boundary::EditBuffer{::fixy::View<std::byte const>{}, kEditRoom};
     std::size_t const position = rng.next_below(static_cast<std::uint32_t>(seeds.size()));
-    seeds.with_view([&picked, position](::fixy::View<boundary::SeedBytes const> all) noexcept {
-        ::fixy::View<std::byte const> const seed{all.get(position).expect("a position below the count")->view()};
-        picked = boundary::EditBuffer{seed, kEditRoom};
-    });
-    return picked;
+    ::fixy::View<std::byte const> const seed{seeds.get(position).expect("a position below the count")->view()};
+    return boundary::EditBuffer{seed, kEditRoom};
 }
 
 // Up to eight edits: flip a bit, write an edge byte, insert or delete a

@@ -1,5 +1,5 @@
-// A SmallList of no inline slot is a GrowList, so the mint refuses an inline
-// count of zero.
+// A SmallList of no inline slot holds each element on the heap, so the mint
+// refuses an inline count of zero.
 
 #include <foundation/core/SmallList.h>
 

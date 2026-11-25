@@ -236,26 +236,24 @@ inline void feed(::fixy::View<std::byte const> input) noexcept {
     }
     fs::DirectoryHandle const target = std::move(made).expect("the directory opened");
     SeedList const seeds = harness_seeds();
+    using WriteTruncate = ::fixy::atom::fs::mode<fs::open_mode::WriteTruncate>;
     bool is_written = true;
-    seeds.with_view([&target, &is_written](::fixy::View<SeedBytes const> all) noexcept {
-        using WriteTruncate = ::fixy::atom::fs::mode<fs::open_mode::WriteTruncate>;
-        std::size_t index = 0;
-        for (SeedBytes const& seed : all) {
-            ::foundation::os::PathText<::fixy::kPathBytes> file_name{};
-            file_name.append(::fixy::TextView{"seed-"}).expect("the name of a seed fits a path");
-            file_name.append_decimal(index).expect("the name of a seed fits a path");
-            ++index;
-            is_written = is_written
-                      && fs::mint_file_at<WriteTruncate>(kCtx, target.ref(), file_name.c_text())
-                             .match(
-                                 [&seed](::fixy::Linear<fs::FileOf<WriteTruncate>> opened) noexcept {
-                                     fs::FileOf<WriteTruncate> const file = std::move(opened).consume();
-                                     return fs::write_full(kCtx, file.ref(), ::fixy::View<std::byte const>{seed.view()})
-                                         .is_ok();
-                                 },
-                                 [](Errno) noexcept { return false; });
-        }
-    });
+    std::size_t index = 0;
+    for (SeedBytes const& seed : seeds) {
+        ::foundation::os::PathText<::fixy::kPathBytes> file_name{};
+        file_name.append(::fixy::TextView{"seed-"}).expect("the name of a seed fits a path");
+        file_name.append_decimal(index).expect("the name of a seed fits a path");
+        ++index;
+        is_written =
+            is_written
+            && fs::mint_file_at<WriteTruncate>(kCtx, target.ref(), file_name.c_text())
+                   .match(
+                       [&seed](::fixy::Linear<fs::FileOf<WriteTruncate>> opened) noexcept {
+                           fs::FileOf<WriteTruncate> const file = std::move(opened).consume();
+                           return fs::write_full(kCtx, file.ref(), ::fixy::View<std::byte const>{seed.view()}).is_ok();
+                       },
+                       [](Errno) noexcept { return false; });
+    }
     if (!is_written) {
         ::fixy::report(::fixy::Sink::Err, "fuzz: a seed did not write to '{}'\n", dir);
         return 1;
@@ -268,39 +266,37 @@ inline void feed(::fixy::View<std::byte const> input) noexcept {
 // walk order of a directory depends on the file system, so the order of the
 // bytes keeps the mutation stream the same on every host.
 [[nodiscard]] inline int run_seeds(SeedList const& seeds, InputCount mutations) noexcept {
-    seeds.with_view([mutations](::fixy::View<SeedBytes const> all) noexcept {
-        auto const seed_at = [all](std::size_t position) noexcept {
-            return ::fixy::View<std::byte const>{all.get(position).expect("a position of the seeds")->view()};
-        };
-        ::fixy::HeapArray<std::size_t> order = ::fixy::mint_heap_array_with<std::size_t>(
-            test_alloc(), all.size(), [](std::size_t position) noexcept { return position; });
-        ::fixy::HeapArray<std::size_t> scratch = ::fixy::mint_heap_array_zeroed<std::size_t>(test_alloc(), all.size());
-        auto const is_before = [&seed_at](auto const left, auto const right) noexcept {
-            return precedes(seed_at(left), seed_at(right));
-        };
-        order = ::foundation::core::with_mut(std::move(order), [&](auto elements) noexcept {
-            scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto room) noexcept {
-                ::foundation::core::sort_stably(std::move(elements), std::move(room), is_before)
-                    .expect("the order and its scratch hold one count");
-            });
+    auto const seed_at = [&seeds](std::size_t position) noexcept {
+        return ::fixy::View<std::byte const>{seeds.get(position).expect("a position of the seeds")->view()};
+    };
+    ::fixy::HeapArray<std::size_t> order = ::fixy::mint_heap_array_with<std::size_t>(
+        test_alloc(), seeds.size(), [](std::size_t position) noexcept { return position; });
+    ::fixy::HeapArray<std::size_t> scratch = ::fixy::mint_heap_array_zeroed<std::size_t>(test_alloc(), seeds.size());
+    auto const is_before = [&seed_at](auto const left, auto const right) noexcept {
+        return precedes(seed_at(left), seed_at(right));
+    };
+    order = ::foundation::core::with_mut(std::move(order), [&](auto elements) noexcept {
+        scratch = ::foundation::core::with_mut(std::move(scratch), [&](auto room) noexcept {
+            ::foundation::core::sort_stably(std::move(elements), std::move(room), is_before)
+                .expect("the order and its scratch hold one count");
         });
-        ::fixy::View<std::size_t const> const sorted = order.view();
-        auto const sorted_seed = [&seed_at, sorted](std::uint64_t random) noexcept {
-            std::size_t const position = random % sorted.size();
-            return seed_at(*sorted.get(position).expect("a position of the order"));
-        };
-        for (std::size_t const position : sorted) {
-            feed(seed_at(position));
-        }
-        MutationStream stream{};
-        for (std::uint64_t index = 0; index < mutations.raw(); ++index) {
-            ::fixy::View<std::byte const> const base = sorted_seed(stream.next());
-            ::fixy::View<std::byte const> const donor = sorted_seed(stream.next());
-            EditBuffer bytes{base, ByteCount{kMutationRoom}};
-            mutate(bytes, donor, stream);
-            feed(bytes.view());
-        }
     });
+    ::fixy::View<std::size_t const> const sorted = order.view();
+    auto const sorted_seed = [&seed_at, sorted](std::uint64_t random) noexcept {
+        std::size_t const position = random % sorted.size();
+        return seed_at(*sorted.get(position).expect("a position of the order"));
+    };
+    for (std::size_t const position : sorted) {
+        feed(seed_at(position));
+    }
+    MutationStream stream{};
+    for (std::uint64_t index = 0; index < mutations.raw(); ++index) {
+        ::fixy::View<std::byte const> const base = sorted_seed(stream.next());
+        ::fixy::View<std::byte const> const donor = sorted_seed(stream.next());
+        EditBuffer bytes{base, ByteCount{kMutationRoom}};
+        mutate(bytes, donor, stream);
+        feed(bytes.view());
+    }
     ::fixy::report(::fixy::Sink::Err, "fuzz: replayed {} seeds and {} mutations\n", seeds.size(), mutations.raw());
     return 0;
 }
