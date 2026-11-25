@@ -1,6 +1,7 @@
 // Microbench of the push and the pop of the three forms of
 // fixy/concurrent/PermissionedChannel.h on one thread: the wire, the merge and
-// the lanes.
+// the lanes.  The last row is the parked form of the lanes
+// (fixy/concurrent/ParkedChannel.h).
 //
 // Each row gives the latency of a push and the pop of the same item through
 // the handles of one channel, which one thread holds in its own cache, with
@@ -16,6 +17,8 @@
 // thousandths.
 
 #include <fixy/Core.h>
+#include <fixy/Ctx.h>
+#include <fixy/concurrent/ParkedChannel.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <foundation/Linear.h>
 #include <foundation/effects/Ctx.h>
@@ -40,6 +43,7 @@ constexpr cc::LaneIndex<kLanes> kSecondLane{::fixy::index<1>()};
 struct WireBenchTag {};
 struct MergeBenchTag {};
 struct LanesBenchTag {};
+struct ParkedLanesBenchTag {};
 
 // A time in nanoseconds, as the nearest count of picoseconds.
 [[nodiscard]] std::uint64_t picoseconds(double nanoseconds) noexcept {
@@ -83,6 +87,18 @@ template <class Consumer>
 template <class Consumer>
 [[gnu::noinline, gnu::aligned(64)]] Item receive_lanes_once(Consumer& consumer) noexcept {
     return item_or_zero(consumer.try_receive());
+}
+
+template <class Producer>
+[[gnu::noinline, gnu::aligned(64)]] bool push_parked_once(Producer& producer, ::fixy::BgLoadCtx const& ctx,
+                                                          Item item) noexcept {
+    return producer.try_push(ctx, item).is_ok();
+}
+
+template <class Consumer>
+[[gnu::noinline, gnu::aligned(64)]] Item receive_parked_once(Consumer& consumer,
+                                                             ::fixy::BgLoadCtx const& ctx) noexcept {
+    return item_or_zero(consumer.try_receive(ctx));
 }
 
 // The codegen rows: a push and a pop inlined in one loop of the caller.
@@ -212,11 +228,59 @@ void report_lanes() noexcept {
     static_cast<void>(std::move(first_lent).expect("the pool lends the producer of the first lane"));
 }
 
+// The parked lanes beside the plain lanes: each push notifies the count of
+// items, and a receive notifies the count of room of its lane after it
+// published the tail of the lane.  No thread waits, so each notify is one fence
+// and one load.
+void report_parked_lanes() noexcept {
+    auto root = perm::mint_permission_root<cc::channel_tag::Whole<cc::ChannelForm::lanes, ParkedLanesBenchTag>>();
+    using Lanes = cc::ParkedChannel<cc::channel_t<Item, kCapacity, decltype(root), kLanes>>;
+    auto [producer_root, consumer_perm] =
+        perm::mint_permission_split<Lanes::producer_tag, Lanes::consumer_tag>(std::move(root));
+    Lanes channel{std::move(producer_root)};
+    ::fixy::BgLoadCtx const ctx{::foundation::effects::testing::bg()};
+    ::foundation::effects::cap::Nondet const lend = ::foundation::effects::testing::test().nondet;
+    auto measure = [&ctx](auto first, auto second, auto consumer) noexcept {
+        bench::Report const row =
+            bench::run("parked lanes push into two lanes then two receives", [&ctx, first, second, consumer] {
+                bool const is_first_pushed = push_parked_once(*first, ctx, 7);
+                bench::do_not_optimize(is_first_pushed);
+                bool const is_second_pushed = push_parked_once(*second, ctx, 8);
+                bench::do_not_optimize(is_second_pushed);
+                Item const first_item = receive_parked_once(*consumer, ctx);
+                bench::do_not_optimize(first_item);
+                Item const second_item = receive_parked_once(*consumer, ctx);
+                bench::do_not_optimize(second_item);
+            });
+        print_row("parked lanes push into two lanes then two receives", row);
+    };
+    auto first_lent = cc::with_producer(
+        channel, lend, kFirstLane,
+        [&channel, &ctx, &measure, lend, token = std::move(consumer_perm)](auto first) mutable noexcept {
+            auto second_lent =
+                cc::with_producer(channel, lend, kSecondLane,
+                                  [&channel, &ctx, &measure, first_ref = ::fixy::to(first),
+                                   token = std::move(token)](auto second) mutable noexcept {
+                                      cc::with_consumer(channel, std::move(token),
+                                                        [&ctx, &measure, first_ref,
+                                                         second_ref = ::fixy::to(second)](auto consumer) noexcept {
+                                                            measure(first_ref, second_ref, ::fixy::to(consumer));
+                                                            std::move(consumer).close(ctx);
+                                                        });
+                                      std::move(second).close(ctx);
+                                  });
+            static_cast<void>(std::move(second_lent).expect("the pool lends the producer of the second lane"));
+            std::move(first).close(ctx);
+        });
+    static_cast<void>(std::move(first_lent).expect("the pool lends the producer of the first lane"));
+}
+
 }  // namespace
 
 int main() {
     report_wire();
     report_merge();
     report_lanes();
+    report_parked_lanes();
     return 0;
 }

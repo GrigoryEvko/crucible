@@ -5016,6 +5016,10 @@ fixy_test(test_parked_box_channel)
 # The merge form of the parked channel: three producers through a full merge,
 # and a consumer close that wakes each parked producer.
 fixy_test(test_parked_merge_channel)
+# The lanes form of the parked channel: the order of the lanes through full
+# lanes, and a wake at each notify of a lane, of its end and of the close of
+# the consumer.
+fixy_test(test_parked_lanes_channel)
 # A pipeline over parked channels: each stage gives its own context to the
 # doors of its handles, and each item comes out in order.
 fixy_test(test_parked_pipeline)
@@ -5049,7 +5053,15 @@ fixy_neg_compile_test(neg_parked_merge_pop_without_nondet
   "pops_with")
 fixy_neg_compile_test(neg_parked_merge_producer_release
   "no matching function for call to .*release"
-  "is_merge")
+  "is_pooled")
+# A parked producer of a lane has no release, and its producer door names the
+# lane.
+fixy_neg_compile_test(neg_parked_lanes_producer_release
+  "no matching function for call to .*release"
+  "is_pooled")
+fixy_neg_compile_test(neg_parked_lanes_producer_without_a_lane
+  "no matching function for call to .with_producer\\("
+  "ChannelForm::merge")
 fixy_neg_compile_test(neg_parked_box_refusal_dropped
   "ignoring return value of"
   "the code discards a temporary linear sum, so its payload can drop")

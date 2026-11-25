@@ -1,6 +1,6 @@
 #pragma once
 
-// A channel that owns the two event counts of its waits (the parked form).
+// A channel that owns the event counts of its waits (the parked form).
 // A wait that parks on an event count ends only when the other side notifies
 // the same count after it changes the condition of the wait.  With the counts
 // outside the channel, a consumer that pops with try_pop, or that notifies
@@ -13,6 +13,10 @@
 //   - A pop and a receive notify room.  The close of the consumer stores
 //     that the consumer is gone and notifies each waiter of room.  The
 //     producer parks on room.
+//
+// A wire and a merge hold one count of room.  A lanes channel holds one count
+// of room for each lane (the lanes form), so a pop of one lane wakes no
+// producer of another lane.
 //
 // No door of a parked end takes an event count, so no caller can pair a wait
 // with the wrong count.  Each door that notifies takes the context of the
@@ -76,10 +80,28 @@
 //     joins the ends of a plain channel.  The body ends each of its parked
 //     handles with close or release.
 //
+// Lanes form
+//     A producer handle of a lanes channel holds one lane, and it parks on the
+//     count of room of that lane.  At most one producer waits on each count.
+//     The consumer reads the lanes in the order of the turn, and it parks on
+//     the one count of items while the lane of the turn is empty and open.  So
+//     each push notifies items, and so does the end of a lane: close(ctx) &&
+//     ends the lane.  A lane that no producer uses must be ended, as in the
+//     plain form.
+//
+//     The consumer frees the cells of a lane only when it publishes the tail of
+//     that lane (the room of fixy/concurrent/LaneRing.h): at each tail_interval
+//     pops of the lane, and at the first Empty answer after an item, for each
+//     lane of the turn.  Each publish notifies the count of its lane.  So a
+//     producer that waits for room while the consumer waits for an item of
+//     another lane gets each free cell before the consumer parks.  The door
+//     that waits with no pop (wait_for_item_until) publishes before it waits,
+//     too.
+//
 // Cost
 //     Each push and each pop pays one seq_cst fence and one load of the count
 //     that it notifies, and a notify that finds a waiter makes one system
-//     call.
+//     call.  A pop of a lanes channel pays them only when it publishes a tail.
 
 #include <fixy/Qtt.h>
 #include <fixy/concurrent/ChannelEnd.h>
@@ -97,6 +119,7 @@
 #include <foundation/Transfer.h>
 #include <foundation/core/Atomic.h>
 #include <foundation/core/Choice.h>
+#include <foundation/core/Index.h>
 #include <foundation/core/Ref.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/permissions/Permission.h>
@@ -152,6 +175,18 @@ class ParkedProducerHandle;
 template <class Channel, ::foundation::brand::IsBrand Scope>
 class ParkedConsumerHandle;
 
+namespace detail {
+
+// The counts of room of a parked channel: one for each lane of a lanes
+// channel, and one for each other form.
+template <class Channel>
+inline constexpr std::size_t parked_room_count_v = 1;
+template <class Channel>
+    requires ChannelOfForm<Channel, ChannelForm::lanes>
+inline constexpr std::size_t parked_room_count_v<Channel> = static_cast<std::size_t>(Channel::lane_count);
+
+}  // namespace detail
+
 // The parked form of a wire (the shape).  Channel is a wire of fixy/
 // concurrent/PermissionedChannel.h, whose push takes a value by reference to
 // const, or a wire of fixy/concurrent/PermissionedBoxChannel.h, whose push
@@ -168,13 +203,20 @@ class ParkedConsumerHandle;
 // one cell, so it wakes one parked producer.  The close of the consumer wakes
 // each parked producer.
 //
+// Channel can also be a lanes channel of fixy/concurrent/PermissionedChannel.h
+// (the lanes form).  Its producer handles come from the pool too, and the
+// producer end has close and no release: the close of a producer ends its
+// lane.  Its order is a function of the items of the lanes, so a pop takes
+// each context.
+//
 // The producers and the consumer use the channel on their threads at the same
 // time by design.  Each part is private: the inner channel states
-// synchronized{}, and the two counts and the state of the consumer are atomic
+// synchronized{}, and the counts and the state of the consumer are atomic
 // cells.  So the parked channel states synchronized{} (foundation/
 // Transfer.h).
 template <class Channel>
     requires ChannelOfForm<Channel, ChannelForm::wire> || ChannelOfForm<Channel, ChannelForm::merge>
+          || ChannelOfForm<Channel, ChannelForm::lanes>
 class[[= ::foundation::transfer::synchronized{}]] ParkedChannel : public ::foundation::Pinned<ParkedChannel<Channel>> {
 public:
     using value_type = typename Channel::row_payload;
@@ -185,11 +227,22 @@ public:
     static constexpr ChannelForm channel_form = Channel::channel_form;
     static constexpr std::size_t channel_capacity = Channel::channel_capacity;
 
+    // The index of a count of room, which is the index of its lane in the
+    // lanes form.  Each other form has one count of room, and no door of it
+    // takes a lane.
+    using lane_index = ::foundation::core::Index<detail::parked_room_count_v<Channel>>;
+
     // True for the merge form.
     static constexpr bool is_merge = channel_form == ChannelForm::merge;
+    // True for the lanes form.
+    static constexpr bool is_lanes = channel_form == ChannelForm::lanes;
+    // True for a form whose producer root lives in a pool, so a producer
+    // handle holds a share and no token.
+    static constexpr bool is_pooled = is_merge || is_lanes;
 
-    // True when a pop door can take the context: each context for a wire, and
-    // a context that owns Nondet for a merge, whose pop reads the schedule.
+    // True when a pop door can take the context: each context for a wire and
+    // for a lanes channel, and a context that owns Nondet for a merge, whose
+    // pop reads the schedule.
     template <class Ctx>
     static constexpr bool pops_with =
         !is_merge || ::foundation::effects::CtxOwnsAllOf<Ctx, ::foundation::effects::Effect::Nondet>;
@@ -206,13 +259,13 @@ public:
 
     // A wire starts with no handle.  The caller keeps the two tokens.
     ParkedChannel() noexcept
-        requires(!is_merge)
+        requires(!is_pooled)
     = default;
 
-    // The pool of the merge parks the producer root, and each producer handle
-    // holds one share of it.
+    // The pool of a merge or of a lanes channel parks the producer root, and
+    // each producer handle holds one share of it.
     explicit ParkedChannel(::foundation::permissions::Permission<producer_tag, brand_type>&& producer_root) noexcept
-        requires is_merge
+        requires is_pooled
         : inner_{std::move(producer_root)} {}
 
     // The key of the constructor of a parked handle (shape).  It holds the
@@ -371,7 +424,9 @@ public:
         }
 
         // Ends the stream, and then notifies items, so a consumer that parks
-        // after its last receive reads the end.
+        // after its last receive reads the end.  A producer of a lanes channel
+        // ends its lane, and the consumer that waits for the lane of its turn
+        // then reads the end of it.
         template <class Ctx>
             requires ::fixy::futex::CtxMayUseFutex<Ctx>
         void close(Ctx const& ctx) && noexcept {
@@ -381,16 +436,34 @@ public:
         }
 
         // Gives the token back and keeps the stream open.  No condition of a
-        // wait changes, so the door notifies nothing.  A producer of a merge
-        // holds a share of the pool and no token, so it has no release.
+        // wait changes, so the door notifies nothing.  A producer of a merge or
+        // of a lanes channel holds a share of the pool and no token, so it has
+        // no release.
         [[nodiscard]] ::foundation::permissions::Permission<producer_tag, brand_type> release() && noexcept
-            requires(!is_merge)
+            requires(!is_pooled)
         {
             this->mark_consumed(__PRETTY_FUNCTION__, __LINE__);
             return std::move(inner_).release();
         }
 
+        // The lane of the producer of a lanes channel.
+        [[nodiscard]] lane_index lane() const noexcept
+            requires is_lanes
+        {
+            return inner_.lane();
+        }
+
     private:
+        // The count of room on which this producer parks: the count of its
+        // lane, or the one count of a wire or a merge.
+        [[nodiscard]] EventCount& room_() const noexcept {
+            if constexpr (is_lanes) {
+                return channel_->rooms_.at(inner_.lane());
+            } else {
+                return channel_->rooms_.at(::foundation::core::index<0>());
+            }
+        }
+
         // One push of an item that moves: the ring takes the item of pending,
         // or gives it back into pending.  True when the ring took it.
         [[nodiscard]] bool push_pending_(::foundation::core::Option<value_type>& pending) noexcept {
@@ -437,8 +510,8 @@ public:
             };
             PushRefusal refusal = PushRefusal::ConsumerGone;
             if constexpr (sizeof...(Bound) == 0) {
-                wait_for<Policy>(ctx, channel.room_, condition);
-            } else if (wait_for<Policy>(ctx, channel.room_, condition, bound...) == EventWaitEnd::deadline_passed) {
+                wait_for<Policy>(ctx, room_(), condition);
+            } else if (wait_for<Policy>(ctx, room_(), condition, bound...) == EventWaitEnd::deadline_passed) {
                 refusal = PushRefusal::Full;
             }
             if (!is_pushed) {
@@ -513,7 +586,7 @@ public:
             this->require_live("a pop through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             ::foundation::core::Option<value_type> popped = pop_(ctx);
-            if (popped.is_some()) channel_->room_.notify_one(ctx);
+            if (popped.is_some()) notify_room_of_item_(ctx);
             return popped;
         }
 
@@ -526,7 +599,7 @@ public:
             this->require_live("a receive through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
             ::foundation::core::Result<value_type, NoItem> received = receive_(ctx);
-            if (received.is_ok()) channel_->room_.notify_one(ctx);
+            if (received.is_ok()) notify_room_of_item_(ctx);
             return received;
         }
 
@@ -540,7 +613,7 @@ public:
                                __LINE__);
             ::foundation::core::Result<value_type, NoItem> received = receive_(ctx);
             if (received.is_ok()) {
-                channel_->room_.notify_one(ctx);
+                notify_room_of_item_(ctx);
                 return received;
             }
             return receive_after_wait_<Policy>(ctx);
@@ -563,7 +636,7 @@ public:
             }
             ::foundation::core::Result<value_type, NoItem> received =
                 std::move(got).expect("the test above found a receive");
-            if (received.is_ok()) channel_->room_.notify_one(ctx);
+            if (received.is_ok()) notify_room_of_item_(ctx);
             return received;
         }
 
@@ -572,26 +645,34 @@ public:
         // can do other work between the end of the wait and the pop, such as a
         // job of a mailbox that notifies no count.  The result is
         // deadline_passed when the ring is still empty and the stream is still
-        // open.  A deadline needs the park, so Policy parks.  The call is out
-        // of line, so its caller holds no code of the wait.
+        // open.  A lanes channel waits for an item of the lane of its turn or
+        // for the end of the stream, and it publishes its tails before it waits
+        // (the lanes form).  A deadline needs the park, so Policy parks.  The
+        // call is out of line, so its caller holds no code of the wait.
         template <WaitPolicy Policy, class Ctx>
             requires CtxFitsWaitPolicy<Ctx, Policy> && (Policy::should_park) && ::fixy::futex::CtxMayUseFutex<Ctx>
         [[nodiscard]] CRUCIBLE_COLD EventWaitEnd wait_for_item_until(Ctx const& ctx,
                                                                      ::fixy::futex::Deadline const& deadline) noexcept {
             this->require_live("a wait through a parked consumer end that a door consumed", __PRETTY_FUNCTION__,
                                __LINE__);
-            ::foundation::effects::cap::Nondet const nondet =
-                ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
-            return wait_for<Policy>(
-                ctx, channel_->items_,
-                [this, nondet]() noexcept { return !inner_.empty_approx(nondet) || inner_.is_closed(); }, deadline);
+            if constexpr (is_lanes) {
+                return wait_for<Policy>(
+                    ctx, channel_->items_,
+                    [this, &ctx]() noexcept { return inner_.is_next_ready(wake_lane_producer_(ctx)); }, deadline);
+            } else {
+                ::foundation::effects::cap::Nondet const nondet =
+                    ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
+                return wait_for<Policy>(
+                    ctx, channel_->items_,
+                    [this, nondet]() noexcept { return !inner_.empty_approx(nondet) || inner_.is_closed(); }, deadline);
+            }
         }
 
         // True when the stream ended, with acquire order.
         [[nodiscard]] bool is_closed() const noexcept { return inner_.is_closed(); }
 
         // Ends the consumer: stores that the consumer is gone, ends the end of
-        // the wire, and then wakes each waiter of room.
+        // the wire, and then wakes each waiter of each count of room.
         template <class Ctx>
             requires ::fixy::futex::CtxMayUseFutex<Ctx>
         void close(Ctx const& ctx) && noexcept {
@@ -599,7 +680,7 @@ public:
             ParkedChannel& channel = *channel_;
             channel.consumer_gone_.store_release(true);
             ::foundation::linear::drop(std::move(inner_));
-            channel.room_.notify_all(ctx);
+            channel.rooms_.notify_each(ctx);
         }
 
         // Gives the token back and keeps the stream, so a later consumer of the
@@ -612,14 +693,36 @@ public:
         }
 
     private:
+        // The notify of room after a receive that took an item.  A lanes channel
+        // notifies in its receive, at each publish of a tail, so its notify here
+        // does nothing.
+        template <class Ctx>
+        [[gnu::always_inline]] void notify_room_of_item_(Ctx const& ctx) noexcept {
+            if constexpr (!is_lanes) {
+                channel_->rooms_.at(::foundation::core::index<0>()).notify_one(ctx);
+            } else {
+                static_cast<void>(ctx);
+            }
+        }
+
+        // The callable that a receive of a lanes channel calls after it
+        // published the tail of a lane: it notifies the count of room of that
+        // lane, on which at most one producer waits.
+        template <class Ctx>
+        [[nodiscard]] auto wake_lane_producer_(Ctx const& ctx) noexcept {
+            return [this, &ctx](lane_index lane) noexcept { channel_->rooms_.at(lane).notify_one(ctx); };
+        }
+
         // The pop and the receive of the inner end.  The pop of a merge reads
         // the schedule, so it takes the tag of Nondet from the context, and the
-        // pop of a wire takes none.
+        // pop of a wire and of a lanes channel takes none.
         template <class Ctx>
         [[nodiscard]] ::foundation::core::Option<value_type> pop_(Ctx const& ctx) noexcept {
             if constexpr (is_merge) {
                 return inner_.try_pop(
                     ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
+            } else if constexpr (is_lanes) {
+                return inner_.try_receive_freeing(wake_lane_producer_(ctx)).ok();
             } else {
                 static_cast<void>(ctx);
                 return inner_.try_pop();
@@ -631,6 +734,8 @@ public:
             if constexpr (is_merge) {
                 return inner_.try_receive(
                     ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx));
+            } else if constexpr (is_lanes) {
+                return inner_.try_receive_freeing(wake_lane_producer_(ctx));
             } else {
                 static_cast<void>(ctx);
                 return inner_.try_receive();
@@ -659,7 +764,7 @@ public:
             wait_for<Policy>(ctx, channel_->items_, [this, &ctx, &got]() noexcept { return has_received_(ctx, got); });
             ::foundation::core::Result<value_type, NoItem> received =
                 std::move(got).expect("the wait ends after a receive that gives an item or the end");
-            if (received.is_ok()) channel_->room_.notify_one(ctx);
+            if (received.is_ok()) notify_room_of_item_(ctx);
             return received;
         }
     };
@@ -678,7 +783,7 @@ public:
     [[nodiscard]] HandleKey<ProducerEnd>
     producer(ChannelFrameKey const& key,
              ::foundation::permissions::Permission<producer_tag, brand_type>&& token) noexcept
-        requires(!is_merge)
+        requires(!is_pooled)
     {
         return HandleKey<ProducerEnd>{ProducerEnd{inner_.producer(key, std::move(token)), *this}};
     }
@@ -692,6 +797,18 @@ public:
         requires is_merge
     {
         CRUCIBLE_TRY(lent, inner_.producer(key, nondet));
+        return ::foundation::core::Option<HandleKey<ProducerEnd>>::some(
+            HandleKey<ProducerEnd>{ProducerEnd{std::move(lent), *this}});
+    }
+
+    // The producer door of a lanes channel, for the producer of lane.  It
+    // lends as the door of a merge does, and the door of the inner channel
+    // takes the claim of the lane.
+    [[nodiscard]] ::foundation::core::Option<HandleKey<ProducerEnd>>
+    producer(ChannelFrameKey const& key, ::foundation::effects::cap::Nondet nondet, lane_index lane) noexcept
+        requires is_lanes
+    {
+        CRUCIBLE_TRY(lent, inner_.producer(key, nondet, lane));
         return ::foundation::core::Option<HandleKey<ProducerEnd>>::some(
             HandleKey<ProducerEnd>{ProducerEnd{std::move(lent), *this}});
     }
@@ -717,8 +834,17 @@ public:
     // changes with the threads, so the read takes the bare tag of Nondet.  A
     // test reads it to know that a producer waits before it changes the
     // condition of the wait.
-    [[nodiscard]] bool has_parked_producer(::foundation::effects::cap::Nondet nondet) const noexcept {
-        return room_.has_waiters(nondet);
+    [[nodiscard]] bool has_parked_producer(::foundation::effects::cap::Nondet nondet) const noexcept
+        requires(!is_lanes)
+    {
+        return rooms_.at(::foundation::core::index<0>()).has_waiters(nondet);
+    }
+
+    // As has_parked_producer, for the producer of a lane of a lanes channel.
+    [[nodiscard]] bool has_parked_producer(::foundation::effects::cap::Nondet nondet, lane_index lane) const noexcept
+        requires is_lanes
+    {
+        return rooms_.at(lane).has_waiters(nondet);
     }
 
     // True when a consumer is in the count of the waiters of items, as
@@ -738,7 +864,9 @@ private:
 
     Channel inner_;
     EventCount items_{};
-    EventCount room_{};
+    // The counts of room (the lanes form): one for each lane of a lanes
+    // channel, and one for each other form.
+    EventCountRow<detail::parked_room_count_v<Channel>> rooms_{};
     // The close of the consumer stores true, and the open of a consumer
     // stores false.  A release stores nothing, because the stream stays.  A
     // channel starts with no consumer yet, which is not a consumer that ended,
@@ -835,12 +963,19 @@ public:
         static_cast<End&&>(*this).close(ctx);
     }
 
-    // A producer of a merge holds a share of the pool and no token, so its
-    // handle has no release.
+    // A producer of a merge or of a lanes channel holds a share of the pool and
+    // no token, so its handle has no release.
     [[nodiscard]] auto release() && noexcept
-        requires(!Channel::is_merge)
+        requires(!Channel::is_pooled)
     {
         return static_cast<End&&>(*this).release();
+    }
+
+    // The lane of the producer of a lanes channel.
+    [[nodiscard]] auto lane() const noexcept
+        requires(Channel::is_lanes)
+    {
+        return End::lane();
     }
 };
 
