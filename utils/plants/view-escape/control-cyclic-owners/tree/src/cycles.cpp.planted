@@ -1,0 +1,47 @@
+// Classes that reach themselves through a type argument (ReachWalk of
+// plugin.h) and that hold no borrow: a cycle of one class, a cycle of two
+// classes, and a node that only holds owners of itself.  Each object has
+// static storage, or a function gives it back, and no line comes.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct Node {
+    Own<Node> next{};
+    Own<Own<Node>> far{};
+    int value = 0;
+};
+
+struct Right;
+struct Left {
+    Own<Right> other{};
+    int value = 0;
+};
+struct Right {
+    Own<Left> other{};
+    int value = 0;
+};
+
+Own<Node> const kept_owner{};
+Node const kept_node{};
+Own<Left> const kept_left_owner{};
+Left const kept_left{};
+Right const kept_right{};
+
+Node pass_node(Node node) { return node; }
+Own<Node> owner_of(Node node) {
+    static_cast<void>(node.value);
+    return {};
+}
+Own<Node> return_owner() {
+    Node const node{};
+    return owner_of(node);
+}
+
+}  // namespace planted

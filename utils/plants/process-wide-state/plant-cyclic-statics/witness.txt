@@ -1,0 +1,23 @@
+# Classes that reach themselves through a type argument (ReachWalk of
+# plugin.h).  The owner of a node that holds it before its key (43), or before
+# its thread-bound end (47), is a static object, and the walk asked the node
+# first.  A walk that keeps the open answer of the node gives no line at these
+# two places.  The node (44 and 48), and the pairs that hold the key or the end
+# first (45, 46, 49 and 50), give their line in each order.  The objects of the
+# keys can change, so each one is also the kind unmarked-static.
+
+compile cycles src/cycles.cpp errors=cycles
+flag cycles -freflection
+exit cycles fail
+finding cycles process-wide-state loan-key-static src/cycles.cpp:43:14 | planted::kept_key_owner
+finding cycles process-wide-state unmarked-static src/cycles.cpp:43:14 | planted::kept_key_owner
+finding cycles process-wide-state loan-key-static src/cycles.cpp:44:9 | planted::kept_key_node
+finding cycles process-wide-state unmarked-static src/cycles.cpp:44:9 | planted::kept_key_node
+finding cycles process-wide-state loan-key-static src/cycles.cpp:45:15 | planted::kept_first_key_owner
+finding cycles process-wide-state unmarked-static src/cycles.cpp:45:15 | planted::kept_first_key_owner
+finding cycles process-wide-state loan-key-static src/cycles.cpp:46:10 | planted::kept_first_key_node
+finding cycles process-wide-state unmarked-static src/cycles.cpp:46:10 | planted::kept_first_key_node
+finding cycles process-wide-state thread-bound-static src/cycles.cpp:47:20 | planted::kept_end_owner
+finding cycles process-wide-state thread-bound-static src/cycles.cpp:48:15 | planted::kept_end_node
+finding cycles process-wide-state thread-bound-static src/cycles.cpp:49:21 | planted::kept_first_end_owner
+finding cycles process-wide-state thread-bound-static src/cycles.cpp:50:16 | planted::kept_first_end_node

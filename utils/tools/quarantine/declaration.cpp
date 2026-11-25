@@ -2662,10 +2662,9 @@ enum class StaticWalk : std::uint8_t {
     loan_key,
 };
 
-// The answer of each walk for each class, by its TYPE_UID, which no
-// collection reuses (the collections of plugin.h).
-std::unordered_map<unsigned, bool> thread_bound_classes;
-std::unordered_map<unsigned, bool> loan_key_classes;
+// The answers of each walk (ReachWalk).
+ReachAnswers thread_bound_classes;
+ReachAnswers loan_key_classes;
 
 // True when the const of TYPE is shallow: a pointer, and a borrow of the base,
 // a class that states refers, refers_unique or refers_deep of
@@ -2692,12 +2691,10 @@ bool has_shallow_const(tree type) {
     return is_borrow;
 }
 
-// True when TYPE holds a class of the mark of WALK (the thread-bound statics,
-// the loan-key statics).  A class that the walk meets again during its walk
-// holds nothing, so a type that reaches itself ends the walk.  An incomplete
-// class is read in no part.  Complexity: linear in the distinct classes that
-// the type reaches, one time for each class and each walk in a unit.
-bool holds_static_mark(tree type, StaticWalk walk, int depth) {
+// True when TYPE holds a class of the mark of KIND (the thread-bound statics,
+// the loan-key statics), in the walk WALK of holds_static_mark.  An incomplete
+// class is read in no part.
+bool reaches_static_mark(tree type, StaticWalk kind, ReachWalk& walk, int depth) {
     static tree const thread_bound = get_identifier("thread_bound");
     static tree const transfer = get_identifier("transfer");
     static tree const loan_key_mark = get_identifier("loan_key_mark");
@@ -2706,8 +2703,9 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
         get_identifier("by_arguments"),  get_identifier("payload_cell"), get_identifier("refers"),
         get_identifier("refers_unique"), get_identifier("refers_deep"),
     };
-    bool const is_key_walk = walk == StaticWalk::loan_key;
+    bool const is_key_walk = kind == StaticWalk::loan_key;
     if (depth > kTypeDepth) {
+        walk.reach_unread_part();
         return false;
     }
     // A reference and an array reach their element in each walk, and a
@@ -2729,24 +2727,22 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
         return false;
     }
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+    if (!CLASS_TYPE_P(type)) {
         return false;
     }
-    std::unordered_map<unsigned, bool>& answers = is_key_walk ? loan_key_classes : thread_bound_classes;
-    auto found = answers.find(TYPE_UID(type));
-    if (found != answers.end()) {
-        return found->second;
+    ReachWalk::Step const step = walk.enter(type);
+    if (step != ReachWalk::Step::read) {
+        return step == ReachWalk::Step::yes;
     }
-    answers.emplace(TYPE_UID(type), false);
     bool is_held = is_key_walk ? carries_base_annotation(TYPE_ATTRIBUTES(type), loan_key_mark, core)
                                : carries_base_annotation(TYPE_ATTRIBUTES(type), thread_bound, transfer);
     tree binfo = TYPE_BINFO(type);
     for (unsigned index = 0; !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-        is_held = holds_static_mark(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), walk, depth + 1);
+        is_held = reaches_static_mark(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), kind, walk, depth + 1);
     }
     for (tree field = TYPE_FIELDS(type); !is_held && field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL) {
-            is_held = holds_static_mark(TREE_TYPE(field), walk, depth + 1);
+            is_held = reaches_static_mark(TREE_TYPE(field), kind, walk, depth + 1);
         }
     }
     // A class that owns or refers to the object of its first type argument
@@ -2762,10 +2758,17 @@ bool holds_static_mark(tree type, StaticWalk walk, int depth) {
     tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
     if (!is_held && is_first_argument_held && arguments != NULL_TREE && TREE_VEC_LENGTH(arguments) > 0) {
         tree argument = TREE_VEC_ELT(arguments, 0);
-        is_held = argument != NULL_TREE && TYPE_P(argument) && holds_static_mark(argument, walk, depth + 1);
+        is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_static_mark(argument, kind, walk, depth + 1);
     }
-    answers[TYPE_UID(type)] = is_held;
-    return is_held;
+    return walk.leave(type, is_held);
+}
+
+// True when TYPE holds a class of the mark of KIND (the thread-bound statics,
+// the loan-key statics).  Complexity: linear in the classes that the type
+// reaches (ReachWalk).
+bool holds_static_mark(tree type, StaticWalk kind) {
+    ReachWalk walk(kind == StaticWalk::loan_key ? loan_key_classes : thread_bound_classes);
+    return reaches_static_mark(type, kind, walk, 0);
 }
 
 // A variable with static storage duration whose type holds a class that
@@ -2785,10 +2788,10 @@ void check_static_reach(tree decl, const std::string& entity) {
     if (type == NULL_TREE || type == error_mark_node || uses_template_parms(type)) {
         return;
     }
-    if (duration == dk_static && holds_static_mark(type, StaticWalk::thread_bound, 0)) {
+    if (duration == dk_static && holds_static_mark(type, StaticWalk::thread_bound)) {
         record_property(Kind::thread_bound_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
     }
-    if (holds_static_mark(type, StaticWalk::loan_key, 0)) {
+    if (holds_static_mark(type, StaticWalk::loan_key)) {
         record_property(Kind::loan_key_static, property_place(DECL_SOURCE_LOCATION(decl)), entity);
     }
     check_static_linear_sum(decl, entity);

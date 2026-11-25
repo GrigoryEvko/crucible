@@ -1,0 +1,6 @@
+# The rule table of the control of the statics of a class that reaches itself.
+# The unit of src/ is quarantined, and it can name the mark of the base that
+# the planted class states.
+
+admit foundation::transfer | the mark of an owner, which the planted class states
+quarantine src/

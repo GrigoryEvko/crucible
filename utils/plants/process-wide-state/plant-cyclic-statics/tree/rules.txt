@@ -1,0 +1,7 @@
+# The rule table of the plant of the statics of a class that reaches itself.
+# The unit of src/ is quarantined, and it can name the marks of the base that
+# the planted classes state.
+
+admit foundation::core | the mark of a loan key, which the planted class states
+admit foundation::transfer | the marks of an owner and of a thread-bound class, which the planted classes state
+quarantine src/

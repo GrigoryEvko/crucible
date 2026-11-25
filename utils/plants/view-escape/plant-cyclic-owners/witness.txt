@@ -1,0 +1,28 @@
+# Classes that reach themselves through a type argument (ReachWalk of
+# plugin.h), in the walk of the statics and in the walk of the returns.  The
+# owner of a node that holds it before its borrow is a static object (36) and
+# the result of a call (57), and the walk asked the node first.  A walk that
+# keeps the open answer of the node gives no line at these two places.  The
+# node (37), and the pair that holds the borrow first (38, 39 and 62), give
+# their line in each order.  Each object that can change is also a line of the
+# kind unmarked-static of the rule process-wide-state.
+
+compile cycles src/cycles.cpp
+flag cycles -freflection
+exit cycles fail
+finding cycles view-escape static-borrow src/cycles.cpp:36:17 | planted::kept_owner
+finding cycles view-escape static-borrow src/cycles.cpp:37:12 | planted::kept_node
+finding cycles view-escape static-borrow src/cycles.cpp:38:18 | planted::kept_first_owner
+finding cycles view-escape static-borrow src/cycles.cpp:39:13 | planted::kept_first_node
+finding cycles view-escape escaped-borrow src/cycles.cpp:57:21 | borrow of the local local
+finding cycles view-escape escaped-borrow src/cycles.cpp:62:27 | borrow of the local local
+finding cycles process-wide-state unmarked-static src/cycles.cpp:36:17 | planted::kept_owner
+finding cycles process-wide-state unmarked-static src/cycles.cpp:37:12 | planted::kept_node
+finding cycles process-wide-state unmarked-static src/cycles.cpp:38:18 | planted::kept_first_owner
+finding cycles process-wide-state unmarked-static src/cycles.cpp:39:13 | planted::kept_first_node
+error cycles src/cycles.cpp:36 | holds a borrow that names no object of static storage: planted::kept_owner
+error cycles src/cycles.cpp:37 | holds a borrow that names no object of static storage: planted::kept_node
+error cycles src/cycles.cpp:38 | holds a borrow that names no object of static storage: planted::kept_first_owner
+error cycles src/cycles.cpp:39 | holds a borrow that names no object of static storage: planted::kept_first_node
+error cycles src/cycles.cpp:57 | this function gives back a borrow of the local local
+error cycles src/cycles.cpp:62 | this function gives back a borrow of the local local

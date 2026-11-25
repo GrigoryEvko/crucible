@@ -171,9 +171,8 @@ struct EscapeNames {
 
 EscapeNames escape_names;
 
-// The answer of holds_borrow for each class of the unit, by TYPE_UID.  A class
-// that the walk meets again during its walk holds nothing there.
-std::unordered_map<unsigned, bool> borrow_classes;
+// The answers of holds_borrow (ReachWalk).
+ReachAnswers borrow_classes;
 
 bool carries_mark(tree type, tree name) {
     return carries_base_annotation(TYPE_ATTRIBUTES(type), name, escape_names.transfer);
@@ -252,32 +251,33 @@ bool owns_its_storage(tree type) {
 // mark in this form.
 bool is_base_storage_owner(tree type) { return owns_its_storage(type) && is_of_base_namespace(type); }
 
-// True when TYPE holds a borrow (the borrow).  Complexity: linear in the
-// distinct classes that the type reaches, one time for each class in a unit.
-bool holds_borrow(tree type, int depth) {
-    if (type == NULL_TREE || type == error_mark_node || depth > kEscapeDepth) {
+// True when TYPE holds a borrow, in the walk WALK of holds_borrow.
+bool reaches_borrow(tree type, ReachWalk& walk, int depth) {
+    if (type == NULL_TREE || type == error_mark_node) {
+        return false;
+    }
+    if (depth > kEscapeDepth) {
+        walk.reach_unread_part();
         return false;
     }
     if (TREE_CODE(type) == REFERENCE_TYPE || TREE_CODE(type) == POINTER_TYPE) {
         return TREE_CODE(TREE_TYPE(type)) != FUNCTION_TYPE && TREE_CODE(TREE_TYPE(type)) != METHOD_TYPE;
     }
     if (TREE_CODE(type) == ARRAY_TYPE) {
-        return holds_borrow(TREE_TYPE(type), depth + 1);
+        return reaches_borrow(TREE_TYPE(type), walk, depth + 1);
     }
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+    if (!CLASS_TYPE_P(type)) {
         return false;
     }
-    auto found = borrow_classes.find(TYPE_UID(type));
-    if (found != borrow_classes.end()) {
-        return found->second;
+    ReachWalk::Step const step = walk.enter(type);
+    if (step != ReachWalk::Step::read) {
+        return step == ReachWalk::Step::yes;
     }
-    borrow_classes.emplace(TYPE_UID(type), false);
     // The pointers of an owner of its storage in the base, such as an arena,
-    // name its own blocks, so the class holds no borrow, and the entry above
-    // keeps that answer.
+    // name its own blocks, so the class holds no borrow.
     if (is_base_storage_owner(type)) {
-        return false;
+        return walk.leave(type, false);
     }
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
@@ -295,22 +295,27 @@ bool holds_borrow(tree type, int depth) {
         for (int index = 0; !is_held && arguments != NULL_TREE && index < last && index < TREE_VEC_LENGTH(arguments);
              ++index) {
             tree argument = TREE_VEC_ELT(arguments, index);
-            is_held = argument != NULL_TREE && TYPE_P(argument) && holds_borrow(argument, depth + 1);
+            is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_borrow(argument, walk, depth + 1);
         }
-        borrow_classes[TYPE_UID(type)] = is_held;
-        return is_held;
+        return walk.leave(type, is_held);
     }
     tree binfo = TYPE_BINFO(type);
     for (unsigned index = 0; !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-        is_held = holds_borrow(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+        is_held = reaches_borrow(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), walk, depth + 1);
     }
     for (tree field = TYPE_FIELDS(type); !is_held && field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)) {
-            is_held = holds_borrow(TREE_TYPE(field), depth + 1);
+            is_held = reaches_borrow(TREE_TYPE(field), walk, depth + 1);
         }
     }
-    borrow_classes[TYPE_UID(type)] = is_held;
-    return is_held;
+    return walk.leave(type, is_held);
+}
+
+// True when TYPE holds a borrow (the borrow).  Complexity: linear in the
+// classes that the type reaches (ReachWalk).
+bool holds_borrow(tree type) {
+    ReachWalk walk(borrow_classes);
+    return reaches_borrow(type, walk, 0);
 }
 
 // True for a function of the namespace std that gives a reference.
@@ -337,7 +342,7 @@ void add_borrow_targets(tree type, std::vector<tree>& out, int depth) {
         return;
     }
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || !holds_borrow(type, 0)) {
+    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || !holds_borrow(type)) {
         return;
     }
     tree info = CLASSTYPE_TEMPLATE_INFO(type);
@@ -513,7 +518,7 @@ public:
             if (is_this_parameter(decl)) {
                 return false;
             }
-            return TREE_CODE(type) != REFERENCE_TYPE || (TYPE_REF_IS_RVALUE(type) && !holds_borrow(TREE_TYPE(type), 0));
+            return TREE_CODE(type) != REFERENCE_TYPE || (TYPE_REF_IS_RVALUE(type) && !holds_borrow(TREE_TYPE(type)));
         }
         if (!VAR_P(decl) || TREE_STATIC(decl) || DECL_EXTERNAL(decl) || DECL_THREAD_LOCAL_P(decl)
             || decl_function_context(decl) != function_ || TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE) {
@@ -572,7 +577,7 @@ public:
                 // A capture by reference of an object that holds a borrow, as
                 // in a closure, carries on the borrows of the object.
                 tree object = TREE_OPERAND(expression, 0);
-                if (holds_borrow(TREE_TYPE(object), 0)) {
+                if (holds_borrow(TREE_TYPE(object))) {
                     add_origins(object, out, depth + 1);
                 } else {
                     add_object(object, out, depth + 1);
@@ -741,7 +746,7 @@ public:
                 continue;
             }
             if (!POINTER_TYPE_P(type)) {
-                if (holds_borrow(type, 0) && could_forward(result, type, runs_)) {
+                if (holds_borrow(type) && could_forward(result, type, runs_)) {
                     add_named_origins(argument, result, out, depth + 1);
                 }
                 continue;
@@ -786,7 +791,7 @@ public:
         tree object_type = TREE_TYPE(TREE_TYPE(stripped));
         bool const is_run_outside = runs_ == OutsideRuns::read && outside_run_core(object_type) != NULL_TREE;
         return object_type != NULL_TREE && !is_run_outside
-            && (!holds_borrow(object_type, 0) || owns_its_storage(object_type));
+            && (!holds_borrow(object_type) || owns_its_storage(object_type));
     }
 
     // The object that an argument by reference names: the operand of an
@@ -856,7 +861,7 @@ public:
             return true;
         }
         tree object = is_address ? TREE_OPERAND(stripped, 0) : stripped;
-        if (holds_borrow(object_type, 0)) {
+        if (holds_borrow(object_type)) {
             if (lend == Lend::object) {
                 add_origins(object, out, depth + 1);
             } else if (could_forward(result, object_type, runs_)) {
@@ -923,7 +928,7 @@ private:
         bool const is_reference = TREE_CODE(TREE_TYPE(decl)) == REFERENCE_TYPE;
         if (is_reference) {
             add_reference_argument(value, Lend::object, NULL_TREE, found, 0);
-        } else if (holds_borrow(TREE_TYPE(decl), 0)) {
+        } else if (holds_borrow(TREE_TYPE(decl))) {
             add_origins(value, found, 0);
         } else {
             return;
@@ -1068,14 +1073,14 @@ tree collect_store(tree* node, int*, void* data) {
     if (TREE_CODE(current) == INIT_EXPR || TREE_CODE(current) == MODIFY_EXPR) {
         tree target = TREE_OPERAND(current, 0);
         tree place = outer_place_of(target, false);
-        if (place != NULL_TREE && holds_borrow(TREE_TYPE(target), 0)) {
+        if (place != NULL_TREE && holds_borrow(TREE_TYPE(target))) {
             stores.push_back(Store{place, TREE_OPERAND(current, 1), false, location});
         }
         return NULL_TREE;
     }
     if (TREE_CODE(current) == AGGR_INIT_EXPR) {
         tree place = outer_place_of(AGGR_INIT_EXPR_SLOT(current), false);
-        if (place != NULL_TREE && holds_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)), 0)) {
+        if (place != NULL_TREE && holds_borrow(TREE_TYPE(AGGR_INIT_EXPR_SLOT(current)))) {
             stores.push_back(Store{place, current, true, location});
         }
         return NULL_TREE;
@@ -1101,7 +1106,7 @@ tree collect_store(tree* node, int*, void* data) {
         return NULL_TREE;
     }
     tree place = outer_place_of(object, true);
-    if (place != NULL_TREE && holds_borrow(TREE_TYPE(object_type), 0)) {
+    if (place != NULL_TREE && holds_borrow(TREE_TYPE(object_type))) {
         tree value = is_assignment ? argument_at(current, 1) : current;
         stores.push_back(Store{place, value, is_construction, location});
     }
@@ -1215,7 +1220,7 @@ void note_borrowed_parameters(tree function, tree body) {
             continue;
         }
         tree referred = TREE_TYPE(type);
-        bool const is_value = !holds_borrow(referred, 0) && !(CLASS_TYPE_P(referred) && is_empty_class(referred));
+        bool const is_value = !holds_borrow(referred) && !(CLASS_TYPE_P(referred) && is_empty_class(referred));
         if (is_value && std::find(found.begin(), found.end(), parameter) != found.end()
             && !is_deduced_lvalue_parameter(function, index)) {
             note_borrowed_parameter(function, parameter, index);
@@ -1236,7 +1241,7 @@ void on_pre_genericize(void* gcc_data, void*) {
         return;
     }
     tree body = DECL_SAVED_TREE(function);
-    bool const returns_borrow = holds_borrow(TREE_TYPE(result), 0);
+    bool const returns_borrow = holds_borrow(TREE_TYPE(result));
     std::vector<Store> stores;
     cp_walk_tree_without_duplicates(&body, collect_store, &stores);
     // The walk of the stores reads the runs outside, and the walk of the
@@ -1256,10 +1261,8 @@ void on_pre_genericize(void* gcc_data, void*) {
     note_borrowed_parameters(function, body);
 }
 
-// The answer of holds_unstatic_borrow for each class of the unit, by
-// TYPE_UID (the statics).  A class that the walk meets again during its walk
-// holds nothing there.
-std::unordered_map<unsigned, bool> unstatic_borrow_classes;
+// The answers of holds_unstatic_borrow (the statics, ReachWalk).
+ReachAnswers unstatic_borrow_classes;
 
 // True when the class TYPE names StaticStorageBrand of foundation/core/Ref.h
 // as a template argument (the statics).
@@ -1281,24 +1284,26 @@ bool names_static_brand(tree type) {
 }
 
 // True when TYPE holds a borrow type of the base whose template arguments
-// name no StaticStorageBrand (the statics).  Complexity: linear in the
-// distinct classes that the type reaches, one time for each class in a unit.
-bool holds_unstatic_borrow(tree type, int depth) {
-    if (type == NULL_TREE || type == error_mark_node || depth > kEscapeDepth) {
+// name no StaticStorageBrand, in the walk WALK of holds_unstatic_borrow.
+bool reaches_unstatic_borrow(tree type, ReachWalk& walk, int depth) {
+    if (type == NULL_TREE || type == error_mark_node) {
+        return false;
+    }
+    if (depth > kEscapeDepth) {
+        walk.reach_unread_part();
         return false;
     }
     if (TREE_CODE(type) == ARRAY_TYPE) {
-        return holds_unstatic_borrow(TREE_TYPE(type), depth + 1);
+        return reaches_unstatic_borrow(TREE_TYPE(type), walk, depth + 1);
     }
     type = TYPE_MAIN_VARIANT(type);
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
+    if (!CLASS_TYPE_P(type)) {
         return false;
     }
-    auto found = unstatic_borrow_classes.find(TYPE_UID(type));
-    if (found != unstatic_borrow_classes.end()) {
-        return found->second;
+    ReachWalk::Step const step = walk.enter(type);
+    if (step != ReachWalk::Step::read) {
+        return step == ReachWalk::Step::yes;
     }
-    unstatic_borrow_classes.emplace(TYPE_UID(type), false);
     bool const is_borrow = carries_mark(type, escape_names.refers) || carries_mark(type, escape_names.refers_unique)
                         || carries_mark(type, escape_names.refers_deep);
     bool is_held = is_borrow && !names_static_brand(type);
@@ -1310,21 +1315,28 @@ bool holds_unstatic_borrow(tree type, int depth) {
         int const last = is_first_owner ? 1 : TREE_VEC_LENGTH(arguments);
         for (int index = 0; !is_held && index < last && index < TREE_VEC_LENGTH(arguments); ++index) {
             tree argument = TREE_VEC_ELT(arguments, index);
-            is_held = argument != NULL_TREE && TYPE_P(argument) && holds_unstatic_borrow(argument, depth + 1);
+            is_held = argument != NULL_TREE && TYPE_P(argument) && reaches_unstatic_borrow(argument, walk, depth + 1);
         }
     }
     tree binfo = TYPE_BINFO(type);
     for (unsigned index = 0; !is_borrow && !is_held && binfo != NULL_TREE && index < BINFO_N_BASE_BINFOS(binfo);
          ++index) {
-        is_held = holds_unstatic_borrow(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1);
+        is_held = reaches_unstatic_borrow(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), walk, depth + 1);
     }
     for (tree field = TYPE_FIELDS(type); !is_borrow && !is_held && field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && !DECL_ARTIFICIAL(field)) {
-            is_held = holds_unstatic_borrow(TREE_TYPE(field), depth + 1);
+            is_held = reaches_unstatic_borrow(TREE_TYPE(field), walk, depth + 1);
         }
     }
-    unstatic_borrow_classes[TYPE_UID(type)] = is_held;
-    return is_held;
+    return walk.leave(type, is_held);
+}
+
+// True when TYPE holds a borrow type of the base whose template arguments
+// name no StaticStorageBrand (the statics).  Complexity: linear in the
+// classes that the type reaches (ReachWalk).
+bool holds_unstatic_borrow(tree type) {
+    ReachWalk walk(unstatic_borrow_classes);
+    return reaches_unstatic_borrow(type, walk, 0);
 }
 
 // The callback of cp_walk_tree that finds an address of an object that has no
@@ -1363,7 +1375,7 @@ void on_collection(void*, void*) {
 }  // namespace
 
 void check_static_borrow(tree decl, const std::string& entity) {
-    if (!holds_unstatic_borrow(TREE_TYPE(decl), 0) || has_static_constant_initializer(decl)) {
+    if (!holds_unstatic_borrow(TREE_TYPE(decl)) || has_static_constant_initializer(decl)) {
         return;
     }
     Place place = place_of(DECL_SOURCE_LOCATION(decl), Scope::quarantine);

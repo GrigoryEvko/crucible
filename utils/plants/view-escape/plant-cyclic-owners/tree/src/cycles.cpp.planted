@@ -1,0 +1,65 @@
+// Classes that reach themselves through a type argument (ReachWalk of
+// plugin.h).  The owner of a node comes before the borrow of the node, so a
+// walk from the node meets the owner while the answer of the node is open.
+// Each class that holds a borrow gives its line, in each order of the questions.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+// A borrow with no brand.
+template <class T>
+struct [[= ::foundation::transfer::refers{}]] Borrow {
+    T const& place;
+};
+
+// A node that holds the owner of itself before its borrow, and one that holds
+// it after its borrow.
+struct OwnerFirst {
+    Own<OwnerFirst> next{};
+    Borrow<int> borrow;
+};
+struct BorrowFirst {
+    Borrow<int> borrow;
+    Own<BorrowFirst> next{};
+};
+
+int const word = 0;
+
+// The walk of the statics reads the last object first, so it asks the node of
+// each pair before its owner.
+Own<OwnerFirst> kept_owner{};
+OwnerFirst kept_node{{}, {word}};
+Own<BorrowFirst> kept_first_owner{};
+BorrowFirst kept_first_node{{word}, {}};
+
+// The walk of the returns asks the node at this body, before each owner below.
+OwnerFirst pass_node(OwnerFirst node) { return node; }
+
+Own<OwnerFirst> wrap(OwnerFirst node) {
+    static_cast<void>(node.borrow.place);
+    return {};
+}
+Own<BorrowFirst> wrap_first(BorrowFirst node) {
+    static_cast<void>(node.borrow.place);
+    return {};
+}
+
+// The owner that the call gives holds a borrow of the local.
+Own<OwnerFirst> return_owner() {
+    int const local = 1;
+    OwnerFirst const node{{}, {local}};
+    return wrap(node);
+}
+Own<BorrowFirst> return_first_owner() {
+    int const local = 2;
+    BorrowFirst const node{{local}, {}};
+    return wrap_first(node);
+}
+
+}  // namespace planted

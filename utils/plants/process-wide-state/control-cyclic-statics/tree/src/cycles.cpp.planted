@@ -1,0 +1,41 @@
+// Classes that reach themselves through a type argument (ReachWalk of
+// plugin.h), and that reach no loan key and hold no thread-bound class: a
+// cycle of one class, and a cycle of two classes.  Each constant object gives
+// no line.
+#include <foundation/Transfer.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct Node {
+    Own<Node> next{};
+    Own<Own<Node>> far{};
+    int value = 0;
+};
+
+struct Right;
+struct Left {
+    Own<Right> other{};
+    int value = 0;
+};
+struct Right {
+    Own<Left> other{};
+    int value = 0;
+};
+
+Own<Node> const kept_owner{};
+Node const kept_node{};
+Own<Left> const kept_left_owner{};
+Left const kept_left{};
+Right const kept_right{};
+
+int read_each() noexcept {
+    return kept_owner.word + kept_node.value + kept_left_owner.word + kept_left.value + kept_right.value;
+}
+
+}  // namespace planted

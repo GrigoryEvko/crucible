@@ -1,0 +1,56 @@
+// Classes that reach themselves through a type argument (ReachWalk of
+// plugin.h).  The owner of a node comes before the key, or before the
+// thread-bound end, of the node, so a walk from the node meets the owner while
+// the answer of the node is open.  Each object gives its line, in each order
+// of the questions.
+#include <foundation/Transfer.h>
+#include <foundation/core/Frame.h>
+
+namespace planted {
+
+// An owner of its first argument.
+template <class T>
+struct [[= ::foundation::transfer::by_arguments{}]] Own {
+    int word = 0;
+};
+
+struct [[= ::foundation::core::loan_key_mark{}]] Key {
+    int word = 0;
+};
+struct [[= ::foundation::transfer::thread_bound{}]] End {
+    int word = 0;
+};
+
+struct KeyNode {
+    Own<KeyNode> next{};
+    Key key{};
+};
+struct KeyFirst {
+    Key key{};
+    Own<KeyFirst> next{};
+};
+struct EndNode {
+    Own<EndNode> next{};
+    End end{};
+};
+struct EndFirst {
+    End end{};
+    Own<EndFirst> next{};
+};
+
+// The walk of the statics reads the last object first, so it asks the node of
+// each pair before its owner.
+Own<KeyNode> kept_key_owner{};
+KeyNode kept_key_node{};
+Own<KeyFirst> kept_first_key_owner{};
+KeyFirst kept_first_key_node{};
+Own<EndNode> const kept_end_owner{};
+EndNode const kept_end_node{};
+Own<EndFirst> const kept_first_end_owner{};
+EndFirst const kept_first_end_node{};
+
+int read_each() noexcept {
+    return kept_end_owner.word + kept_end_node.end.word + kept_first_end_owner.word + kept_first_end_node.end.word;
+}
+
+}  // namespace planted

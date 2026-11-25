@@ -767,6 +767,156 @@ namespace crucible_plugin {
 inline constexpr int kMacroDepth = 1 << 16;
 inline constexpr int kTypeDepth = 4096;
 
+// The path of one walk of types, which tells when the answer of a class is
+// final.  A walk reads the parts of each class one time.  A type argument can
+// name a class of the path, whose answer is open there, so each class of the
+// path from that class on waits for it.  The classes that wait for each other
+// reach the same classes, so they get one answer, when the walk leaves the
+// first of them (the strongly connected components of Tarjan).  An incomplete
+// class gets its parts later, so the answer of each class that reaches one
+// stays open, and no walk keeps it.  A collection runs inside no walk, so the
+// trees of a path stay.  Complexity: linear in the classes and the parts that
+// the walk reads.
+class TypePath {
+public:
+    // Puts the class TYPE on the path, and gives true when the walk reads its
+    // parts.  The walk reads no part of a class of the path, or of a class that
+    // it left with an open answer.  The last class of the path then waits for it.
+    bool enter(tree type) {
+        auto [place, is_new] = numbers_.emplace(type, next_number_);
+        if (!is_new) {
+            wait_for(place->second);
+            return false;
+        }
+        frames_.push_back(Frame{type, next_number_, next_number_, waiting_.size()});
+        ++next_number_;
+        return true;
+    }
+
+    // The last class of the path reaches a part that the walk cannot read: an
+    // incomplete class, or a part behind a bound.
+    void reach_unread_part() { wait_for(kUnread); }
+
+    [[nodiscard]] bool has_unread_part() const { return has_unread_part_; }
+
+    // Takes the last class off the path.  Calls SETTLE for each class that has
+    // the answer of that class now: the class itself and each class that waited
+    // for it.  Calls it for no class while that class waits.
+    template <typename Settle>
+    void leave(Settle settle) {
+        Frame const frame = frames_.back();
+        frames_.pop_back();
+        waiting_.push_back(frame.type);
+        if (frame.low < frame.number) {
+            if (frame.low == kUnread) {
+                numbers_[frame.type] = kUnread;
+            }
+            wait_for(frame.low);
+            return;
+        }
+        for (std::size_t at = frame.first_waiting; at < waiting_.size(); ++at) {
+            numbers_.erase(waiting_[at]);
+            settle(waiting_[at]);
+        }
+        waiting_.resize(frame.first_waiting);
+    }
+
+    // Takes the last class off the path, when its answer is final before the
+    // walk read each part.  A class that waited for it can get a question again.
+    void drop() {
+        Frame const frame = frames_.back();
+        frames_.pop_back();
+        waiting_.push_back(frame.type);
+        for (std::size_t at = frame.first_waiting; at < waiting_.size(); ++at) {
+            numbers_.erase(waiting_[at]);
+        }
+        waiting_.resize(frame.first_waiting);
+    }
+
+private:
+    static constexpr int kUnread = -1;
+
+    struct Frame {
+        tree type = NULL_TREE;
+        int number = 0;
+        int low = 0;  // the least number that the answer of the class waits for, or kUnread
+        std::size_t first_waiting = 0;  // the place in waiting_ of the first class that the walk left after this one
+    };
+
+    void wait_for(int number) {
+        has_unread_part_ = has_unread_part_ || number == kUnread;
+        if (!frames_.empty()) {
+            frames_.back().low = std::min(frames_.back().low, number);
+        }
+    }
+
+    std::vector<Frame> frames_;
+    // The classes that the walk left with an open answer, in their order.
+    std::vector<tree> waiting_;
+    // The number of each class of the path and of waiting_, in the order of the
+    // walk, or kUnread for a class of waiting_ that reaches an unread part.
+    std::unordered_map<tree, int> numbers_;
+    int next_number_ = 0;
+    bool has_unread_part_ = false;
+};
+
+// The answers of one question of reach for each class, by TYPE_UID, which no
+// collection reuses.  A class has the property of such a question when it has
+// it by itself, or when a class that it reaches has it: a base, a member or a
+// type argument that the question reads.  "The class holds a linear sum" is
+// such a question.
+using ReachAnswers = std::unordered_map<unsigned, bool>;
+
+// One walk of a question of reach, from one class to each class that it
+// reaches.  The walk keeps each "yes" at once, and a "no" only when no class
+// that it reads later, and no class that is complete later, can change it
+// (TypePath).
+class ReachWalk {
+public:
+    // What the walk does at a class: it gives an answer, or the caller reads
+    // the parts of the class and gives the answer to leave().
+    enum class Step : std::uint8_t {
+        no,
+        yes,
+        read,
+    };
+
+    explicit ReachWalk(ReachAnswers& answers) : answers_(answers) {}
+
+    Step enter(tree type) {
+        if (!COMPLETE_TYPE_P(type)) {
+            reach_unread_part();
+            return Step::no;
+        }
+        auto found = answers_.find(TYPE_UID(type));
+        if (found != answers_.end()) {
+            return found->second ? Step::yes : Step::no;
+        }
+        return path_.enter(type) ? Step::read : Step::no;
+    }
+
+    bool leave(tree type, bool has_property) {
+        if (has_property) {
+            answers_[TYPE_UID(type)] = true;
+            path_.drop();
+        } else {
+            path_.leave([this](tree settled) { answers_.emplace(TYPE_UID(settled), false); });
+        }
+        return has_property;
+    }
+
+    // The walk meets a bound.
+    void reach_unread_part() { path_.reach_unread_part(); }
+
+    // True when the "no" of the walk can change, because it read no part of an
+    // incomplete class, or of a class behind a bound.
+    [[nodiscard]] bool is_open() const { return path_.has_unread_part(); }
+
+private:
+    ReachAnswers& answers_;
+    TypePath path_;
+};
+
 // The class of a file, as the files above gives it.
 enum class FileClass : std::uint8_t {
     outside,

@@ -1,0 +1,8 @@
+# The rule table of the plant plant-cyclic-owners of the rule view-escape.
+# The unit of src/ is quarantined.  The headers of the repository are outside
+# the root of the plant, so the table admits the marks of the base that the
+# planted code uses.
+
+admit foundation::transfer | the marks of an owner and of a borrow, which the planted classes state
+
+quarantine src/

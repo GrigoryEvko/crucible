@@ -1,0 +1,6 @@
+# Classes that reach themselves through a type argument (ReachWalk of
+# plugin.h) and that hold no borrow give no line of the rule.
+
+compile cycles src/cycles.cpp
+flag cycles -freflection
+exit cycles pass
