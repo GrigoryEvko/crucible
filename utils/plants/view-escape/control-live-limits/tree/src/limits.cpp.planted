@@ -1,15 +1,12 @@
 // Reads of dead storage that the kind stale-borrow does not see.  No line of this
 // unit names the rule view-escape.  Each function pins one limit: a call that keeps
 // a borrow in a different argument, a container of borrows, the result of a generic
-// closure, a call that consumes an owner beside a plain argument that borrows it, a
-// member that keeps a borrow, and a call with no body that takes a class which the
-// unit never completes, and that reaches the owner by a path that the unit cannot
-// see.
+// closure, a member that keeps a borrow, and a call with no body that takes a class
+// which the unit never completes, and that reaches the owner by a path that the unit
+// cannot see.
 #include <foundation/core/Array.h>
 #include <foundation/core/List.h>
 #include <foundation/core/Region.h>
-
-#include <utility>
 
 namespace planted {
 
@@ -23,12 +20,6 @@ struct Kept {
 };
 
 void keep(Kept& kept, View view) noexcept { kept.view = view; }
-
-unsigned long consume(Items&& items, View view) noexcept {
-    Items taken = std::move(items);
-    taken = Items{};
-    return view.size();
-}
 
 unsigned long keep_in_a_different_argument() noexcept {
     Kept kept{};
@@ -52,12 +43,6 @@ unsigned long result_of_a_generic_closure() noexcept {
     auto const view = borrow(0);
     items = Items{};
     return view.size();
-}
-
-unsigned long owner_beside_a_plain_argument() noexcept {
-    Items items{};
-    auto const view = items.view();
-    return consume(std::move(items), view);
 }
 
 class Cursor {

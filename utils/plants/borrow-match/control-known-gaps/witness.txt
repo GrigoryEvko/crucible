@@ -1,8 +1,9 @@
 # The rule does not see a write of a payload with no end in a callee of the arm, a
-# write through a second reference parameter, a write in an arm that the caller gives
-# as a parameter, or the end of the holder of a receiver behind the operator-> of a
-# Box, and no line names the rule borrow-match.  A write through a pointer to the sum
-# does not compile: the store check of the borrow match refuses the arm.
+# write through a second reference parameter, or a write in an arm that the caller
+# gives as a parameter, and no line names the rule borrow-match.  A write through a
+# pointer to the sum does not compile: the store check of the borrow match refuses
+# the arm.  The end of the holder of a receiver behind the operator-> of a Box is a
+# line of the kind stale-borrow of the rule view-escape (plant-stale-borrows).
 
 compile gaps src/gaps.cpp
 flag gaps -freflection

@@ -8,7 +8,9 @@
 # owner leaves its wrapper and lives while a borrow of it is in use.  In the unit
 # constructs a construct at a pointer moves an owner into an object that lives on.
 # In the unit segments a SegmentList of Views keeps a borrow of an element across
-# an append and across an append with code of the element.
+# an append and across an append with code of the element.  In the unit beside one
+# argument of a call gives a borrow, and a different argument names its object, but
+# no callee ends it.
 
 compile live src/live.cpp
 flag live -freflection
@@ -33,3 +35,7 @@ exit constructs pass
 compile segments src/segments.cpp
 flag segments -freflection
 exit segments pass
+
+compile beside src/beside.cpp
+flag beside -freflection
+exit beside pass

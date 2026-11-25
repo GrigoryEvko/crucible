@@ -1,0 +1,77 @@
+// One argument of a call gives a borrow, and a different argument can end its
+// object.  The callee ends the object and then reads the borrow: a View beside a
+// closure that captures the owner and replaces it, a class that holds a View beside
+// such a closure, a View beside the owner by a reference that is not const, a borrow
+// of an element beside its list, and a View beside the owner that the call consumes.
+#include <foundation/core/Array.h>
+#include <foundation/core/List.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+using List = fc::FixedList<Items, 4>;
+
+struct Window {
+    View view{};
+};
+
+template <class Body>
+unsigned long read_after(View view, Body&& body) noexcept {
+    body();
+    return view.size();
+}
+
+template <class Body>
+unsigned long read_window_after(Window window, Body&& body) noexcept {
+    body();
+    return window.view.size();
+}
+
+unsigned long replace_and_read(Items& items, View view) noexcept {
+    items = Items{};
+    return view.size();
+}
+
+unsigned long clear_and_read(List& list, Items const& element) noexcept {
+    list.clear();
+    return element.size();
+}
+
+unsigned long view_beside_a_closure() noexcept {
+    Items items{};
+    return read_after(items.view(), [&items]() noexcept { items = Items{}; });
+}
+
+unsigned long window_beside_a_closure() noexcept {
+    Items items{};
+    return read_window_after(Window{items.view()}, [&items]() noexcept { items = Items{}; });
+}
+
+unsigned long view_beside_its_owner() noexcept {
+    Items items{};
+    return replace_and_read(items, items.view());
+}
+
+unsigned long element_beside_its_list(List& list) noexcept {
+    return clear_and_read(list, *list.get(0).expect("the list holds an element"));
+}
+
+unsigned long consume(Items&& items, View view) noexcept {
+    Items taken = std::move(items);
+    taken = Items{};
+    return view.size();
+}
+
+unsigned long view_beside_a_consumed_owner() noexcept {
+    Items items{};
+    auto const view = items.view();
+    return consume(std::move(items), view);
+}
+
+}  // namespace planted

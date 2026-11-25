@@ -1,0 +1,63 @@
+// One argument of a call gives a borrow, and a different argument names its object,
+// but no callee ends it: a closure that reads the owner, a different owner, the owner
+// by a reference to const, the owner by a reference that the callee only reads, and
+// an owner that the callee consumes and keeps.
+#include <foundation/core/Array.h>
+#include <foundation/core/Region.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::HeapArray<int>;
+using View = fc::View<int const>;
+
+template <class Body>
+unsigned long read_after(View view, Body&& body) noexcept {
+    body();
+    return view.size();
+}
+
+unsigned long read_and_count(Items const& items, View view) noexcept { return items.size() + view.size(); }
+
+unsigned long count_both(Items& items, View view) noexcept { return items.size() + view.size(); }
+
+unsigned long view_beside_a_reading_closure() noexcept {
+    Items items{};
+    return read_after(items.view(), [&items]() noexcept { static_cast<void>(items.size()); });
+}
+
+unsigned long view_beside_a_different_owner() noexcept {
+    Items items{};
+    Items other{};
+    return read_after(items.view(), [&other]() noexcept { other = Items{}; });
+}
+
+unsigned long view_beside_a_const_owner() noexcept {
+    Items items{};
+    return read_and_count(items, items.view());
+}
+
+unsigned long view_beside_an_owner_that_stays() noexcept {
+    Items items{};
+    return count_both(items, items.view());
+}
+
+struct Keeper {
+    Items items{};
+};
+
+unsigned long keep(Keeper& keeper, Items&& items, View view) noexcept {
+    keeper.items = std::move(items);
+    return view.size();
+}
+
+unsigned long view_beside_a_kept_owner(Keeper& keeper) noexcept {
+    Items items{};
+    auto const view = items.view();
+    return keep(keeper, std::move(items), view);
+}
+
+}  // namespace planted

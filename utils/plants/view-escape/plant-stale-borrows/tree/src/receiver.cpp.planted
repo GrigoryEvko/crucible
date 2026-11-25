@@ -1,0 +1,33 @@
+// The receiver of a borrow match stands behind the operator-> of a Box, and the
+// arm captures the Box and ends it.  The match reads the receiver after the arm.
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+
+#include <utility>
+
+namespace planted {
+
+struct Block {
+    ::foundation::core::HeapArray<int> array{};
+};
+
+template <class Owner>
+void move_away_and_end(Owner& owner) noexcept {
+    Owner const taken{std::move(owner)};
+    static_cast<void>(taken);
+}
+
+int receiver_behind_a_box(::foundation::core::Box<Block> box) noexcept {
+    auto& held = box->array;
+    int read = 0;
+    std::as_const(held).with_element(
+        0,
+        [&box, &read](int const& element) noexcept {
+            move_away_and_end(box);
+            read = element;
+        },
+        [] noexcept {});
+    return read;
+}
+
+}  // namespace planted

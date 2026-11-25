@@ -38,6 +38,14 @@
 //     A write through a borrow does not end that borrow.  A call through a
 //     reference does not end the object itself, and a target is no such object.
 //
+// Ends beside a borrow
+//     One argument of a call can give a borrow, as a View or the capture of a
+//     closure, and a different argument can give its object by a reference that is
+//     not const, by a move, or by a closure that captures it so.  The callee can end
+//     the object through the second argument and then read the borrow, so the call is
+//     a use of the borrow after that end.  The effects of the body judge the end, as
+//     they judge a later use.
+//
 // Transfer
 //     A move of an owner keeps the storage behind it, so each loan whose route has
 //     a class in the bytes of the moved object goes to the new object.  A call
@@ -102,9 +110,10 @@
 //     loan, and neither does a container of borrows.  A closure with a declared
 //     result that holds a borrow gives its result the loans of its captures, and a
 //     generic closure gives none.  A call that consumes an owner beside a plain
-//     argument that borrows it is no end: the product gives an arena and a pointer
-//     into it to one object (Vigil.h, keep_load_), and the split mints take a Box and
-//     the Ref of its object (SpscEnds.h).  The place-based checker owns that form.
+//     argument that borrows it ends the borrow only when its body ends the owner
+//     (the ends beside a borrow).  The product gives an arena and a pointer into it
+//     to one object (Vigil.h, keep_load_), and the split mints take a Box and the Ref
+//     of its object (SpscEnds.h), and their bodies keep the owner.
 //     A callee with no body that takes a class which the unit never completes ends
 //     only a loan whose route or targets hold that class.  So an end through such a
 //     class, of an owner that it reaches by a path that the unit cannot see, is no
@@ -2122,6 +2131,7 @@ private:
             built = TREE_CODE(call) == AGGR_INIT_EXPR ? (slot != NULL_TREE ? place_of_lvalue(slot) : kNoPlace)
                                                       : place_of_pointee(argument_at(call, 0));
         }
+        check_ends_beside(callee, arguments);
         CallFacts facts;
         facts.callee = callee;
         facts.result = is_constructor ? DECL_CONTEXT(callee) : TREE_TYPE(type);
@@ -2163,6 +2173,129 @@ private:
         bool is_constructor = false;
         bool is_assignment = false;
     };
+
+    // ── The ends beside a borrow ──
+
+    // An object that one argument of a call binds: its place, the loan that gives
+    // it, and whether the callee can write or end it through this argument.
+    struct Binding {
+        int place = kNoPlace;
+        int loan = -1;
+        bool is_write = false;
+        bool is_capture = false;
+    };
+
+    // The source of the value that a move constructor builds for a parameter by
+    // value, or kNoPlace.
+    int moved_source(tree node) {
+        tree value = strip_value(value_of_argument(node));
+        if (value != NULL_TREE && TREE_CODE(value) == TARGET_EXPR) {
+            value = strip_value(TARGET_EXPR_INITIAL(value));
+        }
+        if (value == NULL_TREE || (TREE_CODE(value) != AGGR_INIT_EXPR && TREE_CODE(value) != CALL_EXPR)) {
+            return kNoPlace;
+        }
+        tree constructor = cp_get_callee_fndecl_nofold(value);
+        if (constructor == NULL_TREE || !DECL_CONSTRUCTOR_P(constructor) || argument_count(value) != 2) {
+            return kNoPlace;
+        }
+        tree source = argument_at(value, 1);
+        tree type = TREE_TYPE(source);
+        if (type == NULL_TREE || !is_rvalue_reference(type)) {
+            return kNoPlace;
+        }
+        return place_of_pointee(source);
+    }
+
+    // The objects that ARGUMENT binds.
+    void add_bindings(const Argument& argument, std::vector<Binding>& out) {
+        if (argument.parameter == NULL_TREE) {
+            return;
+        }
+        if (argument.is_closure) {
+            for (int loan : argument.loans) {
+                if (loans_[loan].place != kNoPlace && loans_[loan].source == LoanSource::capture) {
+                    out.push_back(Binding{loans_[loan].place, loan, loans_[loan].is_unique, true});
+                }
+            }
+            return;
+        }
+        if (is_indirect_type(argument.parameter)) {
+            for (int place : argument.places) {
+                out.push_back(Binding{place, -1, argument.is_write, false});
+            }
+            for (int loan : argument.loans) {
+                if (loans_[loan].place != kNoPlace) {
+                    out.push_back(Binding{loans_[loan].place, loan, argument.is_write, false});
+                }
+            }
+            return;
+        }
+        if (has_end(argument.parameter)) {
+            int const source = moved_source(argument.node);
+            if (source != kNoPlace) {
+                out.push_back(Binding{source, -1, true, false});
+            }
+        }
+        for (int loan : argument.loans) {
+            if (loans_[loan].place != kNoPlace) {
+                out.push_back(Binding{loans_[loan].place, loan, loans_[loan].is_unique, false});
+            }
+        }
+    }
+
+    // The callee can use the borrow BORROW of one argument after the argument at
+    // WRITER_INDEX ends its object.  The use is at the call.
+    void note_end_beside(const Binding& borrow, const Argument& borrow_argument, const Binding& writer,
+                         const Argument& writer_argument, std::size_t writer_index, tree callee) {
+        End end = make_end(EndKind::call, writer.place);
+        end.callee = callee;
+        if (writer.is_capture) {
+            end.is_closure = true;
+            end.taking = taking_of_capture(loans_[writer.loan].closure, loans_[writer.loan].field);
+        } else {
+            end.taking = taking_of_parameter(callee, writer_index, writer_argument.held);
+        }
+        tree const type = writer.is_capture ? places_.type(writer.place) : writer_argument.held;
+        is_rvalue_end_ = writer_argument.is_rvalue && !writer.is_capture;
+        bool const is_ended = ends_loan(loans_[borrow.loan], writer.place, end, type);
+        is_rvalue_end_ = false;
+        if (!is_ended) {
+            return;
+        }
+        tree const named = strip_value(object_of(borrow_argument.node));
+        bool const is_named = named != NULL_TREE && DECL_P(named) && DECL_NAME(named) != NULL_TREE;
+        record_use(is_named ? identifier_text(DECL_NAME(named)) : std::string("an argument of the call"), borrow.loan,
+                   {add_end(end)});
+    }
+
+    // A call that gets a borrow in one argument, and a different argument that can
+    // end the borrowed object (the ends beside a borrow).  Complexity: the square of
+    // the bindings of the call.
+    void check_ends_beside(tree callee, const std::vector<Argument>& arguments) {
+        if (!reads_uses_ || !state_.is_reachable || arguments.size() < 2) {
+            return;
+        }
+        std::vector<std::vector<Binding>> bindings(arguments.size());
+        for (std::size_t index = 0; index < arguments.size(); ++index) {
+            add_bindings(arguments[index], bindings[index]);
+        }
+        for (std::size_t lender = 0; lender < arguments.size(); ++lender) {
+            for (std::size_t writer = 0; writer < arguments.size(); ++writer) {
+                if (lender == writer) {
+                    continue;
+                }
+                for (const Binding& borrow : bindings[lender]) {
+                    for (const Binding& end : bindings[writer]) {
+                        if (borrow.loan >= 0 && !borrow.is_write && end.is_write
+                            && places_.overlaps(loans_[borrow.loan].place, end.place)) {
+                            note_end_beside(borrow, arguments[lender], end, arguments[writer], writer, callee);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // The body of the call can end the object at PLACE that ARGUMENT gives.  With
     // RESULT, the result of the call is a value of RESULT that can get an owner inside
@@ -2499,10 +2632,16 @@ tree find_borrow(tree* node, int* walk_subtrees, void*) {
         && holds_borrow(TREE_TYPE(DECL_EXPR_DECL(*node)))) {
         return *node;
     }
+    // A closure, and a temporary that holds a borrow, can give a borrow to a call
+    // (the ends beside a borrow).
+    if (TREE_CODE(*node) == LAMBDA_EXPR
+        || (TREE_CODE(*node) == TARGET_EXPR && TREE_TYPE(*node) != NULL_TREE && holds_borrow(TREE_TYPE(*node)))) {
+        return *node;
+    }
     return NULL_TREE;
 }
 
-// True when a local or a parameter of FUNCTION can hold a borrow.
+// True when a local, a parameter or a temporary of FUNCTION can hold a borrow.
 bool has_borrow(tree function) {
     for (tree parameter = DECL_ARGUMENTS(function); parameter != NULL_TREE; parameter = DECL_CHAIN(parameter)) {
         if (!is_indirect_type(TREE_TYPE(parameter)) && holds_borrow(TREE_TYPE(parameter))) {
