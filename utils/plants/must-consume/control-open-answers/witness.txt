@@ -1,0 +1,6 @@
+# Classes that reach themselves through a type argument, or whose argument is
+# complete later (the linear types of linear.cpp), each one a correct use of its
+# linear values.  The unit compiles and gives no line of the rule.
+compile facts src/facts.cpp must-consume=on
+flag facts -freflection
+exit facts pass

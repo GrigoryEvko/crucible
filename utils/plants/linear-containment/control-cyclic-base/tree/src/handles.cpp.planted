@@ -1,0 +1,28 @@
+// A handle that is linear only by a base whose type argument is the handle
+// (the linear types of linear.cpp).  The handle can move, so it is linear by
+// its parts, and it is no pinned holder.
+#include <foundation/ByteSeal.h>
+#include <foundation/Linear.h>
+
+namespace planted {
+
+template <class Derived>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{},
+         = ::foundation::lifetime::no_start_over_bytes{}]] Base {
+    int word = 0;
+    constexpr Base() noexcept = default;
+    constexpr Base(Base&&) noexcept {}
+    constexpr Base& operator=(Base&&) noexcept { return *this; }
+    Base(const Base&) = delete;
+    ~Base() {}
+};
+
+struct Handle : Base<Handle> {
+    Handle() noexcept = default;
+    Handle(Handle&&) noexcept = default;
+    Handle& operator=(Handle&&) noexcept = default;
+};
+
+int read(Handle const& handle) noexcept { return handle.word; }
+
+}  // namespace planted

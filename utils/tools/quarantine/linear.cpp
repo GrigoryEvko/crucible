@@ -737,16 +737,22 @@ struct LinearNames {
 
 LinearNames linear_names;
 
-// The answers of the type walks, keyed by the main variant of a class.  Each
-// collection clears them, because a collection can free a tree and reuse its
-// address.
+// The answers of the type walks for each complete class, by TYPE_UID, which no
+// collection reuses.  The linearity and the move of a class read only its
+// bases and its members.  A class holds each of them by value, so a class
+// reaches itself through none of them, and each one is complete when the class
+// is.  The end of the scope reads the sums of the type arguments too, so it
+// keeps an answer only when no later part can change it (scope_end_of).
 struct LinearCaches {
-    std::unordered_map<tree, TypeFacts> facts;
-    std::unordered_map<tree, bool> can_move;
-    std::unordered_map<tree, bool> holds_sum;
+    std::unordered_map<unsigned, Linearity> linearity;
+    std::unordered_map<unsigned, bool> can_move;
+    std::unordered_map<unsigned, bool> ends_at_scope;
 };
 
 LinearCaches linear_caches;
+
+// The answers of holds_linear_sum (the sum holders, ReachWalk).
+ReachAnswers sum_holders;
 
 // The rules that the arguments of the unit run (register_linear).
 struct LinearMode {
@@ -827,20 +833,19 @@ tree element_type_of(tree type) {
 // constructor that is not deleted moves it.  The walk declares no implicit
 // member, so it changes no tree.  A class that holds a linear part has no
 // implicit copy constructor that is not deleted, so a class with no move
-// constructor and no declared copy constructor cannot move.  Complexity: the
-// walk visits each class one time.
+// constructor and no declared copy constructor cannot move.  A class holds its
+// bases and its members by value, so the walk meets no class again on its
+// path, and each part is complete when the class is.  Complexity: the walk
+// visits each class one time.
 bool can_move(tree type, int depth) {
     type = TYPE_MAIN_VARIANT(element_type_of(type));
     if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type) || depth > kTypeDepth) {
         return true;
     }
-    auto found = linear_caches.can_move.find(type);
+    auto found = linear_caches.can_move.find(TYPE_UID(type));
     if (found != linear_caches.can_move.end()) {
         return found->second;
     }
-    // The answer while the walk is open, so that a cycle through a member
-    // ends.
-    linear_caches.can_move.emplace(type, true);
     bool result = false;
     bool is_decided = false;
     for (ovl_iterator constructor(CLASSTYPE_CONSTRUCTORS(type)); constructor; ++constructor) {
@@ -875,72 +880,126 @@ bool can_move(tree type, int depth) {
             }
         }
     }
-    linear_caches.can_move[type] = result;
+    linear_caches.can_move.emplace(TYPE_UID(type), result);
     return result;
 }
 
-bool parts_hold_linear_sum(tree type, bool is_linear, int depth);
-
-// The facts of a type (the linear types).  An array has the facts of its
-// element.  The end of the scope of a class with the annotation
-// scope_end_door is no door when a part of the class is or holds a linear sum
-// (parts_hold_linear_sum), because the destructor of the class ends that sum,
-// and the rule reads no destructor.  Complexity: the walk visits each class
-// one time.
-TypeFacts facts_of(tree type, int depth = 0) {
-    if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth || !TYPE_P(type)) {
-        return {};
+// The class whose facts a value of TYPE has: the main variant of TYPE, or of
+// the element of an array.  Null for each other type and for an incomplete
+// class.
+tree complete_class_of(tree type) {
+    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
+        return NULL_TREE;
     }
     type = TYPE_MAIN_VARIANT(element_type_of(type));
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
-        return {};
+    return CLASS_TYPE_P(type) && COMPLETE_TYPE_P(type) ? type : NULL_TREE;
+}
+
+// Calls VISIT for the type of each part that a value of the complete class
+// TYPE holds: a base, and a data member that is no reference.
+template <typename Visit>
+void each_value_part(tree type, Visit visit) {
+    if (tree binfo = TYPE_BINFO(type)) {
+        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
+            visit(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)));
+        }
     }
-    auto found = linear_caches.facts.find(type);
-    if (found != linear_caches.facts.end()) {
+    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
+        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
+            && !TYPE_REF_P(TREE_TYPE(field))) {
+            visit(TREE_TYPE(field));
+        }
+    }
+}
+
+// The linearity of a type (the linear types).  An array has the linearity of
+// its element.  The walk reads bases and members only, so it meets no class
+// again on its path, and each part is complete when the class is.  Complexity:
+// the walk visits each class one time.
+Linearity linearity_of(tree type, int depth = 0) {
+    type = complete_class_of(type);
+    if (type == NULL_TREE || depth > kTypeDepth) {
+        return Linearity::none;
+    }
+    auto found = linear_caches.linearity.find(TYPE_UID(type));
+    if (found != linear_caches.linearity.end()) {
         return found->second;
     }
-    // A class that holds itself through a member is no type, and the answer
-    // keeps the walk finite while the answer is open.
-    linear_caches.facts.emplace(type, TypeFacts{});
-    TypeFacts result;
-    tree attributes = TYPE_ATTRIBUTES(type);
-    bool is_scope_door = carries_annotation(attributes, linear_names.scope_end_door);
-    if (carries_annotation(attributes, linear_names.linear)) {
-        result.linearity = Linearity::direct;
-        result.ends_at_scope = is_scope_door && !parts_hold_linear_sum(type, true, depth + 1);
+    Linearity result = Linearity::none;
+    if (carries_annotation(TYPE_ATTRIBUTES(type), linear_names.linear)) {
+        result = Linearity::direct;
     } else {
         bool holds_linear = false;
-        bool each_part_ends = true;
-        auto add_part = [&](tree part) {
-            TypeFacts part_facts = facts_of(part, depth + 1);
-            if (part_facts.linearity != Linearity::none) {
-                holds_linear = true;
-                each_part_ends = each_part_ends && part_facts.ends_at_scope;
-            }
-        };
-        if (tree binfo = TYPE_BINFO(type)) {
-            for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-                add_part(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)));
-            }
-        }
-        for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-            if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
-                && !TYPE_REF_P(TREE_TYPE(field))) {
-                add_part(TREE_TYPE(field));
-            }
-        }
+        each_value_part(
+            type, [&](tree part) { holds_linear = holds_linear || linearity_of(part, depth + 1) != Linearity::none; });
         if (holds_linear && can_move(type, 0)) {
-            result.linearity = Linearity::derived;
-            result.ends_at_scope = (is_scope_door && !parts_hold_linear_sum(type, true, depth + 1)) || each_part_ends;
+            result = Linearity::derived;
         }
     }
-    linear_caches.facts[type] = result;
+    linear_caches.linearity.emplace(TYPE_UID(type), result);
     return result;
 }
 
-Linearity linearity_of(tree type) { return facts_of(type).linearity; }
-
 bool is_linear_type(tree type) { return linearity_of(type) != Linearity::none; }
+
+bool parts_hold_linear_sum(tree type, bool is_linear, ReachWalk& walk, int depth);
+
+// Whether the end of the scope of a value of a type is a door, and whether a
+// class that is complete later can change the answer.
+struct ScopeEnd {
+    bool is_door = false;
+    bool is_open = false;
+};
+
+// The end of the scope of a value of TYPE, when TYPE is linear (the linear
+// types).  The end of the scope of a class with the annotation scope_end_door
+// is no door when a part of the class is or holds a linear sum
+// (parts_hold_linear_sum), because the destructor of the class ends that sum,
+// and the rule reads no destructor.  The end of the scope of each other class
+// is a door when the end of the scope of each of its linear parts is one.  The
+// walk reads a type argument only for its sums, so it reads each class one
+// time.  Complexity: linear in the classes that the type reaches.
+ScopeEnd scope_end_of(tree type, int depth = 0) {
+    type = complete_class_of(type);
+    ScopeEnd result;
+    Linearity const linearity = depth > kTypeDepth ? Linearity::none : linearity_of(type);
+    if (linearity == Linearity::none) {
+        return result;
+    }
+    auto found = linear_caches.ends_at_scope.find(TYPE_UID(type));
+    if (found != linear_caches.ends_at_scope.end()) {
+        result.is_door = found->second;
+        return result;
+    }
+    if (carries_annotation(TYPE_ATTRIBUTES(type), linear_names.scope_end_door)) {
+        ReachWalk walk(sum_holders);
+        result.is_door = !parts_hold_linear_sum(type, true, walk, depth + 1);
+        result.is_open = result.is_door && walk.is_open();
+    }
+    if (!result.is_door && linearity == Linearity::derived) {
+        result.is_door = true;
+        each_value_part(type, [&](tree part) {
+            if (result.is_door && is_linear_type(part)) {
+                ScopeEnd const part_end = scope_end_of(part, depth + 1);
+                result.is_door = part_end.is_door;
+                result.is_open = result.is_open || part_end.is_open;
+            }
+        });
+    }
+    if (!result.is_open) {
+        linear_caches.ends_at_scope.emplace(TYPE_UID(type), result.is_door);
+    }
+    return result;
+}
+
+// The facts of a type (the linear types).  An array has the facts of its
+// element.
+TypeFacts facts_of(tree type) {
+    TypeFacts result;
+    result.linearity = linearity_of(type);
+    result.ends_at_scope = scope_end_of(type).is_door;
+    return result;
+}
 
 // Adds each linear field of the class TYPE to FIELDS: its own fields, and the
 // fields of each base that is linear by its parts (the fields).  Returns false,
@@ -977,7 +1036,7 @@ bool collect_linear_fields(tree type, std::vector<tree>& fields, int depth) {
     return true;
 }
 
-bool holds_linear_sum(tree type, int depth);
+bool holds_linear_sum(tree type);
 
 // Adds each field of the class TYPE that is or holds a linear sum to FIELDS,
 // for a holder of a sum in the body of a door (the sum holders).  Returns
@@ -986,14 +1045,14 @@ bool holds_linear_sum(tree type, int depth);
 bool collect_sum_fields(tree type, std::vector<tree>& fields) {
     if (tree binfo = TYPE_BINFO(type)) {
         for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-            if (holds_linear_sum(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), 1)) {
+            if (holds_linear_sum(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)))) {
                 return false;
             }
         }
     }
     for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
         if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
-            && !TYPE_REF_P(TREE_TYPE(field)) && holds_linear_sum(TREE_TYPE(field), 1)) {
+            && !TYPE_REF_P(TREE_TYPE(field)) && holds_linear_sum(TREE_TYPE(field))) {
             fields.push_back(field);
         }
     }
@@ -1035,63 +1094,53 @@ bool is_linear_sum(tree type) {
     return CLASS_TYPE_P(type) && carries_annotation(TYPE_ATTRIBUTES(type), linear_names.sum) && is_linear_type(type);
 }
 
+// True when TYPE is or holds a linear sum, in the walk WALK of
+// holds_linear_sum or of scope_end_of.
+bool reaches_linear_sum(tree type, ReachWalk& walk, int depth) {
+    if (type == NULL_TREE || type == error_mark_node || !TYPE_P(type)) {
+        return false;
+    }
+    type = TYPE_MAIN_VARIANT(element_type_of(type));
+    if (!CLASS_TYPE_P(type)) {
+        return false;
+    }
+    ReachWalk::Step const step = walk.enter(type);
+    if (step != ReachWalk::Step::read) {
+        return step == ReachWalk::Step::yes;
+    }
+    return walk.leave(type, is_linear_sum(type) || parts_hold_linear_sum(type, is_linear_type(type), walk, depth));
+}
+
 // True when TYPE is a linear sum or holds one by value (the sum holders): the
 // element of an array, a base, a data member that is no reference, and a
 // type argument of a linear class, such as the payload of a Box or the
 // element of a list, at each depth.  A pointer and a reference hold nothing.
-// The walk reads each class, also one that cannot move.  Complexity: the walk
-// visits each class one time.
-bool holds_linear_sum(tree type, int depth = 0) {
-    if (type == NULL_TREE || type == error_mark_node || depth > kTypeDepth || !TYPE_P(type)) {
-        return false;
-    }
-    type = TYPE_MAIN_VARIANT(element_type_of(type));
-    if (!CLASS_TYPE_P(type) || !COMPLETE_TYPE_P(type)) {
-        return false;
-    }
-    auto found = linear_caches.holds_sum.find(type);
-    if (found != linear_caches.holds_sum.end()) {
-        return found->second;
-    }
-    // The answer while the walk is open, so that a cycle through a type
-    // argument ends.
-    linear_caches.holds_sum.emplace(type, false);
-    bool const result = is_linear_sum(type) || parts_hold_linear_sum(type, is_linear_type(type), depth);
-    linear_caches.holds_sum[type] = result;
-    return result;
+// The walk reads each class, also one that cannot move.  Complexity: linear in
+// the classes that the type reaches (ReachWalk).
+bool holds_linear_sum(tree type) {
+    ReachWalk walk(sum_holders);
+    return reaches_linear_sum(type, walk, 0);
 }
 
 // True when a part of the complete class TYPE is or holds a linear sum: a
 // base, a data member that is no reference, or a type argument when
-// IS_LINEAR tells that TYPE is linear (holds_linear_sum).  A linear class is
+// IS_LINEAR tells that TYPE is linear (reaches_linear_sum).  A linear class is
 // linear by the values that its type arguments name, so it holds them.
 // Complexity: linear in the parts, and the walk of each part.
-bool parts_hold_linear_sum(tree type, bool is_linear, int depth) {
+bool parts_hold_linear_sum(tree type, bool is_linear, ReachWalk& walk, int depth) {
     if (depth > kTypeDepth) {
+        walk.reach_unread_part();
         return false;
     }
-    if (tree binfo = TYPE_BINFO(type)) {
-        for (unsigned index = 0; index < BINFO_N_BASE_BINFOS(binfo); ++index) {
-            if (holds_linear_sum(BINFO_TYPE(BINFO_BASE_BINFO(binfo, index)), depth + 1)) {
-                return true;
-            }
-        }
-    }
-    for (tree field = TYPE_FIELDS(type); field != NULL_TREE; field = DECL_CHAIN(field)) {
-        if (TREE_CODE(field) == FIELD_DECL && !DECL_FIELD_IS_BASE(field) && TREE_TYPE(field) != NULL_TREE
-            && !TYPE_REF_P(TREE_TYPE(field)) && holds_linear_sum(TREE_TYPE(field), depth + 1)) {
-            return true;
-        }
-    }
-    tree info = is_linear ? CLASSTYPE_TEMPLATE_INFO(type) : NULL_TREE;
+    bool holds_sum = false;
+    each_value_part(type, [&](tree part) { holds_sum = holds_sum || reaches_linear_sum(part, walk, depth + 1); });
+    tree info = is_linear && !holds_sum ? CLASSTYPE_TEMPLATE_INFO(type) : NULL_TREE;
     tree arguments = info != NULL_TREE ? INNERMOST_TEMPLATE_ARGS(TI_ARGS(info)) : NULL_TREE;
-    for (int index = 0; arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
+    for (int index = 0; !holds_sum && arguments != NULL_TREE && index < TREE_VEC_LENGTH(arguments); ++index) {
         tree argument = TREE_VEC_ELT(arguments, index);
-        if (argument != NULL_TREE && TYPE_P(argument) && holds_linear_sum(argument, depth + 1)) {
-            return true;
-        }
+        holds_sum = argument != NULL_TREE && TYPE_P(argument) && reaches_linear_sum(argument, walk, depth + 1);
     }
-    return false;
+    return holds_sum;
 }
 
 // The summaries: the capture fields of each closure whose reference names a
@@ -4746,7 +4795,8 @@ void judge_deferred_findings() {
 // ── The shapes (refer to the section Shapes) ────────────────────────────
 
 // The facts of the rules of the shapes, keyed by the main variant of a type.
-// Each collection clears them, as it clears linear_caches.
+// Each collection clears them, because a collection can free a tree and reuse
+// its address.
 struct ShapeCaches {
     std::unordered_map<tree, bool> refuses_lifetime;
     std::unordered_map<tree, tree> library_holder;
@@ -6772,9 +6822,6 @@ void on_empty_class_assignment(void* gcc_data, void*) {
 }
 
 void on_linear_collection(void*, void*) {
-    linear_caches.facts.clear();
-    linear_caches.can_move.clear();
-    linear_caches.holds_sum.clear();
     shape_caches.refuses_lifetime.clear();
     shape_caches.library_holder.clear();
     shape_caches.brands.clear();

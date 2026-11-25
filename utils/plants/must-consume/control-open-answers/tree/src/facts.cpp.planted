@@ -1,0 +1,64 @@
+// Classes that reach themselves through a type argument (the linear types of
+// linear.cpp), each one a correct use of its linear values: a handle that is
+// linear only by a base of itself, whose end of the scope is a door, and a
+// lease of a class that is complete later and holds no sum.
+#include <foundation/Linear.h>
+
+#include <utility>
+
+namespace planted {
+
+template <class Derived>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Base {
+    int word = 0;
+    constexpr Base() noexcept = default;
+    constexpr Base(Base&&) noexcept {}
+    constexpr Base& operator=(Base&&) noexcept { return *this; }
+    Base(const Base&) = delete;
+    ~Base() {}
+};
+
+struct Handle : Base<Handle> {
+    Handle() noexcept = default;
+    Handle(Handle&&) noexcept = default;
+    Handle& operator=(Handle&&) noexcept = default;
+};
+
+void take_base(Base<Handle>&& base) noexcept;
+void take(Handle&& handle) noexcept;
+
+void pass_base(Base<Handle>&& base) { take_base(std::move(base)); }
+
+void consume_once(Handle&& handle) { take(std::move(handle)); }
+
+// The end of the scope is a door.
+void end_at_the_scope() {
+    Handle handle{};
+    static_cast<void>(handle.word);
+}
+
+template <class T>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Lease {
+    int word = 0;
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+struct Later;
+void take_early(Lease<Later>&& lease) noexcept;
+void pass_early(Lease<Later>&& lease) { take_early(std::move(lease)); }
+
+struct Later {
+    Lease<Later> next{};
+    int value = 0;
+};
+
+void end_a_lease_at_the_scope() {
+    Lease<Later> lease{};
+    static_cast<void>(lease.word);
+}
+
+}  // namespace planted

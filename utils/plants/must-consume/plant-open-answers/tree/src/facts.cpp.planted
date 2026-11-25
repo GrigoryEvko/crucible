@@ -1,0 +1,92 @@
+// The facts of a class that the walk asks while the answer of a class around
+// it is open, or while a type argument is incomplete (the linear types of
+// linear.cpp).
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+#include <utility>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A base whose end of the scope is a door, and whose derived class is its type
+// argument.  The derived class is linear only by this base.
+template <class Derived>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Base {
+    int word = 0;
+    constexpr Base() noexcept = default;
+    constexpr Base(Base&&) noexcept {}
+    constexpr Base& operator=(Base&&) noexcept { return *this; }
+    Base(const Base&) = delete;
+    ~Base() {}
+};
+
+struct Handle : Base<Handle> {
+    Handle() noexcept = default;
+    Handle(Handle&&) noexcept = default;
+    Handle& operator=(Handle&&) noexcept = default;
+};
+
+void take_base(Base<Handle>&& base) noexcept;
+void take(Handle&& handle) noexcept;
+
+// This body asks the base before the derived class.
+void pass_base(Base<Handle>&& base) { take_base(std::move(base)); }
+
+void consume_twice(Handle&& handle) {
+    take(std::move(handle));
+    take(std::move(handle));
+}
+
+void move_out_of_a_borrow(Handle& handle) { take(std::move(handle)); }
+
+// A class whose end of the scope is a door, unless its type argument holds a
+// sum, which the destructor of the class then ends.
+template <class T>
+struct [[= ::foundation::linear::linear{}, = ::foundation::linear::scope_end_door{}]] Lease {
+    int word = 0;
+    constexpr Lease() noexcept = default;
+    constexpr Lease(Lease&&) noexcept {}
+    constexpr Lease& operator=(Lease&&) noexcept { return *this; }
+    Lease(const Lease&) = delete;
+    ~Lease() {}
+};
+
+// This body asks the Lease while its argument is incomplete.
+struct Later;
+void take_early(Lease<Later>&& lease) noexcept;
+void pass_early(Lease<Later>&& lease) { take_early(std::move(lease)); }
+
+struct Later {
+    Option<Token> held{};
+};
+
+// The end of this local ends the sum of Later.
+void drop_a_sum_of_a_later_class() {
+    Lease<Later> lease{};
+    static_cast<void>(lease.word);
+}
+
+// The twin: the argument is complete before the first question.
+struct Prompt {
+    Option<Token> held{};
+};
+
+void drop_a_sum_of_a_prompt_class() {
+    Lease<Prompt> lease{};
+    static_cast<void>(lease.word);
+}
+
+}  // namespace planted

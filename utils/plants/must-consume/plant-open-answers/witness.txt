@@ -1,0 +1,32 @@
+# The answers of the type walks (the linear types and the sum holders of
+# linear.cpp) depend on no order of the questions.  The unit facts.cpp asks a
+# base before the derived class that is its type argument, and the derived class
+# is linear only by that base: a second consume (50) and a move out of a lent
+# parameter (53) of the derived class give their lines.  It also asks a lease of
+# a class that is incomplete there, and that later holds a sum: the end of a
+# later local (78) is no door, as for a class that is complete before (88).  The
+# unit sums.cpp has a static cell of a node that holds the cell before its sum
+# (45), and the walk of the statics asks the node first.  The walk that keeps
+# an open answer, or the answer of an incomplete class, gives none of the lines
+# 50, 53 and 78 of facts.cpp and 45 of sums.cpp.
+
+compile facts src/facts.cpp must-consume=on
+flag facts -freflection
+exit facts pass
+judge facts
+finding facts must-consume double-consume src/facts.cpp:50:9 | planted::consume_twice: handle (planted::Handle)
+finding facts must-consume borrow-move-out src/facts.cpp:53:49 | planted::move_out_of_a_borrow: handle (planted::Handle)
+finding facts must-consume unconsumed src/facts.cpp:78:18 | planted::drop_a_sum_of_a_later_class: lease (planted::Lease<planted::Later>)
+finding facts must-consume unconsumed src/facts.cpp:88:19 | planted::drop_a_sum_of_a_prompt_class: lease (planted::Lease<planted::Prompt>)
+
+compile sums src/sums.cpp must-consume=on errors=sums
+flag sums -freflection
+exit sums fail
+finding sums must-consume option-static src/sums.cpp:45:17 | planted::kept_cell (planted::Cell<planted::CellFirst>)
+finding sums must-consume option-static src/sums.cpp:46:11 | planted::kept_node (planted::CellFirst)
+finding sums must-consume option-static src/sums.cpp:47:16 | planted::kept_first_cell (planted::Cell<planted::SumFirst>)
+finding sums must-consume option-static src/sums.cpp:48:10 | planted::kept_first_node (planted::SumFirst)
+finding sums process-wide-state unmarked-static src/sums.cpp:45:17 | planted::kept_cell
+finding sums process-wide-state unmarked-static src/sums.cpp:46:11 | planted::kept_node
+finding sums process-wide-state unmarked-static src/sums.cpp:47:16 | planted::kept_first_cell
+finding sums process-wide-state unmarked-static src/sums.cpp:48:10 | planted::kept_first_node

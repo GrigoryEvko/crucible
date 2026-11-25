@@ -1,0 +1,50 @@
+// Classes that hold a linear sum and that reach themselves through a type
+// argument (the sum holders of linear.cpp).  Each static object of such a
+// class is the kind option-static, in each order of the questions.
+#include <foundation/Linear.h>
+#include <foundation/core/Choice.h>
+
+namespace planted {
+
+using ::foundation::core::Option;
+
+struct [[= ::foundation::linear::linear{}]] Token {
+    int handle = 0;
+    constexpr explicit Token(int value) noexcept : handle{value} {}
+    constexpr Token(Token&&) noexcept = default;
+    constexpr Token& operator=(Token&& other) noexcept {
+        handle = other.handle;
+        return *this;
+    }
+    Token(const Token&) = delete;
+};
+
+// A linear class that holds the values that its type argument names.
+template <class T>
+struct [[= ::foundation::linear::linear{}]] Cell {
+    int word = 0;
+    constexpr Cell() noexcept = default;
+    constexpr Cell(Cell&&) noexcept = default;
+    constexpr Cell& operator=(Cell&&) noexcept { return *this; }
+    Cell(const Cell&) = delete;
+};
+
+// A node that holds the cell of itself before its sum, and one that holds it
+// after its sum.
+struct CellFirst {
+    Cell<CellFirst> next{};
+    Option<Token> held{};
+};
+struct SumFirst {
+    Option<Token> held{};
+    Cell<SumFirst> next{};
+};
+
+// The walk of the statics reads the last object first, so it asks the node of
+// each pair before its cell.
+Cell<CellFirst> kept_cell{};
+CellFirst kept_node{};
+Cell<SumFirst> kept_first_cell{};
+SumFirst kept_first_node{};
+
+}  // namespace planted

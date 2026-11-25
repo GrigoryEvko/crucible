@@ -1,0 +1,7 @@
+# A handle that is linear only by a base whose type argument is the handle, and
+# that can move, is no pinned holder (the linear types of linear.cpp).  The walk
+# that keeps an open answer gives a false line at the handle.
+
+compile handles src/handles.cpp linear-shapes=on
+flag handles -freflection
+exit handles pass
