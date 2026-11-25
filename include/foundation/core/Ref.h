@@ -248,66 +248,110 @@ namespace detail {
         || ::foundation::reflect::carries_annotation(brand, ^^brand_marks::epoch_brand);
 }
 
-// The constructors of a class that a build can call: each one of the class, or
-// the ones that a derived class can inherit, which are no default, copy or move
-// constructor.
-enum class BuildSet : unsigned char {
-    own,
-    inherited,
+// The constructors of one class for the build key of the class and one tag.  A
+// constructor is open when it is not deleted and takes no such key by value.  A
+// constructor template counts as open, because the read does not see the
+// parameters of a template.
+struct BuildReading final {
+    // The class has an open constructor.
+    bool has_open_own = false;
+    // The class has an open constructor that a derived class can inherit: one
+    // that is no default, copy or move constructor.
+    bool has_open_inheritable = false;
+    // A base of the class, at each depth, has an open constructor that a derived
+    // class can inherit with the key of the base.  A using declaration inherits
+    // such a constructor, and no list of the members of the derived class shows
+    // it.
+    bool inherits_open = false;
 };
 
-// True when a constructor of the set that is not deleted takes no build key of
-// the class and the tag by value.  A constructor template counts as one, because
-// the read does not see the parameters of a template.  The read has no access
-// check, because a member function or a friend of the class can call a private
-// constructor.  Complexity: linear in the members of the class and in the
-// parameters of each constructor.
-[[nodiscard]] consteval bool has_open_build_(std::meta::info type, std::meta::info tag, BuildSet set) {
-    namespace refl = ::foundation::reflect;
-    std::meta::info const arguments[] = {tag, type};
-    std::meta::info const key = std::meta::dealias(std::meta::substitute(^^ArenaBuildKey, arguments));
-    std::meta::info const open =
-        refl::find_member(type, std::meta::access_context::unchecked(), [key, set](std::meta::info member) {
-            if (std::meta::is_constructor_template(member)) return true;
-            if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) return false;
-            bool const is_special = std::meta::is_default_constructor(member) || std::meta::is_copy_constructor(member)
-                                 || std::meta::is_move_constructor(member);
-            if (set == BuildSet::inherited && is_special) return false;
-            std::meta::info const taken = refl::find_parameter(member, [key](std::meta::info parameter) {
-                return std::meta::dealias(std::meta::type_of(parameter)) == key;
-            });
-            return taken == std::meta::info{};
-        });
-    return open != std::meta::info{};
-}
+template <class Class, class Tag>
+[[nodiscard]] consteval BuildReading read_builds_();
 
-// True when a base of the class, at each depth, has a constructor with
-// parameters that takes no build key of the base and the tag.  A using
-// declaration inherits such a constructor, and no list of the members of the
-// derived class shows it.
-[[nodiscard]] consteval bool inherits_open_build_(std::meta::info type, std::meta::info tag) {
+// The kept reading of one class and one tag, so each unit reads the members of
+// a class one time, for to() and for make of each argument list.
+template <class Class, class Tag>
+inline constexpr BuildReading build_reading_v = read_builds_<Class, Tag>();
+
+// The class that a pointer to a class converts to when the class, or a base of
+// it at each depth, has an open constructor that a derived class can inherit,
+// and a pointer to no other class.  The read of the kept answer of a base costs
+// a conversion test, and no substitute (is_plain_class_ of
+// foundation/core/TypeParts.h).
+template <class Tag>
+struct InheritsOpenBuildTest final {
+    template <class Class>
+        requires(build_reading_v<Class, Tag>.has_open_inheritable || build_reading_v<Class, Tag>.inherits_open)
+    consteval InheritsOpenBuildTest(Class*) noexcept {}
+};
+
+// The read of the constructors of a complete class.  The read has no access
+// check, because a member function or a friend of the class can call a private
+// constructor.  Each base answers from its own kept reading.  Complexity:
+// linear in the members of the class, in the parameters of each constructor
+// and in the direct bases.
+template <class Class, class Tag>
+[[nodiscard]] consteval BuildReading read_builds_() {
     namespace refl = ::foundation::reflect;
-    for (refl::TypeNode const& part : refl::member_components_of(refl::TypeNode{type, true})) {
-        if (part.member != std::meta::info{}) continue;
-        if (has_open_build_(part.type, tag, BuildSet::inherited) || inherits_open_build_(part.type, tag)) return true;
+    std::meta::access_context const each = std::meta::access_context::unchecked();
+    std::meta::info const key = std::meta::dealias(^^ArenaBuildKey<Tag, Class>);
+    BuildReading reading{};
+    for (std::meta::info const member : std::meta::members_of(^^Class, each)) {
+        if (std::meta::is_constructor_template(member)) {
+            reading.has_open_own = true;
+            reading.has_open_inheritable = true;
+            break;
+        }
+        if (!std::meta::is_constructor(member) || std::meta::is_deleted(member)) continue;
+        std::meta::info const taken = refl::find_parameter(member, [key](std::meta::info parameter) {
+            return std::meta::dealias(std::meta::type_of(parameter)) == key;
+        });
+        if (taken != std::meta::info{}) continue;
+        reading.has_open_own = true;
+        bool const is_special = std::meta::is_default_constructor(member) || std::meta::is_copy_constructor(member)
+                             || std::meta::is_move_constructor(member);
+        if (!is_special) {
+            reading.has_open_inheritable = true;
+            break;
+        }
     }
-    return false;
+    for (std::meta::info const base : std::meta::bases_of(^^Class, each)) {
+        if (std::meta::is_convertible_type(std::meta::add_pointer(std::meta::type_of(base)),
+                                           ^^InheritsOpenBuildTest<Tag>)) {
+            reading.inherits_open = true;
+            break;
+        }
+    }
+    return reading;
 }
 
 // True when only an arena of the tag builds an object of the class: the class is
 // complete, it is no aggregate and no union, it has no default, copy or move
 // constructor and no bytes form, and each constructor that it has or inherits
-// takes the build key of the class and the tag by value.
-[[nodiscard]] consteval bool is_built_only_by_arena_(std::meta::info type, std::meta::info tag) {
-    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(type));
-    if (!std::meta::is_class_type(bare) || !std::meta::is_complete_type(bare)) return false;
-    if (std::meta::is_aggregate_type(bare) || std::meta::is_trivially_copyable_type(bare)) return false;
-    if (std::meta::is_default_constructible_type(bare) || std::meta::is_copy_constructible_type(bare)
-        || std::meta::is_move_constructible_type(bare)) {
+// takes the build key of the class and the tag by value.  The class has no cv
+// qualifier and is no reference.  Each test is a constant of the template, and
+// a reference to a kept variable in a template instantiates the variable on each
+// path.  So a class that fails a test instantiates no reading of its members.
+template <class Class, class Tag>
+[[nodiscard]] consteval bool reads_built_only_by_arena_() {
+    if constexpr (!std::is_class_v<Class>) {
         return false;
+    } else if constexpr (!std::meta::is_complete_type(^^Class) || std::meta::is_aggregate_type(^^Class)
+                         || std::meta::is_trivially_copyable_type(^^Class)) {
+        return false;
+    } else if constexpr (std::meta::is_default_constructible_type(^^Class)
+                         || std::meta::is_copy_constructible_type(^^Class)
+                         || std::meta::is_move_constructible_type(^^Class)) {
+        return false;
+    } else {
+        return !build_reading_v<Class, Tag>.has_open_own && !build_reading_v<Class, Tag>.inherits_open;
     }
-    return !has_open_build_(bare, tag, BuildSet::own) && !inherits_open_build_(bare, tag);
 }
+
+// The kept answer of reads_built_only_by_arena_, which to() and make of each
+// argument list read.
+template <class Class, class Tag>
+inline constexpr bool is_built_only_by_arena_v = reads_built_only_by_arena_<Class, Tag>();
 
 // What the brand_type of a class tells of an object of it.
 enum class BrandStatement : unsigned char {
@@ -321,17 +365,32 @@ enum class BrandStatement : unsigned char {
     unproven,
 };
 
+// The class that a pointer to a class converts to when only an arena of the tag
+// that the class states as its brand_type builds an object of it, and a pointer
+// to no other class.  The conversion test reads the kept answer, so only a class
+// that the statement reaches instantiates the read of its constructors.
+struct BuiltByStatedArenaTest final {
+    template <class Class>
+        requires(is_built_only_by_arena_v<Class, ::foundation::brand::brand_of_t<Class>>)
+    consteval BuiltByStatedArenaTest(Class*) noexcept {}
+};
+
+// The statement of a carrier class with no cv qualifier and no reference, whose
+// brand_type is the brand.  The read is a function and no template, so each
+// carrier costs the instantiation of brand_statement_v alone.
 [[nodiscard]] consteval BrandStatement read_brand_statement_(std::meta::info carrier, std::meta::info brand) {
     std::meta::info const stated = std::meta::dealias(brand);
     if (!std::meta::is_class_type(stated) || !names_arena_brand_(stated)) return BrandStatement::of_object;
-    std::meta::info const bare = std::meta::dealias(std::meta::remove_cvref(carrier));
-    bool const is_owner = ::foundation::reflect::carries_annotation(bare, ^^::foundation::brand::branded_arena)
-                       && is_class_of_the_base_(bare);
+    bool const is_owner = ::foundation::reflect::carries_annotation(carrier, ^^::foundation::brand::branded_arena)
+                       && is_class_of_the_base_(carrier);
     if (is_owner) return BrandStatement::of_owner;
-    return is_built_only_by_arena_(bare, stated) ? BrandStatement::of_object : BrandStatement::unproven;
+    return std::meta::is_convertible_type(std::meta::add_pointer(carrier), ^^BuiltByStatedArenaTest)
+             ? BrandStatement::of_object
+             : BrandStatement::unproven;
 }
 
-// The kept statement of one carrier.
+// The kept statement of one carrier class, with no cv qualifier and no
+// reference, so each unit reads a class one time for each of its forms.
 template <class Carrier>
 inline constexpr BrandStatement brand_statement_v =
     read_brand_statement_(^^Carrier, ^^::foundation::brand::brand_of_t<Carrier>);
@@ -351,7 +410,7 @@ struct carrier_brand {
 template <class Carrier, class Fresh>
     requires ::foundation::brand::HasBrand<Carrier>
 struct carrier_brand<Carrier, Fresh> {
-    static constexpr detail::BrandStatement statement = detail::brand_statement_v<Carrier>;
+    static constexpr detail::BrandStatement statement = detail::brand_statement_v<std::remove_cvref_t<Carrier>>;
     static_assert(
         statement != detail::BrandStatement::unproven,
         "a class states an arena tag as its brand_type, and code outside the arena can build an object of it: "

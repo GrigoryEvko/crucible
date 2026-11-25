@@ -219,12 +219,13 @@ public:
 
 }  // namespace detail
 
-// A T that only an arena of the tag builds, and whose constructor takes the build
-// key of the tag and then the arguments, with no throw (ArenaBuildKey of
-// foundation/core/Ref.h).
+// A T whose constructor takes the build key of the tag and then the arguments,
+// with no throw, and that only an arena of the tag builds (ArenaBuildKey of
+// foundation/core/Ref.h).  The test of the constructor comes first, so only a
+// class that takes a key gets the read of its constructors.
 template <class T, class Tag, class... Args>
-concept TakesArenaKey = detail::is_built_only_by_arena_(^^T, ^^Tag)
-                     && std::is_nothrow_constructible_v<T, detail::BuildKeySource<Tag, T> const&, Args&&...>;
+concept TakesArenaKey = std::is_nothrow_constructible_v<T, detail::BuildKeySource<Tag, T> const&, Args&&...>
+                     && detail::is_built_only_by_arena_v<T, Tag>;
 
 // The arguments of make<T> in an arena of the tag: the arguments of
 // CanMakeInArena, or the same for a T that takes the build key of the tag before
@@ -655,15 +656,19 @@ private:
     friend class ::foundation::core::Epoch;
 
     // One T that the arguments build in new bytes, at the alignment of T.  A T
-    // that takes the build key of the tag gets the key before the arguments, and
-    // the key is the parameter itself (ArenaBuildKey of foundation/core/Ref.h).
+    // that the arguments build alone gets the arguments alone.  Each other T of
+    // make takes the build key of the tag (ArenaMakes), so it gets the key before
+    // the arguments, and the key is the parameter itself (ArenaBuildKey of
+    // foundation/core/Ref.h).  A T that takes the key has no constructor that the
+    // arguments of make call alone, because no argument gives a key.  So the test
+    // reads no constructor of a T that takes no key.
     template <class Tag, class T, class... Args>
     [[nodiscard, gnu::always_inline]] T& build_(Args&&... args) noexcept {
-        if constexpr (TakesArenaKey<T, Tag, Args...>) {
+        if constexpr (std::is_nothrow_constructible_v<T, Args&&...>) {
+            return *::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
+        } else {
             return *::new(bump_(sizeof(T), alignof(T)))
                 T(ArenaRefDoor::build_key_<Tag, T>(), static_cast<Args&&>(args)...);
-        } else {
-            return *::new(bump_(sizeof(T), alignof(T))) T(static_cast<Args&&>(args)...);
         }
     }
 

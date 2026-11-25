@@ -568,6 +568,19 @@ struct InheritsOpen : OpenBase {
     InheritsOpen(InheritsOpen&&) = delete("an object of the arena stays in it");
     [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
 };
+// The open constructor stands two bases down, so the reading of the middle
+// base gives it from the reading of its own base.
+struct OpenMiddle : OpenBase {
+    using OpenBase::OpenBase;
+};
+struct InheritsOpenDeep : OpenMiddle {
+    using brand_type = Family;
+    using OpenMiddle::OpenMiddle;
+    explicit constexpr InheritsOpenDeep(FamilyKey<InheritsOpenDeep> /*key*/) noexcept : OpenMiddle{0} {}
+    InheritsOpenDeep(InheritsOpenDeep const&) = delete("an object of the arena stays in it");
+    InheritsOpenDeep(InheritsOpenDeep&&) = delete("an object of the arena stays in it");
+    [[no_unique_address]] ::foundation::lifetime::byte_seal seal_{};
+};
 struct OtherTagBuilt {
     using brand_type = Family;
     explicit constexpr OtherTagBuilt(ArenaBuildKey<OtherFamily, OtherTagBuilt> /*key*/) noexcept {}
@@ -599,18 +612,19 @@ struct OwnKeyBuilt {
 };
 template <class T>
 consteval bool is_built_by_family() {
-    return is_built_only_by_arena_(^^T, ^^Family) && brand_statement_v<T> == BrandStatement::of_object
-        && brand_statement_v<T const&> == BrandStatement::of_object;
+    return is_built_only_by_arena_v<T, Family> && brand_statement_v<T> == BrandStatement::of_object
+        && std::is_same_v<carrier_brand_t<T const&, NoMarker>, Family>;
 }
 template <class T>
 consteval bool is_unproven() {
-    return !is_built_only_by_arena_(^^T, ^^Family) && brand_statement_v<T> == BrandStatement::unproven;
+    return !is_built_only_by_arena_v<T, Family> && brand_statement_v<T> == BrandStatement::unproven;
 }
 static_assert(is_built_by_family<Keyed>() && is_built_by_family<DerivedKeyed>());
 static_assert(is_unproven<Loan>() && is_unproven<NoSeal>() && is_unproven<OpenBeside>());
 static_assert(is_unproven<TemplateBuilt>() && is_unproven<DefaultBuilt>() && is_unproven<CopyBuilt>());
 static_assert(is_unproven<MoveBuilt>() && is_unproven<InheritsOpen>() && is_unproven<OtherTagBuilt>());
 static_assert(is_unproven<OtherClassBuilt>() && is_unproven<ReferenceBuilt>() && is_unproven<OwnKeyBuilt>());
+static_assert(is_unproven<InheritsOpenDeep>());
 static_assert(std::is_same_v<decltype(to(std::declval<Keyed&>())), Ref<Keyed, Family>>);
 static_assert(std::is_same_v<decltype(to(std::declval<DerivedKeyed const&>())), Ref<DerivedKeyed const, Family>>);
 
