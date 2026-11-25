@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace {
 
@@ -59,8 +60,7 @@ sriov::DeclaredSrIovPlan two_vf_plan(bool allow_privileged_apply = false) {
         .expect("a NicPort with SR-IOV and a named interface make a plan");
 }
 
-// Count empty handles.  A list gives its elements as a View that writes, as a
-// caller of the planner does.
+// Count empty handles.
 template <std::size_t Count>
 [[nodiscard]] ::fixy::FixedList<sriov::VfHandle, Count> empty_handles() {
     ::fixy::FixedList<sriov::VfHandle, Count> handles{};
@@ -132,13 +132,15 @@ void test_mint_and_handles() {
     CRUCIBLE_TEST_ASSERT(kTest, plan.value().num_vfs.value() == 4);
     CRUCIBLE_TEST_ASSERT(kTest, plan.value().default_vf.vlan.value() == 42);
 
-    // Six slots hold the four handles, so the View of the handles is the
-    // first four slots.
-    auto handle_list = empty_handles<6>();
-    ::fixy::View<sriov::VfHandle, 6> const handles =
+    // Six slots take the four handles, and the last two stay empty.
+    auto [written, handle_list] = ::fixy::with_mut(
+        empty_handles<6>(), [plan](auto run) noexcept { return sriov::materialize_vf_handles(plan, run); });
+    CRUCIBLE_TEST_ASSERT(kTest,
+                         written.is_ok_and([](sriov::VfCount const& count) noexcept { return count.value() == 4; }));
+    ::fixy::View<sriov::VfHandle const, 6> const handles =
         handle_list.view().window<6>(0).expect("the list holds six handles");
-    auto materialized = sriov::materialize_vf_handles(plan, handles).expect("six slots hold four handles");
-    CRUCIBLE_TEST_ASSERT(kTest, materialized.size() == 4);
+    ::fixy::View<sriov::VfHandle const> const materialized =
+        handle_list.view().window(0, 4).expect("the list holds four handles");
     sriov::VfHandle const& first = handles.at(::fixy::index<0>());
     sriov::VfHandle const& second_slot = handles.at(::fixy::index<1>());
     CRUCIBLE_TEST_ASSERT(kTest, first.parent_uuid() == nic_identity().uuid);
@@ -160,9 +162,13 @@ void test_mint_and_handles() {
     auto out_of_range = sriov::vf_handle_at(plan, sriov::admit_vf_index(4).expect("4 is a function index"));
     CRUCIBLE_TEST_ASSERT(kTest, out_of_range.err() == ::fixy::some(sriov::SrIovError::VfIndexOutOfRange));
 
-    auto small_list = empty_handles<2>();
-    auto too_small = sriov::materialize_vf_handles(plan, small_list.view());
+    // A run of two slots holds no four handles, so the planner writes none.
+    auto [too_small, small_list] = ::fixy::with_mut(
+        empty_handles<2>(), [plan](auto run) noexcept { return sriov::materialize_vf_handles(plan, run); });
     CRUCIBLE_TEST_ASSERT(kTest, too_small.err() == ::fixy::some(sriov::SrIovError::InsufficientHandleCapacity));
+    for (sriov::VfHandle const& slot : small_list) {
+        CRUCIBLE_TEST_ASSERT(kTest, slot.identity().uuid.is_zero());
+    }
 
     // An empty slot names no function.
     sriov::VfHandle empty{};
@@ -202,15 +208,16 @@ void test_identity_and_capability_gates() {
 void test_privileged_boundaries() {
     auto plan = two_vf_plan();
 
-    auto handle_list = empty_handles<2>();
-    ::fixy::View<sriov::VfHandle> const handles = handle_list.view();
-    auto enable = sriov::enable(plan, handles);
+    auto [enable, first_list] =
+        ::fixy::with_mut(empty_handles<2>(), [plan](auto run) noexcept { return sriov::enable(plan, run); });
     CRUCIBLE_TEST_ASSERT(kTest, enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto privileged = two_vf_plan(true);
-    auto privileged_enable = sriov::enable(privileged, handles);
+    auto [privileged_enable, second_list] = ::fixy::with_mut(
+        std::move(first_list), [privileged](auto run) noexcept { return sriov::enable(privileged, run); });
     CRUCIBLE_TEST_ASSERT(kTest,
                          privileged_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, second_list.size() == 2);
 
     auto handle = sriov::vf_handle_at(plan, sriov::first_vf_index).expect("index 0 is below the count of two");
     auto cfg = sriov::declare_vf_config(sriov::VfConfig{});
@@ -239,15 +246,16 @@ void test_apply_paths_are_stubbed() {
 
     auto plan = two_vf_plan();
 
-    auto handle_list = empty_handles<2>();
-    ::fixy::View<sriov::VfHandle> const handles = handle_list.view();
-    auto deferred = sriov::enable(plan, handles);
+    auto [deferred, first_list] =
+        ::fixy::with_mut(empty_handles<2>(), [plan](auto run) noexcept { return sriov::enable(plan, run); });
     CRUCIBLE_TEST_ASSERT(kTest, deferred.err() == ::fixy::some(sriov::SrIovError::PrivilegedApplyDeferred));
 
     auto requested = two_vf_plan(true);
-    auto requested_enable = sriov::enable(requested, handles);
+    auto [requested_enable, second_list] = ::fixy::with_mut(
+        std::move(first_list), [requested](auto run) noexcept { return sriov::enable(requested, run); });
     CRUCIBLE_TEST_ASSERT(kTest,
                          requested_enable.err() == ::fixy::some(sriov::SrIovError::PrivilegedBackendUnavailable));
+    CRUCIBLE_TEST_ASSERT(kTest, second_list.size() == 2);
 
     auto requested_disable = sriov::disable(requested);
     CRUCIBLE_TEST_ASSERT(kTest,

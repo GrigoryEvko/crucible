@@ -8,14 +8,16 @@
 
 namespace crucible::cog::sriov {
 
-::fixy::Result<::fixy::View<VfHandle>, SrIovError> SrIovManager::enable(DeclaredSrIovPlan plan,
-                                                                        ::fixy::View<VfHandle> out) noexcept {
-    CRUCIBLE_TRY(_, materialize_vf_handles(plan, out));
+namespace detail {
+
+::fixy::Result<VfCount, SrIovError> refuse_privileged_apply_(DeclaredSrIovPlan plan) noexcept {
     if (!plan.value().allow_privileged_apply) {
         return ::fixy::err(SrIovError::PrivilegedApplyDeferred);
     }
     return ::fixy::err(SrIovError::PrivilegedBackendUnavailable);
 }
+
+}  // namespace detail
 
 // The configuration needs no check: each of its fields is refined.  An
 // empty handle slot names no function, so it is refused here.
@@ -32,11 +34,6 @@ namespace crucible::cog::sriov {
         return ::fixy::err(SrIovError::PrivilegedApplyDeferred);
     }
     return ::fixy::err(SrIovError::PrivilegedBackendUnavailable);
-}
-
-::fixy::Result<::fixy::View<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept {
-    SrIovManager manager{};
-    return manager.enable(plan, out);
 }
 
 ::fixy::Result<::fixy::Unit, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept {

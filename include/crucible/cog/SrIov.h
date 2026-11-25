@@ -14,12 +14,15 @@
 #include <fixy/Refined.h>
 #include <fixy/Tagged.h>
 #include <fixy/Tags.h>
+#include <foundation/Brand.h>
 #include <foundation/Pinned.h>
+#include <foundation/Platform.h>
 #include <foundation/effects/Ctx.h>
 #include <foundation/effects/Effect.h>
 #include <foundation/effects/Row.h>
 #include <foundation/reflect/Hash.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
@@ -163,8 +166,9 @@ private:
     CogIdentity identity_{};
 };
 
-[[nodiscard]] constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
-materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
+template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ::fixy::Result<VfCount, SrIovError>
+materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::ViewMut<VfHandle, Brand, Extent>& out) noexcept;
 
 [[nodiscard]] constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
                                                                           VfIndex index) noexcept;
@@ -178,8 +182,9 @@ class VfHandleDoor {
         return VfHandle{physical, index};
     }
 
-    friend constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
-    materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+    friend constexpr ::fixy::Result<VfCount, SrIovError>
+    materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::ViewMut<VfHandle, Brand, Extent>& out) noexcept;
     friend constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan, VfIndex index) noexcept;
 };
 
@@ -264,20 +269,33 @@ mint_sriov_plan(Ctx const&, CogIdentity physical, NicPortTargetCaps caps, cntp::
 }
 
 // The first num_vfs slots of out take the handles, and the call gives the
-// View of those slots.  A View of fewer slots has no such window, so the
-// call refuses it.  An index below num_vfs, which is at most 4096, is at
-// most 4095, so the checked mint of each index passes.
-[[nodiscard]] constexpr ::fixy::Result<::fixy::View<VfHandle>, SrIovError>
-materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept {
-    const std::uint16_t count = plan.value().num_vfs.value();
-    CRUCIBLE_TRY(handles, out.window(0, count).ok_or(SrIovError::InsufficientHandleCapacity));
+// count of them.  A run of fewer slots takes no handle, so a refused plan
+// writes nothing.  The caller lends the run through a frame door, such as
+// with_mut, so the call is its one writer.  An index below num_vfs, which is
+// at most 4096, is at most 4095, so the checked mint of each index passes.
+template <::foundation::brand::IsBrand Brand, std::size_t Extent>
+[[nodiscard]] constexpr ::fixy::Result<VfCount, SrIovError>
+materialize_vf_handles(DeclaredSrIovPlan plan, ::fixy::ViewMut<VfHandle, Brand, Extent>& out) noexcept {
+    const VfCount count = plan.value().num_vfs;
+    if (out.size() < count.value()) return ::fixy::err(SrIovError::InsufficientHandleCapacity);
     std::uint16_t next_index = 0;
-    for (VfHandle& handle : handles) {
+    for (VfHandle& handle : out) {
+        if (next_index == count.value()) break;
         handle = VfHandleDoor::build(plan.value().physical, ::fixy::mint_refined<vf_index_bound>(next_index));
         ++next_index;
     }
-    return handles;
+    return count;
 }
+
+namespace detail {
+
+// The end of enable after the handles are in the run: the two refusals of the
+// stub.  It takes the plan and no run, so it names no brand and stays in the
+// source file.
+[[nodiscard]] CRUCIBLE_COLD ::fixy::Result<VfCount, SrIovError>
+refuse_privileged_apply_(DeclaredSrIovPlan plan) noexcept;
+
+}  // namespace detail
 
 [[nodiscard]] constexpr ::fixy::Result<VfHandle, SrIovError> vf_handle_at(DeclaredSrIovPlan plan,
                                                                           VfIndex index) noexcept {
@@ -296,11 +314,15 @@ class SrIovManager : public ::foundation::Pinned<SrIovManager> {
 public:
     SrIovManager() = default;
 
+    template <::foundation::brand::IsBrand Brand, std::size_t Extent>
     [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
                             "functions; returns PrivilegedApplyDeferred or "
                             "PrivilegedBackendUnavailable")]]
-    ::fixy::Result<::fixy::View<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan,
-                                                              ::fixy::View<VfHandle> out) noexcept;
+    ::fixy::Result<VfCount, SrIovError> enable(DeclaredSrIovPlan plan,
+                                               ::fixy::ViewMut<VfHandle, Brand, Extent>& out) noexcept {
+        CRUCIBLE_TRY(_, materialize_vf_handles(plan, out));
+        return detail::refuse_privileged_apply_(plan);
+    }
 
     [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
                             "virtual function; returns PrivilegedApplyDeferred")]]
@@ -312,9 +334,14 @@ public:
     ::fixy::Result<::fixy::Unit, SrIovError> disable(DeclaredSrIovPlan plan) noexcept;
 };
 
+template <::foundation::brand::IsBrand Brand, std::size_t Extent>
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend creates virtual "
                         "functions")]]
-::fixy::Result<::fixy::View<VfHandle>, SrIovError> enable(DeclaredSrIovPlan plan, ::fixy::View<VfHandle> out) noexcept;
+::fixy::Result<VfCount, SrIovError> enable(DeclaredSrIovPlan plan,
+                                           ::fixy::ViewMut<VfHandle, Brand, Extent>& out) noexcept {
+    CRUCIBLE_TRY(_, materialize_vf_handles(plan, out));
+    return detail::refuse_privileged_apply_(plan);
+}
 [[nodiscard, deprecated("CRUCIBLE_STUB: no privileged backend configures a "
                         "virtual function")]]
 ::fixy::Result<::fixy::Unit, SrIovError> configure_vf(VfHandle handle, DeclaredVfConfig config) noexcept;

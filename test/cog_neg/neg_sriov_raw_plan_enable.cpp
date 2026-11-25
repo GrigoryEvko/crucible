@@ -11,9 +11,14 @@
 
 namespace sriov = crucible::cog::sriov;
 
-int main() {
-    sriov::SrIovPlan plan{};
-    ::foundation::core::FixedArray<sriov::VfHandle, 1> handles{};
-    auto result = sriov::enable(plan, handles.view());
-    return result.is_ok() ? 0 : 1;
+using HandleRun = ::fixy::ViewMut<sriov::VfHandle, ::foundation::brand::DefaultBrand>;
+
+namespace {
+
+[[maybe_unused]] bool enable_raw_plan(sriov::SrIovPlan plan, HandleRun& run) {
+    return sriov::enable(plan, run).is_ok();
 }
+
+}  // namespace
+
+int main() { return 0; }

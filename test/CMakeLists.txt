@@ -2880,6 +2880,8 @@ crucible_neg_compile_test(neg_nic_config_mint_hot_fg_ctx
 # cog/SrIov.h, the admission of a partition into virtual functions.
 #   * neg_sriov_raw_plan_enable: a raw plan does not convert to the
 #     declared plan that enable takes.
+#   * neg_sriov_const_view_enable: enable writes the run that its caller
+#     lends as the one writer, so a View of const handles is refused.
 #   * neg_sriov_zero_vfs: the checked mint of a count stops the constant
 #     evaluation at zero, the disabled state.
 #   * neg_sriov_multicast_mac: the checked mint of an address stops the
@@ -2889,8 +2891,11 @@ crucible_neg_compile_test(neg_nic_config_mint_hot_fg_ctx
 #   * neg_sriov_vf_handle_forged: a handle is built only from a declared
 #     plan, so its constructor from a parent and an index is private.
 crucible_neg_compile_test(neg_sriov_raw_plan_enable
-    "could not convert .plan. from .crucible::cog::sriov::SrIovPlan."
-    "to .crucible::cog::sriov::DeclaredSrIovPlan. \\{aka .fixy::Tagged<crucible::cog::sriov::SrIovPlan, fixy::tags::source::SrIov>.\\}")
+    "no matching function for call to .enable\\(crucible::cog::sriov::SrIovPlan&, HandleRun&\\)"
+    "cannot convert .plan. \\(type .crucible::cog::sriov::SrIovPlan.\\) to type .crucible::cog::sriov::DeclaredSrIovPlan.")
+crucible_neg_compile_test(neg_sriov_const_view_enable
+    "no matching function for call to .enable\\(crucible::cog::sriov::DeclaredSrIovPlan&, foundation::core::View<const crucible::cog::sriov::VfHandle"
+    "ViewMut<crucible::cog::sriov::VfHandle, Brand, Extent>")
 crucible_neg_compile_test(neg_sriov_zero_vfs
     "__builtin_trap\\(\\).* is not a constant expression"
     "fixy::mint_refined<InRange<1, 4096>\\(\\), short unsigned int>\\(0\\)")
