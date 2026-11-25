@@ -25,12 +25,14 @@
 // Doors
 //   The ring gives no reference to an element out.  A body borrows one
 //   element for the time of a call, and its result holds no borrow:
-//     with_slot(slot, body)        the element of a slot, to read
+//     with_slot(slot, body)        the element of a slot of a ring with no key,
+//                                  to read
 //     with_claim(key, body)        the slot of the next claim, with its old
 //                                  element, to write
 //     with_fresh_claim(key, body)  the slot of the next claim, with a new
 //                                  value-initialized element in it
-//     with_slot(key, slot, body)   the element of a slot, to write
+//     with_slot(key, slot, body)   the element of a slot, to write, or to read
+//                                  in a const ring
 //   A later claim reuses each slot, so a reference that left a door would name
 //   a later element.
 //
@@ -56,7 +58,9 @@
 //   borrow, and it refuses a body that reaches that key.  So no code
 //   inside a body opens a second door of the ring that writes: not a nested
 //   door, not a helper, and not a Ref of the ring.  Its push and its pass
-//   write the claim cursor, so they take the key too.
+//   write the claim cursor, so they take the key too.  A read of a keyed ring
+//   borrows the key as const and refuses a body that reaches the key, because
+//   a claim in the body would end the element that the body reads.
 
 #include <fixy/Core.h>
 #include <fixy/Cyclic.h>
@@ -248,15 +252,15 @@ public:
         return prove_slot_(cursor_.index_back(back.raw()));
     }
 
+    // ── The doors of a ring of Unkeyed (the value doors) ───────────────────
+
     // The read of the element of a slot: body gets it as const, in place.
     // Complexity: O(1), and the cost of body.
     template <class Body>
-        requires CyclicBody<Body, T const>
+        requires(!is_keyed_) && CyclicBody<Body, T const>
     [[= ::foundation::linear::borrow_match{}]] constexpr auto with_slot(Index<N> slot, Body&& body) const& noexcept {
         return static_cast<Body&&>(body)(storage_.at(slot));
     }
-
-    // ── The doors of a ring of Unkeyed (the value doors) ───────────────────
 
     constexpr void push(T const& value) noexcept(std::is_nothrow_copy_assignable_v<T>)
         requires(!is_keyed_) && std::is_copy_assignable_v<T>
@@ -346,6 +350,17 @@ public:
         return static_cast<Body&&>(body)(slot_at_(slot));
     }
 
+    // The read of the element of a slot of a const ring: body gets it as
+    // const, in place.  The door borrows the key as const for the call.  Each
+    // writer of the ring takes the key too, so no code of the body, which
+    // reaches no key of the brand, claims a slot.  Complexity: O(1), and the
+    // cost of body.
+    template <class Body>
+        requires is_keyed_ && ::foundation::core::KeyedElementBody<Body, T const, KeyBrand>
+    constexpr auto with_slot(key_type const& /*key*/, Index<N> slot, Body&& body) const& noexcept {
+        return static_cast<Body&&>(body)(storage_.at(slot));
+    }
+
     constexpr void push(key_type& /*key*/, T const& value) noexcept(std::is_nothrow_copy_assignable_v<T>)
         requires is_keyed_ && std::is_copy_assignable_v<T>
     {
@@ -426,6 +441,11 @@ public:
         requires is_keyed_ && std::is_invocable_v<Body&&, T&>
     void with_slot(Index<N> slot, Body&& body) & = delete("a keyed CyclicBuffer lends a slot that a body writes only "
                                                           "with its LoanKey: call with_slot(key, slot, body)");
+    template <class Body>
+        requires is_keyed_ && std::is_invocable_v<Body&&, T const&>
+    void with_slot(Index<N> slot, Body&& body) const& = delete(
+        "a keyed CyclicBuffer lends a slot that a body reads only with its LoanKey, because a claim in the body would "
+        "end the element: call with_slot(key, slot, body)");
 
     // A body that reaches the key of the ring binds to these overloads, so
     // the refusal gives its reason.
@@ -449,11 +469,19 @@ public:
     void with_slot(key_type& key, Index<N> slot, Body&& body) & = delete(
         "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door "
         "that writes a slot: capture only what the body reads, and keep the key with the caller");
+    template <class Body>
+        requires is_keyed_ && CyclicKeyReachingBody<Body, T const, KeyBrand>
+    void with_slot(key_type const& key, Index<N> slot, Body&& body) const& = delete(
+        "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door "
+        "that writes a slot: capture only what the body reads, and keep the key with the caller");
 
     // A body that holds a linear value by value binds to these overloads, so
     // the refusal gives its reason.
     template <class Body>
-        requires CyclicLinearBody<Body, T const>
+        requires is_keyed_ && ::foundation::core::KeyedLinearElementBody<Body, T const, KeyBrand>
+    void with_slot(key_type const& key, Index<N> slot, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
+    template <class Body>
+        requires(!is_keyed_) && CyclicLinearBody<Body, T const>
     void with_slot(Index<N> slot, Body&& body) const& = delete(CRUCIBLE_LINEAR_BODY_REFUSAL);
     template <class Body>
         requires(!is_keyed_) && CyclicLinearBody<Body, T>
@@ -462,7 +490,7 @@ public:
     // A body that stores a borrow of its element outside the door binds to
     // these overloads, so the refusal gives its reason (CyclicStoringBody).
     template <class Body>
-        requires CyclicStoringBody<Body, T const>
+        requires(!is_keyed_) && CyclicStoringBody<Body, T const>
     void with_slot(Index<N> slot, Body&& body) const& = delete(CRUCIBLE_STORING_BODY_REFUSAL);
     template <class Body>
         requires(!is_keyed_) && CyclicStoringBody<Body, T>

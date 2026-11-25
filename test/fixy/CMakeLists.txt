@@ -2283,6 +2283,16 @@ fixy_neg_compile_test(neg_cyclic_buffer_body_gives_its_slot_out
 fixy_neg_compile_test(neg_cyclic_buffer_body_keeps_its_slot
   "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::update\\(foundation::core::Index<Count>, Body&&\\) &"
   "a body of a frame door stores no borrow outside the frame")
+# A read of a keyed CyclicBuffer borrows the key as const and refuses a body that
+# reaches it, because a claim in the body would end the element that it reads.
+fixy_neg_compile_test(neg_cyclic_buffer_keyed_read_without_key
+  "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(foundation::core::Index<Count>, Body&&\\) const &"
+  "a keyed CyclicBuffer lends a slot that a body reads only with its LoanKey, because a claim in the body would end the element")
+foreach(_keyed_read captures_the_key reaches_the_key_by_a_member)
+  fixy_neg_compile_test(neg_cyclic_buffer_keyed_read_${_keyed_read}
+    "use of deleted function .void fixy::CyclicBuffer<T, N, KeyBrand>::with_slot\\(const key_type&, foundation::core::Index<Count>, Body&&\\) const &"
+    "a body of a keyed door of a CyclicBuffer reaches its LoanKey, so code in the body could open a second door that writes a slot")
+endforeach()
 # A claim ends or replaces the element of its slot, so a ring holds no element
 # that a holder cannot drop.
 fixy_neg_compile_test(neg_cyclic_buffer_of_a_linear_element

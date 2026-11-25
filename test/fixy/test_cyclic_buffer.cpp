@@ -25,6 +25,13 @@ template <class RingType>
     return ring.with_slot(ring.slot_back(back), [](std::uint64_t const& value) noexcept { return value; });
 }
 
+// The value of the element back places before the newest of a keyed ring, which
+// takes the key of the ring.
+template <class RingType, class Key>
+[[nodiscard]] std::uint64_t keyed_value_back(RingType const& ring, Key const& key, ::fixy::Index<4> back) noexcept {
+    return ring.with_slot(key, ring.slot_back(back), [](std::uint64_t const& value) noexcept { return value; });
+}
+
 [[nodiscard]] int starts_empty() {
     const Ring ring{};
     if (!ring.empty() || ring.full() || ring.size() != 0 || Ring::capacity != 4) return 1;
@@ -184,8 +191,8 @@ struct Step {
     if (g_step_ends != ends_before + 1) return 1;
     if (fresh != 7) return 2;
     auto const& read = ring;
-    if (read.with_slot(ring.slot_back(::fixy::index<0>()), value_of) != 13) return 3;
-    if (read.with_slot(ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 4;
+    if (read.with_slot(key, ring.slot_back(::fixy::index<0>()), value_of) != 13) return 3;
+    if (read.with_slot(key, ring.slot_back(::fixy::index<1>()), value_of) != 12 || ring.size() != 2) return 4;
     return 0;
 }
 
@@ -204,15 +211,14 @@ struct Step {
         });
     std::uint64_t const old_value = swapped.at(::fixy::index<0>());
     if (old_value != 43) return 1;
-    if (value_back(ring, ::fixy::index<0>()) != 44) return 2;
-    if (value_back(ring, ::fixy::index<2>()) != 41) return 3;
+    auto& held_key = swapped.at(::fixy::index<1>());
+    if (keyed_value_back(ring, held_key, ::fixy::index<0>()) != 44) return 2;
+    if (keyed_value_back(ring, held_key, ::fixy::index<2>()) != 41) return 3;
     // The pass of a keyed ring takes the key too, and it keeps the element of
     // the slot that it claims.
-    auto& pass_key = swapped.at(::fixy::index<1>());
-    ring.pass_slot(pass_key);
-    if (ring.size() != 4 || value_back(ring, ::fixy::index<0>()) != 0 || value_back(ring, ::fixy::index<1>()) != 44) {
-        return 4;
-    }
+    ring.pass_slot(held_key);
+    if (ring.size() != 4 || keyed_value_back(ring, held_key, ::fixy::index<0>()) != 0) return 4;
+    if (keyed_value_back(ring, held_key, ::fixy::index<1>()) != 44) return 5;
     return 0;
 }
 
