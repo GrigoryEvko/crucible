@@ -18,6 +18,7 @@
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
 #include <fixy/check/Check.h>
+#include <fixy/os/ThreadTasks.h>
 #include <foundation/effects/Effect.h>
 
 #include <atomic>
@@ -82,6 +83,24 @@ struct Work {
         return BackgroundThread::build_trace_from(state, log, alloc, scratch, first_ops(trace), first_ops(meta_starts),
                                                   first_ops(scope_hashes), first_ops(callsite_hashes),
                                                   first_ops(depths), numerics);
+    }
+
+    // The region of the work, which a pipeline that runs no thread builds from
+    // the log.
+    [[nodiscard]] BackgroundThread::BuiltRegion build_region(BackgroundThread& bt, MetaLog const& log) const {
+        crucible::NumericsHash const numerics = bt.numerics();
+        const auto build_in_frame = [this, &log, numerics](BuildState& state) noexcept {
+            const auto test = ::foundation::effects::testing::test();
+            crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
+            ::fixy::Option<BackgroundThread::BuiltRegion> built{};
+            scratch.arena.with_epoch([this, &state, &log, numerics, alloc = test.alloc,
+                                      &built](crucible::TraceScratch::Epoch& epoch) noexcept {
+                built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
+                    build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
+            });
+            return std::move(built).expect("the epoch built the region");
+        };
+        return bt.with_trace_build_state(bt.prove_quiescence(), build_in_frame);
     }
 
     // The first count elements of one array of the work.
@@ -182,21 +201,8 @@ struct PublishedBytes {
 [[nodiscard]] PublishedBytes publish_one_region(Work const& work, crucible::test::RigLog& metalog) {
     crucible::test::RigRing ring{};
     BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
-    MetaLog const& log = *metalog.view();
-    const auto test = ::foundation::effects::testing::test();
     const auto bg = ::foundation::effects::testing::bg();
-    crucible::TraceScratch scratch{Bytes{size_t{1} << 16}};
-    crucible::NumericsHash const numerics = bt.numerics();
-    ::fixy::Option<BackgroundThread::BuiltRegion> built{};
-    const auto build = [&work, &log, numerics, &test, &scratch, &built](BuildState& state) noexcept {
-        scratch.arena.with_epoch(
-            [&work, &state, &log, numerics, alloc = test.alloc, &built](crucible::TraceScratch::Epoch& epoch) noexcept {
-                built = ::fixy::Option<BackgroundThread::BuiltRegion>::some(
-                    work.build(state, log, numerics, alloc, epoch).expect("the work builds a graph").region);
-            });
-    };
-    bt.with_trace_build_state(bt.prove_quiescence(), build);
-    BackgroundThread::BuiltRegion region = std::move(built).expect("the epoch built the region");
+    BackgroundThread::BuiltRegion region = work.build_region(bt, *metalog.view());
     PublishedBytes bytes{.built = region.arena_bytes()};
     bt.run_on_publish_stage(
         [&](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
@@ -645,6 +651,63 @@ void test_publish_adds_no_block_to_the_region_arena() {
                                     && "the publish of a region with no slot took a block");
 
     ::fixy::check::pass(kTest, "  publish_adds_no_block_to_the_region_arena: PASSED\n");
+}
+
+// While no pipeline runs, a job runs on its caller, so a job of one thread
+// publishes a region and writes the publish scratch beside a second thread.
+// The second thread reads the bytes of that scratch in a job too, and the
+// mailbox of the jobs orders the two.  It reads the bytes of the build scratch
+// with the claim of the run state, which no job writes.  The thread sanitizer
+// reports no race.
+void test_scratch_bytes_beside_a_publish_job() {
+    using namespace meta_rig;
+    seal_global_tables();
+
+    crucible::test::RigLog metalog{};
+    crucible::test::RigRing ring{};
+    BackgroundThread bt{::foundation::effects::testing::test().alloc, ring.side(), metalog.side()};
+    // Each region has a slot, so its publish computes a plan in the scratch.
+    Work work;
+    (void)work.push_op_with_meta(metalog, 0);
+    constexpr size_t REGIONS = 32;
+    ::fixy::FixedArray<BackgroundThread::BuiltRegion, REGIONS> regions{};
+    for (::fixy::Index<REGIONS> const position : regions.indices())
+        static_cast<void>(regions.exchange(position, work.build_region(bt, *metalog.view())));
+
+    auto publish = [&bt, held = std::move(regions)]() mutable noexcept {
+        const auto bg = ::foundation::effects::testing::bg();
+        for (::fixy::Index<REGIONS> const position : held.indices()) {
+            BackgroundThread::BuiltRegion region = held.exchange(position, BackgroundThread::BuiltRegion{});
+            bt.run_on_publish_stage([&bg, &region](BackgroundThread::PublishStageView& owner,
+                                                   BackgroundThread::PublishStage const& stage) noexcept {
+                owner.publish_region(bg, stage, std::move(region), BackgroundThread::StreamPoint{});
+            });
+        }
+    };
+    const auto read_publish_bytes = [](BackgroundThread& pipeline) noexcept {
+        Bytes bytes{size_t{0}};
+        pipeline.run_on_publish_stage(
+            [&bytes](BackgroundThread::PublishStageView& owner, BackgroundThread::PublishStage const& stage) noexcept {
+                bytes = owner.publish_scratch_retained_bytes(stage);
+            });
+        return bytes;
+    };
+    auto read = [&bt, read_publish_bytes]() noexcept {
+        constexpr uint32_t READS = 64;
+        Bytes last = read_publish_bytes(bt);
+        for (uint32_t round = 0; round < READS; ++round) {
+            const Bytes bytes = read_publish_bytes(bt);
+            CRUCIBLE_TEST_ASSERT(kTest, bytes >= last && "the publish scratch keeps its first block");
+            last = bytes;
+            static_cast<void>(bt.build_scratch_retained_bytes(bt.prove_quiescence()));
+        }
+    };
+    ::fixy::BgLoadCtx const ctx = bg_load_ctx();
+    static_cast<void>(
+        ::fixy::thread::run_joined(ctx, ::fixy::thread::ThreadOptions{}, std::move(publish), std::move(read)));
+    CRUCIBLE_TEST_ASSERT(kTest, read_publish_bytes(bt) > Bytes{size_t{0}} && "no publish used the scratch");
+
+    ::fixy::check::pass(kTest, "  scratch_bytes_beside_a_publish_job:        PASSED\n");
 }
 
 }  // namespace test_background_thread_run_in_row

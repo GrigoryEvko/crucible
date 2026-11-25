@@ -2264,11 +2264,15 @@ crucible_neg_compile_test(neg_trace_build_state_leaves_through_a_capture
 crucible_neg_compile_test(neg_trace_build_frame_starts_the_pipeline
   "static assertion failed: with_trace_build_state: a capture of the body reaches the state of the trace build"
   "Capture the parts that the body uses")
-# The bytes of the two scratch arenas belong to two stages, so the read of them
-# takes the proof that no pipeline runs.
-crucible_neg_compile_test(neg_background_thread_scratch_bytes_without_a_proof
-  "no matching function for call to .crucible::BackgroundThread::scratch_retained_bytes\\(\\) const."
+# The bytes of the build scratch belong to a run of the pipeline, so the read
+# of them takes the proof that no pipeline runs.  A job writes the publish
+# scratch with no pipeline too, so that read takes the publish-stage proof.
+crucible_neg_compile_test(neg_background_thread_build_scratch_without_a_proof
+  "no matching function for call to .crucible::BackgroundThread::build_scratch_retained_bytes\\(\\)"
   "candidate expects 1 argument, 0 provided")
+crucible_neg_compile_test(neg_background_thread_publish_scratch_with_the_quiescence_proof
+  "cannot convert .fixy::thread::QuiescenceProof<crucible::BackgroundThread>. to .const crucible::BackgroundThread::PublishStage&."
+  "initializing argument 1 of")
 # A BackgroundThread takes its two sides in its constructor, so start takes no
 # side, and no start after stop names another ring or log.
 crucible_neg_compile_test(neg_background_thread_start_takes_no_sides

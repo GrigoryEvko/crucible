@@ -120,17 +120,18 @@ inline constexpr ::foundation::closure::DoorPolicy publish_job_policy{::foundati
 //
 // Each public door that writes or reads the state of a stage from outside
 // the pipeline takes a proof.  run_in_row, with_trace_build_state,
-// pending_op_count, detector_history_count and scratch_retained_bytes take
-// the proof that no pipeline runs (prove_quiescence), and each claims the run
-// state until it returns (hold_run_state_).  at() of the uncompiled queue
-// takes the publish-stage proof.  The mailbox of the publish stage and its two
-// sentinels are private.  The requests, the flush and rearm_stop write only
-// atomic cells, so they are const.  These doors take no proof that the check
-// of the statement reads: set_numerics, start, stop, run_on_publish_stage,
-// run_in_row and with_trace_build_state.  compute_memory_plan is static and
-// takes no BackgroundThread, so it is no door.  The check exempts this one
-// class until the keyed doors of the owner-key member series replace those
-// doors (the exemption of foundation/Transfer.h).
+// pending_op_count, detector_history_count and build_scratch_retained_bytes
+// take the proof that no pipeline runs (prove_quiescence), and each claims the
+// run state until it returns (hold_run_state_).  The doors of the state that
+// a job can write, such as at() of the uncompiled queue, take the
+// publish-stage proof.  The mailbox of the publish stage and its two sentinels
+// are private.  The requests, the flush and rearm_stop write only atomic
+// cells, so they are const.  These doors take no proof that the check of the
+// statement reads: set_numerics, start, stop, run_on_publish_stage, run_in_row
+// and with_trace_build_state.  compute_memory_plan is static and takes no
+// BackgroundThread, so it is no door.  The check exempts this one class until
+// the keyed doors of the owner-key member series replace those doors (the
+// exemption of foundation/Transfer.h).
 struct[[= ::foundation::transfer::synchronized{}]] BackgroundThread {
     // A vendor-encoded hardware identity measured by the startup calibration
     // pass, not synthesized or defaulted.  Zero marks the pre-init state.
@@ -517,11 +518,11 @@ private:
 public:
     // The count of ops in the history of the detector.  The detect stage
     // writes the detector with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence), and it holds the run state
-    // (hold_run_state_).  It gives a copy of the count, which no later start
-    // changes.
+    // pipeline runs (prove_quiescence).  It writes the run state to claim it
+    // (hold_run_state_), so it is not const, and two reads on two threads end
+    // the process.  It gives a copy of the count, which no later start changes.
     [[nodiscard]] uint64_t
-    detector_history_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+    detector_history_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
         hold_run_state_(proof);
         const uint64_t count = detector_.pos_ - detector_.base_;
         release_run_state_();
@@ -629,11 +630,11 @@ private:
 public:
     // The count of the ops that the detect stage holds.  The detect stage
     // writes the count with no order, so the read takes the proof that no
-    // pipeline runs (prove_quiescence), and it holds the run state
-    // (hold_run_state_).  It gives a copy of the count, which no later start
-    // changes.  The ops stay after stop(), and a later start reads them.
-    [[nodiscard]] uint64_t
-    pending_op_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+    // pipeline runs (prove_quiescence).  It writes the run state to claim it
+    // (hold_run_state_), so it is not const, and two reads on two threads end
+    // the process.  It gives a copy of the count, which no later start changes.
+    // The ops stay after stop(), and a later start reads them.
+    [[nodiscard]] uint64_t pending_op_count(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
         hold_run_state_(proof);
         const uint64_t count = pending_ops_.size();
         release_run_state_();
@@ -1507,18 +1508,27 @@ public:
     BackgroundThread& operator=(BackgroundThread&&) =
         delete("the pipeline thread reaches this object and its Refs to the two sides at one address");
 
-    // The bytes of blocks that the two scratch arenas hold.  The build stage
-    // and the publish stage write the arenas with no order, so the read takes
-    // the proof that no pipeline runs (prove_quiescence), and it holds the run
-    // state (hold_run_state_).  It gives a copy of the count, which no later
-    // start changes.
-    [[nodiscard]] size_t
-    scratch_retained_bytes(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+    // The bytes of blocks that the scratch arena of the build stage holds.
+    // Only a run of the pipeline writes the arena, with no order, so the read
+    // takes the proof that no pipeline runs (prove_quiescence).  It writes the
+    // run state to claim it (hold_run_state_), so it is not const, and two
+    // reads on two threads end the process.  It gives a copy of the count,
+    // which no later start changes.
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
+    build_scratch_retained_bytes(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
         hold_run_state_(proof);
-        const size_t bytes =
-            ::fixy::saturating_add(build_scratch_.arena.retained_bytes(), publish_scratch_.arena.retained_bytes());
+        const ::fixy::Quantity<::fixy::unit::Byte, size_t> bytes{build_scratch_.arena.retained_bytes()};
         release_run_state_();
         return bytes;
+    }
+
+    // The bytes of blocks that the scratch arena of the publish stage holds.
+    // A job of run_on_publish_stage writes the arena too, also while no
+    // pipeline runs.  So the read takes the publish-stage proof and not the
+    // proof that no pipeline runs.
+    [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
+    publish_scratch_retained_bytes(PublishStage const&) const noexcept {
+        return ::fixy::Quantity<::fixy::unit::Byte, size_t>{publish_scratch_.arena.retained_bytes()};
     }
 
     // The retained limit of each of the two scratch arenas
@@ -1576,6 +1586,10 @@ public:
         [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
         region_bytes(PublishStage const& stage) const noexcept {
             return owner_.region_bytes(stage);
+        }
+        [[nodiscard]] ::fixy::Quantity<::fixy::unit::Byte, size_t>
+        publish_scratch_retained_bytes(PublishStage const& stage) const noexcept {
+            return owner_.publish_scratch_retained_bytes(stage);
         }
 
         void publish_region(::foundation::effects::Bg const& bg, PublishStage const& stage, BuiltRegion parts,
@@ -1883,14 +1897,22 @@ private:
     // stage with no pipeline, until release_run_state_.  The proof is right
     // (expect_own_proof_), and the run state holds stopped.  Else the door
     // ends the process.  Until the release, a start, a run of run_in_row and a
-    // second such door end the process, and a flush finds no pipeline.
+    // second such door end the process, and a flush finds no pipeline.  The
+    // claim is a write, so each door of it is not const.  A job of
+    // run_on_publish_stage reads no run state, so no door of the claim reads
+    // what a job can write.
     //
     // The proof shows the state only at the call, so the claim is the run-time
     // half of the rule.  The owner key of this class, which start takes too,
-    // gives the rule at compile time.  It replaces the claim with the keyed
-    // doors of the owner-key member series (the exemption of
-    // foundation/Transfer.h).
-    void hold_run_state_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) const noexcept {
+    // gives the rule at compile time.  It replaces PipelineRun::held and the
+    // proof of with_trace_build_state, run_in_row and the counts with the
+    // keyed doors of the owner-key member series (the exemption of
+    // foundation/Transfer.h).  It also gives two rules that no claim gives:
+    //   - start writes rank_, world_size_ and device_capability_ while a job
+    //     on a second thread reads them through plan_target.
+    //   - plan_target and numerics read what start and set_numerics write, and
+    //     they take no proof.
+    void hold_run_state_(::fixy::thread::QuiescenceProof<BackgroundThread> const& proof) noexcept {
         expect_own_proof_(proof);
         if (pipeline_run_.cas_acq_rel(PipelineRun::stopped, PipelineRun::held).is_err()) [[unlikely]] {
             ::fixy::fatal("BackgroundThread: a door of the state of a stage while a run of the pipeline is active, or "
@@ -1900,7 +1922,7 @@ private:
 
     // Ends the claim of hold_run_state_.  A later start or run reads each
     // write of the door.
-    void release_run_state_() const noexcept { pipeline_run_.store_release(PipelineRun::stopped); }
+    void release_run_state_() noexcept { pipeline_run_.store_release(PipelineRun::stopped); }
 
     // True when an object of the type reaches the state of the trace build or
     // a BackgroundThread, or a class that the walk cannot read.
@@ -2088,8 +2110,7 @@ private:
 
     // start(), a run of run_in_row and each door that holds the run state
     // write the run state, and each flush reads it.  It has a line of its own.
-    // It is mutable, because a const door holds the run state too.
-    alignas(64) mutable ::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
+    alignas(64)::fixy::Atomic<PipelineRun> pipeline_run_{PipelineRun::stopped};
 
     // The event count of each flush that waits.  The publish stage notifies
     // it after each count of total_processed, and the pipeline thread after

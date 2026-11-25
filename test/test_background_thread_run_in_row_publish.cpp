@@ -445,6 +445,18 @@ static uint64_t run_family_a(BackgroundThread& bt, crucible::test::TraceRig& rig
     return bt.uncompiled_regions().total();
 }
 
+using Bytes = ::fixy::Quantity<::fixy::unit::Byte, size_t>;
+
+// The bytes of blocks that the two scratch arenas of a stopped pipeline hold.
+static Bytes scratch_retained_bytes(BackgroundThread& bt) {
+    Bytes publish_bytes{size_t{0}};
+    bt.run_on_publish_stage([&publish_bytes](BackgroundThread::PublishStageView& owner,
+                                             BackgroundThread::PublishStage const& stage) noexcept {
+        publish_bytes = owner.publish_scratch_retained_bytes(stage);
+    });
+    return ::fixy::saturating_add(bt.build_scratch_retained_bytes(bt.prove_quiescence()), publish_bytes);
+}
+
 // A long run keeps the bytes of its scratch arenas.  The build stage ends an
 // epoch of its scratch arena after each work item, and the publish stage ends
 // an epoch of its own after each memory plan.  Each arena then holds the
@@ -468,8 +480,8 @@ void test_long_run_keeps_its_scratch() {
     const uint64_t published = run_family_a(bt, rig, LONG_RUN_ITERS);
     CRUCIBLE_TEST_ASSERT(kTest,
                          published >= LONG_RUN_ITERS / 2 && "the run published too few regions to witness the scratch");
-    const size_t scratch_bytes = bt.scratch_retained_bytes(bt.prove_quiescence());
-    CRUCIBLE_TEST_ASSERT(kTest, scratch_bytes == short_bt.scratch_retained_bytes(short_bt.prove_quiescence())
+    const Bytes scratch_bytes = scratch_retained_bytes(bt);
+    CRUCIBLE_TEST_ASSERT(kTest, scratch_bytes == scratch_retained_bytes(short_bt)
                                     && "a scratch arena kept more blocks after its epochs");
 
     uint32_t stored = 0;
@@ -487,7 +499,7 @@ void test_long_run_keeps_its_scratch() {
                         "  long_run_keeps_its_scratch:                "
                         "PASSED (regions={}, stored={}, scratch={} bytes)\n",
                         static_cast<unsigned long long>(published), stored,
-                        static_cast<unsigned long long>(scratch_bytes));
+                        static_cast<unsigned long long>(scratch_bytes.raw()));
 }
 
 // The limits of a pipeline refuse what passes them.  The uncompiled queue
@@ -520,7 +532,7 @@ void test_limits_refuse_what_passes_them(::fixy::TestRunnerCtx const& test) {
     CRUCIBLE_TEST_ASSERT(test, stored == 2);
     CRUCIBLE_TEST_ASSERT(test, queued == 2);
     CRUCIBLE_TEST_ASSERT(test, dropped > 0);
-    CRUCIBLE_TEST_ASSERT(test, bt.scratch_retained_bytes(bt.prove_quiescence()) <= size_t{2} << 20);
+    CRUCIBLE_TEST_ASSERT(test, scratch_retained_bytes(bt).raw() <= size_t{2} << 20);
     ::fixy::check::pass(test, "  limits_refuse_what_passes_them:            PASSED (stored={}, dropped={})\n", stored,
                         static_cast<unsigned long long>(dropped));
 }

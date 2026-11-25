@@ -63,7 +63,7 @@ enum class ProofDoor : uint8_t {
     with_trace_build_state,
     detector_history_count,
     pending_op_count,
-    scratch_retained_bytes,
+    build_scratch_retained_bytes,
 };
 
 // The thread that the cases use, and the rig whose sides it holds.
@@ -96,7 +96,8 @@ void call_door(BackgroundThread& bt, Proof const& proof, ProofDoor door) noexcep
     if (door == ProofDoor::run_in_row) return bt.run_in_row(proof, background());
     if (door == ProofDoor::with_trace_build_state) return bt.with_trace_build_state(proof, [](BuildState&) noexcept {});
     if (door == ProofDoor::detector_history_count) return static_cast<void>(bt.detector_history_count(proof));
-    if (door == ProofDoor::scratch_retained_bytes) return static_cast<void>(bt.scratch_retained_bytes(proof));
+    if (door == ProofDoor::build_scratch_retained_bytes)
+        return static_cast<void>(bt.build_scratch_retained_bytes(proof));
     static_cast<void>(bt.pending_op_count(proof));
 }
 
@@ -110,7 +111,7 @@ void test_own_proof_opens_each_door(BackgroundThread& bt) {
     const uint64_t given = bt.with_trace_build_state(proof, [](BuildState&) noexcept { return kOps; });
     CRUCIBLE_TEST_ASSERT(kTest, given == kOps);
     call_door(bt, proof, ProofDoor::with_trace_build_state);
-    call_door(bt, proof, ProofDoor::scratch_retained_bytes);
+    call_door(bt, proof, ProofDoor::build_scratch_retained_bytes);
     bt.stop_requested.signal();
     call_door(bt, proof, ProofDoor::run_in_row);
     CRUCIBLE_TEST_ASSERT(kTest, bt.pending_op_count(proof) == 0);
@@ -262,22 +263,22 @@ int main() {
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::with_trace_build_state);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::detector_history_count);
     test_foreign_proof_ends_the_process(bt, other, ProofDoor::pending_op_count);
-    test_foreign_proof_ends_the_process(bt, other, ProofDoor::scratch_retained_bytes);
+    test_foreign_proof_ends_the_process(bt, other, ProofDoor::build_scratch_retained_bytes);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::run_in_row);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::with_trace_build_state);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::detector_history_count);
     test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::pending_op_count);
-    test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::scratch_retained_bytes);
+    test_proof_of_a_running_thread_ends_the_process(bt, ProofDoor::build_scratch_retained_bytes);
     test_active_run_ends_the_process(rig, bt, ProofDoor::with_trace_build_state);
     test_active_run_ends_the_process(rig, bt, ProofDoor::detector_history_count);
     test_active_run_ends_the_process(rig, bt, ProofDoor::pending_op_count);
-    test_active_run_ends_the_process(rig, bt, ProofDoor::scratch_retained_bytes);
+    test_active_run_ends_the_process(rig, bt, ProofDoor::build_scratch_retained_bytes);
     test_start_beside_a_frame_ends_the_process(bt);
     test_door_beside_a_frame_ends_the_process(bt, ProofDoor::run_in_row, kHeldState);
     test_door_beside_a_frame_ends_the_process(bt, ProofDoor::with_trace_build_state, kActiveRun);
     test_door_beside_a_frame_ends_the_process(bt, ProofDoor::detector_history_count, kActiveRun);
     test_door_beside_a_frame_ends_the_process(bt, ProofDoor::pending_op_count, kActiveRun);
-    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::scratch_retained_bytes, kActiveRun);
+    test_door_beside_a_frame_ends_the_process(bt, ProofDoor::build_scratch_retained_bytes, kActiveRun);
     test_wait_on_the_own_stage_ends_the_process(OwnStageWait::nested_job);
     test_wait_on_the_own_stage_ends_the_process(OwnStageWait::flush);
     test_own_proof_opens_each_door(bt);

@@ -276,7 +276,8 @@ int main() {
     test_build_and_release_pass_two_to_the_32();
     test_scalars_of_an_op_with_no_tensors();
     test_publish_adds_no_block_to_the_region_arena();
+    test_scratch_bytes_beside_a_publish_job();
 
-    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 29 groups, all passed\n");
+    ::fixy::check::pass(kTest, "test_background_thread_run_in_row: 30 groups, all passed\n");
     return 0;
 }
