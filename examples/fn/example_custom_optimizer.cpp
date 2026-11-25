@@ -128,29 +128,36 @@ void adam_step_ref(Parameters params, FirstMoment m, SecondMoment v, Gradients c
     ErasedLine params_line = std::move(params).take();
     ErasedLine first_moment_line = std::move(m).take();
     ErasedLine second_moment_line = std::move(v).take();
-    static_cast<void>(::fixy::mint_strided_scope(params_line, [&](auto const params_scope) noexcept {
-        auto const grads = params_scope.parallel(grad.value()).expect("the precondition gives the gradients the count");
-        return ::fixy::mint_strided_scope(first_moment_line, [&](auto const first_moment_scope) noexcept {
-            return ::fixy::mint_strided_scope(second_moment_line, [&](auto const second_moment_scope) noexcept {
-                // The invariant carries the equal counts of the three runs.
-                // It checks in each build, so the optimizer folds the index
-                // checks of m and v in the loop into it.
-                CRUCIBLE_FATAL_INVARIANT(params_scope.view().count() == count
-                                         && first_moment_scope.view().count() == count
-                                         && second_moment_scope.view().count() == count);
-                for (std::size_t position = 0; position < count; ++position) {
-                    auto const index = params_scope.index(position).expect("the position is below the count");
-                    step(params_scope.at(index),
-                         first_moment_scope.at(
-                             first_moment_scope.index(position).expect("the precondition bounds the position of m")),
-                         second_moment_scope.at(
-                             second_moment_scope.index(position).expect("the precondition bounds the position of v")),
-                         grads.at(index));
-                }
-                return ::fixy::Unit{};
+    // Each body takes the lines that its inner scopes open by move, so no body
+    // holds a writer of the caller by reference.
+    static_cast<void>(::fixy::mint_strided_scope(
+        params_line, [&grad, &step, count, first_moment_line = std::move(first_moment_line),
+                      second_moment_line = std::move(second_moment_line)](auto const params_scope) mutable noexcept {
+            auto const grads =
+                params_scope.parallel(grad.value()).expect("the precondition gives the gradients the count");
+            return ::fixy::mint_strided_scope(first_moment_line, [&step, &grads, &params_scope, count,
+                                                                  second_moment_line = std::move(second_moment_line)](
+                                                                     auto const first_moment_scope) mutable noexcept {
+                return ::fixy::mint_strided_scope(second_moment_line, [&](auto const second_moment_scope) noexcept {
+                    // The invariant carries the equal counts of the three runs.
+                    // It checks in each build, so the optimizer folds the index
+                    // checks of m and v in the loop into it.
+                    CRUCIBLE_FATAL_INVARIANT(params_scope.view().count() == count
+                                             && first_moment_scope.view().count() == count
+                                             && second_moment_scope.view().count() == count);
+                    for (std::size_t position = 0; position < count; ++position) {
+                        auto const index = params_scope.index(position).expect("the position is below the count");
+                        step(params_scope.at(index),
+                             first_moment_scope.at(first_moment_scope.index(position).expect(
+                                 "the precondition bounds the position of m")),
+                             second_moment_scope.at(second_moment_scope.index(position).expect(
+                                 "the precondition bounds the position of v")),
+                             grads.at(index));
+                    }
+                    return ::fixy::Unit{};
+                });
             });
-        });
-    }));
+        }));
 }
 
 // The rank-1 view of the elements of run, in order.
