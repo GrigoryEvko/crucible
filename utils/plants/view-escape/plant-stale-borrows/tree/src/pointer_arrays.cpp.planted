@@ -1,0 +1,27 @@
+// An owner keeps its elements behind an array of pointers, and a result names an
+// element.  A callee with no body can end the owner, so its call ends the borrow.  The
+// rule quarantine gives its lines for the array of pointers.
+
+namespace planted {
+
+class Segments final {
+public:
+    Segments() noexcept;
+    Segments(Segments const&) = delete("the segments have one owner");
+    Segments& operator=(Segments const&) = delete("the segments have one owner");
+    ~Segments();
+    int const& at(unsigned long position) const& noexcept;
+
+private:
+    int* segments_[2] = {};
+};
+
+void change(Segments& segments) noexcept;
+
+int element_of_a_segment(Segments& segments) noexcept {
+    int const& element = segments.at(0);
+    change(segments);
+    return element;
+}
+
+}  // namespace planted

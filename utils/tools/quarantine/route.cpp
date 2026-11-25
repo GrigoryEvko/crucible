@@ -41,7 +41,9 @@
 //     bytes.  A type argument of the owner is an element.  The bytes of an element
 //     are no raw block, so a list of elements is on the route of its elements only.
 //     An owner with no pointer keeps the address of its blocks as a number, so its
-//     blocks are raw.
+//     blocks are raw.  The state of such an owner is each part by value that holds its
+//     pointers.  A result that names the state, such as a walk of a list, keeps a place
+//     in the blocks, so the owner is on its route too.
 //
 // Answers
 //     An answer is a set of TYPE_UID values, which no collection reuses.  The
@@ -117,6 +119,7 @@ RouteAnswers<std::vector<OwnerClass>> owner_answers;
 RouteAnswers<BorrowRoute> route_answers;
 RouteAnswers<bool> keeps_answers;
 RouteAnswers<bool> raw_block_answers;
+RouteAnswers<TypeSet> state_answers;
 
 std::uint64_t pair_key(tree first, tree second) {
     return (static_cast<std::uint64_t>(TYPE_UID(first)) << 32) | TYPE_UID(second);
@@ -228,6 +231,14 @@ void visit_fields(tree type, Visit visit) {
     }
 }
 
+// The type TYPE with no array.
+tree without_array(tree type) {
+    while (type != NULL_TREE && TREE_CODE(type) == ARRAY_TYPE) {
+        type = TREE_TYPE(type);
+    }
+    return type;
+}
+
 // Adds the targets of TYPE to SET.
 void add_targets(tree type, TypeSet& set, Visits& visits) {
     if (is_indirect_type(type)) {
@@ -251,7 +262,7 @@ void add_targets(tree type, TypeSet& set, Visits& visits) {
         visit_type_arguments(type, add);
         return;
     }
-    visit_fields(type, [&](tree field) { add_targets(TREE_TYPE(field), set, visits); });
+    visit_fields(type, [&](tree field) { add_targets(without_array(TREE_TYPE(field)), set, visits); });
 }
 
 const TypeSet& targets_of(tree type) {
@@ -298,7 +309,8 @@ void add_contents(tree type, TypeSet& set, Visits& visits, bool is_owned, bool i
     bool const is_handle =
         CLASS_TYPE_P(type) && !trivially_copyable_p(type) && classtype_has_move_assign_or_move_ctor_p(type, true);
     bool const is_owner = is_in_owner || is_owner_class(type) || is_handle;
-    visit_fields(type, [&](tree field) { add_contents(TREE_TYPE(field), set, visits, is_owned, is_owner); });
+    visit_fields(type,
+                 [&](tree field) { add_contents(without_array(TREE_TYPE(field)), set, visits, is_owned, is_owner); });
 }
 
 const TypeSet& owned_contents_of(tree type) {
@@ -331,7 +343,7 @@ void add_behind(tree type, TypeSet& set, Visits& visits, bool is_in_owner) {
         return;
     }
     visit_fields(type, [&](tree field) {
-        tree held = TREE_TYPE(field);
+        tree held = without_array(TREE_TYPE(field));
         if (!is_indirect_type(held)) {
             add_behind(held, set, visits, is_owner);
             return;
@@ -409,8 +421,9 @@ void read_blocks(tree type, const TypeSet& elements, Blocks& blocks, Visits& vis
         return;
     }
     visit_fields(object, [&](tree field) {
-        if (is_indirect_type(TREE_TYPE(field))) {
-            read_pointee(TREE_TYPE(field), elements, blocks, visits);
+        tree held = without_array(TREE_TYPE(field));
+        if (is_indirect_type(held)) {
+            read_pointee(held, elements, blocks, visits);
         } else {
             read_blocks(TREE_TYPE(field), elements, blocks, visits);
         }
@@ -432,6 +445,44 @@ bool has_raw_blocks(tree type) {
         Visits visits;
         read_blocks(type, elements, blocks, visits);
         return blocks.are_raw || !blocks.have_pointer;
+    });
+}
+
+// True when an object of TYPE holds a pointer in its bytes.
+bool holds_pointer(tree type, Visits& visits) {
+    type = without_array(type);
+    if (is_indirect_type(type)) {
+        return true;
+    }
+    type = readable_class(element_class(type));
+    if (type == NULL_TREE || !visits.enter(type)) {
+        return false;
+    }
+    bool is_held = false;
+    visit_fields(type, [&](tree field) { is_held = is_held || holds_pointer(TREE_TYPE(field), visits); });
+    return is_held;
+}
+
+// Adds each class part by value of TYPE that holds a pointer to SET.
+void add_state(tree type, TypeSet& set, Visits& visits) {
+    visit_fields(type, [&](tree field) {
+        tree part = readable_class(element_class(TREE_TYPE(field)));
+        Visits pointers;
+        if (part != NULL_TREE && visits.enter(part) && holds_pointer(part, pointers)) {
+            add_id(set, TYPE_UID(part));
+            add_state(part, set, visits);
+        }
+    });
+}
+
+// The parts by value of the owner TYPE that hold its pointers (the blocks).  The walk
+// is quadratic in the depth of the parts.
+const TypeSet& state_of(tree type) {
+    return state_answers.get(TYPE_UID(type), [type] {
+        TypeSet set;
+        Visits visits;
+        add_state(type, set, visits);
+        return set;
     });
 }
 
@@ -461,7 +512,7 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
     // In a wide reading an incomplete class is an owner of each object.
     if (type == NULL_TREE && is_wide_reading && object != NULL_TREE && RECORD_OR_UNION_TYPE_P(object)) {
         static const TypeSet each_object{kRawBytes, kErasedType};
-        owners.push_back(OwnerClass{TYPE_UID(object), &each_object, false, false});
+        owners.push_back(OwnerClass{TYPE_UID(object), &each_object, nullptr, false, false});
     }
     if (type == NULL_TREE || is_borrow_class(type)) {
         return;
@@ -478,7 +529,8 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
         auto const known =
             std::find_if(owners.begin(), owners.end(), [id](const OwnerClass& owner) { return owner.id == id; });
         if (known == owners.end()) {
-            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks && has_raw_blocks(type), is_fixed});
+            owners.push_back(OwnerClass{id, &types_behind(type), keeps_blocks ? &state_of(type) : nullptr,
+                                        keeps_blocks && has_raw_blocks(type), is_fixed});
         } else {
             known->is_fixed = known->is_fixed && is_fixed;
         }
@@ -487,7 +539,7 @@ void add_owners(tree type, std::vector<OwnerClass>& owners, Visits& visits, bool
         }
     }
     visit_fields(type, [&](tree field) {
-        tree held = TREE_TYPE(field);
+        tree held = without_array(TREE_TYPE(field));
         if (!is_indirect_type(held)) {
             add_owners(held, owners, visits, owns_pointers, is_behind);
         } else if (owns_pointers) {
@@ -524,7 +576,7 @@ void add_ended_targets(tree type, TypeSet& set, Visits& visits) {
     if (type == NULL_TREE || !visits.enter(type)) {
         return;
     }
-    visit_fields(type, [&](tree field) { add_ended_targets(TREE_TYPE(field), set, visits); });
+    visit_fields(type, [&](tree field) { add_ended_targets(without_array(TREE_TYPE(field)), set, visits); });
 }
 
 // Adds TYPE and each part of it by value that has an end to SET.
@@ -631,6 +683,7 @@ BorrowRoute make_route(tree result, tree held) {
     }
     for (const OwnerClass& owner : owners_of(held)) {
         if (owner.has_raw_blocks || have_common_type(targets, *owner.behind)
+            || (owner.state != nullptr && have_common_type(targets, *owner.state))
             || (can_be_raw && has_id(*owner.behind, kRawBytes))) {
             add_id(answer.route, owner.id);
         }
@@ -655,6 +708,7 @@ void begin_route_reading(bool is_wide) {
     route_answers.clear_open();
     keeps_answers.clear_open();
     raw_block_answers.clear_open();
+    state_answers.clear_open();
 }
 
 bool have_common_type(const TypeSet& first, const TypeSet& second) {
@@ -680,9 +734,7 @@ void add_types(TypeSet& set, const TypeSet& added) {
 }
 
 tree element_class(tree type) {
-    while (type != NULL_TREE && TREE_CODE(type) == ARRAY_TYPE) {
-        type = TREE_TYPE(type);
-    }
+    type = without_array(type);
     return type != NULL_TREE && TYPE_P(type) ? TYPE_MAIN_VARIANT(type) : NULL_TREE;
 }
 

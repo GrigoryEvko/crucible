@@ -4,7 +4,8 @@
 // blocks, and each of them holds a count of the type int too.  So the type of the
 // result does not tell that the result names a block.  The blocks are the bytes behind
 // a pointer, an array of bytes in a class behind a pointer, and the storage at an
-// address that is a number.  The last owner keeps elements of one type.
+// address that is a number.  The last owner keeps elements of one type, and a walk of
+// it names the part that holds its pointers.
 #include <foundation/AlignedBytes.h>
 #include <foundation/core/Array.h>
 #include <foundation/core/Owner.h>
@@ -47,12 +48,17 @@ private:
 };
 
 template <class Event>
+struct ListState final {
+    HeapArray<Event> events{};
+};
+
+template <class Event>
 class[[= owns_its_storage{}]] EventList final {
 public:
     Event const& at(unsigned long position) const& noexcept;
 
 private:
-    HeapArray<Event> events_{};
+    ListState<Event> state_{};
 };
 
 struct PaddedEvent final {
@@ -70,6 +76,12 @@ struct Store final {
     fc::EventList<fc::PaddedEvent> log{};
 };
 
+struct Walk final {
+    fc::ListState<fc::PaddedEvent> const& state;
+};
+
+Walk walk_of(Store const& store) noexcept;
+unsigned long read(Walk walk) noexcept;
 void change(fc::ByteBlocks& blocks) noexcept;
 void change(fc::NodeBlocks& blocks) noexcept;
 void change(fc::NumberBlocks& blocks) noexcept;
@@ -97,6 +109,12 @@ unsigned long element_of_a_list(Store& store) noexcept {
     fc::PaddedEvent const& event = store.log.at(0);
     change(store);
     return event.value;
+}
+
+unsigned long walk_of_a_list(Store& store) noexcept {
+    auto const walk = walk_of(store);
+    change(store);
+    return read(walk);
 }
 
 }  // namespace planted
