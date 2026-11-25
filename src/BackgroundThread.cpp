@@ -16,6 +16,7 @@
 #include <fixy/Refined.h>
 #include <fixy/concurrent/ChannelEnd.h>
 #include <fixy/concurrent/EventCount.h>
+#include <fixy/concurrent/ParkedChannel.h>
 #include <fixy/concurrent/PermissionedBoxChannel.h>
 #include <fixy/concurrent/PermissionedChannel.h>
 #include <fixy/concurrent/Pipeline.h>
@@ -75,16 +76,19 @@ struct GraphPublishTag {};
 // out of its channel in the same order.  The foreground puts ops into the trace
 // ring with no system call, so no thread wakes the drain stage.  It sleeps
 // with a bound, and it polls the ring again after each sleep.  The detect
-// stage and the build stage receive with receive_waiting of StagePolicy: they
-// park on the items count of their input channel, and the stage before each
-// one notifies that count after each push.  A caller fills the owner mailbox
-// with no wake, so the publish stage parks with a bound.  A sleep or a timed
-// park starts at MIN_SLEEP_NANOS, and each one with no work between doubles
-// the bound up to the longest sleep of the stage.
+// stage and the build stage receive with receive_waiting of StagePolicy, so
+// they park until the stage before them pushes or closes.  A caller fills the
+// owner mailbox with no wake, so the publish stage parks with a bound.  A sleep
+// or a timed park starts at MIN_SLEEP_NANOS, and each one with no work between
+// doubles the bound up to the longest sleep of the stage.  A producer stage
+// that finds its output channel full parks by StagePolicy until the next stage
+// receives.
 //
-// A producer stage that finds its output channel full parks on the room count
-// of that channel by StagePolicy, and the consumer of the channel notifies the
-// room count after each receive (push_pipeline).
+// Each channel of the pipeline is a parked channel (fixy/concurrent/
+// ParkedChannel.h).  It owns the counts of its waits, and each door of its ends
+// notifies the count that its change can end a wait of, so no stage can wait on
+// a count that no notify reaches.  Each door takes the context of its stage,
+// which the stage gives to its body (fixy/concurrent/StageShape.h).
 //
 // The drain stage sleeps only after a spin that found no op, so a steady
 // stream of records never meets a sleep.  A burst that starts in a sleep
@@ -111,44 +115,18 @@ inline constexpr uint64_t RING_MAX_SLEEP_NANOS = 200000;
 // job in the owner mailbox.
 inline constexpr uint64_t MAILBOX_MAX_SLEEP_NANOS = 1000000;
 
+// The wait policy of a park after the spin of a stage (StageIdle).
+using ParkAtOnce = ::fixy::concurrent::SpinThenPark<0>;
+
 // The futex calls of the pipeline use words of the process that the pipeline
 // owns, so the kernel refuses a call only in a broken process.
-[[nodiscard]] inline ::fixy::Option<::fixy::futex::Deadline> deadline_after(::fixy::BgLoadCtx const& ctx,
-                                                                            uint64_t nanos) noexcept {
+[[nodiscard]] inline ::fixy::futex::Deadline deadline_after(::fixy::BgLoadCtx const& ctx, uint64_t nanos) noexcept {
     const auto clock = ::fixy::time::mint_clock_reader<::fixy::ClockSource_v::Monotonic>(ctx);
     const ::foundation::effects::cap::Nondet nondet =
         ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx);
-    return ::fixy::some(::fixy::futex::Deadline::after(clock, nondet, nanos)
-                            .expect("the monotonic clock gives the deadline of a park"));
+    return ::fixy::futex::Deadline::after(clock, nondet, nanos)
+        .expect("the monotonic clock gives the deadline of a park");
 }
-
-// How long a stage parks on the event count of its input channel: until a
-// notify, or until a notify or the bound of its idle state.
-enum class ParkBound : uint8_t {
-    untimed,
-    timed,
-};
-
-// The two event counts of one channel.  The consumer parks on items when the
-// channel is empty, and the producer notifies items after each push.  The
-// producer parks on room when the channel is full, and the consumer notifies
-// room after each receive.  A notify with no waiter is one fence and one
-// load, and it writes nothing to the line of the count.  The producer stage
-// closes its channel before its last notify (close_and_wake), and the test of
-// the consumer reads the closed state too, so the end of the stream ends a
-// park as an item does.  Each count has its own cache line.
-struct ChannelWaits {
-    ::fixy::concurrent::EventCount items{};
-    ::fixy::concurrent::EventCount room{};
-};
-
-// The event counts of the three channels between the stages.  The run of the
-// pipeline holds them beside its channels.
-struct ChannelParks {
-    ChannelWaits trace_batches{};
-    ChannelWaits build_work{};
-    ChannelWaits graph_publish{};
-};
 
 // The idle state of one stage: the end of the spin since the last work, the
 // bound of the next sleep, and the longest sleep.
@@ -167,23 +145,19 @@ public:
     void pause_or_sleep(::fixy::BgLoadCtx const& ctx) noexcept {
         if (should_spin_(ctx)) return;
         const ::fixy::futex::FutexWord sleep_word{0};
-        (void)::fixy::futex::wait(ctx, sleep_word, 0, deadline_after(ctx, next_sleep_nanos_()))
+        (void)::fixy::futex::wait(ctx, sleep_word, 0, ::fixy::some(deadline_after(ctx, next_sleep_nanos_())))
             .expect("the kernel parks a stage of the pipeline on its own word");
     }
 
     // A poll found the channel of input empty.  The stage spins, and then it
-    // parks on the event count of the channel.  It enters the count and tests
-    // the channel again before it sleeps, so a push or a close after the test
-    // notifies it (the protocol of fixy/concurrent/EventCount.h).  A timed
-    // park ends at the bound.
+    // parks until the channel holds an item or its end, or until the bound.
+    // The park takes no item, so the stage can do other work before its next
+    // poll.
     template <class Input>
-    void pause_or_park(::fixy::BgLoadCtx const& ctx, ::fixy::concurrent::EventCount& events, Input const& input,
-                       ParkBound bound) noexcept {
+    void pause_or_park(::fixy::BgLoadCtx const& ctx, Input& input) noexcept {
         if (should_spin_(ctx)) return;
-        const ::fixy::concurrent::EventWait entry = events.prepare_wait();
-        if (input.has_item_or_end()) return;
-        static_cast<void>(events.commit_wait(
-            ctx, entry, bound == ParkBound::timed ? deadline_after(ctx, next_sleep_nanos_()) : ::fixy::none));
+        static_cast<void>(
+            input.template wait_for_item_until<ParkAtOnce>(ctx, deadline_after(ctx, next_sleep_nanos_())));
     }
 
 private:
@@ -330,36 +304,32 @@ struct BackgroundThread::Pipeline {
     // BackgroundThread reads and writes it.
     bool has_started = false;
 
-    using StartChannel = ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>;
+    // Each channel is parked, so it owns the counts of its waits (the idle
+    // wait of a stage).
+    using StartChannel = ::fixy::concurrent::ParkedChannel<
+        ::fixy::concurrent::channel_t<BgPipelineStart, 1, decltype(detail::bg_pipeline::start_root())>>;
     // A Box owns each message of the three channels after the start, and the
     // channel moves the Box from one stage to the next (the owners of
     // fixy/concurrent/PermissionedBoxChannel.h).
-    using TraceBatchChannel =
-        ::fixy::concurrent::box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>;
-    using BuildWorkChannel =
-        ::fixy::concurrent::box_channel_t<BgBuildWork, 64, decltype(detail::bg_pipeline::build_work_root())>;
-    using GraphPublishChannel =
-        ::fixy::concurrent::box_channel_t<BgGraphPublish, 64, decltype(detail::bg_pipeline::graph_publish_root())>;
+    using TraceBatchChannel = ::fixy::concurrent::ParkedChannel<
+        ::fixy::concurrent::box_channel_t<BgTraceBatch, 64, decltype(detail::bg_pipeline::trace_batch_root())>>;
+    using BuildWorkChannel = ::fixy::concurrent::ParkedChannel<
+        ::fixy::concurrent::box_channel_t<BgBuildWork, 64, decltype(detail::bg_pipeline::build_work_root())>>;
+    using GraphPublishChannel = ::fixy::concurrent::ParkedChannel<
+        ::fixy::concurrent::box_channel_t<BgGraphPublish, 64, decltype(detail::bg_pipeline::graph_publish_root())>>;
 
-    // The consumer end of a stage, together with the thread the stage
-    // serves, the context of the run and the event counts of the channels.
-    // Only run_pipeline_ builds one, from a channel end, the thread object,
-    // its context and its event counts.  A stage parks and wakes through the
-    // context, so the drain stage and the detect stage take no context from
-    // the door.
+    // The parked consumer handle of a stage, together with the thread the
+    // stage serves.  Only run_pipeline_ builds one, from a handle and the
+    // thread object.  Each door gives the handle the context of the caller,
+    // which is the context of the stage, so the input holds no context.  The
+    // input owes the consume of its handle, and the stage closes it.
     template <class Consumer>
-    class StageInput {
+    class[[= ::foundation::linear::linear{}]][[= ::foundation::linear::owes_consume{}]] StageInput {
         Consumer inner_;
         ::fixy::Ref<BackgroundThread> owner_;
-        ::fixy::BgLoadCtx ctx_;
-        ::fixy::Ref<detail::bg_pipeline::ChannelParks> parks_;
 
-        StageInput(Consumer&& inner, BackgroundThread& owner, ::fixy::BgLoadCtx const& ctx,
-                   detail::bg_pipeline::ChannelParks& parks) noexcept
-            : inner_{std::move(inner)},
-              owner_{::fixy::erase_brand(::fixy::to(owner))},
-              ctx_{ctx},
-              parks_{::fixy::erase_brand(::fixy::to(parks))} {}
+        StageInput(Consumer&& inner, BackgroundThread& owner) noexcept
+            : inner_{std::move(inner)}, owner_{::fixy::erase_brand(::fixy::to(owner))} {}
         friend struct BackgroundThread;
 
     public:
@@ -383,38 +353,41 @@ struct BackgroundThread::Pipeline {
         StageInput& operator=(const StageInput&) = delete("a stage input owns the linear consumer end of its channel");
         StageInput& operator=(StageInput&&) = delete("a stage input binds to one channel for life");
 
-        [[nodiscard]] decltype(std::declval<Consumer&>().try_pop()) try_pop() noexcept { return inner_.try_pop(); }
+        // The oldest item, or no value while the channel is empty.
+        template <class Ctx>
+        [[nodiscard]] auto try_pop(Ctx const& ctx) noexcept {
+            return inner_.try_pop(ctx);
+        }
 
         // The oldest item, NoItem::Empty, or NoItem::Closed after the last
         // item of a stream that the stage before this one ended.
-        [[nodiscard]] decltype(std::declval<Consumer&>().try_receive()) try_receive() noexcept {
-            return inner_.try_receive();
+        template <class Ctx>
+        [[nodiscard]] auto try_receive(Ctx const& ctx) noexcept {
+            return inner_.try_receive(ctx);
         }
 
         // The oldest item, or NoItem::Closed after the last item of the
         // stream.  While the channel is empty and open, the call waits by
-        // Policy on events, the items count of the channel, with the context
-        // of the run (receive_waiting of the channel).
-        template <::fixy::concurrent::WaitPolicy Policy>
-        [[nodiscard]] decltype(std::declval<Consumer&>().try_receive())
-        receive_waiting(::fixy::concurrent::EventCount& events) noexcept {
-            return inner_.template receive_waiting<Policy>(ctx_, events);
+        // Policy.
+        template <::fixy::concurrent::WaitPolicy Policy, class Ctx>
+        [[nodiscard]] auto receive_waiting(Ctx const& ctx) noexcept {
+            return inner_.template receive_waiting<Policy>(ctx);
         }
 
-        // True when the channel holds an item, or when its stream ended.  A
-        // test after the entry of a park in the event count sees each item of
-        // a push and the end of each close whose notify the entry could miss.
-        // The snapshot takes
-        // the tag of Nondet from the load context.
-        [[nodiscard]] bool has_item_or_end() const noexcept {
-            return !inner_.empty_approx(
-                       ::foundation::effects::extract_bare_from_ctx<::foundation::effects::Effect::Nondet>(ctx_))
-                || inner_.is_closed();
+        // Waits by Policy until the channel holds an item or its end, or until
+        // the deadline.  The call takes no item.
+        template <::fixy::concurrent::WaitPolicy Policy, class Ctx>
+        [[nodiscard]] auto wait_for_item_until(Ctx const& ctx, ::fixy::futex::Deadline const& deadline) noexcept {
+            return inner_.template wait_for_item_until<Policy>(ctx, deadline);
+        }
+
+        // Ends the consumer handle.
+        template <class Ctx>
+        void close(Ctx const& ctx) && noexcept {
+            std::move(inner_).close(ctx);
         }
 
         [[nodiscard]] BackgroundThread& owner() const noexcept { return *owner_; }
-        [[nodiscard]] ::fixy::BgLoadCtx const& ctx() const noexcept { return ctx_; }
-        [[nodiscard]] detail::bg_pipeline::ChannelParks& parks() const noexcept { return *parks_; }
     };
 
     // Also carries the owner to the publish stage from its first
@@ -431,28 +404,18 @@ struct BackgroundThread::Pipeline {
         [[nodiscard]] bool try_push(BgPipelineDone const& /*done*/) noexcept { return true; }
     };
 
-    // Pushes the Box into the channel of producer, and notifies the items
-    // count of the channel, which wakes the consumer only when it parks.
-    // While the channel is full, the producer waits by StagePolicy on the
-    // room count of the channel (push_waiting of the channel).  The consumer
-    // notifies the room count after each receive, so the producer loses no
-    // wake.
+    // Pushes the Box into the channel of the producer.  While the channel is
+    // full, the call waits by StagePolicy until the next stage receives.  The
+    // next stage ends only at the end of its stream, and only this producer
+    // ends that stream.  So a refused push means that the next stage is gone
+    // while the stream is open, and the process ends.
     template <class Producer, class T>
-    static void push_pipeline(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelWaits& waits,
-                              Producer& producer, ::fixy::Box<T>&& value) {
-        producer.template push_waiting<detail::bg_pipeline::StagePolicy>(ctx, waits.room, std::move(value));
-        waits.items.notify_one(ctx);
-    }
-
-    // Ends the producer handle of a stage, which closes its channel (the end
-    // of the stream of fixy/concurrent/ChannelEnd.h), and then notifies the
-    // items count of the channel.  The notify comes after the close, so a
-    // consumer that parks after its last receive reads the end.
-    template <class Producer>
-    static void close_and_wake(::fixy::BgLoadCtx const& ctx, detail::bg_pipeline::ChannelWaits& waits,
-                               Producer&& out) noexcept {
-        ::foundation::linear::drop(std::move(out));
-        waits.items.notify_one(ctx);
+    static void push_item(::fixy::BgLoadCtx const& ctx, Producer& producer, ::fixy::Box<T>&& item) noexcept {
+        producer.template push_waiting<detail::bg_pipeline::StagePolicy>(ctx, std::move(item))
+            .match([](::fixy::Unit /*pushed*/) noexcept {},
+                   [](::fixy::concurrent::PushRefused<::fixy::Box<T>> /*refused*/) noexcept {
+                       ::fixy::fatal("a stage of the pipeline closed its input before the end of the stream");
+                   });
     }
 
     // True when a receive found the end of the stream.
@@ -461,43 +424,33 @@ struct BackgroundThread::Pipeline {
         return received.err().value_or(::fixy::concurrent::NoItem::Empty) == ::fixy::concurrent::NoItem::Closed;
     }
 
-    // One idle step of a stage whose input channel is empty: a poll of the
-    // spin, or a park on the event count of the channel.  A timed park ends
-    // at the bound of idle.
-    template <class Input>
-    static void wait_for_item(Input const& in, ::fixy::concurrent::EventCount& events,
-                              detail::bg_pipeline::StageIdle& idle, detail::bg_pipeline::ParkBound bound) noexcept {
-        idle.pause_or_park(in.ctx(), events, in, bound);
-    }
-
     // The four stages of the pipeline, in the order of its channels.  Each
-    // stage takes the input over the consumer handle of its channel and the
-    // producer handle of the next channel.  The handles carry the scope
-    // brands of the frames of run_pipeline_, so each stage is a template over
-    // the types of its two ends, and only run_pipeline_ names them.
+    // stage takes the input over the consumer handle of its channel, the
+    // producer handle of the next channel and the context of the stage.  The
+    // handles carry the scope brands of the frames of run_pipeline_, so each
+    // stage is a template over the types of its two ends, and only
+    // run_pipeline_ names them.  Each stage closes its output and then its
+    // input at its end.
     //
     // The drain stage pops batches from the trace ring until a signal on
     // stop_requested, then pushes the last batch and closes its channel.
     // Each later stage ends at the end of its input stream, and it closes
     // its own channel then.
     template <class Input, class Output>
-    static void DrainTraceRingFn(Input&& in, Output&& out);
+    static void DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx);
 
     // The detect stage feeds each entry to the iteration detector, cuts a
     // work item at each boundary, and pushes a commit marker after each
     // batch.  It applies each divergence reset at the point of the
     // divergence in the op stream.
     template <class Input, class Output>
-    static void DetectIterationFn(Input&& in, Output&& out);
+    static void DetectIterationFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx);
 
     // The build stage builds a trace graph from each work item and
     // forwards commit markers unchanged.  A work item that met the overflow
     // of the metadata log sends nothing.
-    //
-    // The pipeline runs this body as the entry of its own thread, so the
-    // body takes the background context of that thread from the door.
     template <class Input, class Output>
-    static void BuildTraceFn(Input&& in, Output&& out);
+    static void BuildTraceFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx);
 
     // The publish stage publishes each region whose reset point is the
     // requested point, discards each stale one, and at each commit marker
@@ -513,11 +466,8 @@ struct BackgroundThread::Pipeline {
     // publish-stage proof for each call, serves the owner mailbox before
     // every pop, and closes the mailbox on its way out, so a job posted to
     // it runs here between two publications and never beside one.
-    //
-    // The pipeline runs this body as the entry of its own thread, so the
-    // body takes the background context of that thread from the door.
     template <class Input>
-    static void MakeRegionFn(Input&& in, BgSinkProducerHandle&& out);
+    static void MakeRegionFn(Input&& in, BgSinkProducerHandle&& out, ::fixy::BgLoadCtx const& ctx);
 };
 
 // ignore_regions_ comes before region_ready_ in the class, so it is built
@@ -863,14 +813,13 @@ uint32_t BackgroundThread::region_count(PublishStage const&) const noexcept {
 }
 
 template <class Input, class Output>
-void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out) {
+void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx) {
     BackgroundThread& owner = in.owner();
-    detail::bg_pipeline::ChannelWaits& next = in.parks().trace_batches;
-    while (in.try_pop().is_none()) {
+    while (in.try_pop(ctx).is_none()) {
         CRUCIBLE_SPIN_PAUSE;
     }
 
-    ::foundation::effects::Alloc const alloc = in.ctx().cap().alloc;
+    ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
     ::fixy::Box<BgTraceBatch> batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     detail::bg_pipeline::StageIdle idle{detail::bg_pipeline::RING_MAX_SLEEP_NANOS};
 
@@ -892,34 +841,33 @@ void BackgroundThread::Pipeline::DrainTraceRingFn(Input&& in, Output&& out) {
         batch->count = pop(*batch);
 
         if (batch->count == 0) {
-            idle.pause_or_sleep(in.ctx());
+            idle.pause_or_sleep(ctx);
             continue;
         }
         idle.reset();
 
-        push_pipeline(in.ctx(), next, out, std::move(batch));
+        push_item(ctx, out, std::move(batch));
         batch = ::fixy::mint_box<BgTraceBatch>(alloc);
     }
 
     batch->count = pop(*batch);
     if (batch->count > 0) {
-        push_pipeline(in.ctx(), next, out, std::move(batch));
+        push_item(ctx, out, std::move(batch));
     }
 
-    close_and_wake(in.ctx(), next, std::move(out));
+    std::move(out).close(ctx);
+    std::move(in).close(ctx);
 }
 
 template <class Input, class Output>
-void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out) {
+void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx) {
     BackgroundThread& owner = in.owner();
-    detail::bg_pipeline::ChannelParks& parks = in.parks();
-    ::foundation::effects::Alloc const alloc = in.ctx().cap().alloc;
+    ::foundation::effects::Alloc const alloc = ctx.cap().alloc;
     while (true) {
-        // The receive waits for a batch or for the end of the stream, and
-        // then it wakes the drain stage when that stage waits for room.
+        // The receive waits for a batch or for the end of the stream, and it
+        // wakes the drain stage when that stage waits for room.
         ::fixy::Result<::fixy::Box<BgTraceBatch>, ::fixy::concurrent::NoItem> received =
-            in.template receive_waiting<detail::bg_pipeline::StagePolicy>(parks.trace_batches.items);
-        parks.trace_batches.room.notify_one(in.ctx());
+            in.template receive_waiting<detail::bg_pipeline::StagePolicy>(ctx);
         if (is_end_of_stream(received)) break;
 
         // The channel gives the batch in a Box, which ends it after the
@@ -946,7 +894,7 @@ void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out) {
             if (owner.detector_.check(alloc, entry.schema_hash, entry.shape_hash)) {
                 ::fixy::Option<::fixy::Box<BgBuildWork>> work = owner.prepare_iteration_build_work(alloc);
                 if (work.is_some()) {
-                    push_pipeline(in.ctx(), parks.build_work, out, std::move(work).expect("the test above found work"));
+                    push_item(ctx, out, std::move(work).expect("the test above found work"));
                 }
             }
             owner.drop_unclaimable_ops_();
@@ -961,23 +909,21 @@ void BackgroundThread::Pipeline::DetectIterationFn(Input&& in, Output&& out) {
             .boundaries = owner.detector_.boundaries_detected.get(),
             .period = owner.detector_.confirmed ? DetectorPeriod::Confirmed : DetectorPeriod::Searching});
 
-        push_pipeline(in.ctx(), parks.build_work, out, owner.make_commit_work(alloc, ops.count));
+        push_item(ctx, out, owner.make_commit_work(alloc, ops.count));
     }
-    close_and_wake(in.ctx(), parks.build_work, std::move(out));
+    std::move(out).close(ctx);
+    std::move(in).close(ctx);
 }
 
 template <class Input, class Output>
-void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
-    const ::fixy::BgLoadCtx ctx{::foundation::effects::host::BackgroundOwner::mint_background_context()};
+void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out, ::fixy::BgLoadCtx const& ctx) {
     BackgroundThread& owner = in.owner();
-    detail::bg_pipeline::ChannelParks& parks = in.parks();
 
     while (true) {
-        // The receive waits for a work or for the end of the stream, and then
-        // it wakes the detect stage when that stage waits for room.
+        // The receive waits for a work or for the end of the stream, and it
+        // wakes the detect stage when that stage waits for room.
         ::fixy::Result<::fixy::Box<BgBuildWork>, ::fixy::concurrent::NoItem> received =
-            in.template receive_waiting<detail::bg_pipeline::StagePolicy>(parks.build_work.items);
-        parks.build_work.room.notify_one(ctx);
+            in.template receive_waiting<detail::bg_pipeline::StagePolicy>(ctx);
         if (is_end_of_stream(received)) break;
 
         ::fixy::Box<BgBuildWork> const work = std::move(received).expect("the test above found an item");
@@ -994,7 +940,7 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
             publish->commit_count = work->commit_count;
             publish->meta_floor = work->meta_floor;
             publish->reset_point = work->reset_point;
-            push_pipeline(ctx, parks.graph_publish, out, std::move(publish));
+            push_item(ctx, out, std::move(publish));
             continue;
         }
 
@@ -1050,17 +996,18 @@ void BackgroundThread::Pipeline::BuildTraceFn(Input&& in, Output&& out) {
             continue;
         }
 
-        push_pipeline(ctx, parks.graph_publish, out, std::move(publish).expect("the build made a region"));
+        push_item(ctx, out, std::move(publish).expect("the build made a region"));
     }
-    close_and_wake(ctx, parks.graph_publish, std::move(out));
+    std::move(out).close(ctx);
+    std::move(in).close(ctx);
 }
 
 // Keeping the publish stage separate means the publish-side delegate
 // never sees the build-side machinery, so a crash-stop during publish
 // cannot taint the build stage's owner pointer.
 template <class Input>
-void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&& out) {
-    const ::foundation::effects::Bg bg = ::foundation::effects::host::BackgroundOwner::mint_background_context();
+void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&& out, ::fixy::BgLoadCtx const& ctx) {
+    const ::foundation::effects::Bg bg = ctx.cap();
     BackgroundThread& owner = in.owner();
     CRUCIBLE_FATAL_INVARIANT(::fixy::same_target(out.owner, ::fixy::some(::fixy::to(owner))));
     const OwnerMailboxScope mailbox{owner, PublishStage{}};
@@ -1068,23 +1015,22 @@ void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&&
 
     while (true) {
         owner.serve_owner_mailbox_(PublishStage{});
-        ::fixy::Result<::fixy::Box<BgGraphPublish>, ::fixy::concurrent::NoItem> received = in.try_receive();
+        // The receive wakes the build stage when that stage waits for room.
+        ::fixy::Result<::fixy::Box<BgGraphPublish>, ::fixy::concurrent::NoItem> received = in.try_receive(ctx);
         if (received.is_err()) {
             if (is_end_of_stream(received)) {
                 // The sink takes each value at its first push.
                 const bool is_taken = out.try_push(BgPipelineDone{});
                 CRUCIBLE_FATAL_INVARIANT(is_taken);
+                std::move(in).close(ctx);
                 return;
             }
             // A job in the owner mailbox gives no wake, so the park is
             // timed, and the stage serves the mailbox after each park.
-            wait_for_item(in, in.parks().graph_publish.items, idle, detail::bg_pipeline::ParkBound::timed);
+            idle.pause_or_park(ctx, in);
             continue;
         }
         idle.reset();
-        // The receive freed a cell, so it wakes the build stage when that
-        // stage waits for room.
-        in.parks().graph_publish.room.notify_one(in.ctx());
 
         ::fixy::Box<BgGraphPublish> publish = std::move(received).expect("the test above found an item");
 
@@ -1101,7 +1047,7 @@ void BackgroundThread::Pipeline::MakeRegionFn(Input&& in, BgSinkProducerHandle&&
             // The count comes first, and then the notify wakes each flush
             // that parks.  With no flush that parks, the notify is one fence
             // and one load.
-            owner.processed_events_.notify_all(in.ctx());
+            owner.processed_events_.notify_all(ctx);
             continue;
         }
 
@@ -1189,9 +1135,6 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     Pipeline::TraceBatchChannel trace_batches;
     Pipeline::BuildWorkChannel build_work;
     Pipeline::GraphPublishChannel graph_publish;
-    // The event counts of the three channels.  They live as long as the
-    // channels, and each stage ends before this frame does.
-    detail::bg_pipeline::ChannelParks parks{};
 
     Pipeline::StartChannel start;
 
@@ -1199,17 +1142,16 @@ void BackgroundThread::run_pipeline_(::fixy::BgLoadCtx const& ctx) noexcept {
     // below calls it with the handle of each end of each channel.  Each
     // handle carries the scope brand of its frame, so the stages are
     // templates over the types of the handles.
-    auto const run_stages = [this, &ctx, &parks](auto start_prod, auto start_end, auto trace_prod, auto trace_end,
-                                                 auto build_prod, auto build_end, auto publish_prod,
-                                                 auto publish_end) noexcept {
-        auto start_cons = Pipeline::StageInput<decltype(start_end)>{std::move(start_end), *this, ctx, parks};
-        auto trace_cons = Pipeline::StageInput<decltype(trace_end)>{std::move(trace_end), *this, ctx, parks};
-        auto build_cons = Pipeline::StageInput<decltype(build_end)>{std::move(build_end), *this, ctx, parks};
-        auto publish_cons = Pipeline::StageInput<decltype(publish_end)>{std::move(publish_end), *this, ctx, parks};
+    auto const run_stages = [this, &ctx](auto start_prod, auto start_end, auto trace_prod, auto trace_end,
+                                         auto build_prod, auto build_end, auto publish_prod,
+                                         auto publish_end) noexcept {
+        auto start_cons = Pipeline::StageInput<decltype(start_end)>{std::move(start_end), *this};
+        auto trace_cons = Pipeline::StageInput<decltype(trace_end)>{std::move(trace_end), *this};
+        auto build_cons = Pipeline::StageInput<decltype(build_end)>{std::move(build_end), *this};
+        auto publish_cons = Pipeline::StageInput<decltype(publish_end)>{std::move(publish_end), *this};
 
-        while (!start_prod.try_push(BgPipelineStart{})) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
+        start_prod.try_push(ctx, BgPipelineStart{}).expect("the start channel holds the start signal of one run");
+        std::move(start_prod).close(ctx);
         auto drain_stage =
             ::fixy::concurrent::mint_stage<&Pipeline::DrainTraceRingFn<decltype(start_cons), decltype(trace_prod)>>(
                 ctx, std::move(start_cons), std::move(trace_prod));

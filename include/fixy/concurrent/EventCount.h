@@ -113,8 +113,8 @@ private:
     EventWait(EventCount& events, std::uint32_t epoch) noexcept;
 
     // The count of the entry.  The structure that holds the event count owns
-    // it, such as the parks of a pipeline, and the count is Pinned, so it does
-    // not move.  The one constructor sets the member from a reference, so it
+    // it, such as a parked channel, and the count is Pinned, so it does not
+    // move.  The one constructor sets the member from a reference, so it
     // is never null, and the const keeps it set: the entry has no setter.  Only
     // prepare_wait makes an entry, and an entry does not copy or move.  So the
     // entry lives in the scope of one wait, which reaches the count by
