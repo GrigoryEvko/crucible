@@ -396,6 +396,25 @@ namespace detail {
 using record_word_ [[gnu::may_alias]] = std::uint64_t;
 using const_record_word_ [[gnu::may_alias]] = std::uint64_t const;
 
+// The positions of the words of a record of Count words, in order.  An
+// expansion statement walks them, so the position is a constant of each step.
+// The steps need pointer iterators, and a C array has them.
+template <std::size_t Count>
+struct word_positions_ {
+    std::size_t at[Count]{};
+};
+
+template <std::size_t Count>
+[[nodiscard]] consteval word_positions_<Count> list_word_positions_() noexcept {
+    word_positions_<Count> listed{};
+    for (std::size_t position = 0; position < Count; ++position)
+        listed.at[position] = position;
+    return listed;
+}
+
+template <std::size_t Count>
+inline constexpr word_positions_<Count> word_positions_below_ = list_word_positions_<Count>();
+
 // The class and the member type of a pointer to a data member.
 template <class Member>
 struct member_of_;
@@ -497,13 +516,26 @@ class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
         return static_cast<std::size_t>(field - start) / sizeof(std::uint64_t);
     }
 
+    // The most words of a record that copy_words_ and store_words_ expand, the
+    // words of one cache line.  The compiler does not unroll a loop of the
+    // words, so the loop keeps each word in memory, and the expanded steps keep
+    // each word in a register.  A longer record keeps the loop, because the
+    // code of each caller grows with the expanded words.
+    static constexpr std::size_t kExpandedWords = 8;
+
     // Loads each word of record with an acquire load.  Complexity: one load
     // for each word, at most 32.
     static void copy_words_(T* record, Words& words) noexcept {
         detail::const_record_word_* const first =
             static_cast<detail::const_record_word_*>(static_cast<void const*>(record));
-        for (Word const word : Words::indices()) {
-            words.set(word, __atomic_load_n(first + word.raw(), __ATOMIC_ACQUIRE));
+        if constexpr (kWords <= kExpandedWords) {
+            template for (constexpr std::size_t at : detail::word_positions_below_<kWords>.at) {
+                words.set(::foundation::core::index<at>(), __atomic_load_n(first + at, __ATOMIC_ACQUIRE));
+            }
+        } else {
+            for (Word const word : Words::indices()) {
+                words.set(word, __atomic_load_n(first + word.raw(), __ATOMIC_ACQUIRE));
+            }
         }
     }
 
@@ -513,8 +545,15 @@ class [[nodiscard]][[= ::foundation::transfer::refers{}]] SharedView final {
         requires(!std::is_const_v<T>)
     {
         detail::record_word_* const first = static_cast<detail::record_word_*>(static_cast<void*>(record));
-        for (Word const word : Words::indices()) {
-            if (word.raw() != skipped) __atomic_store_n(first + word.raw(), words.at(word), __ATOMIC_RELEASE);
+        if constexpr (kWords <= kExpandedWords) {
+            template for (constexpr std::size_t at : detail::word_positions_below_<kWords>.at) {
+                if (at != skipped)
+                    __atomic_store_n(first + at, words.at(::foundation::core::index<at>()), __ATOMIC_RELEASE);
+            }
+        } else {
+            for (Word const word : Words::indices()) {
+                if (word.raw() != skipped) __atomic_store_n(first + word.raw(), words.at(word), __ATOMIC_RELEASE);
+            }
         }
     }
 

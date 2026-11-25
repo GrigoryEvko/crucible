@@ -5,13 +5,19 @@
 // write_committed, and a reader thread copies the slot through read_committed
 // at the same time, on a shared mapping.  Each write gives a record whose two
 // words agree, so a copy that mixes two writes shows a pair that does not
-// agree, and the test counts no such copy.  ThreadSanitizer sees only atomic
-// accesses to the mapping, so the tsan preset reports no race.  A plain View
-// of the same mapping reads and writes with plain loads and stores, and the
-// same test through it is a data race.
+// agree, and the test counts no such copy.  The case runs a record of four
+// words with the commit word third, one with it first, and one of 16 words with
+// it first.  A commit that a writer stores before the other words shows only
+// with the commit word first.  ThreadSanitizer sees only atomic accesses to the
+// mapping, so the tsan preset reports no race.  A plain View of the same mapping
+// reads and writes with plain loads and stores, and the same test through it is
+// a data race.
 //
 // The single-thread cases read a word, a field and a record of each door, and
-// a record that no write committed gives no value.
+// a record that no write committed gives no value.  The round trip of each
+// word runs records of 2, 4, 8, 9, 16 and 32 words, with the commit word first
+// and last, because a copy of at most eight words has other code than a longer
+// one.  A write must change no word of the records beside it.
 
 #include <fixy/Core.h>
 #include <fixy/Ctx.h>
@@ -46,6 +52,23 @@ struct Probe {
     std::uint64_t complement = 0;
     std::uint64_t stamp = 0;
     std::uint64_t pad = 0;
+};
+
+// The same record with the commit word first, so a store of the commit before
+// the other words is seen.
+struct FrontProbe {
+    std::uint64_t stamp = 0;
+    std::uint64_t value = 0;
+    std::uint64_t complement = 0;
+    std::uint64_t pad = 0;
+};
+
+// The same record with 16 words, which the copy and the store walk with a loop.
+struct WideFrontProbe {
+    std::uint64_t stamp = 0;
+    std::uint64_t value = 0;
+    std::uint64_t complement = 0;
+    fixy::FixedArray<std::uint64_t, 13> pad{};
 };
 
 struct ProbeRegion {
@@ -108,22 +131,102 @@ template <class Mapping>
     return 0;
 }
 
-// The race case: a writer and a reader on one slot at the same time.
-template <class Mapping>
+// A record of Words words whose commit word is the first word, and one whose
+// commit word is the last word.  copy_words_ and store_words_ expand the words
+// of a record of at most eight words, and walk the words of a longer one.
+template <std::size_t Words>
+struct FrontCommit {
+    std::uint64_t stamp = 0;
+    fixy::FixedArray<std::uint64_t, Words - 1> rest{};
+};
+template <std::size_t Words>
+struct BackCommit {
+    fixy::FixedArray<std::uint64_t, Words - 1> rest{};
+    std::uint64_t stamp = 0;
+};
+
+// The record with the stamp and a word of value in each place, each value
+// distinct in the record.
+template <class Record>
+[[nodiscard]] Record record_of(std::uint64_t stamp) {
+    Record made{};
+    made.stamp = stamp;
+    for (auto const index : decltype(made.rest)::indices())
+        made.rest.set(index, stamp * 1000 + index.raw() + 1);
+    return made;
+}
+
+// Two records hold the same words.
+template <class Record>
+[[nodiscard]] bool is_same_record(Record const& left, Record const& right) {
+    bool is_same = left.stamp == right.stamp;
+    for (auto const index : decltype(left.rest)::indices())
+        is_same = is_same && left.rest.at(index) == right.rest.at(index);
+    return is_same;
+}
+
+// A write of one record of a run gives each word of it back, and it changes no
+// word of the record before it or after it.
+template <class Record, class Mapping>
+[[nodiscard]] int each_word_round_trips(Mapping& mapping) {
+    constexpr std::size_t kCount = kPageBytes / sizeof(Record);
+    for (auto const records : mapping.template view_at<Record, kCount>(0)) {
+        fixy::Index<kCount> const before = fixy::index<0>();
+        fixy::Index<kCount> const middle = fixy::index<1>();
+        fixy::Index<kCount> const after = fixy::index<2>();
+        records.template write_committed<&Record::stamp>(before, record_of<Record>(3));
+        records.template write_committed<&Record::stamp>(middle, record_of<Record>(5));
+        records.template write_committed<&Record::stamp>(after, record_of<Record>(7));
+        records.template write_committed<&Record::stamp>(middle, record_of<Record>(11));
+        bool const is_middle = records.template read_committed<&Record::stamp>(middle)
+                                   .map([](Record copy) { return is_same_record(copy, record_of<Record>(11)); })
+                                   .value_or(false);
+        bool const are_neighbors = records.template read_committed<&Record::stamp>(before)
+                                       .map([](Record copy) { return is_same_record(copy, record_of<Record>(3)); })
+                                       .value_or(false)
+                                && records.template read_committed<&Record::stamp>(after)
+                                       .map([](Record copy) { return is_same_record(copy, record_of<Record>(7)); })
+                                       .value_or(false);
+        if (!is_middle || !are_neighbors) {
+            fixy::report(fixy::Sink::Err, "a record of {} bytes gave middle {} neighbors {}\n", sizeof(Record),
+                         is_middle, are_neighbors);
+            return 1;
+        }
+        return 0;
+    }
+    fixy::report(fixy::Sink::Err, "the mapping gave no run of records of {} bytes\n", sizeof(Record));
+    return 1;
+}
+
+// Each form of a record in the pack.
+template <class... Records, class Mapping>
+[[nodiscard]] int words_round_trip(Mapping& mapping) {
+    return (each_word_round_trips<Records>(mapping) + ... + 0);
+}
+
+// The race case: a writer and a reader on one slot at the same time, of a
+// record whose commit word is the third word or the first.  Each record takes
+// its own slot, because a slot that holds a record of the other type before the
+// first write looks like a copy that mixes two writes.
+template <class Record, std::size_t Slot, class Mapping>
 [[nodiscard]] int copies_mix_no_two_writes(Mapping& mapping) {
     std::uint64_t torn = 0;
     std::uint64_t copied = 0;
-    for (Probes const probes : mapping.template view_at<Probe, kProbes>(0)) {
-        fixy::Index<kProbes> const slot = fixy::index<2>();
-        auto writer = [probes, slot]() noexcept {
+    constexpr std::size_t kCount = kPageBytes / sizeof(Record);
+    for (auto const records : mapping.template view_at<Record, kCount>(0)) {
+        fixy::Index<kCount> const slot = fixy::index<Slot>();
+        auto writer = [records, slot]() noexcept {
             for (std::uint64_t write = 1; write <= kWrites; ++write) {
-                probes.write_committed<&Probe::stamp>(slot,
-                                                      Probe{.value = write, .complement = ~write, .stamp = write});
+                Record made{};
+                made.value = write;
+                made.complement = ~write;
+                made.stamp = write;
+                records.template write_committed<&Record::stamp>(slot, made);
             }
         };
-        auto reader = [probes, slot, &torn, &copied]() noexcept {
+        auto reader = [records, slot, &torn, &copied]() noexcept {
             for (std::uint64_t read = 0; read < kWrites; ++read) {
-                for (Probe const copy : probes.read_committed<&Probe::stamp>(slot)) {
+                for (Record const& copy : records.template read_committed<&Record::stamp>(slot)) {
                     ++copied;
                     if (copy.complement != ~copy.value || copy.stamp != copy.value) ++torn;
                 }
@@ -159,7 +262,14 @@ template <class Brand>
     }
     auto mapping = std::move(mapped).expect("the mint gave a mapping");
     if (int const rc = doors_read_what_they_wrote(mapping); rc != 0) return rc;
-    return copies_mix_no_two_writes(mapping);
+    if (int const rc = copies_mix_no_two_writes<Probe, 2>(mapping); rc != 0) return rc;
+    if (int const rc = copies_mix_no_two_writes<FrontProbe, 5>(mapping); rc != 0) return rc;
+    if (int const rc = copies_mix_no_two_writes<WideFrontProbe, 9>(mapping); rc != 0) return rc;
+    // The round trip writes records of other types in the page, so it runs
+    // last: a slot of the race case holds no record of the round trip.
+    return words_round_trip<FrontCommit<2>, FrontCommit<4>, FrontCommit<8>, FrontCommit<9>, FrontCommit<16>,
+                            FrontCommit<32>, BackCommit<2>, BackCommit<4>, BackCommit<8>, BackCommit<9>, BackCommit<16>,
+                            BackCommit<32>>(mapping);
 }
 
 }  // namespace
