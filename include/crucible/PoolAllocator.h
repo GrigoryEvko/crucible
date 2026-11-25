@@ -469,42 +469,44 @@ private:
     // addresses takes the address of its first byte, so the address of each
     // pooled slot is the first byte of its View by construction.  A pooled
     // slot of no byte has no first byte, so its address is the byte of the
-    // pool at its offset.  One branded scope walks the slots, and the run
-    // writes the entry at the index of the slot through its element door.
-    // Complexity: one pass over the slots.
+    // pool at its offset.  A loop walks the positions of the slots with checked
+    // reads, and the run writes the entry at the position of the slot through
+    // its element door.  The loop takes no branded scope: it writes Views of the
+    // pool into the column of the pool, a store that the gate of a scope body
+    // refuses (StoresNoBorrowOutside of foundation/core/CaptureStore.h).  The
+    // pool proves that store, not a frame, because it owns the bytes and the
+    // column.  init runs the function, so the two checks of each position cost
+    // nothing on a hot path.  Complexity: one pass over the slots.
     template <class Entry, class Brand, std::size_t Extent, class EntryOf>
     static void write_pool_column_(const MemoryPlan& plan, ::fixy::View<uint8_t> pool,
                                    ::fixy::ViewMut<Entry, Brand, Extent> run, EntryOf const& entry_of) noexcept {
         CRUCIBLE_PRE(run.size() == plan.slots.size());
-        static_cast<void>(::fixy::mint_branded_scope(plan.slots.view(), [&](auto const& slots) noexcept {
-            for (auto const index : slots.indices()) {
-                const TensorSlot& slot = slots.at(index);
-                if (slot.is_external) continue;
-                pool.window(slot.offset_bytes, slot.nbytes)
-                    .match(
-                        [&](::fixy::View<uint8_t> bytes) noexcept {
-                            if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
-                                refuse_slot_(slot, plan, index);
-                            auto entry =
-                                run.get_mut(index.raw()).expect("the column holds one entry for each slot of the plan");
-                            *entry = entry_of(bytes, slot);
-                        },
-                        [&]() noexcept { refuse_slot_(slot, plan, index); });
-            }
-            return ::fixy::Unit{};
-        }));
+        ::fixy::View<TensorSlot const> const slots = plan.slots.view();
+        for (std::size_t position = 0; position < slots.size(); ++position) {
+            const TensorSlot& slot = *slots.get(position).expect("the position is below the count of the slots");
+            if (slot.is_external) continue;
+            pool.window(slot.offset_bytes, slot.nbytes)
+                .match(
+                    [&](::fixy::View<uint8_t> bytes) noexcept {
+                        if (slot.offset_bytes % ALIGNMENT != 0) [[unlikely]]
+                            refuse_slot_(slot, plan, position);
+                        auto entry =
+                            run.get_mut(position).expect("the column holds one entry for each slot of the plan");
+                        *entry = entry_of(bytes, slot);
+                    },
+                    [&]() noexcept { refuse_slot_(slot, plan, position); });
+        }
     }
 
     // Ends the process for a pooled slot that the pool cannot serve: its
     // window ends past the pool, or its first byte is off the alignment.  The
     // path is cold and out of line, so the loop of init holds no object of
     // it, and each arm of the loop that refuses a slot names it alone.  The
-    // position is the branded index of the slot in the scope of the loop.
-    template <class Position>
+    // position is the position of the slot in the plan.
     [[noreturn]] CRUCIBLE_COLD static void refuse_slot_(const TensorSlot& slot, const MemoryPlan& plan,
-                                                        Position position) noexcept {
+                                                        std::size_t position) noexcept {
         ::fixy::fatal("PoolAllocator: slot {} does not fit the pool: offset={} nbytes={} pool_bytes={} alignment={}",
-                      position.raw(), slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
+                      position, slot.offset_bytes, slot.nbytes, plan.pool_bytes, ALIGNMENT);
     }
 
     // The address of the first byte of the pool, or no address for a pool of
