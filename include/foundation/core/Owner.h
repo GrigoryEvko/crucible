@@ -56,6 +56,9 @@
 // that such code puts into an owner in its end leaks, because the end of the
 // owner is at its last step.
 //
+// No rule of the compiler plugin finds such a second name, thus only this order
+// gives protection against it at run time.
+//
 // A state states the member runs_element_code as false when its release runs no
 // such code, such as the storage of bytes.  A state that ends elements names their
 // type in the member type released_element, and its release runs such code when the
