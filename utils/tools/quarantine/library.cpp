@@ -288,8 +288,8 @@ bool matches_default(tree argument, tree default_argument) {
 
 // The template arguments of a class that is not a library class.  An
 // argument equal to the default of its parameter is skipped: the declaration
-// did not write it, so a fixy default such as the storage of AppendOnly is not
-// a finding at each object.
+// did not write it, so a library class that a class template of the base has as
+// the default of a parameter is not a finding at each object.
 LibraryClasses library_class_in_template_arguments(tree class_type, int depth, const FileEntry* language) {
     LibraryClasses found;
     tree info = CLASSTYPE_TEMPLATE_INFO(class_type);
