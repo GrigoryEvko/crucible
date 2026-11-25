@@ -69,12 +69,12 @@
 //   that an append puts into the list during the walk.  A walk of a list
 //   that moved away ends the process at its next segment.
 //
-// Mark of the storage
-//   A list of elements that hold no borrow states owns_its_storage{} of
-//   foundation/core/Owner.h.  So the kind stale-borrow of the rule view-escape
-//   reads an append as no end of a borrow, although an append writes pointers
-//   of the state.  Each member that is not const keeps each object that a
-//   borrow can name, until the end of the list:
+// Marks of the storage
+//   Each list states keeps_its_blocks{} of foundation/core/Owner.h.  So the
+//   kind stale-borrow of the rule view-escape reads an append as no end of a
+//   borrow, although an append writes pointers of the state.  Each member that
+//   is not const keeps each object that a borrow can name, until the end of
+//   the list:
 //     append, append_with   write slots that hold no element, the tail, the
 //                           count, and a word of the directory that names no
 //                           segment before
@@ -84,11 +84,11 @@
 //                           the rule reads the end of that list
 //     expect_empty          ends a list that holds no element
 //
-//   A list of elements that hold a borrow, such as a list of Views, states
-//   nothing.  The mark also tells that an owner holds no borrow, and then the
-//   rule would read a list of Views of a local as a list that a function can
-//   give back.  For such a list the rule reads an append as an end of each
-//   borrow of an element, so it refuses a correct use and no wrong one.
+//   A list of elements that hold no borrow also states owns_its_storage{}.
+//   That mark also tells that an owner holds no borrow, so a list of elements
+//   that hold a borrow, such as a list of Views, does not state it.  Then the
+//   rule reads a list of Views of a local as a list that holds a borrow of the
+//   local, and it refuses a function that gives such a list back.
 //
 // Threads
 //   A read writes no state of the list, so a list is Shareable when its
@@ -682,7 +682,8 @@ template <class T>
 // The annotation of a list of elements that hold a borrow: it states nothing.
 struct holds_borrows_of_elements final {};
 
-// The mark of a list (the mark of the storage).
+// The mark of a list that tells whether it holds a borrow (the marks of the
+// storage).
 template <bool HoldsNone>
 inline constexpr auto segment_storage_mark_ = holds_borrows_of_elements{};
 
@@ -695,8 +696,8 @@ template <class T>
     requires OwnedElement<T>
 class [[nodiscard]][[= ::foundation::linear::linear_when<::foundation::linear::is_linear_type(^^T)>]]
                    [[= ::foundation::lifetime::no_start_over_bytes{}]][[= ::foundation::transfer::by_arguments{}]]
-                   [[= detail::segment_storage_mark_<detail::holds_no_borrow_of_element_<T>()>]] SegmentList final
-    : public OwnerCore<detail::owner::SegmentListState<T>, SegmentList<T>> {
+                   [[= keeps_its_blocks{}]][[= detail::segment_storage_mark_<detail::holds_no_borrow_of_element_<T>()>]]
+    SegmentList final : public OwnerCore<detail::owner::SegmentListState<T>, SegmentList<T>> {
     using State = detail::owner::SegmentListState<T>;
     using Core = OwnerCore<State, SegmentList>;
 

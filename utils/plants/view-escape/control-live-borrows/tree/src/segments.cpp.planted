@@ -1,0 +1,35 @@
+// A SegmentList of Views keeps its blocks, so a borrow of an element stays
+// live across an append and across an append with code of the element.
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/SegmentList.h>
+#include <foundation/effects/Effect.h>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::FixedArray<int, 2>;
+using View = fc::View<int const>;
+using Views = fc::SegmentList<View>;
+
+fc::Alloc alloc() noexcept { return ::foundation::effects::testing::test().alloc; }
+
+unsigned long element_across_an_append(Items const& items) noexcept {
+    Views list{};
+    list.append(alloc(), items.view());
+    auto const element = list.get(0).expect("the list holds one element");
+    list.append(alloc(), items.view());
+    return element->size();
+}
+
+unsigned long element_across_an_append_with(Items const& items) noexcept {
+    Views list{};
+    list.append(alloc(), items.view());
+    auto const element = list.get(0).expect("the list holds one element");
+    list.append_with(alloc(), [&items](unsigned long) noexcept -> View { return items.view(); });
+    return element->size();
+}
+
+}  // namespace planted

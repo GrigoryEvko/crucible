@@ -3491,13 +3491,15 @@ void report_view_escape(const Finding& finding);
 // arguments that the values of an owner of the base hold, or -1 for a class that
 // is no such owner.  is_borrow_class() is true for a class that states refers{},
 // refers_unique{} or refers_deep{}, is_storage_owner() for a class of the base
-// that states owns_its_storage{}, and is_outside_owner() for an owner of the base
-// that releases nothing at its end (the runs outside).  In a wide reading an
-// incomplete class can hold a borrow (set_wide_borrows).
+// that states owns_its_storage{}, is_block_keeper() for a class of the base that
+// states owns_its_storage{} or keeps_its_blocks{}, and is_outside_owner() for an
+// owner of the base that releases nothing at its end (the runs outside).  In a
+// wide reading an incomplete class can hold a borrow (set_wide_borrows).
 bool holds_borrow(tree type);
 int held_owner_arguments(tree type);
 bool is_borrow_class(tree type);
 bool is_storage_owner(tree type);
+bool is_block_keeper(tree type);
 bool is_outside_owner(tree type);
 void set_wide_borrows(bool is_wide);
 
@@ -3560,8 +3562,9 @@ bool can_hold_object(tree type, tree held);
 // each class of OWNERS.
 bool can_hold_owner(tree type, const TypeSet& owners);
 bool can_hold_each_owner(tree type, const TypeSet& owners);
-// True for a class that states owns_its_storage{}: each member that is not const
-// keeps the objects of its blocks.
+// True for a class of the base that states owns_its_storage{} or
+// keeps_its_blocks{}: each member that is not const keeps the objects of its
+// blocks.
 bool keeps_its_blocks(tree type);
 // Each owner that an object of TYPE is or owns.
 const std::vector<OwnerClass>& owner_classes(tree type);

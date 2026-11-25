@@ -150,8 +150,8 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 
 // The mark of an owner that holds its storage through pointers: a class that is
 // not on OwnerCore, or one on OwnerCore whose members move no element, such as a
-// SegmentList.  No door of the class stores a pointer or a borrow that a caller
-// gives.  The store check of a frame body
+// SegmentList of elements that hold no borrow.  No door of the class stores a
+// pointer or a borrow that a caller gives.  The store check of a frame body
 // (foundation/core/CaptureStore.h) reads its type arguments and no member.
 // Each member that is not const keeps each object that a borrow of a caller
 // can name, until the end of the owner.  So the kind stale-borrow of the rule
@@ -161,6 +161,17 @@ concept OwnerState = MarksOwnerState<State> && GivesOwnerOperations<State>;
 // to bytes or to void, or a class behind a pointer holds an array of bytes.  The
 // blocks of each other class hold the types that its pointers name.
 struct owns_its_storage final {};
+
+// The mark of an owner whose members keep each block, such as a SegmentList.
+// Each member that is not const keeps each object that a borrow of a caller can
+// name, until the end of the owner, a move assignment of it or a member that
+// takes it by an rvalue reference.  So the kind stale-borrow of the rule
+// view-escape reads a call of another member as no end of a borrow.  The mark
+// states nothing about the borrows that the owner holds, so an owner of Views
+// can state it.  owns_its_storage{} also states that the owner holds no borrow.
+// The rule trusts the mark only on a class of the namespace foundation or fixy,
+// as it trusts owns_its_storage{}.
+struct keeps_its_blocks final {};
 
 // A state whose release gives nothing back, such as the run of a region that
 // owns no storage.  It states the member releases_nothing as true, so the end

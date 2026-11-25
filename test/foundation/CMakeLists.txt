@@ -5083,18 +5083,18 @@ foundation_neg_compile_test(neg_core_segment_list_drain_of_named
 foundation_neg_compile_test(neg_core_segment_list_drain_by_reference
   "use of deleted function .void foundation::core::SegmentList<T>::drain\\(Body&&\\) &&"
   "the body of drain takes each element by value, so it names no object that drain ends")
-# A drain and an assignment end each borrow of an element.  An append ends none
-# in a list that states owns_its_storage{}, as the test reads, and a list of
-# borrows does not state it.
+# A drain and an assignment end each borrow of an element.  An append ends none,
+# because each list states keeps_its_blocks{}, as the test reads.  The rule
+# trusts that mark only on a class of the base.
 foundation_neg_compile_test(neg_core_segment_list_ref_after_drain
   "neg_core_segment_list_ref_after_drain\\.cpp:17:[0-9]+: error: this use reads a borrow of list in element after a call of foundation::core::SegmentList::drain with list"
   "neg_core_segment_list_ref_after_drain\\.cpp:16:")
 foundation_neg_compile_test(neg_core_segment_list_run_after_assignment
   "neg_core_segment_list_run_after_assignment\\.cpp:14:[0-9]+: error: this use reads a borrow of list in run after an assignment of list"
   "neg_core_segment_list_run_after_assignment\\.cpp:13:")
-foundation_neg_compile_test(neg_core_segment_list_ref_across_append_of_borrows
-  "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:19:[0-9]+: error: this use reads a borrow of list in element after a call of foundation::core::SegmentList::append with list"
-  "neg_core_segment_list_ref_across_append_of_borrows\\.cpp:18:")
+foundation_neg_compile_test(neg_core_keeps_its_blocks_outside_the_base
+  "neg_core_keeps_its_blocks_outside_the_base\\.cpp:27:[0-9]+: error: this use reads a borrow of renewed in view after a call of .*Renewed::renew with renewed"
+  "neg_core_keeps_its_blocks_outside_the_base\\.cpp:26:")
 # A Sealed gives its object only as a const object, so no code appends to a
 # sealed list.  It does not move, a temporary gives no object, and an object
 # that a read writes and a linear object do not seal.  test/fixy has the test.

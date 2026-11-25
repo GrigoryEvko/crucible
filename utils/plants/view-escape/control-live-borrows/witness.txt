@@ -7,6 +7,8 @@
 # base that keep their blocks and that hold no raw block.  In the unit inner_owners an
 # owner leaves its wrapper and lives while a borrow of it is in use.  In the unit
 # constructs a construct at a pointer moves an owner into an object that lives on.
+# In the unit segments a SegmentList of Views keeps a borrow of an element across
+# an append and across an append with code of the element.
 
 compile live src/live.cpp
 flag live -freflection
@@ -27,3 +29,7 @@ exit inner_owners pass
 compile constructs src/constructs.cpp
 flag constructs -freflection
 exit constructs pass
+
+compile segments src/segments.cpp
+flag segments -freflection
+exit segments pass

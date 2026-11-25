@@ -251,9 +251,9 @@ static_assert(!::foundation::transfer::Sendable<SegmentList<int*>>
               && !::foundation::transfer::Shareable<SegmentList<int*>>);
 static_assert(::foundation::transfer::SendableOwned<SegmentList<int>>);
 
-// A list of elements that hold no borrow states that it keeps its storage, and
-// a list of elements that hold one states nothing.  An owner holds a borrow when
-// its object does.
+// Each list states that it keeps its blocks.  A list of elements that hold no
+// borrow also states that it owns its storage, and a list of elements that hold
+// one does not.  An owner holds a borrow when its object does.
 struct HoldsRun final {
     View<int const> run{};
 };
@@ -267,6 +267,12 @@ static_assert(StatesItsStorage<Box<int>> && StatesItsStorage<SegmentList<int>> &
 static_assert(!StatesItsStorage<View<int const>> && !StatesItsStorage<int*> && !StatesItsStorage<HoldsRun>);
 static_assert(!StatesItsStorage<Box<View<int const>>> && !StatesItsStorage<SegmentList<View<int const>>>);
 static_assert(!StatesItsStorage<StaysOnItsThread>);
+template <class T>
+concept KeepsItsBlocks = ::foundation::reflect::carries_annotation(^^SegmentList<T>, ^^keeps_its_blocks);
+static_assert(KeepsItsBlocks<int> && KeepsItsBlocks<LinearToken> && KeepsItsBlocks<Box<int>>);
+static_assert(KeepsItsBlocks<View<int const>> && KeepsItsBlocks<int*> && KeepsItsBlocks<HoldsRun>);
+static_assert(KeepsItsBlocks<Box<View<int const>>> && KeepsItsBlocks<SegmentList<View<int const>>>);
+static_assert(KeepsItsBlocks<StaysOnItsThread>);
 
 // The surface of the list is closed over the shared verbs and the names of
 // the family.

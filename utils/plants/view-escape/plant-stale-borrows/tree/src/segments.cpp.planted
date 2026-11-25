@@ -1,0 +1,56 @@
+// A SegmentList of Views keeps its blocks across an append, and these events
+// still end each borrow of an element: a drain, a move assignment, an
+// assignment of an empty list and the end of the list.
+#include <foundation/core/Array.h>
+#include <foundation/core/Ref.h>
+#include <foundation/core/Region.h>
+#include <foundation/core/SegmentList.h>
+#include <foundation/effects/Effect.h>
+
+#include <utility>
+
+namespace planted {
+
+namespace fc = ::foundation::core;
+
+using Items = fc::FixedArray<int, 2>;
+using View = fc::View<int const>;
+using Views = fc::SegmentList<View>;
+
+fc::Alloc alloc() noexcept { return ::foundation::effects::testing::test().alloc; }
+
+unsigned long element_after_a_drain(Items const& items) noexcept {
+    Views list{};
+    list.append(alloc(), items.view());
+    auto const element = list.get(0).expect("the list holds one element");
+    std::move(list).drain([](View) noexcept {});
+    return element->size();
+}
+
+unsigned long element_after_an_assignment(Items const& items, Views& other) noexcept {
+    Views list{};
+    list.append(alloc(), items.view());
+    auto const element = list.get(0).expect("the list holds one element");
+    list = std::move(other);
+    return element->size();
+}
+
+unsigned long element_after_a_clear(Items const& items) noexcept {
+    Views list{};
+    list.append(alloc(), items.view());
+    auto const element = list.get(0).expect("the list holds one element");
+    list = Views{};
+    return element->size();
+}
+
+unsigned long run_after_the_end(Items const& items) noexcept {
+    fc::View<View const> run{};
+    {
+        Views list{};
+        list.append(alloc(), items.view());
+        run = *list.segments().begin();
+    }
+    return run.size();
+}
+
+}  // namespace planted

@@ -7,9 +7,9 @@
 //     with an end: each pointer of it, and of its parts by value that have no end
 //     of their own, names storage that it owns.  A borrow class of the base
 //     (refers{}, refers_unique{} and refers_deep{} of foundation/Transfer.h) owns
-//     nothing.  A class that states owns_its_storage{} of foundation/core/Owner.h
-//     keeps each block until its own end, so it is one owner with no owner behind
-//     it.  When no code can move or assign such a class, a call through a reference
+//     nothing.  A class of the base that states owns_its_storage{} or
+//     keeps_its_blocks{} of foundation/core/Owner.h keeps each block until its own
+//     end, so it is one owner with no owner behind it.  When no code can move or assign such a class, a call through a reference
 //     to it ends nothing.  Behind a pointer it ends with the owner of the pointer.  An
 //     owner of the base that keeps its elements behind a pointer to void owns the types
 //     of its arguments (escape.cpp, the borrow).
@@ -34,8 +34,8 @@
 //     of the argument has no owner on its route.
 //
 // Blocks
-//     A class that states owns_its_storage{} can keep an object of each type in a
-//     raw block.  Then it is on the route of each result, also when a part of the
+//     A class that keeps its blocks (owns_its_storage{} or keeps_its_blocks{})
+//     can keep an object of each type in a raw block.  Then it is on the route of each result, also when a part of the
 //     argument has the type of a target.  A block is raw when a pointer of the owner
 //     names bytes or void, and when a class behind a pointer holds an array of
 //     bytes.  A type argument of the owner is an element.  The bytes of an element
@@ -774,7 +774,7 @@ bool keeps_its_blocks(tree type) {
     if (type == NULL_TREE || !CLASS_TYPE_P(type)) {
         return false;
     }
-    return keeps_answers.get(TYPE_UID(type), [type] { return is_storage_owner(type); });
+    return keeps_answers.get(TYPE_UID(type), [type] { return is_block_keeper(type); });
 }
 
 const BorrowRoute& borrow_route(tree result, tree held) {

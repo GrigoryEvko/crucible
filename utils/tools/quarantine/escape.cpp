@@ -257,6 +257,19 @@ bool owns_its_storage(tree type) {
 // mark in this form.
 bool is_base_storage_owner(tree type) { return owns_its_storage(type) && is_of_base_namespace(type); }
 
+// True for a class of the namespace foundation or fixy that states
+// keeps_its_blocks{} of include/foundation/core/Owner.h: each member that is not
+// const keeps each block.  The mark states nothing about the borrows that the
+// class holds.  The rule trusts it only in the base, as it trusts
+// owns_its_storage{}.
+bool is_base_block_keeper(tree type) {
+    static tree const mark = get_identifier("keeps_its_blocks");
+    static tree const core = get_identifier("core");
+    type = TYPE_MAIN_VARIANT(type);
+    return CLASS_TYPE_P(type) && carries_base_annotation(TYPE_ATTRIBUTES(type), mark, core)
+        && is_of_base_namespace(type);
+}
+
 // True when TYPE holds a borrow, in the walk WALK of holds_borrow.
 bool reaches_borrow(tree type, ReachWalk& walk, int depth) {
     if (type == NULL_TREE || type == error_mark_node) {
@@ -1529,6 +1542,8 @@ bool is_borrow_class(tree type) {
 }
 
 bool is_storage_owner(tree type) { return is_base_storage_owner(type); }
+
+bool is_block_keeper(tree type) { return is_base_storage_owner(type) || is_base_block_keeper(type); }
 
 bool is_outside_owner(tree type) { return outside_run_core(type) != NULL_TREE; }
 

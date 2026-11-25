@@ -1163,6 +1163,8 @@ inline constexpr StatedZero kZeros[] = {
     {^^::foundation::core::owns_its_storage,
      "the annotation of an owner that holds its storage through pointers that no caller sets: it is empty and is "
      "never a value in a signature"},
+    {^^::foundation::core::keeps_its_blocks,
+     "the annotation of an owner whose members keep each block: it is empty and is never a value in a signature"},
     {^^::foundation::core::dispatch_brand,
      "the annotation of a brand whose keys only the dispatch door mints: it is empty and is never a value in a "
      "signature"},
